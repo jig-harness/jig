@@ -28,8 +28,18 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Invariant** — the tool-independent statement of a practice ("every
   committed generated file has a drift check"), as opposed to any particular
   tool that implements it.
+- **Disposition** — a written behavioral default ("systematic over
+  improvised", "no backward compatibility yet") paired with the explicit
+  condition under which it flips (its *flip condition*). A disposition
+  without a flip condition becomes dogma.
+- **Tool delta** — a runtime-specific instruction file (`CLAUDE.md`,
+  `.cursorrules`, …) carrying only what is specific to that runtime plus a
+  pointer to the universal instruction file — never a second copy of it.
 - **Vendoring** — copying external material into a repo so it remains
   available and stable regardless of the original's location or lifetime.
+- **MCP (Model Context Protocol)** — an open standard for connecting AI
+  agents to external tools and data sources; an MCP server exposes a set of
+  callable tools to any compatible agent runtime.
 
 ## Enforcement
 
@@ -58,9 +68,36 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Freshness gate (drift check)** — the check that fails when a *generated
   artifact* no longer matches what its generator would produce — proof the
   committed copy is stale.
+- **Freshness triad** — the three mechanisms every committed *generated
+  artifact* ships with: a regenerate script, a CI drift check, and a
+  pre-commit auto-regenerate-and-stage hook.
+- **Commit-nothing check** — a CI check that recomputes a derivable fact
+  (a count, a roster) and compares it to what the prose claims, committing
+  no generated file — freshness without the merge-conflict liability of a
+  committed cache.
+- **Ephemeral replay** — the strongest drift check for schema-like
+  artifacts: rebuild from absolute scratch in a throwaway environment
+  (e.g. replay all migrations into a disposable container), normalize, and
+  diff against the committed copy — testing the whole derivation chain,
+  not file timestamps.
 - **Suppression token** — a documented inline marker that legitimately
   silences a specific gate at a specific spot, with a justification. A
   registry of them prevents ad-hoc, invisible exceptions.
+- **Escape hatch** — a documented, legitimate way to bypass a gate (e.g.
+  `git commit --no-verify` in an emergency), always paired with a higher
+  rung — usually *CI* — that re-checks, so the bypass changes nothing about
+  what merges.
+- **Advisory gate** — a gate that reports failures without blocking, run
+  that way while its precision is being proven. Every advisory gate carries
+  a promotion condition (when it becomes blocking); advisory-forever is a
+  tracked smell.
+- **Process marker** — a literal tag in a commit-message body (e.g.
+  `[reviewed: db-migration]`) recording that a mandatory process step
+  happened, required by a commit-msg hook and re-verified by a gate the
+  committer can't skip.
+- **Fix-and-stage** — the pre-commit hook pattern where an auto-fixer
+  (formatter, regenerator) runs and its output is re-staged automatically,
+  so the commit lands already clean instead of failing.
 
 ## Process
 
@@ -75,6 +112,10 @@ capitalized as commonly written; cross-references are *italicized*.
 - **HITL (human-in-the-loop)** — a decision class that must be made by a
   human, never autonomously by an agent (merges, releases, destructive
   operations, scope expansions). Kept in an explicit registry.
+- **BWC (backward compatibility)** — keeping old interfaces working when
+  things change. Groundwork treats "when do we start paying for BWC?" as an
+  explicit *disposition* with a flip condition (e.g., first real customer
+  data), not an unstated assumption.
 - **De-scarring** — cleaning a finished document of review findings,
   corrections, and reviewer dialogue ("scars") so it reads cleanly; the
   history stays in PRs, issues, and git — not in the artifact.

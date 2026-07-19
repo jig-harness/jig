@@ -1,0 +1,97 @@
+module: M0
+name: instruction-architecture
+criteria:
+  - id: universal-instruction-file
+    level: lite
+    requires: convention
+    statement: >-
+      A vendor-neutral universal instruction file (AGENTS.md or equivalent)
+      exists at the repo root and stays small (on the order of 150 lines).
+    observe:
+      - "AGENTS.md (or documented equivalent) exists at repo root"
+      - "file is not tool-specific (readable truth for every agent runtime)"
+      - "file length is on the order of 150 lines or less"
+
+  - id: gates-and-guardrails-listed
+    level: lite
+    requires: convention
+    statement: >-
+      The universal instruction file lists the quality gates (runnable
+      commands) and the critical guardrails.
+    observe:
+      - "instruction file has a quality-gates section with runnable commands"
+      - "instruction file has a guardrails section naming the failures prevented"
+
+  - id: glossary-exists
+    level: lite
+    requires: convention
+    statement: >-
+      A one-page domain glossary exists with canonical terms and explicit
+      avoid-aliases, and the universal instruction file points to it.
+    observe:
+      - "GLOSSARY.md or CONTEXT.md exists"
+      - "entries carry explicit 'avoid' aliases"
+      - "universal instruction file links to it"
+
+  - id: tool-deltas-are-pointers
+    level: standard
+    requires: convention
+    statement: >-
+      Every tool-specific instruction file (CLAUDE.md, .cursor rules,
+      copilot-instructions.md, ...) carries only runtime-specific content
+      and points back to the universal file, duplicating none of it.
+    observe:
+      - "each tool-specific file opens with a pointer to the universal file"
+      - "no rule text appears in both the universal file and a tool delta"
+
+  - id: per-directory-instructions
+    level: standard
+    requires: convention
+    statement: >-
+      Directories whose conventions differ from the repo default carry
+      their own nested instruction file, and the universal file states the
+      closest-file-wins policy.
+    observe:
+      - "nested instruction files exist where apps/packages diverge"
+      - "universal file documents closest-file-wins"
+
+  - id: conditional-rules-documented
+    level: standard
+    requires: convention
+    statement: >-
+      If a conditional-rules directory exists, its README documents the
+      loading semantics — path-frontmatter rules load on match,
+      frontmatter-less rules always load — and each rule is scoped to the
+      narrowest paths that cover it.
+    observe:
+      - "rules directory contains a README stating the loading model"
+      - "rules carry path frontmatter unless deliberately universal"
+
+  - id: dispositions-with-flip-conditions
+    level: standard
+    requires: convention
+    statement: >-
+      Behavioral defaults (dispositions) are written down, and every
+      disposition states the condition under which it flips.
+    observe:
+      - "a dispositions document exists and is linked from the universal file"
+      - "every disposition entry contains an explicit flip condition"
+
+  - id: instruction-freshness-checked
+    level: strict
+    requires: mechanical
+    statement: >-
+      Countable facts and referenced paths in instruction files are
+      verified against reality by a CI check that fails on drift.
+    observe:
+      - "a CI job re-derives countable facts stated in instruction files"
+      - "a CI job (or link checker) verifies referenced paths exist"
+
+  - id: instruction-set-owned
+    level: strict
+    requires: convention
+    statement: >-
+      The instruction set has a named owner and a stated review cadence.
+    observe:
+      - "an owner is named in or alongside the universal instruction file"
+      - "a review cadence is stated (and last-review date is plausible)"

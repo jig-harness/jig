@@ -50,12 +50,18 @@ just file timestamps.
   schema-like artifacts use ephemeral replay; the artifact inventory itself is
   generated and gated.
 
-## Port status (Phase 2 remainder)
+## Port status
 
-| Source (docomply `develop`) | Becomes |
-|-----------------------------|---------|
-| Generate → check → auto-stage triad instances (docs index, schema, error codes) | `reference/triad/` (one worked, generic example: generator + drift check + hook wiring) |
-| Ephemeral-replay drift check (`tools/db/check-*` + ephemeral-postgres lib) | `reference/ephemeral-replay/` (genericized) |
-| Derivable-fact CI check + referenced-path-exists check (P1-4, commit-nothing design) | `reference/prose-facts/` |
+| Source (docomply `develop`) | Landed as |
+|-----------------------------|-----------|
+| Generate → check → auto-stage triad instances (docs index, schema, error codes) | [`reference/triad/`](reference/triad/) — one runnable generic example: generator + drift check + fixture, with hook and CI wiring |
+| Ephemeral-replay drift check (`tools/db/check-*` + ephemeral-postgres lib) | [`reference/ephemeral-replay/`](reference/ephemeral-replay/) — genericized recipe + commented docker/pg_dump skeleton |
+| Derivable-fact CI check + referenced-path-exists check (commit-nothing design) | [`reference/prose-facts/`](reference/prose-facts/) — two runnable checks + fixture |
 
-Still to write: `mappings.md` (CI-provider variants), `maturity.yaml`.
+[`mappings.md`](mappings.md) (CI providers, hook managers, container/database
+variants) and [`maturity.yaml`](maturity.yaml) are in place. Not ported (per
+"don't port the unproven" / IP scrub): the checker self-test harnesses, the
+error-code and seed-freshness triad instances (domain-specific values only —
+the pattern is fully represented by the worked example), and the generated
+artifact-inventory tooling (Strict criterion stated in `maturity.yaml`; no
+generic reference implementation yet).

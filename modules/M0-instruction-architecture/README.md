@@ -50,19 +50,25 @@ system that keeps agent guidance findable, small, scoped, and single-sourced.
   are CI-verified against reality, referenced paths are checked to exist, and
   the instruction set has a named owner and review cadence.
 
-## Port status (Phase 2 remainder)
+## Port status
 
-Port and genericize from the reference implementation (docomply `develop`):
+Ported and genericized from the reference implementation (docomply
+`develop`) — all sources below have landed:
 
-| Source | Becomes |
-|--------|---------|
-| `AGENTS.md` (structure, not content) | `templates/AGENTS-skeleton.md` |
-| `.claude/rules/README.md` (C8) | `templates/rules-README.md` + loading-semantics doc |
-| `CONTEXT.md` + glossary rule | `templates/GLOSSARY-skeleton.md` + authoring notes |
-| Dispositions (systematic default, BWC-deferred, minimalism ladder) | `templates/dispositions.md` |
-| `docs/development/ai-tools/model-routing-policy.md` (C9) | `reference/model-routing-policy.md` (tiered model economics) |
-| `docs/development/hitl-decision-registry.md` (C6) | `templates/hitl-registry.md` (shared with M7) |
-| Cross-runtime skill discovery (symlink mirror + sync script) | `reference/` script + `mappings.md` entry |
+| Source | Became |
+|--------|--------|
+| `AGENTS.md` (structure, not content) | [`templates/AGENTS-skeleton.md`](templates/AGENTS-skeleton.md) |
+| `.claude/rules/README.md` (C8) | [`templates/rules-README.md`](templates/rules-README.md) (loading semantics documented inline) |
+| `CONTEXT.md` + glossary rule | [`templates/GLOSSARY-skeleton.md`](templates/GLOSSARY-skeleton.md) (authoring notes in header comment) |
+| Dispositions (systematic default, BWC-deferred, minimalism ladder) | [`templates/dispositions.md`](templates/dispositions.md) — each with its flip condition |
+| `docs/development/ai-tools/model-routing-policy.md` (C9) | [`reference/model-routing-policy.md`](reference/model-routing-policy.md) (tiered model economics) |
+| `docs/development/hitl-decision-registry.md` (C6) | [`templates/hitl-registry.md`](templates/hitl-registry.md) (shared with M7) |
+| Cross-runtime skill discovery (symlink mirror + sync script) | [`reference/sync-skills-mirror.sh`](reference/sync-skills-mirror.sh) + `mappings.md` entry |
 
-Still to write: `mappings.md` (Claude Code / Codex / Cursor / Copilot file
-conventions), `maturity.yaml`.
+Also written: [`mappings.md`](mappings.md) (Claude Code / Codex / Cursor /
+Copilot file conventions) and [`maturity.yaml`](maturity.yaml). Noted as
+future (not ported — reference-implementation-specific or unproven): the
+generated per-agent model roster tooling (its pattern is described in the
+routing-policy reference; the generator belongs with M2), and the
+PR-review-side consumer of rule frontmatter (belongs with M7's reviewer
+harness).

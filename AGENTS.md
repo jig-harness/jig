@@ -85,8 +85,12 @@ the enforcement ladder: *absent → convention-only → mechanically enforced*.
 - Conventional Commits (`feat:`, `docs:`, `chore:`, …). Work on feature
   branches + PRs once the kernel phase ends; during bootstrap, small direct
   commits to `main` are acceptable.
-- There are no CI gates here yet (M1 will introduce groundwork's own, dogfooded
-  set — see ROADMAP Phase 2 remainder). Until then: self-check that links
-  resolve and tables render.
+- Quality gates (dogfooded M1, tiny by design) — run all with one command:
+  `./scripts/gates.sh`. The set, in order: gate self-tests, markdown links
+  resolve, blank line before tables, terms of art defined in the glossary
+  (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`). CI runs
+  the same command on every PR (`.github/workflows/gates.yml`). Vendored
+  material (`seeds/`, `docs/`), `templates/`, and test `fixtures/` are out of
+  gate scope — see the header comment of each check script for why.
 - HITL (human-in-the-loop) decisions: publishing/visibility, license, deleting
   seed material, and anything touching the IP scrub boundary — flag, don't act.

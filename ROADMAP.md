@@ -11,25 +11,32 @@ groundwork work starts here.
 |-------|-------|--------|
 | 0 | Founding charter (analysis, module map, blueprint) | ✅ done (vendored in `docs/`) |
 | 1 | Codification **in docomply**: C1–C9 canonical docs + drift fixes | ✅ done (epic an issue, all 12 sub-issues; artifacts on docomply `develop` — see Port sources) |
-| 2 | **Bootstrap groundwork**: skeleton, principles, glossary, profiles outline, auditor v0, port M0–M2 | 🔶 kernel done (this repo); remainder below |
+| 2 | **Bootstrap groundwork**: skeleton, principles, glossary, profiles outline, auditor v0, port M0–M2 | ✅ done 2026-07-19 (all remainder items closed — see below) |
 | 3 | Port M4 docs governance, M5 ADR practice, M3 change-area catalog; add `maturity.yaml` per landed module | ⬜ |
 | 4 | Port M7 review-harness core + M8 learning loop | ⬜ |
 | 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ⬜ |
 | ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing |
 
-## Phase 2 remainder (next work, in order)
+## Phase 2 remainder (all closed 2026-07-19; next work is Phase 3)
 
-1. **M0–M2 `templates/` + `reference/` + `mappings.md` + `maturity.yaml`** —
-   the module READMEs define what to port and from where; the mechanisms must
-   be genericized (values → placeholders) and IP-scrubbed per AGENTS.md.
-2. **Groundwork's own gates (dogfood M1)** — minimal: markdown link check +
-   glossary-coverage check (terms of art defined) + table-blank-line check, as
-   CI on PRs. Keep it tiny; it exists to practice what M1 preaches.
-3. **Auditor calibration** — run `audit/` end-to-end against one small external
-   repo; fix prompt/report gaps found. (The methodology was already exercised
-   once — on docomply itself, 2026-07-18, which produced the charter.)
-4. **Profiles deepening** — per-module maturity targets per profile
-   (currently outline-level in `profiles/`).
+1. ~~**M0–M2 `templates/` + `reference/` + `mappings.md` + `maturity.yaml`**~~
+   — ✅ done 2026-07-19: all three modules carry the full contract,
+   genericized and IP-scrubbed per AGENTS.md (see each § Port status for
+   what was deliberately not ported).
+2. ~~**Groundwork's own gates (dogfood M1)**~~ — ✅ done 2026-07-19:
+   `./scripts/gates.sh` (self-tests + link check + table check +
+   glossary-coverage via acronym proxy) runs locally and in CI on every PR
+   (`.github/workflows/gates.yml`).
+3. ~~**Auditor calibration**~~ — ✅ done 2026-07-19: full run against
+   sindresorhus/execa
+   ([report](audit/calibration/2026-07-19-execa.md)); six auditor gaps found
+   and fixed (null-result guidance, negative-evidence rule, advisory score
+   state, repo-shape weighting, full-clone requirement, bot-wiring evidence
+   rule).
+4. ~~**Profiles deepening**~~ — ✅ done 2026-07-19 for ported modules:
+   profile targets for M0–M2 now resolve to concrete `maturity.yaml`
+   criteria (levels named in `profiles/`, criteria stated only in the module
+   files); deepens further automatically as each later module ports.
 
 ## Port sources (docomply `develop` — Phase 1 artifacts and beyond)
 

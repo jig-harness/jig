@@ -1,0 +1,96 @@
+# Git-hooks skeleton (lefthook syntax) — groundwork module M1.
+#
+# Copy to your repo root as lefthook.yml, replace every <placeholder>, delete
+# what you don't need. The SHAPE is the point:
+#
+#   pre-commit  — fast, auto-FIXING checks that re-stage what they fixed
+#   pre-push    — cheap grep gates first, then the one heavy build/test phase
+#   commit-msg  — process markers that must live in the commit message
+#
+# Local hooks are the fast-feedback rung, not the authority: every check here
+# is mirrored in CI (see ci-pr-gates.yml), so the escape hatch below never
+# changes what merges.
+#
+# Escape hatch: `git commit --no-verify` / `git push --no-verify` skip all
+# hooks. Legitimate for emergencies and WIP pushes; CI closes the hole.
+#
+# Other hook managers (husky, pre-commit framework): see ../mappings.md.
+
+# ---------------------------------------------------------------------------
+# Pre-commit: quality gates on STAGED files. Parallel — each command is
+# independent and fast. The pattern to copy is fix-and-stage: run the fixer,
+# `git add` its output, and set `stage_fixed: true` so the commit goes out
+# already clean instead of failing and making the human re-drive it.
+pre-commit:
+  parallel: true
+  commands:
+    # Formatter/linter with auto-fix on staged files only.
+    format-and-lint-staged:
+      timeout: 90s          # every command gets a timeout: a hung hook is
+                            # worse than no hook — it teaches people --no-verify
+      run: <formatter/linter command scoped to staged files, in fix mode>
+      stage_fixed: true     # re-stage whatever the fixer changed
+
+    # Regenerate-and-stage: when a source of truth changes, regenerate its
+    # derived artifact in the same commit (see module M2 for the CI-side
+    # freshness gate this pairs with).
+    regenerate-derived:
+      glob: "<source-of-truth path pattern, e.g. schema/*.yaml>"
+      timeout: 2m
+      run: |
+        <regeneration command>
+        git add <generated file(s)>
+      stage_fixed: true
+
+    # Cheap staged-content guard: block a known footgun before it is even
+    # committed (e.g. focused tests like `.only(`, debug statements, secrets).
+    # Fail with a message that names the offending lines.
+    no-<footgun>:
+      glob: "<file pattern the footgun appears in>"
+      timeout: 30s
+      run: |
+        STAGED=$(git diff --cached --name-only | grep -E '<file pattern>' || true)
+        if [ -n "$STAGED" ] && echo "$STAGED" | xargs grep -n '<forbidden pattern>' 2>/dev/null; then
+          echo "ERROR: <forbidden pattern> found in staged files — remove before committing"
+          exit 1
+        fi
+
+# ---------------------------------------------------------------------------
+# Pre-push: the full gate set before code leaves the machine. Sequential —
+# cheap gates fail fast before the heavy phase spends minutes.
+pre-push:
+  parallel: false
+  commands:
+    # Cheap grep gates: one command per codebase rule, each a small tested
+    # script (see ../reference/grep-gate/). `glob:` scopes the gate so pushes
+    # that cannot violate the rule skip it entirely.
+    check-<rule-1>:
+      glob: "<paths the rule applies to>"
+      run: scripts/check-<rule-1>.sh
+    check-<rule-2>:
+      glob: "<paths the rule applies to>"
+      run: scripts/check-<rule-2>.sh
+
+    # Heavy phase last: build + test what changed. If several agents or
+    # worktrees share one machine, serialize this phase behind a mutex so
+    # parallel pushes don't thrash the machine into false timeout failures
+    # (see module M12). CI remains the authority with the full graph.
+    build-and-test:
+      run: <build + test command for changed packages>
+
+# ---------------------------------------------------------------------------
+# Commit-msg: validate the message AFTER it is written. This is the only hook
+# that can reliably read the commit message — at pre-commit time the message
+# file is stale or missing. Lefthook passes the message file path as {1}.
+commit-msg:
+  commands:
+    # Process marker: when protected files are staged, require the review
+    # sign-off tag in the message body. Message-body tags (not git notes)
+    # because notes don't propagate through `git push` by default.
+    # Full portable script + design notes: ../reference/commit-msg-marker/
+    review-marker:
+      timeout: 30s
+      run: |
+        REVIEW_MARKER='<[reviewed:your-process] tag>' \
+        REVIEW_PATHS_RE='<^regex/for/protected/paths$>' \
+        scripts/check-review-marker.sh {1}

@@ -13,6 +13,7 @@
 
 | Facet | Detected | Evidence |
 |-------|----------|----------|
+| Repo shape | <library / app / service / monorepo — calibrates which practices are expected> | <…> |
 | Language(s) / runtime | <…> | <path> |
 | Package manager / task runner | <…> | <lockfile / config> |
 | CI provider | <…> | <dir> |
@@ -22,9 +23,13 @@
 
 ## Module scores
 
+> Score per module: absent / convention-only / advisory / enforced (see
+> methodology step 3). For modules with a `maturity.yaml`, score each
+> criterion and roll up; mark inapplicable practices "expected-absent".
+
 | Module | Score | Evidence (paths) | One-line assessment |
 |--------|-------|------------------|---------------------|
-| M0 Instruction architecture | absent / convention-only / enforced | <…> | <…> |
+| M0 Instruction architecture | absent / convention-only / advisory / enforced | <…> | <…> |
 | M1 Gates & enforcement ladder | … | <…> | <…> |
 | M2 Generated-artifact freshness | … | <…> | <…> |
 | M3–M12 … | … | <…> | <…> |

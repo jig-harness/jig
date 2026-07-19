@@ -12,6 +12,7 @@ periodically, a practices-drift regression check.
 | [methodology.md](methodology.md) | The four-step audit method an agent executes |
 | [survey-prompts/](survey-prompts/) | One ready-to-run prompt per practice area (fan out in parallel) |
 | [report-template.md](report-template.md) | The structure of the deliverable |
+| [calibration/](calibration/) | End-to-end audit runs against external repos, kept as worked examples |
 
 ## Running an audit (agent instructions)
 
@@ -23,8 +24,9 @@ periodically, a practices-drift regression check.
    claim carries file-path evidence; recommendations are phrased in the
    target's own toolchain.
 
-**v0 caveat**: module `maturity.yaml` scoring criteria are not yet in place
-(they land with each module's port — see [ROADMAP.md](../ROADMAP.md)), so v0
-audits score modules qualitatively on the enforcement ladder
-(*absent / convention-only / mechanically enforced*) rather than against
-formal criteria. That is exactly what the founding audit did.
+**v0 caveat**: formal `maturity.yaml` scoring criteria exist for the ported
+modules (M0–M2 so far — score those against their criteria files); the
+remaining modules land theirs with each port (see
+[ROADMAP.md](../ROADMAP.md)). Until then, score unported modules
+qualitatively on the enforcement ladder (*absent / convention-only /
+mechanically enforced*). That is exactly what the founding audit did.

@@ -2,7 +2,7 @@
 
 Survey how code review and continuous improvement work.
 
-1. Reviewers in play: humans, bot reviewers (CodeRabbit/Greptile/Copilot/custom), their roles and posture (blocking vs comment-only), and any layering rationale.
+1. Reviewers in play: humans, bot reviewers (CodeRabbit/Greptile/Copilot/custom), their roles and posture (blocking vs comment-only), and any layering rationale. Count a bot only if its config or workflow wiring is present — a badge or sponsor mention is not a reviewer.
 2. Review routing: are mandatory review requirements selected by change type? Mechanically or by convention?
 3. The comment-resolution loop: is addressing review feedback codified (accept/reject/defer rules, HITL boundaries, thread-resolution mechanics)?
 4. Measurement: is review quality measured at all (missed-defect tracking, vendor parity, eval fixtures, telemetry)?

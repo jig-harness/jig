@@ -5,9 +5,11 @@ target repo. Terms: [GLOSSARY.md](../GLOSSARY.md).
 
 ## 1. Fan out parallel surveys
 
-Launch the four survey prompts in [survey-prompts/](survey-prompts/) as
-parallel **read-only** sub-agents against the target repo, each with the
-shared preamble prepended. Each survey returns a structured synthesis with
+Use a **full clone** of the target — several survey questions (drift over
+time, review practice, supersession) are unanswerable from a shallow
+snapshot. Launch the four survey prompts in
+[survey-prompts/](survey-prompts/) as parallel **read-only** sub-agents
+against the target repo, each with the shared preamble prepended. Each survey returns a structured synthesis with
 file-path evidence — never file dumps. Add a fifth, project-specific survey if
 the target has a large surface the four don't cover (e.g., a data platform).
 
@@ -28,9 +30,14 @@ must be phrased in these tools.
 
 For each groundwork module (M0–M12), grade the target:
 
-- **absent** — the practice doesn't exist;
+- **absent** — the practice doesn't exist (mark "expected-absent" where the
+  repo's shape makes the practice inapplicable — e.g. no deploy pipeline in
+  a library);
 - **convention-only** — practiced or documented, but nothing mechanical fails
   when it's violated;
+- **advisory** — a check runs mechanically but cannot block (non-blocking CI
+  step, fail-off coverage upload); score it with its promotion condition,
+  or the lack of one;
 - **mechanically enforced** — hooks/CI/review gates catch violations (note
   which rung, and whether CI is the authority).
 

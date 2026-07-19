@@ -1,0 +1,105 @@
+# Machine-evaluable maturity criteria for M1 — gates & enforcement ladder.
+# Schema: modules/README.md § "maturity.yaml schema". Criteria are observable
+# repo facts scored absent → convention → mechanical.
+#
+# Not scored here: the cross-worktree resource mutex named under Strict in the
+# README — it applies only where parallel agents share one machine and is
+# scored by module M12.
+module: M1
+name: gates-enforcement-ladder
+criteria:
+  - id: gate-set-documented
+    level: lite
+    requires: convention
+    statement: >-
+      An ordered gate set (format, lint, types, tests, build) is stated in
+      one canonical place and runnable with a single command.
+    observe:
+      - "instruction file (or equivalent canonical doc) lists the ordered gates"
+      - "one script/task runs the whole set"
+
+  - id: ci-runs-gates-on-pr
+    level: lite
+    requires: mechanical
+    statement: >-
+      CI runs the gate set on every pull request and a failing run blocks
+      the merge.
+    observe:
+      - "CI workflow triggered on pull requests runs the gate set"
+      - "the workflow's jobs are required checks (branch protection or
+        pipelines-must-succeed setting)"
+
+  - id: precommit-autofix-hooks
+    level: standard
+    requires: mechanical
+    statement: >-
+      A managed pre-commit hook runs auto-fixing checks and re-stages what
+      they fixed.
+    observe:
+      - "hook-manager config present (lefthook.yml, .husky/, or
+        .pre-commit-config.yaml)"
+      - "pre-commit entry runs a fixer and stages its output
+        (e.g. stage_fixed or an explicit git add)"
+
+  - id: grep-gates-tested-and-wired
+    level: standard
+    requires: mechanical
+    statement: >-
+      The team's top codebase-wide rules (target: five or more) exist as
+      grep-gate scripts, each with a paired self-test, wired into both the
+      pre-push hook and CI.
+    observe:
+      - "check-<rule> scripts present"
+      - "each has a paired test-<rule> self-test with fixtures"
+      - "both hook config and CI workflow invoke them"
+
+  - id: escape-hatch-documented
+    level: standard
+    requires: convention
+    statement: >-
+      The hook bypass (--no-verify) is documented next to the hooks, with
+      when it is legitimate and the note that CI re-runs everything.
+    observe:
+      - "hook config or gate docs mention --no-verify and its conditions"
+      - "every hook-enforced check also appears in CI"
+
+  - id: suppression-token-registry
+    level: strict
+    requires: convention
+    statement: >-
+      A single registry page lists every suppression token a live gate
+      honors, with syntax, consuming gate, placement, and justification
+      requirement, plus a registration rule for new tokens.
+    observe:
+      - "registry doc present in the docs tree"
+      - "tokens parsed by check scripts appear in it"
+
+  - id: commit-msg-process-markers
+    level: strict
+    requires: mechanical
+    statement: >-
+      Mandatory-review areas are enforced by a commit-msg hook requiring a
+      review-marker tag when protected paths are staged, re-checked by a
+      gate the committer cannot skip.
+    observe:
+      - "commit-msg hook checks staged paths against a marker in the message"
+      - "CI (or another unskippable rung) re-verifies the marker"
+
+  - id: gate-self-tests-in-ci
+    level: strict
+    requires: mechanical
+    statement: >-
+      CI runs each grep gate's self-test alongside the gate, so a silently
+      broken gate fails the pipeline.
+    observe:
+      - "CI workflow invokes the test-<rule> scripts, not only the gates"
+
+  - id: advisory-gates-carry-promotion-conditions
+    level: strict
+    requires: convention
+    statement: >-
+      Every advisory (non-blocking) gate states its promotion condition and
+      a review date; none is advisory indefinitely without one.
+    observe:
+      - "continue-on-error / allow_failure gates carry a promotion condition
+        and date in config comments or the gate catalog"

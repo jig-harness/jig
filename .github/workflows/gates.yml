@@ -1,0 +1,21 @@
+# Groundwork's own quality gates (dogfooded M1 — see ROADMAP Phase 2 item 2).
+# Tiny by design: markdown links resolve, tables render, terms of art are
+# defined. One command locally: ./scripts/gates.sh
+name: gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run gate set (self-tests + checks)
+        run: ./scripts/gates.sh

@@ -1,0 +1,77 @@
+# Machine-evaluable criteria for M2 (generated-artifact freshness).
+# Schema: modules/README.md § "maturity.yaml schema". Each criterion is an
+# observable repo fact, scored absent → convention → mechanical.
+module: M2
+name: generated-artifact-freshness
+criteria:
+  - id: derived-inventory-exists
+    level: lite
+    requires: convention
+    statement: >-
+      Every committed derived file is listed in one canonical place together
+      with the command that regenerates it.
+    observe:
+      - "an inventory (README section, docs page, or manifest) pairs each derived file with its generator"
+      - "no committed derived file is missing from the inventory"
+
+  - id: hand-editing-forbidden
+    level: lite
+    requires: convention
+    statement: >-
+      Hand-editing derived files is documented as forbidden, and each derived
+      file's header identifies it as generated with its regenerate command.
+    observe:
+      - "instruction file or inventory states the hand-editing ban"
+      - "derived files open with a generated-file marker naming the regenerate command"
+
+  - id: committed-derived-full-triad
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every committed derived file has the full freshness triad: a regenerate
+      script, a CI drift check that fails when the file is stale, and a
+      pre-commit hook that regenerates and stages it when its inputs change.
+    observe:
+      - "a runnable regenerate script exists per derived file"
+      - "a CI job regenerates to a temp location, diffs, and fails on mismatch"
+      - "hook-manager config (lefthook/husky/pre-commit) auto-stages the regenerated file"
+
+  - id: instruction-path-references-checked
+    level: standard
+    requires: mechanical
+    statement: >-
+      A CI check verifies that repo paths referenced in instruction files
+      resolve to existing files or directories.
+    observe:
+      - "CI job runs a referenced-path-exists check over the instruction files"
+
+  - id: prose-facts-ci-checked
+    level: strict
+    requires: mechanical
+    statement: >-
+      Derivable facts stated in prose (counts, rosters) are re-derived and
+      compared by a CI check that commits no generated file.
+    observe:
+      - "CI job re-derives each registered fact and fails when a stated copy disagrees"
+      - "no generated cache of the derived facts is committed to the repo"
+
+  - id: schema-artifacts-use-ephemeral-replay
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every schema-like committed artifact's drift check replays its source
+      of truth from scratch in a throwaway environment, normalizes both
+      sides identically, and compares.
+    observe:
+      - "drift check spins an ephemeral database/container and applies migrations from zero"
+      - "committed artifact and fresh dump pass through the same normalization before diff"
+
+  - id: artifact-inventory-generated-and-gated
+    level: strict
+    requires: mechanical
+    statement: >-
+      The derived-file inventory is itself a generated artifact with its own
+      drift gate, so the inventory cannot silently omit a new derived file.
+    observe:
+      - "a script generates the inventory from repo state"
+      - "a CI check fails when the committed inventory is stale"

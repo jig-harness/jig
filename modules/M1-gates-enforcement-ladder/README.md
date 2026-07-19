@@ -49,15 +49,19 @@ ladder from convention to hard gate, without collapsing into bureaucracy.
   conditions with dates; cross-worktree resource mutex where parallel agents
   share a machine (see M12).
 
-## Port status (Phase 2 remainder)
+## Port status
 
-| Source (docomply `develop`) | Becomes |
-|-----------------------------|---------|
-| `lefthook.yml` (shape) | `templates/lefthook.yml` + `mappings.md` (husky / pre-commit equivalents) |
-| `scripts/check-*` + paired `test-*` convention | `reference/grep-gate/` (framework skeleton: one example gate + self-test + fixtures) |
-| `.github/workflows/pr-quality-gates.yml` (shape) | `templates/ci-pr-gates.yml` (GitHub Actions) + GitLab mapping note |
-| `docs/development/suppression-token-registry.md` (C7) | `templates/suppression-registry.md` |
-| Commit-msg review-marker gate | `reference/` script + notes |
+| Source (docomply `develop`) | Landed as |
+|-----------------------------|-----------|
+| `lefthook.yml` (shape) | [`templates/lefthook.yml`](templates/lefthook.yml) — copyable hook skeleton; husky / pre-commit equivalents in [`mappings.md`](mappings.md) |
+| `scripts/check-*` + paired `test-*` convention | [`reference/grep-gate/`](reference/grep-gate/) — framework skeleton with one worked example gate (TODO-without-issue), its self-test, and fixtures |
+| `.github/workflows/pr-quality-gates.yml` (shape) | [`templates/ci-pr-gates.yml`](templates/ci-pr-gates.yml) — GitHub Actions skeleton; GitLab CI mapping in [`mappings.md`](mappings.md) |
+| `docs/development/suppression-token-registry.md` (C7) | [`templates/suppression-registry.md`](templates/suppression-registry.md) — copyable registry skeleton |
+| Commit-msg review-marker gate | [`reference/commit-msg-marker/`](reference/commit-msg-marker/) — portable script + design notes |
 
-Still to write: `mappings.md`, `maturity.yaml`, and groundwork's own dogfooded
-mini-gate set (see ROADMAP Phase 2 remainder item 2).
+Also landed: [`mappings.md`](mappings.md) (hook managers + CI providers) and
+[`maturity.yaml`](maturity.yaml) (auditor criteria for the levels above).
+
+Groundwork's own dogfooded mini-gate set (this repo running M1 on itself) is
+a separate work item at the repo root — see ROADMAP Phase 2 remainder item 2;
+it is deliberately not part of this module directory.

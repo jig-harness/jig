@@ -1,0 +1,3 @@
+// TODO: tighten input validation
+# TODO handle the empty-list case
+// TODO: vendored quirk  todo-exempt:
