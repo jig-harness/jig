@@ -1,0 +1,28 @@
+# TEMPLATE — copy this to your repo (e.g. tools/change-areas/catalog.yaml) and
+# replace the single example area with your own. This is the single source of
+# truth mapping path patterns -> change-areas -> implications; every consumer
+# (CI selection, review gates, tracker labels, deploy tiers) is generated from
+# it. See the module README and reference/catalog/ for the full field spec,
+# the resolver algorithm, and a worked multi-area example.
+
+areas:
+  # One area per "kind of change." The id is a kebab-case slug used by every
+  # consumer — they reference this name, never re-hardcode the globs below.
+  <area-id>:
+    title: "<Human Name>"
+    category: <group>            # grouping tag only — NOT a build/deploy lane
+    paths: ["<glob>/**"]         # globs that define membership (>=1)
+    workspace: ["<apps-or-packages-dir>"]  # owning dir(s); [] if path-only
+    impliedBy: []                # ids whose change also implies THIS area
+    deployTier: <tier|none>      # which deploy lane applies
+    # --- optional projection blocks: add only when the consumer exists ---
+    # review:
+    #   skills: [<review-skill>]
+    #   notes: "when this review applies"
+    # postDeploy:
+    #   - action: "<operational step>"
+    #     when: "<trigger>"
+    #     envs: [staging, prod]
+    # linear:
+    #   labels: [<tracker-label>]
+    # agent: <owning-agent>

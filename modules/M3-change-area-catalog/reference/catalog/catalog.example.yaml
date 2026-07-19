@@ -1,0 +1,86 @@
+# Change-area catalog — worked generic example.
+#
+# This is the single source of truth mapping path patterns -> named
+# change-areas -> everything that must happen because of a change. Every
+# consumer (CI job selection, review gates, tracker labels, deploy tiers,
+# post-deploy actions) is a projection generated from this file and references
+# area *names*, never re-hardcoding the globs.
+#
+# The areas below are neutral placeholders — a web app that consumes a shared
+# library, a deployable API service, the shared library itself, a CI-infra
+# area, and a docs area — chosen only to exercise every field and both shapes
+# of the `impliedBy` relation. Replace them with your repo's real areas.
+#
+# Field reference: see ./README.md § "Entry schema".
+
+areas:
+  # ---- A deployable app that fans out from the shared library -------------
+  web-app:
+    title: "Web App"
+    category: app                 # grouping tag only — never a build/deploy lane
+    paths: ["apps/web-app/**"]    # globs that DEFINE membership
+    workspace: ["apps/web-app"]   # owning workspace dir(s); must exist and be glob-covered
+    impliedBy: [core-lib, ci-infra]  # a change to any listed area also implies THIS area
+    deployTier: primary
+    notes: "Rebuilt whenever the shared library or CI infra changes."
+    review:
+      skills: [ui-review]
+      notes: "Applies when user-facing components change."
+    linear:
+      labels: [area:web]
+    agent: frontend
+
+  # ---- A deployable service with a post-deploy action --------------------
+  api-service:
+    title: "API Service"
+    category: service
+    paths: ["apps/api-service/**"]
+    workspace: ["apps/api-service"]
+    impliedBy: [core-lib, ci-infra]
+    deployTier: primary
+    review:
+      skills: [api-review]
+      notes: "Applies when request/response contracts change."
+    postDeploy:
+      - action: "warm read-through cache"
+        when: "after new instances are healthy in each env"
+        envs: [staging, prod]
+        notes: "Runs against the deployed image, not the repo."
+    linear:
+      labels: [area:api]
+    agent: backend
+
+  # ---- A path-only library area that fans OUT to its consumers -----------
+  core-lib:
+    title: "Core Shared Library"
+    category: library
+    paths: ["packages/core-lib/**"]
+    workspace: ["packages/core-lib"]
+    impliedBy: []                 # nothing implies it; it implies consumers via THEIR impliedBy
+    deployTier: none
+    linear:
+      labels: [area:shared]
+    agent: architect
+
+  # ---- An infra area every deployable consumes ---------------------------
+  ci-infra:
+    title: "CI & Build Infra"
+    category: infra
+    paths: [".github/workflows/**", "turbo.json", "package.json"]
+    workspace: []                 # path-only area, no owning workspace dir
+    impliedBy: []
+    deployTier: none
+    linear:
+      labels: [area:infra]
+    agent: platform
+
+  # ---- A docs area with no deploy or review implications -----------------
+  docs:
+    title: "Documentation"
+    category: docs
+    paths: ["docs/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    linear:
+      labels: [area:docs]

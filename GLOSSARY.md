@@ -17,6 +17,10 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Drift** — the gap that grows when two copies of the same fact evolve
   independently (a doc says one thing, the code does another). Groundwork's
   recurring answer: make one copy the *SSoT* and gate or generate the rest.
+- **Projection** — a consumer-specific view *generated* from an *SSoT* (a CI
+  path-filter, a review-gate table, a tracker-label set derived from a
+  change-area catalog). Because it is generated and *freshness-gated*, it
+  cannot silently disagree with its source.
 - **Module** — groundwork's unit of adoption: one practice area (e.g.,
   "generated-artifact freshness") packaged with its invariant, maturity
   levels, templates, and reference code. Modules adopt independently.
@@ -95,6 +99,11 @@ capitalized as commonly written; cross-references are *italicized*.
   `[reviewed: db-migration]`) recording that a mandatory process step
   happened, required by a commit-msg hook and re-verified by a gate the
   committer can't skip.
+- **Change-area catalog** — one machine-readable file mapping path patterns to
+  named *change-areas* and their implications (which CI jobs run, which reviews
+  are mandatory, which deploy tier applies). It is the *SSoT* every consumer
+  reads via generated *projections*, instead of each re-hardcoding its own
+  path-lists that then disagree.
 - **Fix-and-stage** — the pre-commit hook pattern where an auto-fixer
   (formatter, regenerator) runs and its output is re-staged automatically,
   so the commit lands already clean instead of failing.
@@ -104,6 +113,14 @@ capitalized as commonly written; cross-references are *italicized*.
 - **ADR (architecture decision record)** — a short numbered document capturing
   one significant decision, its context, and its consequences. Append-only
   history: superseded ADRs are marked, not rewritten.
+- **Frontmatter** — the machine-readable metadata block at the top of a
+  document (a YAML header: type, status, lifecycle, owner, freshness date).
+  Validated against a schema so a docs tree stays queryable and its lifecycle
+  is mechanically checkable rather than guessed.
+- **Authority hierarchy** — a written, single-valued precedence order for
+  resolving contradictions between documents (e.g. generated ground truth >
+  decision records > feature docs). Turns "which doc wins?" from a judgment
+  call into a lookup.
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).

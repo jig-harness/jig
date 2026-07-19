@@ -1,0 +1,7 @@
+areas:
+  web-app:
+    paths: ["apps/web-app/**"]
+  core-lib:
+    paths: ["packages/core-lib/**"]
+  ci-infra:
+    paths: ["tools/ci/**"]

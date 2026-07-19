@@ -1,0 +1,84 @@
+# Machine-evaluable criteria for M5 (ADR practice).
+# Schema: modules/README.md § "maturity.yaml schema". Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M5
+name: adr-practice
+criteria:
+  - id: adrs-exist-numbered-from-template
+    level: lite
+    requires: convention
+    statement: >-
+      Decisions are captured as numbered ADR files from a shared template with
+      consistent frontmatter (a decision date and a status).
+    observe:
+      - "an ADR directory holds ADR-NNNN-*.md files with frontmatter"
+      - "an ADR template exists and is referenced by the instructions"
+
+  - id: amendment-discipline-documented
+    level: lite
+    requires: convention
+    statement: >-
+      The evolution rule is written down: an approved ADR is amended (dated
+      Amendments entry) or superseded, never silently rewritten.
+    observe:
+      - "the ADR conventions state amendment-or-supersession, not in-place rewrite"
+
+  - id: numbering-gate-enforced
+    level: standard
+    requires: mechanical
+    statement: >-
+      A check fails when two ADRs claim the same number, and it runs in CI (the
+      authority), ideally mirrored in a pre-push hook.
+    observe:
+      - "a CI job runs a duplicate-ADR-number check and fails on a collision"
+      - "the same check is available as a local hook"
+
+  - id: adr-frontmatter-validated
+    level: standard
+    requires: mechanical
+    statement: >-
+      ADR frontmatter is machine-validated, including the ADR-specific fields
+      decision_date, supersedes, and superseded_by.
+    observe:
+      - "a frontmatter checker (see M4) enforces ADR-specific required fields"
+      - "a CI job runs it on changed ADRs"
+
+  - id: supersession-metadata-used
+    level: standard
+    requires: convention
+    statement: >-
+      Superseding a decision updates both files: the new ADR sets supersedes
+      and the old one sets superseded_by plus a deprecated status.
+    observe:
+      - "superseded ADRs carry superseded_by and a deprecated/superseded status"
+      - "superseding ADRs carry supersedes pointing back"
+
+  - id: decisions-extracted-to-rules
+    level: strict
+    requires: mechanical
+    statement: >-
+      Pattern-checkable ADR decisions are distilled into a machine-readable
+      rules catalog, each rule citing its ADR, and a checker enforces them on
+      changed code in CI.
+    observe:
+      - "a rules catalog maps decisions to patterns, each linked to an ADR"
+      - "a CI check applies the rules to changed code and fails on critical violations"
+
+  - id: numbering-gate-mirrored-both-rungs
+    level: strict
+    requires: mechanical
+    statement: >-
+      The numbering gate runs both client-side (pre-push) and server-side (CI),
+      so a duplicate cannot be pushed past a bypassed local hook.
+    observe:
+      - "a pre-push hook runs the numbering gate"
+      - "a CI job runs the identical gate as a required check"
+
+  - id: rule-checker-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      The ADR-rule checker ships with a self-test proving it still catches
+      known violations, run in CI so a broken rule gate fails loudly.
+    observe:
+      - "a self-test exercises each rule shape and runs in CI"

@@ -1,0 +1,44 @@
+# TEMPLATE — copy to your repo (e.g. .adr-rules.yaml) and replace the example
+# rules. This is the machine-readable catalog of ADR decisions that a gate can
+# verify — the "decisions-become-checks" single source of truth. Each rule
+# cites the ADR it derives from, so a failing check points back to the decision.
+# The reference interpreter (../reference/decisions-to-checks/) reads this file.
+#
+# Two rule shapes:
+#   - deny-on-match:  a `pattern` that must NOT appear (a forbidden construct)
+#   - require-nearby: a `pattern` that must be accompanied by a `follow_check`
+#                     pattern within a few lines (a required companion)
+#
+# Write patterns UNQUOTED or in SINGLE quotes so the text is the regex verbatim
+# (double quotes invite YAML backslash-escaping surprises). Patterns are POSIX
+# ERE (grep -E / awk).
+
+version: 1
+generated_from: docs/adr/
+
+pattern_rules:
+  # deny-on-match: a construct forbidden by a decision.
+  - id: PM-101
+    adr: ADR-0001
+    name: no-raw-console-log
+    severity: critical
+    pattern: 'console\.log\('
+    exclude: ['**/*.test.*', 'scripts/**']
+    message: 'Use the structured logger, not console.log (ADR-0001)'
+    fix_hint: 'Replace console.log(...) with logger.info(...)'
+
+  # require-nearby: a construct that must carry a companion.
+  - id: PM-102
+    adr: ADR-0002
+    name: fetch-needs-timeout
+    severity: warning
+    pattern: 'fetch\('
+    follow_check: 'AbortSignal|timeout'
+    exclude: ['**/*.test.*']
+    message: 'Network fetch must pass a timeout / abort signal (ADR-0002)'
+    fix_hint: 'Pass AbortSignal.timeout(ms) or a timeout option to fetch()'
+
+# Higher-tier rules that need language/LLM reasoning (not verifiable by a grep)
+# are deliberately out of scope here — they belong with the review harness (M7)
+# / learning loop (M8), not this pattern gate. Keep this file to the
+# mechanically-checkable subset.

@@ -26,9 +26,15 @@ DESCRIBE
 # conventional file names
 CONTRIBUTING
 CODEOWNERS
+# file-name / schema-doc components (e.g. WIKI-SCHEMA.md) and env-var names
+WIKI
+SCHEMA
+# git refs / plumbing
+HEAD
 # ubiquitous industry acronyms — defining these would bury groundwork's own
 # terms of art (which is what GLOSSARY.md is for)
 UI
+LLM
 SDK
 OpenAPI
 POSIX

@@ -12,8 +12,8 @@ groundwork work starts here.
 | 0 | Founding charter (analysis, module map, blueprint) | ✅ done (vendored in `docs/`) |
 | 1 | Codification **in docomply**: C1–C9 canonical docs + drift fixes | ✅ done (epic an issue, all 12 sub-issues; artifacts on docomply `develop` — see Port sources) |
 | 2 | **Bootstrap groundwork**: skeleton, principles, glossary, profiles outline, auditor v0, port M0–M2 | ✅ done 2026-07-19 (all remainder items closed — see below) |
-| 3 | Port M4 docs governance, M5 ADR practice, M3 change-area catalog; add `maturity.yaml` per landed module | ⬜ |
-| 4 | Port M7 review-harness core + M8 learning loop | ⬜ |
+| 3 | Port M4 docs governance, M5 ADR practice, M3 change-area catalog; add `maturity.yaml` per landed module | ✅ done 2026-07-19 (M3/M4/M5 carry the full contract — see below) |
+| 4 | Port M7 review-harness core + M8 learning loop | ⬜ (next) |
 | 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ⬜ |
 | ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing |
 
@@ -37,6 +37,37 @@ groundwork work starts here.
    profile targets for M0–M2 now resolve to concrete `maturity.yaml`
    criteria (levels named in `profiles/`, criteria stated only in the module
    files); deepens further automatically as each later module ports.
+
+## Phase 3 (done 2026-07-19; next work is Phase 4)
+
+M3, M4, and M5 now carry the full module contract (`README.md`, `templates/`,
+`reference/`, `mappings.md`, `maturity.yaml`), genericized and IP-scrubbed per
+AGENTS.md. Each reference gate is a portable shell script with a paired
+self-test and fixtures; all self-tests pass.
+
+1. **M3 — change-area catalog.** One validated catalog → generated
+   projections, referenced by name. Landed: a worked generic `catalog.yaml`, a
+   language-neutral schema/resolver/projection spec, and the runnable
+   regex-mirror sync guard (regex→catalog direction, with self-test). The
+   resolver/emitters are specified, not transcribed — a graph job for the
+   repo's own language, not bash.
+2. **M4 — docs-as-wiki governance.** Landed the two M4-specific mechanical
+   gates as portable, self-tested scripts: a schema-driven **frontmatter
+   checker** (enum membership with did-you-mean, ADR-specific fields) and the
+   C4 **de-scarring lint** (code-masked, list-anchored, with `descar_allow`
+   opt-out), plus a frontmatter-aware **index generator** with a `--check`
+   freshness gate (M2's triad applied to navigation). Templates: WIKI-SCHEMA
+   governance model + generic frontmatter schema.
+3. **M5 — ADR practice.** Landed the **numbering gate** (duplicate-number
+   collision check) and a **generic `adr-rules.yaml` interpreter** for
+   decisions-become-checks (deny-on-match + require-nearby, severity-aware),
+   each with self-tests. Templates: ADR skeleton with amendment discipline +
+   generic rules catalog. The bespoke per-rule script and the LLM "semantic"
+   tier were deliberately not ported (see each README § Port status).
+
+Deferred to their owning modules (noted in the READMEs): tag-merge normalizer
+and scheduled wiki-lint (M4, future); catalog→regex reverse check needs the
+resolver (M3); semantic ADR-rule tier belongs with M7/M8.
 
 ## Port sources (docomply `develop` — Phase 1 artifacts and beyond)
 

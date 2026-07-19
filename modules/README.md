@@ -10,9 +10,9 @@ and converges on the same directory contract (defined in [AGENTS.md](../AGENTS.m
 | [M0 Instruction architecture](M0-instruction-architecture/) | Layered agent-instruction files, conditional rules, glossary, dispositions | ported (full contract) |
 | [M1 Gates & enforcement ladder](M1-gates-enforcement-ladder/) | Quality gates, hooks, grep gates, CI authority, suppression registry | ported (full contract) |
 | [M2 Generated-artifact freshness](M2-generated-artifact-freshness/) | Drift gates for anything derived from a source of truth | ported (full contract) |
-| [M3 Change-area catalog](M3-change-area-catalog/) | Path→implication mapping as SSoT with generated projections | stub |
-| [M4 Docs-as-wiki governance](M4-docs-governance/) | Schema-validated docs tree, generated index, retrospection, de-scarring | stub |
-| [M5 ADR practice](M5-adr-practice/) | Decision records: numbering gate, amendments, decisions-become-checks | stub |
+| [M3 Change-area catalog](M3-change-area-catalog/) | Path→implication mapping as SSoT with generated projections | ported (full contract) |
+| [M4 Docs-as-wiki governance](M4-docs-governance/) | Schema-validated docs tree, generated index, retrospection, de-scarring | ported (full contract) |
+| [M5 ADR practice](M5-adr-practice/) | Decision records: numbering gate, amendments, decisions-become-checks | ported (full contract) |
 | [M6 Feature-delivery pipeline](M6-feature-delivery-pipeline/) | Research → PRD → architecture → design loop → epic, with per-stage review | stub |
 | [M7 PR lifecycle & review](M7-pr-lifecycle-review/) | Draft PRs, layered reviewers, comment-resolution loop, HITL merge | stub |
 | [M8 Learning loop](M8-learning-loop/) | Miss→lens flywheel, eval corpus, reflection, memory promotion | stub |
