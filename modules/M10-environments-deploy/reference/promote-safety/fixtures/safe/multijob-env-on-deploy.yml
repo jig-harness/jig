@@ -1,0 +1,21 @@
+# SAFE: push-triggered, and the PRODUCTION deploy job itself has a protected
+# environment; the unrelated `test` job has none. Proves the (a) check reads the
+# gate on the deploy job, and does not require it on other jobs.
+name: ci
+on:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./run-tests.sh
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

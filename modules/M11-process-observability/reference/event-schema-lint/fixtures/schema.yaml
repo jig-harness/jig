@@ -1,0 +1,13 @@
+# Fixture schema for the event-schema-lint self-test. A small closed set of
+# process event types; the events fixtures validate against it.
+version: 1
+
+event_types:
+  - type: review_completed
+    required: [pr, reviewer, outcome, cost_unit]
+  - type: gate_result
+    required: [gate, result, duration_ms]
+  - type: cycle_time
+    required: [pr, stage, elapsed_ms]
+  - type: heartbeat
+    required: []

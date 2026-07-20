@@ -1,0 +1,5 @@
+# Malformed: `metrics:` is a scalar, not a collection. This must FAIL closed
+# (exit 2), not parse to zero metrics and pass as an empty registry — which
+# would silently disable every source check.
+version: 1
+metrics: disabled

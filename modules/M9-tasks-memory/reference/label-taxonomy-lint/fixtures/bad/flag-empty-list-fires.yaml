@@ -1,0 +1,17 @@
+# BAD — the `needs-love` flag declares `fires: []`, an empty YAML list. That is
+# no process trigger, so it is folksonomy, which this module bans.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: has-migration
+    fires: migration-review
+  - id: needs-love
+    fires: []

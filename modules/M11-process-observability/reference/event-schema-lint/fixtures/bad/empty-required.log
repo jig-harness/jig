@@ -1,0 +1,3 @@
+# A required field present but with an empty value (outcome=). Present-but-blank
+# is as dark as absent. Must FAIL (exit 1).
+type=review_completed pr=482 reviewer=shadow outcome= cost_unit=4

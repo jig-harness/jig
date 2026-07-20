@@ -1,0 +1,4 @@
+# Exactly at both default thresholds (MAX_BEHIND=20, MAX_AGE_SECONDS=86400).
+# At-threshold is fresh; only strictly-greater stalls. Must PASS.
+BEHIND 20
+AGE_SECONDS 86400

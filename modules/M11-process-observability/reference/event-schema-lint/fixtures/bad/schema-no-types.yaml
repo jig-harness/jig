@@ -1,0 +1,4 @@
+# Malformed schema — no event_types block at all (nothing to validate against).
+# Must ERROR (exit 2).
+version: 1
+metrics: []

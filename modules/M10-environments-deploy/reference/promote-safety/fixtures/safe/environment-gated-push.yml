@@ -1,0 +1,17 @@
+# SAFE: fires on push, BUT a protected environment approval gates it, and it
+# ships the verified artifact. Environment approval is the manual gate — (a)
+# does not trip; the verified reference means (b) does not trip either.
+name: deploy-production
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production        # required-reviewer protection stops the auto-fire
+    steps:
+      - name: Download verified artifact
+        run: gh run download --name verified-build
+      - name: Deploy to production
+        run: ./deploy --target production

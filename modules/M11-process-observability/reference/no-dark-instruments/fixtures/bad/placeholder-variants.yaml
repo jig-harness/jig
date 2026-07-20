@@ -1,0 +1,23 @@
+# Every recognized placeholder, in mixed case, must be caught. Must FAIL (exit 1).
+version: 1
+
+metrics:
+  - id: metric-a
+    source: tbd
+    owner: a
+
+  - id: metric-b
+    source: DARK
+    owner: b
+
+  - id: metric-c
+    source: None
+    owner: c
+
+  - id: metric-d
+    source: FixMe
+    owner: d
+
+  - id: metric-e
+    source: query:real_and_wired
+    owner: e

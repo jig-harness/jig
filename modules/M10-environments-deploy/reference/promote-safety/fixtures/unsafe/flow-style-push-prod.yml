@@ -1,0 +1,14 @@
+# UNSAFE (a): the push trigger is written as an inline flow mapping
+# `on: { push: {...} }` rather than a block. The deploy-production job has no
+# gate, so every push auto-deploys. Regression for the flow-style `on:` form.
+name: deploy-production
+on: { push: { branches: [main] } }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

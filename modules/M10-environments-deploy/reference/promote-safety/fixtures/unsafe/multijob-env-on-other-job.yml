@@ -1,0 +1,22 @@
+# UNSAFE (a): push-triggered. A separate `test` job carries `environment:
+# staging`, but the PRODUCTION deploy job has no environment and no manual gate,
+# so every push auto-deploys. Regression for the false pass where an environment
+# on ANY job counted as gating the deploy job.
+name: ci
+on:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment: staging          # on a NON-prod job — must not gate the deploy
+    steps:
+      - run: ./run-tests.sh
+  deploy:
+    runs-on: ubuntu-latest
+    steps:                        # no environment / when: manual on the prod job
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified # ships verified, so only (a) trips
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

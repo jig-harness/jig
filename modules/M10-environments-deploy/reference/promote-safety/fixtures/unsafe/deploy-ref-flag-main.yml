@@ -1,0 +1,14 @@
+# UNSAFE (b): manually gated (workflow_dispatch + protected environment), so (a)
+# is clean — but the deploy COMMAND passes a mutable ref as a flag,
+# `./deploy --ref main`, not a YAML `ref:` key. Regression for a mutable ref
+# selected on the command line.
+name: promote
+on:
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy to production
+        run: ./deploy --target production --ref main

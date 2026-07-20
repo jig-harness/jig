@@ -14,8 +14,8 @@ groundwork work starts here.
 | 2 | **Bootstrap groundwork**: skeleton, principles, glossary, profiles outline, auditor v0, port M0–M2 | ✅ done 2026-07-19 (all remainder items closed — see below) |
 | 3 | Port M4 docs governance, M5 ADR practice, M3 change-area catalog; add `maturity.yaml` per landed module | ✅ done 2026-07-19 (M3/M4/M5 carry the full contract — see below) |
 | 4 | Port M7 review-harness core + M8 learning loop | ✅ done 2026-07-20 (M7/M8 carry the full contract — see below) |
-| 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ⬜ (next) |
-| ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing |
+| 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ✅ done 2026-07-20 (all five modules carry the full contract; auditor v1 scores M0–M12; greenfield folded in — see below) |
+| ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing (now the active mode — all modules M0–M12 ported) |
 
 ## Phase 2 remainder (all closed 2026-07-19; next work is Phase 3)
 
@@ -102,6 +102,85 @@ self-test and fixtures; all self-tests pass.
 
 Deferred to their owning modules: the precision-bar *values* and the metric
 event wiring (M11); the eval-replay runner (target-repo language, not bash).
+
+## Phase 5 (done 2026-07-20; next work is ∞ Backflow)
+
+The last five modules now carry the full module contract (`README.md`,
+`templates/`, `reference/`, `mappings.md`, `maturity.yaml`), genericized and
+IP-scrubbed per AGENTS.md. **All 13 modules (M0–M12) are ported**, so the module
+map is complete and groundwork enters its standing backflow mode. Each new
+reference gate is a portable, self-tested shell script (10 gates + 10 self-tests
+across the five modules; all pass); the auditor scores every module against its
+criteria; and the greenfield path is folded in.
+
+1. **M6 — feature-delivery pipeline.** Landed the idea→shipped contract
+   ([`PIPELINE.md`](modules/M6-feature-delivery-pipeline/templates/PIPELINE.md):
+   research spike → PRD → architecture → design-prototype loop → epic, with
+   per-stage adversarial review + de-scar and the design loop allowed to feed
+   back upstream); the three genericized artifact templates (PRD, architecture,
+   research-note); and two self-tested gates — a **required-sections** check
+   ("use the committed template" made mechanical) and a **stage-review-record**
+   check (an artifact can't reach `status: accepted` without a review record).
+   The kickoff seed's tiered estimates, named personas, and model-routing table
+   were deliberately not ported (see README § Not ported).
+2. **M9 — tasks & memory.** Landed the tracker-agnostic
+   [`label-taxonomy.yaml`](modules/M9-tasks-memory/templates/label-taxonomy.yaml)
+   where every **flag label** declares the process it `fires:` (folksonomy
+   banned); the epic/issue templates; the what/how/in-session
+   [memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md) + promotion
+   flow (with M8); a phase **formula** with REQUIRED phases; and two self-tested
+   gates — a **label-taxonomy lint** and a **required-phases** check (a done item
+   with an unrecorded required phase fails, the validate-then-gate pattern).
+3. **M10 — environments & deploy.** Landed the four-stage
+   [`CI-ARCHITECTURE.md`](modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md)
+   (PR gates → post-merge verification advancing a **verified pointer** → deploy
+   of verified artifacts → manual gated promotion) with the ephemeral-env and
+   test-data-factory concepts; and two self-tested gates — a **verified-pointer
+   freshness watchdog** (fails when the pointer lags the default branch) and a
+   **promote-safety** lint (a production deploy must be manually gated and ship
+   the verified pointer, not a mutable ref). Deploy criteria are marked
+   "expected-absent" for library-shaped repos.
+4. **M11 — process observability.** Landed the
+   [`TELEMETRY.md`](modules/M11-process-observability/templates/TELEMETRY.md)
+   model (process events → metrics → dashboards → promote/demote), an
+   `event-schema.yaml` and a `metrics-registry.yaml`, and two self-tested gates —
+   an **event-schema lint** and a **no-dark-instruments** check (a metric whose
+   `source` is `TODO`/empty fails, porting the reference implementation's
+   hard-won "an instrument that's provisioned but fail-open is worse than none"
+   lesson). Parity computation is referenced from M8, not duplicated.
+5. **M12 — parallel-agent ergonomics.** Landed the
+   [`WORKTREE-ERGONOMICS.md`](modules/M12-parallel-agent-ergonomics/templates/WORKTREE-ERGONOMICS.md)
+   model plus worktree-hook and branch-discipline skeletons, and two self-tested
+   **runnable utilities** — a deterministic **port allocator** (stable id→port
+   via `cksum`, collision-bounded) and a cross-worktree **resource mutex**
+   (atomic `mkdir` lock, PID-liveness stale reclaim, CI bypass). The mutex
+   self-test proves real mutual exclusion with an enter/exit interleaving log
+   plus a sensitivity guard.
+
+**Auditor v1 (scored maturity assessment).** Every module now ships
+`maturity.yaml`, so the auditor scores the whole module map against observable
+criteria, not by feel. Landed [`audit/score-modules.sh`](audit/score-modules.sh)
+— it emits a fill-in scoring checklist from every module's criteria, and
+`--check` asserts all 13 modules carry criteria (a future port that forgets its
+`maturity.yaml` fails loudly). [`audit/methodology.md`](audit/methodology.md) and
+[`audit/README.md`](audit/README.md) updated to score all modules by criteria and
+to map surveys→modules. The **docomply re-audit** is the operational dogfood
+step; it needs read access to the private reference repo and is run where that
+checkout is available — a report without file-path evidence from the real target
+is not a valid audit, so it is not fabricated here (see audit/README § Dogfood
+target).
+
+**Greenfield path.** [`adoption/greenfield.md`](adoption/greenfield.md) rewritten
+to fold in the project-kickoff seed: its 11 phases are mapped to modules (the
+discovery outputs come from M6's templates; the phase-3 red-team pass is M6's
+per-stage adversarial review in a fresh session; phase 11 populates M9's
+taxonomy). The [seed](seeds/project-kickoff/) is kept as-imported for provenance,
+with "the module wins" stated where they diverge.
+
+Deferred to standing backflow: dashboard *products* and metric threshold *values*
+(M11, target-repo); the preview-env spawner and test-data-factory *implementation*
+(M10, host-specific); the port-allocator probe-for-free fallback (M12, noted
+future). The eval/telemetry *runners* remain target-repo-language jobs, not bash.
 
 ## Port sources (docomply `develop` — Phase 1 artifacts and beyond)
 

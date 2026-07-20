@@ -1,0 +1,17 @@
+# BAD — the `hitl` flag has two `fires:` fields. Last-win would let an empty
+# first declaration be replaced by a value (order-dependent) and satisfy the
+# non-empty invariant on a malformed entry. Duplicate keys are rejected.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: hitl
+    fires:
+    fires: security-review

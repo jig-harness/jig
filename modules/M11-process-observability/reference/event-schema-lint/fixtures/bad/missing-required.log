@@ -1,0 +1,3 @@
+# A registered type missing a required field (review_completed has no outcome).
+# Must FAIL (exit 1).
+type=review_completed pr=482 reviewer=shadow cost_unit=4

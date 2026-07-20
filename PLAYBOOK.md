@@ -1,9 +1,14 @@
 # Playbook — the end-to-end delivery narrative
 
-**Status: draft.** This condensed, generalized narrative will be refined from
-the reference implementation's canonical process docs when modules M6 and M7
-port (see [ROADMAP.md](ROADMAP.md) § Port sources). It exists now so adopters
-see how the modules compose into one delivery motion.
+This condensed narrative shows how the modules compose into one delivery
+motion. The full, copyable contracts now live in their modules: the feature
+pipeline is [M6](modules/M6-feature-delivery-pipeline/)
+([`PIPELINE.md`](modules/M6-feature-delivery-pipeline/templates/PIPELINE.md)),
+the PR loop is [M7](modules/M7-pr-lifecycle-review/)
+([`PR-LIFECYCLE.md`](modules/M7-pr-lifecycle-review/templates/PR-LIFECYCLE.md)),
+and the learning loop is [M8](modules/M8-learning-loop/)
+([`FLYWHEEL.md`](modules/M8-learning-loop/templates/FLYWHEEL.md)) — this page is
+the map, those are the territory.
 
 Two nested loops: the **feature pipeline** (idea → shipped increment) and the
 **PR loop** (change → merged), with a **learning loop** wrapped around both.

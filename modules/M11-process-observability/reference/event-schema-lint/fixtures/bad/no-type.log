@@ -1,0 +1,2 @@
+# An event line with no type= token at all — cannot be classified. Must ERROR (exit 2).
+pr=482 reviewer=shadow outcome=approved cost_unit=4

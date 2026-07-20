@@ -1,0 +1,3 @@
+# No events emitted this window — nothing to validate. Must PASS (exit 0).
+# (Whether an instrument is DARK is the no-dark-instruments gate's job, not this
+#  one; this gate only validates the shape of events that ARE emitted.)

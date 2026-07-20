@@ -1,0 +1,17 @@
+# UNSAFE (b): manually gated (workflow_dispatch + protected environment), so (a)
+# is fine — but it checks out and ships the mutable `main` branch instead of the
+# verified pointer. What reaches prod is whatever main is, not what was verified.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Deploy to production
+        run: ./deploy --target production

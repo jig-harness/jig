@@ -1,0 +1,15 @@
+# UNSAFE (a): the push trigger is a block SEQUENCE item (`on:\n  - push`), not a
+# scalar/mapping. The deploy-production job has no gate, so every push
+# auto-deploys. Regression for the block-sequence trigger form.
+name: deploy-production
+on:
+  - push
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

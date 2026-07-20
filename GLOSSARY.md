@@ -143,6 +143,16 @@ capitalized as commonly written; cross-references are *italicized*.
   in parallel on one machine.
 - **Monorepo** — one repository holding many applications/packages, usually
   with a shared task runner and shared quality gates.
+- **Verified pointer** — a branch or tag that a delivery pipeline advances only
+  when post-merge verification passes, so "merged" and "verified" stay distinct
+  facts. Deploys ship the verified pointer, not the latest commit; a *freshness*
+  watchdog pages when the pointer falls too far behind the default branch.
+- **Ephemeral environment** — a disposable, cheap preview environment spun up
+  per pull request or branch and torn down after, so changes can be exercised in
+  something realistic without a shared long-lived staging server.
+- **Test-data factory** — a generator of realistic, tenant-isolated, resettable
+  seed data, so tests and preview environments run against representative data
+  rather than hand-made fixtures or a copy of production.
 
 ## Review & learning
 

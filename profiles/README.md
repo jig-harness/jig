@@ -5,13 +5,13 @@ level, for a project shape. Profiles are starting points, not contracts — the
 [audit](../audit/) report's recommendations override generic profile advice
 for brownfield projects.
 
-For ported modules (M0–M5, M7, M8 so far), a profile's target resolves to
+Every module (M0–M12) is now ported, so a profile's target resolves to
 concrete criteria: "M1 Lite" means passing every `level: lite` criterion in
 [`modules/M1-gates-enforcement-ladder/maturity.yaml`](../modules/M1-gates-enforcement-ladder/maturity.yaml),
 and likewise per module — the criteria live only there (single source of
-truth), so profiles name levels, never restate criteria. Targets for
-unported modules stay outline-level until each module's port lands its
-`maturity.yaml`.
+truth), so profiles name levels, never restate criteria. The
+[auditor](../audit/) reads the same criteria to score a target repo (run
+[`audit/score-modules.sh`](../audit/score-modules.sh) for the checklist).
 
 ## Choosing
 

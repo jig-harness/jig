@@ -1,0 +1,3 @@
+# A manifest with only comments and blanks — no labels to check.
+# The gate must treat this as a usage error (exit 2), not a silent pass.
+

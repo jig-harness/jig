@@ -1,0 +1,10 @@
+# A metric whose `source` is an empty YAML collection []. That is no wired
+# event/query — it must be flagged DARK (exit 1), not pass as fully wired.
+version: 1
+metrics:
+  - id: gate-pass-rate
+    source: query:gate_result_pass_ratio
+    owner: platform-team
+  - id: review-adoption-rate
+    source: []
+    owner: review-guild

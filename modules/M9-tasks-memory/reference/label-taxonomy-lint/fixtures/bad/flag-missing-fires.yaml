@@ -1,0 +1,17 @@
+# BAD — the `needs-love` flag declares no `fires:`. A flag label with no process
+# trigger is folksonomy (decoration), which this module bans.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: has-migration
+    fires: migration-review
+  - id: needs-love
+    notes: someone thought this label was nice to have; it fires nothing

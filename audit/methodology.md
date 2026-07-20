@@ -14,8 +14,12 @@ file-path evidence — never file dumps. Add a fifth, project-specific survey if
 the target has a large surface the four don't cover (e.g., a data platform).
 
 The four areas: agent scaffolding; documentation governance; automation &
-mechanical enforcement; review architecture & learning loop. (Tasks/memory and
-environments/CI are covered inside surveys 3–4.)
+mechanical enforcement; review architecture & learning loop. They map onto the
+module map as: survey 1 → M0; survey 2 → M4/M5/M6; survey 3 → M1/M2/M3/M10/M12;
+survey 4 → M7/M8/M9/M11. (Tasks/memory, environments/CI, process observability,
+and parallel-agent ergonomics are covered inside surveys 3–4 rather than each
+getting its own prompt — add a fifth survey only if one of those is a large
+surface in the target.)
 
 ## 2. Detect the stack
 
@@ -41,8 +45,13 @@ For each groundwork module (M0–M12), grade the target:
 - **mechanically enforced** — hooks/CI/review gates catch violations (note
   which rung, and whether CI is the authority).
 
-Where a module has `maturity.yaml`, score its criteria individually; otherwise
-grade qualitatively with evidence. Also record **drift findings** — places
+Every module M0–M12 ships a `maturity.yaml`, so score **every** module by its
+criteria individually — run [`score-modules.sh`](score-modules.sh) to generate
+the fill-in checklist (module → criterion → level → requires, with empty
+Score/Evidence columns) and grade each row against the target with a file-path
+evidence note. Qualitative grading is the fallback only for a criterion the
+target's shape makes inapplicable (mark it "expected-absent"). Also record
+**drift findings** — places
 where the repo's stated practices contradict its actual state (stale
 instruction files, docs describing retired tools, dangling paths). Drift is a
 first-class result: the founding audit's most actionable findings were drift.

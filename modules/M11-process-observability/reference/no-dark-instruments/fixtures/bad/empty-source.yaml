@@ -1,0 +1,7 @@
+# A metric whose source key is present but blank. Must FAIL (exit 1).
+version: 1
+
+metrics:
+  - id: reviewer-cost-vs-catches
+    source:
+    owner: review-guild

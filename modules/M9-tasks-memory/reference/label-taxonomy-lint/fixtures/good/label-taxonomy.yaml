@@ -1,0 +1,36 @@
+# Valid taxonomy — must PASS. Unique ids across the whole file; types and
+# statuses are closed, non-empty lists; every flag declares what it fires.
+version: 1
+
+types:
+  - id: feature
+    notes: net-new user-facing capability
+  - id: bug
+    notes: a defect against expected behaviour
+  - id: chore
+    notes: maintenance with no user-visible behaviour change
+
+statuses:
+  - id: triage
+  - id: todo
+  - id: in-progress
+  - id: in-review
+  - id: blocked
+  - id: done
+
+flags:
+  - id: has-migration
+    fires: migration-review
+    notes: a schema/data migration is present; the migration review gate is mandatory
+  - id: api-change
+    fires: contract-gates
+    notes: a public interface changed; the contract/compatibility gates are mandatory
+  - id: manual-ops
+    fires: blocks-done-until-operator-checklist
+    notes: a human operator step is required; the item cannot reach done until the checklist is complete
+  - id: security-sensitive
+    fires: security-review
+    notes: touches auth, secrets, or untrusted input; a security review is mandatory
+  - id: hitl
+    fires: revoke-autonomy
+    notes: revokes autonomous execution/merge for this item; a human must act

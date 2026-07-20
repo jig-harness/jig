@@ -1,0 +1,6 @@
+# phase record for WORK-104 — must FAIL
+# marked done, but the required `staging-verify` phase was never recorded: the
+# item is closing before it was verified on staging.
+status: done
+architect-review
+design-loop

@@ -1,0 +1,21 @@
+# UNSAFE (b): the production-deploy job checks out mutable `main`, downloads a
+# verified artifact, and then deploys with `--ref main`. The verified download
+# is in the SAME job, but the deploy explicitly selects `main` — a line matcher
+# cannot tie the `verified` selector to the deploy command, so a mutable ref in
+# the deploy job stays unsafe. Regression for the "verified anywhere in the
+# deploy job suppresses (b)" bypass.
+name: promote
+on:
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main                          # mutable ref selected for the deploy
+      - name: Fetch verified build
+        run: gh run download --name verified-build
+      - name: Deploy to production
+        run: ./deploy --target production --ref main

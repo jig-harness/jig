@@ -1,0 +1,9 @@
+# Malformed: `review_completed` is declared twice. The second entry would
+# silently overwrite the first's required list — the gate must reject it (exit 2).
+version: 1
+
+event_types:
+  - type: review_completed
+    required: [pr, reviewer, outcome, cost_unit]
+  - type: review_completed
+    required: [pr]

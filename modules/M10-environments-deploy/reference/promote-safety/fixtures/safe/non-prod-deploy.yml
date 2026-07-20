@@ -1,0 +1,17 @@
+# SAFE: it deploys, and on a mutable head ref, and with no manual gate — but to
+# a PREVIEW environment, not production. No production signal, so it is out of
+# scope. Shows the lint does not fire on ephemeral / non-prod deploys.
+name: deploy-preview
+on:
+  pull_request: {}
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    environment: preview
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Deploy ephemeral preview
+        run: ./deploy --target preview

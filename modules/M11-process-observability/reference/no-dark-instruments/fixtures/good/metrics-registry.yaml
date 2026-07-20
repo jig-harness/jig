@@ -1,0 +1,23 @@
+# Fully-wired registry — every metric has a real source. Must PASS (exit 0).
+version: 1
+
+metrics:
+  - id: review-adoption-rate
+    description: share of merged PRs that received an automated review
+    source: query:reviews_over_merges
+    owner: platform-team
+
+  - id: gate-pass-rate
+    description: share of gate_result events with result=pass, per gate
+    source: event:gate_result
+    owner: platform-team
+
+  - id: ci-duration-trend
+    description: rolling median of gate_result.duration_ms
+    source: event:gate_result.duration_ms
+    owner: build-team
+
+  - id: reviewer-cost-vs-catches
+    description: review cost_unit against confirmed findings, per reviewer
+    source: join:review_completed+corpus_outcomes
+    owner: review-guild

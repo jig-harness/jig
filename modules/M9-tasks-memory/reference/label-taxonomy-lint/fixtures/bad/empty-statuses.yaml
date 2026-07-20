@@ -1,0 +1,13 @@
+# BAD — `statuses:` is present but empty. Statuses must be a closed, non-empty
+# list, or an issue could carry no status at all.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+
+flags:
+  - id: has-migration
+    fires: migration-review

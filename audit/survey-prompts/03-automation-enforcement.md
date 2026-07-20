@@ -9,6 +9,7 @@ Map every mechanical enforcement surface.
 5. Generated artifacts: enumerate every committed generated file and whether it has (a) a regenerate script, (b) a drift check in CI, (c) a pre-commit auto-regen twin.
 6. Change classification: is there any path→implication mapping (which changes trigger which gates/reviews/deploys), and is it a single source of truth or re-hardcoded per consumer?
 7. Schema/API contract sync: migrations-to-types generation, OpenAPI/client-SDK drift checks.
+8. Parallel-agent ergonomics (only where the repo is worked by multiple agents on one machine — worktree-based tooling): deterministic per-worktree port allocation, a cross-worktree heavy-run mutex, branch reuse-before-create discipline, documented footgun bans. If the repo shows no sign of parallel-agent use, mark "expected-absent" in one line and move on.
 
-Synthesize: (A) an enforcement ladder per quality concern (editor → hook → CI → review → convention-only); (B) convention-only concerns that plausibly deserve a mechanical gate; (C) advisory gates that could be promoted to blocking.
+Synthesize: (A) an enforcement ladder per quality concern (editor → hook → CI → review → convention-only); (B) convention-only concerns that plausibly deserve a mechanical gate; (C) advisory gates that could be promoted to blocking; (D) the CI pipeline architecture (PR gates / verify / deploy / promotion) and whether a verified-artifact pointer separates "merged" from "verified".
 

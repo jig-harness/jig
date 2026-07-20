@@ -1,0 +1,2 @@
+# An unrecognized key (schema drift). Must error (exit 2), not silently pass.
+DISTANCE 3

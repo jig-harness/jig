@@ -1,0 +1,19 @@
+# BAD — `priorities:` is not part of the schema. Unknown top-level keys are
+# rejected so the taxonomy shape stays closed (everything else here is valid).
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+priorities:
+  - id: p0
+  - id: p1
+
+flags:
+  - id: has-migration
+    fires: migration-review

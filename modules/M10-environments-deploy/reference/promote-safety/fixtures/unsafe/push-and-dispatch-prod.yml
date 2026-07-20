@@ -1,0 +1,20 @@
+# UNSAFE (a): fires on push AND declares workflow_dispatch, but nothing gates
+# the PUSH run — no environment: protection, no when: manual. The dispatch
+# trigger is an *additional* manual entry point, not an approval on the push,
+# so every merge to main still auto-deploys to production. Regression test for
+# the false-negative where mere presence of workflow_dispatch was read as a gate.
+name: deploy-production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified   # ships verified (so (b) is clean) — only (a) trips
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

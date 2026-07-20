@@ -1,0 +1,12 @@
+# UNSAFE (a): a GitLab pipeline (no `jobs:` wrapper). The production-deploy job
+# fires on every push via a JOB-LEVEL rule, with no environment and no
+# when: manual — so every push auto-deploys to prod. Regression for the gap
+# where only GitHub `on: push` was detected, missing GitLab push rules.
+stages:
+  - deploy
+deploy-production:
+  stage: deploy
+  script:
+    - ./deploy --target production --ref refs/tags/verified
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'

@@ -1,0 +1,2 @@
+# A token that is not key=value (bare "shadow"). Malformed input. Must ERROR (exit 2).
+type=review_completed pr=482 shadow outcome=approved cost_unit=4

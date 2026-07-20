@@ -1,0 +1,16 @@
+# SAFE: manual trigger + protected environment + deploys the verified pointer.
+# Neither failure mode trips: it does not fire on push, and it ships `verified`.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production        # protected environment — required reviewers gate here
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified  # the pinned, verified pointer only
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

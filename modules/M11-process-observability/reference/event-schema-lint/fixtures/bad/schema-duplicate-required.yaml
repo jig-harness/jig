@@ -1,0 +1,8 @@
+# Malformed: `review_completed` has two `required:` lists. The second would
+# overwrite the first, dropping fields it appears to require — reject (exit 2).
+version: 1
+
+event_types:
+  - type: review_completed
+    required: [pr, reviewer, outcome]
+    required: []

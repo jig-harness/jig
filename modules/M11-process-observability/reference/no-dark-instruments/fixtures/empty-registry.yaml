@@ -1,0 +1,4 @@
+# A present-but-empty metrics collection — a legitimate "no metrics registered
+# yet" state, distinct from a missing metrics: key. Must PASS (exit 0).
+version: 1
+metrics:

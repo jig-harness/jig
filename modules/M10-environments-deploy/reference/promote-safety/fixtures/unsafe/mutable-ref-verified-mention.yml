@@ -1,0 +1,22 @@
+# UNSAFE (b): manually gated (workflow_dispatch + protected environment), so
+# (a) is clean — but the deploy job checks out and ships the mutable `main`
+# branch. The word "verified" appears only in a step name and a log line, never
+# on the ref/artifact that is actually deployed. Regression test for the
+# false-negative where a file-wide `verified` mention exempted a mutable-ref
+# deploy: what reaches prod is whatever main is, not what passed verification.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main                       # the deployed ref is mutable — (b) must trip
+      - name: Deploy verified snapshot     # "verified" here is only a step name
+        run: |
+          echo "promoting the verified build to production"
+          ./deploy --target production

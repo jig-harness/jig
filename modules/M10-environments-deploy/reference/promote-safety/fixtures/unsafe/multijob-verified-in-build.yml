@@ -1,0 +1,24 @@
+# UNSAFE (b): manually gated (workflow_dispatch + protected environment on the
+# deploy job), so (a) is clean. A `build` job checks out `refs/heads/verified`,
+# but the PRODUCTION deploy job ships mutable `main`. Regression for the false
+# pass where a `verified` selector on ANOTHER job exempted the deploy job.
+name: promote
+on:
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/verified   # verified ref, but on the BUILD job
+      - run: ./build.sh
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main                  # the prod deploy ships mutable main
+      - name: Deploy to production
+        run: ./deploy --target production

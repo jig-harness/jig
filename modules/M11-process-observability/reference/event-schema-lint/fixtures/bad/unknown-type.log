@@ -1,0 +1,3 @@
+# A typo'd event type that is not in the schema. Must FAIL (exit 1).
+type=review_completed pr=482 reviewer=shadow outcome=approved cost_unit=4
+type=gate_reslt gate=links result=pass duration_ms=120

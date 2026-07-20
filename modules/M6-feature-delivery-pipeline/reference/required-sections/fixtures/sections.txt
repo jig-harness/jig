@@ -1,0 +1,7 @@
+# Required top-level sections for a PRD stage artifact.
+# One heading label per line (plain text, no `#`); `#` starts a comment.
+Problem statement
+Users and personas
+Requirements
+Success metrics
+Scope

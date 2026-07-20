@@ -1,0 +1,11 @@
+# BAD — the `staging-verify` phase has two `required:` fields. Last-win would
+# make it required: false and drop a mandatory gate. Must ERROR (exit 2).
+version: 1
+name: recurring-multiphase-delivery
+
+phases:
+  - id: architect-review
+    required: true
+  - id: staging-verify
+    required: true
+    required: false

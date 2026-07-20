@@ -1,0 +1,8 @@
+# Valid event stream — every type is registered and every required field is
+# present and non-empty. Must PASS (exit 0).
+type=review_completed pr=482 reviewer=shadow outcome=changes_requested cost_unit=12
+type=review_completed pr=482 reviewer=vendor-bot outcome=approved cost_unit=4
+type=gate_result gate=blank-line-before-tables result=pass duration_ms=310
+type=gate_result gate=unresolved-threads result=fail duration_ms=880
+type=cycle_time pr=482 stage=open-to-ready elapsed_ms=5400000
+type=heartbeat emitter=ci source=nightly

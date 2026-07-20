@@ -1,0 +1,20 @@
+# SAFE: fires on push AND workflow_dispatch, but a protected environment gates
+# the push run and it ships the verified pointer. Proves the (a) check does not
+# over-flag push+dispatch when a REAL gate (environment protection) is present —
+# it is the environment:, not the dispatch trigger, that makes this safe.
+name: deploy-production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production          # required-reviewer protection gates the push run
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

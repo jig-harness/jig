@@ -1,0 +1,4 @@
+# phase record with no `status:` line — malformed, must ERROR (exit 2).
+# Without a status the gate cannot know whether the item is claiming completion.
+architect-review
+staging-verify

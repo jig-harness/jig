@@ -1,0 +1,2 @@
+# No observation at all — freshness cannot be asserted from no data.
+# Must error (exit 2), unlike a "nothing to measure" tally file.

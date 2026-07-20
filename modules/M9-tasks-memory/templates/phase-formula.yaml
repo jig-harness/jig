@@ -1,0 +1,42 @@
+# TEMPLATE — copy to your repo (e.g. phase-formula.yaml) per class of recurring
+# multi-phase work, and prune to the phases YOU actually run. A "formula" encodes
+# the phases a whole class of work must move through, and marks which ones are
+# REQUIRED before an item may close. It is validated at close by the
+# required-phases gate (../reference/required-phases/): an item cannot reach a
+# done state with a `required: true` phase unrecorded.
+#
+# Why a formula and not a per-issue checklist: the required phases live in ONE
+# place, so "we always verify on staging before production" is a property of the
+# work class, not something each author has to remember to add.
+#
+# Fields per phase:
+#   id        stable kebab-case name; the phase record refers to it
+#   required  bool — true means the item may not close until this phase is recorded
+#   notes     what the phase is / what "complete" means for it
+#
+# Keep one formula per recurring class (a schema change, a service rollout, a
+# dependency upgrade). Below is a generic delivery formula; specialise it.
+
+version: 1
+name: recurring-multiphase-delivery
+
+phases:
+  - id: architect-review
+    required: true
+    notes: a human architecture sign-off on the approach before build begins
+
+  - id: design-loop
+    required: false
+    notes: optional interface/design iteration for user-facing work
+
+  - id: build
+    required: true
+    notes: implementation complete with its own gates green
+
+  - id: staging-verify
+    required: true
+    notes: exercised end-to-end on a staging environment; may not close to production unverified
+
+  - id: production
+    required: false
+    notes: the terminal deploy/promotion step

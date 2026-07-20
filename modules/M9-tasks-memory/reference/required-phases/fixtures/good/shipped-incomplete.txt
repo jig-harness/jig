@@ -1,0 +1,6 @@
+# phase record for WORK-103 — must PASS by default
+# `shipped` is not in the default DONE_STATES, so this incomplete record is not
+# gated. (The self-test re-runs it with DONE_STATES=shipped to prove the gate
+# then fires.)
+status: shipped
+architect-review

@@ -1,0 +1,81 @@
+# TEMPLATE — copy to your repo (e.g. label-taxonomy.yaml) and prune to the
+# labels YOUR tracker actually uses. This is the single source of truth (SSoT)
+# for issue classification, and it is validated by the label-taxonomy lint
+# (../reference/label-taxonomy-lint/), so keep it in sync with your tracker.
+#
+# The schema is closed — only four top-level keys are allowed:
+#   version     an integer stamp (bump on a breaking change to the vocabulary)
+#   types       CLOSED list: what kind of work an issue is
+#   statuses    CLOSED list: where an issue is in its lifecycle
+#   flags       list: labels that FIRE a process — the point of the whole file
+#
+# Every label id must be unique across the file. `types` and `statuses` must be
+# non-empty. Grow them deliberately: a new type or status is a real change to how
+# every issue is read.
+#
+# The one rule that makes a label a trigger rather than folksonomy: every flag
+# declares what it `fires:` — the gate, review, block, or effect it turns on. A
+# flag with no `fires:` is decoration and the lint rejects it. Many flags are
+# derivable from your change-area catalog (M3): if a path touches a migration,
+# the `has-migration` flag can be applied automatically rather than by hand.
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# types — CLOSED. What kind of work this is. Exactly one per issue.
+# ---------------------------------------------------------------------------
+types:
+  - id: feature
+    notes: net-new user-facing capability
+  - id: bug
+    notes: a defect against expected behaviour
+  - id: chore
+    notes: maintenance/refactor with no user-visible behaviour change
+  - id: spike
+    notes: time-boxed investigation whose output is knowledge, not shipped code
+
+# ---------------------------------------------------------------------------
+# statuses — CLOSED. Where the issue is in its lifecycle. Exactly one per issue.
+# ---------------------------------------------------------------------------
+statuses:
+  - id: triage
+    notes: filed, not yet accepted or estimated
+  - id: todo
+    notes: accepted and ready to start
+  - id: in-progress
+    notes: actively being worked
+  - id: in-review
+    notes: implementation complete, under review
+  - id: blocked
+    notes: cannot proceed until a dependency clears
+  - id: done
+    notes: terminal — shipped and verified
+
+# ---------------------------------------------------------------------------
+# flags — each FIRES a named process. Zero or more per issue. These are the
+# process triggers; adding one is a policy decision, not a convenience label.
+# ---------------------------------------------------------------------------
+flags:
+  - id: has-migration
+    fires: migration-review
+    notes: a schema/data migration is present; the migration review gate is mandatory before merge
+
+  - id: api-change
+    fires: contract-gates
+    notes: a public interface changed; the contract/backward-compatibility gates are mandatory
+
+  - id: security-sensitive
+    fires: security-review
+    notes: touches auth, secrets, or untrusted input; a security review is mandatory
+
+  - id: manual-ops
+    fires: blocks-done-until-operator-checklist
+    notes: a human operator step is required (a data backfill, a feature-flag flip); the issue cannot reach done until the checklist is complete
+
+  - id: docs-required
+    fires: blocks-done-until-docs-updated
+    notes: the change alters documented behaviour; the issue cannot reach done until the docs are updated
+
+  - id: hitl
+    fires: revoke-autonomy
+    notes: human-in-the-loop — revokes autonomous execution/merge for this issue and its PR; a person must act (shared with M7's HITL registry)

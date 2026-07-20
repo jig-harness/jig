@@ -1,0 +1,14 @@
+# SAFE: a GitLab production-deploy job with a push rule BUT gated — a protected
+# environment and when: manual on the rule, so the push does not auto-deploy.
+# Ships the verified pointer. Proves a GitLab push rule with a real gate is safe.
+stages:
+  - deploy
+deploy-production:
+  stage: deploy
+  environment:
+    name: production
+  script:
+    - ./deploy --target production --ref refs/tags/verified
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: manual

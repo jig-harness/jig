@@ -1,0 +1,7 @@
+# A formula that declares no phases — malformed, must ERROR (exit 2).
+# A formula with nothing under `phases:` enforces nothing and is almost always a
+# mistake, so the gate refuses it rather than passing vacuously.
+version: 1
+name: empty
+
+phases:

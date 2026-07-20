@@ -1,0 +1,94 @@
+# pipeline.example.yaml — a provider-neutral sketch of the four-stage delivery
+# spine (see ./CI-ARCHITECTURE.md). It is NOT a runnable config for any one CI
+# provider; it is the shape, so you can see how the four workflows relate before
+# you translate it to GitHub Actions / GitLab CI / etc. (per-provider wiring is
+# in ../mappings.md). Replace <placeholders> and the tool names with yours.
+
+# ---------------------------------------------------------------------------
+# STAGE 1 — PR gates. Runs on every pull request. Fast, diff-scoped, no secrets
+# for fork PRs. These INFORM the human merge; they do not certify production.
+# ---------------------------------------------------------------------------
+pr_gates:
+  on: pull_request
+  runs:
+    - format-and-lint
+    - unit-tests
+    - type-check
+    - change-area-reviews        # M7: reviews selected by what changed (M3 catalog)
+    - repo-gates                 # M1: links, tables, glossary, promote-safety lint, ...
+  # Optional but recommended: a disposable preview environment per PR.
+  preview_environment:
+    create: on_open              # spin up a full running copy at this commit
+    url: https://pr-<number>.preview.<your-domain>
+    seed: test-data-factory --tenant "pr-<number>"   # seeded + isolated per PR
+    destroy: on_close            # cattle, not pets — torn down with the PR
+
+# ---------------------------------------------------------------------------
+# STAGE 2 — Post-merge verification. Runs on every push to the default branch.
+# Heavy, integrated, and the ONLY thing allowed to advance the verified pointer.
+# "Merged" is not "verified": this stage re-checks the integrated branch.
+# ---------------------------------------------------------------------------
+verify_default_branch:
+  on:
+    push:
+      branches: [<default-branch>]
+  runs:
+    - integration-and-e2e-tests
+    - migration-against-prod-like-db
+    - smoke-deploy-to-throwaway-env
+  on_success:
+    # Advance the explicit `verified` pointer to this commit. Deploys read this.
+    advance_pointer:
+      name: verified             # e.g. `git tag -f verified <sha> && git push --force origin verified`
+      to: ${commit_sha}
+
+# ---------------------------------------------------------------------------
+# STAGE 2b — Freshness watchdog (self-healing). Scheduled, not per-PR. Fails when
+# the verified pointer lags too far behind the tip (verification has stalled),
+# so a freeze pages someone instead of silently shipping stale code.
+# See ../reference/verified-pointer/check-verified-fresh.sh
+# ---------------------------------------------------------------------------
+verified_freshness_watchdog:
+  on:
+    schedule: "*/15 * * * *"     # every 15 minutes
+  runs:
+    - name: check verified pointer is fresh
+      env:
+        MAX_BEHIND: "20"
+        MAX_AGE_SECONDS: "86400"
+      run: |
+        BEHIND=$(git rev-list --count verified..origin/<default-branch>)
+        AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
+        BEHIND="$BEHIND" AGE_SECONDS="$AGE_SECONDS" \
+          ./modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.sh
+  on_failure:
+    - page-on-call
+    - heal: rerun-verification-from-tip   # self-heal: re-kick stage 2
+
+# ---------------------------------------------------------------------------
+# STAGE 3 — Deploy verified artifacts. Triggered when the verified pointer moves.
+# Deploys WHAT THE POINTER POINTS AT — never a raw branch, never :latest.
+# ---------------------------------------------------------------------------
+deploy_verified:
+  on:
+    pointer_advanced: verified
+  runs:
+    - name: deploy the verified commit to staging
+      checkout:
+        ref: refs/tags/verified  # the verified pointer, not `main`
+      run: deploy --target staging --ref refs/tags/verified
+
+# ---------------------------------------------------------------------------
+# STAGE 4 — Promotion to production. MANUAL + GATED. Never auto-fires. Ships the
+# already-verified, already-deployed build. Enforced by ../reference/promote-safety.
+# ---------------------------------------------------------------------------
+promote_to_production:
+  on:
+    workflow_dispatch: {}        # a deliberate human action — not `push`
+  environment:
+    name: production             # attach protection rules: required reviewers / wait timer
+  runs:
+    - name: promote verified build to production
+      checkout:
+        ref: refs/tags/verified  # still the verified pointer, nothing mutable
+      run: deploy --target production --ref refs/tags/verified

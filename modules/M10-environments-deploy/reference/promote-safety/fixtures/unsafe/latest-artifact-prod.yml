@@ -1,0 +1,14 @@
+# UNSAFE (b): manually gated, so (a) is fine — but it deploys a mutable
+# `:latest` image tag rather than the verified artifact. `:latest` moves, so
+# prod can drift away from what was verified between two identical runs.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy container to production
+        run: ./deploy --target production --image registry.example.com/app:latest

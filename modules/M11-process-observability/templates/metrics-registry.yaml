@@ -1,0 +1,54 @@
+# TEMPLATE — copy to your repo (e.g. metrics-registry.yaml) and replace the
+# examples with the process metrics YOU roll up. This is the registry of process
+# metrics: each one names the wired event/query behind it (`source`) and who is
+# accountable for it (`owner`). The no-dark-instruments gate
+# (../reference/no-dark-instruments/) FAILS if any `source` is missing, empty, or
+# a placeholder (TODO / tbd / dark / none / fixme) — a metric CLAIMED but not
+# wired is a "dark instrument", and a dark instrument is worse than none.
+#
+# Every metric here should trace to an event_type in event-schema.yaml (or to a
+# derived query over those events). Keep the registry the SSoT for "what we
+# measure about our own process"; dashboards render from it.
+#
+#   id           stable kebab-case metric id (referenced by dashboards)
+#   description   one line: what the number means
+#   source        the WIRED event or query that computes it — the field the
+#                 no-dark-instruments gate checks. NEVER leave this as TODO.
+#   owner         the team/role accountable for keeping it lit
+#   threshold     OPTIONAL — a target/alert value. The VALUE is repo-specific and
+#                 stays with your repo (groundwork ships the mechanism, not the
+#                 number); omit or set per your context.
+
+version: 1
+
+metrics:
+  # --- review outcomes + cost (M7 / M8) ---
+  - id: review-adoption-rate
+    description: share of merged PRs that received at least one automated review
+    source: query:reviews_over_merges
+    owner: <platform-team>
+
+  - id: reviewer-cost-vs-catches
+    description: review cost_unit against confirmed findings, per reviewer — the
+      evidence for keeping, promoting, or dropping a reviewer (feeds M8 parity)
+    source: join:review_completed+corpus_outcomes
+    owner: <review-guild>
+
+  # --- gate health (M1) ---
+  - id: gate-pass-rate
+    description: share of gate_result events with result=pass, per gate — a gate
+      that fails constantly is noise; one that never fails may be theater
+    source: event:gate_result
+    owner: <platform-team>
+
+  - id: ci-duration-trend
+    description: rolling median of gate_result.duration_ms — catches CI slowdown
+      before it becomes a tax on every PR
+    source: event:gate_result.duration_ms
+    owner: <build-team>
+
+  # --- flow (cycle time) ---
+  - id: open-to-ready-cycle-time
+    description: median elapsed_ms for cycle_time events at stage=open-to-ready
+    source: event:cycle_time
+    owner: <delivery-lead>

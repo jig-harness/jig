@@ -1,0 +1,5 @@
+# No metrics: collection at all — a malformed registry, not a clean empty one.
+# Must ERROR (exit 2).
+version: 1
+dashboards:
+  - id: process-health

@@ -13,13 +13,13 @@ and converges on the same directory contract (defined in [AGENTS.md](../AGENTS.m
 | [M3 Change-area catalog](M3-change-area-catalog/) | Path→implication mapping as SSoT with generated projections | ported (full contract) |
 | [M4 Docs-as-wiki governance](M4-docs-governance/) | Schema-validated docs tree, generated index, retrospection, de-scarring | ported (full contract) |
 | [M5 ADR practice](M5-adr-practice/) | Decision records: numbering gate, amendments, decisions-become-checks | ported (full contract) |
-| [M6 Feature-delivery pipeline](M6-feature-delivery-pipeline/) | Research → PRD → architecture → design loop → epic, with per-stage review | stub |
+| [M6 Feature-delivery pipeline](M6-feature-delivery-pipeline/) | Research → PRD → architecture → design loop → epic, with per-stage review | ported (full contract) |
 | [M7 PR lifecycle & review](M7-pr-lifecycle-review/) | Draft PRs, layered reviewers, comment-resolution loop, HITL merge | ported (full contract) |
 | [M8 Learning loop](M8-learning-loop/) | Miss→lens flywheel, eval corpus, reflection, memory promotion | ported (full contract) |
-| [M9 Tasks & memory](M9-tasks-memory/) | Tracker taxonomy with process-driving labels; persistent agent memory | stub |
-| [M10 Environments & deploy](M10-environments-deploy/) | PR gates → verify → deploy → promote; ephemeral envs; test-data factory | stub |
-| [M11 Process observability](M11-process-observability/) | Telemetry on the delivery process itself (review quality, gate health) | stub |
-| [M12 Parallel-agent ergonomics](M12-parallel-agent-ergonomics/) | Multiple agents, one machine/repo: ports, mutexes, branch discipline | stub |
+| [M9 Tasks & memory](M9-tasks-memory/) | Tracker taxonomy with process-driving labels; persistent agent memory | ported (full contract) |
+| [M10 Environments & deploy](M10-environments-deploy/) | PR gates → verify → deploy → promote; ephemeral envs; test-data factory | ported (full contract) |
+| [M11 Process observability](M11-process-observability/) | Telemetry on the delivery process itself (review quality, gate health) | ported (full contract) |
+| [M12 Parallel-agent ergonomics](M12-parallel-agent-ergonomics/) | Multiple agents, one machine/repo: ports, mutexes, branch discipline | ported (full contract) |
 
 Adoption ordering for brownfield projects is leverage-first — typically
 M1 → M2 → M0 → M4 — but the [audit](../audit/) report's recommendation
@@ -49,8 +49,13 @@ criteria:
       - "one script/task runs them all"
 ```
 
-Scoring: each criterion is observed as `absent`, `convention` (stated in
-prose or habit only), or `mechanical` (a hook, CI job, or script enforces
-it). A repo attains a maturity level when every criterion at that level *and
-below* scores at or above its `requires`. `requires: mechanical` criteria
-are what separate Standard/Strict rungs from documentation theater.
+Scoring: each criterion is *observed* on the enforcement ladder as `absent`,
+`convention` (stated in prose or habit only), `advisory` (a check runs
+mechanically but cannot block — a non-blocking CI step; see
+[GLOSSARY.md](../GLOSSARY.md)), or `mechanical` (a hook, CI job, or review
+gate enforces it). The `requires` field is the *pass bar* and takes only
+`convention` or `mechanical`: a criterion needing `mechanical` is **not** met
+by an `advisory` observation (that is precisely a gate to promote). A repo
+attains a maturity level when every criterion at that level *and below* is
+observed at or above its `requires`. `requires: mechanical` criteria are what
+separate Standard/Strict rungs from documentation theater.

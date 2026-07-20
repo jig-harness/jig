@@ -1,0 +1,7 @@
+# phase record — must ERROR (exit 2)
+# Two status lines: last-win would make this look 'open' (non-terminal) and skip
+# the gate, even though it is really 'closed' and missing staging-verify.
+status: closed
+status: open
+architect-review
+design-loop

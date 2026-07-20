@@ -1,0 +1,7 @@
+# phase record for WORK-105 — must FAIL
+# A tracker export wrote the terminal status as a quoted scalar. The quotes must
+# not make it look non-terminal: it is closed, but the required `staging-verify`
+# phase was never recorded.
+status: "closed"
+architect-review
+design-loop

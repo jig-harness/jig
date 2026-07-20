@@ -1,0 +1,18 @@
+# UNSAFE (a): push-triggered, and the ONLY `environment:` is a step INPUT
+# (`with: environment:`), which grants no protected-environment reviewers — the
+# deploy job has no job-level gate. Regression for a nested step-input
+# environment being mistaken for a job gate.
+name: deploy-production
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: some/deploy-action@v1
+        with:
+          environment: production      # an action input, NOT a job-level gate
+          ref: refs/tags/verified
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

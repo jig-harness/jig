@@ -1,0 +1,7 @@
+# Malformed schema — a declared type with no required: list. Must ERROR (exit 2).
+version: 1
+
+event_types:
+  - type: review_completed
+    required: [pr, reviewer, outcome, cost_unit]
+  - type: gate_result

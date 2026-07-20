@@ -1,0 +1,46 @@
+# TEMPLATE — copy to your repo (e.g. event-schema.yaml) and prune to the process
+# events YOUR delivery system actually emits. This is the CLOSED set of process-
+# telemetry event types and the fields each one must carry. It is the contract
+# the event-schema lint (../reference/event-schema-lint/) validates a live event
+# stream against, and the vocabulary the metrics registry
+# (metrics-registry.yaml) builds its `source:` on.
+#
+# This measures the DELIVERY PROCESS, not the product: review outcomes and their
+# cost, gate pass/fail and duration, cycle times between lifecycle stages. Keep
+# it closed and deliberate — a new event type is a real new thing you measure.
+#
+# Each event_type declares its `required` fields as an inline flow list. Emitted
+# events carry more (timestamps, ids, actor); `required` is the floor a metric
+# can safely depend on. Field names are generic — rename to your own.
+#
+#   type       the event_type (must be one registered below)
+#   required   fields that MUST be present and non-empty on every such event
+#              ([] for a type with no required fields)
+
+version: 1
+
+event_types:
+  # A review finished — the outcome and what it cost. The cost + the confirmed-
+  # findings count are what M8's parity report turns into cost-vs-catches, and
+  # what M7's precision bar is measured against before a reviewer may block.
+  - type: review_completed
+    required: [pr, reviewer, outcome, findings, cost_unit]
+
+  # A quality gate ran — pass/fail and how long it took. Gate results ARE events
+  # (see M1); pass-rate and duration-trend metrics roll up from these.
+  - type: gate_result
+    required: [gate, result, duration_ms]
+
+  # Time elapsed between two lifecycle stages (open->ready, ready->merged,
+  # merged->deployed). One event per stage transition.
+  - type: cycle_time
+    required: [pr, stage, elapsed_ms]
+
+  # A deploy/promotion happened (sources for these live in M10). Kept generic.
+  - type: deploy_result
+    required: [environment, result, duration_ms]
+
+  # A liveness ping proving an emitter is not silently dark. No required payload,
+  # but its ABSENCE is itself a signal (an instrument that stopped emitting).
+  - type: heartbeat
+    required: []

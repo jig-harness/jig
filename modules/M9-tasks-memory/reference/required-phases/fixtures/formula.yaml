@@ -1,0 +1,18 @@
+# A phase formula for a recurring class of multi-phase work. Two phases are
+# REQUIRED before the item may close; the others are optional.
+version: 1
+name: recurring-multiphase-delivery
+
+phases:
+  - id: architect-review
+    required: true
+    notes: a human architecture sign-off before build
+  - id: design-loop
+    required: false
+    notes: optional interface/design iteration
+  - id: staging-verify
+    required: true
+    notes: verified on a staging environment before it may close to production
+  - id: production
+    required: false
+    notes: the terminal deploy

@@ -1,0 +1,20 @@
+# SAFE: a `build` job checks out mutable `main` (it is not a production-deploy
+# job, so its ref is irrelevant); the PRODUCTION deploy job ships the verified
+# artifact. Proves a mutable ref on a NON-deploy job does not false-positive.
+name: promote
+on:
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main                  # mutable, but build is not a prod-deploy job
+      - run: ./build.sh
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy to production
+        run: ./deploy --target production --artifact verified-build

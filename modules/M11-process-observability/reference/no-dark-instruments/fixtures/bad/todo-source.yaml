@@ -1,0 +1,11 @@
+# One metric's source is still a TODO — claimed but not wired. Must FAIL (exit 1).
+version: 1
+
+metrics:
+  - id: gate-pass-rate
+    source: event:gate_result
+    owner: platform-team
+
+  - id: review-adoption-rate
+    source: TODO
+    owner: platform-team

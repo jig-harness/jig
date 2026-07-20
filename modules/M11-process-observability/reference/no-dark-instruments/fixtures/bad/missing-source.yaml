@@ -1,0 +1,7 @@
+# A metric with no source key at all — the darkest instrument. Must FAIL (exit 1).
+version: 1
+
+metrics:
+  - id: ci-duration-trend
+    description: rolling median of gate durations
+    owner: build-team

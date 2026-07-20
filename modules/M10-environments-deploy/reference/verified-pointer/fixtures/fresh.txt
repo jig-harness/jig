@@ -1,0 +1,4 @@
+# Verified pointer keeping up: a few commits behind, advanced recently. Must PASS.
+# <KEY> <value>   (KEY is BEHIND or AGE_SECONDS)
+BEHIND 3
+AGE_SECONDS 3600

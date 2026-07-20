@@ -1,0 +1,9 @@
+# Golden id -> port pairs at the default range (PORT_BASE=20000 PORT_SPAN=1000).
+# The mapping is a portable CRC (cksum), so these values are stable across
+# machines and over time; the self-test asserts each id still maps here, which
+# would catch any accidental change to the hashing that breaks determinism.
+# Format: <worktree-id> <expected-port>. Blank lines and # comments ignored.
+main            20856
+feature-login   20379
+feature-logout  20309
+bugfix-auth     20775

@@ -1,0 +1,5 @@
+# phase record for WORK-102 — must PASS
+# still in progress: staging-verify is not done yet, but the item is not
+# claiming completion, so there is nothing to gate.
+status: in-progress
+architect-review

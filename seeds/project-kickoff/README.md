@@ -11,5 +11,12 @@ Lite/Standard/Enterprise tiers) plus `references/` (methodology detail,
 prompts, checklists, PRD + architecture templates, documentation standards,
 architecture elements library).
 
-Disposition (extraction-roadmap Phase 2/5): fold into `adoption/greenfield.md`
-and the M6 module templates; keep this seed directory as imported until then.
+Disposition (extraction-roadmap Phase 5 — done 2026-07-20): folded into
+[`adoption/greenfield.md`](../../adoption/greenfield.md) (its 11 phases mapped
+to modules) and the [M6](../../modules/M6-feature-delivery-pipeline/) module
+templates (PRD, architecture, research-note, and the pipeline contract, all
+genericised and IP-scrubbed). This seed directory is kept **as imported** for
+provenance; where it and a module disagree, the module wins. The seed's tiered
+time estimates, named critique personas, and model-routing table were
+deliberately not ported (reference-implementation tuned choices, not portable
+mechanism — see M6 README § Not ported).

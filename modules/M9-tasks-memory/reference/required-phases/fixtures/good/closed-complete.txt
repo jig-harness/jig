@@ -1,0 +1,7 @@
+# phase record for work item WORK-101 — must PASS
+# closed, and both required phases (architect-review, staging-verify) recorded.
+status: closed
+architect-review
+design-loop
+staging-verify
+production

@@ -1,0 +1,17 @@
+# BAD — `has-migration` is declared twice. A label id must be unique across the
+# whole file, or a reference to it is ambiguous.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: has-migration
+    fires: migration-review
+  - id: has-migration
+    fires: contract-gates
