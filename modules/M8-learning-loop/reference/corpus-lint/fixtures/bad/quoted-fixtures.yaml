@@ -1,0 +1,11 @@
+# The top-level collection written as a quoted key (`"fixtures":`) — the same
+# YAML mapping key as `fixtures:`. The entry under it is `required: true` with
+# no validated record, so it must FAIL: a quoted key must not let the whole
+# collection go unparsed and report "0 valid".
+version: 1
+"fixtures":
+  - lever: L-0016
+    category: security
+    pinned_commit: 9f2a1c4
+    lens: LENS-005
+    required: true

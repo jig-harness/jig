@@ -1,0 +1,14 @@
+# SAFE: pull_request_target, but checks out the BASE ref only and treats the
+# fork's code as data. Secrets are safe because the PR's own code never runs.
+name: shadow-review
+on: pull_request_target
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4        # no `ref:` -> base of the PR target
+      - name: Analyze the diff (data only)
+        env:
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+        run: ./tools/review --diff-only

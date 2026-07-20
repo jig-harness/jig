@@ -13,8 +13,8 @@ groundwork work starts here.
 | 1 | Codification **in docomply**: C1–C9 canonical docs + drift fixes | ✅ done (epic an issue, all 12 sub-issues; artifacts on docomply `develop` — see Port sources) |
 | 2 | **Bootstrap groundwork**: skeleton, principles, glossary, profiles outline, auditor v0, port M0–M2 | ✅ done 2026-07-19 (all remainder items closed — see below) |
 | 3 | Port M4 docs governance, M5 ADR practice, M3 change-area catalog; add `maturity.yaml` per landed module | ✅ done 2026-07-19 (M3/M4/M5 carry the full contract — see below) |
-| 4 | Port M7 review-harness core + M8 learning loop | ⬜ (next) |
-| 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ⬜ |
+| 4 | Port M7 review-harness core + M8 learning loop | ✅ done 2026-07-20 (M7/M8 carry the full contract — see below) |
+| 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ⬜ (next) |
 | ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing |
 
 ## Phase 2 remainder (all closed 2026-07-19; next work is Phase 3)
@@ -68,6 +68,40 @@ self-test and fixtures; all self-tests pass.
 Deferred to their owning modules (noted in the READMEs): tag-merge normalizer
 and scheduled wiki-lint (M4, future); catalog→regex reverse check needs the
 resolver (M3); semantic ADR-rule tier belongs with M7/M8.
+
+## Phase 4 (done 2026-07-20; next work is Phase 5)
+
+M7 and M8 now carry the full module contract (`README.md`, `templates/`,
+`reference/`, `mappings.md`, `maturity.yaml`), genericized and IP-scrubbed per
+AGENTS.md. Each reference gate is a portable shell script with a paired
+self-test and fixtures; all self-tests pass.
+
+1. **M7 — PR lifecycle & review.** Landed the draft→review→resolve→merge
+   contract as a copyable [`PR-LIFECYCLE.md`](modules/M7-pr-lifecycle-review/templates/PR-LIFECYCLE.md)
+   with explicit HITL boundaries; the review-harness **config** side as
+   [`review-config.yaml`](modules/M7-pr-lifecycle-review/templates/review-config.yaml)
+   (tool registry, comment-only posture, numbered additive lenses, verify-tool
+   invariant, containment guards, precision bar); the C6 HITL decision registry
+   ([`HITL-REGISTRY.md`](modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md),
+   shared with M0); and two self-tested portable gates — a **`pull_request_target`
+   safety lint** (fork-unsafe reviewer wiring fails loudly) and the
+   **unresolved-threads merge gate** (the address/reject/defer loop made
+   mechanical). The reviewer *runtime* and docomply's 44-lens catalogue are
+   deliberately not transcribed (see README § Not ported).
+2. **M8 — learning loop.** Landed the miss→lens flywheel (plus the reflection
+   and memory-promotion companion cycles) as [`FLYWHEEL.md`](modules/M8-learning-loop/templates/FLYWHEEL.md);
+   a **generic** [`miss-taxonomy.yaml`](modules/M8-learning-loop/templates/miss-taxonomy.yaml)
+   (docomply's real categories IP-scrubbed out); the eval-corpus schema
+   ([`corpus.yaml`](modules/M8-learning-loop/templates/corpus.yaml)); and two
+   self-tested gates — **corpus-lint** (unique lever ids, taxonomy membership,
+   pinned pre-fix commit, and the **validate-then-gate** rule that a
+   `required: true` fixture must carry a live-validation record) and the
+   **parity report** (recall / precision / `missed_blockers`, driving the M7
+   promotion bar). The eval *runner* and telemetry wiring stay with the target
+   repo / M11 (see README § Not ported).
+
+Deferred to their owning modules: the precision-bar *values* and the metric
+event wiring (M11); the eval-replay runner (target-repo language, not bash).
 
 ## Port sources (docomply `develop` — Phase 1 artifacts and beyond)
 

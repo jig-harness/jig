@@ -1,0 +1,9 @@
+# Lever id has the `L-` prefix and a digit, but not exactly four digits.
+# Must FAIL (the format is L-NNNN, not "L-" + any digit + anything).
+version: 1
+fixtures:
+  - lever: L-1not-a-number
+    category: test-gap
+    pinned_commit: 9f2a1c4
+    lens: LENS-006
+    required: false

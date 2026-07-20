@@ -1,0 +1,10 @@
+# `required: true` carrying an inline YAML comment, with no validated record.
+# Must FAIL: the comment must not hide the `true`, or the validate-then-gate
+# rule is silently bypassed.
+version: 1
+fixtures:
+  - lever: L-0014
+    category: security
+    pinned_commit: 9f2a1c4
+    lens: LENS-005
+    required: true  # validated elsewhere, honest

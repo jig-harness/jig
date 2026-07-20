@@ -1,0 +1,2 @@
+# A non-numeric tally column. Must error (exit 2), not silently pass.
+shadow      lots  3   0

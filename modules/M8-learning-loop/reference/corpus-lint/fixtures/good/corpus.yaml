@@ -1,0 +1,31 @@
+# Valid corpus — must PASS. Unique levers, known categories, pins present,
+# lenses present, and the required:true entry carries a dated validation.
+version: 1
+taxonomy: miss-taxonomy.yaml
+
+fixtures:
+  - lever: L-0007
+    category: error-handling
+    title: retry swallowed a 500 into a success
+    pinned_commit: 9f2a1c4
+    lens: LENS-001
+    required: true
+    validated:
+      run: eval-2026-05-12
+      by: reviewer-a
+      date: 2026-05-12
+
+  - lever: L-0008
+    category: contract-break
+    title: renamed export, no shim
+    pinned_commit: 3b7e0aa
+    lens: LENS-002
+    required: false
+
+  # Fields in a different order (lever not first) — still a valid fixture.
+  - category: test-gap
+    title: new branch shipped untested
+    pinned_commit: aa10ff2
+    lens: LENS-003
+    lever: L-0009
+    required: false

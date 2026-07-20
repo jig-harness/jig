@@ -1,0 +1,13 @@
+# SAFE: runs the PR's own code, but on the `pull_request` trigger — which has
+# NO access to secrets for fork PRs. Executing untrusted code here is fine.
+name: build-and-test
+on: pull_request
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: npm ci && npm test

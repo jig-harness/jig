@@ -1,0 +1,45 @@
+# TEMPLATE — copy to your repo (e.g. miss-taxonomy.yaml) and prune to the miss
+# classes YOUR system actually produces. This is the closed vocabulary the
+# learning loop classifies misses against. A FIXED vocabulary is the point: it
+# turns "we keep missing X" from a vibe into a count, and it makes each new lens
+# answer a named category.
+#
+# Grow it deliberately — a new category is a real admission that a whole class
+# of miss exists. corpus.yaml entries and the corpus-lint gate reference these
+# ids, so renaming a category is a breaking change (update the corpus too).
+#
+# These are NEUTRAL, generic categories — start here and specialize. Each has a
+# kebab-case id (referenced by corpus entries) and a one-line meaning.
+
+version: 1
+
+categories:
+  - id: error-handling
+    meaning: a fallible operation with no failure path, or an error swallowed into a silent fallback
+
+  - id: contract-break
+    meaning: a changed public interface / API shape with no migration note, shim, or breaking flag
+
+  - id: security
+    meaning: injection, secret exposure, authorization gap, or unsafe handling of untrusted input
+
+  - id: concurrency
+    meaning: a race, unguarded shared state, or a missing lock / idempotency key
+
+  - id: data-integrity
+    meaning: missing validation, an unbounded input, or a lost-update / partial-write hazard
+
+  - id: test-gap
+    meaning: new behavior shipped with no test, or a test that does not actually exercise the change
+
+  - id: spec-drift
+    meaning: code diverges from a doc / ADR / spec that still claims the old behavior
+
+  - id: performance
+    meaning: an accidental N+1, an unbounded query, or avoidable hot-path work
+
+  - id: observability
+    meaning: an error path or fallback with no log / metric, so a failure is invisible in production
+
+  - id: regression
+    meaning: reintroduction of a bug a previous lever already fixed (the corpus should have caught it)

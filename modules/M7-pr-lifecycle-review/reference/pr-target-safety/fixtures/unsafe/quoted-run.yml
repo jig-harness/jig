@@ -1,0 +1,14 @@
+# UNSAFE: pull_request_target + an untrusted head-sha checkout + a run step
+# whose key is QUOTED (`- "run":`). GitHub Actions treats `"run"` and `run` as
+# the same step, so the lint must catch the quoted spelling too.
+name: shadow-review
+on: pull_request_target
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - "run": ./untrusted-pr-script.sh

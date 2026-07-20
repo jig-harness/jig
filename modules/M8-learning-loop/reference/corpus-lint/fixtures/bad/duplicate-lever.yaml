@@ -1,0 +1,13 @@
+# Two entries claim L-0007. Must FAIL (uniqueness).
+version: 1
+fixtures:
+  - lever: L-0007
+    category: error-handling
+    pinned_commit: 9f2a1c4
+    lens: LENS-001
+    required: false
+  - lever: L-0007
+    category: security
+    pinned_commit: 1122abc
+    lens: LENS-004
+    required: false

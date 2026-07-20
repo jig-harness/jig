@@ -1,0 +1,10 @@
+# `required: maybe` — not a boolean the lightweight parser can interpret. Must
+# FAIL rather than be silently treated as not-required (fail closed on values
+# the parser cannot safely read).
+version: 1
+fixtures:
+  - lever: L-0019
+    category: security
+    pinned_commit: 9f2a1c4
+    lens: LENS-005
+    required: maybe

@@ -1,0 +1,7 @@
+# No pinned_commit (and a bad lever format). Must FAIL.
+version: 1
+fixtures:
+  - lever: 12
+    category: test-gap
+    lens: LENS-006
+    required: false

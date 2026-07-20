@@ -1,0 +1,10 @@
+# `required` written as a quoted YAML key — the same mapping key as `required:`,
+# so the validate-then-gate rule must still apply. No validated record here, so
+# it must FAIL (a quoted key must not smuggle an unvalidated fixture in).
+version: 1
+fixtures:
+  - lever: L-0015
+    category: security
+    pinned_commit: 9f2a1c4
+    lens: LENS-005
+    "required": true

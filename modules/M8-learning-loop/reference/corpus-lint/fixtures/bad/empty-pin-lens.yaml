@@ -1,0 +1,9 @@
+# YAML empty values for pin and lens (`null`, `{}`) — key present but nothing
+# pinned and no answering lens. Must FAIL: `null`/`{}` are not real values.
+version: 1
+fixtures:
+  - lever: L-0013
+    category: test-gap
+    pinned_commit: null
+    lens: {}
+    required: false

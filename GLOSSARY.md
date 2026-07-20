@@ -157,7 +157,33 @@ capitalized as commonly written; cross-references are *italicized*.
   measured. Generalizes to any evaluable agent behavior.
 - **Eval fixture / corpus** — a pinned historical case (exact commit + expected
   findings) that a reviewer or agent is re-run against, turning past misses
-  into a regression test for the process itself.
+  into a regression test for the process itself. A fixture pins the *pre-fix*
+  state and joins the blocking corpus only after a live run validates it.
+- **Lever** — a durably numbered miss-and-its-answer (`L-NNNN`), filed once and
+  referenced forever: a *lens*, an *eval fixture*, and a parity metric all point
+  back to it. Numbering is guarded for uniqueness like *ADR* numbers.
+- **Review harness** — an automated reviewer built as prompt *lenses* over a
+  reusable engine, not a fixed static analyzer. Split into a repo-agnostic
+  **core** (a tool registry of reviewers, a required verify step, and
+  containment guards that keep it from flooding a PR or running untrusted code)
+  and a repo-specific **config** (which reviewers, which lenses, which posture).
+- **Comment-resolution loop** — the discipline that every PR review thread
+  reaches a terminal state before merge — **addressed**, **rejected** (with a
+  reason), or **deferred** (with a filed follow-up) — each leaving an audit
+  trail. Scope expansion and overruling a human thread stay *HITL*.
+- **Precision bar** — the pre-committed threshold of measured precision an
+  automated reviewer (or *lens*) must clear before it may be promoted from
+  comment-only to blocking. Recorded up front so "advisory forever" is visible.
+- **Parity report (parity tracker)** — the periodic measurement of a reviewer
+  against oracles (external reviewers, humans): recall, precision, and a
+  `missed_blockers` count. Drives whether a *lens* is kept, promoted past the
+  *precision bar*, or killed — and whether a vendor can be dropped.
+- **Reflection** — the cycle that accumulates end-of-session feedback into an
+  inbox and processes it into *proposed* scaffolding changes, which a human
+  approves before anything is edited (self-modifying rules stay *HITL*).
+- **Memory promotion** — lifting a durable lesson from an agent's private,
+  per-session memory into git-tracked, shared memory through a review point, so
+  it survives the session and reaches other agents.
 - **Skill** — a packaged, named procedure an agent can invoke (a review
   checklist, a migration workflow). The unit of codified "how we do this
   here."

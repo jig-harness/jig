@@ -1,0 +1,11 @@
+# required: true with an empty `validated:` and an unnested, null `date:` —
+# key presence without real content. Must FAIL (validate-then-gate).
+version: 1
+fixtures:
+  - lever: L-0012
+    category: security
+    pinned_commit: 9f2a1c4
+    lens: LENS-005
+    required: true
+    validated: {}
+    date: ~

@@ -1,0 +1,19 @@
+# UNSAFE: pull_request_target + checks out the fork's repository via head_ref +
+# a run: step. Same secret-exfiltration exposure as head-sha-run, via the
+# `repository:` / head_ref form.
+name: e2e-on-pr
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.head_ref }}
+      - run: pnpm install && pnpm e2e
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}

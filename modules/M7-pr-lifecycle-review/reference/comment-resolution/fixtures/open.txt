@@ -1,0 +1,4 @@
+# An unresolved thread remains. Must FAIL (blocks merge).
+T-2001 addressed
+T-2002 open
+T-2003 rejected  duplicate of T-2001

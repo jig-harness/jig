@@ -1,0 +1,95 @@
+# TEMPLATE — copy to your repo (e.g. review-config.yaml) and replace the
+# examples. This is the *config* half of the review-harness core/config split:
+# the repo-agnostic core (a tool registry, the verify-tool invariant, and
+# containment guards) is generic code; everything specific to THIS repo — which
+# reviewers run, in what posture, and which numbered lenses they apply — lives
+# here as data. Keeping them split is what let the harness be reused across
+# repos without forking the engine.
+#
+# The three ideas this file encodes:
+#   1. Tool registry     — the set of reviewers, each with a POSTURE.
+#   2. Comment-only bar   — a reviewer/lens may only BLOCK once measured
+#                           precision clears a pre-committed bar (M8 measures
+#                           it; M7 records the bar and the current posture).
+#   3. Verify-tool + guards — the core must run a verify step and stay within
+#                           containment limits (no runaway comment floods, no
+#                           executing untrusted fork code — see the PR-target
+#                           safety lint in ../reference/pr-target-safety/).
+
+version: 1
+
+# ---- tool registry --------------------------------------------------------
+# Every reviewer the harness knows about. `posture` is the enforcement rung:
+#   comment  — posts findings, blocks nothing (the default for anything new)
+#   blocking — a finding is a required-check failure (only after the bar)
+tools:
+  - id: shadow
+    kind: shadow          # in-house harness (this config drives it)
+    posture: comment      # comment-only until the precision bar is cleared
+    enabled: true
+
+  - id: vendor-bot
+    kind: bot             # a commercial reviewer (AST/semgrep depth)
+    posture: comment
+    enabled: true
+
+  - id: humans
+    kind: human           # human reviewers; selected per change-area (M3)
+    posture: blocking     # a human "request changes" blocks — always allowed
+
+# ---- verify-tool invariant ------------------------------------------------
+# The harness core MUST invoke a verify step before trusting its own output —
+# a reviewer that never checks its claims against reality drifts into
+# confident nonsense. Name the command the core runs; it is repo-specific but
+# its PRESENCE is an invariant the core enforces (a missing verify tool is a
+# config error, not a silent skip).
+verify_tool:
+  command: "make review-verify"   # e.g. typecheck + targeted tests the lens set implies
+  required: true
+
+# ---- containment guards ---------------------------------------------------
+# Bounds the core enforces regardless of lens config, so a misfiring reviewer
+# degrades loudly instead of flooding a PR or escaping its sandbox.
+containment:
+  max_comments_per_pr: 40         # above this, summarize instead of spamming
+  dedupe_by: [file, line, lens]   # never post the same finding twice
+  untrusted_code: data_only       # fork PR code is inspected, never executed
+                                  # (the PR-target safety lint enforces this)
+
+# ---- the precision bar ----------------------------------------------------
+# The single pre-committed rule for ever flipping a lens from comment to
+# blocking. Written down ONCE so "why is this still advisory?" has an answer
+# and "advisory forever" is a visible smell, not a default.
+promotion_bar:
+  min_true_positive_rate: 0.90    # of this lens's findings, >= 90% must be real
+  min_sample: 20                  # measured over at least N fired findings
+  measured_by: M8-parity-report   # ../../M8-learning-loop/reference/parity-report/
+  note: >-
+    A lens stays `posture: comment` until M8's measurement shows it clears this
+    bar; promotion to `posture: block` is an M7-Strict, HITL decision.
+
+# ---- lenses ---------------------------------------------------------------
+# Numbered, ADDITIVE checks the shadow reviewer applies. A lens is a prompt
+# module / checklist bullet, not a static-analysis rule — new misses grow the
+# list, they never rewrite it (that append-only discipline is M8's flywheel).
+# Each lens carries its own posture so promotion is per-lens, and `lever`
+# links back to the M8 durable identifier of the miss that created it.
+lenses:
+  - id: LENS-001
+    name: error-paths-handled
+    posture: comment
+    lever: L-0007                 # the M8 lever this lens answers (or ~ if seeded)
+    summary: >-
+      Every fallible call has an explicit failure path; no error is swallowed
+      into a silent fallback.
+
+  - id: LENS-002
+    name: public-contract-unbroken
+    posture: comment
+    lever: ~
+    summary: >-
+      A changed exported signature / API shape has a migration note or a
+      compatibility shim, or is flagged as breaking.
+
+# Higher-tier "semantic" lenses that need full LLM reasoning (not a checklist
+# bullet) are grown locally, not shipped here — see ../README.md § Not ported.

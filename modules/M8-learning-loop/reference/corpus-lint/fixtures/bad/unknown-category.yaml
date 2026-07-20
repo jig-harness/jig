@@ -1,0 +1,8 @@
+# Category is not in the taxonomy. Must FAIL (a typo'd category hides the miss).
+version: 1
+fixtures:
+  - lever: L-0010
+    category: error-hanlding
+    pinned_commit: 9f2a1c4
+    lens: LENS-001
+    required: false

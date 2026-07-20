@@ -1,0 +1,46 @@
+# TEMPLATE — copy to your repo (e.g. corpus.yaml) and replace the examples.
+# This is the eval corpus: the set of past misses reconstructed as replayable
+# fixtures, so yesterday's miss becomes a regression test for the process
+# itself. The corpus-lint gate (../reference/corpus-lint/) enforces its
+# invariants; the parity report (../reference/parity-report/) measures how the
+# reviewers do against it.
+#
+# One entry per filed miss. Fields:
+#   lever          durable id, `L-NNNN`, UNIQUE across the corpus (the tracker
+#                  id of the miss; a lens and a metric both reference it)
+#   category       a member of the miss taxonomy (see `taxonomy:` below)
+#   title          one line: what was missed
+#   pinned_commit  the commit BEFORE the fix — the state the reviewer must catch
+#                  (post-fix pins prove nothing)
+#   lens           the additive lens that answers this miss (links to M7's
+#                  review-config lenses); every filed miss gets one
+#   required       false until a live run validates the fixture; true once it is
+#                  part of the blocking regression corpus
+#   validated      REQUIRED when `required: true` — the record of the live run
+#                  that proved the reviewer now catches it (run id + date)
+
+version: 1
+taxonomy: miss-taxonomy.yaml
+
+fixtures:
+  # A validated fixture: it caught the miss on a live run, so it is now part of
+  # the blocking regression corpus.
+  - lever: L-0007
+    category: error-handling
+    title: a retry helper swallowed a 500 response into a success
+    pinned_commit: 9f2a1c4
+    lens: LENS-001
+    required: true
+    validated:
+      run: eval-2026-05-12
+      by: <reviewer-or-agent>
+      date: 2026-05-12
+
+  # A fresh entry: filed and answered with a lens, but not yet validated — so it
+  # stays out of the blocking corpus (required: false) until a live run proves it.
+  - lever: L-0008
+    category: contract-break
+    title: a renamed export shipped with no compatibility shim or breaking flag
+    pinned_commit: 3b7e0aa
+    lens: LENS-002
+    required: false

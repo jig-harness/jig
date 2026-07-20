@@ -1,0 +1,8 @@
+# A fixture with no `lever:` at all. Must FAIL — a record without a lever is a
+# missing required field, not something the parser may silently drop.
+version: 1
+fixtures:
+  - category: test-gap
+    pinned_commit: 9f2a1c4
+    lens: LENS-006
+    required: false

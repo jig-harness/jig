@@ -1,0 +1,10 @@
+# `required: True` — a valid YAML boolean, same truthy value as `true`, so the
+# validate-then-gate rule must still apply. No validated record, so it must FAIL
+# (a capitalized boolean must not smuggle an unvalidated fixture in).
+version: 1
+fixtures:
+  - lever: L-0018
+    category: security
+    pinned_commit: 9f2a1c4
+    lens: LENS-005
+    required: True

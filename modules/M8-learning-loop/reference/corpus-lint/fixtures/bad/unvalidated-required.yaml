@@ -1,0 +1,8 @@
+# required: true but no validated record. Must FAIL (validate-then-gate).
+version: 1
+fixtures:
+  - lever: L-0011
+    category: security
+    pinned_commit: 9f2a1c4
+    lens: LENS-005
+    required: true

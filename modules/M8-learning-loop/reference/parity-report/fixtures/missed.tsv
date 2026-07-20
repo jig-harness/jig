@@ -1,0 +1,3 @@
+# The in-house reviewer missed a blocker an oracle caught. Must FAIL (open a lever).
+shadow      40  2   1
+vendor-bot  22  8   0

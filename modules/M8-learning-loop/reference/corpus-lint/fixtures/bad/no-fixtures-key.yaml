@@ -1,0 +1,11 @@
+# No `fixtures:` collection at all (misspelled / omitted). Must ERROR (exit 2),
+# not silently pass as "0 valid" — an absent collection is a usage error, not a
+# clean corpus.
+version: 1
+taxonomy: miss-taxonomy.yaml
+fixturez:
+  - lever: L-0017
+    category: security
+    pinned_commit: 9f2a1c4
+    lens: LENS-005
+    required: true

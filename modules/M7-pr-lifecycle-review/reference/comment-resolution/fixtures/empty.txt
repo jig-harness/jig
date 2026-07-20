@@ -1,0 +1,2 @@
+# No review threads on this PR. An EMPTY export must PASS (zero open threads),
+# never be skipped. (Comment lines only — no thread rows.)

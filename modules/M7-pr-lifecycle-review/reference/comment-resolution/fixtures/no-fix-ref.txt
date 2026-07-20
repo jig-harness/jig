@@ -1,0 +1,3 @@
+# An 'addressed' thread whose trail names no commit/change — a bare word, not a
+# fix reference. Must FAIL: 'addressed' claims a fix, so it must point at one.
+T-4001 addressed not-fixed

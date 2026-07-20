@@ -1,0 +1,18 @@
+# UNSAFE: same head-sha checkout + run: as head-sha-run, but the untrusted
+# expression is a FOLDED scalar spread across lines. A line-oriented grep for
+# `ref: ...head.sha` misses it; the gate must still catch it.
+name: shadow-review
+on: pull_request_target
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: >-
+            ${{ github.event.pull_request.head.sha }}
+      - name: Install and review
+        env:
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+        run: npm ci && ./tools/review

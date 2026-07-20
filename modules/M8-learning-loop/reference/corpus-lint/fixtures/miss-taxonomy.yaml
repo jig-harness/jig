@@ -1,0 +1,10 @@
+version: 1
+categories:
+  - id: error-handling
+    meaning: fallible op with no failure path
+  - id: contract-break
+    meaning: changed public interface, no shim
+  - id: security
+    meaning: injection / secret exposure / authz gap
+  - id: test-gap
+    meaning: new behavior with no test

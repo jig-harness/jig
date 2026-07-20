@@ -1,0 +1,17 @@
+# UNSAFE: pull_request_target (privileged, has secrets) + checks out the PR
+# HEAD sha + runs code. A forked PR's build script runs with the secrets in
+# scope and can exfiltrate them.
+name: shadow-review
+on: pull_request_target
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Install and review
+        env:
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+        run: npm ci && ./tools/review

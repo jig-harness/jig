@@ -1,0 +1,106 @@
+# Machine-evaluable criteria for M7 (PR lifecycle & review).
+# Schema: modules/README.md § "maturity.yaml schema". Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M7
+name: pr-lifecycle-review
+criteria:
+  - id: lifecycle-documented
+    level: lite
+    requires: convention
+    statement: >-
+      The PR lifecycle is written down once — open as a draft, self-review,
+      review, resolve threads, human marks Ready, human merges — and referenced
+      by the instructions.
+    observe:
+      - "a pr-lifecycle doc states the draft -> review -> resolve -> ready -> merge loop"
+      - "it names marking Ready and merging as human-only steps"
+
+  - id: self-review-before-request
+    level: lite
+    requires: convention
+    statement: >-
+      Authors are expected to read their own full diff and run the local gate
+      set before requesting review.
+    observe:
+      - "the lifecycle doc requires author self-review + local gates before requesting review"
+
+  - id: reviews-selected-by-change-area
+    level: standard
+    requires: mechanical
+    statement: >-
+      Which mandatory reviews a PR needs is derived from the change-area
+      catalog (a generated projection), not a hand-kept list or reviewer memory.
+    observe:
+      - "a review-gate projection is generated from the M3 catalog"
+      - "review requests / required checks are driven by that projection"
+
+  - id: automated-reviewer-comment-only-with-bar
+    level: standard
+    requires: convention
+    statement: >-
+      Any automated reviewer runs comment-only, and a pre-committed precision
+      bar for ever flipping it (or a lens) to blocking is written down.
+    observe:
+      - "the review config sets a comment-only posture for new reviewers/lenses"
+      - "a precision bar (and who measures it) is recorded, not implied"
+
+  - id: comment-resolution-loop-gated
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every review thread reaches a terminal state (addressed / rejected /
+      deferred) with an audit trail, and no PR merges with an open thread.
+    observe:
+      - "the address/reject/defer loop contract is documented"
+      - "an unresolved-threads check runs as a required merge gate in CI"
+
+  - id: pr-target-wiring-fork-safe
+    level: standard
+    requires: mechanical
+    statement: >-
+      No secret-bearing reviewer workflow checks out and runs untrusted fork
+      code, and a lint enforces it.
+    observe:
+      - "a pull_request_target safety lint runs in CI over the workflows"
+      - "no workflow trips it (fork code is treated as data under privileged triggers)"
+
+  - id: human-ready-and-merge-enforced
+    level: strict
+    requires: mechanical
+    statement: >-
+      Marking Ready and merging are mechanically reserved to humans — branch
+      protection requires a human actor and green required checks.
+    observe:
+      - "branch protection requires required checks + review before merge"
+      - "automation cannot self-merge (no bot bypass of the human merge step)"
+
+  - id: hitl-registry-published
+    level: strict
+    requires: convention
+    statement: >-
+      The human-only decision classes (mark Ready, merge, promote a reviewer to
+      blocking, expand scope, overrule a human) are listed in one registry, and
+      a hitl label revokes autonomous merge.
+    observe:
+      - "a HITL decision registry enumerates the human-only decisions with a trigger each"
+      - "a hitl label is defined and revokes autonomous merge for the linked PR"
+
+  - id: reviewer-promotion-gated-on-measurement
+    level: strict
+    requires: mechanical
+    statement: >-
+      Promoting a reviewer or lens from comment-only to blocking is gated on
+      measured precision (from the M8 corpus / parity report), not a hunch.
+    observe:
+      - "a lens flipped to blocking carries a recorded precision measurement clearing the bar"
+      - "the measurement source (M8 parity report) is wired, not aspirational"
+
+  - id: review-gates-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      The PR-target safety lint and the unresolved-threads gate each ship a
+      self-test that runs in CI, so a broken review gate fails loudly.
+    observe:
+      - "each gate has a paired self-test exercising a known pass and a known fail"
+      - "CI runs the self-tests"

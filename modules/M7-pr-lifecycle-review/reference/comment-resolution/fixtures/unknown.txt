@@ -1,0 +1,3 @@
+# A typo'd / unknown state. Must FAIL (catch resolutions that don't fit the contract).
+T-4001 addressed
+T-4002 resolveed  looks-like-a-typo

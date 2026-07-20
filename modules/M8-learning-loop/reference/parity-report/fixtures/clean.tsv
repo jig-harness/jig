@@ -1,0 +1,4 @@
+# reviewer-vs-oracle tallies — no missed blockers. Must PASS.
+# <reviewer> <true_positives> <false_positives> <missed_blockers>
+shadow      47  3   0
+vendor-bot  20  10  0

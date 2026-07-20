@@ -1,0 +1,15 @@
+# SAFE: pull_request_target and it does reference the head ref, but there is no
+# `run:` step — nothing executes the fork's code, so no execution path exists.
+name: label-by-size
+on: pull_request_target
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,2 @@
+# A fifth column (schema drift). Must error (exit 2), not silently pass on $1-$4.
+shadow      47  3   0   stale

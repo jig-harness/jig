@@ -1,0 +1,4 @@
+# A rejection and a deferral with no audit trail. Must FAIL.
+T-3001 addressed
+T-3002 rejected
+T-3003 deferred
