@@ -82,7 +82,7 @@ jobs:
   index-freshness:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: sh reference/triad/check-index-fresh.sh <docs-dir>
 ```
 

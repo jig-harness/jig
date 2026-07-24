@@ -33,7 +33,7 @@ jobs:
     env:
       M9: modules/M9-tasks-memory        # where you vendored the module
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: "$M9"/reference/label-taxonomy-lint/test-check-label-taxonomy.sh
       - run: TAXONOMY=label-taxonomy.yaml "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.sh
   required-phases:
@@ -41,7 +41,7 @@ jobs:
     env:
       M9: modules/M9-tasks-memory
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: "$M9"/reference/required-phases/test-check-formula.sh
       # export this PR's item phase record from the tracker (see below), then:
       - run: |

@@ -40,9 +40,9 @@ jobs:
     env:
       M10: base/modules/M10-environments-deploy    # gate scripts, from the base tree
     steps:
-      - uses: actions/checkout@v4                   # PR tree — scanned as DATA
+      - uses: actions/checkout@<full-commit-sha>    # v4; PR tree — scanned as DATA
         with: { path: pr }
-      - uses: actions/checkout@v4                   # BASE tree — owns the gate
+      - uses: actions/checkout@<full-commit-sha>    # v4; BASE tree — owns the gate
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     env: { MAX_BEHIND: "20", MAX_AGE_SECONDS: "86400" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }                    # need history to measure lag
       - name: verified pointer is fresh (page/heal on fail)
         run: |

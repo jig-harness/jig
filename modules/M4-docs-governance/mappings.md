@@ -28,7 +28,7 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }        # scar lint / new-doc detection need the diff
       - name: New docs (require description)
         id: new

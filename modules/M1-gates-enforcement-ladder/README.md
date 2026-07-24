@@ -36,6 +36,11 @@ ladder from convention to hard gate, without collapsing into bureaucracy.
 6. **Advisory→blocking pipeline** — new gates may start advisory, but each
    advisory gate carries a promotion condition; advisory-forever is a tracked
    smell.
+7. **Third-party automation integrity** — external CI actions and included
+   automation are pinned to immutable revisions, while an automated dependency
+   updater proposes tested pin changes. An immutable pin without an update
+   path becomes stale; an update bot without immutable pins leaves merge-time
+   behavior changeable outside the reviewed commit.
 
 ## Maturity levels
 
@@ -43,7 +48,8 @@ ladder from convention to hard gate, without collapsing into bureaucracy.
   CI runs the gates on every PR.
 - **Standard** — full hook layer with auto-fix-and-stage; ≥ the team's top-5
   codebase rules as tested grep gates in hooks + CI; escape hatches
-  documented.
+  documented; third-party CI automation is immutable and automatically
+  updated.
 - **Strict** — suppression-token registry; commit-msg process markers for
   mandatory reviews; gate self-tests required; advisory gates carry promotion
   conditions with dates; cross-worktree resource mutex where parallel agents
@@ -56,6 +62,7 @@ ladder from convention to hard gate, without collapsing into bureaucracy.
 | `lefthook.yml` (shape) | [`templates/lefthook.yml`](templates/lefthook.yml) — copyable hook skeleton; husky / pre-commit equivalents in [`mappings.md`](mappings.md) |
 | `scripts/check-*` + paired `test-*` convention | [`reference/grep-gate/`](reference/grep-gate/) — framework skeleton with one worked example gate (TODO-without-issue), its self-test, and fixtures |
 | `.github/workflows/pr-quality-gates.yml` (shape) | [`templates/ci-pr-gates.yml`](templates/ci-pr-gates.yml) — GitHub Actions skeleton; GitLab CI mapping in [`mappings.md`](mappings.md) |
+| Immutable Action references + Renovate updates (shape) | Pin-and-update invariant, provider mappings, and an observable Standard criterion |
 | `docs/development/suppression-token-registry.md` (C7) | [`templates/suppression-registry.md`](templates/suppression-registry.md) — copyable registry skeleton |
 | Commit-msg review-marker gate | [`reference/commit-msg-marker/`](reference/commit-msg-marker/) — portable script + design notes |
 

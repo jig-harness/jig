@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     env: { M11: modules/M11-process-observability }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: "$M11"/reference/no-dark-instruments/test-check-metrics-wired.sh
       - run: "$M11"/reference/no-dark-instruments/check-metrics-wired.sh metrics-registry.yaml
   events:
@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     env: { M11: modules/M11-process-observability }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: "$M11"/reference/event-schema-lint/test-check-events.sh
       # export the window's events into the logfmt line shape, then validate
       - run: ./scripts/export-events > events.log     # your backend query, see below

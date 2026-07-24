@@ -26,7 +26,7 @@ jobs:
       web-app: ${{ steps.r.outputs.web-app }}
       api-service: ${{ steps.r.outputs.api-service }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }   # resolver needs the base..HEAD diff
       - id: r
         run: <your-resolver> --emit gha >> "$GITHUB_OUTPUT"
@@ -40,7 +40,7 @@ jobs:
 ```yaml
 # Static: a generated dorny/paths-filter config (committed, freshness-gated).
 # Regenerate from the catalog; a drift check (see M2) fails when it is stale.
-- uses: dorny/paths-filter@v3
+- uses: dorny/paths-filter@<full-commit-sha> # v3
   id: filter
   with: { filters: .github/change-area-filters.yml }   # generated projection
 ```

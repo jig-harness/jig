@@ -182,6 +182,28 @@ Deferred to standing backflow: dashboard *products* and metric threshold *values
 (M10, host-specific); the port-allocator probe-for-free fallback (M12, noted
 future). The eval/telemetry *runners* remain target-repo-language jobs, not bash.
 
+## Standing backflow (active)
+
+- **2026-07-24 — portfolio audit + reviewer independence.** A live
+  multi-repository audit exposed two reusable gaps. First, a single-repo audit
+  misses hand-copied policy drift, organization-wide enforcement gaps, and
+  capabilities that need a maintained home outside an application repo. The
+  auditor now includes a
+  [portfolio comparison method](audit/portfolio-methodology.md), report
+  template, clean-snapshot guidance, and read-only repository-host enforcement
+  checks. Second, fork-safe wiring alone does not state that a PR must be
+  unable to alter the reviewer code, prompts, or policy that judges it. M7 now
+  carries that independent-reviewer-source invariant in its README, mapping,
+  config contract, audit prompt, and maturity criteria. Groundwork's own stale
+  phase summary was replaced by a pointer to this continuation anchor, and its
+  CI action is now pinned to an immutable commit and has checked-in Renovate
+  update policy (bot installation remains host-side). Docomply's proven
+  pin-and-update discipline also exposed mutable Action references in
+  Groundwork's examples; M1 now states the general invariant and the examples
+  use immutable placeholders. Its Markdown gates now scan tracked and
+  non-ignored untracked content, so gitignored audit snapshots and local
+  workspaces cannot break repository checks.
+
 ## Port sources (docomply `develop` — Phase 1 artifacts and beyond)
 
 Phase 1 wrote the canonical process docs in docomply; they are the primary

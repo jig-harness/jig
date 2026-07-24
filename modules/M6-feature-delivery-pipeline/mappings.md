@@ -38,10 +38,10 @@ jobs:
       M6: base/modules/M6-feature-delivery-pipeline   # gate scripts, from the base tree
     steps:
       # The PR tree — scanned as DATA; fetch-depth 0 so we can diff the base.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with: { path: pr, fetch-depth: 0 }
       # The gate scripts, from the base the PR targets — the PR cannot edit them.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base

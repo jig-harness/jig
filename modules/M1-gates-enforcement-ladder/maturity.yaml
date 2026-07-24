@@ -63,6 +63,18 @@ criteria:
       - "hook config or gate docs mention --no-verify and its conditions"
       - "every hook-enforced check also appears in CI"
 
+  - id: third-party-automation-pinned-and-updated
+    level: standard
+    requires: mechanical
+    statement: >-
+      Third-party CI automation is pinned to immutable revisions and an
+      automated updater proposes pin changes through the normal gate set.
+    observe:
+      - "external CI actions, remote includes, and containerized CI tools use
+        immutable commit or digest references"
+      - "dependency-updater configuration covers those references"
+      - "proposed updates run the same required gates as other changes"
+
   - id: suppression-token-registry
     level: strict
     requires: convention

@@ -18,6 +18,7 @@
 | Package manager / task runner | <…> | <lockfile / config> |
 | CI provider | <…> | <dir> |
 | Hook manager | <…> | <config or "none"> |
+| Repository-host enforcement | <default branch; protection/rulesets; required checks/reviews; or "unchecked"> | <read-only host query + date> |
 | Issue tracker / review bots | <…> | <references> |
 | Agent runtimes in use | <…> | <instruction files found> |
 
@@ -60,5 +61,7 @@
 ## Appendix — survey provenance
 
 > Date, auditor version/commit, which surveys ran, verified vs unchecked
-> counts, prior-audit reference if this is a re-audit (with
-> fixed/still-open/regressed diff).
+> counts, audited ref/commit, repository-host settings query (or why it was
+> unavailable), prior-audit reference if this is a re-audit (with
+> fixed/still-open/regressed diff). Record credential findings without copying
+> the credential.

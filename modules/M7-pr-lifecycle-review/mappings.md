@@ -2,10 +2,11 @@
 
 The module [invariant](README.md) — draft PRs, change-area-selected reviews,
 layered comment-only-until-proven reviewers, a resolve-every-thread loop, a
-human Ready + merge, fork-safe wiring — is tool-independent. This file maps its
+human Ready + merge, reviewer code and policy independent of the reviewed
+change, and fork-safe wiring — is tool-independent. This file maps its
 mechanisms onto concrete forges, [review bots](../../GLOSSARY.md), agent
-runtimes, [CI](../../GLOSSARY.md) providers, and [issue trackers](../../GLOSSARY.md).
-Replace `<placeholders>` with your values.
+runtimes, [CI](../../GLOSSARY.md) providers, and
+[issue trackers](../../GLOSSARY.md). Replace `<placeholders>` with your values.
 
 ## The two gates, per rung
 
@@ -18,13 +19,19 @@ The change-area review *selection* is not a gate here — it rides on
 [M3](../M3-change-area-catalog/)'s review-gate projection, which decides which
 mandatory reviewers a PR needs.
 
-Two things these examples get right and you must not drop:
+Three things these examples get right and you must not drop:
 
 - **Run the gate logic from the BASE, not the PR checkout.** A merge-blocking
   gate that runs scripts out of the PR's own checkout is not a gate — the PR can
   edit the script (or the workflow) to report success. Check the PR's tree out
   as *data* to be scanned, and run the gate scripts from a separately
   checked-out base tree the PR cannot alter (or a pinned reusable workflow).
+- **The PR cannot define its own reviewer.** Load a secret-bearing or
+  merge-relevant reviewer's runtime, prompts, and active policy from a pinned
+  external version, separately hosted service, or the target base branch. If a
+  PR changes reviewer code or policy, exercise that proposal only in a separate
+  unprivileged, comment-only shadow job; the authoritative review keeps using
+  the previously trusted version.
 - **Use paths that exist after checkout.** The scripts live under the module
   directory (`modules/M7-pr-lifecycle-review/reference/...` as shipped). Set one
   `M7` variable to wherever you vendored the module and build every path from
@@ -43,11 +50,11 @@ jobs:
       M7: base/modules/M7-pr-lifecycle-review   # gate scripts, from the base tree
     steps:
       # The PR's tree — inspected as DATA only; its scripts never run the gate.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with: { path: pr }
       # The gate scripts, from the BASE commit the PR targets — the PR cannot
       # edit these, so it cannot make an unsafe workflow report success.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
@@ -124,6 +131,9 @@ emits `open`.
 Each reviewer is one entry in [`review-config.yaml`](templates/review-config.yaml)
 with a `posture`. New reviewers enter **comment-only**; promotion to blocking is
 [HITL](../../GLOSSARY.md) and gated on measured precision ([M8](../M8-learning-loop/)).
+The config's `review_source` records where the authoritative runtime and policy
+come from. A checked-in config can change in a PR, but the review of that PR
+reads the target base branch's copy.
 
 | Reviewer | Role | Typical posture |
 |----------|------|-----------------|

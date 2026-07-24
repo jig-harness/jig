@@ -6,7 +6,7 @@
 # here as data. Keeping them split is what let the harness be reused across
 # repos without forking the engine.
 #
-# The three ideas this file encodes:
+# The four ideas this file encodes:
 #   1. Tool registry     — the set of reviewers, each with a POSTURE.
 #   2. Comment-only bar   — a reviewer/lens may only BLOCK once measured
 #                           precision clears a pre-committed bar (M8 measures
@@ -15,8 +15,23 @@
 #                           containment limits (no runaway comment floods, no
 #                           executing untrusted fork code — see the PR-target
 #                           safety lint in ../reference/pr-target-safety/).
+#   4. Reviewer source    — the PR head cannot change the runtime, prompts, or
+#                           policy used for its own authoritative review.
 
 version: 1
+
+# ---- authoritative reviewer source ---------------------------------------
+# These values document the wiring contract. Replace the runtime reference
+# with an immutable release/commit, or use `separately-hosted-service`. The
+# active policy for a PR comes from its target base branch, never its head.
+# Proposed reviewer/config changes may run separately without secrets and in
+# comment-only posture; they do not replace the authoritative review.
+review_source:
+  runtime: pinned-external
+  runtime_ref: "<immutable-release-or-commit>"
+  active_policy: target-base
+  proposed_changes: unprivileged-comment-only-shadow
+  pr_head: data_only
 
 # ---- tool registry --------------------------------------------------------
 # Every reviewer the harness knows about. `posture` is the enforcement rung:

@@ -44,10 +44,10 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 
 ## Status
 
-**Phase 2 (bootstrap) — kernel in place.** Structure, principles, glossary,
-auditor v0, and module definitions exist; module `templates/` and `reference/`
-implementations are being ported from the reference implementation. See
-[ROADMAP.md](ROADMAP.md) for exactly what is done and what comes next.
+**Standing backflow — the module map is complete.** All 13 modules (M0–M12)
+carry the full module contract, and the auditor scores the complete map.
+[ROADMAP.md](ROADMAP.md) is the sole continuation anchor for what is done,
+what was deliberately deferred, and what comes next.
 
 Groundwork is distilled from a production reference implementation (the
 docomply monorepo — private), which remains "instance #1": lessons learned

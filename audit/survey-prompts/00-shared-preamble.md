@@ -32,6 +32,11 @@ Calibration rules (learned from audit runs):
 - **History-dependent questions need history.** If the checkout is shallow,
   state which questions are unanswerable from a snapshot rather than
   guessing (auditors: prefer a full clone).
+- **Checked in does not mean required.** A CI workflow is a merge gate only
+  when repository-host settings require its result. Query those settings
+  read-only where access exists; otherwise mark enforcement unchecked.
+- **Do not reproduce secrets as evidence.** Report that a credential-bearing
+  URL or config exists and name its location, but never print the credential.
 - **Stay in your survey's lane** to avoid double-counting: hooks/CI/lint
   enforcement detail belongs to survey 3; other surveys mention it only as
   the nearest-analogue of something absent, in one line.

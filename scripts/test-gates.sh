@@ -28,4 +28,33 @@ run_case fail fail-link     "$here/check-md-links.sh" .
 run_case fail fail-table    "$here/check-md-tables.sh" .
 run_case fail fail-glossary "$here/check-glossary-coverage.sh" . GLOSSARY.md allowlist.txt
 
+# Ignored local workspaces are not repository content. One deliberately broken
+# ignored Markdown file exercises all three gates; the tracked file stays valid.
+ignored_root=$(mktemp -d)
+trap 'rm -rf "$ignored_root"' EXIT
+git -C "$ignored_root" init -q
+printf '.context/\n' > "$ignored_root/.gitignore"
+printf '# Good\n\nRepository content.\n' > "$ignored_root/README.md"
+printf '# Glossary\n\nHITL is defined here.\n' > "$ignored_root/GLOSSARY.md"
+printf '# none\n' > "$ignored_root/allowlist.txt"
+mkdir -p "$ignored_root/.context"
+printf '# Bad\nText\n| table |\n[missing](nowhere.md)\nUNDEFINEDTERM\n' > "$ignored_root/.context/ignored.md"
+git -C "$ignored_root" add .gitignore README.md GLOSSARY.md allowlist.txt
+
+for gate in check-md-links.sh check-md-tables.sh; do
+  if "$here/$gate" "$ignored_root" >/dev/null 2>&1; then
+    echo "ok: ignored workspace ($(basename "$gate"))"
+  else
+    echo "FAIL: ignored workspace affected $gate"
+    bad=1
+  fi
+done
+if "$here/check-glossary-coverage.sh" "$ignored_root" \
+  "$ignored_root/GLOSSARY.md" "$ignored_root/allowlist.txt" >/dev/null 2>&1; then
+  echo "ok: ignored workspace (check-glossary-coverage.sh)"
+else
+  echo "FAIL: ignored workspace affected check-glossary-coverage.sh"
+  bad=1
+fi
+
 exit "$bad"

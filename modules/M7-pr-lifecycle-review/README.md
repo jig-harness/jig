@@ -7,9 +7,10 @@ may merge all live in people's heads, so they happen inconsistently or not at
 all. Second, adding AI reviewers to that vacuum makes it *worse* — an
 automated reviewer with no measured precision and the power to block turns
 review into noise, and one wired carelessly into CI becomes a security hole (a
-reviewer that runs untrusted code from a fork with repository secrets). This
-module codifies the draft→review→resolve→merge loop with layered reviewers,
-measured automation, and the human checkpoints kept explicit.
+reviewer that runs untrusted code from a fork with repository secrets, or lets
+the PR being reviewed alter the reviewer's own prompts and policy). This module
+codifies the draft→review→resolve→merge loop with layered reviewers, measured
+automation, and the human checkpoints kept explicit.
 
 ## Invariant
 
@@ -21,7 +22,9 @@ measured automation, and the human checkpoints kept explicit.
 > stated reason — before merge. **Automated reviewers run comment-only** until
 > measured precision clears a pre-committed bar that justifies more. And any
 > reviewer that executes PR code runs it under a **fork-safe** wiring that
-> never grants untrusted code access to secrets.
+> never grants untrusted code access to secrets. The reviewer runtime, prompts,
+> and active policy come from a pinned external source, a separately hosted
+> service, or the target base branch — never from the PR head being reviewed.
 
 Everything below is one tool-independent statement made mechanical; concrete
 per-forge, per-bot wiring lives in [mappings.md](mappings.md).
@@ -60,13 +63,20 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    are [HITL](../../GLOSSARY.md) — an agent may not silently widen scope or
    overrule a person. The [unresolved-threads gate](reference/comment-resolution/)
    makes "no open threads at merge" mechanical.
-6. **Fork-safe reviewer wiring** — an automated reviewer needs repository
+6. **The reviewed change cannot define its reviewer** — the authoritative
+   reviewer runtime, prompts, and active policy are loaded from an immutable
+   external version, a separately hosted service, or the target base branch.
+   The PR head is review input, not reviewer configuration. A proposed change
+   to the reviewer can run in a separate unprivileged, comment-only shadow job,
+   but it cannot alter the review that decides whether that same change is
+   safe.
+7. **Fork-safe reviewer wiring** — an automated reviewer needs repository
    secrets (model keys, a bot token) yet must inspect code from untrusted
    forks. The safe pattern extracts and analyzes the base-branch tooling while
    treating fork code as *data*, never executing it in the privileged context.
    The [PR-target safety lint](reference/pr-target-safety/) fails a workflow
    that checks out and runs untrusted PR head code in a secret-bearing job.
-7. **Explicit HITL boundaries** — the human-only decision classes (mark Ready,
+8. **Explicit HITL boundaries** — the human-only decision classes (mark Ready,
    merge, promote a reviewer to blocking, expand scope, override a human
    thread) are listed once in [`HITL-REGISTRY.md`](templates/HITL-REGISTRY.md)
    rather than scattered across skills and habits, so autonomous runs know
@@ -83,7 +93,8 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
   **comment-only** with a written precision bar for ever blocking; the
   comment-resolution loop is a contract (address/reject/defer, every thread
   terminal) and no PR merges with unresolved threads; any reviewer executing
-  PR code uses the fork-safe wiring.
+  PR code uses the fork-safe wiring; and no authoritative reviewer obtains its
+  runtime, prompts, or active policy from the PR head it is reviewing.
 - **Strict** — the unresolved-threads gate and the PR-target safety lint run in
   CI (the authority); the HITL decision registry is published and the `hitl`
   label revokes autonomous merge; reviewer promotion comment-only→blocking is
@@ -99,9 +110,12 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    review-gate projection instead of a hand-kept list.
 3. If you run an automated reviewer, express it as
    [`review-config.yaml`](templates/review-config.yaml) (tool registry,
-   comment-only posture, numbered lenses, precision bar) and wire it fork-safe;
-   add the [PR-target safety lint](reference/pr-target-safety/) so the wiring
-   can't regress.
+   comment-only posture, numbered lenses, precision bar, reviewer source).
+   Load the authoritative runtime and policy from a pinned external version,
+   hosted service, or target base branch; test proposed reviewer changes in a
+   separate unprivileged shadow run. Wire the reviewer fork-safe and add the
+   [PR-target safety lint](reference/pr-target-safety/) so the wiring can't
+   regress.
 4. Adopt the [unresolved-threads gate](reference/comment-resolution/) as a
    merge gate; export thread states from your forge into its input format
    (recipes in [mappings.md](mappings.md)).
@@ -119,6 +133,13 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
 
 Also landed: [`mappings.md`](mappings.md) (forges, review bots, agent-runtime
 reviewers, CI providers, trackers) and [`maturity.yaml`](maturity.yaml).
+
+**Backflow, 2026-07-24.** A live extraction of a reviewer into its own
+versioned repository exposed a security property that the earlier fork-safety
+wording did not state strongly enough: the change under review must not control
+the reviewer code or policy that judges it. The invariant, config contract,
+mapping guidance, audit prompt, and maturity criteria now state that property
+directly.
 
 **Not ported** (per "don't port the unproven" / IP scrub): the shadow
 reviewer's actual lens catalogue (44 product-specific lenses) and its

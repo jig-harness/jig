@@ -44,6 +44,17 @@ criteria:
       - "the review config sets a comment-only posture for new reviewers/lenses"
       - "a precision bar (and who measures it) is recorded, not implied"
 
+  - id: automated-review-source-independent
+    level: standard
+    requires: mechanical
+    statement: >-
+      A secret-bearing or merge-relevant automated reviewer gets its runtime,
+      prompts, and active policy from a pinned external source, separately
+      hosted service, or target base branch — never the PR head it reviews.
+    observe:
+      - "review wiring identifies a trusted runtime and policy source outside the PR head"
+      - "proposed reviewer changes can only affect a separate unprivileged shadow run, not their own authoritative review"
+
   - id: comment-resolution-loop-gated
     level: standard
     requires: mechanical

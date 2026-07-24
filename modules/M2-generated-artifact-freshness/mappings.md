@@ -39,7 +39,7 @@ jobs:
   freshness:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: sh reference/triad/check-index-fresh.sh <docs-dir>
 ```
 
@@ -57,7 +57,7 @@ jobs:
   schema-drift:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: ./reference/ephemeral-replay/check-schema-drift.sh <migrations-dir> <schema.sql>
 ```
 

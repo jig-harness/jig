@@ -26,7 +26,7 @@ jobs:
   adr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }
       - name: ADR numbers unique (blocking)
         run: reference/numbering-gate/check-adr-numbers.sh

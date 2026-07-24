@@ -36,6 +36,20 @@ bash + grep + git, so they work under any of them.
 | Run summary | `$GITHUB_STEP_SUMMARY` | Job log / MR widget (no direct equivalent; a comment bot if needed) |
 | Commit-msg marker re-check | Step iterating `git rev-list` over PR commits (see template) | Same script; diff range `$CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD` |
 
+## Immutable third-party automation and updates
+
+Pinning and updating are one mechanism with two halves:
+
+| Provider | Immutable reference | Maintenance path |
+|----------|---------------------|------------------|
+| GitHub Actions | `uses: owner/action@<full-commit-sha> # v<release>` | Configure Renovate's `github-actions` manager, Dependabot's `github-actions` ecosystem, or an equivalent updater to propose new commits through the normal PR gates |
+| GitLab CI components/includes | Pin a component release or project include to the provider's immutable commit form; do not follow a default branch | Configure a dependency updater that understands the include syntax, or keep a machine-readable registry plus a scheduled stale-pin check |
+| Containerized CI tools | Pin the image digest and retain the human-readable release in a comment or variable | Let the updater propose digest changes, then run the same gate/self-test contract before merge |
+
+Keep compatibility restrictions next to the updater policy with a reason,
+owner, review date, tested range, and removal condition. A permanently ignored
+update or unexplained version ceiling is hidden maintenance debt.
+
 ## Where each piece lands
 
 | M1 piece | This module ships | You install it at |

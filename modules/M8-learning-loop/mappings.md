@@ -27,14 +27,14 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: reference/corpus-lint/test-check-corpus.sh
       - run: CORPUS=corpus.yaml reference/corpus-lint/check-corpus.sh
   parity:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-commit-sha> # v4
       - run: ./scripts/parity-snapshot > parity.tsv      # from your telemetry
       - run: MIN_PRECISION=0.90 reference/parity-report/check-parity.sh parity.tsv
 ```
