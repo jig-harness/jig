@@ -1,0 +1,9 @@
+# Trails whose "sha" is an ordinary English word that happens to be valid hex.
+# All must FAIL: a bare hex run names no commit, and `moot defaced` is exactly the
+# frictionless dismissal the trail requirement exists to refuse.
+T-7101 moot  defaced
+T-7102 moot  deadbeef
+T-7103 addressed  effaced
+T-7104 deferred  accede
+T-7105 moot  commit defacedly
+T-7106 addressed  sha: deadbeefery

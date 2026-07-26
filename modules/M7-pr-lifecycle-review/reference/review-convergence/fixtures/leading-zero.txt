@@ -1,0 +1,7 @@
+# A count the producer zero-padded. Must error: bash arithmetic reads 08 as
+# octal, so the comparison would die and the gate would emit NO decision — worse
+# than a wrong one, for something whose exit code is control flow.
+pr_state: open
+open_threads: 08
+round: 3
+reviewer: alice reported

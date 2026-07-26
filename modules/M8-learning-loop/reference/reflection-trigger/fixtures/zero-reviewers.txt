@@ -1,0 +1,2 @@
+# A record naming no reviewers cannot describe a settled round.
+CONVERGED round=5 open_threads=0 reviewers=0/0 pr_state=open

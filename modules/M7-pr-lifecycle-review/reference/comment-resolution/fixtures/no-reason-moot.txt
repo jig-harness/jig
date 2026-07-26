@@ -1,0 +1,5 @@
+# A 'moot' thread with no trail. Must FAIL: claiming a finding no longer applies
+# is a claim about the code, so it must say WHAT superseded it. Without that,
+# 'moot' becomes the frictionless way to dismiss anything.
+T-5001 addressed  fixed in a1b2c3d
+T-5002 moot

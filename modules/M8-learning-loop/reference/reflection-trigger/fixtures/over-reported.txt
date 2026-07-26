@@ -1,0 +1,3 @@
+# More reviewers reported than expected — a producer that cannot be trusted about
+# "everyone reported", which is the only field that matters here.
+CONVERGED round=5 open_threads=0 reviewers=3/2 pr_state=open

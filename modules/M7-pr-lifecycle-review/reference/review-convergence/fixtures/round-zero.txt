@@ -1,0 +1,7 @@
+# `round` is 1-based, so a 0th round is not a round. Must error rather than
+# reporting CONVERGED for a loop that never ran a pass — an invalid measurement
+# that would then flow on to M8's reflection trigger.
+pr_state: open
+open_threads: 0
+round: 0
+reviewer: alice reported

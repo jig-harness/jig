@@ -1,0 +1,3 @@
+# An unresolved thread must export as `open` and FAIL the gate.
+T-9301	true	**accepted** — fixed in a1b2c3d
+T-9302	false	This still looks wrong to me

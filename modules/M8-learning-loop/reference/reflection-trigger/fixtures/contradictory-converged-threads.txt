@@ -1,0 +1,2 @@
+# CONVERGED while threads are open. The gate would have said WORK.
+CONVERGED round=5 open_threads=2 reviewers=2/2 pr_state=open

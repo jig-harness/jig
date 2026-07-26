@@ -1,0 +1,9 @@
+# Replies NEWEST FIRST, several rows per thread. T-9501's newest reply is a
+# reviewer's acknowledgement; the verdict is the one below it and must still win.
+# T-9502 has only acknowledgements — nothing declared, so `unclassified`.
+T-9501	true	confirmed, thanks
+T-9501	true	**accepted** — added the guard in a1b2c3d
+T-9501	true	this needs a guard on the retry path
+T-9502	true	sounds good
+T-9502	true	I moved that call into the caller
+T-9503	false	still looks wrong — and here is an **accepted** decoy

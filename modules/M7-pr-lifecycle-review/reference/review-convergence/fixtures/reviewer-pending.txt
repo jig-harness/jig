@@ -1,0 +1,8 @@
+# THE EARLY-STOP TRAP. Zero open threads, but alice has not reported, so her
+# comments have not posted. A naive "any open threads?" check reads this as
+# convergence and abandons live findings.
+pr_state: open
+open_threads: 0
+round: 2
+reviewer: shadow-reviewer reported
+reviewer: alice pending

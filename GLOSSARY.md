@@ -178,9 +178,32 @@ capitalized as commonly written; cross-references are *italicized*.
   containment guards that keep it from flooding a PR or running untrusted code)
   and a repo-specific **config** (which reviewers, which lenses, which posture).
 - **Comment-resolution loop** — the discipline that every PR review thread
-  reaches a terminal state before merge — **addressed**, **rejected** (with a
-  reason), or **deferred** (with a filed follow-up) — each leaving an audit
-  trail. Scope expansion and overruling a human thread stay *HITL*.
+  reaches a terminal state before merge — **addressed** (fixed here),
+  **rejected** (with a reason), **deferred** (with a filed follow-up), or *moot*
+  — each leaving an audit trail. Scope expansion and overruling a human thread
+  stay *HITL*.
+- **Moot (as a resolution)** — the terminal state for a review finding whose
+  anchored code no longer exists: deleted or rewritten by a later commit.
+  Distinct from *rejected* on purpose — rejected asserts the reviewer was
+  **wrong**, moot asserts it may have been **right about code that is gone**.
+  Collapsing the two feeds a *miss→lens flywheel* false positives the reviewer
+  never committed, training away findings it got right. Still needs a trail
+  naming what superseded it.
+- **Declared verdict** — the resolution state written by the author, in a
+  machine-readable form anchored to a fixed position in the reply, at the moment
+  of replying — rather than reconstructed later from the thread's prose.
+  Reconstruction loses acceptances far more often than rejections, so anything
+  downstream that counts outcomes inherits that bias.
+- **Export adapter** — the small, checked-in translation step between a forge's
+  API and a gate's input format. A forge offers an id, a resolved boolean and
+  free text; a gate wants a closed set of states. Keeping the mapping in one
+  place — including local vocabulary and an explicit "cannot tell" — means it
+  can be tested against the gate it feeds, instead of being re-improvised in
+  every workflow that calls the gate.
+- **Review round** — one pass of the review loop: reviewers comment, the author
+  resolves, the push re-triggers the reviewers. Because resolving *causes* the
+  next round, "no open threads" is not the loop's stop condition; a round that is
+  settled — every expected reviewer has reported — with nothing left is.
 - **Precision bar** — the pre-committed threshold of measured precision an
   automated reviewer (or *lens*) must clear before it may be promoted from
   comment-only to blocking. Recorded up front so "advisory forever" is visible.

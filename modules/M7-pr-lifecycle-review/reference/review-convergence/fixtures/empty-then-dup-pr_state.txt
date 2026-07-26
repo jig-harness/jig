@@ -1,0 +1,9 @@
+# 'pr_state' declared empty and then again with a value. Must ERROR: the schema says
+# exactly once, and keying duplicate detection on "value still empty" lets the
+# malformed line disappear instead of being reported.
+pr_state: open
+open_threads: 0
+round: 2
+reviewer: alice reported
+pr_state:
+pr_state: 1

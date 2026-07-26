@@ -1,0 +1,3 @@
+# An unknown decision token, in an otherwise complete record — so this fixture
+# isolates token validation instead of also failing on missing fields.
+MAYBE round=5 open_threads=0 reviewers=2/2 pr_state=open

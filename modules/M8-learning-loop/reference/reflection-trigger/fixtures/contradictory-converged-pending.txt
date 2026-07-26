@@ -1,0 +1,3 @@
+# CONVERGED with a reviewer still pending. The gate would have said WAIT — this is
+# the early stop, laundered through a hand-written decision file.
+CONVERGED round=5 open_threads=0 reviewers=1/2 pr_state=open

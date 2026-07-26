@@ -1,0 +1,2 @@
+# The PR was merged out from under the loop — no convergence to reflect on.
+ABORT round=6 open_threads=1 reviewers=2/2 pr_state=merged

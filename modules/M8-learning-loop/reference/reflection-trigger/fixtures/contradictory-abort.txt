@@ -1,0 +1,2 @@
+# ABORT on an open PR with nothing left to do. The gate would have said CONVERGED.
+ABORT round=5 open_threads=0 reviewers=2/2 pr_state=open

@@ -1,0 +1,4 @@
+# M7-shaped and self-contradictory: CONVERGED with threads still open, a reviewer
+# still out, on a merged PR. The authoritative gate would have emitted ABORT.
+# Must ERROR — accepting it records a convergence that never happened.
+CONVERGED round=5 open_threads=2 reviewers=1/2 pr_state=merged

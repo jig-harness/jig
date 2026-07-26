@@ -1,0 +1,7 @@
+# THE ORPHANING TRAP. The PR merged mid-loop. Every fix pushed from here lands on
+# a branch nothing will merge — silently, with no error raised.
+pr_state: merged
+open_threads: 2
+round: 4
+reviewer: shadow-reviewer reported
+reviewer: alice reported

@@ -3,15 +3,30 @@
 > TEMPLATE — copy to your repo (e.g. `docs/development/pr-lifecycle.md`) and
 > adjust the forge-specific steps (the `<...>` bits). This is the narrative
 > contract for how a change moves from branch to merged; the executable steps
-> (skills, gates, bots) are referenced, not restated. Invariant it encodes:
+> (skills, gates, bots) are referenced, not restated.
+>
+> **On copying, repoint every link.** The links below are written relative to this
+> file's home in the groundwork module (`../reference/...`, `../../M8-...`) so they
+> resolve while you are reading it here. At the destination above they would
+> resolve to `docs/reference/...`, which does not exist. Point each one at wherever
+> you vendored the module — the same path you set `M7` to in your CI wiring — or at
+> your own copy of the gate, or delete it if you did not adopt that piece. A dead
+> link in the contract everyone is told to read is how a gate quietly stops being
+> the thing people follow.
+>
+> Invariant it encodes:
 > **PRs open as drafts; a human marks Ready and a human merges; every review
-> thread ends resolved with an audit trail.**
+> thread ends resolved with an audit trail, in a terminal state the author
+> declares rather than one anybody infers later; and review is a loop over
+> rounds whose stop condition is a round that finds nothing left.**
 
 ## The loop
 
 ```
 branch → open DRAFT PR → self-review → CI + automated review + human review
-      → resolve-comments loop (repeat until zero open threads)
+      → resolve-comments loop, one ROUND per push:
+            resolve every thread → push → reviewers re-run → repeat
+            until a round is settled with nothing left  (not merely "nothing open")
       → gates green → mark READY (human) → merge (human) → update tracker
 ```
 
@@ -63,16 +78,33 @@ from [M3](../../M3-change-area-catalog/)'s review-gate projection.
 ### 4. The resolve-comments loop
 
 Every review thread — from a human or a bot — must reach a **terminal state**.
-There are exactly three, and each leaves an audit trail:
+There are exactly four, the set is **closed** (an unrecognised state fails rather
+than passing), and each leaves an audit trail:
 
 | Outcome | What it means | Trail required |
 |---------|---------------|----------------|
-| **Addressed** | fixed in the PR | the commit / change that fixes it, linked in the thread; then resolve the thread |
-| **Rejected** | won't fix | a stated reason in the thread; then resolve |
-| **Deferred** | fix later | a filed follow-up item (with its id), linked; then resolve |
+| **Addressed** | accepted and fixed here | the commit / change that fixes it, linked in the thread; then resolve |
+| **Rejected** | the finding is wrong or the behaviour is intended | a stated reason in the thread; then resolve |
+| **Deferred** | accepted, but not fixed here | the follow-up item it was filed as, with its id; then resolve |
+| **Moot** | no longer applies — the code it anchored to is gone | the commit / change that superseded it; then resolve |
 
-Repeat the loop — new commits may draw new comments — until **zero threads are
-open**. Two things are **not** an agent's call and stop for a human
+**Moot is not a polite Rejected.** Rejected asserts the reviewer was *wrong*;
+moot asserts it may have been *right about code that no longer exists*. Collapsing
+them tells a learning loop ([M8](../../M8-learning-loop/)) that the reviewer
+produced a false positive when it did not, which trains away findings it got
+right. Three of the four states claim that some change exists — "fixed here",
+"tracked there", "superseded by that" — so for those, prose is not a trail: name
+the commit, the follow-up id, or the URL.
+
+**Declare the state; do not leave it to be inferred.** Write it in the reply, in
+whatever anchored form your repo picked (`<...>` — a leading token, or a trailing
+`Verdict:` line), at the moment you reply. Reconstructing verdicts from prose
+afterwards loses acceptances far more often than rejections, which quietly biases
+anything downstream that counts them. If a reply is genuinely *not* a verdict — a
+clarifying question mid-thread — say so explicitly rather than inventing a state;
+"cannot tell" is a real outcome and must not be rounded to a real one.
+
+Two things are **not** an agent's call and stop for a human
 ([HITL](#human-in-the-loop-boundaries)):
 
 - **Scope expansion.** If addressing a comment means changing something outside
@@ -80,11 +112,25 @@ open**. Two things are **not** an agent's call and stop for a human
 - **Overruling a human.** An agent may not resolve a *human* reviewer's thread
   by rejection on its own judgment; a human decides.
 
-**Exit:** every thread is Addressed / Rejected / Deferred and resolved; zero
-open threads.
+#### Knowing when the loop is done
+
+Resolving a round means pushing, and pushing re-triggers the reviewers, so
+"zero open threads" is **not** the stop condition. Two rules, and both failures
+are silent — no error is raised either way:
+
+- **Zero open threads while a reviewer is still running is not convergence.**
+  That round's comments have not posted yet; stopping there abandons live
+  findings and looks exactly like success.
+- **Re-check that the PR is still open, every round.** A merge or close that
+  lands mid-loop orphans every later fix onto a branch nothing will merge.
+
+**Exit:** a round in which every thread is Addressed / Rejected / Deferred / Moot
+with its trail, every reviewer has reported, and the PR is still open.
 **Executable:** the unresolved-threads merge gate
-[`check-threads-resolved.sh`](../reference/comment-resolution/), fed by the
-thread-state export step in [`mappings.md`](../mappings.md).
+[`check-threads-resolved.sh`](../reference/comment-resolution/) — fed by the
+verdict export adapter, not by raw reply text — and the per-round
+[convergence check](../reference/review-convergence/), whose exit code drives the
+loop. Both are wired in [`mappings.md`](../mappings.md).
 
 ### 5. Gates green, then Ready, then merge
 
@@ -102,6 +148,12 @@ branch protection requiring a human actor — see the
 
 On merge, move the tracked work item to its next state and record anything the
 next agent needs (a follow-up filed in step 4, a decision worth an ADR).
+
+A change that took **many rounds** to converge is itself a signal: usually the
+scaffolding under-served it, not that the reviewer was noisy. Feed the round count
+to the learning loop rather than letting it evaporate with the session — see
+[M8](../../M8-learning-loop/)'s
+[reflection trigger](../../M8-learning-loop/reference/reflection-trigger/).
 
 **Executable:** your tracker's transition command / task update (see
 [M9](../../M9-tasks-memory/)).

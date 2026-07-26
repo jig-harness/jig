@@ -1,0 +1,9 @@
+# The same bot counted twice, once per artifact it left behind. Must ERROR: a
+# repeated identity is a producer bug, not a second vote, and letting it through
+# is exactly how "everyone reported" stops meaning anything.
+pr_state: open
+open_threads: 0
+round: 2
+reviewer: coderabbit reported
+reviewer: coderabbit reported
+reviewer: alice pending

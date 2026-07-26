@@ -1,0 +1,5 @@
+# Closed without merging: same orphaning, same abort.
+pr_state: closed
+open_threads: 0
+round: 2
+reviewer: alice reported

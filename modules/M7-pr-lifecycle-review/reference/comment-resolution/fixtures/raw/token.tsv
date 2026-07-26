@@ -1,0 +1,8 @@
+# Forge rows using the leading-token encoding: bold markers, an em-dash
+# separator, a `state:` variant, and the `accepted` synonym. All resolved, so
+# the produced states file must PASS the gate.
+# <thread-id>\t<resolved>\t<last reply body>
+T-9001	true	**accepted** — added the guard in a1b2c3d
+T-9002	true	**rejected** — intended: the retry is handled one layer up in the caller
+T-9003	true	deferred: filed as ISSUE-482 (perf tuning, out of scope here)
+T-9004	true	**moot** — superseded by the rewrite in 4f5a6b7

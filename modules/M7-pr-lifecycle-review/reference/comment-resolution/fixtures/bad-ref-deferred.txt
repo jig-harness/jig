@@ -1,0 +1,4 @@
+# A 'deferred' thread with a promise instead of a filed follow-up. Must FAIL:
+# "later" is not a reference, and a deferral nobody can find is an abandonment.
+T-6101 deferred  later
+T-6102 deferred  will do this next quarter

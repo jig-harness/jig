@@ -1,0 +1,2 @@
+# An ordinary review — one round. Must not fire, or the habit gets switched off.
+CONVERGED round=1 open_threads=0 reviewers=2/2 pr_state=open

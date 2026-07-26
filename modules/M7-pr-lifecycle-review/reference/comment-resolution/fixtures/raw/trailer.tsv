@@ -1,0 +1,5 @@
+# The trailing-trailer encoding. Flattening a multi-line reply turns "on its own
+# line" into "at the end of the body", so the trailer is the last thing here.
+T-9101	true	Added the guard in a1b2c3d. Verdict: accepted
+T-9102	true	Filed as ISSUE-901 for next cycle. Verdict: deferred
+T-9103	true	The whole helper went away in 4f5a6b7. Verdict: superseded

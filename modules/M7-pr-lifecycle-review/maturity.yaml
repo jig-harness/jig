@@ -60,10 +60,65 @@ criteria:
     requires: mechanical
     statement: >-
       Every review thread reaches a terminal state (addressed / rejected /
-      deferred) with an audit trail, and no PR merges with an open thread.
+      deferred / moot) with an audit trail, and no PR merges with an open
+      thread.
     observe:
-      - "the address/reject/defer loop contract is documented"
+      - "the addressed/rejected/deferred/moot loop contract is documented"
       - "an unresolved-threads check runs as a required merge gate in CI"
+      - "the state set is closed — an unrecognised state fails rather than passing"
+      - "a state claiming a change (addressed / deferred / moot) fails without a reference to one, not merely with blank text"
+
+  - id: moot-distinct-from-rejected
+    level: standard
+    requires: convention
+    statement: >-
+      A finding whose anchored code no longer exists has its own terminal state,
+      distinct from rejection, so a learning loop is not told the reviewer was
+      wrong when it was right about deleted code.
+    observe:
+      - "a moot (or equivalently named) state exists and is documented as distinct from rejection"
+      - "it requires a trail naming what superseded the finding"
+
+  # Two rungs of the same obligation. The convention — an anchored encoding, and
+  # an exporter that decodes it — is what Standard asks for. Validating the
+  # verdict as it is WRITTEN is strictly more, and is the rung below.
+  - id: verdict-declared-not-inferred
+    level: standard
+    requires: convention
+    statement: >-
+      The author declares the terminal state in a machine-readable, anchored
+      form at reply time, rather than leaving it to be reconstructed from prose.
+    observe:
+      - "a verdict encoding is specified (leading token, trailer, or forge field) and anchored to a fixed position, not a free-text search"
+      - "an export adapter decodes that encoding onto the gate's closed state set, rather than passing reply prose to the gate"
+      - "'cannot tell' is its own exported value, distinguishable from a real state"
+
+  # Encoding-agnostic on purpose: this scores THAT the verdict is validated where
+  # it is written, never which encoding was picked. Groundwork states no
+  # preference between a leading token and a trailer (see mappings.md).
+  - id: verdict-validated-at-write-time
+    level: strict
+    requires: mechanical
+    statement: >-
+      The tool that posts thread replies validates the declared verdict as the
+      reply is written, so a missing verdict fails immediately instead of
+      becoming an unclassifiable row at export.
+    observe:
+      - "the reply-posting tool rejects a reply carrying no verdict, at write time"
+      - "an explicit opt-out flag exists for replies that are deliberately not a verdict"
+
+  - id: review-loop-convergence-rules
+    level: strict
+    requires: mechanical
+    statement: >-
+      The loop's stop condition distinguishes 'no open threads' from 'the
+      reviewer has not reported yet', and re-checks that the PR is still open
+      each round.
+    observe:
+      - "a convergence check runs per round and its result is the loop's control flow, not a person's judgement"
+      - "convergence waits for the reviewer to settle before declaring zero threads a stop"
+      - "the loop aborts when the PR stops being open, rather than pushing to a branch that will not merge"
+      - "the check counts every thread the merge gate would reject, not only those literally marked open"
 
   - id: pr-target-wiring-fork-safe
     level: standard

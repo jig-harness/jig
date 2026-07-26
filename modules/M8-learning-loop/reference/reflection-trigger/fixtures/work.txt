@@ -1,0 +1,2 @@
+# Still mid-loop. Reflection fires AT convergence, not before.
+WORK round=4 open_threads=3 reviewers=2/2 pr_state=open

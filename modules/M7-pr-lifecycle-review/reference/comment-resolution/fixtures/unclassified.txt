@@ -1,0 +1,6 @@
+# A thread the forge reports resolved, but whose reply declares no verdict — what
+# the exporter emits when it cannot tell. Must FAIL, and with its own message:
+# folding "cannot tell" into a real state is the loss the declared-verdict
+# invariant exists to prevent.
+T-7001 addressed  fixed in a1b2c3d
+T-7002 unclassified  thanks, good catch — I moved that call into the caller

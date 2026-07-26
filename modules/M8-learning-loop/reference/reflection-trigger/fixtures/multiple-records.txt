@@ -1,0 +1,4 @@
+# A stale record left above the current one. Must error rather than firing on
+# the first line — that would record a convergence for a loop that was orphaned.
+CONVERGED round=5 open_threads=0 reviewers=2/2 pr_state=open
+ABORT round=6 open_threads=1 reviewers=2/2 pr_state=merged

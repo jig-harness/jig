@@ -1,0 +1,6 @@
+# A 'moot' thread whose trail is nonblank but names nothing. Must FAIL: a
+# nonblank-text check is what lets `moot x` pass, and `moot` is the state that
+# must not become the frictionless way to dismiss a finding.
+T-6001 addressed  fixed in a1b2c3d
+T-6002 moot  x
+T-6003 moot  no longer relevant after the refactor

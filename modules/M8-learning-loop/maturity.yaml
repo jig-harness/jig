@@ -105,3 +105,18 @@ criteria:
     observe:
       - "a promote-memory step lifts private memory into a git-tracked shared store"
       - "promotion is a review point, not unattended"
+
+  - id: reflection-triggered-on-an-observable
+    level: strict
+    requires: mechanical
+    statement: >-
+      Session reflection is prompted by an observable signal — such as a review
+      whose FINAL round count, at convergence, met a threshold — rather than by
+      the author remembering, and the signal is recorded so entries can be
+      ranked.
+    observe:
+      - "the trigger fires on a converged review whose final round count met the threshold — not mid-loop, where the count is not yet the answer"
+      - "the trigger runs as a step in the review loop, not as an instruction to remember"
+      - "the reflection record carries the triggering measurement — the change id and the count — written by the trigger rather than by hand"
+      - "the threshold is configurable, and firing on every change is not the default"
+      - "a record already filed for that change and count is not filed again, including after the inbox entry has been processed"

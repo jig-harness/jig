@@ -1,0 +1,7 @@
+# Threads to resolve. Fix, push, run the next round — the normal case, and not a
+# failure.
+pr_state: open
+open_threads: 4
+round: 1
+reviewer: shadow-reviewer reported
+reviewer: alice reported

@@ -1,0 +1,4 @@
+# A resolved thread whose reply declares no verdict. Must become `unclassified`
+# — not a guessed state — and must FAIL the gate.
+T-9201	true	**accepted** — fixed in a1b2c3d
+T-9202	true	Thanks, good catch — I moved that call into the caller

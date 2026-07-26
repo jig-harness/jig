@@ -1,0 +1,6 @@
+# Round settled: every named reviewer reported, nothing left open. Loop may stop.
+pr_state: open
+open_threads: 0
+round: 3
+reviewer: shadow-reviewer reported
+reviewer: alice reported

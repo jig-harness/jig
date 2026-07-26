@@ -1,0 +1,5 @@
+# No open_threads. Defaulting it would manufacture the confidence this gate
+# exists to withhold, so a missing key is an error.
+pr_state: open
+round: 1
+reviewer: alice reported

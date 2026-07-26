@@ -1,0 +1,2 @@
+# A non-boolean resolved column is schema drift, not a thread to guess about.
+T-9401	yes	**accepted** — fixed in a1b2c3d

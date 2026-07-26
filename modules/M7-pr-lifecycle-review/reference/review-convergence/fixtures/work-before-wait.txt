@@ -1,0 +1,8 @@
+# Unsettled round WITH open threads: there is work in hand either way, so this
+# must read as WORK, not WAIT.
+pr_state: open
+open_threads: 3
+round: 2
+reviewer: shadow-reviewer reported
+reviewer: coderabbit pending
+reviewer: alice pending

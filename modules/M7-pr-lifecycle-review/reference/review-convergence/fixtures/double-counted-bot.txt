@@ -1,0 +1,9 @@
+# THE COUNTING TRAP that identities exist to prevent. A bot leaves TWO artifacts
+# behind — a check run and a posted review — so a producer summing signals rather
+# than identities reports 2 of 2 reported here and declares CONVERGED, while
+# alice has not looked yet. Named, it is plainly 1 of 2: WAIT.
+pr_state: open
+open_threads: 0
+round: 2
+reviewer: coderabbit reported
+reviewer: alice pending

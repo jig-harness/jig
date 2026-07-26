@@ -1,0 +1,6 @@
+# No reviewer named at all. Must ERROR rather than converge: a round that settled
+# nothing is not a settled round, and an unenumerated producer looks exactly like
+# a PR nobody reviewed.
+pr_state: open
+open_threads: 0
+round: 1

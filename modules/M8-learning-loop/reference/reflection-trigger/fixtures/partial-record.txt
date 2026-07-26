@@ -1,0 +1,3 @@
+# Starts with the right word but is not an M7 record. Must error: anything that
+# can be mistaken for a decision could otherwise write durable evidence.
+CONVERGED round=5
