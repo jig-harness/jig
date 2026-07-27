@@ -78,7 +78,9 @@ else
     exit 2
   fi
   command -v gh >/dev/null 2>&1 || { echo "error: gh CLI not found" >&2; exit 2; }
-  [ -n "$branch" ] || branch=$(gh_api "repos/$repo" --jq .default_branch)
+  if [ -z "$branch" ]; then
+    branch=$(gh_api "repos/$repo" --jq .default_branch) || { echo "error: could not determine default branch for $repo (gh api failed or timed out)" >&2; exit 2; }
+  fi
   errfile=$(mktemp) || { echo "error: could not create a temp file for gh api stderr" >&2; exit 2; }
   trap 'rm -f "$errfile"' EXIT
   if ! json=$(gh_api "repos/$repo/branches/$branch/protection" 2>"$errfile"); then
