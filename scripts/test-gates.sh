@@ -57,4 +57,6 @@ else
   bad=1
 fi
 
+"$here/test-check-branch-protection.sh" || bad=1
+
 exit "$bad"
