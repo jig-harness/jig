@@ -1,0 +1,4 @@
+areas:
+  web-app:
+    paths: ["apps/web-app/**"]
+    notes: "Replaces the old services/legacy-app code path; see history."

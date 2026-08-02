@@ -1,0 +1,5 @@
+areas:
+  app:
+    paths: ["apps/**"]
+  &dup app:
+    paths: ["rogue/**"]

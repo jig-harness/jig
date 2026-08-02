@@ -1,0 +1,3 @@
+areas: &catalog#v1
+  web-app:
+    paths: ["apps/**"]

@@ -1,0 +1,6 @@
+areas:
+  web-app:
+    paths: ["apps/web-app/**"]
+metadata:
+  unrelated:
+    paths: ["services/**"]

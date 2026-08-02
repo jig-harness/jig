@@ -1,0 +1,3 @@
+areas: &catalog !!map
+  web-app:
+    paths: ["apps/**"]

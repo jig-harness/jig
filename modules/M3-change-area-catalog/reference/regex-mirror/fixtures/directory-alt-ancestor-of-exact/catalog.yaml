@@ -1,0 +1,3 @@
+areas:
+  root-config:
+    paths: ["apps/config.json"]

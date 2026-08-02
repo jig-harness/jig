@@ -1,0 +1,4 @@
+areas:
+  web-app:
+    paths: ["apps/**"]
+    "pa\u0074hs": ["rogue/**"]

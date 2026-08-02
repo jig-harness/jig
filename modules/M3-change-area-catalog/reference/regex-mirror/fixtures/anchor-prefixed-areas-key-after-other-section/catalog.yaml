@@ -1,0 +1,8 @@
+areas:
+  web-app:
+    paths: ["apps/**"]
+metadata:
+  foo: bar
+&dup areas:
+  other:
+    paths: ["rogue/**"]

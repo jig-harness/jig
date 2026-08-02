@@ -1,0 +1,7 @@
+? areas
+:
+  other-area:
+    paths: ["rogue/**"]
+areas:
+  web-app:
+    paths: ["apps/**"]

@@ -1,0 +1,3 @@
+areas:
+  literal-dot:
+    paths: ["apps.web/**"]

@@ -84,7 +84,13 @@ criteria:
     requires: mechanical
     statement: >-
       Any hand-maintained CI shortcut regex is checked against the catalog in
-      both directions, so the shortcut and the catalog cannot diverge.
+      both directions and against the union of files tracked at the current
+      and base refs (the two directional checks alone can pass while a
+      whole unmapped tracked file still slips through — see
+      reference/regex-mirror/README.md).
     observe:
-      - "a check asserts every regex path prefix is represented in the catalog"
-      - "a check asserts every code-bearing catalog path is matched by the regex"
+      - "no hand-maintained CI shortcut regex exists — CI job selection is driven entirely by the resolver (see ci-selection-resolver-driven) — in which case this criterion is vacuously satisfied"
+      - "checkFilterSegmentCoverage asserts every regex alternative's prefix matches a component-boundary literal head of some area's parsed paths: value — never a substring scan of the catalog file's raw text, which a notes: field's prose could satisfy"
+      - "checkFilterCoverage asserts every area whose impliedBy closure reaches the shortcut's target area class has its paths: glob matched by some regex alternative, compared the same parsed-values way"
+      - "a check asserts every tracked file the regex calls code-bearing matches at least one catalog area, checked against the union of current- and base-ref tracked files (checkFilterFileCoverage)"
+      - "if the shortcut gates deployment specifically rather than answering the general \"did any code change?\" question, a check also asserts every matching tracked file's area closure reaches a deploy-critical area (checkFilterCodeAreaCoverage)"

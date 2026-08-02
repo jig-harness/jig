@@ -1,0 +1,3 @@
+areas:
+  dir-file:
+    paths: ["dir\\file/**"]

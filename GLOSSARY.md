@@ -107,6 +107,23 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Fix-and-stage** — the pre-commit hook pattern where an auto-fixer
   (formatter, regenerator) runs and its output is re-staged automatically,
   so the commit lands already clean instead of failing.
+- **Area class** — a repo-chosen boolean partition of *change-areas* used to
+  scope a check to "the areas that matter for this question" (e.g. which
+  areas require the heavy build, which gate a deploy). Not a schema field
+  itself — each class is defined by a rule over existing schema fields — but
+  a check that consumes a class must cite its rule, so two implementations
+  can't silently disagree about membership. *Code area* and *deploy-critical
+  area* are the two instances used by the *change-area catalog*'s
+  regex-mirror guard.
+- **Code area** — the *area class* answering "must the heavy build run for a
+  change here?", repo-defined (e.g. every area whose `category` isn't a
+  docs-only tag). Used by `checkFilterCoverage` to decide which areas a fast
+  CI shortcut regex must never miss. Not identical to *deploy-critical
+  area* — a CI-infra area can be code-bearing without ever being deployed.
+- **Deploy-critical area** — the *area class* of every area whose
+  `deployTier` is not `none`, read directly off the schema field (unlike
+  *code area*, which is repo-chosen). Used by `checkFilterCodeAreaCoverage`
+  to decide whether a file's resolved areas actually gate a deploy.
 
 ## Process
 

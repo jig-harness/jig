@@ -1,0 +1,3 @@
+areas:#note
+  web-app:
+    paths: ["apps/**"]

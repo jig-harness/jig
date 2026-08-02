@@ -1,0 +1,4 @@
+areas:
+  web-app:
+    paths: ["apps/**"]
+    &dup paths: ["rogue/**"]

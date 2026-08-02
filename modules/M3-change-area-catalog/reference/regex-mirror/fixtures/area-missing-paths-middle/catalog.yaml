@@ -1,0 +1,5 @@
+areas:
+  web-app:
+    category: code
+  core-lib:
+    paths: ["packages/core-lib/**"]

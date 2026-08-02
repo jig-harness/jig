@@ -1,0 +1,3 @@
+areas:
+  odd-name:
+    paths: ["apps/foo,bar/**"]

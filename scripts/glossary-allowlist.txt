@@ -50,6 +50,9 @@ BASE
 UI
 LLM
 SDK
+ERE
+CRLF
+EOF
 OpenAPI
 POSIX
 ORM
@@ -62,6 +65,7 @@ SQL
 HTML
 HTTP
 HTTPS
+URI
 ID
 DB
 OS
@@ -71,6 +75,7 @@ OSS
 ESM
 PID
 # vendor/product names
+PyYAML
 OpenAI
 GPT
 MySQL

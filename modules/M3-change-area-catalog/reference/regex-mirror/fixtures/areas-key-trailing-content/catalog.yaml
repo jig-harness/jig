@@ -1,0 +1,3 @@
+areas: invalid
+  web-app:
+    paths: ["apps/**"]

@@ -1,0 +1,3 @@
+areas:
+  quoted-name:
+    paths: ["apps/foo\"bar/**"]

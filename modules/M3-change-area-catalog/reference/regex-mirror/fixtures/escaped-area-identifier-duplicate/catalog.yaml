@@ -1,0 +1,5 @@
+areas:
+  "web\u002dapp":
+    paths: ["apps/**"]
+  web-app:
+    paths: ["rogue/**"]

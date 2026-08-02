@@ -1,0 +1,5 @@
+areas:
+  broken:
+    paths: "apps/**"
+  web-app:
+    paths: ["apps/**"]

@@ -1,0 +1,7 @@
+areas:
+  web-app:
+    paths: ["apps/web-app/**"]
+    notes: |
+      The removed CI shortcut config used to read:
+      paths: ["services/**"]
+      That path is no longer code-bearing; kept here only as history.

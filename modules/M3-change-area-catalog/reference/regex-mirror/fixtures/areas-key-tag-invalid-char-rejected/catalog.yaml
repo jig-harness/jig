@@ -1,0 +1,3 @@
+areas: !tag<x>
+  web-app:
+    paths: ["apps/**"]

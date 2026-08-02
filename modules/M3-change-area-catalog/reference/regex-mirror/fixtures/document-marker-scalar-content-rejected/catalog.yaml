@@ -1,0 +1,4 @@
+--- junk
+areas:
+  web-app:
+    paths: ["apps/**"]
