@@ -1,0 +1,92 @@
+// Renovate update policy for groundwork itself (dogfoods M1's "pin and update"
+// invariant: see modules/M1-gates-enforcement-ladder/mappings.md).
+//
+// Scope: this repo has no package manifests, Dockerfiles, or lockfiles. The
+// only dependencies Renovate can manage are GitHub Actions `uses:` references
+// in .github/workflows/. Example workflows under modules/*/templates/ and test
+// fixtures are out of scope (config:recommended already ignores fixtures, and
+// the template paths are not workflow directories).
+//
+// Every update arrives as a normal PR and runs the same gates as any other
+// change (./scripts/gates.sh). Nothing auto-merges: a human reviews each one.
+//
+// Renovate only acts once its GitHub App is installed on the repo, which is a
+// host-side (org admin) step and cannot be enabled from this file.
+//
+// Validate after editing:
+//   npx --yes --package renovate -- renovate-config-validator --strict --no-global renovate.json5
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  // Sensible defaults for managers, ignore paths, and PR behavior.
+  extends: ["config:recommended"],
+
+  // One issue that lists every pending and rate-limited update.
+  dependencyDashboard: true,
+
+  // --- Supply-chain caution -------------------------------------------------
+
+  // Wait 3 days after a release is published before proposing it, so a
+  // yanked or compromised release is usually gone before we see it.
+  minimumReleaseAge: "3 days",
+
+  // Hold back the branch itself (not just the PR) until the age check passes;
+  // otherwise Renovate creates the branch early with a pending status.
+  internalChecksFilter: "strict",
+
+  // --- Noise control --------------------------------------------------------
+
+  // Batch updates into one weekly window (UTC, Renovate's default timezone;
+  // set `timezone` to shift it to local time).
+  schedule: ["before 6am on monday"],
+
+  // The schedule only gates new branches by default; without this, Renovate
+  // would keep updating and rebasing open PR branches (rerunning CI) all week.
+  updateNotScheduled: false,
+
+  // Cap open Renovate PRs and creation rate.
+  prConcurrentLimit: 3,
+  prHourlyLimit: 2,
+
+  // --- PR conventions -------------------------------------------------------
+
+  // Titles follow the repo's Conventional Commits rule (see AGENTS.md):
+  // `chore(deps): ...`, overridden per manager below.
+  semanticCommits: "enabled",
+  semanticCommitType: "chore",
+  semanticCommitScope: "deps",
+  labels: ["dependencies"],
+
+  // --- Security updates -----------------------------------------------------
+
+  // Fixes for known vulnerabilities must not wait for Monday or the 3-day age
+  // window, so they override both settings above.
+  //
+  // Caveat: this only fires when GitHub raises a vulnerability alert, and
+  // Dependabot does not raise alerts for SHA-pinned Actions (which is all this
+  // repo has). In practice an Action security fix follows the normal weekly
+  // schedule unless a maintainer triggers it from the Dependency Dashboard. The
+  // block is kept so it takes effect if a manifest-based dependency is added.
+  vulnerabilityAlerts: {
+    schedule: ["at any time"],
+    minimumReleaseAge: null,
+    labels: ["dependencies", "security"],
+  },
+
+  // --- Per-manager rules ----------------------------------------------------
+
+  packageRules: [
+    {
+      // Actions are referenced as `uses: owner/action@<full-sha> # vN` so a
+      // moved tag cannot change what CI runs. Renovate keeps the SHA and the
+      // version comment in sync, and proposes all action bumps in one PR.
+      description: "Keep GitHub Actions immutable and bot-maintained; one grouped PR per week",
+      matchManagers: ["github-actions"],
+      pinDigests: true,
+      groupName: "github-actions",
+      // Renovate splits major and non-major updates into separate PRs by default.
+      separateMajorMinor: false,
+      semanticCommitType: "ci",
+    },
+  ],
+}
