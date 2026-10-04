@@ -10,12 +10,13 @@ groundwork work starts here.
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Founding charter (analysis, module map, blueprint) | ✅ done (vendored in `docs/`) |
-| 1 | Codification **in docomply**: C1–C9 canonical docs + drift fixes | ✅ done (epic an issue, all 12 sub-issues; artifacts on docomply `develop` — see Port sources) |
+| 1 | Codification **in docomply**: C1–C9 canonical docs + drift fixes | ✅ done (all 12 codification items; artifacts on docomply `develop` — see Port sources) |
 | 2 | **Bootstrap groundwork**: skeleton, principles, glossary, profiles outline, auditor v0, port M0–M2 | ✅ done 2026-07-19 (all remainder items closed — see below) |
 | 3 | Port M4 docs governance, M5 ADR practice, M3 change-area catalog; add `maturity.yaml` per landed module | ✅ done 2026-07-19 (M3/M4/M5 carry the full contract — see below) |
 | 4 | Port M7 review-harness core + M8 learning loop | ✅ done 2026-07-20 (M7/M8 carry the full contract — see below) |
 | 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ✅ done 2026-07-20 (all five modules carry the full contract; auditor v1 scores M0–M12; greenfield folded in — see below) |
 | ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing (now the active mode — all modules M0–M12 ported) |
+| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and consumed as pinned releases | proposed — see § Runnable tooling |
 
 ## Phase 2 remainder (all closed 2026-07-19; next work is Phase 3)
 
@@ -203,6 +204,39 @@ future). The eval/telemetry *runners* remain target-repo-language jobs, not bash
   use immutable placeholders. Its Markdown gates now scan tracked and
   non-ignored untracked content, so gitignored audit snapshots and local
   workspaces cannot break repository checks.
+
+## Runnable tooling (proposed)
+
+Groundwork takes over the generic agent skills and development tools that
+grew inside the reference implementation, under the placement and porting
+rules in [AGENTS.md](AGENTS.md). Background: docomply's engineering-standards
+decision 0003 and its [extraction inventory](https://github.com/docomply/engineering-standards/blob/main/docs/extraction-inventory.md) classifies every unit and
+orders the move:
+
+1. **Kernel** — Bun/TypeScript toolchain, the Bash gates ported, an installer
+   (pinned release → per-host cache → per-worktree skill links for both Claude
+   Code and Codex), shared test helpers, and a local-checkout override for
+   developing against a working tree.
+2. **Pilot** — `resolve-review-comments`, plus the low-coupling skills.
+3. **Issue-tracker planning cluster** — issue pickup, epic planning,
+   batching, prioritisation, follow-up; the tracker interface is drawn here.
+4. **Gates and workspace infrastructure** — the tooling every other step
+   runs on: the change-area resolver (M3's reference implementation),
+   cross-worktree locks and test infrastructure, remote gates, and the
+   runnable form of M12 (Herdr workspace lifecycle and status board).
+5. **PR drive loop.**
+
+Out of scope: the reference implementation's dev dashboard. It embeds that
+organization's own operating model (its tracker workflow, epics, decisions
+and priorities), so it stays with that organization's tooling rather than
+being abstracted here.
+
+Each unit moves only after every import it has resolves within Groundwork
+(to itself or to units already moved) and its reference-implementation
+values are configuration, and the reference
+implementation's copy is deleted in the same rollout. Charter amendments for
+this phase are in [AGENTS.md](AGENTS.md) (toolchain; tool-bound adapters behind
+interfaces; move, never copy; no issue-tracker references).
 
 ## Port sources (docomply `develop` — Phase 1 artifacts and beyond)
 

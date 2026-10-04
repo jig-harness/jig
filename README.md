@@ -14,7 +14,7 @@ New to these ideas? Every term of art used in this repo is defined in plain
 language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 "SSoT" or "enforcement ladder" is unfamiliar.
 
-## Three ways to use this repo
+## Ways to use this repo
 
 1. **Greenfield template** — starting a new project: follow
    [adoption/greenfield.md](adoption/greenfield.md), which combines a structured
@@ -26,6 +26,9 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
    maturity rung at a time ([adoption/brownfield.md](adoption/brownfield.md)).
 3. **Reference** — cherry-pick a single pattern (e.g., generated-artifact
    freshness gates) from its module.
+4. **Shared tooling** — consume agent skills and development tools as a pinned
+   release rather than copying them between repositories. Being established:
+   see [ROADMAP.md](ROADMAP.md) § Runnable tooling.
 
 ## Structure
 

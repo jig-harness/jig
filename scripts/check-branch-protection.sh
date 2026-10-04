@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Read-only recheck for default-branch protection (an issue, M1 dogfooded).
+# Read-only recheck for default-branch protection (M1 dogfooded).
 #
 # Host settings are a human's call — this script never writes them. It only
 # reads the current state and reports each control the repo's default

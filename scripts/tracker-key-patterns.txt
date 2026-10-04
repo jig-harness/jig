@@ -1,0 +1,6 @@
+# Issue-tracker keys that must not appear in repository content.
+# One extended regular expression per line; see check-no-tracker-refs.sh.
+#
+# The reference implementation's tracker: keys, and links to its issues.
+\bDOC-[0-9]+\b
+linear\.app/docomply/issue

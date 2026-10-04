@@ -9,4 +9,5 @@ root=$(dirname "$here")
 "$here/check-md-links.sh" "$root"
 "$here/check-md-tables.sh" "$root"
 "$here/check-glossary-coverage.sh" "$root"
+"$here/check-no-tracker-refs.sh" "$root"
 echo "all gates passed"

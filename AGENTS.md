@@ -7,9 +7,20 @@ Compatible with Claude Code, Codex, Cursor, and others.
 
 Groundwork extracts the delivery practices of a mature AI-native codebase (the
 docomply monorepo — the private "reference implementation") into a
-vendor-agnostic, tech-stack-flexible, modular template. It serves three uses:
-greenfield template, brownfield upgrade path, and **runnable auditor** that
-scores a target repo and produces actionable recommendations.
+vendor-agnostic, tech-stack-flexible, modular template. Its uses:
+greenfield template, brownfield upgrade path, **runnable auditor** that scores
+a target repo and produces actionable recommendations, and **shared runnable
+tooling** — the agent skills and development tools (PR review loops, issue
+pickup, workspace management, gates) that repositories consume as a pinned
+release instead of copying.
+
+The placement rule for that tooling: a generic mechanism lives here; an
+organization's values (tracker team and labels, review bots, gate commands,
+host names) stay in that organization's own repositories and reach the tooling
+as configuration; product-bound code never comes here. The rules in this file
+are operative as written. The decision that adopted them is background, not a
+source this file defers to: docomply's
+[engineering-standards decision 0003](https://github.com/docomply/engineering-standards/blob/main/docs/decisions/0003-groundwork-hosts-generic-agent-tooling.md).
 
 Read in this order when starting a session here:
 
@@ -30,7 +41,11 @@ Read in this order when starting a session here:
   invariant, then map concrete implementations per ecosystem in the module's
   `mappings.md` (agent runtimes; issue trackers; hook managers; CI providers;
   review bots). Derive-don't-declare where possible: prefer detecting a repo's
-  stack over asking for configuration.
+  stack over asking for configuration. This governs the doctrine. Runnable
+  tooling may be bound to a named tool (Linear, GitHub, Herdr), provided the
+  binding sits behind an interface and a second implementation can be added
+  without touching callers; build the second one when a consumer needs it,
+  not before.
 - **Values vs mechanisms.** Reference material ported from docomply must be
   split: repo-agnostic mechanism into `reference/`, docomply-specific values
   replaced by placeholders or `examples/`. Where docomply hasn't made that
@@ -40,12 +55,28 @@ Read in this order when starting a session here:
   its invention disclosure. When porting a docomply file, strip product-domain
   examples and replace with neutral ones. When in doubt, leave it out and note
   the gap.
+- **No issue-tracker references.** Content here carries no reference to the
+  reference implementation's issue tracker (`DOC-NNNN` keys or links), in
+  documents and in code alike. Rationale must stand on its own: in the module
+  documentation, or in a comment at the code whose shape needs explaining.
+  When moving code in, resolve every such reference: restate the rationale it
+  pointed to where the shape is non-obvious, and drop it where the code or
+  documentation already makes the reason evident. Enforced by
+  `scripts/check-no-tracker-refs.sh`; the key patterns live in
+  `scripts/tracker-key-patterns.txt`.
 - **De-scarring.** Final documents carry no review-finding traces, reviewer
   dialogue, or "addressed/fixed" annotations — that history lives in PRs and
   issues. A light version-history section is fine.
-- **Don't port the unproven.** Dark-by-default dials, unvalidated eval
-  fixtures, and aspirational hooks from the reference implementation stay out
-  until validated there. Note them as "future" in the module README instead.
+- **Don't port the unproven; move, never copy.** Dark-by-default dials,
+  unvalidated eval fixtures, and aspirational hooks from the reference
+  implementation stay out until validated there — note them as "future" in the
+  module README instead. Active use shows that tooling is needed, not that
+  every part of it is validated: a moved tool brings its own tests, and any
+  part of it that is dark by default or unvalidated still stays out under the
+  rule above. Port it by moving the operated source here and deleting the
+  reference implementation's copy in the same rollout, never by rewriting a
+  parallel copy. A rewritten copy becomes a fork the moment the original takes
+  its next fix.
 - Markdown: blank line before every table (many renderers break otherwise).
 
 ## Module contract
@@ -78,19 +109,32 @@ the enforcement ladder: *absent → convention-only → mechanically enforced*.
   [ROADMAP.md](ROADMAP.md). All C1–C9 codification artifacts live on docomply
   `develop` (paths listed in ROADMAP.md § Port sources).
 - Groundwork must never *require* docomply access to be useful: everything a
-  consumer needs gets vendored or rewritten here.
+  consumer needs is moved, vendored or rewritten here, and docomply-specific
+  values arrive as configuration from the consumer.
 
 ## Ways of working in this repo
 
 - Conventional Commits (`feat:`, `docs:`, `chore:`, …). Work on feature
   branches + PRs once the kernel phase ends; during bootstrap, small direct
   commits to `main` are acceptable.
+- **Toolchain.** Runnable tooling and gates are written in Bun + TypeScript:
+  Bun runs natively on macOS, Linux and Windows, where Bash runs only through
+  a compatibility layer and its standard utilities behave differently on macOS
+  and Linux. Bun is this
+  repository's toolchain, not a requirement on target repositories — tooling a
+  non-JavaScript repository runs ships as a standalone executable or is pinned
+  through mise. The existing Bash gates are ported as the first step of that
+  work; until then they remain the gates.
 - Quality gates (dogfooded M1, tiny by design) — run all with one command:
   `./scripts/gates.sh`. The set, in order: gate self-tests, markdown links
   resolve, blank line before tables, terms of art defined in the glossary
-  (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`). CI runs
-  the same command on every PR (`.github/workflows/gates.yml`). Vendored
-  material (`seeds/`, `docs/`), `templates/`, and test `fixtures/` are out of
-  gate scope — see the header comment of each check script for why.
+  (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`), no
+  issue-tracker references. CI runs
+  the same command on every PR (`.github/workflows/gates.yml`). Scope differs
+  per gate, and each check script's header comment states exactly what it
+  skips and why: the Markdown gates leave vendored material (`seeds/`,
+  `docs/`), `templates/` and test `fixtures/` out, while the issue-tracker
+  gate covers everything, vendored material and templates included, except
+  test `fixtures/` and its own pattern file.
 - HITL (human-in-the-loop) decisions: publishing/visibility, license, deleting
   seed material, and anything touching the IP scrub boundary — flag, don't act.
