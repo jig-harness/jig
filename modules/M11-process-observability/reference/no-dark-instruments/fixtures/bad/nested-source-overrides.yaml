@@ -1,0 +1,8 @@
+# A nested `- source:` under another key must not replace the metric's own
+# (placeholder) source: the metric is still dark.
+version: 1
+metrics:
+  - id: adoption
+    source: TODO
+    examples:
+      - source: event:wired

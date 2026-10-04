@@ -1,5 +1,5 @@
 <!-- GENERATED FILE - do not edit by hand.
-     Regenerate: sh generate-index.sh <docs-dir>  (see README.md) -->
+     Regenerate: bun generate-index.ts <docs-dir>  (see README.md) -->
 # Index
 
 - [Troubleshooting](advanced/troubleshooting.md)

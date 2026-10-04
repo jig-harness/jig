@@ -1,0 +1,11 @@
+# UNSAFE (a): the production deploy fires on every push. The `when: manual`
+# text belongs to a nested `variables` mapping inside the flow-mapping rule, so
+# the rule itself has no `when` property and gates nothing.
+stages:
+  - deploy
+deploy-production:
+  stage: deploy
+  script:
+    - ./deploy --target production --ref refs/tags/verified
+  rules:
+    - { if: '$CI_PIPELINE_SOURCE == "push"', variables: { NOTE: x, when: manual, OTHER: y } }

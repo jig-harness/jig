@@ -11,7 +11,7 @@ concrete criteria: "M1 Lite" means passing every `level: lite` criterion in
 and likewise per module — the criteria live only there (single source of
 truth), so profiles name levels, never restate criteria. The
 [auditor](../audit/) reads the same criteria to score a target repo (run
-[`audit/score-modules.sh`](../audit/score-modules.sh) for the checklist).
+[`audit/score-modules.ts`](../audit/score-modules.ts) for the checklist).
 
 ## Choosing
 

@@ -89,7 +89,7 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    Declaring costs one **decode step** that is easy to forget: no forge has a
    verdict field, so something has to turn the declared reply into the state the
    gate reads. That step is the [export adapter](../../GLOSSARY.md) —
-   [the one shipped here](reference/comment-resolution/normalize-thread-states.sh)
+   [the one shipped here](reference/comment-resolution/normalize-thread-states.ts)
    — and it is where "cannot tell" stays visible instead of being rounded to a
    real state. Concrete per-forge encodings are in [mappings.md](mappings.md).
 
@@ -171,7 +171,7 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    regress.
 4. Adopt the [unresolved-threads gate](reference/comment-resolution/) as a
    merge gate. Pick a verdict encoding, and wire the
-   [export adapter](reference/comment-resolution/normalize-thread-states.sh)
+   [export adapter](reference/comment-resolution/normalize-thread-states.ts)
    between your forge and the gate — mapping your own vocabulary in its
    `canon()` rather than loosening the gate (recipes in
    [mappings.md](mappings.md)).
@@ -220,7 +220,7 @@ the unproven" turns on:
 | Ported | Left to the adopter / deferred |
 |--------|-------------------------------|
 | The invariant: the verdict is declared, in an anchored form, at reply time | *Which* anchored form. [mappings.md](mappings.md) presents a leading token and a trailing trailer as alternatives and states no preference |
-| An encoding-**agnostic** [export adapter](reference/comment-resolution/normalize-thread-states.sh): both encodings are one variable apart, adopter vocabulary lives in its `canon()` | The reference implementation's bold-token convention as *the* mechanism. It is the exporter's default only because a default is required |
+| An encoding-**agnostic** [export adapter](reference/comment-resolution/normalize-thread-states.ts): both encodings are one variable apart, adopter vocabulary lives in its `canon()` | The reference implementation's bold-token convention as *the* mechanism. It is the exporter's default only because a default is required |
 | That write-time enforcement is the top rung of the enforcement ladder for this obligation, as it is for every other ([M1](../M1-gates-enforcement-ladder/)) | The reference implementation's particular reply-posting script, which is not transcribed here |
 
 So the obligation is split across two rungs rather than asserted at one:

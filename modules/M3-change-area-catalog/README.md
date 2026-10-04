@@ -144,7 +144,7 @@ one shared change-area vocabulary, many thin per-consumer projections.
 | `tools/change-areas/catalog.yaml` (entry shape) | [`reference/catalog/catalog.example.yaml`](reference/catalog/catalog.example.yaml) — a fully valid generic catalog exercising every field; [`templates/catalog.yaml`](templates/catalog.yaml) — a copyable one-area starter |
 | `schema.ts` + `check-catalog.ts` (schema + graph invariants) | [`reference/catalog/README.md`](reference/catalog/README.md) — the schema and the graph invariants as a language-neutral spec, with the resolver algorithm |
 | `resolve.ts` (seed match → `impliedBy` closure), `emit.ts` (projection emitters) | Documented as an algorithm + the projection list in [`reference/catalog/README.md`](reference/catalog/README.md) |
-| `tools/change-areas/check-catalog.ts`'s four-direction regex-mirror guard (`checkFilterCoverage`, `checkFilterSegmentCoverage`, `checkFilterFileCoverage`, `checkFilterCodeAreaCoverage`) | The four-direction model, with each check's inputs/algorithm/failure condition, is the language-neutral spec in [`reference/catalog/README.md`](reference/catalog/README.md#the-regex-mirror-guard); [`reference/regex-mirror/`](reference/regex-mirror/) ships `checkFilterSegmentCoverage` as a runnable shell script (matched against parsed `paths:` values, with a self-test and fixtures — including a fixture asserting that prose under a `notes:` field cannot satisfy path coverage); the other three directions are documented recipes, not ported to bash |
+| `tools/change-areas/check-catalog.ts`'s four-direction regex-mirror guard (`checkFilterCoverage`, `checkFilterSegmentCoverage`, `checkFilterFileCoverage`, `checkFilterCodeAreaCoverage`) | The four-direction model, with each check's inputs/algorithm/failure condition, is the language-neutral spec in [`reference/catalog/README.md`](reference/catalog/README.md#the-regex-mirror-guard); [`reference/regex-mirror/`](reference/regex-mirror/) ships `checkFilterSegmentCoverage` as a runnable Bun + TypeScript gate (matched against parsed `paths:` values, with a self-test and fixtures — including a fixture asserting that prose under a `notes:` field cannot satisfy path coverage); the other three directions are documented recipes, not implemented here |
 
 Also landed: [`mappings.md`](mappings.md) (CI path-filter providers, tracker
 labels, deploy tiers) and [`maturity.yaml`](maturity.yaml).
@@ -152,8 +152,8 @@ labels, deploy tiers) and [`maturity.yaml`](maturity.yaml).
 **Not ported** (per "don't port the unproven" / values-vs-mechanisms): the
 resolver, validators, and emitters are TypeScript in the reference
 implementation and are represented here as a language-neutral spec plus the one
-guard that is genuinely portable as a shell script — a change-area resolver is
+guard that runs natively with Bun — a change-area resolver is
 a structured-data + graph job best written in whatever language the target repo
-already uses, not reimplemented in bash. The docomply catalog's actual area
+already uses, implemented in its own stack. The docomply catalog's actual area
 names, deploy tiers, and post-deploy actions are product-domain values and are
 replaced throughout with neutral examples.

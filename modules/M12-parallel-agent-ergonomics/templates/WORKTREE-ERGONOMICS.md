@@ -33,7 +33,7 @@ so the same worktree always gets the same port and two worktrees almost never
 clash — no registry, no lock. Use the port allocator:
 
 ```sh
-PORT=$(reference/port-allocator/allocate-port.sh "$(git branch --show-current)")
+PORT=$(bun reference/port-allocator/allocate-port.ts "$(git branch --show-current)")
 ```
 
 Give related services separate ranges (app on `PORT_BASE=20000`, database on
@@ -46,11 +46,11 @@ Wrap heavy build/test commands so only one runs machine-wide at a time; the rest
 wait their turn instead of thrashing:
 
 ```sh
-with-resource-lock.sh --lock build -- pnpm build
-with-resource-lock.sh --lock test  -- pnpm test
+bun with-resource-lock.ts --lock build -- pnpm build
+bun with-resource-lock.ts --lock test  -- pnpm test
 ```
 
-The lock is an atomic `mkdir` lock at a machine-global path (so it spans
+The lock is an atomic process-id symlink lock at a machine-global path (so it spans
 worktrees) with a wait timeout and dead-holder reclaim. It **bypasses in CI**
 (`CI=1`): a CI runner is already an isolated machine, so serializing there is
 pure latency. Mechanism + caveats: `reference/resource-lock/README.md`.
@@ -94,6 +94,6 @@ trigger, and reflection feedback becomes durable improvements. Hook skeletons:
 2. Import the `branch-discipline.md` checklist into your agent instruction file
    (see the **[M0 instruction architecture](../../M0-instruction-architecture/)**
    module) so every agent inherits it.
-3. Wrap your heavy gate commands with `with-resource-lock.sh` locally; leave CI
+3. Wrap your heavy gate commands with `with-resource-lock.ts` locally; leave CI
    unwrapped (the bypass handles it).
 4. Add the footgun table above to your contributing docs, trimmed to your stack.

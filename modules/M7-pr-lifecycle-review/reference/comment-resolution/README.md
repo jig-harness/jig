@@ -81,15 +81,15 @@ as the state. Nothing bridges that by itself: a reply reading
 `**accepted** — fixed in a1b2c3d` arrives as the state `**accepted**` and fails as
 an unknown state, and so does every other documented verdict encoding.
 
-[`normalize-thread-states.sh`](normalize-thread-states.sh) is that bridge, and is
+[`normalize-thread-states.ts`](normalize-thread-states.ts) is that bridge, and is
 the **only** place a reply encoding is decoded — one adapter per repo, not one per
 workflow:
 
 ```sh
 # rows out of the forge:  <thread-id>\t<resolved>\t<reply body>
 # one row per REPLY, newest first; a thread id repeats across its replies
-VERDICT_ENCODING=token ./normalize-thread-states.sh pr-thread-rows.tsv > pr-threads.txt
-THREADS=pr-threads.txt ./check-threads-resolved.sh
+VERDICT_ENCODING=token bun ./normalize-thread-states.ts pr-thread-rows.tsv > pr-threads.txt
+THREADS=pr-threads.txt bun ./check-threads-resolved.ts
 ```
 
 Export **every** reply, newest first — not just the last comment. The newest
@@ -131,17 +131,17 @@ scope expansion and overruling a *human* thread — stay
 [HITL](../../../../GLOSSARY.md); this gate enforces the mechanical half.
 
 ```sh
-THREADS=pr-threads.txt ./check-threads-resolved.sh
+THREADS=pr-threads.txt bun ./check-threads-resolved.ts
 ```
 
 ## Files
 
 | File | Role |
 |------|------|
-| `check-threads-resolved.sh` | the gate; states file via arg or `THREADS` |
-| `test-check-threads-resolved.sh` | paired self-test |
-| `normalize-thread-states.sh` | the exporter; forge rows → gate states. `VERDICT_ENCODING` selects the encoding |
-| `test-normalize-thread-states.sh` | paired self-test — golden states files **and** the gate's verdict on each |
+| `check-threads-resolved.ts` | the gate; states file via arg or `THREADS` |
+| `check-threads-resolved.test.ts` | paired self-test |
+| `normalize-thread-states.ts` | the exporter; forge rows → gate states. `VERDICT_ENCODING` selects the encoding |
+| `normalize-thread-states.test.ts` | paired self-test — golden states files **and** the gate's verdict on each |
 | `fixtures/clean.txt` | all terminal with trails — must pass |
 | `fixtures/open.txt` | an open thread — must fail |
 | `fixtures/no-reason.txt` | trail-less rejection/deferral — must fail |
@@ -157,5 +157,9 @@ THREADS=pr-threads.txt ./check-threads-resolved.sh
 | `fixtures/raw/verdict-then-ack.tsv` | several replies per thread — a verdict buried under an acknowledgement must still win |
 | `fixtures/raw/*.expected` | the gate input each one must produce (golden files) |
 
-Run the self-tests with `./test-check-threads-resolved.sh` and
-`./test-normalize-thread-states.sh`.
+Run the self-tests with `./check-threads-resolved.test.ts` and
+`./normalize-thread-states.test.ts`.
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

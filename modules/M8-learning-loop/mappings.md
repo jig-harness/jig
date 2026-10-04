@@ -29,15 +29,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: reference/corpus-lint/test-check-corpus.sh
-      - run: CORPUS=corpus.yaml reference/corpus-lint/check-corpus.sh
+      - run: bun test reference/corpus-lint/check-corpus.test.ts
+      - run: CORPUS=corpus.yaml bun reference/corpus-lint/check-corpus.ts
   parity:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
       - run: ./scripts/parity-snapshot > parity.tsv      # from your telemetry
-      - run: MIN_PRECISION=0.90 reference/parity-report/check-parity.sh parity.tsv
+      - run: MIN_PRECISION=0.90 bun reference/parity-report/check-parity.ts parity.tsv
 ```
 
 ### GitLab CI
@@ -46,13 +46,13 @@ jobs:
 corpus-lint:
   rules: [{ changes: ['corpus.yaml', 'miss-taxonomy.yaml'] }]
   script:
-    - reference/corpus-lint/test-check-corpus.sh
-    - CORPUS=corpus.yaml reference/corpus-lint/check-corpus.sh
+    - bun test reference/corpus-lint/check-corpus.test.ts
+    - CORPUS=corpus.yaml bun reference/corpus-lint/check-corpus.ts
 parity:
   rules: [{ if: '$CI_PIPELINE_SOURCE == "schedule"' }]
   script:
     - ./scripts/parity-snapshot > parity.tsv
-    - MIN_PRECISION=0.90 reference/parity-report/check-parity.sh parity.tsv
+    - MIN_PRECISION=0.90 bun reference/parity-report/check-parity.ts parity.tsv
 ```
 
 ## Issue trackers (durable lever ids)
@@ -113,9 +113,9 @@ or above the threshold. Its exit 3 ("nothing to do") is not a failure, so wire i
 as a condition rather than a bare step:
 
 ```sh
-# last step of the review loop, after check-round-converged.sh wrote decision.txt
+# last step of the review loop, after check-round-converged.ts wrote decision.txt
 CHANGE="$PR" INBOX=docs/reflection-inbox.md ARCHIVE=docs/reflection-archive.md \
-  ROUND_THRESHOLD=3 reference/reflection-trigger/reflection-trigger.sh decision.txt \
+  ROUND_THRESHOLD=3 bun reference/reflection-trigger/reflection-trigger.ts decision.txt \
   && trigger_rc=0 || trigger_rc=$?
 
 case "$trigger_rc" in

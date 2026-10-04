@@ -1,0 +1,10 @@
+# SAFE: a GitLab production-deploy job gated by a real `when: manual`; its
+# script is a block scalar with the indentation indicator before the chomping
+# indicator.
+deploy-production:
+  stage: deploy
+  script: |2-
+    ./deploy --target production --ref refs/tags/verified
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: manual

@@ -1,0 +1,11 @@
+# UNSAFE (a): the production deploy fires on every push. The script is a block
+# scalar whose header writes the indentation indicator before the chomping
+# indicator (`|2-`); the standalone `when: manual` line inside it is text, not a
+# gate.
+deploy-production:
+  stage: deploy
+  script: |2-
+    ./deploy --target production --ref refs/tags/verified
+    when: manual
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'

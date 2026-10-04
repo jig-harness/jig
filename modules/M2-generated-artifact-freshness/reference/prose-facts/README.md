@@ -31,15 +31,15 @@ Two design rules carried over from the proven implementation:
 
 | File | Role |
 |------|------|
-| `check-stated-counts.sh` | Fails when a stated count ("N guides total") disagrees with a directory listing |
-| `check-referenced-paths.sh` | Fails when a markdown link or code-span path in prose resolves to no file |
+| `check-stated-counts.ts` | Fails when a stated count ("N guides total") disagrees with a directory listing |
+| `check-referenced-paths.ts` | Fails when a markdown link or code-span path in prose resolves to no file |
 | `fixture/` | A tiny instruction file + guides directory both checks pass against |
 
-Try it (POSIX shell, no dependencies):
+Try it with the pinned Bun runtime:
 
 ```sh
-sh check-stated-counts.sh fixture/instructions.md fixture/guides guides
-sh check-referenced-paths.sh fixture/instructions.md
+bun check-stated-counts.ts fixture/instructions.md fixture/guides guides
+bun check-referenced-paths.ts fixture/instructions.md
 ```
 
 To see the failure mode, edit `fixture/instructions.md` to claim "7 guides
@@ -54,7 +54,7 @@ no script change needed:
 
 ```yaml
 - name: Stated-counts drift check (advisory)
-  run: sh reference/prose-facts/check-stated-counts.sh <instruction-file> <dir> <noun>
+  run: bun reference/prose-facts/check-stated-counts.ts <instruction-file> <dir> <noun>
   continue-on-error: true   # delete this line to promote to blocking
 ```
 

@@ -1,14 +1,12 @@
 // Renovate update policy for groundwork itself (dogfoods M1's "pin and update"
 // invariant: see modules/M1-gates-enforcement-ladder/mappings.md).
 //
-// Scope: this repo has no package manifests, Dockerfiles, or lockfiles. The
-// only dependencies Renovate can manage are GitHub Actions `uses:` references
-// in .github/workflows/. Example workflows under modules/*/templates/ and test
-// fixtures are out of scope (config:recommended already ignores fixtures, and
-// the template paths are not workflow directories).
+// Scope: GitHub Actions, the mise runtime pin, and package dependencies with
+// Bun's lockfile. Consumer templates and fixture inputs are examples, not
+// dependencies of Groundwork's executable toolchain.
 //
-// Every update arrives as a normal PR and runs the same gates as any other
-// change (./scripts/gates.sh). Nothing auto-merges: a human reviews each one.
+// Every update arrives as a normal PR and runs `bun run gates`. Nothing
+// auto-merges: a human reviews each one.
 //
 // Renovate only acts once its GitHub App is installed on the repo, which is a
 // host-side (org admin) step and cannot be enabled from this file.
@@ -63,10 +61,9 @@
   // window, so they override both settings above.
   //
   // Caveat: this only fires when GitHub raises a vulnerability alert, and
-  // Dependabot does not raise alerts for SHA-pinned Actions (which is all this
-  // repo has). In practice an Action security fix follows the normal weekly
+  // Dependabot does not raise alerts for SHA-pinned Actions (which covers the workflow actions). An Action security fix follows the weekly
   // schedule unless a maintainer triggers it from the Dependency Dashboard. The
-  // block is kept so it takes effect if a manifest-based dependency is added.
+  // package dependencies also use this vulnerability-alert policy.
   vulnerabilityAlerts: {
     schedule: ["at any time"],
     minimumReleaseAge: null,

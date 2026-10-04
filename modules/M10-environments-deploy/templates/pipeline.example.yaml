@@ -46,7 +46,7 @@ verify_default_branch:
 # STAGE 2b — Freshness watchdog (self-healing). Scheduled, not per-PR. Fails when
 # the verified pointer lags too far behind the tip (verification has stalled),
 # so a freeze pages someone instead of silently shipping stale code.
-# See ../reference/verified-pointer/check-verified-fresh.sh
+# See ../reference/verified-pointer/check-verified-fresh.ts
 # ---------------------------------------------------------------------------
 verified_freshness_watchdog:
   on:
@@ -60,7 +60,7 @@ verified_freshness_watchdog:
         BEHIND=$(git rev-list --count verified..origin/<default-branch>)
         AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
         BEHIND="$BEHIND" AGE_SECONDS="$AGE_SECONDS" \
-          ./modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.sh
+          bun ./modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.ts
   on_failure:
     - page-on-call
     - heal: rerun-verification-from-tip   # self-heal: re-kick stage 2

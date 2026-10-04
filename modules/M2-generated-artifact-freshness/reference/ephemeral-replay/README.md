@@ -18,7 +18,7 @@ Because every run is a clean-room replay, nothing on the developer's machine
 (a mutated local database, another checkout's container) can contaminate the
 result, and parallel [worktrees](../../../../GLOSSARY.md) never collide.
 
-`check-schema-drift.sh` is a well-commented, portable skeleton of this
+`check-schema-drift.ts` is a well-commented, native Bun skeleton of this
 recipe using docker + `psql` + `pg_dump` against a generic migrations
 directory (e.g. one whose first migration creates an `orders` table). It is
 **one instantiation of a general pattern**: the same five steps apply to any
@@ -28,7 +28,7 @@ index from seed data. Swap "container + migrations + dump" for your
 equivalents; keep the shape.
 
 ```sh
-./check-schema-drift.sh <migrations-dir> <committed-schema.sql>
+bun check-schema-drift.ts <migrations-dir> <committed-schema.sql>
 ```
 
 ## Normalization gotchas (where this pattern actually fails)
@@ -61,8 +61,24 @@ bug, not real drift:
   the permanent one — and `pg_isready` succeeds during the temporary phase.
   Wait for the entrypoint's init-complete log line first, *then* poll
   `pg_isready`, or the check races and fails intermittently.
-- **Name containers per working directory** (hash of the checkout path), so
-  parallel worktrees on one machine never fight over one container name.
+- **Name containers per invocation** (process id plus a random suffix), so
+  parallel worktrees, or two runs in one checkout, never fight over one
+  container name or remove each other's container.
+- **Bound every docker call.** Each call has its own deadline (the whole
+  readiness wait is capped at 60s, `DOCKER_TIMEOUT_MS` overrides the 5-minute
+  default for other calls), and Ctrl-C cancels in-flight calls and runs a
+  bounded cleanup. Giving up on a `docker run` does not prove the daemon
+  stopped creating the container, so after a timed-out, interrupted or failed
+  run the cleanup waits (bounded) for that call to settle, then removes the
+  container and lists it with `docker ps -a`, repeating up to five times. Only
+  a run call that actually resolved, followed by a successful removal and an
+  empty listing, counts as confirmed. A call that stayed pending, was rejected
+  or was cancelled proves nothing about the daemon, which may still create the
+  container later, so even with empty listings the cleanup ends the window by
+  warning with the container name and the `docker rm -f` command to run
+  by hand. `DOCKER_RECONCILE_MS` sets the pause between attempts (integer
+  milliseconds, default 1000, clamped to 1..10000; invalid values fall back to
+  the default), and the whole reconciliation stops after 30s regardless.
 - **Don't use `--rm`.** If initialization fails, `--rm` deletes the
   container before its logs can be read. Remove explicitly in a cleanup
   trap, with a `KEEP_CONTAINER=1` escape hatch for debugging.

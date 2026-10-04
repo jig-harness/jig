@@ -27,7 +27,7 @@ docs-only area's prefix; see Direction 1's gap below).
 
 ## Direction 1 — regex → catalog (runnable here: `checkFilterSegmentCoverage`)
 
-[`check-catalog-regex-sync.sh`](check-catalog-regex-sync.sh) reads the
+[`check-catalog-regex-sync.ts`](check-catalog-regex-sync.ts) reads the
 alternation regex out of the filter script, splits it on `|`, normalizes each
 segment to a plain path prefix (strips `^`, `$`, trailing `/.*` / `/`,
 backslash escapes — a trailing `/**` is rejected rather than stripped, since
@@ -45,16 +45,16 @@ declares = drift.
 ```sh
 FILTER_FILE=tools/ci/detect-changes-filter.sh \
 CATALOG=tools/change-areas/catalog.yaml \
-  ./check-catalog-regex-sync.sh
+  bun check-catalog-regex-sync.ts
 ```
 
 Inputs come from env vars so the paired self-test
-([`test-catalog-regex-sync.sh`](test-catalog-regex-sync.sh)) can point the gate
+([`check-catalog-regex-sync.test.ts`](check-catalog-regex-sync.test.ts)) can point the gate
 at the [`fixtures/`](fixtures/): a `synced/` pair that must pass, and
 adversarial pairs — most of which must fail or hard-error, though some must
 still *pass* (see the `Expects` column) — see the table below for the full,
 current set. Run the self-test any time with
-`./test-catalog-regex-sync.sh`; wire it into your CI alongside the gate
+`bun test check-catalog-regex-sync.test.ts`; wire it into your CI alongside the gate
 itself, so a change that breaks the gate's own regex-handling logic fails
 loudly instead of passing green.
 

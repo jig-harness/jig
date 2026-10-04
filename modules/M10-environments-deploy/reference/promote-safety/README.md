@@ -72,23 +72,23 @@ run is a nice-to-have; [CI](../../../../GLOSSARY.md) is the authority (see
 [M1](../../../M1-gates-enforcement-ladder/)).
 
 ```sh
-WORKFLOWS_DIR=.github/workflows ./check-promote-safety.sh
+WORKFLOWS_DIR=.github/workflows bun ./check-promote-safety.ts
 ```
 
 ## Files
 
 | File | Role |
 |------|------|
-| `check-promote-safety.sh` | the gate; `WORKFLOWS_DIR` or file args select inputs |
-| `test-check-promote-safety.sh` | paired self-test |
-| `fixtures/safe/` | manual+verified, env-gated push+verified, non-prod preview, push+dispatch **with** environment, env on the deploy job (other job bare), mutable ref on a non-deploy job, GitLab push rule **with** a gate — must pass |
-| `fixtures/unsafe/` | auto-push prod (a), push+dispatch with no env (a), env on a *different* job (a), GitLab job-level push rule ungated (a), flow-style `on: { push }` (a), quoted `on: "push"` (a), block-sequence `on: - push` (a), step-input environment not a gate (a), mutable branch ref (b), `--ref main` flag (b), `:latest` image (b), `verified` only in a step name (b), `verified` on a *different* job (b), mutable ref + in-job verified download (b) — must fail |
+| `check-promote-safety.ts` | the gate; `WORKFLOWS_DIR` or file args select inputs |
+| `check-promote-safety.test.ts` | paired self-test |
+| `fixtures/safe/` | manual+verified, env-gated push+verified, non-prod preview, push+dispatch **with** environment, env on the deploy job (other job bare), mutable ref on a non-deploy job, GitLab push rule **with** a gate (block, flow-mapping and quoted-key forms), block scalars with either indicator order — must pass |
+| `fixtures/unsafe/` | auto-push prod (a), push+dispatch with no env (a), env on a *different* job (a), GitLab job-level push rule ungated (a), flow-style `on: { push }` (a), quoted `on: "push"` (a), quoted `"only": [pushes]` (a), `when: manual` text inside a quoted flow-mapping value or an indent-first block scalar (a), quoted `"ref": main` (b), block-sequence `on: - push` (a), step-input environment not a gate (a), mutable branch ref (b), `--ref main` flag (b), `:latest` image (b), `verified` only in a step name (b), `verified` on a *different* job (b), mutable ref + in-job verified download (b) — must fail |
 
-Run the self-test with `./test-check-promote-safety.sh`.
+Run the self-test with `bun test ./check-promote-safety.test.ts`.
 
 ## Known limits
 
-Bash + awk job segmentation, not a full YAML evaluator. The checks are scoped to
+TypeScript job segmentation, not a full YAML evaluator. The checks are scoped to
 the production-deploy job, but three residual imprecisions remain, all left to a
 precise-parse version in whatever language the repo already uses (same reasoning
 as [M7](../../../M7-pr-lifecycle-review/)'s lint):
@@ -115,6 +115,8 @@ as [M7](../../../M7-pr-lifecycle-review/)'s lint):
   every pipeline" behaviour with no explicit rule is not treated as
   push-firing — declare the deploy job `when: manual` (which this lint reads as
   a gate) so intent is explicit.
+- Flow mappings are read when they sit on a single line; a flow mapping split
+  across lines is not parsed for `when: manual`, which errs toward flagging.
 - Because a line matcher can't bind a ref to the deploy command, rule (b) treats
   **any** mutable ref in the deploy job as unsafe rather than trying to prove
   it's the deployed one. A job that legitimately needs a mutable checkout for

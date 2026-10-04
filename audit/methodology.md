@@ -62,7 +62,7 @@ For each groundwork module (M0–M12), grade the target:
   which rung, and whether CI is the authority).
 
 Every module M0–M12 ships a `maturity.yaml`, so score **every** module by its
-criteria individually — run [`score-modules.sh`](score-modules.sh) to generate
+criteria individually — run [`score-modules.ts`](score-modules.ts) to generate
 the fill-in checklist (module → criterion → level → requires, with empty
 Score/Evidence columns) and grade each row against the target with a file-path
 evidence note. Qualitative grading is the fallback only for a criterion the

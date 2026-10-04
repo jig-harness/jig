@@ -1,0 +1,12 @@
+# UNSAFE (a): the production deploy fires on every push. The flow mapping does
+# not close on its line, so it cannot be read confidently and is not treated as
+# a gate.
+stages:
+  - deploy
+deploy-production:
+  stage: deploy
+  script:
+    - ./deploy --target production --ref refs/tags/verified
+  rules:
+    - { if: '$CI_PIPELINE_SOURCE == "push"', when: manual,
+        variables: { NOTE: x } }

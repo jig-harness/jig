@@ -79,7 +79,7 @@ criteria:
       The verified-pointer freshness gate and the promote-safety lint both run in
       CI, each with a self-test, so a broken deploy gate fails loudly.
     observe:
-      - "check-verified-fresh.sh and check-promote-safety.sh run in CI"
+      - "bun check-verified-fresh.ts and bun check-promote-safety.ts run in CI"
       - "each ships a paired self-test exercising a known pass and a known fail, run in CI"
 
   - id: production-promotion-manual-and-gated

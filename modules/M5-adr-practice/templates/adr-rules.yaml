@@ -10,8 +10,9 @@
 #                     pattern within a few lines (a required companion)
 #
 # Write patterns UNQUOTED or in SINGLE quotes so the text is the regex verbatim
-# (double quotes invite YAML backslash-escaping surprises). Patterns are POSIX
-# ERE (grep -E / awk).
+# (double quotes invite YAML backslash-escaping surprises). Patterns use the common extended regular-expression constructs shown below.
+# The native interpreter also translates POSIX character classes such as
+# [[:space:]] to their JavaScript equivalents.
 
 version: 1
 generated_from: docs/adr/

@@ -7,7 +7,7 @@ ADR into a machine-readable rule and let a gate enforce it — turning "we decid
 X" into "CI enforces X".
 
 The rules live in data ([`../../templates/adr-rules.yaml`](../../templates/adr-rules.yaml)),
-each citing the ADR it derives from, and [`adr-rules-check.sh`](adr-rules-check.sh)
+each citing the ADR it derives from, and [`adr-rules-check.ts`](adr-rules-check.ts)
 is a **generic interpreter** of that catalog. (The reference implementation
 hand-codes each rule in a bespoke script — but a per-rule script is exactly what
 a rules catalog exists to avoid, so groundwork ports the generic mechanism.)
@@ -30,10 +30,10 @@ Each rule carries `exclude` globs (where it's silent, e.g. tests) and a
 
 ```sh
 # check specific files (in a hook/CI, the staged/changed code files)
-RULES=.adr-rules.yaml adr-rules-check.sh $(git diff --cached --name-only --diff-filter=ACM)
+RULES=.adr-rules.yaml bun adr-rules-check.ts $(git diff --cached --name-only --diff-filter=ACM)
 
 # fail on warnings too
-STRICT=1 RULES=.adr-rules.yaml adr-rules-check.sh <files...>
+STRICT=1 RULES=.adr-rules.yaml bun adr-rules-check.ts <files...>
 ```
 
 Wire it into pre-commit over the changed code files (fast feedback) and into CI
@@ -60,7 +60,7 @@ worse than none.
 
 | File | Role |
 |------|------|
-| `adr-rules-check.sh` | the generic interpreter (deny-on-match + require-nearby) |
-| `test-adr-rules-check.sh` | paired self-test |
+| `adr-rules-check.ts` | the generic interpreter (deny-on-match + require-nearby) |
+| `adr-rules-check.test.ts` | paired self-test |
 | `fixtures/adr-rules.yaml` | the example rules catalog the test runs against |
 | `fixtures/clean/`, `fixtures/bad/` | code that passes / trips each rule shape |

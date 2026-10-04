@@ -22,11 +22,11 @@ the [advisory gate](../../../../GLOSSARY.md) posture.
 
 ## Mechanism
 
-Portable bash + awk (float math for precision/recall). Feed only the reviewers
+Portable Bun + TypeScript (precision/recall arithmetic). Feed only the reviewers
 you actually gate on; blank lines and `#` comments are ignored.
 
 ```sh
-MIN_PRECISION=0.90 ./check-parity.sh parity.tsv
+MIN_PRECISION=0.90 bun ./check-parity.ts parity.tsv
 ```
 
 Produce `parity.tsv` from your telemetry or a weekly parity snapshot (recipes in
@@ -43,11 +43,16 @@ running it (see [M1](../../../M1-gates-enforcement-ladder/)).
 
 | File | Role |
 |------|------|
-| `check-parity.sh` | the gate; `TALLIES` + `MIN_PRECISION` select inputs |
-| `test-check-parity.sh` | paired self-test (exit codes + the precision math) |
+| `check-parity.ts` | the gate; `TALLIES` + `MIN_PRECISION` select inputs |
+| `check-parity.test.ts` | paired self-test (exit codes + the precision math) |
 | `fixtures/clean.tsv` | no missed blockers — must pass |
 | `fixtures/missed.tsv` | a missed blocker — must fail |
 | `fixtures/empty.tsv` | nothing tallied — must pass |
 | `fixtures/bad-row.tsv` | a non-numeric column — must error |
 
-Run the self-test with `./test-check-parity.sh`.
+Run the self-test with `bun test ./check-parity.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

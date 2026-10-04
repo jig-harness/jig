@@ -6,16 +6,15 @@ hook managers and CI providers. Terms of art: see
 
 ## Hook managers
 
-All three managers can run the same shell scripts; they differ in where the
+All three managers can run the same Bun commands; they differ in where the
 wiring lives and what conveniences exist. The reference scripts in this
-module (`reference/grep-gate/`, `reference/commit-msg-marker/`) are plain
-bash + grep + git, so they work under any of them.
+module (`reference/grep-gate/`, `reference/commit-msg-marker/`) run with Bun and Git under any of them.
 
 | M1 piece | lefthook (`lefthook.yml`) | husky (`.husky/*` shell files) | pre-commit framework (`.pre-commit-config.yaml`) |
 |----------|---------------------------|--------------------------------|--------------------------------------------------|
 | Pre-commit fix-and-stage | `pre-commit:` command with `stage_fixed: true`; `glob:` scopes it | `.husky/pre-commit` script; re-stage manually with `git add` after the fixer | Hook entry with `stages: [pre-commit]`; auto-fix hooks fail the run and leave fixes unstaged by design — re-run to commit |
 | File-pattern scoping | `glob:` per command | Manual (`git diff --cached --name-only \| grep …`) | `files:`/`types:` regex per hook |
-| Pre-push grep gates | `pre-push:` commands, one per rule, `parallel: false` for fail-fast ordering | `.husky/pre-push` calling each `scripts/check-*.sh` in order | Hook entries with `stages: [pre-push]`, `entry: scripts/check-<rule>.sh`, `pass_filenames: false` |
+| Pre-push grep gates | `pre-push:` commands, one per rule, `parallel: false` for fail-fast ordering | `.husky/pre-push` calling each `bun scripts/check-*.ts` in order | Hook entries with `stages: [pre-push]`, `entry: bun scripts/check-<rule>.ts`, `pass_filenames: false` |
 | Heavy build/test phase | Last `pre-push:` command | Last line of `.husky/pre-push` | `stages: [pre-push]` entry with `always_run: true` |
 | Commit-msg marker | `commit-msg:` command; message file path is `{1}` | `.husky/commit-msg`; path is `$1` | Hook with `stages: [commit-msg]`; the framework passes the message file as the filename argument |
 | Per-command timeout | `timeout:` per command | Not built in — wrap with `timeout(1)` or equivalent | Not built in — wrap in the script |
@@ -55,7 +54,21 @@ update or unexplained version ceiling is hidden maintenance debt.
 | M1 piece | This module ships | You install it at |
 |----------|-------------------|-------------------|
 | Hook layer shape | `templates/lefthook.yml` | Repo root (or manager equivalent above) |
-| Grep-gate framework | `reference/grep-gate/` | `scripts/check-<rule>.sh` + `scripts/test-<rule>.sh` + fixtures, wired into pre-push and CI |
+| Grep-gate framework | `reference/grep-gate/` | `scripts/check-<rule>.ts` + Bun tests + fixtures, wired into pre-push and CI |
 | CI gate set | `templates/ci-pr-gates.yml` | `.github/workflows/` or `.gitlab-ci.yml` per the table above |
 | Suppression registry | `templates/suppression-registry.md` | Your docs tree, one page, linked from the instruction file |
 | Commit-msg marker | `reference/commit-msg-marker/` | `scripts/` + the manager's commit-msg hook + a CI re-check |
+
+## Non-JavaScript repositories
+
+The invariant is that a gate has one reproducible implementation, independent
+of the application's language. Groundwork chooses a mise-managed Bun pin for
+this kernel: run the complete pinned checkout with its `mise.toml` active,
+install `bun.lock` with `bun install --frozen-lockfile`, and invoke `bun <gate.ts>`.
+The consumer's application can remain Python, Go or any other stack.
+
+Standalone executables from `bun build --compile` are supported by Bun, but a
+binary release matrix is deferred until distribution needs it. Source plus a
+runtime pin keeps fixtures and dependencies together and avoids a second
+packaging contract during this migration. Layout and adoption details:
+[tools/README.md](../../tools/README.md).

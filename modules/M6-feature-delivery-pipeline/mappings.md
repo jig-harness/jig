@@ -47,12 +47,12 @@ jobs:
           path: base
       - name: Gate self-tests (blocking)
         run: |
-          "$M6"/reference/required-sections/test-check-required-sections.sh
-          "$M6"/reference/stage-review-record/test-check-stage-accepted.sh
+          bun test "$M6"/reference/required-sections/check-required-sections.test.ts
+          bun test "$M6"/reference/stage-review-record/check-stage-accepted.test.ts
       - name: Changed stage docs carry their required sections + a review record
         run: |
-          reqsec="$M6/reference/required-sections/check-required-sections.sh"
-          review="$M6/reference/stage-review-record/check-stage-accepted.sh"
+          reqsec="$M6/reference/required-sections/check-required-sections.ts"
+          review="$M6/reference/stage-review-record/check-stage-accepted.ts"
           base="${{ github.event.pull_request.base.sha }}"
           git -C pr diff --name-only --diff-filter=d "$base" HEAD -- 'docs/**/*.md' |
           while read -r f; do
@@ -63,8 +63,8 @@ jobs:
               docs/research/*)     man="docs/_manifests/research-sections.txt" ;;
               *)                   man="" ;;
             esac
-            [ -n "$man" ] && { MANIFEST="$man" "$reqsec" "pr/$f" || exit 1; }
-            "$review" "pr/$f" || exit 1     # accepted-implies-reviewed, every stage doc
+            [ -n "$man" ] && { MANIFEST="$man" bun "$reqsec" "pr/$f" || exit 1; }
+            bun "$review" "pr/$f" || exit 1     # accepted-implies-reviewed, every stage doc
           done
 ```
 
@@ -85,14 +85,14 @@ pipeline_docs:
     - mkdir -p base && git archive "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
         modules/M6-feature-delivery-pipeline | tar -x -C base
   script:
-    - "$M6"/reference/required-sections/test-check-required-sections.sh
-    - "$M6"/reference/stage-review-record/test-check-stage-accepted.sh
+    - bun test "$M6"/reference/required-sections/check-required-sections.test.ts
+    - bun test "$M6"/reference/stage-review-record/check-stage-accepted.test.ts
     - |
       git diff --name-only --diff-filter=d "$CI_MERGE_REQUEST_DIFF_BASE_SHA"... -- 'docs/***.md' |
       while read -r f; do
         SECTIONS="$(cat docs/_manifests/$(basename "$(dirname "$f")")-sections.txt 2>/dev/null)" \
-          "$M6"/reference/required-sections/check-required-sections.sh "$f" || exit 1
-        "$M6"/reference/stage-review-record/check-stage-accepted.sh "$f" || exit 1
+          bun "$M6"/reference/required-sections/check-required-sections.ts "$f" || exit 1
+        bun "$M6"/reference/stage-review-record/check-stage-accepted.ts "$f" || exit 1
       done
 ```
 
@@ -150,7 +150,7 @@ frontmatter block serves both docs governance and the two M6 gates.
 
 ## CI providers
 
-Any provider works — both gates are plain shell with self-tests. The only
+Any provider works — both gates use Bun and TypeScript with self-tests. The only
 provider-specific piece is the changed-files query (`git diff --name-only`
 against the merge base), shown above for GitHub Actions and GitLab CI. Run the
 required-sections gate on **changed stage docs** and the stage-review-record

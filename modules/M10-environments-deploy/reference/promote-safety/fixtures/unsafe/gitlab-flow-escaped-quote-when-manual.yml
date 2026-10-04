@@ -1,0 +1,11 @@
+# UNSAFE (a): the production deploy fires on every push. A backslash-escaped
+# quote keeps the double-quoted string open, so the `, when: manual,` text is
+# still inside a string value and gates nothing.
+stages:
+  - deploy
+deploy-production:
+  stage: deploy
+  script:
+    - ./deploy --target production --ref refs/tags/verified
+  rules:
+    - { if: '$CI_PIPELINE_SOURCE == "push"', variables: { NOTE: "x\", when: manual, y" } }

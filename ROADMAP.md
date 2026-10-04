@@ -16,7 +16,7 @@ groundwork work starts here.
 | 4 | Port M7 review-harness core + M8 learning loop | ✅ done 2026-07-20 (M7/M8 carry the full contract — see below) |
 | 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ✅ done 2026-07-20 (all five modules carry the full contract; auditor v1 scores M0–M12; greenfield folded in — see below) |
 | ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing (now the active mode — all modules M0–M12 ported) |
-| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and consumed as pinned releases | proposed — see § Runnable tooling |
+| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and consumed as pinned releases | kernel toolchain implemented; remaining extraction work follows § Runnable tooling |
 
 ## Phase 2 remainder (all closed 2026-07-19; next work is Phase 3)
 
@@ -25,7 +25,7 @@ groundwork work starts here.
    genericized and IP-scrubbed per AGENTS.md (see each § Port status for
    what was deliberately not ported).
 2. ~~**Groundwork's own gates (dogfood M1)**~~ — ✅ done 2026-07-19:
-   `./scripts/gates.sh` (self-tests + link check + table check +
+   `bun run gates` (self-tests + link check + table check +
    glossary-coverage via acronym proxy) runs locally and in CI on every PR
    (`.github/workflows/gates.yml`).
 3. ~~**Auditor calibration**~~ — ✅ done 2026-07-19: full run against
@@ -43,7 +43,7 @@ groundwork work starts here.
 
 M3, M4, and M5 now carry the full module contract (`README.md`, `templates/`,
 `reference/`, `mappings.md`, `maturity.yaml`), genericized and IP-scrubbed per
-AGENTS.md. Each reference gate is a portable shell script with a paired
+AGENTS.md. Each reference gate is a native Bun/TypeScript command with a paired
 self-test and fixtures; all self-tests pass.
 
 1. **M3 — change-area catalog.** One validated catalog → generated
@@ -74,7 +74,7 @@ resolver (M3); semantic ADR-rule tier belongs with M7/M8.
 
 M7 and M8 now carry the full module contract (`README.md`, `templates/`,
 `reference/`, `mappings.md`, `maturity.yaml`), genericized and IP-scrubbed per
-AGENTS.md. Each reference gate is a portable shell script with a paired
+AGENTS.md. Each reference gate is a native Bun/TypeScript command with a paired
 self-test and fixtures; all self-tests pass.
 
 1. **M7 — PR lifecycle & review.** Landed the draft→review→resolve→merge
@@ -110,8 +110,8 @@ The last five modules now carry the full module contract (`README.md`,
 `templates/`, `reference/`, `mappings.md`, `maturity.yaml`), genericized and
 IP-scrubbed per AGENTS.md. **All 13 modules (M0–M12) are ported**, so the module
 map is complete and groundwork enters its standing backflow mode. Each new
-reference gate is a portable, self-tested shell script (10 gates + 10 self-tests
-across the five modules; all pass); the auditor scores every module against its
+reference gate is a native, self-tested Bun/TypeScript command (each
+with a paired self-test; all pass); the auditor scores every module against its
 criteria; and the greenfield path is folded in.
 
 1. **M6 — feature-delivery pipeline.** Landed the idea→shipped contract
@@ -160,7 +160,7 @@ criteria; and the greenfield path is folded in.
 
 **Auditor v1 (scored maturity assessment).** Every module now ships
 `maturity.yaml`, so the auditor scores the whole module map against observable
-criteria, not by feel. Landed [`audit/score-modules.sh`](audit/score-modules.sh)
+criteria, not by feel. Landed [`audit/score-modules.ts`](audit/score-modules.ts)
 — it emits a fill-in scoring checklist from every module's criteria, and
 `--check` asserts all 13 modules carry criteria (a future port that forgets its
 `maturity.yaml` fails loudly). [`audit/methodology.md`](audit/methodology.md) and
@@ -205,7 +205,7 @@ future). The eval/telemetry *runners* remain target-repo-language jobs, not bash
   non-ignored untracked content, so gitignored audit snapshots and local
   workspaces cannot break repository checks.
 
-## Runnable tooling (proposed)
+## Runnable tooling
 
 Groundwork takes over the generic agent skills and development tools that
 grew inside the reference implementation, under the placement and porting
@@ -264,3 +264,17 @@ Private org-owned repo, separate from Forge (docomply's agent-execution
 control plane — runner vs content); no license while private, Apache-2.0
 recommended if opened; Phase 1 before Phase 2; newcomer accessibility is a
 standing requirement (principle 7).
+
+## Toolchain kernel
+
+The repository and module gates now run as Bun/TypeScript. The runtime is pinned
+through mise, dependencies through `bun.lock`, and the canonical `bun run gates`
+command runs locally and in a Linux/macOS/Windows matrix. Existing Bash and
+TypeScript fixture verdicts were compared before removing the operated shell
+implementations. See [scripts/migration-parity.md](scripts/migration-parity.md)
+for the comparison scope and retained shell data.
+
+Runnable layout: [tools/README.md](tools/README.md). Non-JavaScript consumers
+operate a complete pinned checkout with mise-managed Bun. The installer,
+consumer manifest pin, shared helper move and subsequent extraction waves
+remain separate work.

@@ -61,13 +61,13 @@ jobs:
           path: base
       - name: Reviewer wiring is fork-safe (blocking)
         # scan the PR's workflow files as data; run the trusted, base-owned gate
-        run: WORKFLOWS_DIR=pr/.github/workflows "$M7"/reference/pr-target-safety/check-pr-target-safety.sh
+        run: WORKFLOWS_DIR=pr/.github/workflows bun "$M7"/reference/pr-target-safety/check-pr-target-safety.ts
       - name: Gate self-tests (blocking)
         run: |
-          "$M7"/reference/pr-target-safety/test-check-pr-target-safety.sh
-          "$M7"/reference/comment-resolution/test-check-threads-resolved.sh
-          "$M7"/reference/comment-resolution/test-normalize-thread-states.sh
-          "$M7"/reference/review-convergence/test-check-round-converged.sh
+          bun test "$M7"/reference/pr-target-safety/check-pr-target-safety.test.ts
+          bun test "$M7"/reference/comment-resolution/check-threads-resolved.test.ts
+          bun test "$M7"/reference/comment-resolution/normalize-thread-states.test.ts
+          bun test "$M7"/reference/review-convergence/check-round-converged.test.ts
       - name: Export review-thread rows
         # The API emits ROWS — id, resolved, reply body — and nothing more.
         # Decoding the declared verdict is the next step's job, not this one's.
@@ -103,10 +103,10 @@ jobs:
         # makes every declared verdict an unknown state (see § below).
         run: |
           VERDICT_ENCODING=token \
-            "$M7"/reference/comment-resolution/normalize-thread-states.sh \
+            bun "$M7"/reference/comment-resolution/normalize-thread-states.ts \
             pr-thread-rows.tsv > pr-threads.txt
       - name: Every thread resolved with a trail (blocking merge)
-        run: THREADS=pr-threads.txt "$M7"/reference/comment-resolution/check-threads-resolved.sh
+        run: THREADS=pr-threads.txt bun "$M7"/reference/comment-resolution/check-threads-resolved.ts
 ```
 
 ### GitLab CI
@@ -118,11 +118,11 @@ pr_hygiene:
   script:
     # On GitLab, run from a protected branch's copy of the scripts (or a
     # component) so a fork MR cannot alter the gate it must pass.
-    - WORKFLOWS_DIR=.gitlab/ci "$M7"/reference/pr-target-safety/check-pr-target-safety.sh
-    - "$M7"/reference/pr-target-safety/test-check-pr-target-safety.sh
-    - "$M7"/reference/comment-resolution/test-check-threads-resolved.sh
-    - "$M7"/reference/comment-resolution/test-normalize-thread-states.sh
-    - "$M7"/reference/review-convergence/test-check-round-converged.sh
+    - WORKFLOWS_DIR=.gitlab/ci bun "$M7"/reference/pr-target-safety/check-pr-target-safety.ts
+    - bun test "$M7"/reference/pr-target-safety/check-pr-target-safety.test.ts
+    - bun test "$M7"/reference/comment-resolution/check-threads-resolved.test.ts
+    - bun test "$M7"/reference/comment-resolution/normalize-thread-states.test.ts
+    - bun test "$M7"/reference/review-convergence/check-round-converged.test.ts
     # Same two steps as GitHub: rows out of the API, verdicts decoded by the
     # checked-in exporter. Only the API call differs — and, as there, every note
     # is emitted newest-first rather than just `.notes[-1]`.
@@ -135,9 +135,9 @@ pr_hygiene:
                  | .[] | [ $id, $res, (gsub("\\s+";" ")) ] | @tsv' > mr-thread-rows.tsv
     - |
       VERDICT_ENCODING=token \
-        "$M7"/reference/comment-resolution/normalize-thread-states.sh \
+        bun "$M7"/reference/comment-resolution/normalize-thread-states.ts \
         mr-thread-rows.tsv > mr-threads.txt
-    - THREADS=mr-threads.txt "$M7"/reference/comment-resolution/check-threads-resolved.sh
+    - THREADS=mr-threads.txt bun "$M7"/reference/comment-resolution/check-threads-resolved.ts
 ```
 
 ## Forges — lifecycle primitives + thread-state export
@@ -152,7 +152,7 @@ Every forge gives the same three things and nothing more: an id, a resolved
 boolean, and free-text replies. Turning those into the gate's
 `addressed | rejected | deferred | moot | unclassified | open` states is a
 **separate, checked-in step** —
-[`normalize-thread-states.sh`](reference/comment-resolution/normalize-thread-states.sh),
+[`normalize-thread-states.ts`](reference/comment-resolution/normalize-thread-states.ts),
 shown in the export recipes above. An unresolved thread emits `open` whatever its
 last reply says.
 
@@ -315,7 +315,7 @@ the loop early and silently; a mistake in the pessimistic direction costs one
 extra round.
 
 **Do not let the thread count swallow the gate's own failure.** The tempting
-one-liner — `check-threads-resolved.sh … | grep -c '^FAIL' || true` — pipes the
+one-liner — `check-threads-resolved.ts … | grep -c '^FAIL' || true` — pipes the
 gate's stdout into `grep` and then masks every nonzero status. If the states file
 is missing, unreadable, or malformed, the gate exits **2** with empty stdout, the
 count comes out **0**, and the convergence gate cheerfully reports `CONVERGED` on
@@ -328,7 +328,7 @@ shell on the gate's *ordinary* exit 1 — every normal `WORK` round would kill t
 driver before the status could be classified.
 
 ```sh
-gate_out=$("$M7"/reference/comment-resolution/check-threads-resolved.sh pr-threads.txt) \
+gate_out=$(bun "$M7"/reference/comment-resolution/check-threads-resolved.ts pr-threads.txt) \
   && gate_rc=0 || gate_rc=$?
 case "$gate_rc" in
   0) threads=0 ;;                                          # every thread terminal
@@ -368,7 +368,7 @@ decisions were interchangeable. Dispatch on the status explicitly — that dispa
 
 ```sh
 set -euo pipefail
-"$M7"/reference/review-convergence/check-round-converged.sh round-status.txt > decision.txt \
+bun "$M7"/reference/review-convergence/check-round-converged.ts round-status.txt > decision.txt \
   && decision_rc=0 || decision_rc=$?
 cat decision.txt          # keep it: M8's reflection trigger reads this file
 
@@ -415,7 +415,7 @@ reads the target base branch's copy.
 
 ## CI providers
 
-Any provider works — the two gates are plain shell. The only provider-specific
+Any provider works — the two gates use Bun and TypeScript. The only provider-specific
 piece is the thread-state export step (a forge API call), shown above for
 GitHub Actions and GitLab CI.
 

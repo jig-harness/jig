@@ -42,12 +42,12 @@ period's events into this shape for the gate.
 
 ## Mechanism
 
-Portable bash + awk (no `yq` / python / jq). It reads the schema's `event_types`
+Native Bun/TypeScript (no shell utilities). It reads the schema's `event_types`
 and their `required` flow lists, then checks each event line against them. The
 schema defaults to `event-schema.yaml`; override with `SCHEMA=`.
 
 ```sh
-SCHEMA=event-schema.yaml ./check-events.sh events.log
+SCHEMA=event-schema.yaml bun ./check-events.ts events.log
 ```
 
 ## Where it runs
@@ -61,12 +61,12 @@ Cheap enough to always-run.
 
 | File | Role |
 |------|------|
-| `check-events.sh` | the gate; `EVENTS` arg + `SCHEMA` env select inputs |
-| `test-check-events.sh` | paired self-test (exit codes + the offending type/field in the report) |
+| `check-events.ts` | the gate; `EVENTS` arg + `SCHEMA` env select inputs |
+| `check-events.test.ts` | paired self-test (exit codes + the offending type/field in the report) |
 | `fixtures/schema.yaml` | the small event schema the fixtures validate against |
 | `fixtures/good/events.log` | a valid stream — must pass |
 | `fixtures/empty.log` | no events — must pass |
 | `fixtures/bad/*.log` | one file per failure mode (unknown type, missing/empty required, malformed) |
 | `fixtures/bad/schema-*.yaml` | malformed schemas — must error |
 
-Run the self-test with `./test-check-events.sh`.
+Run the self-test with `bun test ./check-events.test.ts`.

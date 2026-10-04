@@ -34,7 +34,7 @@ reviewer: alice pending
 ```
 
 ```sh
-./check-round-converged.sh round-status.txt
+bun ./check-round-converged.ts round-status.txt
 # WAIT round=2 open_threads=0 reviewers=1/2 pr_state=open
 ```
 
@@ -100,8 +100,8 @@ feeds it honest.
 
 | File | Role |
 |------|------|
-| `check-round-converged.sh` | the decision; `STATUS` env or arg selects the input |
-| `test-check-round-converged.sh` | paired self-test (all four decisions, the format errors, and the two traps) |
+| `check-round-converged.ts` | the decision; `STATUS` env or arg selects the input |
+| `check-round-converged.test.ts` | paired self-test (all four decisions, the format errors, and the two traps) |
 | `fixtures/converged.txt` | settled, nothing open — `CONVERGED` |
 | `fixtures/threads-open.txt` | threads to resolve — `WORK` |
 | `fixtures/reviewer-pending.txt` | the early-stop trap — `WAIT`, not `CONVERGED` |
@@ -122,4 +122,9 @@ feeds it honest.
 | `fixtures/round-zero.txt` | `round: 0` — must error; the counter is 1-based |
 | `fixtures/leading-zero.txt` | a zero-padded count bash would read as octal — must error |
 
-Run the self-test with `./test-check-round-converged.sh`.
+Run the self-test with `bun test ./check-round-converged.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

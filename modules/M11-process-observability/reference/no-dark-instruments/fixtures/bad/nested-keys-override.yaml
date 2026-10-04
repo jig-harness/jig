@@ -1,0 +1,9 @@
+# Nested `id:` and `source:` keys under another key must not replace the
+# metric's own identity or source: the metric is still dark.
+version: 1
+metrics:
+  - id: adoption
+    source: TODO
+    detail:
+      id: other
+      source: event:wired

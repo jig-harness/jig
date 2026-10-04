@@ -33,12 +33,12 @@ Export the record from your tracker — recipes in
 
 ## Mechanism
 
-Portable bash + awk (no `yq` / python).
+Portable Bun + TypeScript (no shell utilities required).
 
 ```sh
-RECORD=work-101.txt FORMULA=phase-formula.yaml ./check-formula.sh
+RECORD=work-101.txt FORMULA=phase-formula.yaml bun ./check-formula.ts
 # or
-./check-formula.sh work-101.txt phase-formula.yaml
+bun ./check-formula.ts work-101.txt phase-formula.yaml
 ```
 
 ## Where it runs
@@ -51,10 +51,15 @@ automation in the tracker (the authority — see
 
 | File | Role |
 |------|------|
-| `check-formula.sh` | the gate; `RECORD` + `FORMULA` select inputs, `DONE_STATES` the terminal states |
-| `test-check-formula.sh` | paired self-test |
+| `check-formula.ts` | the gate; `RECORD` + `FORMULA` select inputs, `DONE_STATES` the terminal states |
+| `check-formula.test.ts` | paired self-test |
 | `fixtures/formula.yaml` | the shared formula (two required phases) |
 | `fixtures/good/` | records that must pass (complete-at-close, still-open, non-done status) |
 | `fixtures/bad/` | records/formula that must fail or error |
 
-Run the self-test with `./test-check-formula.sh`.
+Run the self-test with `bun test ./check-formula.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

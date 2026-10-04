@@ -1,0 +1,8 @@
+# SAFE: a GitLab production-deploy job whose push rule is a flow mapping with a
+# real top-level `when: manual` after nested mappings and escaped quotes.
+deploy-production:
+  stage: deploy
+  script:
+    - ./deploy --target production --ref refs/tags/verified
+  rules:
+    - { if: '$CI_PIPELINE_SOURCE == "push"', variables: { NOTE: "a\", b", LIST: [1, 2], OTHER: 'it''s' }, when: manual }

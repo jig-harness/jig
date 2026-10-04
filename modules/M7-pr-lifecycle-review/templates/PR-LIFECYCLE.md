@@ -51,8 +51,8 @@ leave inline notes where a reviewer will otherwise ask. Run the local gate set.
 
 **Exit:** the author has reviewed the full diff; local gates pass.
 **Executable:** run the local gate set — the M7 gates
-([`check-pr-target-safety.sh`](../reference/pr-target-safety/),
-[`check-threads-resolved.sh`](../reference/comment-resolution/)) plus your
+([`check-pr-target-safety.ts`](../reference/pr-target-safety/),
+[`check-threads-resolved.ts`](../reference/comment-resolution/)) plus your
 repo's own gates — and your agent runtime's self-review (e.g. `/review`).
 
 ### 3. Automated + human review (concurrent, layered)
@@ -127,7 +127,7 @@ are silent — no error is raised either way:
 **Exit:** a round in which every thread is Addressed / Rejected / Deferred / Moot
 with its trail, every reviewer has reported, and the PR is still open.
 **Executable:** the unresolved-threads merge gate
-[`check-threads-resolved.sh`](../reference/comment-resolution/) — fed by the
+[`check-threads-resolved.ts`](../reference/comment-resolution/) — fed by the
 verdict export adapter, not by raw reply text — and the per-round
 [convergence check](../reference/review-convergence/), whose exit code drives the
 loop. Both are wired in [`mappings.md`](../mappings.md).

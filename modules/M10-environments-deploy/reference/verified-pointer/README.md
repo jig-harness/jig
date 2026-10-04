@@ -33,19 +33,19 @@ Two independent lag signals; supply either or both:
 The pointer is **stalled** (exit `1`) if *either* supplied signal exceeds its
 threshold; it is **fresh** (exit `0`) only if every supplied signal is at or
 under threshold. At-threshold counts as fresh — only strictly-greater stalls.
-Thresholds are validated up front (like `check-parity.sh` validates
+Thresholds are validated up front (like `check-parity.ts` validates
 `MIN_PRECISION`): a non-numeric or negative threshold is a usage error (exit
 `2`), never a silently-passing check.
 
 ## Mechanism
 
-Portable bash + coreutils. Feed the observation via env or an input file; derive
+Portable Bun/TypeScript. Feed the observation via env or an input file; derive
 the numbers from git (recipes per forge in [`../../mappings.md`](../../mappings.md)):
 
 ```sh
 BEHIND=$(git rev-list --count verified..origin/main)
 AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
-MAX_BEHIND=20 MAX_AGE_SECONDS=86400 ./check-verified-fresh.sh
+MAX_BEHIND=20 MAX_AGE_SECONDS=86400 bun ./check-verified-fresh.ts
 ```
 
 An input file passes the same observation as `<KEY> <value>` lines (`BEHIND` /
@@ -62,15 +62,15 @@ is still the authority for running it (see [M1](../../../M1-gates-enforcement-la
 
 | File | Role |
 |------|------|
-| `check-verified-fresh.sh` | the gate; `BEHIND` / `AGE_SECONDS` + `MAX_BEHIND` / `MAX_AGE_SECONDS`, or a file arg |
-| `test-check-verified-fresh.sh` | paired self-test (exit codes, thresholds, file + env paths) |
+| `check-verified-fresh.ts` | the gate; `BEHIND` / `AGE_SECONDS` + `MAX_BEHIND` / `MAX_AGE_SECONDS`, or a file arg |
+| `check-verified-fresh.test.ts` | paired self-test (exit codes, thresholds, file + env paths) |
 | `fixtures/fresh.txt` | keeping up — must pass |
 | `fixtures/boundary.txt` | exactly at threshold — must pass |
 | `fixtures/stalled-behind.txt` | too far behind — must fail |
 | `fixtures/stalled-age.txt` | not advanced in too long — must fail |
 | `fixtures/bad-value.txt` | non-numeric observation — must error |
 
-Run the self-test with `./test-check-verified-fresh.sh`.
+Run the self-test with `bun test ./check-verified-fresh.test.ts`.
 
 ## Known limits
 

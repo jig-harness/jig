@@ -66,10 +66,10 @@ pre-push:
     # that cannot violate the rule skip it entirely.
     check-<rule-1>:
       glob: "<paths the rule applies to>"
-      run: scripts/check-<rule-1>.sh
+      run: bun scripts/check-<rule-1>.ts
     check-<rule-2>:
       glob: "<paths the rule applies to>"
-      run: scripts/check-<rule-2>.sh
+      run: bun scripts/check-<rule-2>.ts
 
     # Heavy phase last: build + test what changed. If several agents or
     # worktrees share one machine, serialize this phase behind a mutex so
@@ -93,4 +93,4 @@ commit-msg:
       run: |
         REVIEW_MARKER='<[reviewed:your-process] tag>' \
         REVIEW_PATHS_RE='<^regex/for/protected/paths$>' \
-        scripts/check-review-marker.sh {1}
+        bun scripts/check-review-marker.ts {1}

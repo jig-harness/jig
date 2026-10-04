@@ -23,13 +23,13 @@ promoted into the regression gate, where a green result would be theater.
 
 ## Mechanism
 
-Portable bash + awk (no `yq` / python). It reads the taxonomy's category ids and
+Portable Bun + TypeScript (no shell utilities required). It reads the taxonomy's category ids and
 the corpus's fixtures, then checks each fixture against the table above. The
 taxonomy defaults to `miss-taxonomy.yaml` beside the corpus; override with
 `TAXONOMY=`.
 
 ```sh
-CORPUS=corpus.yaml TAXONOMY=miss-taxonomy.yaml ./check-corpus.sh
+CORPUS=corpus.yaml TAXONOMY=miss-taxonomy.yaml bun ./check-corpus.ts
 ```
 
 ## Where it runs
@@ -42,10 +42,15 @@ is a convenience. It is cheap enough to always-run.
 
 | File | Role |
 |------|------|
-| `check-corpus.sh` | the gate; `CORPUS` + `TAXONOMY` select inputs |
-| `test-check-corpus.sh` | paired self-test |
+| `check-corpus.ts` | the gate; `CORPUS` + `TAXONOMY` select inputs |
+| `check-corpus.test.ts` | paired self-test |
 | `fixtures/good/` | a valid corpus — must pass |
 | `fixtures/bad/` | one file per broken invariant — each must fail |
 | `fixtures/miss-taxonomy.yaml` | the category vocabulary the fixtures resolve against |
 
-Run the self-test with `./test-check-corpus.sh`.
+Run the self-test with `bun test ./check-corpus.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

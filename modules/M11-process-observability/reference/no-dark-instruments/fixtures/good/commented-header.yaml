@@ -1,0 +1,6 @@
+# A trailing comment on the `metrics:` header is accepted and the block is read.
+version: 1
+
+metrics: # process metrics
+  - id: adoption
+    source: event:adoption

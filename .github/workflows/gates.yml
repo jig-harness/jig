@@ -1,6 +1,4 @@
-# Groundwork's own quality gates (dogfooded M1 — see ROADMAP Phase 2 item 2).
-# Tiny by design: markdown links resolve, tables render, terms of art are
-# defined. One command locally: ./scripts/gates.sh
+# The same native Bun gate set runs on every supported operating system.
 name: gates
 
 on:
@@ -8,14 +6,36 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: gates-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  gates:
-    runs-on: ubuntu-latest
+  platform-gates:
+    name: gates (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - name: Run gate set (self-tests + checks)
-        run: ./scripts/gates.sh
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Run gate set
+        run: bun run gates
+
+  # Preserve the existing required status-check name while requiring all OSes.
+  gates:
+    needs: platform-gates
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every platform
+        env:
+          RESULT: ${{ needs.platform-gates.result }}
+        run: test "$RESULT" = success

@@ -34,19 +34,19 @@ jobs:
       M9: modules/M9-tasks-memory        # where you vendored the module
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: "$M9"/reference/label-taxonomy-lint/test-check-label-taxonomy.sh
-      - run: TAXONOMY=label-taxonomy.yaml "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.sh
+      - run: bun test "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.test.ts
+      - run: TAXONOMY=label-taxonomy.yaml bun "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.ts
   required-phases:
     runs-on: ubuntu-latest
     env:
       M9: modules/M9-tasks-memory
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: "$M9"/reference/required-phases/test-check-formula.sh
+      - run: bun test "$M9"/reference/required-phases/check-formula.test.ts
       # export this PR's item phase record from the tracker (see below), then:
       - run: |
           RECORD=item-phases.txt FORMULA=phase-formula.yaml \
-            "$M9"/reference/required-phases/check-formula.sh
+            bun "$M9"/reference/required-phases/check-formula.ts
 ```
 
 ### GitLab CI
@@ -56,10 +56,10 @@ tasks_memory:
   variables:
     M9: modules/M9-tasks-memory
   script:
-    - "$M9"/reference/label-taxonomy-lint/test-check-label-taxonomy.sh
-    - TAXONOMY=label-taxonomy.yaml "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.sh
-    - "$M9"/reference/required-phases/test-check-formula.sh
-    - RECORD=item-phases.txt FORMULA=phase-formula.yaml "$M9"/reference/required-phases/check-formula.sh
+    - bun test "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.test.ts
+    - TAXONOMY=label-taxonomy.yaml bun "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.ts
+    - bun test "$M9"/reference/required-phases/check-formula.test.ts
+    - RECORD=item-phases.txt FORMULA=phase-formula.yaml bun "$M9"/reference/required-phases/check-formula.ts
 ```
 
 ## Issue trackers — flag labels + required checks, and formula → phases
@@ -101,7 +101,7 @@ the home — the reflection/promotion *commands* live with
 
 ## CI providers
 
-Any provider works — both gates are plain shell (bash + awk, no `yq`/python).
+Any provider works — both gates run with Bun and TypeScript.
 The only provider-specific pieces are (1) the path prefix (`M9` above) and (2)
 the tracker export that produces the phase record the required-phases gate
 consumes, shown per tracker above.

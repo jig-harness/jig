@@ -1,0 +1,7 @@
+# UNSAFE (a): a GitLab production-deploy job that fires on every push through
+# the legacy `only` keyword, written with a quoted key.
+deploy-production:
+  stage: deploy
+  script:
+    - ./deploy --target production --ref refs/tags/verified
+  "only": [pushes]

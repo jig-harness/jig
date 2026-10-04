@@ -1,0 +1,7 @@
+# A comment after the bare `-` marker is not a key: the item's own keys start on
+# the next line.
+version: 1
+metrics:
+  -     # explanation
+    id: adoption
+    source: event:adoption

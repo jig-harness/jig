@@ -6,13 +6,18 @@ rung's checks onto concrete [CI](../../GLOSSARY.md) providers, [git
 hook](../../GLOSSARY.md) managers, and container/database stacks. Replace
 `<placeholders>` with your repo's values.
 
+Every command below is a TypeScript script run with [Bun](../../GLOSSARY.md):
+`bun <script>.ts`. The runner (CI job, hook or container) needs Bun installed at
+a pinned version first — see the toolchain note in
+[M1's mappings](../M1-gates-enforcement-ladder/mappings.md).
+
 ## CI providers, per rung
 
 | Rung | Check | Reference script |
 |------|-------|------------------|
 | 2 — CI-check, commit nothing | stated-counts drift; referenced-path-exists | [`reference/prose-facts/`](reference/prose-facts/) |
-| 3 — commit + triad | regenerate-to-temp-and-diff drift gate | [`reference/triad/check-index-fresh.sh`](reference/triad/check-index-fresh.sh) |
-| 3 (Strict, schema-like) | ephemeral replay | [`reference/ephemeral-replay/check-schema-drift.sh`](reference/ephemeral-replay/check-schema-drift.sh) |
+| 3 — commit + triad | regenerate-to-temp-and-diff drift gate | [`reference/triad/check-index-fresh.ts`](reference/triad/check-index-fresh.ts) |
+| 3 (Strict, schema-like) | ephemeral replay | [`reference/ephemeral-replay/check-schema-drift.ts`](reference/ephemeral-replay/check-schema-drift.ts) |
 
 ### GitHub Actions
 
@@ -22,10 +27,10 @@ hook](../../GLOSSARY.md) managers, and container/database stacks. Replace
 # `steps:` key.
 steps:
   - name: Stated-counts drift (advisory)
-    run: sh reference/prose-facts/check-stated-counts.sh <instruction-file> <dir> <noun>
+    run: bun reference/prose-facts/check-stated-counts.ts <instruction-file> <dir> <noun>
     continue-on-error: true
   - name: Referenced paths exist (advisory)
-    run: sh reference/prose-facts/check-referenced-paths.sh <instruction-file>
+    run: bun reference/prose-facts/check-referenced-paths.ts <instruction-file>
     continue-on-error: true
 ```
 
@@ -40,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: sh reference/triad/check-index-fresh.sh <docs-dir>
+      - run: bun reference/triad/check-index-fresh.ts <docs-dir>
 ```
 
 ```yaml
@@ -58,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: ./reference/ephemeral-replay/check-schema-drift.sh <migrations-dir> <schema.sql>
+      - run: bun reference/ephemeral-replay/check-schema-drift.ts <migrations-dir> <schema.sql>
 ```
 
 ### GitLab CI
@@ -67,13 +72,13 @@ jobs:
 # Rung 2 — advisory via allow_failure; promote by deleting that line.
 prose-facts:
   script:
-    - sh reference/prose-facts/check-stated-counts.sh <instruction-file> <dir> <noun>
-    - sh reference/prose-facts/check-referenced-paths.sh <instruction-file>
+    - bun reference/prose-facts/check-stated-counts.ts <instruction-file> <dir> <noun>
+    - bun reference/prose-facts/check-referenced-paths.ts <instruction-file>
   allow_failure: true
 
 # Rung 3 — triad drift gate, run only when the inputs changed.
 index-freshness:
-  script: sh reference/triad/check-index-fresh.sh <docs-dir>
+  script: bun reference/triad/check-index-fresh.ts <docs-dir>
   rules:
     - changes: ['<docs-dir>/**/*.md']
 
@@ -81,7 +86,7 @@ index-freshness:
 schema-drift:
   image: docker:27
   services: ['docker:27-dind']
-  script: ./reference/ephemeral-replay/check-schema-drift.sh <migrations-dir> <schema.sql>
+  script: bun reference/ephemeral-replay/check-schema-drift.ts <migrations-dir> <schema.sql>
 
 # ...or skip the container entirely with a GitLab service database: replay
 # migrations into the `postgres` service with psql, dump with pg_dump, then

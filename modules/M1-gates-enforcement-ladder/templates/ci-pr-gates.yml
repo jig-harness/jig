@@ -42,13 +42,17 @@ jobs:
         with:
           fetch-depth: 0    # grep gates that diff against the base need history
 
+      # Install the pinned gate runtime before the first gate runs. This step is
+      # unconditional: the gates below run on every PR, including docs-only ones,
+      # so they cannot rely on the change-gated "Setup toolchain" step later.
+      - uses: jdx/mise-action@<pinned-sha>    # reads the Bun pin from mise.toml
       # --- Cheap grep gates (mirrors of the pre-push hook; see lefthook.yml).
       # Run each gate AND its paired self-test. Keep one step per rule so a
       # failure names the rule in the check UI.
       - name: Gate — <rule-1>
-        run: scripts/check-<rule-1>.sh
+        run: bun scripts/check-<rule-1>.ts
       - name: Gate self-test — <rule-1>
-        run: scripts/test-<rule-1>.sh
+        run: bun test scripts/check-<rule-1>.test.ts
 
       - name: Gate — review markers on protected commits
         # CI-side re-check of the commit-msg marker (closes --no-verify):

@@ -62,7 +62,7 @@ Read in this order when starting a session here:
   When moving code in, resolve every such reference: restate the rationale it
   pointed to where the shape is non-obvious, and drop it where the code or
   documentation already makes the reason evident. Enforced by
-  `scripts/check-no-tracker-refs.sh`; the key patterns live in
+  `scripts/check-no-tracker-refs.ts`; the key patterns live in
   `scripts/tracker-key-patterns.txt`.
 - **De-scarring.** Final documents carry no review-finding traces, reviewer
   dialogue, or "addressed/fixed" annotations — that history lives in PRs and
@@ -120,14 +120,13 @@ the enforcement ladder: *absent → convention-only → mechanically enforced*.
 - **Toolchain.** Runnable tooling and gates are written in Bun + TypeScript:
   Bun runs natively on macOS, Linux and Windows, where Bash runs only through
   a compatibility layer and its standard utilities behave differently on macOS
-  and Linux. Bun is this
-  repository's toolchain, not a requirement on target repositories — tooling a
+  and Linux. Bun is this repository's toolchain, not a requirement on target repositories — tooling a
   non-JavaScript repository runs ships as a standalone executable or is pinned
-  through mise. The existing Bash gates are ported as the first step of that
-  work; until then they remain the gates.
+  through mise. The repository and module gates run natively under the pinned
+  Bun runtime.
 - Quality gates (dogfooded M1, tiny by design) — run all with one command:
-  `./scripts/gates.sh`. The set, in order: gate self-tests, markdown links
-  resolve, blank line before tables, terms of art defined in the glossary
+  `bun run gates`. The set, in order: format, lint, types, gate self-tests,
+  build, Markdown links resolve, blank line before tables, terms of art defined in the glossary
   (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`), no
   issue-tracker references. CI runs
   the same command on every PR (`.github/workflows/gates.yml`). Scope differs

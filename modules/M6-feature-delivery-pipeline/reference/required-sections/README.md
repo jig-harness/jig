@@ -33,8 +33,8 @@ forgiving on formatting so the gate flags a genuinely absent section, not a
 capitalisation difference.
 
 ```sh
-SECTIONS='Problem statement|Success metrics|Scope' ./check-required-sections.sh prd.md
-./check-required-sections.sh prd.md sections.txt
+SECTIONS='Problem statement|Success metrics|Scope' bun ./check-required-sections.ts prd.md
+bun ./check-required-sections.ts prd.md sections.txt
 ```
 
 ## Where it runs
@@ -50,11 +50,16 @@ PR that touches `docs/prd/*.md` runs the PRD manifest against it.
 
 | File | Role |
 |------|------|
-| `check-required-sections.sh` | the gate; artifact via arg/`ARTIFACT`, headings via `SECTIONS`/manifest |
-| `test-check-required-sections.sh` | paired self-test (exit codes + case-insensitive matching + the named-miss output) |
+| `check-required-sections.ts` | the gate; artifact via arg/`ARTIFACT`, headings via `SECTIONS`/manifest |
+| `check-required-sections.test.ts` | paired self-test (exit codes + case-insensitive matching + the named-miss output) |
 | `fixtures/sections.txt` | a PRD sections manifest |
 | `fixtures/good-prd.md` | all required sections — must pass |
 | `fixtures/bad-prd.md` | missing `## Success metrics` — must fail |
 | `fixtures/empty-sections.txt` | comments only — must error (exit 2) |
 
-Run the self-test with `./test-check-required-sections.sh`.
+Run the self-test with `bun test ./check-required-sections.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

@@ -9,8 +9,7 @@ commit-message body once the review is done, checked by a commit-msg hook
 whenever protected files are staged — and re-checked by a later gate (CI)
 so the local hook is a convenience, not the authority.
 
-`check-review-marker.sh` is the portable hook script (bash + grep + git; no
-runtime). Wire it into your hook manager's `commit-msg` hook — see
+`check-review-marker.ts` is the native Bun/TypeScript hook script. Wire it into your hook manager's `commit-msg` hook — see
 `../../templates/lefthook.yml` for placement and `../../mappings.md` for
 husky / pre-commit-framework equivalents.
 
@@ -48,7 +47,7 @@ cd "$(mktemp -d)" && git init -q .
 mkdir -p db/migrations && echo 'CREATE TABLE t (id INT);' > db/migrations/0001.sql
 git add db/migrations/0001.sql
 echo 'feat: add table t' > MSG
-path/to/check-review-marker.sh MSG           # fails: marker missing
+bun path/to/check-review-marker.ts MSG           # fails: marker missing
 printf 'feat: add table t\n\n[reviewed:db-migration]\n' > MSG
-path/to/check-review-marker.sh MSG           # passes
+bun path/to/check-review-marker.ts MSG           # passes
 ```

@@ -1,0 +1,7 @@
+# A trailing comment on the `metrics:` header must not hide the block: the
+# metric below is still dark. Must FAIL (exit 1).
+version: 1
+
+metrics: # process metrics
+  - id: adoption
+    source: TODO

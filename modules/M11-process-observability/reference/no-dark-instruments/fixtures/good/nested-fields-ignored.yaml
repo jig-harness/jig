@@ -1,0 +1,12 @@
+# Nested keys named `id`/`source` are not the metric's own fields; the
+# top-level source here is wired and must be the one reported.
+version: 1
+metrics:
+  -
+    id: adoption
+    source: event:adoption
+    detail:
+      id: other
+      source: TODO
+    notes: |
+      source: TODO

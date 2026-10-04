@@ -248,3 +248,14 @@ capitalized as commonly written; cross-references are *italicized*.
   recommendations report. See [audit/](audit/).
 - **Backflow** — the standing rule that lessons from a live implementation
   flow back into this template (and vice versa), keeping both honest.
+
+## Runnable tooling
+
+- **Toolchain** — the runtime, compiler and checks used to build and test tools.
+- **Bun** — the runtime that executes Groundwork's TypeScript commands and tests,
+  installs their dependencies and bundles the tools.
+- **TypeScript** — JavaScript with checked type declarations; Groundwork checks
+  the types separately before running its commands.
+- **mise** — a tool that installs the exact runtime version recorded by a repository.
+- **Hard link** — another filesystem name for the same file. Creating the name
+  atomically lets a lock claim publish a complete owner record in one operation.

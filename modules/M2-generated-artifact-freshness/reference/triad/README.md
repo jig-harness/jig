@@ -25,17 +25,17 @@ definitions, ORM types from migrations, dependency notices from lockfiles.
 
 | File | Role |
 |------|------|
-| `generate-index.sh` | Generator: docs tree in, deterministic `index.md` out |
-| `check-index-fresh.sh` | Drift check: regenerate to temp, diff, fail loudly |
+| `generate-index.ts` | Generator: docs tree in, deterministic `index.md` out |
+| `check-index-fresh.ts` | Drift check: regenerate to temp, diff, fail loudly |
 | `fixture/docs/` | Tiny docs tree (with its committed, fresh `index.md`) to run against |
 
-Try it (POSIX shell, no dependencies):
+Try it with the pinned Bun runtime:
 
 ```sh
-sh generate-index.sh fixture/docs        # regenerate the artifact
-sh check-index-fresh.sh fixture/docs     # exit 0: fresh
+bun generate-index.ts fixture/docs        # regenerate the artifact
+bun check-index-fresh.ts fixture/docs     # exit 0: fresh
 echo '# New page' > fixture/docs/new.md
-sh check-index-fresh.sh fixture/docs     # exit 1: stale, prints the fix
+bun check-index-fresh.ts fixture/docs     # exit 1: stale, prints the fix
 ```
 
 ## Wiring the third leg: the auto-stage hook
@@ -51,7 +51,7 @@ pre-commit:
     index-fresh:
       glob: "<docs-dir>/**/*.md"
       run: |
-        sh reference/triad/generate-index.sh <docs-dir>
+        bun reference/triad/generate-index.ts <docs-dir>
         git add <docs-dir>/index.md
       stage_fixed: true
 ```
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: sh reference/triad/check-index-fresh.sh <docs-dir>
+      - run: bun reference/triad/check-index-fresh.ts <docs-dir>
 ```
 
 ## Determinism rules for generators

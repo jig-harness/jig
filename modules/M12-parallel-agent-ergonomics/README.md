@@ -34,12 +34,12 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    its own branch or directory name, so the same worktree always gets the same
    port and two worktrees almost never clash, with no registry and no lock. The
    portable allocator is [`reference/port-allocator/`](reference/port-allocator/)
-   (`allocate-port.sh` + self-test); the collision caveat and range-sizing
+   (`allocate-port.ts` + self-test); the collision caveat and range-sizing
    guidance are in its README.
 2. **A cross-worktree heavy-run mutex** — full build/test passes run one-at-a-time
-   machine-wide instead of thrashing, via an atomic `mkdir` lock at a shared path
+   machine-wide instead of thrashing, via an atomic process-id symlink lock at a shared path
    with a wait timeout and dead-holder reclaim:
-   [`reference/resource-lock/`](reference/resource-lock/) (`with-resource-lock.sh`
+   [`reference/resource-lock/`](reference/resource-lock/) (`with-resource-lock.ts`
    + self-test). It **bypasses under [CI](../../GLOSSARY.md)** because a CI runner
    is an already-isolated machine — serializing there would be pure latency. This
    is the **same `with-resource-lock` mechanism** the
@@ -91,7 +91,7 @@ governs how those files layer), so every agent inherits the rules.
    into your docs tree and trim the footgun table and port ranges to your stack.
 2. Vendor [`reference/port-allocator/`](reference/port-allocator/) and
    [`reference/resource-lock/`](reference/resource-lock/); wrap your heavy gate
-   commands with `with-resource-lock.sh` locally (CI is handled by the bypass).
+   commands with `with-resource-lock.ts` locally (CI is handled by the bypass).
 3. Wire the create/remove hooks from
    [`templates/worktree-hooks.md`](templates/worktree-hooks.md) at your worktree
    manager's hook points (see [mappings.md](mappings.md)).
@@ -105,7 +105,7 @@ governs how those files layer), so every agent inherits the rules.
 | Source (docomply `develop`) | Landed as |
 |-----------------------------|-----------|
 | Worktree-create hook allocating a deterministic port slot | [`reference/port-allocator/`](reference/port-allocator/) (portable allocator + self-test) and the create-hook skeleton in [`templates/worktree-hooks.md`](templates/worktree-hooks.md) |
-| `with-resource-lock.sh` cross-worktree mutex (atomic `mkdir`, process-id liveness, stale reclaim, CI bypass) | [`reference/resource-lock/`](reference/resource-lock/) (transcribed and self-tested; shared with [M1](../M1-gates-enforcement-ladder/)) |
+| `with-resource-lock.ts` cross-worktree mutex (atomic process-id symlink, process-id liveness, stale reclaim, CI bypass) | [`reference/resource-lock/`](reference/resource-lock/) (transcribed and self-tested; shared with [M1](../M1-gates-enforcement-ladder/)) |
 | Branch reuse-before-create discipline + footgun bans | [`templates/branch-discipline.md`](templates/branch-discipline.md) and the model doc [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md) |
 | Worktree-remove hook nudging reflection | remove-hook skeleton in [`templates/worktree-hooks.md`](templates/worktree-hooks.md), cross-linked to [M8](../M8-learning-loop/) |
 

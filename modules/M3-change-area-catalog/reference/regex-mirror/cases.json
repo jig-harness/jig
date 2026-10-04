@@ -1,0 +1,633 @@
+[
+  [0, "synced regex/catalog passes", "synced/filter.sh", "synced/catalog.yaml"],
+  [
+    1,
+    "regex prefix absent from catalog",
+    "drift/filter.sh",
+    "drift/catalog.yaml"
+  ],
+  [
+    1,
+    "regex prefix present only in notes:, not paths:",
+    "notes-only/filter.sh",
+    "notes-only/catalog.yaml"
+  ],
+  [
+    1,
+    "regex prefix near-misses a sibling path (services vs services-old)",
+    "boundary/filter.sh",
+    "boundary/catalog.yaml"
+  ],
+  [
+    1,
+    "regex prefix present only in a nested block's own paths: key",
+    "nested-paths/filter.sh",
+    "nested-paths/catalog.yaml"
+  ],
+  [
+    1,
+    "regex prefix present only in notes: block-scalar prose shaped like paths:",
+    "block-scalar/filter.sh",
+    "block-scalar/catalog.yaml"
+  ],
+  [
+    2,
+    "regex alternative normalizes to empty (.* catch-all)",
+    "empty-alternative/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    1,
+    "narrower regex misses a glob with a literal comma",
+    "comma-in-glob/filter.sh",
+    "comma-in-glob/catalog.yaml"
+  ],
+  [
+    0,
+    "inline comment after a paths: array doesn't leak into the glob",
+    "inline-comment/filter.sh",
+    "inline-comment/catalog.yaml"
+  ],
+  [
+    2,
+    "trailing | drops an empty alternative that matches every path",
+    "trailing-pipe/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    1,
+    "quoted string inside an inline comment doesn't leak into the glob",
+    "inline-comment-quoted/filter.sh",
+    "inline-comment-quoted/catalog.yaml"
+  ],
+  [
+    2,
+    "unescaped regex metacharacter is rejected, not treated as a literal",
+    "unescaped-metachar/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    0,
+    "a backslash-escaped metacharacter stays supported as a literal",
+    "escaped-dot/filter.sh",
+    "escaped-dot/catalog.yaml"
+  ],
+  [
+    0,
+    "a catalog glob containing its own ] is parsed whole, not truncated",
+    "bracket-glob/filter.sh",
+    "bracket-glob/catalog.yaml"
+  ],
+  [
+    2,
+    "an alternative missing a leading ^ is rejected",
+    "unanchored-start/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "an alternative with no trailing boundary is rejected",
+    "unanchored-end/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    0,
+    "a /.* boundary (wildcard after a real separator) stays supported",
+    "dot-star-boundary/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "an escaped literal pipe is rejected, not silently mis-split",
+    "escaped-pipe/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    1,
+    "an exact-anchored alternative can't cover a descendant-only glob",
+    "exact-match-descendant/filter.sh",
+    "exact-match-descendant/catalog.yaml"
+  ],
+  [
+    0,
+    "a YAML-escaped quote inside a glob is parsed, not truncated",
+    "escaped-quote-in-glob/filter.sh",
+    "escaped-quote-in-glob/catalog.yaml"
+  ],
+  [
+    1,
+    "a directory-form alternative can't cover an exact wildcard-free catalog value",
+    "directory-alt-exact-catalog/filter.sh",
+    "directory-alt-exact-catalog/catalog.yaml"
+  ],
+  [
+    2,
+    "a malformed paths: array (an unquoted element) is a hard error",
+    "malformed-paths-array/filter.sh",
+    "malformed-paths-array/catalog.yaml"
+  ],
+  [
+    2,
+    "an unescaped anchor embedded mid-alternative is rejected",
+    "embedded-anchor/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "trailing non-comment content after ] is a hard error",
+    "trailing-garbage-after-bracket/filter.sh",
+    "trailing-garbage-after-bracket/catalog.yaml"
+  ],
+  [
+    2,
+    "an unsupported YAML escape sequence is a hard error",
+    "unsupported-yaml-escape/filter.sh",
+    "unsupported-yaml-escape/catalog.yaml"
+  ],
+  [
+    2,
+    "a leading comma in the paths: array is a hard error",
+    "leading-comma/filter.sh",
+    "leading-comma/catalog.yaml"
+  ],
+  [
+    2,
+    "a doubled comma in the paths: array is a hard error",
+    "double-comma/filter.sh",
+    "double-comma/catalog.yaml"
+  ],
+  [
+    2,
+    "an empty path string is a hard error even if another area is valid",
+    "empty-path-string/filter.sh",
+    "empty-path-string/catalog.yaml"
+  ],
+  [
+    0,
+    "a single trailing comma in the paths: array stays supported",
+    "trailing-comma-ok/filter.sh",
+    "trailing-comma-ok/catalog.yaml"
+  ],
+  [
+    1,
+    "an escaped-literal alternative can't cover a bracket-class glob",
+    "escaped-bracket-literal/filter.sh",
+    "escaped-bracket-literal/catalog.yaml"
+  ],
+  [
+    1,
+    "an escaped-literal alternative can't cover a ? wildcard glob",
+    "question-mark-variable/filter.sh",
+    "question-mark-variable/catalog.yaml"
+  ],
+  [
+    2,
+    "an escaped trailing \\\\$ is a literal, not an anchor, and has no boundary",
+    "escaped-dollar-not-anchor/filter.sh",
+    "escaped-dollar-not-anchor/catalog.yaml"
+  ],
+  [
+    2,
+    "an empty paths: array is a hard error even if another area is valid",
+    "empty-paths-array/filter.sh",
+    "empty-paths-array/catalog.yaml"
+  ],
+  [
+    2,
+    "a non-array paths: declaration is a hard error, not silently skipped",
+    "non-array-paths/filter.sh",
+    "non-array-paths/catalog.yaml"
+  ],
+  [
+    0,
+    "a directory-form alternative covers a genuine ancestor of an exact file",
+    "directory-alt-ancestor-of-exact/filter.sh",
+    "directory-alt-ancestor-of-exact/catalog.yaml"
+  ],
+  [
+    2,
+    "a trailing /** on the regex side is rejected (unreliable duplicate-quantifier semantics)",
+    "double-star-regex-suffix/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "a combined /\\$ suffix is rejected (distinct from a clean exact match)",
+    "combined-suffix-slash-dollar/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    0,
+    "a /.*\\$ suffix normalizes and passes just like the plain /.* form",
+    "combined-suffix-dotstar-dollar/filter.sh",
+    "combined-suffix-dotstar-dollar/catalog.yaml"
+  ],
+  [
+    2,
+    "a combined suffix against an exact catalog file is rejected",
+    "combined-suffix-exact-file/filter.sh",
+    "inline-comment/catalog.yaml"
+  ],
+  [
+    2,
+    "a backslash before an unrecognized character is rejected",
+    "unrecognized-escape/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    0,
+    "an escaped backslash decodes to one literal backslash, not zero",
+    "escaped-backslash-in-regex/filter.sh",
+    "escaped-backslash-in-regex/catalog.yaml"
+  ],
+  [
+    0,
+    "an escaped backslash followed by a real \\$ anchor is an exact match",
+    "escaped-backslash-then-dollar/filter.sh",
+    "escaped-backslash-then-dollar/catalog.yaml"
+  ],
+  [
+    2,
+    "leading/trailing whitespace in the normalized prefix is a hard error",
+    "whitespace-in-prefix/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "a double-quoted assignment is a hard error (raw source text isn't the runtime value)",
+    "double-quoted-assignment/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    1,
+    "an escaped-literal alternative can't cover a brace-expansion glob",
+    "brace-expansion-variable/filter.sh",
+    "brace-expansion-variable/catalog.yaml"
+  ],
+  [
+    2,
+    "a concatenated single-quoted assignment is a hard error",
+    "concatenated-quoted-assignment/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "an extglob catalog glob is a hard error (unrecognized dialect)",
+    "extglob-catalog-glob/filter.sh",
+    "extglob-catalog-glob/catalog.yaml"
+  ],
+  [
+    2,
+    "a leading ! catalog glob is a hard error (unrecognized negation)",
+    "leading-negation-glob/filter.sh",
+    "leading-negation-glob/catalog.yaml"
+  ],
+  [
+    0,
+    "a backslash-escaped metacharacter in a catalog glob is literal, not a variable construct",
+    "escaped-metachar-in-catalog-glob/filter.sh",
+    "escaped-metachar-in-catalog-glob/catalog.yaml"
+  ],
+  [
+    2,
+    "multiple \\$CODE_PATH_RE assignments (or assignment-shaped lines) is a hard error",
+    "multiple-assignments/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "a += append is rejected by the whole-file grammar",
+    "append-assignment/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "a backslash-newline line continuation is a hard error",
+    "line-continuation/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "an indirect assignment (printf -v with a split variable name) is a hard error",
+    "indirect-assignment/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "an assignment wrapped in a conditional is a hard error",
+    "conditional-assignment/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "a duplicate paths: key within the same area is a hard error, not unioned",
+    "duplicate-paths-key/filter.sh",
+    "duplicate-paths-key/catalog.yaml"
+  ],
+  [
+    2,
+    "a comment between duplicate paths: keys doesn't reset the duplicate tracker",
+    "duplicate-paths-key-comment-between/filter.sh",
+    "duplicate-paths-key-comment-between/catalog.yaml"
+  ],
+  [
+    1,
+    "a paths: key outside areas: is not a real area declaration",
+    "paths-outside-areas/filter.sh",
+    "paths-outside-areas/catalog.yaml"
+  ],
+  [
+    2,
+    "a paths: key inside areas: but with no containing area is a hard error, not silently accepted",
+    "paths-without-area/filter.sh",
+    "paths-without-area/catalog.yaml"
+  ],
+  [
+    2,
+    "a CRLF line ending in the filter file is a hard error",
+    "crlf-line-ending/filter.sh",
+    "synced/catalog.yaml"
+  ],
+  [
+    2,
+    "a column-zero comment doesn't end the areas: block early",
+    "duplicate-paths-key-column-zero-comment/filter.sh",
+    "duplicate-paths-key-column-zero-comment/catalog.yaml"
+  ],
+  [
+    2,
+    "a duplicate area identifier is a hard error, not two areas",
+    "duplicate-area-identifier/filter.sh",
+    "duplicate-area-identifier/catalog.yaml"
+  ],
+  [
+    2,
+    "a duplicate top-level areas: key is a hard error, not a second block to scan",
+    "duplicate-areas-key/filter.sh",
+    "duplicate-areas-key/catalog.yaml"
+  ],
+  [
+    2,
+    "a quoted duplicate of the top-level areas: key is a hard error, quotes and all",
+    "quoted-areas-key-duplicate/filter.sh",
+    "quoted-areas-key-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "a bare duplicate areas: key with space before the colon is still a hard error",
+    "spaced-areas-key-duplicate/filter.sh",
+    "spaced-areas-key-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "a quoted duplicate areas: key with space before the colon is still a hard error",
+    "spaced-quoted-areas-key-duplicate/filter.sh",
+    "spaced-quoted-areas-key-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "a duplicate areas: key spelled with an unsupported YAML escape is a hard error, not invisible",
+    "escaped-areas-key-duplicate/filter.sh",
+    "escaped-areas-key-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "an areas: key with trailing content is a hard error, not a nested mapping",
+    "areas-key-trailing-content/filter.sh",
+    "areas-key-trailing-content/catalog.yaml"
+  ],
+  [
+    2,
+    "a 2-space line with no colon is not a valid area declaration",
+    "colonless-area-line/filter.sh",
+    "colonless-area-line/catalog.yaml"
+  ],
+  [
+    2,
+    "an area name with trailing content is a hard error, not a nested mapping",
+    "area-name-trailing-content/filter.sh",
+    "area-name-trailing-content/catalog.yaml"
+  ],
+  [
+    2,
+    "an anchor-prefixed duplicate areas: key is a hard error, not a silent end of block",
+    "anchor-prefixed-areas-key-duplicate/filter.sh",
+    "anchor-prefixed-areas-key-duplicate/catalog.yaml"
+  ],
+  [
+    0,
+    "a single YAML anchor after areas: still declares a normal areas: block",
+    "areas-key-anchor-ok/filter.sh",
+    "areas-key-anchor-ok/catalog.yaml"
+  ],
+  [
+    0,
+    "a single YAML anchor after an area name still declares a normal area",
+    "area-name-anchor-ok/filter.sh",
+    "area-name-anchor-ok/catalog.yaml"
+  ],
+  [
+    0,
+    "an anchor and a tag together after areas: still declare a normal areas: block",
+    "areas-key-anchor-and-tag-ok/filter.sh",
+    "areas-key-anchor-and-tag-ok/catalog.yaml"
+  ],
+  [
+    2,
+    "two anchors after areas: is a hard error, not the supported anchor-plus-tag form",
+    "areas-key-duplicate-anchor/filter.sh",
+    "areas-key-duplicate-anchor/catalog.yaml"
+  ],
+  [
+    2,
+    "a # with no preceding whitespace after an anchor is a hard error, not valid anchor content",
+    "areas-key-anchor-with-hash-rejected/filter.sh",
+    "areas-key-anchor-with-hash-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a # immediately after the areas: colon (no separating whitespace) is a hard error, not a trailing comment",
+    "areas-key-colon-adjacent-hash-rejected/filter.sh",
+    "areas-key-colon-adjacent-hash-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a flow indicator (,) in an anchor name is a hard error, not valid anchor content",
+    "areas-key-anchor-flow-indicator-rejected/filter.sh",
+    "areas-key-anchor-flow-indicator-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a flow indicator (,) in a tag name is a hard error, same as in an anchor",
+    "areas-key-tag-flow-indicator-rejected/filter.sh",
+    "areas-key-tag-flow-indicator-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "an angle bracket in a tag name is a hard error",
+    "areas-key-tag-invalid-char-rejected/filter.sh",
+    "areas-key-tag-invalid-char-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a colon inside an area line's trailing comment is not the mapping colon",
+    "area-name-comment-colon-rejected/filter.sh",
+    "area-name-comment-colon-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a non-mapping core tag (!!str) on areas: is a hard error",
+    "areas-key-non-mapping-core-tag-rejected/filter.sh",
+    "areas-key-non-mapping-core-tag-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a --- multi-document catalog is a hard error, not scanned past into a second document",
+    "multi-document-catalog-rejected/filter.sh",
+    "multi-document-catalog-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a ... document-end marker is a hard error too, same as ---",
+    "document-end-marker-catalog-rejected/filter.sh",
+    "document-end-marker-catalog-rejected/catalog.yaml"
+  ],
+  [
+    0,
+    "a leading --- before any real content is a legitimate single-document marker, not a hard error",
+    "leading-document-start-marker-ok/filter.sh",
+    "leading-document-start-marker-ok/catalog.yaml"
+  ],
+  [
+    0,
+    "a trailing ... with nothing after it is a legitimate single-document marker, not a hard error",
+    "trailing-document-end-marker-ok/filter.sh",
+    "trailing-document-end-marker-ok/catalog.yaml"
+  ],
+  [
+    2,
+    "two consecutive --- markers is a hard error, not tolerated as a single leading marker",
+    "repeated-document-start-marker-rejected/filter.sh",
+    "repeated-document-start-marker-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a YAML sequence entry under areas: is a hard error, not harvested as an area name",
+    "areas-sequence-entry-rejected/filter.sh",
+    "areas-sequence-entry-rejected/catalog.yaml"
+  ],
+  [
+    2,
+    "a document marker with trailing scalar content (--- junk) is a hard error, not a bare decoration",
+    "document-marker-scalar-content-rejected/filter.sh",
+    "document-marker-scalar-content-rejected/catalog.yaml"
+  ],
+  [
+    0,
+    "a custom tag's resolvability is the adopter's own concern, not this scanner's \u2014 character-valid custom tags stay permissive",
+    "areas-key-custom-tag-ok/filter.sh",
+    "areas-key-custom-tag-ok/catalog.yaml"
+  ],
+  [
+    2,
+    "an anchor-prefixed duplicate area name is a hard error",
+    "anchor-prefixed-area-name-duplicate/filter.sh",
+    "anchor-prefixed-area-name-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "an anchor-prefixed duplicate paths: key is a hard error",
+    "anchor-prefixed-paths-key-duplicate/filter.sh",
+    "anchor-prefixed-paths-key-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "an explicit-key (? areas) duplicate of the areas: key is a hard error",
+    "explicit-key-areas-duplicate/filter.sh",
+    "explicit-key-areas-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "an anchor-prefixed duplicate areas: key is a hard error even after an unrelated top-level section",
+    "anchor-prefixed-areas-key-after-other-section/filter.sh",
+    "anchor-prefixed-areas-key-after-other-section/catalog.yaml"
+  ],
+  [
+    2,
+    "an anchor-prefixed areas: key is a hard error even when it comes before the plain areas: key",
+    "anchor-prefixed-areas-key-duplicate-first/filter.sh",
+    "anchor-prefixed-areas-key-duplicate-first/catalog.yaml"
+  ],
+  [
+    2,
+    "an explicit-key (? areas) duplicate is a hard error even when it comes before the plain areas: key",
+    "explicit-key-areas-duplicate-first/filter.sh",
+    "explicit-key-areas-duplicate-first/catalog.yaml"
+  ],
+  [
+    2,
+    "a double-quoted duplicate area identifier is a hard error, quotes and all",
+    "quoted-area-identifier-duplicate/filter.sh",
+    "quoted-area-identifier-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "a single-quoted duplicate area identifier is a hard error, quotes and all",
+    "single-quoted-area-identifier-duplicate/filter.sh",
+    "single-quoted-area-identifier-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "a quoted duplicate area identifier with space before the colon is still a hard error",
+    "spaced-area-identifier-duplicate/filter.sh",
+    "spaced-area-identifier-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "an area identifier with an unsupported YAML escape is a hard error, not silently compared undecoded",
+    "escaped-area-identifier-duplicate/filter.sh",
+    "escaped-area-identifier-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "a duplicate area identifier where one form uses a supported \\\" escape is still a hard error",
+    "escaped-quote-area-identifier-duplicate/filter.sh",
+    "escaped-quote-area-identifier-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "a duplicate area identifier where one form uses YAML's doubled single-quote escape is still a hard error",
+    "doubled-quote-area-identifier-duplicate/filter.sh",
+    "doubled-quote-area-identifier-duplicate/catalog.yaml"
+  ],
+  [
+    0,
+    "a paths: key with space before the colon still declares the area's paths",
+    "spaced-paths-key/filter.sh",
+    "spaced-paths-key/catalog.yaml"
+  ],
+  [
+    2,
+    "a quoted duplicate paths: key within the same area is a hard error, quotes and all",
+    "quoted-paths-key-duplicate/filter.sh",
+    "quoted-paths-key-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "a duplicate paths: key spelled with an unsupported YAML escape is a hard error, not invisible",
+    "escaped-paths-key-duplicate/filter.sh",
+    "escaped-paths-key-duplicate/catalog.yaml"
+  ],
+  [
+    2,
+    "an area missing paths: in the middle of the block is a hard error, not masked by another area's glob",
+    "area-missing-paths-middle/filter.sh",
+    "area-missing-paths-middle/catalog.yaml"
+  ],
+  [
+    2,
+    "an area missing paths: as the last area in the file is a hard error at EOF",
+    "area-missing-paths-last/filter.sh",
+    "area-missing-paths-last/catalog.yaml"
+  ]
+]

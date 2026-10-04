@@ -14,7 +14,7 @@ periodically, a practices-drift regression check.
 | [survey-prompts/](survey-prompts/) | One ready-to-run prompt per practice area (fan out in parallel) |
 | [report-template.md](report-template.md) | The structure of the deliverable |
 | [portfolio-report-template.md](portfolio-report-template.md) | The portfolio-level conclusions and shared-capability structure |
-| [score-modules.sh](score-modules.sh) | Generates the fill-in scoring checklist from every module's `maturity.yaml` (`--check` verifies all 13 carry criteria) |
+| [score-modules.ts](score-modules.ts) | Generates the fill-in scoring checklist from every module's `maturity.yaml` (`--check` verifies all 13 carry criteria) |
 | [calibration/](calibration/) | End-to-end audit runs against external repos, kept as worked examples |
 
 ## Running an audit (agent instructions)
@@ -38,9 +38,9 @@ Groundwork module.
 **v1 (scored maturity assessment)**: every module M0–M12 now ships formal
 `maturity.yaml` criteria, so an audit scores the *whole* module map against
 observable criteria rather than grading later modules by feel. Run
-[`score-modules.sh`](score-modules.sh) to emit the fill-in checklist (one row
+[`score-modules.ts`](score-modules.ts) to emit the fill-in checklist (one row
 per criterion, with empty Score/Evidence columns) and paste it under the
-report's "Module scores"; `score-modules.sh --check` asserts all 13 modules
+report's "Module scores"; `bun score-modules.ts --check` asserts all 13 modules
 carry criteria, so a future port that forgets its `maturity.yaml` fails loudly.
 Qualitative grading on the enforcement ladder (*absent / convention-only /
 advisory / mechanically enforced*) is now the fallback only where a criterion

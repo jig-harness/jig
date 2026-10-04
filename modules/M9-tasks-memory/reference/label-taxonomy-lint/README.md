@@ -21,13 +21,13 @@ The `fires:` rule is the heart: it is what makes a label a *trigger* (a
 
 ## Mechanism
 
-Portable bash + awk (no `yq` / python). It reads the top-level keys and every
+Portable Bun + TypeScript (no shell utilities required). It reads the top-level keys and every
 `- ` list entry, then checks each against the table above.
 
 ```sh
-TAXONOMY=label-taxonomy.yaml ./check-label-taxonomy.sh
+TAXONOMY=label-taxonomy.yaml bun ./check-label-taxonomy.ts
 # or
-./check-label-taxonomy.sh label-taxonomy.yaml
+bun ./check-label-taxonomy.ts label-taxonomy.yaml
 ```
 
 ## Where it runs
@@ -40,9 +40,14 @@ a convenience. It is cheap enough to always-run.
 
 | File | Role |
 |------|------|
-| `check-label-taxonomy.sh` | the gate; `TAXONOMY` selects the input |
-| `test-check-label-taxonomy.sh` | paired self-test |
+| `check-label-taxonomy.ts` | the gate; `TAXONOMY` selects the input |
+| `check-label-taxonomy.test.ts` | paired self-test |
 | `fixtures/good/label-taxonomy.yaml` | a valid taxonomy — must pass |
 | `fixtures/bad/` | one file per broken invariant — each must fail |
 
-Run the self-test with `./test-check-label-taxonomy.sh`.
+Run the self-test with `bun test ./check-label-taxonomy.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

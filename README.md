@@ -58,3 +58,24 @@ there flow back here (see [principles/05-learning-loop.md](principles/05-learnin
 
 Private repo; publishing (whole or per-module) is a deferred decision. No
 license granted while private.
+
+## Working on Groundwork
+
+Install [mise](https://mise.jdx.dev/) and run:
+
+```sh
+mise install
+mise exec -- bun install --frozen-lockfile
+mise exec -- bun run gates
+```
+
+The gate command checks formatting, lint, types, all gate self-tests, the build,
+Markdown links/tables/glossary coverage, and tracker-reference exclusions.
+GitHub Actions runs the same command on Linux, macOS and Windows. The tests
+use Bun's built-in runner; `bun test` runs them alone. `bun run format` formats
+TypeScript and configuration; `bun run build` bundles the command entry points
+into the ignored `dist/` directory.
+
+The runnable-tool layout and non-JavaScript consumer runtime choice are in
+[tools/README.md](tools/README.md). The source checkout includes module-local
+and shared imports; operate it as a complete pinned checkout.

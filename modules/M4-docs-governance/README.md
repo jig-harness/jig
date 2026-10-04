@@ -79,7 +79,7 @@ Knowledge moves up three layers, each promoting into the next:
 | `docs/.frontmatter-schema.yaml` (types/statuses/lifecycle/owners/tags + suggestions) | [`templates/frontmatter-schema.yaml`](templates/frontmatter-schema.yaml) — generic schema with neutral enums |
 | `.claude/scripts/frontmatter-check.sh` (schema validator) | [`reference/frontmatter-check/`](reference/frontmatter-check/) — portable checker + self-test + fixtures |
 | `scripts/check-descarring-scars.sh` (+ its self-test) — the C4 de-scarring rule | [`reference/scar-lint/`](reference/scar-lint/) — portable scar detector with code-masking + self-test + fixtures |
-| `tools/docs/generate-index.ts` (index generator + freshness gate) | [`reference/index/`](reference/index/) — portable frontmatter-aware generator (orphan reporting documented as a not-yet-ported extension); freshness-gate wiring reuses M2's triad |
+| `tools/docs/generate-index.sh` (index generator + freshness gate) | [`reference/index/`](reference/index/) — portable frontmatter-aware generator (orphan reporting documented as a not-yet-ported extension); freshness-gate wiring reuses M2's triad |
 
 Also landed: [`mappings.md`](mappings.md) (CI providers, hook managers, schema
 formats) and [`maturity.yaml`](maturity.yaml).

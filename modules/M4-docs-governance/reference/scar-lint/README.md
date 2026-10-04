@@ -34,15 +34,18 @@ changed* — never reviewer names, an "addressed" ledger, or struck-through text
   (frontmatter-only by design; an in-prose marker couldn't be distinguished
   from documentation of the marker).
 
+The script uses the shared [`../docs.ts`](../docs.ts) reader. When adopting
+these files, keep that helper in the parent directory and run them with Bun.
+
 ## Usage
 
 ```sh
 # explicit files (in CI, restrict to the branch diff so the approved corpus
 # isn't swept every run)
-ALLOWLIST="docs/WIKI-SCHEMA.md docs/review/" check-descarring-scars.sh docs/a.md
+ALLOWLIST="docs/WIKI-SCHEMA.md docs/review/" bun check-descarring-scars.ts docs/a.md
 
 # no args: scan approved docs in the tree
-DOCS_DIR=docs check-descarring-scars.sh
+DOCS_DIR=docs bun check-descarring-scars.ts
 ```
 
 ## Enforcement posture
@@ -50,7 +53,7 @@ DOCS_DIR=docs check-descarring-scars.sh
 Start **advisory** (`continue-on-error` in CI) while precision is proven on your
 corpus, then promote to blocking once the false-positive rate is low and
 existing scars are swept. Run the paired self-test
-([`test-descarring-scars.sh`](test-descarring-scars.sh)) as a **blocking** CI
+([`check-descarring-scars.test.ts`](check-descarring-scars.test.ts)) as a **blocking** CI
 step regardless — proving the gate still catches scars is what lets you trust an
 advisory scan. The Strict criterion in [`../../maturity.yaml`](../../maturity.yaml)
 is the blocking version tied to promotion into `approved`.
@@ -59,6 +62,6 @@ is the blocking version tied to promotion into `approved`.
 
 | File | Role |
 |------|------|
-| `check-descarring-scars.sh` | the lint; code-masking + anchored scar detection |
-| `test-descarring-scars.sh` | paired self-test |
+| `check-descarring-scars.ts` | the lint; code-masking + anchored scar detection |
+| `check-descarring-scars.test.ts` | paired self-test |
 | `fixtures/` | clean, scarred, draft, documents-syntax, and descar_allow docs |

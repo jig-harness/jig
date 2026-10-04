@@ -1,0 +1,6 @@
+# Malformed: `metrics:` holds a block mapping, not a list of items. This must
+# FAIL closed (exit 2), not drop the declaration and pass as an empty registry.
+version: 1
+metrics: # process metrics
+  id: adoption
+  source: TODO

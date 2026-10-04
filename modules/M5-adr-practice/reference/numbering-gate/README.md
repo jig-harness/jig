@@ -21,16 +21,16 @@ the authority — CI is what catches a duplicate pushed with `--no-verify` or by
 automation that bypassed local hooks (see [M1](../../../M1-gates-enforcement-ladder/)).
 
 ```sh
-ADR_DIR=docs/adr ./check-adr-numbers.sh
+ADR_DIR=docs/adr bun check-adr-numbers.ts
 ```
 
 ## Files
 
 | File | Role |
 |------|------|
-| `check-adr-numbers.sh` | the gate; `ADR_DIR` selects the directory |
-| `test-check-adr-numbers.sh` | paired self-test |
+| `check-adr-numbers.ts` | the gate; `ADR_DIR` selects the directory |
+| `check-adr-numbers.test.ts` | paired self-test |
 | `fixtures/unique/` | distinct numbers — must pass |
 | `fixtures/dupe/` | two files sharing `ADR-0002` — must fail |
 
-Run the self-test with `./test-check-adr-numbers.sh`.
+Run the self-test with `bun test check-adr-numbers.test.ts`.

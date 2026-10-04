@@ -4,3 +4,8 @@
 .idea/
 .vscode/
 *.iml
+
+# Local evidence and installed/build outputs.
+.context/
+node_modules/
+dist/

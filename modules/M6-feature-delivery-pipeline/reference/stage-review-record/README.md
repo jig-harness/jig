@@ -39,7 +39,7 @@ One artifact per run, via arg 1 or `ARTIFACT=`.
 | frontmatter opened with `---` but never closed | error (exit 2) |
 
 ```sh
-./check-stage-accepted.sh prd.md
+bun ./check-stage-accepted.ts prd.md
 ```
 
 ## Where it runs
@@ -54,8 +54,8 @@ to `accepted` cannot merge until the record is present.
 
 | File | Role |
 |------|------|
-| `check-stage-accepted.sh` | the gate; artifact via arg/`ARTIFACT` |
-| `test-check-stage-accepted.sh` | paired self-test (every pass/fail/error path) |
+| `check-stage-accepted.ts` | the gate; artifact via arg/`ARTIFACT` |
+| `check-stage-accepted.test.ts` | paired self-test (every pass/fail/error path) |
 | `fixtures/draft.md` | draft — must pass |
 | `fixtures/no-frontmatter.md` | no status — must pass |
 | `fixtures/accepted-reviewed.md` | accepted + `reviewed:` key — must pass |
@@ -65,4 +65,9 @@ to `accepted` cannot merge until the record is present.
 | `fixtures/accepted-reviewed-bare.md` | accepted, `reviewed: true` only — must fail |
 | `fixtures/malformed.md` | unterminated frontmatter — must error (exit 2) |
 
-Run the self-test with `./test-check-stage-accepted.sh`.
+Run the self-test with `bun test ./check-stage-accepted.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

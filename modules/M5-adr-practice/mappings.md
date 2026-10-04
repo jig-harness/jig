@@ -10,7 +10,7 @@ managers, [CI](../../GLOSSARY.md) providers, and issue trackers. Replace
 
 | Gate | Local (hook) | CI (authority) |
 |------|--------------|----------------|
-| ADR numbering | pre-push: `check-adr-numbers.sh` | blocking; mirror of the hook so `--no-verify` can't ship a duplicate |
+| ADR numbering | pre-push: `check-adr-numbers.ts` | blocking; mirror of the hook so `--no-verify` can't ship a duplicate |
 | ADR-rule checks | pre-commit over staged code | blocking (critical) / advisory (warnings) |
 
 ADR *frontmatter* validity is not a separate gate here — it rides on
@@ -29,11 +29,11 @@ jobs:
       - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }
       - name: ADR numbers unique (blocking)
-        run: reference/numbering-gate/check-adr-numbers.sh
+        run: bun reference/numbering-gate/check-adr-numbers.ts
       - name: ADR-rule self-test (blocking)
-        run: reference/decisions-to-checks/test-adr-rules-check.sh
+        run: bun test reference/decisions-to-checks/adr-rules-check.test.ts
       - name: ADR rules on changed code (blocking on critical)
-        run: RULES=.adr-rules.yaml reference/decisions-to-checks/adr-rules-check.sh $(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+        run: RULES=.adr-rules.yaml bun reference/decisions-to-checks/adr-rules-check.ts $(git diff --name-only origin/${{ github.base_ref }}...HEAD)
 ```
 
 ### GitLab CI
@@ -41,16 +41,16 @@ jobs:
 ```yaml
 adr:
   script:
-    - reference/numbering-gate/check-adr-numbers.sh
-    - reference/decisions-to-checks/test-adr-rules-check.sh
-    - RULES=.adr-rules.yaml reference/decisions-to-checks/adr-rules-check.sh $(git diff --name-only "$CI_MERGE_REQUEST_DIFF_BASE_SHA"...HEAD)
+    - bun reference/numbering-gate/check-adr-numbers.ts
+    - bun test reference/decisions-to-checks/adr-rules-check.test.ts
+    - RULES=.adr-rules.yaml bun reference/decisions-to-checks/adr-rules-check.ts $(git diff --name-only "$CI_MERGE_REQUEST_DIFF_BASE_SHA"...HEAD)
 ```
 
 ## Hook managers
 
 | Manager | Wiring |
 |---------|--------|
-| [lefthook](https://github.com/evilmartians/lefthook) | pre-push `adr-numbers`: `run: reference/numbering-gate/check-adr-numbers.sh`; pre-commit `adr-rules`: `glob: "**/*.{ts,js,py,go}"`, `run: RULES=.adr-rules.yaml reference/decisions-to-checks/adr-rules-check.sh {staged_files}` |
+| [lefthook](https://github.com/evilmartians/lefthook) | pre-push `adr-numbers`: `run: bun reference/numbering-gate/check-adr-numbers.ts`; pre-commit `adr-rules`: `glob: "**/*.{ts,js,py,go}"`, `run: RULES=.adr-rules.yaml bun reference/decisions-to-checks/adr-rules-check.ts {staged_files}` |
 | [husky](https://typicode.github.io/husky/) | `.husky/pre-push` runs the numbering gate; `.husky/pre-commit` runs the rules check over `git diff --cached --name-only --diff-filter=ACM` |
 | [pre-commit framework](https://pre-commit.com) | a `repo: local` hook `id: adr-numbers` (`always_run: true`, `pass_filenames: false`) and one `id: adr-rules` with `files:` scoped to code |
 

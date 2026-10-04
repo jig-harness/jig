@@ -1,0 +1,7 @@
+# Malformed: a valid item is followed by a stray mapping key at the item's
+# indent. This must FAIL closed (exit 2), not ignore the key and pass.
+version: 1
+metrics:
+  - id: wired
+    source: event:wired
+  bogus: ignored

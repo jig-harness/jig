@@ -5,7 +5,8 @@ every metric declares a wired source, dashboards surface drift, and measurements
 drive promote/demote — is tool-independent. This file maps its mechanisms onto
 concrete telemetry/analytics backends, event emitters, and dashboard homes. The
 backends below are **options**, never requirements — pick one you already run.
-Replace `<placeholders>` with your values.
+Replace `<placeholders>` with your values. Install the pinned Bun runtime
+before the commands below; the module gates and tests require Bun.
 
 ## The two gates, per rung
 
@@ -14,7 +15,7 @@ Replace `<placeholders>` with your values.
 | no-dark-instruments | on any change to `metrics-registry.yaml` | [CI](../../GLOSSARY.md) (authority); cheap enough to pre-commit — a new metric cannot merge dark |
 | event-schema lint | wherever an event stream is exported for aggregation (per-PR over a captured stream, or scheduled over a window) | CI; validates emitted events against `event-schema.yaml` |
 
-Both gates are plain shell (bash + awk) — any CI provider runs them. Point one
+Both gates run on Bun (TypeScript) — any CI provider runs them. Point one
 `M11` variable at wherever you vendored the module and build paths from it.
 
 ## Telemetry / analytics backends (the metric `source`)
@@ -60,18 +61,18 @@ jobs:
     env: { M11: modules/M11-process-observability }
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: "$M11"/reference/no-dark-instruments/test-check-metrics-wired.sh
-      - run: "$M11"/reference/no-dark-instruments/check-metrics-wired.sh metrics-registry.yaml
+      - run: bun test "$M11"/reference/no-dark-instruments/check-metrics-wired.test.ts
+      - run: bun "$M11"/reference/no-dark-instruments/check-metrics-wired.ts metrics-registry.yaml
   events:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     env: { M11: modules/M11-process-observability }
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: "$M11"/reference/event-schema-lint/test-check-events.sh
+      - run: bun test "$M11"/reference/event-schema-lint/check-events.test.ts
       # export the window's events into the logfmt line shape, then validate
       - run: ./scripts/export-events > events.log     # your backend query, see below
-      - run: SCHEMA=event-schema.yaml "$M11"/reference/event-schema-lint/check-events.sh events.log
+      - run: SCHEMA=event-schema.yaml bun "$M11"/reference/event-schema-lint/check-events.ts events.log
 ```
 
 ### GitLab CI
@@ -80,11 +81,11 @@ jobs:
 process-telemetry:
   variables: { M11: modules/M11-process-observability }
   script:
-    - "$M11"/reference/no-dark-instruments/test-check-metrics-wired.sh
-    - "$M11"/reference/no-dark-instruments/check-metrics-wired.sh metrics-registry.yaml
-    - "$M11"/reference/event-schema-lint/test-check-events.sh
+    - bun test "$M11"/reference/no-dark-instruments/check-metrics-wired.test.ts
+    - bun "$M11"/reference/no-dark-instruments/check-metrics-wired.ts metrics-registry.yaml
+    - bun test "$M11"/reference/event-schema-lint/check-events.test.ts
     - ./scripts/export-events > events.log
-    - SCHEMA=event-schema.yaml "$M11"/reference/event-schema-lint/check-events.sh events.log
+    - SCHEMA=event-schema.yaml bun "$M11"/reference/event-schema-lint/check-events.ts events.log
 ```
 
 ### Exporting a backend's events into the lint's line format

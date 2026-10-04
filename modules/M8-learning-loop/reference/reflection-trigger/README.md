@@ -22,14 +22,14 @@ mechanised, a reviewer config that let a known class through. Each of those is a
 | The record is **aggregable** | the tool writes `change:` and `rounds:` itself, so the inbox answers "which changes fought the scaffolding hardest" — the question that ranks the levers |
 | Firing is **calibrated**, not constant | `ROUND_THRESHOLD` (default 3); a threshold of 0 is rejected, because firing on every change is how a reflection habit gets switched off |
 | A re-run does not **double-count** | a record already present for that change *and* round count is skipped — and the check-and-append is serialized under a lock, so two concurrent runs *sharing a filesystem* cannot both pass the check (see the scope note below) |
-| The record lands **whole or not at all** | the replacement inbox is built beside the real one and `mv`d into place; a failed write leaves the original byte-identical, so no marker can survive over a truncated record |
+| The record lands **whole or not at all** | the replacement inbox is built beside the real one and atomically renamed into place; a failed write leaves the original byte-identical, so no marker can survive over a truncated record |
 | A near-miss cannot write evidence | the decision file must hold exactly one complete M7 record; a partial line, or a stale record above the current one, is an error rather than a firing |
 | Shape is not agreement | the decision is re-derived from the record's own fields and must match. `CONVERGED … open_threads=2 … pr_state=merged` is well-formed and self-contradictory — the gate would have said `ABORT` — so it errors instead of laundering a convergence that never happened |
 
 ## Mechanism
 
 ```sh
-CHANGE=PR-482 INBOX=docs/reflection-inbox.md ./reflection-trigger.sh decision.txt
+CHANGE=PR-482 INBOX=docs/reflection-inbox.md bun ./reflection-trigger.ts decision.txt
 # PROMPT change=PR-482 rounds=5 threshold=3
 ```
 
@@ -61,7 +61,7 @@ wrapper, all deliberate:
   bypassing would remove the guard where it is needed.
 - **No automatic stale-lock reclamation.** M12 reclaims a lock whose holder PID is
   gone; this does not, because doing it safely needs compare-and-swap and POSIX
-  shell has atomic *create* but no atomic *replace-if-unchanged*. Every
+  the filesystem API has atomic *create* but no atomic *replace-if-unchanged*. Every
   PID-liveness scheme is a read then a delete, and two processes racing on the same
   dead owner can each remove what the other just created — ending in concurrent
   appends, the exact failure the lock exists to prevent. Instead the wait is bounded
@@ -85,7 +85,7 @@ from ever firing with nothing reporting it:
 
 ```sh
 CHANGE=$PR INBOX=docs/reflection-inbox.md ARCHIVE=docs/reflection-archive.md \
-  ./reflection-trigger.sh decision.txt && rc=0 || rc=$?
+  bun ./reflection-trigger.ts decision.txt && rc=0 || rc=$?
 case "$rc" in
   0) <your runtime's reflect command> ;;
   3) : ;;                                     # ordinary review, nothing to do
@@ -124,8 +124,8 @@ only guarantees the question gets asked, while the answer is still available.
 
 | File | Role |
 |------|------|
-| `reflection-trigger.sh` | the trigger; `CHANGE` / `INBOX` / `ARCHIVE` / `ROUND_THRESHOLD` / `LOCK_TIMEOUT` env, decision file via arg or `DECISION` |
-| `test-reflection-trigger.sh` | paired self-test (the firing rule, the record contents, the repeat-run guard, and 8 **concurrent** runs writing exactly one record) |
+| `reflection-trigger.ts` | the trigger; `CHANGE` / `INBOX` / `ARCHIVE` / `ROUND_THRESHOLD` / `LOCK_TIMEOUT` env, decision file via arg or `DECISION` |
+| `reflection-trigger.test.ts` | paired self-test (the firing rule, the record contents, the repeat-run guard, and 8 **concurrent** runs writing exactly one record) |
 | `fixtures/converged-hard.txt` | five rounds — must fire |
 | `fixtures/converged-ordinary.txt` | one round — must skip |
 | `fixtures/work.txt` | still mid-loop — must skip |
@@ -139,4 +139,15 @@ only guarantees the question gets asked, while the answer is still available.
 | `fixtures/zero-reviewers.txt` | `reviewers=0/0` — cannot describe a settled round; must error |
 | `fixtures/over-reported.txt` | `reviewers=3/2` — must error |
 
-Run the self-test with `./test-reflection-trigger.sh`.
+Run the self-test with `bun test ./reflection-trigger.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.
+
+On Windows, the lock publishes a prewritten owner file through an atomic hard
+link, so reflection does not require symbolic-link privileges. On macOS and
+Linux it keeps the PID-keyed symbolic link. Both protocols establish ownership
+before acquisition, preserve foreign lock paths, and require manual stale-lock
+recovery. The eight-process concurrency test runs on every platform.

@@ -1,0 +1,15 @@
+# UNSAFE (b): the production deploy selects a moving branch through a quoted
+# `"ref"` key.
+name: deploy-production
+on:
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          "ref": main
+      - name: Deploy to production
+        run: ./deploy --target production

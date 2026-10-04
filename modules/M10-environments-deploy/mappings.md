@@ -4,7 +4,8 @@ The module [invariant](README.md) — four stages, an explicit `verified` pointe
 a freshness watchdog, verified-only deploys, and a manual gated promotion — is
 tool-independent. This file maps its mechanisms onto concrete
 [CI](../../GLOSSARY.md) providers, preview-environment platforms, and promotion
-gates. Replace `<placeholders>` with your values.
+gates. Replace `<placeholders>` with your values. Install the pinned Bun runtime
+before the commands below; the module gates and tests require Bun.
 
 ## The two gates, per rung
 
@@ -47,11 +48,11 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
       - name: Production deploys are gated + verified-only (blocking)
-        run: WORKFLOWS_DIR=pr/.github/workflows "$M10"/reference/promote-safety/check-promote-safety.sh
+        run: WORKFLOWS_DIR=pr/.github/workflows bun "$M10"/reference/promote-safety/check-promote-safety.ts
       - name: Gate self-tests (blocking)
         run: |
-          "$M10"/reference/promote-safety/test-check-promote-safety.sh
-          "$M10"/reference/verified-pointer/test-check-verified-fresh.sh
+          bun test "$M10"/reference/promote-safety/check-promote-safety.test.ts
+          bun test "$M10"/reference/verified-pointer/check-verified-fresh.test.ts
 ---
 # .github/workflows/verified-watchdog.yml — scheduled freshness watchdog
 on:
@@ -69,7 +70,7 @@ jobs:
           BEHIND=$(git rev-list --count verified..origin/${GITHUB_REF_NAME})
           AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
           BEHIND="$BEHIND" AGE_SECONDS="$AGE_SECONDS" \
-            modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.sh
+            bun modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.ts
 ```
 
 ### GitLab CI
@@ -89,9 +90,9 @@ promote_safety:
         modules/M10-environments-deploy | tar -x -C base
   script:
     # scan the MR's own deploy workflows (data) with the trusted base-tree gate
-    - WORKFLOWS_DIR=.gitlab/deploy "$M10"/reference/promote-safety/check-promote-safety.sh
-    - "$M10"/reference/promote-safety/test-check-promote-safety.sh
-    - "$M10"/reference/verified-pointer/test-check-verified-fresh.sh
+    - WORKFLOWS_DIR=.gitlab/deploy bun "$M10"/reference/promote-safety/check-promote-safety.ts
+    - bun test "$M10"/reference/promote-safety/check-promote-safety.test.ts
+    - bun test "$M10"/reference/verified-pointer/check-verified-fresh.test.ts
 
 verified_watchdog:
   rules: [{ if: '$CI_PIPELINE_SOURCE == "schedule"' }]
@@ -100,7 +101,7 @@ verified_watchdog:
     - BEHIND=$(git rev-list --count verified..origin/$CI_DEFAULT_BRANCH)
     - AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
     - BEHIND="$BEHIND" AGE_SECONDS="$AGE_SECONDS"
-        modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.sh
+        bun modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.ts
 ```
 
 ## CI providers — the four stages + the `verified` pointer

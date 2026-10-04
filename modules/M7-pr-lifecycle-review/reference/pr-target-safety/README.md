@@ -45,26 +45,31 @@ thing being checked), so run it as a required check on every PR that touches
 (see [M1](../../../M1-gates-enforcement-ladder/)).
 
 ```sh
-WORKFLOWS_DIR=.github/workflows ./check-pr-target-safety.sh
+WORKFLOWS_DIR=.github/workflows bun ./check-pr-target-safety.ts
 ```
 
 ## Files
 
 | File | Role |
 |------|------|
-| `check-pr-target-safety.sh` | the gate; `WORKFLOWS_DIR` or file args select inputs |
-| `test-check-pr-target-safety.sh` | paired self-test |
+| `check-pr-target-safety.ts` | the gate; `WORKFLOWS_DIR` or file args select inputs |
+| `check-pr-target-safety.test.ts` | paired self-test |
 | `fixtures/safe/` | base-only checkout, plain `pull_request`, data-only labeler — must pass |
 | `fixtures/unsafe/` | `pull_request_target` + untrusted checkout + `run:` — must fail |
 
-Run the self-test with `./test-check-pr-target-safety.sh`.
+Run the self-test with `bun test ./check-pr-target-safety.test.ts` (and run the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
 
 ## Known limits
 
-Bash pattern-matching, not a YAML evaluator: it will not catch untrusted
+Line-oriented pattern matching, not a YAML evaluator: it will not catch untrusted
 execution smuggled purely through a third-party `uses:` action (no `run:`
 step), and it treats the presence of `pull_request_target` anywhere in the file
 as "triggered by it." Both bias toward over-flagging, which is the right
 direction for a security gate; a precise-parse version belongs in whatever
 language the repo already uses (see [M3](../../../M3-change-area-catalog/)'s
 same reasoning about graph jobs).
+
+The native gate uses the shared implementation in Groundwork’s
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
+`lib/` together in the pinned Groundwork checkout when adopting it.

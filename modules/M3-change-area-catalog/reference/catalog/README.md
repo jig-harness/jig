@@ -372,7 +372,7 @@ implementations can't silently disagree:
   value's literal head at a component boundary (or, for an exact-anchored
   alternative, no literal head equals it exactly) — the regex claims a code
   path the catalog doesn't declare. Runnable today:
-  [`../regex-mirror/check-catalog-regex-sync.sh`](../regex-mirror/check-catalog-regex-sync.sh).
+  [`../regex-mirror/check-catalog-regex-sync.ts`](../regex-mirror/check-catalog-regex-sync.ts).
 
 ### `checkFilterFileCoverage` (regex → catalog, per tracked file)
 
@@ -482,7 +482,7 @@ implementations can't silently disagree:
   deploy-lane shortcut is triggering for a change no deploy-gating area
   actually depends on.
 
-[`../regex-mirror/check-catalog-regex-sync.sh`](../regex-mirror/check-catalog-regex-sync.sh)
+[`../regex-mirror/check-catalog-regex-sync.ts`](../regex-mirror/check-catalog-regex-sync.ts)
 implements `checkFilterSegmentCoverage` as specified above — a
 component-boundary literal-prefix match against parsed `paths:` values, never
 a substring of the catalog file's raw text — as a standalone shell script. It

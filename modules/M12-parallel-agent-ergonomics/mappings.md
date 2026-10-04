@@ -14,8 +14,8 @@ the other modules do.
 
 | Utility | Runs where | Signal it reads |
 |---------|-----------|-----------------|
-| `reference/port-allocator/allocate-port.sh` | worktree-create hook and/or the dev script | worktree id (arg or `WORKTREE_ID`), range via `PORT_BASE`/`PORT_SPAN` |
-| `reference/resource-lock/with-resource-lock.sh` | around heavy local gate commands (build, test, e2e) | lock via `LOCK_NAME`/`--lock`; bypass via `CI`/`RESOURCE_LOCK_BYPASS` |
+| `reference/port-allocator/allocate-port.ts` | worktree-create hook and/or the dev script | worktree id (arg or `WORKTREE_ID`), range via `PORT_BASE`/`PORT_SPAN` |
+| `reference/resource-lock/with-resource-lock.ts` | around heavy local gate commands (build, test, e2e) | lock via `LOCK_NAME`/`--lock`; bypass via `CI`/`RESOURCE_LOCK_BYPASS` |
 
 ## Worktree managers / agent runners — where the hooks wire
 
@@ -26,11 +26,11 @@ reflection. Only the wiring point differs per tool.
 |---------|-------------------|-------------------|-------|
 | plain `git worktree` | a wrapper script/alias around `git worktree add` | a wrapper around `git worktree remove` | git itself has no add/remove hook event; the wrapper is the seam |
 | worktree-based agent runner (e.g. a per-workspace runner such as Conductor) | the runner's post-create / workspace-setup hook | the runner's pre-remove / teardown hook | the runner already brackets a session — the natural home for both |
-| `direnv` / per-directory env | `.envrc` calls `allocate-port.sh` on entry and exports `PORT` | none (no teardown event) | derived ports mean no cleanup is needed |
+| `direnv` / per-directory env | `.envrc` calls `allocate-port.ts` on entry and exports `PORT` | none (no teardown event) | derived ports mean no cleanup is needed |
 | tmux / shell session per worktree | shell rc sources a per-worktree env file | a shell `EXIT` trap prints the reflection nudge | lightweight; good when there is no formal manager |
 
 Because ports are **derived**, the create hook is convenience, not correctness:
-any dev script can call `allocate-port.sh` directly and get the identical port
+any dev script can call `allocate-port.ts` directly and get the identical port
 without a hook having fired.
 
 ## Package managers — the wrong-root-install footgun
@@ -54,7 +54,7 @@ and treat any other manager's root install as the banned action.
 
 A CI runner already gives each job its own isolated machine, so the
 cross-worktree mutex has nothing to serialize there and the wait would be pure
-added latency. `with-resource-lock.sh` therefore runs the command unlocked when
+added latency. `with-resource-lock.ts` therefore runs the command unlocked when
 it sees a CI signal. Most providers set `CI=true` automatically, so the bypass is
 usually zero-config; the column below is the signal to rely on (or set
 `RESOURCE_LOCK_BYPASS=1` explicitly).
@@ -69,7 +69,7 @@ usually zero-config; the column below is the signal to rely on (or set
 Locally, leave heavy commands wrapped:
 
 ```sh
-with-resource-lock.sh --lock test -- pnpm test     # serialized across worktrees
+bun with-resource-lock.ts --lock test -- pnpm test     # serialized across worktrees
 ```
 
 In CI, run them unwrapped or wrapped — either way the bypass makes them run

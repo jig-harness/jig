@@ -1,0 +1,18 @@
+# UNSAFE (a): the production deploy job key is quoted and sits next to a gated
+# job. Quoting the key must not fold its lines into the previous job, whose
+# environment would then hide that the production deploy is ungated.
+name: deploy-production
+on:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - run: ./build
+  "deploy-prod":
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production
+        run: ./deploy --target production

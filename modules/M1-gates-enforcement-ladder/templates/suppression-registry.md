@@ -40,7 +40,7 @@ Replace these example rows (the first matches the worked example gate in
 
 | Token | Suppresses (gate) | Placement | Justification required |
 |-------|-------------------|-----------|------------------------|
-| `todo-exempt: <reason>` | `scripts/check-todo-has-issue.sh` (TODO-without-issue ban) | Same line as the TODO | Non-empty `<reason>` — the bare token does not suppress |
+| `todo-exempt: <reason>` | `scripts/check-todo-has-issue.ts` (TODO-without-issue ban) | Same line as the TODO | Non-empty `<reason>` — the bare token does not suppress |
 | `-- <gate>-ignore-file` + `-- Justification: <text>` on the next line | `<a whole-file gate, e.g. a SQL migration lint>` | One of the first 5 lines of the file, column 0 — header-only so the marker can't ride along with unrelated violations further down | The companion `Justification:` line is mechanically required |
 | `<allowlist file or in-script list entry>` | `<gate that keeps a reviewed allowlist instead of inline tokens>` | One entry per exempted path/name, in the list itself | None parsed — the PR review of the list edit *is* the justification gate |
 

@@ -50,8 +50,13 @@ reference implementation):
   **gitignored symlink farm** pointing back at the canonical one,
   regenerated on every dependency install and drift-checked from a
   pre-push hook.
-- Script + full recipe: [reference/sync-skills-mirror.sh](reference/sync-skills-mirror.sh).
+- Script + full recipe: [reference/sync-skills-mirror.ts](reference/sync-skills-mirror.ts).
 
 Fallback for runtimes with no skill discovery at all: reference the skill
 by path in the instruction file ("read `.claude/skills/<name>/SKILL.md`
 and follow it") — any tool that can read files can execute a skill.
+
+The skill mirror command runs under the pinned Bun runtime; see
+[tools/README.md](../../tools/README.md) for the source-checkout layout.
+Windows requires Developer Mode or permission to create symlinks for this
+optional discovery mirror; it never substitutes copies for the canonical skills.

@@ -63,7 +63,7 @@ Ported and genericized from the reference implementation (docomply
 | Dispositions (systematic default, BWC-deferred, minimalism ladder) | [`templates/dispositions.md`](templates/dispositions.md) — each with its flip condition |
 | `docs/development/ai-tools/model-routing-policy.md` (C9) | [`reference/model-routing-policy.md`](reference/model-routing-policy.md) (tiered model economics) |
 | `docs/development/hitl-decision-registry.md` (C6) | [`templates/hitl-registry.md`](templates/hitl-registry.md) (shared with M7) |
-| Cross-runtime skill discovery (symlink mirror + sync script) | [`reference/sync-skills-mirror.sh`](reference/sync-skills-mirror.sh) + `mappings.md` entry |
+| Cross-runtime skill discovery (symlink mirror + sync script) | [`reference/sync-skills-mirror.ts`](reference/sync-skills-mirror.ts) + `mappings.md` entry |
 
 Also written: [`mappings.md`](mappings.md) (Claude Code / Codex / Cursor /
 Copilot file conventions) and [`maturity.yaml`](maturity.yaml). Noted as

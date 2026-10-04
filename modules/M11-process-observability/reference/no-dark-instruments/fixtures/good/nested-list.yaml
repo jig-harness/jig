@@ -1,0 +1,8 @@
+# A list nested inside an item is a continuation, not a new metric.
+version: 1
+metrics:
+  - id: wired
+    source: event:wired
+    labels:
+      - team
+      - region

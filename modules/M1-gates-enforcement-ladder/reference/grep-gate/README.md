@@ -1,59 +1,36 @@
 # Grep-gate framework
 
-A grep gate (see [GLOSSARY.md](../../../../GLOSSARY.md)) is a deliberately
-simple check: one small shell script that searches the codebase for a
-forbidden or required pattern and fails with a readable report. Simple beats
-clever here — a grep with a self-test outlives an unowned AST analyzer,
-because anyone on the team can read, fix, and extend it.
+A [grep gate](../../../../GLOSSARY.md) searches the codebase for a forbidden or
+required pattern and fails with a readable report. Without a tested check,
+a rule can silently stop catching violations while still reporting success.
 
-This directory is the framework skeleton with one fully worked example:
-**every `TODO` comment must reference an issue** (`TODO(#123)` or
-`TODO(PROJ-123)`). The rule itself is a neutral placeholder — copy the pair
-of scripts and swap in your own rule.
+This worked example requires every `TODO` comment to reference an issue
+(`TODO(#123)` or `TODO(PROJ-123)`), or carry a justified `todo-exempt: <reason>`
+suppression on the same line. The rule is a neutral example to adapt.
 
 ## The convention
 
-1. **One script per rule** — `check-<rule>.sh`. It exits `0` on pass and `1`
-   with a formatted violation report on failure. Directory paths come from
-   env vars (here `SRC_DIR`) so the script is self-testable, and a missing
-   or empty directory passes, so the gate can be wired up before the tree it
-   guards exists.
-2. **A paired self-test** — `test-<rule>.sh` runs the gate against small
-   fixtures and asserts pass on clean input, fail on violations, and correct
-   suppression behavior. The self-test is what keeps the gate honest: a gate
-   whose regex silently stops matching is worse than no gate, because it
-   still reports green.
-3. **Fixtures** — minimal files under `fixtures/` exercising each behavior:
-   `clean/` (must pass), `bad/` (must fail), and one per suppression or edge
-   case. Keep them tiny and language-neutral where possible.
-4. **Wired into both rungs** — the gate runs in the pre-push hook (fast local
-   feedback; see `../../templates/lefthook.yml`) *and* in CI (the authority;
-   see `../../templates/ci-pr-gates.yml`). CI also runs the self-test, so a
-   broken gate fails loudly instead of passing silently.
-5. **Suppressions are registered** — if the gate accepts an inline
-   suppression token (this example accepts `todo-exempt: <reason>`, reason
-   mandatory), the token gets a row in the suppression-token registry
-   (`../../templates/suppression-registry.md`) in the same change that
-   introduces it.
+1. Write one `check-<rule>.ts` per rule. Exit 0 on pass, 1 on violations,
+   and 2 on unreadable or invalid inputs. Scan roots are configurable so
+   fixtures can exercise the same command as real repositories.
+2. Pair it with Bun tests that assert clean, bad and suppression verdicts.
+   Groundwork's example tests are in
+   [scripts/freshness.test.ts](../../../../scripts/freshness.test.ts).
+3. Keep small, language-neutral inputs under `fixtures/`.
+4. Run the gate and tests locally and in CI. Local hooks provide fast feedback;
+   CI remains the authority even when someone bypasses a hook.
+5. Register every suppression token and require a reason at each use.
 
 ## Files
 
 | File | Role |
 |------|------|
-| `check-todo-has-issue.sh` | the gate: scans `SRC_DIR` (default `src`) for bare TODOs |
-| `test-todo-has-issue.sh` | the paired self-test |
-| `fixtures/clean/` | issue-referenced TODOs — gate must pass |
-| `fixtures/bad/` | bare TODO, TODO without colon, reason-less suppression — gate must fail |
-| `fixtures/exempt/` | justified `todo-exempt:` suppression — gate must pass |
+| `check-todo-has-issue.ts` | Scans `SRC_DIR` (default `src`) for bare TODOs |
+| `fixtures/clean/` | Issue-referenced TODOs pass |
+| `fixtures/bad/` | Bare TODOs and reason-less suppressions fail |
+| `fixtures/exempt/` | Justified suppressions pass |
 
-Run the self-test any time with `./test-todo-has-issue.sh`; it prints a
-pass/fail line per case and exits non-zero on any failure.
-
-## Adapting to your rule
-
-Copy both scripts, rename `<rule>`, replace the stage-1 pattern (what to
-find), the stage-2 pattern (what forms are allowed), and the suppression
-token, then rewrite the fixtures to match. Keep the error message
-actionable: say what the rule is, how to comply, and how to legitimately
-suppress. Everything is plain bash + grep + coreutils — no language runtime
-required, so the pair runs identically in hooks and in any CI image.
+Run `bun test scripts/freshness.test.ts` from the Groundwork root. To adapt
+the rule, change the candidate, allowed-form and suppression patterns, then
+rewrite the fixtures. The native implementation needs the pinned Bun runtime
+and its shared imports; see [M1 mappings](../../mappings.md).

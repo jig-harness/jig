@@ -1,0 +1,12 @@
+# UNSAFE (a): both the `on` and `push` keys are quoted. Quoting must not hide
+# the push trigger.
+name: deploy-production
+"on":
+  "push":
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production
+        run: ./deploy --target production

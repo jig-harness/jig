@@ -29,8 +29,8 @@ M12="${M12:-tools/worktree}"
 id="$(git -C "$PWD" branch --show-current 2>/dev/null)"
 [ -n "$id" ] || id="$(basename "$PWD")"    # detached HEAD: fall back to dir name
 
-app_port="$(PORT_BASE=20000 PORT_SPAN=1000 "$M12/reference/port-allocator/allocate-port.sh" "$id")"
-db_port="$( PORT_BASE=21000 PORT_SPAN=1000 "$M12/reference/port-allocator/allocate-port.sh" "$id")"
+app_port="$(PORT_BASE=20000 PORT_SPAN=1000 bun "$M12/reference/port-allocator/allocate-port.ts" "$id")"
+db_port="$( PORT_BASE=21000 PORT_SPAN=1000 bun "$M12/reference/port-allocator/allocate-port.ts" "$id")"
 
 cat <<EOF
 worktree "$id" port slots:
@@ -43,7 +43,7 @@ EOF
 
 Wire it so the values reach the running processes — either export them from the
 hook into a per-worktree env file the dev script sources, or have the dev script
-call `allocate-port.sh` itself. Deterministic means either path yields the same
+call `allocate-port.ts` itself. Deterministic means either path yields the same
 port.
 
 ## On remove — nudge reflection
@@ -81,8 +81,8 @@ module `mappings.md` gives the concrete locations — in brief:
 |---------|---------------|---------------|
 | plain `git worktree` | a wrapper alias/script around `git worktree add` | a wrapper around `git worktree remove` |
 | worktree-based agent runner | the runner's post-create / setup hook | the runner's pre-remove / teardown hook |
-| direnv / per-dir env | `.envrc` calls `allocate-port.sh` on entry | n/a (no teardown event) |
+| direnv / per-dir env | `.envrc` calls `allocate-port.ts` on entry | n/a (no teardown event) |
 
 Because ports are **derived**, the create hook is optional convenience: any dev
-script can call `allocate-port.sh` directly and get the same answer without a
+script can call `allocate-port.ts` directly and get the same answer without a
 hook having run.
