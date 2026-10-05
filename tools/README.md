@@ -9,6 +9,9 @@ Groundwork keeps reusable command-line tools here as they move in.
 - `skills/<name>/SKILL.md` — agent procedures and their private supporting files.
 - `tools/<area>/` — operated development commands grouped by responsibility.
 - `lib/` — shared code used by multiple commands, with no consumer-specific values.
+  `lib/test-helpers/` and the temp-dir scope (`lib/test-tmpdir*.ts`) are the shared
+  test support; `lib/guarded-git-spawn.ts` is the only sanctioned route to a raw
+  spawn in tests that build scratch git repositories.
 - `modules/M*/reference/` — the practice gates and worked examples already shipped
   with the modules. They stay beside the doctrine they enforce.
 - `scripts/` — Groundwork's own repository checks and build orchestration.

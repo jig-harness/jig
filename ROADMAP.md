@@ -275,6 +275,18 @@ implementations. See [scripts/migration-parity.md](scripts/migration-parity.md)
 for the comparison scope and retained shell data.
 
 Runnable layout: [tools/README.md](tools/README.md). Non-JavaScript consumers
-operate a complete pinned checkout with mise-managed Bun. The installer,
-consumer manifest pin, shared helper move and subsequent extraction waves
+operate a complete pinned checkout with mise-managed Bun.
+
+Shared test helpers have landed in `lib/`: `expectSpawnExit` and its
+companions (a failed exit-code assertion carries the subprocess's output),
+`guarded-git-spawn` (every spawn made through it must pass an explicit env free
+of `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` or the common-dir/object-directory
+routing variables, so scratch git calls cannot touch the real repository from
+inside a hook; adopting it in the existing scratch-repository tests, such as
+`scripts/freshness.test.ts`, is still pending, and those calls remain
+unguarded until then), and the per-process temp-dir scope with its Bun preload. Not yet moved: the shell-command reachability model that
+the reference implementation's workflow linter exports to many of its tests.
+It is generic but sits inside a single very large file together with that
+organization's workflow conventions, so it needs its own seam before it can
+move. The installer, consumer manifest pin and subsequent extraction waves
 remain separate work.
