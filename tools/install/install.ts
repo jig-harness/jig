@@ -333,19 +333,46 @@ function exactInstall(
   consumer: string,
   records: Installed[],
   path: string,
+  allowMissing = false,
 ): boolean {
   const mine = records.filter(
     (entry) => entry.path === path || entry.path.startsWith(`${path}/`),
   );
-  if (!mine.length || !mine.every((entry) => entryMatches(consumer, entry)))
+  if (
+    !mine.length ||
+    !mine.every((entry) =>
+      allowMissing && !present(join(consumer, entry.path))
+        ? true
+        : entryMatches(consumer, entry),
+    )
+  )
     return false;
   if (mine.length === 1 && mine[0]?.path === path) return true;
   try {
     const root = join(consumer, path);
     if (!lstatSync(root).isDirectory()) return false;
-    const actual = new Set(
-      inventory(root, undefined, true).map((file) => `${path}/${file.path}`),
-    );
+    const actual = new Set<string>();
+    // Inspect leaves without following links: helper trees contain file links
+    // in normal installs and regular files in copy mode. A directory no record
+    // lies under is unmanaged, so it counts as a stray leaf even when empty.
+    function leaves(relative: string): void {
+      for (const name of readdirSync(join(consumer, relative))) {
+        const child = `${relative}/${name}`,
+          stat = lstatSync(join(consumer, child));
+        if (
+          stat.isDirectory() &&
+          !stat.isSymbolicLink() &&
+          mine.some((entry) => entry.path.startsWith(`${child}/`))
+        )
+          leaves(child);
+        else actual.add(child);
+      }
+    }
+    leaves(path);
+    if (allowMissing)
+      return [...actual].every((leaf) =>
+        mine.some((entry) => entry.path === leaf),
+      );
     return (
       actual.size === mine.length &&
       mine.every((entry) => actual.has(entry.path))
@@ -402,6 +429,7 @@ export async function install(options: Options): Promise<void> {
   const root = await cached(options),
     manifest = verify(root, options.local ? undefined : options.pin.manifest);
   const manifestDigest = digest(readFileSync(join(root, MANIFEST)));
+  const helpers = manifest.files.filter((item) => item.path.startsWith("lib/"));
   const fingerprint = digest(
     JSON.stringify({
       pin: options.pin,
@@ -483,6 +511,16 @@ export async function install(options: Options): Promise<void> {
       )
         throw new Error(`install record disagrees with release: ${path}`);
     };
+    for (const item of helpers) {
+      const path = `.groundwork/${item.path}`,
+        entry = entryAt(path);
+      if (!entry) throw new Error(`missing install record: ${path}`);
+      known.add(path);
+      if (entry.target) {
+        if (entry.target !== join(root, item.path))
+          throw new Error(`wrong release link: ${path}`);
+      } else expectFile(path, item);
+    }
     for (const [key, content] of adapters) {
       const [surface, skill] = key.split("/") as [string, string];
       const dir = `.groundwork/adapters/${key}`,
@@ -527,13 +565,20 @@ export async function install(options: Options): Promise<void> {
     function tree(relative: string): void {
       const stat = lstatSync(join(consumer, relative));
       if (old?.entries.some((entry) => entry.path === relative)) return;
-      if (!stat.isDirectory() || stat.isSymbolicLink())
+      // A directory is ours only if a record lies under it; an added empty one
+      // would otherwise pass for want of anything to validate.
+      if (
+        !stat.isDirectory() ||
+        stat.isSymbolicLink() ||
+        !old?.entries.some((entry) => entry.path.startsWith(`${relative}/`))
+      )
         throw new Error(`unexpected installed entry: ${relative}`);
       for (const name of readdirSync(join(consumer, relative)))
         tree(`${relative}/${name}`);
     }
     if (present(join(consumer, ".groundwork/adapters")))
       tree(".groundwork/adapters");
+    if (present(join(consumer, ".groundwork/lib"))) tree(".groundwork/lib");
     for (const skill of options.overlay.skills)
       for (const surface of [".claude", ".agents"])
         tree(`${surface}/skills/${skill}`);
@@ -543,6 +588,18 @@ export async function install(options: Options): Promise<void> {
   await locked(join(consumer, ".groundwork/install.lock"), async () => {
     // Read after acquiring the worktree lock, since another installer may have changed ownership while we waited.
     old = readLock(statePath);
+    // Never remove a helper tree created or altered by the consumer, including
+    // after an interrupted install. Ownership comes from exact disk records.
+    const helperPath = ".groundwork/lib";
+    if (
+      present(join(consumer, helperPath)) &&
+      !carriedRecords(old).some((records) =>
+        exactInstall(consumer, records, helperPath, true),
+      )
+    )
+      throw new Error(
+        "unmanaged or changed shared helpers; move .groundwork/lib aside before reinstalling",
+      );
     const ignorePath = join(consumer, ".gitignore");
     if (present(ignorePath) && !lstatSync(ignorePath).isFile())
       throw new Error("gitignore must be a regular file");
@@ -595,6 +652,8 @@ export async function install(options: Options): Promise<void> {
       else stagedEntries.push({ path, file: record(stage, path) });
     }
     try {
+      for (const item of helpers)
+        link(`.groundwork/${item.path}`, join(root, item.path));
       for (const [key, content] of adapters) {
         const path = `.groundwork/adapters/${key}`;
         file(`${path}/SKILL.md`, content);
@@ -679,6 +738,9 @@ export async function install(options: Options): Promise<void> {
           join(stage, ".groundwork/adapters"),
           join(consumer, ".groundwork/adapters"),
         );
+      rmSync(join(consumer, helperPath), { recursive: true, force: true });
+      if (existsSync(join(stage, helperPath)))
+        renameSync(join(stage, helperPath), join(consumer, helperPath));
       for (const path of discovery) {
         mkdirSync(dirname(join(consumer, path)), { recursive: true });
         renameSync(join(stage, path), join(consumer, path));

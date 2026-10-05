@@ -13,6 +13,26 @@ import {
   normalizeSchema,
   reconcileStepMs,
 } from "../modules/M2-generated-artifact-freshness/reference/ephemeral-replay/check-schema-drift.ts";
+import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
+
+// Filter after merging overrides, including Windows' case-insensitive spelling.
+function safeSpawn(
+  command: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+) {
+  const env = Object.fromEntries(
+    Object.entries({ ...process.env, ...options.env }).filter(
+      ([key]) =>
+        !(LEAKY_GIT_ENV as readonly string[]).includes(key.toUpperCase()),
+    ),
+  );
+  const [executable, ...args] = command;
+  if (!executable) throw new Error("Missing subprocess executable");
+  const result = spawnSync(executable, args, { ...options, env });
+  return { ...result, exitCode: result.status };
+}
+
 const root = resolve(import.meta.dir, "..");
 const temp = mkdtempSync(join(tmpdir(), "groundwork-freshness-"));
 afterAll(() => rmSync(temp, { recursive: true, force: true }));
@@ -22,7 +42,7 @@ function run(
   cwd = root,
   env: Record<string, string> = {},
 ) {
-  return Bun.spawnSync([process.execPath, join(root, path), ...args], {
+  return safeSpawn([process.execPath, join(root, path), ...args], {
     cwd,
     env: { ...process.env, ...env },
   });
@@ -34,18 +54,19 @@ function compare(
   cwd = root,
   env: Record<string, string> = {},
 ) {
-  expect(run(path, args, cwd, env).exitCode).toBe(status);
+  expectSpawnExit(run(path, args, cwd, env), status);
   if (process.env.GROUNDWORK_BASH_PARITY === "1")
-    expect(
-      Bun.spawnSync(
+    expectSpawnExit(
+      safeSpawn(
         [
           "bash",
           join(root, ".context/bash-baseline", path.replace(/\.ts$/, ".sh")),
           ...args,
         ],
         { cwd, env: { ...process.env, ...env } },
-      ).exitCode,
-    ).toBe(status);
+      ),
+      status,
+    );
 }
 const m1 = "modules/M1-gates-enforcement-ladder/reference";
 const m2 = "modules/M2-generated-artifact-freshness/reference";
@@ -66,14 +87,17 @@ test("TODO gate: empty root", () =>
 test("review marker passes unrelated paths and requires marker on staged protected paths", () => {
   const dir = join(temp, "marker");
   mkdirSync(dir);
-  Bun.spawnSync(["git", "init", "-q", dir]);
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
   const message = join(dir, "message.txt");
   writeFileSync(message, "chore: example\n");
   const gate = `${m1}/commit-msg-marker/check-review-marker.ts`;
   compare(gate, [message], 0, dir);
   mkdirSync(join(dir, "db/migrations"), { recursive: true });
   writeFileSync(join(dir, "db/migrations/001.sql"), "SELECT 1;\n");
-  Bun.spawnSync(["git", "-C", dir, "add", "db/migrations/001.sql"]);
+  expectSpawnExit(
+    safeSpawn(["git", "-C", dir, "add", "db/migrations/001.sql"]),
+    0,
+  );
   compare(gate, [message], 1, dir);
   writeFileSync(message, "chore: example\n\n[reviewed:db-migration]\n");
   compare(gate, [message], 0, dir);
@@ -129,7 +153,7 @@ test("count and referenced-path fixtures, drift and omission", () => {
 test("root-relative Markdown links resolve against the repository root", () => {
   const repo = join(temp, "links");
   mkdirSync(join(repo, "docs/sub"), { recursive: true });
-  Bun.spawnSync(["git", "init", "-q", repo]);
+  expectSpawnExit(safeSpawn(["git", "init", "-q", repo]), 0);
   writeFileSync(join(repo, "docs/example.md"), "# Example\n");
   const page = join(repo, "docs/sub/page.md");
   const gate = `${m2}/prose-facts/check-referenced-paths.ts`;
@@ -167,7 +191,7 @@ test.skipIf(process.platform === "win32")(
     writeFileSync(join(docs, "a0.md"), "# Zero\n");
     writeFileSync(join(docs, "a\\z.md"), "# Zed\n");
     const out = join(temp, "sort-index.md");
-    expect(run(`${m2}/triad/generate-index.ts`, [docs, out]).exitCode).toBe(0);
+    expectSpawnExit(run(`${m2}/triad/generate-index.ts`, [docs, out]), 0);
     const links = [...readFileSync(out, "utf8").matchAll(/\]\(([^)]+)\)/g)];
     expect(links.map((match) => match[1])).toEqual(["a/z.md", "a0.md"]);
   },
@@ -175,18 +199,19 @@ test.skipIf(process.platform === "win32")(
 test("index generator preserves deterministic body; gate detects stale and missing", () => {
   const docs = join(root, m2, "triad/fixture/docs");
   const fresh = join(temp, "fresh-index.md");
-  expect(run(`${m2}/triad/generate-index.ts`, [docs, fresh]).exitCode).toBe(0);
+  expectSpawnExit(run(`${m2}/triad/generate-index.ts`, [docs, fresh]), 0);
   const generated = readFileSync(fresh, "utf8");
   if (process.env.GROUNDWORK_BASH_PARITY === "1") {
     const old = join(temp, "old-index.md");
-    expect(
-      Bun.spawnSync([
+    expectSpawnExit(
+      safeSpawn([
         "bash",
         join(root, ".context/bash-baseline", `${m2}/triad/generate-index.sh`),
         docs,
         old,
-      ]).exitCode,
-    ).toBe(0);
+      ]),
+      0,
+    );
     expect(
       generated.replace("bun generate-index.ts", "sh generate-index.sh"),
     ).toBe(readFileSync(old, "utf8"));
@@ -198,9 +223,7 @@ test("index generator preserves deterministic body; gate detects stale and missi
     writeFileSync(old, "stale\n");
     compare(`${m2}/triad/check-index-fresh.ts`, [docs, old], 1);
   }
-  expect(run(`${m2}/triad/check-index-fresh.ts`, [docs, fresh]).exitCode).toBe(
-    0,
-  );
+  expectSpawnExit(run(`${m2}/triad/check-index-fresh.ts`, [docs, fresh]), 0);
   const again = join(temp, "again.md");
   run(`${m2}/triad/generate-index.ts`, [docs, again]);
   expect(readFileSync(again, "utf8")).toBe(generated);
@@ -212,7 +235,7 @@ test.skipIf(process.platform === "win32")(
     const dir = join(temp, "mirror");
     mkdirSync(join(dir, ".claude/skills/example"), { recursive: true });
     writeFileSync(join(dir, ".claude/skills/example/SKILL.md"), "# Example\n");
-    Bun.spawnSync(["git", "init", "-q", dir]);
+    expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
     const gate =
       "modules/M0-instruction-architecture/reference/sync-skills-mirror.ts";
     compare(gate, ["--check"], 1, dir);

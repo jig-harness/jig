@@ -282,16 +282,21 @@ companions (a failed exit-code assertion carries the subprocess's output),
 `guarded-git-spawn` (every spawn made through it must pass an explicit env free
 of `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` or the common-dir/object-directory
 routing variables, so scratch git calls cannot touch the real repository from
-inside a hook; adopting it in the existing scratch-repository tests, such as
-`scripts/freshness.test.ts`, is still pending, and those calls remain
-unguarded until then), and the per-process temp-dir scope with its Bun preload. Not yet moved: the shell-command reachability model that
+inside a hook; the freshness and gate test suites now use it for scratch git
+commands and subprocesses that may launch git indirectly), and the per-process
+temp-dir scope with its Bun preload. Not yet moved: the shell-command reachability model that
 the reference implementation's workflow linter exports to many of its tests.
 It is generic but sits inside a single very large file together with that
 organization's workflow conventions, so it needs its own seam before it can
 move.
 
 The [installer](tools/install/README.md) now packages self-contained skill
-scripts with a digest/mode manifest, fetches immutable releases into an atomic
+scripts and importable shared helpers. Consumers import the helpers from
+`.groundwork/lib/`; link and copy installs are checked against the release
+manifest, including when no skills are selected. Consumer import switches and
+local-copy deletion still require a published immutable release pin.
+
+It records a digest/mode manifest, fetches immutable releases into an atomic
 host cache, renders consumer-specific Claude Code and Codex adapters, and checks
 them offline. Its local override builds working-tree snapshots. Acceptance
 tests exercise concurrent Git worktrees, copy fallback, tampering and headless

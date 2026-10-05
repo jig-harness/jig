@@ -20,6 +20,14 @@ import {
   verify,
 } from "./integrity.ts";
 
+/** Importable support modules: preserve paths and their relative imports. */
+export const sharedHelpers = [
+  "lib/guarded-git-spawn.ts",
+  "lib/test-helpers/expect-spawn-exit.ts",
+  "lib/test-tmpdir.ts",
+  "lib/test-tmpdir-bun-preload.ts",
+] as const;
+
 /**
  * Build a self-contained payload. Existing output is refused to avoid stale
  * files. The payload is assembled beside the output and renamed into place only
@@ -57,6 +65,16 @@ async function build(
   if (!existsSync(join(source, "mise.toml")))
     throw new Error(`release source needs mise.toml: ${source}`);
   copyFileSync(join(source, "mise.toml"), join(output, "mise.toml"));
+  // These helpers depend only on the native runtime and each other. Unlike
+  // skill commands, consumers import them, including from a test preload.
+  // Minimal skill-only sources may omit lib/; a partial helper set is invalid.
+  if (existsSync(join(source, "lib")))
+    for (const path of sharedHelpers) {
+      const to = join(output, path);
+      mkdirSync(dirname(to), { recursive: true });
+      copyFileSync(join(source, path), to);
+      chmodSync(to, 0o644);
+    }
   const entries: string[] = [];
   // Supporting TypeScript modules are inlined into entry points, never shipped as duplicate sources.
   if (existsSync(join(source, "skills"))) {

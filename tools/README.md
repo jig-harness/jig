@@ -12,6 +12,8 @@ Groundwork keeps reusable command-line tools here as they move in.
   `lib/test-helpers/` and the temp-dir scope (`lib/test-tmpdir*.ts`) are the shared
   test support; `lib/guarded-git-spawn.ts` is the only sanctioned route to a raw
   spawn in tests that build scratch git repositories.
+  Pinned releases install these helpers under `.groundwork/lib/` in the consumer;
+  see [importing shared helpers](install/README.md#importing-shared-helpers).
 - `modules/M*/reference/` — the practice gates and worked examples already shipped
   with the modules. They stay beside the doctrine they enforce.
 - `scripts/` — Groundwork's own repository checks and build orchestration.

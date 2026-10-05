@@ -182,8 +182,15 @@ it(
       }
       proc.kill();
       await proc.exited;
-      rmSync(fixtureDir, { recursive: true, force: true });
-      rmSync(fakeSystemTmpdir, { recursive: true, force: true });
+      // Windows may hold the killed child's working directory a moment longer.
+      const retry = {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      };
+      rmSync(fixtureDir, retry);
+      rmSync(fakeSystemTmpdir, retry);
     }
   },
   TEST_TIMEOUT_MS,

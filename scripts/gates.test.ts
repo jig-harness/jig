@@ -10,6 +10,26 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { remediation } from "./check-branch-protection.ts";
+import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
+
+// Filter after merging overrides, including Windows' case-insensitive spelling.
+function safeSpawn(
+  command: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+) {
+  const env = Object.fromEntries(
+    Object.entries({ ...process.env, ...options.env }).filter(
+      ([key]) =>
+        !(LEAKY_GIT_ENV as readonly string[]).includes(key.toUpperCase()),
+    ),
+  );
+  const [executable, ...args] = command;
+  if (!executable) throw new Error("Missing subprocess executable");
+  const result = spawnSync(executable, args, { ...options, env });
+  return { ...result, exitCode: result.status };
+}
+
 const root = resolve(import.meta.dir, "..");
 const fixtures = join(import.meta.dir, "tests/fixtures");
 const temporary: string[] = [];
@@ -22,7 +42,7 @@ afterAll(() => {
   for (const path of temporary) rmSync(path, { recursive: true, force: true });
 });
 function run(gate: string, args: string[] = [], cwd = root) {
-  return Bun.spawnSync(
+  return safeSpawn(
     [process.execPath, join(import.meta.dir, `${gate}.ts`), ...args],
     { cwd },
   );
@@ -62,9 +82,9 @@ const cases: [string, string, string[], number][] = [
 ];
 for (const [gate, fixture, args, status] of cases)
   test(`${gate}: ${fixture} exits ${status}`, () => {
-    expect(run(gate, args, join(fixtures, fixture)).exitCode).toBe(status);
+    expectSpawnExit(run(gate, args, join(fixtures, fixture)), status);
     if (process.env.GROUNDWORK_BASH_PARITY === "1") {
-      const legacy = Bun.spawnSync(
+      const legacy = safeSpawn(
         [
           "bash",
           join(root, ".context/bash-baseline/scripts", `${gate}.sh`),
@@ -72,7 +92,7 @@ for (const [gate, fixture, args, status] of cases)
         ],
         { cwd: join(fixtures, fixture) },
       );
-      expect(legacy.exitCode).toBe(status);
+      expectSpawnExit(legacy, status);
     }
   });
 for (const [name, status] of [
@@ -90,20 +110,19 @@ for (const [name, status] of [
       "example/repo",
       "main",
     ];
-    expect(run("check-branch-protection", args, tmpdir()).exitCode).toBe(
-      status,
-    );
+    expectSpawnExit(run("check-branch-protection", args, tmpdir()), status);
     if (process.env.GROUNDWORK_BASH_PARITY === "1")
-      expect(
-        Bun.spawnSync([
+      expectSpawnExit(
+        safeSpawn([
           "bash",
           join(
             root,
             ".context/bash-baseline/scripts/check-branch-protection.sh",
           ),
           ...args,
-        ]).exitCode,
-      ).toBe(status);
+        ]),
+        status,
+      );
   });
 for (const [fixture, needle] of [
   ["unprotected", "FAIL  required CI status check(s) configured"],
@@ -125,13 +144,14 @@ for (const [fixture, needle] of [
       ]).stdout.toString(),
     ).toContain(needle ?? ""));
 test("offline branch audit needs no origin", () =>
-  expect(
+  expectSpawnExit(
     run(
       "check-branch-protection",
       ["--input", join(fixtures, "branch-protection/compliant.json")],
       tmpdir(),
-    ).exitCode,
-  ).toBe(0));
+    ),
+    0,
+  ));
 test("remediation preserves stricter review and app-bound checks", () => {
   const input = JSON.parse(
     readFileSync(join(fixtures, "branch-protection/compliant.json"), "utf8"),
@@ -150,7 +170,7 @@ test("remediation preserves stricter review and app-bound checks", () => {
 });
 test("ignored workspace excluded; non-ignored untracked content checked", () => {
   const dir = temp();
-  expect(Bun.spawnSync(["git", "init", "-q", dir]).exitCode).toBe(0);
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
   writeFileSync(join(dir, ".gitignore"), ".context/\n");
   writeFileSync(join(dir, "README.md"), "# Good\n\nRepository content.\n");
   writeFileSync(
@@ -162,17 +182,17 @@ test("ignored workspace excluded; non-ignored untracked content checked", () => 
   const bad = "# Bad\nText\n| table |\n[missing](nowhere.md)\nUNDEFINEDTERM\n";
   writeFileSync(join(dir, ".context/ignored.md"), bad);
   for (const gate of ["check-md-links", "check-md-tables"])
-    expect(run(gate, [dir]).exitCode).toBe(0);
+    expectSpawnExit(run(gate, [dir]), 0);
   const glossaryArgs = [
     dir,
     join(dir, "GLOSSARY.md"),
     join(dir, "allowlist.txt"),
   ];
-  expect(run("check-glossary-coverage", glossaryArgs).exitCode).toBe(0);
+  expectSpawnExit(run("check-glossary-coverage", glossaryArgs), 0);
   writeFileSync(join(dir, "untracked.md"), bad);
   for (const gate of ["check-md-links", "check-md-tables"])
-    expect(run(gate, [dir]).exitCode).toBe(1);
-  expect(run("check-glossary-coverage", glossaryArgs).exitCode).toBe(1);
+    expectSpawnExit(run(gate, [dir]), 1);
+  expectSpawnExit(run("check-glossary-coverage", glossaryArgs), 1);
 });
 const unixPermissions =
   process.platform !== "win32" && process.getuid?.() !== 0;
@@ -184,23 +204,23 @@ test.skipIf(!unixPermissions)(
     writeFileSync(patterns, "EXAMPLE-[0-9]+\n");
     chmodSync(patterns, 0);
     try {
-      expect(
-        run("check-no-tracker-refs", [join(fixtures, "pass"), patterns])
-          .exitCode,
-      ).toBe(2);
+      expectSpawnExit(
+        run("check-no-tracker-refs", [join(fixtures, "pass"), patterns]),
+        2,
+      );
     } finally {
       chmodSync(patterns, 0o644);
     }
-    Bun.spawnSync(["git", "init", "-q", dir]);
+    expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
     mkdirSync(join(dir, "locked"));
     writeFileSync(
       join(dir, "locked/notes.md"),
       "See " + "DOC" + "-1 for why.\n",
     );
-    Bun.spawnSync(["git", "-C", dir, "add", "locked/notes.md"]);
+    expectSpawnExit(safeSpawn(["git", "-C", dir, "add", "locked/notes.md"]), 0);
     chmodSync(join(dir, "locked"), 0);
     try {
-      expect(run("check-no-tracker-refs", [dir]).exitCode).toBe(2);
+      expectSpawnExit(run("check-no-tracker-refs", [dir]), 2);
     } finally {
       chmodSync(join(dir, "locked"), 0o755);
     }

@@ -1,4 +1,4 @@
-# Installing shared skills
+# Installing shared skills and helpers
 
 Consumers need the same maintained procedures on every machine, without copying
 large skill directories into each repository. This installer keeps one verified
@@ -80,6 +80,9 @@ The installer creates:
   every installed file's digest/mode or exact link target. Check mode treats it
   as a record of link-versus-copy choices only: required files, link targets and
   copy digests are recomputed from the verified release and rendered adapters.
+- `.groundwork/lib/` — importable shared test helpers linked to the verified
+  cache, or copied on hosts without link permission. These are installed even
+  when the overlay selects no skills.
 
 Only these installed paths are appended to `.gitignore`; other project skills
 stay visible to Git. The installer keeps its lines in a marked block that it
@@ -95,10 +98,46 @@ existing in-repository skill aside explicitly when adopting it. Reinstall
 removes previously installed skills that are no longer selected and leaves
 unrelated project skills alone. To stop the install while retaining the pin,
 install once with `"skills": []`; then remove the pin and the install hook.
+That install still publishes `.groundwork/lib/`, so first drop any imports of
+it and the `bunfig.toml` preload, then delete `.groundwork/lib/` (the
+installer owns it) so a fresh checkout has no dangling references.
 After a pilot deletes its old source, rollback means pinning the last good
 release or vendoring that release into the consumer.
 
+## Importing shared helpers
+
+Consumer code imports the installed files using paths relative to its own
+location. For a test at the repository root:
+
+```ts
+import { spawnSync } from "./.groundwork/lib/guarded-git-spawn.ts";
+import { expectSpawnExit } from "./.groundwork/lib/test-helpers/expect-spawn-exit.ts";
+```
+
+The guarded spawn requires an explicit environment without the repository-routing
+variables exported in `LEAKY_GIT_ENV`. Filter those names case-insensitively
+after merging environment overrides. It returns Node's subprocess result;
+pass `{ ...result, exitCode: result.status }` to `expectSpawnExit`.
+
+To contain test scratch directories, add
+`preload = ["./.groundwork/lib/test-tmpdir-bun-preload.ts"]` under `[test]` in
+the consumer's `bunfig.toml`. A consumer needing its own directory prefix or
+environment names instead imports `scopeTestTmpdir` from
+`.groundwork/lib/test-tmpdir.ts` in a small preload, passes its own options,
+and registers `afterAll(() => scope.release())`. Child processes must receive
+the current environment explicitly to inherit the scope.
+
+Offline check verifies helper links or copy bytes against the release manifest
+and rejects missing or extra files. Reinstall refuses a helper tree that differs
+from its install records; move an edited tree aside before reinstalling. To adopt
+a release, switch imports and delete the old consumer implementations in the
+same rollout.
+
 ## Release packaging
+
+The release also ships importable support modules: guarded Git spawning,
+subprocess exit assertions, the temporary-directory scope and its Bun preload.
+They retain their source paths and relative imports and need no `node_modules`.
 
 Using the runtime in [mise.toml](../../mise.toml), run from this checkout:
 

@@ -17,7 +17,8 @@ import { dirname, join } from "node:path";
 import { LEAKY_GIT_ENV, spawnSync } from "../../lib/guarded-git-spawn.ts";
 import { digest, MANIFEST, verify } from "./integrity.ts";
 import { install, type Options, type Pin } from "./install.ts";
-import { release } from "./release.ts";
+import { release, sharedHelpers } from "./release.ts";
+import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { render, validateOverlay, type Overlay } from "./render.ts";
 
 const temps: string[] = [];
@@ -56,7 +57,7 @@ const overlay = (model = "fast"): Overlay => ({
     codex_frontmatter: { example: { model: "codex-example" } },
   },
 });
-async function fixture() {
+async function fixture(helpers = false) {
   const root = temporary(),
     source = join(root, "source"),
     remote = join(root, "remote"),
@@ -64,6 +65,13 @@ async function fixture() {
   mkdirSync(source);
   mkdirSync(remote);
   put(source, "mise.toml", '[tools]\nbun = "1.4.0"\n');
+  if (helpers)
+    for (const path of sharedHelpers)
+      put(
+        source,
+        path,
+        readFileSync(join(import.meta.dir, "../..", path), "utf8"),
+      );
   put(
     source,
     "skills/example/SKILL.md",
@@ -113,6 +121,155 @@ async function fixture() {
     cached: join(cache, `v1-${manifest}`),
   };
 }
+
+test("pinned shared helpers import and preload offline through links and copies without dependencies", async () => {
+  const f = await fixture(true);
+  const payload = verify(join(f.remote, "release"), f.pin.manifest);
+  expect(
+    payload.files
+      .filter((file) => file.path.startsWith("lib/"))
+      .map((file) => file.path)
+      .sort(),
+  ).toEqual([...sharedHelpers].sort());
+  for (const copies of [false, true]) {
+    const options = { ...f.options, copies, overlay: { skills: [] } };
+    await install(options);
+    await check(options);
+    const lib = join(f.consumer, ".groundwork/lib");
+    put(
+      f.consumer,
+      "helper-probe.ts",
+      `
+      import { spawnSync } from './.groundwork/lib/guarded-git-spawn.ts';
+      import { expectSpawnExit } from './.groundwork/lib/test-helpers/expect-spawn-exit.ts';
+      import { scopeTestTmpdir } from './.groundwork/lib/test-tmpdir.ts';
+      const result = spawnSync(process.execPath, ['-e', 'console.log("shared")'], { env: process.env });
+      expectSpawnExit({ ...result, exitCode: result.status }, 0);
+      if (result.stdout !== 'shared\\n') throw new Error('missing output');
+      const scope = scopeTestTmpdir({ prefix: 'consumer-test.' });
+      scope.release();
+    `,
+    );
+    expectSpawnExit(
+      Bun.spawnSync([process.execPath, "helper-probe.ts"], {
+        cwd: f.consumer,
+        env,
+      }),
+      0,
+    );
+    const marker = join(f.root, `preload-root-${copies}.txt`);
+    put(
+      f.consumer,
+      "scope-probe.test.ts",
+      `
+      import { test, expect } from 'bun:test';
+      import { tmpdir } from 'node:os';
+      import { writeFileSync, mkdtempSync } from 'node:fs';
+      import { join } from 'node:path';
+      test('preload contains scratch', () => {
+        expect(tmpdir()).toBe(process.env.GROUNDWORK_TEST_TMPDIR);
+        expect(process.env.GROUNDWORK_TEST_TMPDIR).toBeDefined();
+        mkdtempSync(join(tmpdir(), 'scratch.'));
+        writeFileSync(${JSON.stringify(marker)}, tmpdir());
+      });
+    `,
+    );
+    expectSpawnExit(
+      Bun.spawnSync(
+        [
+          process.execPath,
+          "test",
+          "--preload",
+          join(lib, "test-tmpdir-bun-preload.ts"),
+          "scope-probe.test.ts",
+        ],
+        { cwd: f.consumer, env },
+      ),
+      0,
+    );
+    expect(existsSync(readFileSync(marker, "utf8"))).toBe(false);
+    expect(existsSync(join(f.consumer, "node_modules"))).toBe(false);
+    // Reinstall and check from the verified cache after its remote disappears.
+    if (copies) rmSync(f.remote, { recursive: true });
+    await install(options);
+    await check(options);
+  }
+});
+
+test("shared helper checks derive paths and bytes from the release and refuse unmanaged replacement", async () => {
+  const f = await fixture(true);
+  const options = { ...f.options, copies: true };
+  const path = join(f.consumer, ".groundwork/lib/test-tmpdir.ts");
+  put(f.consumer, ".groundwork/lib/custom.ts", "consumer-owned");
+  await expect(install(options)).rejects.toThrow("unmanaged");
+  expect(
+    readFileSync(join(f.consumer, ".groundwork/lib/custom.ts"), "utf8"),
+  ).toBe("consumer-owned");
+  rmSync(join(f.consumer, ".groundwork/lib"), { recursive: true });
+  await install(options);
+  const original = readFileSync(path);
+  writeFileSync(path, "changed");
+  await expect(check(options)).rejects.toThrow("installed file changed");
+  await expect(install(options)).rejects.toThrow("changed shared helpers");
+  writeFileSync(path, original);
+  const lockPath = join(f.consumer, ".groundwork/install.lock.json");
+  const originalLock = readFileSync(lockPath, "utf8");
+  const lock = JSON.parse(originalLock);
+  lock.entries = lock.entries.filter(
+    (entry: { path: string }) =>
+      entry.path !== ".groundwork/lib/test-tmpdir.ts",
+  );
+  writeFileSync(lockPath, JSON.stringify(lock));
+  await expect(check(options)).rejects.toThrow("missing install record");
+  writeFileSync(lockPath, originalLock);
+  put(f.consumer, ".groundwork/lib/extra.ts", "extra");
+  await expect(check(options)).rejects.toThrow("unexpected installed entry");
+  rmSync(join(f.consumer, ".groundwork/lib/extra.ts"));
+  // An added empty directory has no files to validate, yet is still unmanaged.
+  const stray = join(f.consumer, ".groundwork/lib/consumer-owned");
+  mkdirSync(stray);
+  await expect(check(options)).rejects.toThrow("unexpected installed entry");
+  const pending = JSON.parse(originalLock);
+  pending.pending = true;
+  writeFileSync(lockPath, JSON.stringify(pending));
+  await expect(install(options)).rejects.toThrow("changed shared helpers");
+  expect(existsSync(stray)).toBe(true);
+  writeFileSync(lockPath, originalLock);
+  rmSync(stray, { recursive: true });
+  await check(options);
+  writeFileSync(join(f.cached, "lib/test-tmpdir.ts"), "cache tampering");
+  await expect(check(options)).rejects.toThrow("release integrity mismatch");
+});
+
+test("helper installs recover pending publication and retire paths when switching to a helper-free release", async () => {
+  const f = await fixture(true);
+  await install(f.options);
+  const lockPath = join(f.consumer, ".groundwork/install.lock.json");
+  const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+  lock.pending = true;
+  lock.previous = [lock.entries];
+  writeFileSync(lockPath, JSON.stringify(lock));
+  await expect(check(f.options)).rejects.toThrow("interrupted");
+  await install({ ...f.options, copies: true });
+  await check(f.options);
+  // An interruption during removal may leave only part of the previous tree.
+  const partial = JSON.parse(readFileSync(lockPath, "utf8"));
+  partial.pending = true;
+  writeFileSync(lockPath, JSON.stringify(partial));
+  rmSync(join(f.consumer, ".groundwork/lib/test-tmpdir.ts"));
+  await install(f.options);
+  await check(f.options);
+  const noHelpers = await fixture();
+  const options = {
+    ...noHelpers.options,
+    consumer: f.consumer,
+    cache: f.cache,
+    overlay: { skills: [] },
+  };
+  await install(options);
+  await check(options);
+  expect(existsSync(join(f.consumer, ".groundwork/lib"))).toBe(false);
+});
 const check = (options: Options) => install({ ...options, check: true });
 
 test("two actual Git worktrees install concurrently, share one verified cache and render distinct overlays", async () => {
