@@ -18,8 +18,8 @@ Groundwork keeps reusable command-line tools here as they move in.
 
 A command binds a named host behind an interface when it needs one. Host names,
 tracker policies, gate commands and organization-specific values arrive from
-consumer configuration. The installer and shared test-helper migration are
-separate work; this directory does not preempt their contracts.
+consumer configuration. The [installer](install/README.md) provides verified
+pinned releases, a per-host cache, per-worktree adapters and offline checks.
 
 ## Runtime choice
 
@@ -30,7 +30,7 @@ with that checkout's mise configuration active. The runtime belongs to the
 Groundwork tooling; it does not change the target repository's application
 language or package manager.
 
-This first release uses source plus a runtime pin. It avoids a separate binary
+This first release uses bundled commands plus a runtime pin. It avoids a separate binary
 matrix and keeps gates, fixtures and module references reviewable together.
 [Bun supports standalone executables](https://bun.sh/docs/bundler/executables),
 but producing and distributing them is a later packaging decision. Moving

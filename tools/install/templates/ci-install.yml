@@ -1,0 +1,19 @@
+# Copy into a consumer workflow after its pin and overlay are committed.
+# Provision GROUNDWORK_INSTALLER as the pinned bundled installer, available even
+# on a cache miss. The consumer's ordinary Git credential must access the pin.
+# Run under the Bun runtime pinned by the installed release's mise.toml.
+steps:
+  - name: Restore Groundwork host cache
+    uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+    with:
+      path: ${{ runner.temp }}/groundwork-cache
+      key: groundwork-${{ runner.os }}-${{ hashFiles('.groundwork.json') }}
+  - name: Install and verify shared skills
+    env:
+      CACHE: ${{ runner.temp }}/groundwork-cache
+    run: |
+      bun "$GROUNDWORK_INSTALLER" --overlay consumer-overlay.json --cache "$CACHE"
+      bun "$GROUNDWORK_INSTALLER" --overlay consumer-overlay.json --cache "$CACHE" --check
+    shell: bash
+# The installer is native on Windows too; use equivalent arguments in the
+# consumer's chosen shell. Run consumer gates after these steps.

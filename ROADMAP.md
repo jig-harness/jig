@@ -288,5 +288,13 @@ unguarded until then), and the per-process temp-dir scope with its Bun preload. 
 the reference implementation's workflow linter exports to many of its tests.
 It is generic but sits inside a single very large file together with that
 organization's workflow conventions, so it needs its own seam before it can
-move. The installer, consumer manifest pin and subsequent extraction waves
-remain separate work.
+move.
+
+The [installer](tools/install/README.md) now packages self-contained skill
+scripts with a digest/mode manifest, fetches immutable releases into an atomic
+host cache, renders consumer-specific Claude Code and Codex adapters, and checks
+them offline. Its local override builds working-tree snapshots. Acceptance
+tests exercise concurrent Git worktrees, copy fallback, tampering and headless
+installation in the native platform matrix. Consumer manifest pins, publication,
+pilot skill moves, old synchronizer removal and live remote-host validation
+remain the next rollout steps; no consumer has switched as part of this change.
