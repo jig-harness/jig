@@ -154,6 +154,42 @@ test("discovery links expose consumer-local payload files and shared imports", a
   await install({ ...f.options, check: true });
 });
 
+test.skipIf(process.platform === "win32")(
+  "check rejects cache links for materialized files even with rewritten lock records",
+  async () => {
+    const f = await fixture(true);
+    await install(f.options);
+    const lockPath = join(f.consumer, ".groundwork/install.lock.json");
+    const originalLock = readFileSync(lockPath, "utf8");
+    for (const [path, source] of [
+      [".groundwork/lib/test-tmpdir.ts", "lib/test-tmpdir.ts"],
+      [
+        ".groundwork/adapters/claude/example/scripts/main.ts",
+        "skills/example/scripts/main.ts",
+      ],
+    ]) {
+      const target = join(f.cached, source!);
+      const installed = join(f.consumer, path!);
+      const lock = JSON.parse(originalLock) as {
+        entries: { path: string; target?: string; file?: unknown }[];
+      };
+      const entry = lock.entries.find((entry) => entry.path === path)!;
+      delete entry.file;
+      entry.target = target;
+      rmSync(installed);
+      symlinkSync(target, installed);
+      writeFileSync(lockPath, JSON.stringify(lock));
+      await expect(check(f.options)).rejects.toThrow(
+        "expected regular-file install record",
+      );
+      rmSync(installed);
+      cpSync(target, installed);
+      writeFileSync(lockPath, originalLock);
+      await check(f.options);
+    }
+  },
+);
+
 test("pinned shared helpers import and preload offline through links and copies without dependencies", async () => {
   const f = await fixture(true);
   const payload = verify(join(f.remote, "release"), f.pin.manifest);

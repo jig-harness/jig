@@ -74,7 +74,8 @@ exits nonzero with the affected path.
 The installer creates:
 
 - `.groundwork/adapters/{claude,codex}/<name>/SKILL.md` — generated instructions.
-- Supporting files linked to the verified cache, retaining their original paths.
+- Supporting files materialized as verified, owned copies inside the adapters,
+  retaining their original paths.
 - `.claude/skills/<name>` and `.agents/skills/<name>` — links to the local adapters.
 - `.groundwork/overlay.json` — the resolved runtime configuration, recorded and
   verified alongside the generated instructions. Installed scripts read it from
@@ -83,9 +84,9 @@ The installer creates:
   every installed file's digest/mode or exact link target. Check mode treats it
   as a record of link-versus-copy choices only: required files, link targets and
   copy digests are recomputed from the verified release and rendered adapters.
-- `.groundwork/lib/` — importable shared test helpers linked to the verified
-  cache, or copied on hosts without link permission. These are installed even
-  when the overlay selects no skills.
+- `.groundwork/lib/` — importable shared test helpers materialized as verified,
+  owned copies in the consumer. These are installed even when the overlay
+  selects no skills.
 
 Only these installed paths are appended to `.gitignore`; other project skills
 stay visible to Git. The installer keeps its lines in a marked block that it
