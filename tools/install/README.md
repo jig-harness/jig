@@ -131,8 +131,10 @@ environment names instead imports `scopeTestTmpdir` from
 and registers `afterAll(() => scope.release())`. Child processes must receive
 the current environment explicitly to inherit the scope.
 
-Offline check verifies helper links or copy bytes against the release manifest
-and rejects missing or extra files. Reinstall refuses a helper tree that differs
+Offline check requires regular helper files, verifies their bytes against the
+release manifest and rejects missing or extra files. Reinstall can replace
+unchanged links recorded by an older installer with current copies. It refuses
+a helper tree that differs
 from its install records; move an edited tree aside before reinstalling. To adopt
 a release, switch imports and delete the old consumer implementations in the
 same rollout.

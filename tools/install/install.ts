@@ -352,9 +352,9 @@ function exactInstall(
     const root = join(consumer, path);
     if (!lstatSync(root).isDirectory()) return false;
     const actual = new Set<string>();
-    // Inspect leaves without following links: helper trees contain file links
-    // in normal installs and regular files in copy mode. A directory no record
-    // lies under is unmanaged, so it counts as a stray leaf even when empty.
+    // Inspect leaves without following links: older install records can contain
+    // helper links that reinstall migrates to current regular files. A directory
+    // no record lies under is unmanaged, so even an empty one is a stray leaf.
     function leaves(relative: string): void {
       for (const name of readdirSync(join(consumer, relative))) {
         const child = `${relative}/${name}`,
