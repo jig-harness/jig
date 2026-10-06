@@ -150,13 +150,18 @@ bun tools/install/release.ts . dist/release v1.0.0
 ```
 
 The packager refuses an existing output directory. It prints the manifest
-digest, copies skill instructions/references, excludes tests/fixtures and bundles
-each TypeScript script entry point into one file with its dependencies inlined.
+digest, copies skill instructions/references and excludes tests/fixtures.
+Skills can retain TypeScript source and ship their supporting modules. The
+review skill uses this path so consumer compilers
+can check its public imports and discovery directories without stripped types.
+Its YAML configuration parser ships as a typed facade over a bundled dependency;
+installed copies need no package download. Other skills bundle each script entry
+point with its dependencies inlined.
 Entry points use `import.meta.main`, `isEntryPoint(...)` or `runMain(...)`;
 supporting TypeScript modules are omitted except explicitly declared public
 exports. The review skill exports its ladder, process and conditional-request
-modules for sibling skills; each is bundled with its dependencies. Process
-cancellation uses one shared handler across bundles. A consumer runner with its
+modules for sibling skills. Process cancellation uses one shared handler across
+imported modules and bundles. A consumer runner with its
 own process API registers each owned group through `registerCancellationGroup`
 and calls the returned release function when that group settles. Each registration
 owns an independent token; releasing it twice cannot remove another owner.
@@ -191,6 +196,10 @@ frozen lockfile first. Changes made directly inside `node_modules` are outside
 the source contract. A prepared release must already have a valid manifest.
 Checks fail if the current source no longer matches the installed snapshot.
 Normal pin-based installs do not select a local snapshot.
+
+When changing the packager itself, invoke the working tree's
+`tools/install/install.ts`. An older bundled installer uses its own packaging
+code even when `--local` selects newer skill source.
 
 ## Headless hosts and CI
 
