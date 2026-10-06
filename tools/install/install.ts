@@ -636,6 +636,19 @@ export async function install(options: Options): Promise<void> {
       chmodSync(dest, 0o644);
       stagedEntries.push({ path, file: record(stage, path) });
     }
+    /** Keep imported files physically within the consumer's owned installation. */
+    function copy(path: string, from: string): void {
+      const dest = join(stage, path);
+      mkdirSync(dirname(dest), { recursive: true });
+      cpSync(from, dest, { recursive: true, dereference: true });
+      if (lstatSync(dest).isDirectory())
+        for (const item of inventory(dest, undefined, true))
+          stagedEntries.push({
+            path: `${path}/${item.path}`,
+            file: { ...item, path: `${path}/${item.path}` },
+          });
+      else stagedEntries.push({ path, file: record(stage, path) });
+    }
     /** `from` is where the content is read now when `target` is not published yet. */
     function link(path: string, target: string, from = target): void {
       const dest = join(stage, path);
@@ -658,19 +671,12 @@ export async function install(options: Options): Promise<void> {
             throw e;
         }
       }
-      cpSync(from, dest, { recursive: true, dereference: true });
-      if (lstatSync(dest).isDirectory())
-        for (const item of inventory(dest, undefined, true))
-          stagedEntries.push({
-            path: `${path}/${item.path}`,
-            file: { ...item, path: `${path}/${item.path}` },
-          });
-      else stagedEntries.push({ path, file: record(stage, path) });
+      copy(path, from);
     }
     try {
       file(runtimeOverlayPath, overlayText);
       for (const item of helpers)
-        link(`.groundwork/${item.path}`, join(root, item.path));
+        copy(`.groundwork/${item.path}`, join(root, item.path));
       for (const [key, content] of adapters) {
         const path = `.groundwork/adapters/${key}`;
         file(`${path}/SKILL.md`, content);
@@ -681,7 +687,7 @@ export async function install(options: Options): Promise<void> {
             item.path.startsWith(`skills/${skill}/`) &&
             item.path !== `skills/${skill}/SKILL.md`,
         ))
-          link(
+          copy(
             `${path}/${item.path.slice(`skills/${skill}/`.length)}`,
             join(root, item.path),
           );

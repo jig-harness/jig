@@ -4,6 +4,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -13,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { LEAKY_GIT_ENV, spawnSync } from "../../lib/guarded-git-spawn.ts";
 import { digest, MANIFEST, verify } from "./integrity.ts";
 import { install, type Options, type Pin } from "./install.ts";
@@ -121,6 +122,37 @@ async function fixture(helpers = false) {
     cached: join(cache, `v1-${manifest}`),
   };
 }
+
+test("discovery links expose consumer-local payload files and shared imports", async () => {
+  const f = await fixture(true);
+  await install(f.options);
+  for (const surface of [".claude", ".agents"]) {
+    const discovery = join(f.consumer, surface, "skills/example");
+    const linked = lstatSync(discovery).isSymbolicLink();
+    if (process.platform !== "win32") expect(linked).toBe(true);
+    for (const file of ["SKILL.md", "scripts/main.ts", "references/guide.md"]) {
+      const path = join(discovery, file);
+      expect(lstatSync(path).isFile()).toBe(true);
+      expect(
+        realpathSync(path).startsWith(`${realpathSync(f.consumer)}${sep}`),
+      ).toBe(true);
+      if (linked)
+        expect(
+          realpathSync(path).startsWith(
+            `${join(realpathSync(f.consumer), ".groundwork/adapters")}${sep}`,
+          ),
+        ).toBe(true);
+    }
+  }
+  for (const helper of sharedHelpers) {
+    const path = join(f.consumer, ".groundwork", helper);
+    expect(lstatSync(path).isFile()).toBe(true);
+    expect(realpathSync(path)).toBe(
+      join(realpathSync(f.consumer), ".groundwork", helper),
+    );
+  }
+  await install({ ...f.options, check: true });
+});
 
 test("pinned shared helpers import and preload offline through links and copies without dependencies", async () => {
   const f = await fixture(true);
@@ -576,7 +608,7 @@ test("warm cache validates version and wrong-version supporting links fail check
     );
     rmSync(link);
     symlinkSync(join(alternate, "skills/example/references/guide.md"), link);
-    await expect(check(f.options)).rejects.toThrow("wrong release link");
+    await expect(check(f.options)).rejects.toThrow("not a regular file");
   }
 });
 

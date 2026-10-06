@@ -172,6 +172,13 @@ live alongside the skill; imports of external runtime files need an explicit
 packaging seam before a skill moves. The payload includes `mise.toml` and a
 bundled `tools/install.js`; application consumers need no `node_modules`.
 
+Verified payload files and shared helpers are copied into the worktree's owned
+`.groundwork` directories. Discovery directories link to those local adapters
+where the host supports links. Imported TypeScript therefore stays inside the
+consumer repository, where compilers and code analyzers can resolve it safely;
+the immutable release remains in the shared host cache. Both the cache and the
+materialized files are checked against the release manifest.
+
 Publishing is a separate human decision. A release publisher places this payload
 at `release/` in the Git tree it publishes and records that tree's full commit
 and the printed digest. The publisher must preserve modes and bytes. The
