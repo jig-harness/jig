@@ -74,7 +74,8 @@ exits nonzero with the affected path.
 The installer creates:
 
 - `.groundwork/adapters/{claude,codex}/<name>/SKILL.md` — generated instructions.
-- Supporting files linked to the verified cache, retaining their original paths.
+- Supporting files materialized as verified, owned copies inside the adapters,
+  retaining their original paths.
 - `.claude/skills/<name>` and `.agents/skills/<name>` — links to the local adapters.
 - `.groundwork/overlay.json` — the resolved runtime configuration, recorded and
   verified alongside the generated instructions. Installed scripts read it from
@@ -83,9 +84,9 @@ The installer creates:
   every installed file's digest/mode or exact link target. Check mode treats it
   as a record of link-versus-copy choices only: required files, link targets and
   copy digests are recomputed from the verified release and rendered adapters.
-- `.groundwork/lib/` — importable shared test helpers linked to the verified
-  cache, or copied on hosts without link permission. These are installed even
-  when the overlay selects no skills.
+- `.groundwork/lib/` — importable shared test helpers materialized as verified,
+  owned copies in the consumer. These are installed even when the overlay
+  selects no skills.
 
 Only these installed paths are appended to `.gitignore`; other project skills
 stay visible to Git. The installer keeps its lines in a marked block that it
@@ -130,8 +131,10 @@ environment names instead imports `scopeTestTmpdir` from
 and registers `afterAll(() => scope.release())`. Child processes must receive
 the current environment explicitly to inherit the scope.
 
-Offline check verifies helper links or copy bytes against the release manifest
-and rejects missing or extra files. Reinstall refuses a helper tree that differs
+Offline check requires regular helper files, verifies their bytes against the
+release manifest and rejects missing or extra files. Reinstall can replace
+unchanged links recorded by an older installer with current copies. It refuses
+a helper tree that differs
 from its install records; move an edited tree aside before reinstalling. To adopt
 a release, switch imports and delete the old consumer implementations in the
 same rollout.
@@ -150,13 +153,19 @@ bun tools/install/release.ts . dist/release v1.0.0
 ```
 
 The packager refuses an existing output directory. It prints the manifest
-digest, copies skill instructions/references, excludes tests/fixtures and bundles
-each TypeScript script entry point into one file with its dependencies inlined.
+digest, copies skill instructions/references and excludes tests/fixtures.
+Skills can retain TypeScript source and ship their supporting modules. The
+review skill uses this path so consumer compilers
+can check its public imports and discovery directories without stripped types.
+Its YAML configuration parser ships as a small wrapper with checked TypeScript
+declarations around a bundled dependency; installed copies need no package
+download. Other skills bundle each script entry
+point with its dependencies inlined.
 Entry points use `import.meta.main`, `isEntryPoint(...)` or `runMain(...)`;
-supporting TypeScript modules are omitted except explicitly declared public
-exports. The review skill exports its ladder, process and conditional-request
-modules for sibling skills; each is bundled with its dependencies. Process
-cancellation uses one shared handler across bundles. A consumer runner with its
+Supporting modules ship with retained-source skills; other skills inline them
+into bundled entry points. The review skill exports its ladder, process and conditional-request
+modules for sibling skills. Process cancellation uses one shared handler across
+imported modules and bundles. A consumer runner with its
 own process API registers each owned group through `registerCancellationGroup`
 and calls the returned release function when that group settles. Each registration
 owns an independent token; releasing it twice cannot remove another owner.
@@ -165,6 +174,13 @@ paths because procedures already invoke those paths with Bun. Runtime data must
 live alongside the skill; imports of external runtime files need an explicit
 packaging seam before a skill moves. The payload includes `mise.toml` and a
 bundled `tools/install.js`; application consumers need no `node_modules`.
+
+Verified payload files and shared helpers are copied into the worktree's owned
+`.groundwork` directories. Discovery directories link to those local adapters
+where the host supports links. Imported TypeScript therefore stays inside the
+consumer repository, where compilers and code analyzers can resolve it safely;
+the immutable release remains in the shared host cache. Both the cache and the
+materialized files are checked against the release manifest.
 
 Publishing is a separate human decision. A release publisher places this payload
 at `release/` in the Git tree it publishes and records that tree's full commit
@@ -191,6 +207,10 @@ frozen lockfile first. Changes made directly inside `node_modules` are outside
 the source contract. A prepared release must already have a valid manifest.
 Checks fail if the current source no longer matches the installed snapshot.
 Normal pin-based installs do not select a local snapshot.
+
+When changing the packager itself, invoke the working tree's
+`tools/install/install.ts`. An older bundled installer uses its own packaging
+code even when `--local` selects newer skill source.
 
 ## Headless hosts and CI
 

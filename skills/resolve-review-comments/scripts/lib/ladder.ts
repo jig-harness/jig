@@ -862,9 +862,8 @@ export interface LoadResult {
 /**
  * Read and validate the ladder config. NEVER throws: an unusable config is a
  * `null` with a stated reason, which `resolveStance` turns into an inert
- * (accepted) verdict. `js-yaml` is imported dynamically for the same reason —
- * a skill copy distributed without the repo's dependencies must degrade to
- * "ladder off", not to a module-load crash in every caller.
+ * (accepted) verdict. The typed parser facade ships its runtime dependency
+ * with the release, independently of consumer dependencies or package caches.
  */
 export async function loadLadder(path: string): Promise<LoadResult> {
   const canonicalAbs = join(consumerRoot(), LADDER_CONFIG_RELPATH);
@@ -882,7 +881,7 @@ export async function loadLadder(path: string): Promise<LoadResult> {
   }
   let doc: unknown;
   try {
-    const { load } = await import("js-yaml");
+    const { load } = await import("./yaml.ts");
     doc = load(text);
   } catch (err) {
     return {

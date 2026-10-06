@@ -352,9 +352,9 @@ function exactInstall(
     const root = join(consumer, path);
     if (!lstatSync(root).isDirectory()) return false;
     const actual = new Set<string>();
-    // Inspect leaves without following links: helper trees contain file links
-    // in normal installs and regular files in copy mode. A directory no record
-    // lies under is unmanaged, so it counts as a stray leaf even when empty.
+    // Inspect leaves without following links: older install records can contain
+    // helper links that reinstall migrates to current regular files. A directory
+    // no record lies under is unmanaged, so even an empty one is a stray leaf.
     function leaves(relative: string): void {
       for (const name of readdirSync(join(consumer, relative))) {
         const child = `${relative}/${name}`,
@@ -477,12 +477,22 @@ export async function install(options: Options): Promise<void> {
       if (readFileSync(join(consumer, path), "utf8") !== content)
         throw new Error(`rendered adapter changed: ${path}`);
     }
+    const discoveryLinks = new Set(
+      [...adapters.keys()].map((key) => {
+        const [surface, skill] = key.split("/");
+        return `${surface === "claude" ? ".claude" : ".agents"}/skills/${skill}`;
+      }),
+    );
     for (const entry of old.entries) {
       safePath(entry.path);
       plainParents(consumer, entry.path);
       const path = join(consumer, entry.path),
         stat = lstatSync(path);
       if (entry.target) {
+        if (!discoveryLinks.has(entry.path))
+          throw new Error(
+            `expected regular-file install record: ${entry.path}`,
+          );
         if (
           !stat.isSymbolicLink() ||
           resolve(dirname(path), readlinkSync(path)) !== entry.target
@@ -507,9 +517,9 @@ export async function install(options: Options): Promise<void> {
       const entry = entryAt(path);
       if (!entry) throw new Error(`missing install record: ${path}`);
       known.add(path);
+      if (entry.target || !entry.file)
+        throw new Error(`expected regular-file install record: ${path}`);
       if (!want) return;
-      if (entry.target)
-        throw new Error(`unexpected link for generated file: ${path}`);
       if (
         entry.file?.digest !== want.digest ||
         (process.platform !== "win32" &&
@@ -518,14 +528,7 @@ export async function install(options: Options): Promise<void> {
         throw new Error(`install record disagrees with release: ${path}`);
     };
     for (const item of helpers) {
-      const path = `.groundwork/${item.path}`,
-        entry = entryAt(path);
-      if (!entry) throw new Error(`missing install record: ${path}`);
-      known.add(path);
-      if (entry.target) {
-        if (entry.target !== join(root, item.path))
-          throw new Error(`wrong release link: ${path}`);
-      } else expectFile(path, item);
+      expectFile(`.groundwork/${item.path}`, item);
     }
     for (const [key, content] of adapters) {
       const [surface, skill] = key.split("/") as [string, string];
@@ -544,15 +547,9 @@ export async function install(options: Options): Promise<void> {
       expectFile(`${dir}/SKILL.md`, files.get("SKILL.md"));
       for (const item of manifest.files)
         if (item.path.startsWith(prefix) && item.path !== `${prefix}SKILL.md`) {
-          const rel = item.path.slice(prefix.length),
-            entry = entryAt(`${dir}/${rel}`);
+          const rel = item.path.slice(prefix.length);
           files.set(rel, item);
-          if (!entry) throw new Error(`missing install record: ${dir}/${rel}`);
-          known.add(`${dir}/${rel}`);
-          if (entry.target) {
-            if (entry.target !== join(root, item.path))
-              throw new Error(`wrong release link: ${dir}/${rel}`);
-          } else expectFile(`${dir}/${rel}`, item);
+          expectFile(`${dir}/${rel}`, item);
         }
       const discovery = `${surface === "claude" ? ".claude" : ".agents"}/skills/${skill}`,
         linked = entryAt(discovery);
@@ -636,6 +633,19 @@ export async function install(options: Options): Promise<void> {
       chmodSync(dest, 0o644);
       stagedEntries.push({ path, file: record(stage, path) });
     }
+    /** Keep imported files physically within the consumer's owned installation. */
+    function copy(path: string, from: string): void {
+      const dest = join(stage, path);
+      mkdirSync(dirname(dest), { recursive: true });
+      cpSync(from, dest, { recursive: true, dereference: true });
+      if (lstatSync(dest).isDirectory())
+        for (const item of inventory(dest, undefined, true))
+          stagedEntries.push({
+            path: `${path}/${item.path}`,
+            file: { ...item, path: `${path}/${item.path}` },
+          });
+      else stagedEntries.push({ path, file: record(stage, path) });
+    }
     /** `from` is where the content is read now when `target` is not published yet. */
     function link(path: string, target: string, from = target): void {
       const dest = join(stage, path);
@@ -658,19 +668,12 @@ export async function install(options: Options): Promise<void> {
             throw e;
         }
       }
-      cpSync(from, dest, { recursive: true, dereference: true });
-      if (lstatSync(dest).isDirectory())
-        for (const item of inventory(dest, undefined, true))
-          stagedEntries.push({
-            path: `${path}/${item.path}`,
-            file: { ...item, path: `${path}/${item.path}` },
-          });
-      else stagedEntries.push({ path, file: record(stage, path) });
+      copy(path, from);
     }
     try {
       file(runtimeOverlayPath, overlayText);
       for (const item of helpers)
-        link(`.groundwork/${item.path}`, join(root, item.path));
+        copy(`.groundwork/${item.path}`, join(root, item.path));
       for (const [key, content] of adapters) {
         const path = `.groundwork/adapters/${key}`;
         file(`${path}/SKILL.md`, content);
@@ -681,7 +684,7 @@ export async function install(options: Options): Promise<void> {
             item.path.startsWith(`skills/${skill}/`) &&
             item.path !== `skills/${skill}/SKILL.md`,
         ))
-          link(
+          copy(
             `${path}/${item.path.slice(`skills/${skill}/`.length)}`,
             join(root, item.path),
           );

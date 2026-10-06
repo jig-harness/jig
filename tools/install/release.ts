@@ -28,12 +28,9 @@ export const sharedHelpers = [
   "lib/test-tmpdir-bun-preload.ts",
 ] as const;
 
-/** Public imports used by sibling skills; bundle dependencies into each export. */
-export const skillExports = new Set([
-  "resolve-review-comments/scripts/lib/ladder.ts",
-  "resolve-review-comments/scripts/lib/proc.ts",
-  "resolve-review-comments/scripts/lib/gh-conditional.ts",
-]);
+// Bun runs this skill's native-runtime TypeScript directly. Retain its types
+// because consumers compile both imported helpers and discovery-surface globs.
+const typedSkills = new Set(["resolve-review-comments"]);
 
 /**
  * Build a self-contained payload. Existing output is refused to avoid stale
@@ -83,14 +80,50 @@ async function build(
       chmodSync(to, 0o644);
     }
   const entries: string[] = [];
-  // Supporting TypeScript modules are inlined into entry points, never shipped as duplicate sources.
+  // Native-runtime skills retain typed source; other commands inline dependencies.
   if (existsSync(join(source, "skills"))) {
     for (const file of inventory(join(source, "skills"), releaseExcluded)) {
       const from = join(source, "skills", file.path),
         to = join(output, "skills", file.path);
       if (file.path.endsWith(".ts")) {
+        if (file.path === "resolve-review-comments/scripts/lib/yaml.ts") {
+          // Keep the public facade typed while embedding its external parser.
+          const result = await Bun.build({
+            entrypoints: [from],
+            target: "bun",
+            packages: "bundle",
+            splitting: false,
+          });
+          const [built] = result.outputs;
+          if (!result.success || result.outputs.length !== 1 || !built)
+            throw new Error(
+              `YAML facade bundle failed: ${result.logs.join("\n")}`,
+            );
+          mkdirSync(dirname(to), { recursive: true });
+          writeFileSync(
+            join(dirname(to), "yaml-runtime.js"),
+            await built.text(),
+          );
+          writeFileSync(
+            join(dirname(to), "yaml-runtime.d.ts"),
+            "export function load(text: string): unknown;\n",
+          );
+          writeFileSync(to, 'export { load } from "./yaml-runtime.js";\n');
+          for (const path of [
+            to,
+            join(dirname(to), "yaml-runtime.js"),
+            join(dirname(to), "yaml-runtime.d.ts"),
+          ])
+            chmodSync(path, 0o644);
+          continue;
+        }
+        if (typedSkills.has(file.path.split("/")[0] ?? "")) {
+          mkdirSync(dirname(to), { recursive: true });
+          copyFileSync(from, to);
+          chmodSync(to, file.executable ? 0o755 : 0o644);
+          continue;
+        }
         if (
-          skillExports.has(file.path) ||
           /\bif\s*\(\s*(?:import\.meta\.main|isEntryPoint\s*\()|^\s*runMain\s*\(/m.test(
             readFileSync(from, "utf8"),
           )

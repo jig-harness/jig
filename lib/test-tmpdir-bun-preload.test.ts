@@ -97,6 +97,27 @@ afterAll(() => outerScope.release());
 const PER_CYCLE_DEADLINE_MS = 15_000;
 const TEST_TIMEOUT_MS = 2 * PER_CYCLE_DEADLINE_MS + 15_000;
 
+async function removeAfterExit(path: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        process.platform !== "win32" ||
+        !["EBUSY", "EPERM", "ENOTEMPTY"].includes(code ?? "") ||
+        Date.now() >= deadline
+      )
+        throw error;
+      // Windows can retain directory handles briefly after the child exits.
+      // Yield between attempts instead of relying on synchronous retry options.
+      await Bun.sleep(100);
+    }
+  }
+}
+
 it(
   "the preload scopes every watch cycle, not just the first",
   async () => {
@@ -182,15 +203,8 @@ it(
       }
       proc.kill();
       await proc.exited;
-      // Windows may hold the killed child's working directory a moment longer.
-      const retry = {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 100,
-      };
-      rmSync(fixtureDir, retry);
-      rmSync(fakeSystemTmpdir, retry);
+      await removeAfterExit(fixtureDir);
+      await removeAfterExit(fakeSystemTmpdir);
     }
   },
   TEST_TIMEOUT_MS,

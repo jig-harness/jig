@@ -35,6 +35,51 @@ beforeAll(async () => {
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
+test("public release imports retain strict TypeScript contracts", () => {
+  const probe = join(scratch, "typed-probe.ts");
+  const publicLib = join(payload, "skills/resolve-review-comments/scripts/lib");
+  writeFileSync(
+    probe,
+    `import { run, type RunResult } from ${JSON.stringify(join(publicLib, "proc.ts"))};
+import { readPrLiveness, type PrLiveness } from ${JSON.stringify(join(publicLib, "gh-conditional.ts"))};
+import { loadLadder, type LoadResult } from ${JSON.stringify(join(publicLib, "ladder.ts"))};
+const result: Promise<RunResult> = run(['git', 'status']);
+const state: Promise<PrLiveness> = readPrLiveness('42');
+const ladder: Promise<LoadResult> = loadLadder('config.yaml');
+void [result, state, ladder];\n`,
+  );
+  const config = join(scratch, "tsconfig.json");
+  writeFileSync(
+    config,
+    JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        noEmit: true,
+        skipLibCheck: true,
+        target: "ESNext",
+        module: "Preserve",
+        moduleResolution: "bundler",
+        allowImportingTsExtensions: true,
+        types: ["bun"],
+        typeRoots: [join(source, "node_modules/@types")],
+      },
+      files: [probe],
+      include: [join(payload, "skills/resolve-review-comments/**/*.ts")],
+    }),
+  );
+  const result = spawnSync(
+    process.execPath,
+    [join(source, "node_modules/typescript/bin/tsc"), "-p", config],
+    {
+      env,
+      cwd: scratch,
+      encoding: "utf8",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit({ ...result, exitCode: result.status }, 0);
+}, 35_000);
+
 for (const copies of [false, true])
   test(`bundled review commands use consumer policy and sibling paths (${copies ? "copies" : "links"})`, async () => {
     const consumer = join(scratch, copies ? "copies" : "links");
@@ -124,7 +169,7 @@ for (const copies of [false, true])
         probe,
         `import { defaultConfigPath, loadLadder } from ${JSON.stringify(join(scripts, "lib/ladder.ts"))}; const loaded = await loadLadder(defaultConfigPath()); console.log(JSON.stringify({path: defaultConfigPath(),valid: loaded.config !== null}));\n`,
       );
-      const ladder = spawnSync(process.execPath, [probe], {
+      const ladder = spawnSync(process.execPath, ["--no-install", probe], {
         cwd: consumer,
         env: childEnv,
         encoding: "utf8",
@@ -134,6 +179,23 @@ for (const copies of [false, true])
         path: join(realpathSync(configDir), "review-triage.yaml"),
         valid: true,
       });
+      const configPath = join(configDir, "review-triage.yaml");
+      const validConfig = readFileSync(configPath, "utf8");
+      writeFileSync(configPath, `${validConfig}\nversion: 1\n`);
+      writeFileSync(
+        probe,
+        `import { defaultConfigPath, loadLadder } from ${JSON.stringify(join(scripts, "lib/ladder.ts"))}; const loaded = await loadLadder(defaultConfigPath()); console.log(JSON.stringify({valid: loaded.config !== null, anomaly: loaded.anomaly}));\n`,
+      );
+      const duplicate = spawnSync(process.execPath, ["--no-install", probe], {
+        cwd: consumer,
+        env: childEnv,
+        encoding: "utf8",
+      });
+      expectSpawnExit({ ...duplicate, exitCode: duplicate.status }, 0);
+      const rejected = JSON.parse(duplicate.stdout);
+      expect(rejected.valid).toBe(false);
+      expect(rejected.anomaly).toContain("duplicated mapping key");
+      writeFileSync(configPath, validConfig);
     }
     writeFileSync(join(consumer, ".groundwork/overlay.json"), "{}\n");
     await expect(install({ ...options, check: true })).rejects.toThrow(
