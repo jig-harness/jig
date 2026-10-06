@@ -154,12 +154,13 @@ digest, copies skill instructions/references and excludes tests/fixtures.
 Skills can retain TypeScript source and ship their supporting modules. The
 review skill uses this path so consumer compilers
 can check its public imports and discovery directories without stripped types.
-Its YAML configuration parser ships as a typed facade over a bundled dependency;
-installed copies need no package download. Other skills bundle each script entry
+Its YAML configuration parser ships as a small wrapper with checked TypeScript
+declarations around a bundled dependency; installed copies need no package
+download. Other skills bundle each script entry
 point with its dependencies inlined.
 Entry points use `import.meta.main`, `isEntryPoint(...)` or `runMain(...)`;
-supporting TypeScript modules are omitted except explicitly declared public
-exports. The review skill exports its ladder, process and conditional-request
+Supporting modules ship with retained-source skills; other skills inline them
+into bundled entry points. The review skill exports its ladder, process and conditional-request
 modules for sibling skills. Process cancellation uses one shared handler across
 imported modules and bundles. A consumer runner with its
 own process API registers each owned group through `registerCancellationGroup`

@@ -28,13 +28,6 @@ export const sharedHelpers = [
   "lib/test-tmpdir-bun-preload.ts",
 ] as const;
 
-/** Public imports used by sibling skills; retain their TypeScript contracts. */
-export const skillExports = new Set([
-  "resolve-review-comments/scripts/lib/ladder.ts",
-  "resolve-review-comments/scripts/lib/proc.ts",
-  "resolve-review-comments/scripts/lib/gh-conditional.ts",
-]);
-
 // Bun runs this skill's native-runtime TypeScript directly. Retain its types
 // because consumers compile both imported helpers and discovery-surface globs.
 const typedSkills = new Set(["resolve-review-comments"]);
