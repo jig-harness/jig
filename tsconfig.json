@@ -17,6 +17,7 @@
     "scripts/**/*.ts",
     "lib/**/*.ts",
     "tools/**/*.ts",
+    "skills/**/*.ts",
     "modules/**/*.ts",
     "audit/**/*.ts"
   ],

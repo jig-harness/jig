@@ -1,0 +1,81 @@
+version: 1
+severity_order:
+  - low
+  - medium
+  - high
+  - blocker
+severity_mapping:
+  low:
+    linear_priority: 4
+    acceptance: Minor
+  medium:
+    linear_priority: 3
+    acceptance: Minor
+  high:
+    linear_priority: 2
+    acceptance: Major
+  blocker:
+    linear_priority: 1
+    acceptance: Blocker
+  unknown:
+    linear_priority: 0
+categories:
+  - correctness
+  - data-integrity
+  - security
+  - compliance
+  - ux
+  - performance
+  - tests
+  - docs
+  - drift
+  - style
+fail_open:
+  inert_when_unknown:
+    - severity
+    - self_inflicted
+bands:
+  - id: boy-scout
+    from_round: 1
+    through_round: 3
+    minimal_diff: false
+    accept_if:
+      unconditional: true
+  - id: escalated
+    from_round: 4
+    through_round: 6
+    minimal_diff: true
+    accept_if:
+      min_severity: high
+      categories:
+        - data-integrity
+        - security
+        - compliance
+      max_tier: 2
+      self_inflicted: true
+  - id: late
+    from_round: 7
+    through_round: null
+    minimal_diff: true
+    accept_if:
+      min_severity: blocker
+      categories:
+        - data-integrity
+        - security
+      self_inflicted: true
+reply:
+  marker: review-triage ladder
+  wont_fix: >-
+    **wont-fix** — valid, declined by the {marker} ({config}, band `{band}`,
+    round {round}): a {severity}/{category} finding at tier {tier} clears none
+    of this band's accept clauses ({clauses}). Not obligatory, so no follow-up
+    is filed.
+
+    <!-- {marker} -->
+  deferred: >-
+    **deferred** — valid and obligatory, but declined for THIS PR by the
+    {marker} ({config}, band `{band}`, round {round}): a {severity}/{category}
+    finding at tier {tier} clears none of this band's accept clauses
+    ({clauses}).
+
+    <!-- {marker} -->

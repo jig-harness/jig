@@ -42,7 +42,9 @@ export function record(root: string, path: string): FileRecord {
 }
 /** Source paths under skills/ that are never shipped in a release. */
 export const releaseExcluded = (path: string): boolean =>
-  path.split("/").some((part) => ["fixtures", "node_modules"].includes(part)) ||
+  path
+    .split("/")
+    .some((part) => ["fixtures", "__tests__", "node_modules"].includes(part)) ||
   path.endsWith(".test.ts");
 /** `skip` prunes paths (relative to root) before they are validated or entered. */
 export function inventory(

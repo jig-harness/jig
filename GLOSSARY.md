@@ -268,3 +268,12 @@ capitalized as commonly written; cross-references are *italicized*.
 - **mise** — a tool that installs the exact runtime version recorded by a repository.
 - **Hard link** — another filesystem name for the same file. Creating the name
   atomically lets a lock claim publish a complete owner record in one operation.
+
+- **REST (Representational State Transfer)** — a convention for reading and
+  changing service resources through ordinary web requests.
+- **NDJSON (newline-delimited JSON)** — structured JSON records written one per
+  line, so a command can consume them as a stream.
+- **ASCII (American Standard Code for Information Interchange)** — the basic
+  character set containing English letters, digits and common punctuation.
+- **SHA (Secure Hash Algorithm)** — a family of content fingerprints; Git uses
+  one to identify a commit, while release verification uses SHA-256 digests.

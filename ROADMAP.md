@@ -303,3 +303,15 @@ tests exercise concurrent Git worktrees, copy fallback, tampering and headless
 installation in the native platform matrix. Consumer manifest pins, publication,
 pilot skill moves, old synchronizer removal and live remote-host validation
 remain the next rollout steps; no consumer has switched as part of this change.
+
+## Review-skill pilot preparation
+
+The operated TypeScript [review-resolution skill](skills/resolve-review-comments/README.md)
+and its suite now live here. Consumer policy comes from the installed overlay,
+and optional sibling skills resolve in the consumer worktree. The release
+packages the stable command paths and public ladder/conditional-request exports.
+Groundwork runs the moved behavioral suite; consumer-side tests retain the
+real driver integration. This is rollout preparation: publication, pin adoption,
+source retirement in the companion repositories and live host review loops
+remain pending the coordinated rollout. The skill README records the source
+revision and acceptance work.

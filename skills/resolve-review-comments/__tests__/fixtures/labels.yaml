@@ -1,0 +1,33 @@
+{
+  "groups": {
+    "type": {
+      "labels": {
+        "bug": {},
+        "feature": {},
+        "infra": {},
+        "docs": {},
+        "chore": {}
+      }
+    },
+    "repo": {
+      "labels": {
+        "project": {},
+        "website": {},
+        "runner": {},
+        "reviewer": {},
+        "standards": {},
+        "toolkit": {},
+        "groundwork": {},
+        "billing": {}
+      }
+    },
+    "size": {
+      "labels": {
+        "xs": {},
+        "small": {},
+        "medium": {},
+        "large": {}
+      }
+    }
+  }
+}

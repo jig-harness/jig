@@ -1,0 +1,63 @@
+{
+  "skills": [
+    "resolve-review-comments"
+  ],
+  "gates": {
+    "command": "bun run gates"
+  },
+  "review": {
+    "bots": [
+      "review-bot[bot]"
+    ],
+    "job_pattern": "",
+    "deferral_team": "TASK",
+    "repo_label": "project",
+    "repo_slug": "example/project",
+    "taxonomy": {
+      "types": [
+        "bug",
+        "feature",
+        "infra",
+        "docs",
+        "chore"
+      ],
+      "repos": [
+        "project",
+        "website",
+        "runner",
+        "reviewer",
+        "standards",
+        "toolkit",
+        "groundwork",
+        "billing"
+      ],
+      "sizes": [
+        "xs",
+        "small"
+      ],
+      "categories": [
+        "correctness",
+        "data-integrity",
+        "security",
+        "compliance",
+        "ux",
+        "performance",
+        "tests",
+        "docs",
+        "drift",
+        "style"
+      ],
+      "context_prefixes": [
+        "agent:",
+        "domain:",
+        "codearea:"
+      ],
+      "ownership_prefixes": [
+        "agent:",
+        "domain:"
+      ],
+      "provenance_label": "pr-followup",
+      "epic_label": "epic"
+    }
+  }
+}

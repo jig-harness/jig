@@ -100,6 +100,7 @@ describe("scopeTestTmpdir", () => {
     // one where a restore that writes back an empty string instead of
     // deleting would be invisible to `process.env[name]` truthiness checks
     // but visible to os.tmpdir() on Windows.
+    const beforeOuter = envSnapshot();
     const outerScope = scopeTestTmpdir();
     try {
       delete process.env.TMP;
@@ -117,6 +118,14 @@ describe("scopeTestTmpdir", () => {
       expect("TEMP" in process.env).toBe(false);
     } finally {
       outerScope.release();
+      // Deleting TEMP/TMP is an external change that release deliberately keeps.
+      // The test owns those deletions and must restore them for later suites,
+      // especially on Windows where TMPDIR alone does not contain scratch files.
+      for (const name of ["TMP", "TEMP"]) {
+        const value = beforeOuter[name];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 

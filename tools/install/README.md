@@ -76,6 +76,9 @@ The installer creates:
 - `.groundwork/adapters/{claude,codex}/<name>/SKILL.md` — generated instructions.
 - Supporting files linked to the verified cache, retaining their original paths.
 - `.claude/skills/<name>` and `.agents/skills/<name>` — links to the local adapters.
+- `.groundwork/overlay.json` — the resolved runtime configuration, recorded and
+  verified alongside the generated instructions. Installed scripts read it from
+  the invoking consumer worktree rather than from the host cache.
 - `.groundwork/install.lock.json` — input fingerprint, manifest identity and
   every installed file's digest/mode or exact link target. Check mode treats it
   as a record of link-versus-copy choices only: required files, link targets and
@@ -150,7 +153,14 @@ The packager refuses an existing output directory. It prints the manifest
 digest, copies skill instructions/references, excludes tests/fixtures and bundles
 each TypeScript script entry point into one file with its dependencies inlined.
 Entry points use `import.meta.main`, `isEntryPoint(...)` or `runMain(...)`;
-supporting TypeScript modules are omitted. Bundled scripts retain their `.ts`
+supporting TypeScript modules are omitted except explicitly declared public
+exports. The review skill exports its ladder, process and conditional-request
+modules for sibling skills; each is bundled with its dependencies. Process
+cancellation uses one shared handler across bundles. A consumer runner with its
+own process API registers each owned group through `registerCancellationGroup`
+and calls the returned release function when that group settles. Each registration
+owns an independent token; releasing it twice cannot remove another owner.
+Bundled scripts retain their `.ts`
 paths because procedures already invoke those paths with Bun. Runtime data must
 live alongside the skill; imports of external runtime files need an explicit
 packaging seam before a skill moves. The payload includes `mise.toml` and a

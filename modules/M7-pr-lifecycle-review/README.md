@@ -184,6 +184,11 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
 
 ## Port status
 
+The operated [review-resolution skill](../../skills/resolve-review-comments/README.md)
+now ships as runnable TypeScript alongside these practice references. It uses
+consumer configuration for tracker taxonomy, reviewers and gate commands;
+release publication and live consumer adoption remain rollout steps.
+
 | Source (docomply `develop`) | Landed as |
 |-----------------------------|-----------|
 | `docs/development/pr-lifecycle.md` (C2) — draft→review→resolve→merge narrative | [`templates/PR-LIFECYCLE.md`](templates/PR-LIFECYCLE.md) — copyable lifecycle contract with HITL boundaries |
@@ -211,24 +216,27 @@ the same corpus still lost or misfiled a majority of *declared* outcomes. The
 `moot` state is likewise evidenced — those threads were observed in the wild
 being scored as push-back.
 
-What is **not** yet proven, and is therefore **not** what this module ports, is
-the reference implementation's specific *choice* of encoding — a bold leading
-token — which landed recently and has not run through enough review cycles to be
-called settled. Drawing that line precisely, because it is the line "don't port
-the unproven" turns on:
+The reference implementation's specific *choice* of encoding — a bold leading
+token — landed recently and has not run through enough review cycles to be
+called settled. Two layers carry it differently, and the line between them is
+the line "don't port the unproven" turns on:
 
-| Ported | Left to the adopter / deferred |
-|--------|-------------------------------|
-| The invariant: the verdict is declared, in an anchored form, at reply time | *Which* anchored form. [mappings.md](mappings.md) presents a leading token and a trailing trailer as alternatives and states no preference |
-| An encoding-**agnostic** [export adapter](reference/comment-resolution/normalize-thread-states.ts): both encodings are one variable apart, adopter vocabulary lives in its `canon()` | The reference implementation's bold-token convention as *the* mechanism. It is the exporter's default only because a default is required |
-| That write-time enforcement is the top rung of the enforcement ladder for this obligation, as it is for every other ([M1](../M1-gates-enforcement-ladder/)) | The reference implementation's particular reply-posting script, which is not transcribed here |
+| Layer | Treatment of the bold-token encoding |
+|-------|--------------------------------------|
+| The [operated skill](../../skills/resolve-review-comments/README.md) and its `reply-to-thread.ts` | Moved as operated source, so it ships the bold leading token and enforces it at reply time. The skill is one mechanism, moved whole rather than rewritten into an encoding-neutral variant that would become a fork |
+| This module's practice references: [mappings.md](mappings.md), the [export adapter](reference/comment-resolution/normalize-thread-states.ts), the lifecycle contract | Encoding-**agnostic**. The invariant (a verdict is declared, in an anchored form, at reply time) is what they assert. [mappings.md](mappings.md) presents a leading token and a trailing trailer as alternatives and states no preference; adopter vocabulary lives in the adapter's `canon()`, and the token is its default only because a default is required |
+
+An adopter that does not run the operated skill is free to choose the trailer
+form; one that does inherits the token. Either way, write-time enforcement is
+the top rung of the enforcement ladder for this obligation, as it is for every
+other ([M1](../M1-gates-enforcement-ladder/)).
 
 So the obligation is split across two rungs rather than asserted at one:
 declaring in an anchored encoding is a **standard** convention, while validating
-the verdict at write time — which needs a reply-posting tool to hang it on, and
-names no encoding — is **strict**. Revisit the encoding question once the
-reference implementation has cycles behind it; nothing above has to change when
-it settles, which is the point of keeping the choice out of the mechanism.
+the verdict at write time — which needs a reply-posting tool to hang it on — is
+**strict**. Revisit the encoding question once the reference implementation has
+cycles behind it; the practice references above do not change when it settles,
+and only the operated skill's token vocabulary would.
 
 **Not ported** (per "don't port the unproven" / IP scrub): the shadow
 reviewer's actual lens catalogue (44 product-specific lenses) and its

@@ -28,6 +28,13 @@ export const sharedHelpers = [
   "lib/test-tmpdir-bun-preload.ts",
 ] as const;
 
+/** Public imports used by sibling skills; bundle dependencies into each export. */
+export const skillExports = new Set([
+  "resolve-review-comments/scripts/lib/ladder.ts",
+  "resolve-review-comments/scripts/lib/proc.ts",
+  "resolve-review-comments/scripts/lib/gh-conditional.ts",
+]);
+
 /**
  * Build a self-contained payload. Existing output is refused to avoid stale
  * files. The payload is assembled beside the output and renamed into place only
@@ -83,6 +90,7 @@ async function build(
         to = join(output, "skills", file.path);
       if (file.path.endsWith(".ts")) {
         if (
+          skillExports.has(file.path) ||
           /\bif\s*\(\s*(?:import\.meta\.main|isEntryPoint\s*\()|^\s*runMain\s*\(/m.test(
             readFileSync(from, "utf8"),
           )
@@ -102,6 +110,23 @@ async function build(
       target: "bun",
       packages: "bundle",
       splitting: false,
+      plugins: [
+        {
+          name: "entrypoint-guards",
+          setup(build) {
+            build.onLoad({ filter: /\.ts$/ }, (args) => {
+              if (resolve(args.path) === resolve(entry)) return undefined;
+              // Bundling makes import.meta.url the entry's URL in every module.
+              // Imported command modules must retain their original non-main state.
+              const text = readFileSync(args.path, "utf8").replace(
+                /\bisEntryPoint\s*\(\s*import\.meta\.url\s*\)|\bimport\.meta\.main/g,
+                "false",
+              );
+              return { contents: text, loader: "ts" };
+            });
+          },
+        },
+      ],
     });
     const [built] = result.outputs;
     if (!result.success || result.outputs.length !== 1 || !built)

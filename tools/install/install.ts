@@ -421,6 +421,7 @@ export async function install(options: Options): Promise<void> {
     throw new Error("consumer must be a directory");
   for (const path of [
     ".groundwork/install.lock.json",
+    ".groundwork/overlay.json",
     ".claude/skills/placeholder",
     ".agents/skills/placeholder",
     ".gitignore",
@@ -439,6 +440,7 @@ export async function install(options: Options): Promise<void> {
     }),
   );
   const statePath = join(consumer, ".groundwork/install.lock.json");
+  const overlayText = `${JSON.stringify(options.overlay, null, 2)}\n`;
   if (present(statePath) && !lstatSync(statePath).isFile())
     throw new Error("install lock must be a regular file");
   let old = readLock(statePath);
@@ -465,6 +467,10 @@ export async function install(options: Options): Promise<void> {
     )
       throw new Error("installation inputs changed; reinstall");
     const expected: string[] = [];
+    const overlayPath = ".groundwork/overlay.json";
+    expected.push(overlayPath);
+    if (readFileSync(join(consumer, overlayPath), "utf8") !== overlayText)
+      throw new Error("runtime overlay changed: .groundwork/overlay.json");
     for (const [key, content] of adapters) {
       const path = `.groundwork/adapters/${key}/SKILL.md`;
       expected.push(path);
@@ -591,6 +597,16 @@ export async function install(options: Options): Promise<void> {
     // Never remove a helper tree created or altered by the consumer, including
     // after an interrupted install. Ownership comes from exact disk records.
     const helperPath = ".groundwork/lib";
+    const runtimeOverlayPath = ".groundwork/overlay.json";
+    if (
+      present(join(consumer, runtimeOverlayPath)) &&
+      !carriedRecords(old).some((records) =>
+        exactInstall(consumer, records, runtimeOverlayPath, true),
+      )
+    )
+      throw new Error(
+        "unmanaged or changed runtime overlay; move .groundwork/overlay.json aside before reinstalling",
+      );
     if (
       present(join(consumer, helperPath)) &&
       !carriedRecords(old).some((records) =>
@@ -652,6 +668,7 @@ export async function install(options: Options): Promise<void> {
       else stagedEntries.push({ path, file: record(stage, path) });
     }
     try {
+      file(runtimeOverlayPath, overlayText);
       for (const item of helpers)
         link(`.groundwork/${item.path}`, join(root, item.path));
       for (const [key, content] of adapters) {
@@ -741,6 +758,10 @@ export async function install(options: Options): Promise<void> {
       rmSync(join(consumer, helperPath), { recursive: true, force: true });
       if (existsSync(join(stage, helperPath)))
         renameSync(join(stage, helperPath), join(consumer, helperPath));
+      renameSync(
+        join(stage, runtimeOverlayPath),
+        join(consumer, runtimeOverlayPath),
+      );
       for (const path of discovery) {
         mkdirSync(dirname(join(consumer, path)), { recursive: true });
         renameSync(join(stage, path), join(consumer, path));
