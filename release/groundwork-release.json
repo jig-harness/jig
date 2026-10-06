@@ -1,0 +1,151 @@
+{
+  "schema": 1,
+  "version": "v0.1.1-review-pilot",
+  "files": [
+    {
+      "path": "lib/guarded-git-spawn.ts",
+      "digest": "26bf538853a52ac8d7a84251b58488b7b576120ebb0374f911313b545d4a05ad",
+      "executable": false
+    },
+    {
+      "path": "lib/test-helpers/expect-spawn-exit.ts",
+      "digest": "2ad61d0212011d6fb95105732bfadd8a471098154c5f19c67b631fffd9936a7a",
+      "executable": false
+    },
+    {
+      "path": "lib/test-tmpdir-bun-preload.ts",
+      "digest": "fac4180c0eb458791014a1399ceabedc1259b79f0de091e457965d0024716642",
+      "executable": false
+    },
+    {
+      "path": "lib/test-tmpdir.ts",
+      "digest": "7ee04aa3bc87915f5994e9b445089f67c5150cbcbefdaa86b777a2d444044ed6",
+      "executable": false
+    },
+    {
+      "path": "mise.toml",
+      "digest": "3f303e5537910e91db1fe407aaa09b599570d74403453f65224e33163d81d7fc",
+      "executable": false
+    },
+    {
+      "path": "skills/README.md",
+      "digest": "32bc7a0211adb96ea0659c768f56de395ad4bdf97ce041edf21cbdfa5a51b308",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/README.md",
+      "digest": "061bd7a62e1386a9d87c78e273aee026eb0372161e4b99668dbf04ba7cd1dc58",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/references/deferral-protocol.md",
+      "digest": "20a7a41c66268c03ed5a6994055e80ec3d04d4b8ef73786181daef171a0eda04",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/references/triage-rubric.md",
+      "digest": "daf7b224ca45b2bad4e37c6fe11324b7636bd821e722533d7977135ee8ad62d5",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/await-round.ts",
+      "digest": "d1150cad3ef222628e958758b9ba38e84ff4add507d352147dc3f0d3d96c8e5e",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/converge.ts",
+      "digest": "c223855fb2b32b839001c3e66a3429a3dba1465fa7ce348d47a2b669446c0f52",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/current-round.ts",
+      "digest": "653acacd1eb6c87ebd61fa5b8f8bc8251063eace1463a8128017d64e32a2f320",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/defer-batch.ts",
+      "digest": "6a14d76f6135860e1b27ee17d92b748c2b283d089fd16f83d6fa83b2ac24a775",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/cli.ts",
+      "digest": "b3d856d06113f23ae8d2480cc4980711090e0815c8d05c687e6d02f4ae1cd3f8",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/consumer.ts",
+      "digest": "a3d4e2c242f4ce2210bfe2aea45acfc8a013b8aa35e4f0b59fa5d4e00a6c49db",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/gh-conditional.ts",
+      "digest": "789e13d00217908657946d647eb986758558038c4e9c566e284eedfef735f55c",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/gh.ts",
+      "digest": "1089598534958b8f7ebf0c3f1e63023ea3d3e46a2462b0ae9f1ca283dc752c78",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/ladder.ts",
+      "digest": "11217d3147ca4ae2b9f89fe4a796d74640943c685ce72f31e7e8ca8edb500441",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/proc.ts",
+      "digest": "4b9d5be0e70299a3eee75a0adb690d4b7e42eff07e93ff3c7f81f8bb46b8bdf4",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/yaml-runtime.d.ts",
+      "digest": "6c64343cda88b3c708b089fdd15a3c25161f7f4564a5e6381210728bd784625f",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/yaml-runtime.js",
+      "digest": "5fa31160451cbb71169b86168bb0966e1300d51cfa1b34f46e2a9b181213dae5",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/lib/yaml.ts",
+      "digest": "fe0b93ef1fe8b3957a446ee25b1653b975874a82b913ba060ff1568797d655d9",
+      "executable": false
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/list-unresolved-threads.ts",
+      "digest": "6348da0d85457a78bc538ed757e800b148e5fe774e737f047db990824a1cc776",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/reply-to-thread.ts",
+      "digest": "588913b3d5cf986200155fe78e89efebe5d805967e27137dda8b0d497ce9c01d",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/resolve-thread.ts",
+      "digest": "e3aec5cf6d8f03513a92ed89347bcdda723f207a36c035805f8dfca7bc8d806c",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/triage-ladder.ts",
+      "digest": "111b0c80b2d49dc30effa753671ce0f2670255d482a699257efa64d650807ec5",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/scripts/unresolve-thread.ts",
+      "digest": "c92fa0ce1a2db5d0be463dd451cba7b3a4eb283b5b07edd1a12264d679bb5d54",
+      "executable": true
+    },
+    {
+      "path": "skills/resolve-review-comments/SKILL.md",
+      "digest": "3c3bde799c7a202162b055183446368e9f534fcd883b71facc0c3987bc91eb6d",
+      "executable": false
+    },
+    {
+      "path": "tools/install.js",
+      "digest": "f90061fa58ad3d8f6d8475da688868989b811e1023c8dab99ed650c88d37b22a",
+      "executable": false
+    }
+  ]
+}
