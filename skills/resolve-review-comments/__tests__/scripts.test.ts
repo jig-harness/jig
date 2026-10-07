@@ -325,7 +325,18 @@ case "$1 $2" in
     esac ;;
   "api graphql")
     case "$*" in
+      *"query=query("*"threadId:ID!)"*)
+        echo liveness >> "$FIX/thread-events.log"
+        echo "$*" >> "$FIX/liveness-calls.log"
+        [ -f "$FIX/state-unreadable" ] && { echo "gh-stub: simulated unreadable state" >&2; exit 1; }
+        if [ -f "$FIX/liveness-response.json" ]; then cat "$FIX/liveness-response.json"
+        else
+          tid=''
+          for arg in "$@"; do case "$arg" in threadId=*) tid="\${arg#threadId=}" ;; esac; done
+          printf '{"data":{"node":{"__typename":"PullRequestReviewThread","id":"%s","pullRequest":{"number":%s,"state":"%s"}}}}' "$tid" "$(cat "$FIX/number")" "$(cat "$FIX/state")"
+        fi ;;
       *"--input -"*)
+        echo reply >> "$FIX/thread-events.log"
         n=0
         while [ -e "$FIX/graphql-input-$((n + 1)).json" ]; do n=$((n + 1)); done
         # A mutation that is IN FLIGHT rather than instantaneous, so a probe can
@@ -342,6 +353,7 @@ case "$1 $2" in
         fi
         echo "https://github.com/acme/widgets/pull/1#discussion_r1" ;;
       *"resolveReviewThread"*|*"unresolveReviewThread"*)
+        echo resolution >> "$FIX/thread-events.log"
         # resolve-thread.ts / unresolve-thread.ts pass the mutation through
         # -f query=... rather than --input -, so they need their own slow
         # branch (TASK) — same shape as the one above, minus a body to
@@ -363,6 +375,7 @@ case "$1 $2" in
         # after a copied install's scripts have loaded and before
         # await-round.ts probes for its /drive-pr sibling (TASK).
         if [ -f "$FIX/rm-on-threads" ]; then rm -rf "$(cat "$FIX/rm-on-threads")"; fi
+        echo enumeration >> "$FIX/thread-events.log"
         cat "$FIX/threads.json" ;;
     esac ;;
   *) echo "gh-stub: unhandled command: $*" >&2; exit 1 ;;
@@ -1904,6 +1917,194 @@ describe.skipIf(process.platform === "win32")(
   },
 );
 
+// Every thread write reads its own PR, even after an open round was enumerated.
+describe.skipIf(process.platform === "win32")(
+  "thread mutation liveness",
+  () => {
+    const writers = [
+      "reply-to-thread.ts",
+      "resolve-thread.ts",
+      "unresolve-thread.ts",
+    ];
+    const body = "**accepted** — fixed the guard.\n";
+    const events = (fix: Fixture) =>
+      readFileSync(join(fix.dir, "thread-events.log"), "utf8")
+        .trim()
+        .split("\n");
+
+    for (const script of writers) {
+      const write = (fix: Fixture) =>
+        runScript(script, ["PRRT_x"], fix, {
+          stdin: body,
+          // A caller's driver target is never evidence of thread ownership.
+          env: { DRIVE_PR_TARGET: "99999" },
+        });
+
+      // Without a sibling drive, reply-to-thread correctly refuses drive context;
+      // these standalone tests therefore keep the ordinary no-drive environment.
+      const standaloneWrite = (fix: Fixture) =>
+        runScript(script, ["PRRT_x"], fix, { stdin: body });
+
+      it(`${script}: an open PR is read immediately before the write`, () => {
+        const fix = writeFixture({ threads: [thread("PRRT_x")] });
+        expect(
+          runScript("list-unresolved-threads.ts", [fix.pr], fix).code,
+        ).toBe(0);
+        const r = standaloneWrite(fix);
+        expect({ code: r.code, stderr: r.stderr }).toEqual({
+          code: 0,
+          stderr: "",
+        });
+        expect(events(fix)).toEqual([
+          "enumeration",
+          "liveness",
+          script === "reply-to-thread.ts" ? "reply" : "resolution",
+        ]);
+        const query = readFileSync(join(fix.dir, "liveness-calls.log"), "utf8");
+        expect(query).toContain("node(id:$threadId)");
+        expect(query).toContain("pullRequest { number state }");
+        expect(query).toContain("threadId=PRRT_x");
+        expect(query).not.toContain("--cache");
+      });
+
+      for (const state of ["MERGED", "CLOSED"]) {
+        it(`${script}: refuses ${state} after open enumeration`, () => {
+          const fix = writeFixture({ threads: [thread("PRRT_x")] });
+          expect(
+            runScript("await-round.ts", [fix.pr, "--once"], fix).code,
+          ).toBe(0);
+          expect(
+            runScript("list-unresolved-threads.ts", [fix.pr], fix).code,
+          ).toBe(0);
+          writeFileSync(join(fix.dir, "state"), state);
+          const r = standaloneWrite(fix);
+          expect(r.code).toBe(5);
+          expect(r.stderr).toContain(`owning PR #${fix.pr} is ${state}`);
+          expect(r.stderr).toContain("stop the review pass");
+          expect(events(fix).at(-1)).toBe("liveness");
+          expect(events(fix)).not.toContain("reply");
+          expect(events(fix)).not.toContain("resolution");
+        });
+      }
+
+      it(`${script}: refuses a failed liveness read`, () => {
+        const fix = writeFixture({ stateUnreadable: true });
+        const r = standaloneWrite(fix);
+        expect(r.code).toBe(1);
+        expect(r.stderr).toContain("cannot read owning PR liveness");
+        expect(events(fix)).toEqual(["liveness"]);
+      });
+
+      const openNode = {
+        __typename: "PullRequestReviewThread",
+        id: "PRRT_x",
+        pullRequest: { number: 42, state: "OPEN" },
+      };
+      const invalidResponses = {
+        "malformed JSON": "{",
+        "null node": JSON.stringify({ data: { node: null } }),
+        "wrong node type": JSON.stringify({
+          data: { node: { ...openNode, __typename: "Issue" } },
+        }),
+        "wrong thread": JSON.stringify({
+          data: { node: { ...openNode, id: "PRRT_other" } },
+        }),
+        "missing PR": JSON.stringify({
+          data: { node: { ...openNode, pullRequest: null } },
+        }),
+        "unknown state": JSON.stringify({
+          data: {
+            node: {
+              ...openNode,
+              pullRequest: { number: 42, state: "UNKNOWN" },
+            },
+          },
+        }),
+        "partial GraphQL error": JSON.stringify({
+          data: { node: openNode },
+          errors: [{ message: "unreadable" }],
+        }),
+      };
+      for (const [name, response] of Object.entries(invalidResponses)) {
+        it(`${script}: refuses ${name}`, () => {
+          const fix = writeFixture({});
+          writeFileSync(join(fix.dir, "liveness-response.json"), response);
+          const r = standaloneWrite(fix);
+          expect(r.code).toBe(1);
+          expect(r.stderr).toContain("cannot read owning PR liveness");
+          expect(events(fix)).toEqual(["liveness"]);
+        });
+      }
+
+      // Resolution has no optional lease integration; a conflicting driver target
+      // must not redirect the owning-PR lookup or permit an otherwise closed PR.
+      if (script !== "reply-to-thread.ts") {
+        it(`${script}: ignores a different driver's target`, () => {
+          const fix = writeFixture({ state: "MERGED" });
+          expect(write(fix).code).toBe(5);
+          expect(events(fix)).toEqual(["liveness"]);
+        });
+      }
+    }
+
+    for (const script of writers) {
+      it(`converge stops after a mid-pass merge refuses ${script}, before follow-up work`, () => {
+        const fix = writeFixture({ threads: [thread("PRRT_x")] });
+        const passFile = join(fix.dir, "merge-pass.ts");
+        const followup = join(fix.dir, "followup-push-would-run");
+        writeFileSync(
+          passFile,
+          `
+        import { writeFileSync, appendFileSync } from "node:fs";
+        import { spawnSync } from "node:child_process";
+        appendFileSync(${JSON.stringify(join(fix.dir, "passes.log"))}, "pass\\n");
+        const listed = spawnSync(process.execPath, [${JSON.stringify(join(SCRIPTS, "list-unresolved-threads.ts"))}, process.argv[2]], { encoding: "utf8" });
+        if (listed.status !== 0) process.exit(1);
+        writeFileSync(${JSON.stringify(join(fix.dir, "state"))}, "MERGED");
+        const wrote = spawnSync(process.execPath, [${JSON.stringify(join(SCRIPTS, script))}, "PRRT_x"], { input: ${JSON.stringify(body)}, encoding: "utf8" });
+        process.stderr.write(wrote.stderr);
+        if (wrote.status !== 0) process.exit(wrote.status ?? 1);
+        writeFileSync(${JSON.stringify(followup)}, "unexpected follow-up");
+      `,
+        );
+        const r = runScript(
+          "converge.ts",
+          [
+            fix.pr,
+            "--max-rounds",
+            "2",
+            "--",
+            process.execPath,
+            passFile,
+            fix.pr,
+          ],
+          fix,
+        );
+        expect(r.code).toBe(1);
+        expect(r.stderr).toContain("is MERGED; refusing mutation");
+        expect(r.stderr).toContain("pass failed on round 1");
+        expect(readFileSync(join(fix.dir, "passes.log"), "utf8")).toBe(
+          "pass\n",
+        );
+        expect(existsSync(followup)).toBe(false);
+        expect(events(fix).at(-1)).toBe("liveness");
+        expect(events(fix)).not.toContain("reply");
+        expect(events(fix)).not.toContain("resolution");
+      });
+    }
+
+    it("checks again when the PR merges between reply and resolution", () => {
+      const fix = writeFixture({});
+      expect(
+        runScript("reply-to-thread.ts", ["PRRT_x"], fix, { stdin: body }).code,
+      ).toBe(0);
+      writeFileSync(join(fix.dir, "state"), "MERGED");
+      expect(runScript("resolve-thread.ts", ["PRRT_x"], fix).code).toBe(5);
+      expect(events(fix)).toEqual(["liveness", "reply", "liveness"]);
+    });
+  },
+);
+
 // ── reply-to-thread.ts: the posting chokepoint ──────────────────────────────
 
 describe.skipIf(process.platform === "win32")(
@@ -2929,6 +3130,79 @@ describe.skipIf(process.platform === "win32")(
       if (!mutation) throw new Error("expected a recorded mutation");
       expect(readFileSync(join(fix.dir, mutation), "utf8")).toContain(
         body.trim(),
+      );
+    });
+    for (const noOutcome of [false, true]) {
+      // The liveness read is a network round trip; the lease fence must be the
+      // LAST check before the reply so it cannot go stale during that read.
+      it(`runs the harness fence after liveness, immediately before the reply (no-outcome=${noOutcome})`, () => {
+        const fix = writeFixture({});
+        const r = runWithSibling(
+          "reply-to-thread.ts",
+          ["PRRT_fence", ...(noOutcome ? ["--no-outcome"] : [])],
+          fix,
+          {
+            "assert-post-allowed.ts": `
+            import { appendFileSync } from "node:fs";
+            appendFileSync(${JSON.stringify(join(fix.dir, "thread-events.log"))}, "fence\\n");
+          `,
+          },
+          { stdin: body, env: { DRIVE_PR_TARGET: "99999" } },
+        );
+        expect(r.code).toBe(0);
+        expect(mutations(fix)).toHaveLength(1);
+        expect(readFileSync(join(fix.dir, "thread-events.log"), "utf8")).toBe(
+          "liveness\nfence\nreply\n",
+        );
+      });
+      it(`refuses when the lease is taken over during the liveness read (no-outcome=${noOutcome})`, () => {
+        const fix = writeFixture({});
+        // A fence that refuses once the liveness read has happened models a
+        // replacement driver taking the lease while that read was pending.
+        const r = runWithSibling(
+          "reply-to-thread.ts",
+          ["PRRT_fence", ...(noOutcome ? ["--no-outcome"] : [])],
+          fix,
+          {
+            "assert-post-allowed.ts": `
+            import { readFileSync } from "node:fs";
+            const events = readFileSync(${JSON.stringify(join(fix.dir, "thread-events.log"))}, "utf8");
+            process.exit(events.includes("liveness") ? 11 : 0);
+          `,
+          },
+          { stdin: body, env: { DRIVE_PR_TARGET: "99999" } },
+        );
+        expect(r.code).toBe(11);
+        expect(mutations(fix)).toEqual([]);
+        expect(readFileSync(join(fix.dir, "thread-events.log"), "utf8")).toBe(
+          "liveness\n",
+        );
+      });
+    }
+    // Documents the residual race the SKILL.md states: GitHub offers no
+    // open-state precondition, so a merge landing after the liveness read —
+    // here, during the fence — is NOT prevented. Do not read this as a guarantee.
+    it("does not prevent a merge that lands during the fence (documented residual race)", () => {
+      const fix = writeFixture({});
+      const r = runWithSibling(
+        "reply-to-thread.ts",
+        ["PRRT_fence"],
+        fix,
+        {
+          "assert-post-allowed.ts": `
+            import { writeFileSync } from "node:fs";
+            writeFileSync(${JSON.stringify(join(fix.dir, "state"))}, "MERGED");
+          `,
+        },
+        { stdin: body, env: { DRIVE_PR_TARGET: "99999" } },
+      );
+      expect(r.code).toBe(0);
+      // Proves the fence really ran and merged the PR, so this cannot degrade
+      // into an ordinary OPEN-state posting test.
+      expect(readFileSync(join(fix.dir, "state"), "utf8")).toBe("MERGED");
+      expect(mutations(fix)).toHaveLength(1);
+      expect(readFileSync(join(fix.dir, "thread-events.log"), "utf8")).toBe(
+        "liveness\nreply\n",
       );
     });
     it("an installed sibling without its fence refuses before posting", () => {

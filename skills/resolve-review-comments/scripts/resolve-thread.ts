@@ -13,6 +13,7 @@
 
 import { isEntryPoint, runMain } from "./lib/cli.ts";
 import { ghOrExit } from "./lib/gh.ts";
+import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 
 // Gated behind isEntryPoint rather than run at module scope: this module's
 // side effect is a MUTATION, so importing it — the pattern the rest of this
@@ -25,6 +26,7 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  await assertThreadPrOpen("resolve-thread", threadId);
   process.stdout.write(
     await ghOrExit("resolve-thread", [
       "api",

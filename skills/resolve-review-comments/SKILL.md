@@ -197,6 +197,22 @@ thread. Only escalate to a human when you cannot tell.
 
 ### 3. Classify and act on each thread
 
+Before every reply, resolution, or reopening, the thread helper reads the owning
+PR's current state directly from the thread identifier. It does not reuse the
+round's state or a driver's target PR. Exit `5` means that PR is closed or merged;
+exit `1` means ownership or liveness could not be read. Either is terminal for
+this pass: stop further replies, resolutions, commits, and pushes, report the
+reason, and preserve local fixes for a new delivery decision. Do not bypass the
+helper with a direct mutation. This applies to one-shot, standalone convergence,
+and harness loops, including replies made with `--no-outcome`.
+
+The read runs immediately before the write, after reply validation. For a reply,
+it comes before any optional driver lease check, so that check stays the last one
+before the post and cannot go stale during the read. The read narrows the race;
+it cannot eliminate it. GitHub
+provides no open-state precondition for these thread mutations, so a PR can still
+close or merge between the successful read and the mutation.
+
 Read the thread and the anchored code. Every thread gets exactly one outcome,
 and **every reply opens with that outcome in bold** — see
 [Reply format](#reply-format) below. The vocabulary is closed: no other values,
@@ -632,9 +648,16 @@ check before committing. A fix can pass types, lint and tests yet fail formattin
 or build. Missing gate configuration is a reason to stop before committing or
 resolving the held batch; do not guess a command.
 
-Then commit with a conventional message referencing the PR, and push. A green
-push re-triggers the review bots, which may post a new round — that is the
-loop's cue.
+Then commit with a conventional message referencing the PR. Push liveness
+belongs to the caller that performs the push. When `/drive-pr` is installed,
+use its `guarded-push.ts` procedure, which rechecks liveness immediately before
+pushing; do not replace it with a bare push. A standalone pass must freshly
+read `gh pr view "$PR" --json state -q .state` immediately before its push and
+proceed only for `OPEN`. A failed read or any other state stops the pass, with
+no follow-up push. An earlier round check or successful thread write is not
+push authorization. The state read and Git push are also separate operations,
+so this check cannot prevent a merge in that final interval. A green push
+re-triggers the review bots, which may post a new round — that is the loop's cue.
 
 ### 5. Resolve the accepted batch
 
@@ -711,6 +734,9 @@ The distinctions it encodes have each burned real convergences:
 - **A PR that merges mid-loop orphans everything after it.** Subsequent fixes
   get pushed to a branch nothing will merge, and the work vanishes with no
   error. `await-round.ts` re-checks liveness every round and exits `5`.
+  Thread helpers also check immediately before each mutation, and the pushing
+  caller checks before its push. Stop the active pass on any refusal;
+  `converge.ts` reports a failed pass as exit `1` and starts no further round.
 - **Zero threads is not zero findings.** A finding the reviewer cannot anchor
   to a diff line is posted in its summary comment and never becomes a thread,
   so a thread count cannot see it. Before reporting `3`,

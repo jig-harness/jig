@@ -17,6 +17,7 @@
 
 import { isEntryPoint, runMain } from "./lib/cli.ts";
 import { ghOrExit } from "./lib/gh.ts";
+import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 
 // Gated behind isEntryPoint like every other script in this family, rather
 // than running at import time. This module's side effect is a MUTATION, and
@@ -32,6 +33,7 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  await assertThreadPrOpen("unresolve-thread", threadId);
   process.stdout.write(
     await ghOrExit("unresolve-thread", [
       "api",

@@ -34,6 +34,7 @@ import { existsSync, lstatSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fail, isEntryPoint, readStdinAll, runMain } from "./lib/cli.ts";
 import { ghCall, run } from "./lib/proc.ts";
+import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 
 const OUTCOME_HELP = `reply-to-thread.ts: body must begin with an outcome token.
 
@@ -580,10 +581,6 @@ async function main(): Promise<number> {
     );
   }
 
-  // LAST local act before the irreversible one. Everything above can be
-  // re-run; the mutation below cannot be taken back (TASK).
-  await assertPostAllowed();
-
   // The request document is built as JSON and delivered on stdin
   // (`--input -`), never through `gh api -f`/`-F`: `-f body=@-` sends the
   // LITERAL string "@-" (the `@file`/`@-` magic is `-F`-only), and `-F`
@@ -602,6 +599,14 @@ async function main(): Promise<number> {
     variables: { threadId, body: postBody },
   });
 
+  // The liveness read is a network round trip, so it runs BEFORE the lease
+  // fence: a fence checked first could go stale while the read is pending (a
+  // replacement driver takes the lease), and the superseded session would still
+  // post the duplicate reply the fence exists to prevent. The fence is
+  // therefore the last check before the irreversible POST. The liveness guard
+  // applies to standalone and harness callers alike.
+  await assertThreadPrOpen("reply-to-thread", threadId);
+  await assertPostAllowed();
   const r = await ghCall(
     [
       "api",

@@ -130,7 +130,22 @@ for (const copies of [false, true])
       join(driver, "assert-post-allowed.ts"),
       "console.error('consumer fence'); process.exitCode = 11;\n",
     );
-    const childEnv = { ...env };
+    // The reply's liveness read runs before the consumer fence, so it needs an
+    // open PR to reach the fence this test asserts on.
+    const bin = join(consumer, "bin");
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, "gh"),
+      `#!/usr/bin/env bun
+const id = process.argv.find(arg => arg.startsWith("threadId="))?.slice(9);
+console.log(JSON.stringify({ data: { node: { __typename: "PullRequestReviewThread", id, pullRequest: { number: 42, state: "OPEN" } } } }));
+`,
+      { mode: 0o755 },
+    );
+    const childEnv: Record<string, string | undefined> = {
+      ...env,
+      PATH: `${bin}${delimiter}${process.env.PATH}`,
+    };
     delete childEnv.GROUNDWORK_OVERLAY;
     delete childEnv.GROUNDWORK_REVIEW_TRIAGE_CONFIG;
     for (const surface of [".claude", ".agents"]) {
@@ -190,18 +205,22 @@ else process.exitCode = 1;
       expectSpawnExit({ ...invalidAwait, exitCode: invalidAwait.status }, 2);
       expect(invalidAwait.stderr).toContain("unknown flag: --invalid-flag");
       expect(invalidAwait.stderr).not.toContain("reply-to-thread.ts:");
-      const post = spawnSync(
-        process.execPath,
-        [join(scripts, "reply-to-thread.ts"), "PRRT_test"],
-        {
-          cwd: consumer,
-          env: { ...childEnv, DRIVE_PR_TARGET: "42" },
-          encoding: "utf8",
-          input: "**accepted** Added the guard.\n",
-        },
-      );
-      expectSpawnExit({ ...post, exitCode: post.status }, 11);
-      expect(post.stderr).toContain("consumer fence");
+      // The stub gh above is a shebang script, which Windows cannot execute, so
+      // the liveness read ahead of the fence is only reachable on POSIX.
+      if (process.platform !== "win32") {
+        const post = spawnSync(
+          process.execPath,
+          [join(scripts, "reply-to-thread.ts"), "PRRT_test"],
+          {
+            cwd: consumer,
+            env: { ...childEnv, DRIVE_PR_TARGET: "42" },
+            encoding: "utf8",
+            input: "**accepted** Added the guard.\n",
+          },
+        );
+        expectSpawnExit({ ...post, exitCode: post.status }, 11);
+        expect(post.stderr).toContain("consumer fence");
+      }
       const probe = join(consumer, "probe.ts");
       writeFileSync(
         probe,
@@ -337,3 +356,103 @@ console.log("owned");
   expectSpawnExit({ ...child, exitCode: child.status }, 0);
   expect(child.stdout.trim()).toBe("owned");
 });
+
+for (const copies of [false, true]) {
+  test.skipIf(process.platform === "win32")(
+    `bundled thread writers check liveness through both harnesses (${copies ? "copies" : "links"})`,
+    async () => {
+      const consumer = join(scratch, `liveness-${copies ? "copies" : "links"}`);
+      mkdirSync(consumer);
+      const overlay = JSON.parse(
+        readFileSync(
+          join(
+            source,
+            "skills/resolve-review-comments/__tests__/fixtures/overlay.json",
+          ),
+          "utf8",
+        ),
+      );
+      const options = {
+        consumer,
+        overlay,
+        copies,
+        local: payload,
+        cache: join(scratch, "cache"),
+        pin: {
+          repository: "https://example.test/groundwork.git",
+          revision: "a".repeat(40),
+          manifest,
+          version: "pilot-test",
+        },
+      };
+      await install(options);
+      await install({ ...options, check: true });
+      const bin = join(consumer, "bin");
+      mkdirSync(bin);
+      const log = join(consumer, "gh.log");
+      writeFileSync(
+        join(bin, "gh"),
+        `#!/usr/bin/env bun
+import { appendFileSync, readFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const query = args.find(arg => arg.startsWith("query=")) ?? "";
+if (query.includes("node(id:$threadId)")) {
+  appendFileSync(process.env.TEST_GH_LOG!, "read\\n");
+  if (process.env.TEST_PR_STATE === "unreadable") process.exit(1);
+  const id = args.find(arg => arg.startsWith("threadId="))?.slice(9);
+  console.log(JSON.stringify({ data: { node: { __typename: "PullRequestReviewThread", id, pullRequest: { number: 42, state: process.env.TEST_PR_STATE } } } }));
+} else {
+  if (args.includes("--input")) readFileSync(0);
+  appendFileSync(process.env.TEST_GH_LOG!, "write\\n");
+  console.log("true");
+}
+`,
+        { mode: 0o755 },
+      );
+      const childEnv: Record<string, string | undefined> = {
+        ...env,
+        PATH: `${bin}${delimiter}${process.env.PATH}`,
+        TEST_GH_LOG: log,
+      };
+      delete childEnv.DRIVE_PR_TARGET;
+      for (const surface of [".claude", ".agents"]) {
+        for (const script of [
+          "reply-to-thread.ts",
+          "resolve-thread.ts",
+          "unresolve-thread.ts",
+        ]) {
+          for (const state of ["OPEN", "MERGED", "CLOSED", "unreadable"]) {
+            writeFileSync(log, "");
+            const result = spawnSync(
+              process.execPath,
+              [
+                join(
+                  consumer,
+                  surface,
+                  "skills/resolve-review-comments/scripts",
+                  script,
+                ),
+                "PRRT_bundle",
+              ],
+              {
+                cwd: consumer,
+                env: { ...childEnv, TEST_PR_STATE: state },
+                encoding: "utf8",
+                input: "**accepted** Added the guard.\n",
+                timeout: 5000,
+              },
+            );
+            expectSpawnExit(
+              { ...result, exitCode: result.status },
+              state === "OPEN" ? 0 : state === "unreadable" ? 1 : 5,
+            );
+            expect(readFileSync(log, "utf8")).toBe(
+              state === "OPEN" ? "read\nwrite\n" : "read\n",
+            );
+          }
+        }
+      }
+    },
+    30_000,
+  );
+}

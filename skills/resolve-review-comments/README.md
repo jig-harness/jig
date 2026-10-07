@@ -12,7 +12,11 @@ Each acted-on thread has an explicit outcome and an attached rationale. Accepted
 fixes and findings made moot by those fixes remain open until checks pass and the
 push reaches the pull request ([PR](https://github.com/docomply/jig/blob/main/GLOSSARY.md)). Human review decisions,
 marking the PR ready, and merging remain human checkpoints. A review loop never
-reports convergence from unreadable check state or an inactive PR.
+reports convergence from unreadable check state or an inactive PR. Every thread
+write freshly reads the owning PR and refuses a closed, merged, or unreadable
+state, including in standalone installs. This is a check immediately before a
+write, not atomic protection: a merge between the read and mutation remains
+possible. The caller performing a push owns its separate liveness check.
 
 ## Installation and consumer values
 
