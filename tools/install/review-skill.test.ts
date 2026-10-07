@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   cpSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -9,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { LEAKY_GIT_ENV, spawnSync } from "../../lib/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { install } from "./install.ts";
@@ -96,6 +97,7 @@ for (const copies of [false, true])
       ),
     );
     overlay.review.job_pattern = "custom-review-job";
+    overlay.review.required_checks = ["custom-review-job"];
     const options = {
       consumer,
       overlay,
@@ -144,6 +146,42 @@ for (const copies of [false, true])
       );
       expectSpawnExit({ ...round, exitCode: round.status }, 0);
       expect(round.stdout.trim()).toBe("7");
+      const ghBin = join(consumer, "stub-bin");
+      mkdirSync(ghBin, { recursive: true });
+      writeFileSync(
+        join(ghBin, "gh"),
+        `#!/usr/bin/env bun
+const args = process.argv.slice(2);
+if (args[0] === 'pr' && args[1] === 'checks') console.log('[]');
+else if (args[0] === 'api') console.log('HTTP/2.0 200 OK\\r\\n\\r\\n' + JSON.stringify({state:'open',head:{sha:'a'.repeat(40)}}));
+else process.exitCode = 1;
+`,
+      );
+      chmodSync(join(ghBin, "gh"), 0o755);
+      if (process.platform !== "win32") {
+        const requiredAwait = spawnSync(
+          process.execPath,
+          [
+            join(scripts, "await-round.ts"),
+            "42",
+            "--once",
+            "--no-ci",
+            "--no-count",
+          ],
+          {
+            cwd: consumer,
+            env: { ...childEnv, PATH: `${ghBin}${delimiter}${childEnv.PATH}` },
+            encoding: "utf8",
+          },
+        );
+        expectSpawnExit(
+          { ...requiredAwait, exitCode: requiredAwait.status },
+          4,
+        );
+        expect(requiredAwait.stderr).toContain(
+          "required reviewer coverage is incomplete",
+        );
+      }
       const invalidAwait = spawnSync(
         process.execPath,
         [join(scripts, "await-round.ts"), "--invalid-flag"],

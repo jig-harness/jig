@@ -31,11 +31,36 @@ configuration as well as rendering agent instructions:
 |-------|---------|
 | `gates.command` | Complete local checks required before a fix is committed and pushed |
 | `review.bots` | Expected reviewer identities for instructions |
-| `review.job_pattern` | Regular expression selecting the reviewer checks whose completion permits another round |
+| `review.job_pattern` | Regular expression selecting checks to wait on; requires `review.required_checks` |
+| `review.required_checks` | Distinct exact check names that must each complete; missing or skipped members cannot settle |
 | `review.deferral_team` | Linear team used by the deferral adapter |
 | `review.repo_slug` | GitHub repository (`owner/name`) used to validate finding permalinks |
 | `review.repo_label` | Repository label used on follow-up issues |
 | `review.taxonomy` | Consumer label sets: `types`, `repos`, `sizes`, `categories`, `context_prefixes`, and `ownership_prefixes` |
+
+Declare required coverage explicitly whenever `job_pattern` is set (including
+when supplied with `--job-pattern`). Patterns select checks; regex alternatives
+do not declare required membership. For example:
+
+```json
+{
+  "review": {
+    "job_pattern": "Primary review|Secondary review|Fallback review",
+    "required_checks": ["Primary review", "Secondary review"]
+  }
+}
+```
+
+Here both required checks must complete with a passing or neutral conclusion.
+Missing required checks keep waiting (exit `4` under `--once`), even with
+`--no-ci`; skipped required checks fail (exit `7`). A selected optional fallback
+may be absent or skipped, but an observed running or failed fallback still
+blocks convergence. Each required name must match the selection pattern;
+invalid coverage configuration exits `2`. Check names are exact and case
+sensitive: consumers own names and changes to them. `required_checks` also works
+without a pattern and supports check names outside the default reviewer heuristic.
+Without either field, the existing reviewer-name heuristic remains available
+and does not guarantee coverage of a consumer-defined reviewer set.
 
 Consumers retain policy stances, change-proportional validation commands,
 optional sibling-claim sweep commands, and independent review-agent definitions

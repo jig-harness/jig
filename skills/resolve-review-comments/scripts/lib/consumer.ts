@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 export interface ReviewConfig {
   bots?: string[];
   job_pattern?: string;
+  required_checks?: string[];
   deferral_team?: string;
   repo_label?: string;
   repo_slug?: string;
@@ -71,6 +72,16 @@ export function reviewConfig(): ReviewConfig {
       typeof value !== "string"
     )
       throw new Error(`review.${key} must be a string`);
+    if (
+      key === "required_checks" &&
+      (!Array.isArray(value) ||
+        value.length === 0 ||
+        value.some((x) => typeof x !== "string" || !x.trim()) ||
+        new Set(value).size !== value.length)
+    )
+      throw new Error(
+        "review.required_checks must contain distinct nonempty check names",
+      );
     if (key === "taxonomy") {
       if (!value || typeof value !== "object" || Array.isArray(value))
         throw new Error("review.taxonomy must be an object");

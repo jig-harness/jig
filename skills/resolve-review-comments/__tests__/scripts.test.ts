@@ -265,8 +265,9 @@ case "$1 $2" in
     esac ;;
   "pr checks")
     echo x >> "$FIX/pr-checks-calls.log"
+    [ -f "$FIX/checks.json" ] && cat "$FIX/checks.json"
     [ -f "$FIX/checks-exit" ] && exit "$(cat "$FIX/checks-exit")"
-    cat "$FIX/checks.json" ;;
+    exit 0 ;;
   "api -i")
     # TASK: the conditional REST reads lib/gh-conditional.ts makes. Serves
     # the SAME fixtures the GraphQL-backed 'pr view' / 'pr checks' branches do,
@@ -432,7 +433,7 @@ function thread(
 
 function writeFixture(opts: {
   state?: string;
-  checks?: unknown[] | { exit: number };
+  checks?: unknown[] | { exit: number; body?: unknown[] };
   threads?: unknown[];
   head?: string;
   stateUnreadable?: boolean;
@@ -451,6 +452,8 @@ function writeFixture(opts: {
     writeFileSync(join(dir, "checks.json"), JSON.stringify(checks));
   } else {
     writeFileSync(join(dir, "checks-exit"), String(checks.exit));
+    if (checks.body)
+      writeFileSync(join(dir, "checks.json"), JSON.stringify(checks.body));
   }
   // gh --paginate --slurp returns an ARRAY of page documents.
   writeFileSync(
@@ -603,7 +606,7 @@ describe.skipIf(process.platform === "win32")(
       expect(r.stderr).toContain("FAILED");
     });
 
-    it("exit 2: an explicitly supplied --job-pattern matching nothing is a config error, not no-CI", () => {
+    it("exit 2: an explicit --job-pattern needs declared required coverage", () => {
       const fix = writeFixture({
         checks: [check("build", "pass", "COMPLETED")],
       });
@@ -613,7 +616,229 @@ describe.skipIf(process.platform === "win32")(
         fix,
       );
       expect(r.code).toBe(2);
-      expect(r.stderr).toContain("matched none");
+      expect(r.stderr).toContain("requires review.required_checks");
+    });
+
+    for (const scenario of [
+      {
+        label: "mixed success/skip",
+        required: ["AI review", "CodeRabbit"],
+        checks: [
+          check("AI review", "pass", "SUCCESS"),
+          check("CodeRabbit", "skipping", "SKIPPED"),
+        ],
+        code: 7,
+      },
+      {
+        label: "missing required member",
+        required: ["AI review", "CodeRabbit"],
+        checks: [check("AI review", "pass", "SUCCESS")],
+        code: 4,
+      },
+      {
+        label: "all required checks absent despite --no-ci",
+        required: ["AI review", "CodeRabbit"],
+        checks: [],
+        code: 4,
+      },
+      {
+        label: "all required members complete",
+        required: ["AI review", "CodeRabbit"],
+        checks: [
+          check("AI review", "pass", "SUCCESS"),
+          check("CodeRabbit", "pass", "SUCCESS"),
+        ],
+        code: 3,
+      },
+      {
+        label: "required member pending",
+        required: ["AI review", "CodeRabbit"],
+        checks: [
+          check("AI review", "pass", "SUCCESS"),
+          check("CodeRabbit", "pending", "IN_PROGRESS"),
+        ],
+        code: 4,
+      },
+      {
+        label: "required member neutral",
+        required: ["AI review", "CodeRabbit"],
+        checks: [
+          check("AI review", "pass", "SUCCESS"),
+          check("CodeRabbit", "skipping", "NEUTRAL"),
+        ],
+        code: 3,
+      },
+      {
+        label: "retired optional arm skipped",
+        required: ["CodeRabbit"],
+        checks: [
+          check("AI review", "skipping", "SKIPPED"),
+          check("CodeRabbit", "pass", "SUCCESS"),
+        ],
+        code: 3,
+      },
+      {
+        label: "retired optional arm absent",
+        required: ["CodeRabbit"],
+        checks: [check("CodeRabbit", "pass", "SUCCESS")],
+        code: 3,
+      },
+      {
+        label: "optional arm still running",
+        required: ["CodeRabbit"],
+        checks: [
+          check("AI review", "pending", "IN_PROGRESS"),
+          check("CodeRabbit", "pass", "SUCCESS"),
+        ],
+        code: 4,
+      },
+      {
+        label: "duplicate name cannot hide skipped required check",
+        required: ["CodeRabbit"],
+        checks: [
+          check("CodeRabbit", "pass", "SUCCESS"),
+          check("CodeRabbit", "skipping", "SKIPPED"),
+        ],
+        code: 7,
+      },
+    ]) {
+      it(`explicit coverage: ${scenario.label}`, () => {
+        const fix = writeFixture({ checks: scenario.checks });
+        const overlay = join(fix.dir, "overlay.json");
+        writeFileSync(
+          overlay,
+          JSON.stringify({ review: { required_checks: scenario.required } }),
+        );
+        const result = runScript(
+          "await-round.ts",
+          [
+            fix.pr,
+            "--once",
+            "--no-ci",
+            "--job-pattern",
+            "AI review|CodeRabbit",
+          ],
+          fix,
+          { env: { GROUNDWORK_OVERLAY: overlay } },
+        );
+        expect({ code: result.code, stderr: result.stderr }).toEqual({
+          code: scenario.code,
+          stderr: expect.any(String),
+        });
+        if (scenario.code !== 3)
+          expect(result.stderr).not.toContain("converged:");
+      });
+    }
+
+    // Required coverage must not switch off failure detection elsewhere, and
+    // an observed terminal failure outranks missing coverage and a pending exit.
+    for (const scenario of [
+      {
+        label: "failed optional reviewer beside satisfied required one",
+        required: ["CodeRabbit"],
+        checks: [
+          check("AI review", "fail", "FAILURE"),
+          check("CodeRabbit", "pass", "SUCCESS"),
+        ],
+        code: 7,
+      },
+      {
+        label: "failed required member while another is missing",
+        required: ["AI review", "CodeRabbit"],
+        checks: [check("AI review", "fail", "FAILURE")],
+        code: 7,
+      },
+      {
+        label: "cancelled required member while another is missing",
+        required: ["AI review", "CodeRabbit"],
+        checks: [check("AI review", "cancel", "CANCELLED")],
+        code: 7,
+      },
+    ]) {
+      it(`required coverage keeps failure detection: ${scenario.label}`, () => {
+        const fix = writeFixture({ checks: scenario.checks });
+        const overlay = join(fix.dir, "overlay.json");
+        writeFileSync(
+          overlay,
+          JSON.stringify({ review: { required_checks: scenario.required } }),
+        );
+        const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
+          env: { GROUNDWORK_OVERLAY: overlay },
+        });
+        expect(r.code).toBe(scenario.code);
+        expect(r.stderr).not.toContain("converged:");
+      });
+    }
+
+    it("exit 7: a skipped required reviewer outranks a gh exit-8 pending answer", () => {
+      const fix = writeFixture({
+        checks: {
+          exit: 8,
+          body: [
+            check("CodeRabbit", "skipping", "SKIPPED"),
+            check("build", "pending", "IN_PROGRESS"),
+          ],
+        },
+      });
+      const overlay = join(fix.dir, "overlay.json");
+      writeFileSync(
+        overlay,
+        JSON.stringify({ review: { required_checks: ["CodeRabbit"] } }),
+      );
+      const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
+        env: { GROUNDWORK_OVERLAY: overlay },
+      });
+      expect(r.code).toBe(7);
+    });
+
+    it("the missing-coverage diagnostic names only the absent checks", () => {
+      const fix = writeFixture({
+        checks: [check("AI review", "pass", "SUCCESS")],
+      });
+      const overlay = join(fix.dir, "overlay.json");
+      writeFileSync(
+        overlay,
+        JSON.stringify({
+          review: { required_checks: ["AI review", "CodeRabbit"] },
+        }),
+      );
+      const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
+        env: { GROUNDWORK_OVERLAY: overlay },
+      });
+      expect(r.code).toBe(4);
+      expect(r.stderr).toMatch(/waiting for: CodeRabbit$/m);
+    });
+
+    it("required custom check names work without a job pattern", () => {
+      const fix = writeFixture({
+        checks: [check("custom-check", "pass", "SUCCESS")],
+      });
+      const overlay = join(fix.dir, "overlay.json");
+      writeFileSync(
+        overlay,
+        JSON.stringify({ review: { required_checks: ["custom-check"] } }),
+      );
+      const result = runScript("await-round.ts", [fix.pr, "--once"], fix, {
+        env: { GROUNDWORK_OVERLAY: overlay },
+      });
+      expect(result.code).toBe(3);
+    });
+
+    it("a job pattern cannot exclude a required member", () => {
+      const fix = writeFixture({});
+      const overlay = join(fix.dir, "overlay.json");
+      writeFileSync(
+        overlay,
+        JSON.stringify({ review: { required_checks: ["CodeRabbit"] } }),
+      );
+      const result = runScript(
+        "await-round.ts",
+        [fix.pr, "--once", "--job-pattern", "AI review"],
+        fix,
+        { env: { GROUNDWORK_OVERLAY: overlay } },
+      );
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("excluded by --job-pattern");
     });
 
     it("exit 4 under --once: checks exist but none is reviewer-shaped — not settled (#3880 class)", () => {

@@ -25,7 +25,10 @@ import { siblingSkill, reviewConfig } from "./lib/consumer.ts";
  *                   expression (e.g. the reviewer job). Default: wait for ALL
  *                   checks to settle. Narrow it when a repo's slowest check is
  *                   unrelated to review (a full test matrix) and you don't
- *                   want to block on it.
+ *                   want to block on it. Explicit patterns require exact
+ *                   review.required_checks names in the consumer overlay.
+ *                   Missing required checks wait; skipped required checks fail.
+ *                   Dormant optional arms are omitted from required_checks.
  *   --timeout       give up waiting after this long (default 1800s). Exits 4.
  *   --interval      poll spacing while checks are pending (default 30s, min 5s).
  *   --once          evaluate a single time and exit; never sleep.
@@ -291,14 +294,18 @@ type CheckState =
   | "failed"
   | "none"
   | "no-reviewer"
+  | "missing-required"
   | "mismatch"
   | "error";
 
+/** A classification plus, for `missing-required`, the names still absent. */
+type CheckResult = { state: CheckState; missing: string[] };
+
 /**
- * Classify the check set. Returns exactly one of:
+ * Classify the check set. Returns exactly one state of:
  *
  *   pending      a matching check is still running
- *   settled      matching checks exist and none is pending
+ *   settled      required coverage is complete and matching checks are done
  *   failed       a matching check ended in failure — see below
  *   none         the RAW check set is empty (no checks created yet, or no CI
  *                at all) — the one state --no-ci may legitimately assert
@@ -306,6 +313,7 @@ type CheckState =
  *                yet (none matched the name pattern, or every match so far is
  *                a permanently-skipped arm) — checks exist, so --no-ci's "this
  *                PR genuinely has no checks" contract does not cover it
+ *   missing-required  at least one consumer-required check has not appeared
  *   mismatch     checks exist but --job-pattern matched none: a config error,
  *                not an absence of CI, so it must not fall through to no-CI
  *   error        the query itself failed; we do NOT know the state
@@ -325,20 +333,101 @@ type CheckState =
 async function checkState(
   pr: string,
   jobPattern: RegExp | null,
-): Promise<CheckState> {
+  requiredChecks: string[],
+): Promise<CheckResult> {
   const r = await ghCall(["pr", "checks", pr, "--json", "name,bucket,state"], {
     stderr: "ignore",
   });
-  if (r.code === 8) return "pending";
-  if (r.code !== 0 || r.stdout.trim() === "") return "error";
+  // Exit 8 is "checks pending", but the JSON it carries is still usable: a
+  // required reviewer that already ended SKIPPED or failed must outrank the
+  // pending answer. Only an unreadable body falls back to bare pending.
+  const pendingExit = r.code === 8;
+  if (r.code !== 0 && !pendingExit) return { state: "error", missing: [] };
+  if (r.stdout.trim() === "") {
+    return { state: pendingExit ? "pending" : "error", missing: [] };
+  }
 
   let raw: CheckRun[];
   try {
     raw = JSON.parse(r.stdout) as CheckRun[];
-    if (!Array.isArray(raw)) return "error";
+    if (!Array.isArray(raw)) throw new Error("not an array");
   } catch {
-    return "error";
+    return { state: pendingExit ? "pending" : "error", missing: [] };
   }
+  const state = (s: CheckState, missing: string[] = []): CheckResult => ({
+    state: s,
+    missing,
+  });
+
+  // Consumer policy declares coverage; regex alternation does not. Evaluate
+  // each required name before the empty-set/no-CI path or SKIPPED filtering.
+  // A required job that never ran cannot attest to a clean review round.
+  const required = raw.filter((c) => requiredChecks.includes(c.name));
+  if (required.some((c) => c.state === "SKIPPED")) return state("failed");
+
+  // Which checks may veto a convergence. Scoping this to an explicit
+  // --job-pattern was wrong in both directions: with no pattern an unrelated
+  // failing build blocked the loop, but scoping it to the pattern meant the
+  // DEFAULT invocation — the one every documented example uses — could never
+  // notice a failed reviewer at all. Use the reviewer set instead: an explicit
+  // pattern when given, otherwise checks whose name looks like a reviewer.
+  // Unrelated CI failures stay out of it either way.
+  //
+  // "review" alone is too broad a fragment for the heuristic: common,
+  // unrelated GitHub-native checks such as "Dependency Review" or a "Security
+  // Review" gate would match it, get counted as evidence the reviewer ran, and
+  // let a genuinely unreviewed round report settled the moment that unrelated
+  // check appears (which can easily precede the real reviewer check's
+  // creation). Requiring "ai"+"review" together for the bare word keeps every
+  // reviewer identity this repo actually uses (AI review, AI review
+  // (majordomo), codex-named checks, CodeRabbit) while excluding that class
+  // of decoy.
+  //
+  // Required names are always vetoes, in addition to whichever reviewer set
+  // applies: declaring mandatory coverage must not switch off failure
+  // detection for the other observed reviewers.
+  const reviewerShaped = (c: CheckRun) =>
+    jobPattern !== null
+      ? jobPattern.test(c.name)
+      : /ai[ _-]?review|codex|coderabbit/i.test(c.name);
+  const vetoes = raw.filter(
+    (c) => requiredChecks.includes(c.name) || reviewerShaped(c),
+  );
+
+  // Optional/fallback arms may intentionally never run. Only consumer-declared
+  // required checks must attest to coverage; their SKIPPED state was refused
+  // above.
+  const liveVetoes = vetoes.filter((c) => c.state !== "SKIPPED");
+
+  // A reviewer that FAILED never posted its findings, so "no open threads"
+  // says nothing about whether the round was clean. This is judged before any
+  // missing-coverage or pending answer: a failure already observed is more
+  // useful to the driver (exit 7) than a wait for names that may never come.
+  //
+  // `fail` is not the only non-success terminal state. A cancelled or
+  // timed-out reviewer posted no findings either, so treating those as settled
+  // reports a clean round the reviewer never ran. NEUTRAL is deliberately
+  // excluded from that list: some reviewers (e.g. this repo's majordomo shadow
+  // check) are configured to always conclude neutral even on a clean run — see
+  // the "informational only" check-run summary — so it is a completion state,
+  // not a failure to report. Pending is not terminal.
+  if (
+    liveVetoes.some(
+      (c) =>
+        c.bucket !== "pass" && c.bucket !== "pending" && c.state !== "NEUTRAL",
+    )
+  ) {
+    return state("failed");
+  }
+
+  const missing = requiredChecks.filter(
+    (name) => !required.some((c) => c.name === name),
+  );
+  if (missing.length > 0) return state("missing-required", missing);
+
+  // gh's documented "checks pending" exit is authoritative even when the
+  // matching logic below cannot see the running check.
+  if (pendingExit) return state("pending");
 
   // Filter to the checks we actually care about FIRST. Counting the raw set
   // ahead of the pattern means a PR with unrelated checks but no reviewer
@@ -354,79 +443,36 @@ async function checkState(
     // configuration error. Letting it fall through to the no-CI path means a
     // typo'd --job-pattern quietly waits out the grace window and then
     // declares convergence without the named reviewer ever being observed.
-    if (jobPattern !== null && raw.length > 0) return "mismatch";
-    return "none";
+    if (jobPattern !== null && raw.length > 0) return state("mismatch");
+    return state("none");
   }
 
-  if (matched.some((c) => c.bucket === "pending")) return "pending";
+  if (matched.some((c) => c.bucket === "pending")) return state("pending");
 
-  // A reviewer that FAILED never posted its findings, so "no open threads"
-  // says nothing about whether the round was clean.
-  //
-  // Which checks may veto a convergence. Scoping this to an explicit
-  // --job-pattern was wrong in both directions: with no pattern an unrelated
-  // failing build blocked the loop, but scoping it to the pattern meant the
-  // DEFAULT invocation — the one every documented example uses — could never
-  // notice a failed reviewer at all. Use the reviewer set instead: an explicit
-  // pattern when given, otherwise checks whose name looks like a reviewer.
-  // Unrelated CI failures stay out of it either way.
-  let vetoes: CheckRun[];
-  if (jobPattern !== null) {
-    vetoes = matched;
-  } else {
-    // "review" alone is too broad a fragment: common, unrelated GitHub-native
-    // checks such as "Dependency Review" or a "Security Review" gate would
-    // match it, get counted as evidence the reviewer ran, and let a genuinely
-    // unreviewed round report settled the moment that unrelated check appears
-    // (which can easily precede the real reviewer check's creation).
-    // Requiring "ai"+"review" together for the bare word keeps every reviewer
-    // identity this repo actually uses (AI review, AI review (majordomo),
-    // codex-named checks, CodeRabbit) while excluding that class of decoy.
-    vetoes = raw.filter((c) => /ai[ _-]?review|codex|coderabbit/i.test(c.name));
-    // Other, non-reviewer checks can be visible and non-pending before the
-    // reviewer job has even been created — an unrelated fast lint check
-    // completing seconds after push is a common ordering, not an edge case.
-    // An empty vetoes set here is the SAME ambiguity as an empty check set
-    // entirely: it must not fall through to `settled` below, or a zero thread
-    // count declares convergence before the reviewer has had a chance to post.
-    if (vetoes.length === 0) return "no-reviewer";
-  }
+  // Other, non-reviewer checks can be visible and non-pending before the
+  // reviewer job has even been created — an unrelated fast lint check
+  // completing seconds after push is a common ordering, not an edge case. An
+  // empty live reviewer set here is the SAME ambiguity as an empty check set
+  // entirely: it must not fall through to `settled` below, or a zero thread
+  // count declares convergence before the reviewer has had a chance to post.
+  // This also covers a heuristic match that is only a permanently-skipped arm.
+  if (liveVetoes.length === 0) return state("no-reviewer");
 
-  // A check whose OWN `if:` condition prevented it from running at all (raw
-  // state SKIPPED, as opposed to a conclusion the job reached) never attempted
-  // a review, so it cannot attest to anything either way. This matters because
-  // repo policy can retire an arm — this repo's CI-fallback "AI review" job is
-  // permanently gated off (`vars.AI_REVIEW_CI_ARM` unset) since the majordomo
-  // cutover, see .github/workflows/ai-code-review.yml — while another check
-  // matching the same reviewer-name pattern (majordomo) is the one that
-  // actually runs. Counting the permanently-inert arm as a veto would make
-  // this predicate report `failed` on every single round forever, since that
-  // arm can never report anything but SKIPPED. If EVERY veto candidate turns
-  // out to be skipped, that is not settled either — fall through to the same
-  // `no-reviewer` ambiguity as an empty vetoes set, rather than silently
-  // calling it clean.
-  const liveVetoes = vetoes.filter((c) => c.state !== "SKIPPED");
-  if (liveVetoes.length === 0) return "no-reviewer";
-
-  // `fail` is not the only non-success terminal state. A cancelled or
-  // timed-out reviewer posted no findings either, so treating those as settled
-  // reports a clean round the reviewer never ran. NEUTRAL is deliberately
-  // excluded from that list: some reviewers (e.g. this repo's majordomo shadow
-  // check) are configured to always conclude neutral even on a clean run — see
-  // the "informational only" check-run summary — so it is a completion state,
-  // not a failure to report.
-  if (liveVetoes.some((c) => c.bucket !== "pass" && c.state !== "NEUTRAL")) {
-    return "failed";
-  }
-
-  return "settled";
+  return state("settled");
 }
 
 async function main(): Promise<number> {
   const mainStartedAt = Date.now();
   let pr = "";
   let botsOnly = false;
-  let jobPatternRaw = reviewConfig().job_pattern ?? "";
+  let config: ReturnType<typeof reviewConfig>;
+  try {
+    config = reviewConfig();
+  } catch (e) {
+    fail(2, e instanceof Error ? e.message : String(e));
+  }
+  let jobPatternRaw = config.job_pattern ?? "";
+  const requiredChecks = config.required_checks ?? [];
   let once = false;
   let noCi = false;
   let noCount = false;
@@ -551,6 +597,22 @@ async function main(): Promise<number> {
         2,
         `--job-pattern is not a valid regular expression: ${e instanceof Error ? e.message : String(e)}`,
       );
+    }
+  }
+
+  if (jobPattern !== null && requiredChecks.length === 0) {
+    fail(
+      2,
+      "an explicit --job-pattern or review.job_pattern requires review.required_checks in the consumer overlay; declare required check names and omit dormant optional arms",
+    );
+  }
+  if (jobPattern !== null) {
+    for (const name of requiredChecks) {
+      if (!jobPattern.test(name))
+        fail(
+          2,
+          `required check '${name}' is excluded by --job-pattern '${jobPatternRaw}'`,
+        );
     }
   }
 
@@ -766,6 +828,7 @@ async function main(): Promise<number> {
         ? await checkSignalsUnchanged(liveHead)
         : false;
     let cs: CheckState;
+    let missingRequired: string[] = [];
     if (
       lastWaiting !== null &&
       signalsUnchanged &&
@@ -774,7 +837,9 @@ async function main(): Promise<number> {
     ) {
       cs = lastWaiting.state;
     } else {
-      cs = await checkState(pr, jobPattern);
+      const result = await checkState(pr, jobPattern, requiredChecks);
+      cs = result.state;
+      missingRequired = result.missing;
       lastWaiting =
         liveHead !== "" && (cs === "pending" || cs === "no-reviewer")
           ? { state: cs, head: liveHead, at: Date.now() }
@@ -840,6 +905,15 @@ async function main(): Promise<number> {
           );
         }
         break;
+
+      case "missing-required":
+        queryErrors = 0;
+        noChecksSince = null;
+        console.error(
+          `required reviewer coverage is incomplete on #${pr}; waiting for: ${missingRequired.join(", ")}`,
+        );
+        if (!(await waitOrGiveUp())) return 4;
+        continue;
 
       case "no-reviewer":
         queryErrors = 0;

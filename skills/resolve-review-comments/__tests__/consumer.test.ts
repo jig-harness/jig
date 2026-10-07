@@ -62,3 +62,18 @@ test("non-deferral consumers do not need a batching taxonomy", () => {
   });
   withOverlay({}, () => expect(reviewConfig()).toEqual({}));
 });
+
+for (const value of [[], "AI review", [""], [" "], [42], ["review", "review"]])
+  test(`invalid required check names fail closed: ${JSON.stringify(value)}`, () => {
+    withOverlay({ review: { required_checks: value } }, () => {
+      expect(reviewConfig).toThrow(
+        "review.required_checks must contain distinct nonempty check names",
+      );
+    });
+  });
+
+test("required check names come from consumer policy", () => {
+  withOverlay({ review: { required_checks: ["custom-check"] } }, () => {
+    expect(reviewConfig().required_checks).toEqual(["custom-check"]);
+  });
+});

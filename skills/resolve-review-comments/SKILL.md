@@ -691,13 +691,20 @@ contract:
 | `7` | a reviewer check did not pass, so it may never have reported |
 | `8` | zero unresolved threads, but the reviewer has summary-only findings no one has answered — they never became threads |
 | `1` | the check state could not be read — never reported as settled |
-| `2` | usage or configuration error (bad interval, unmatched `--job-pattern`) |
+| `2` | usage or configuration error (bad interval, invalid or undeclared reviewer coverage) |
 
 Only `3` means converged. Every other non-zero is a reason to stop and look,
 not a variant of "done".
 
 The distinctions it encodes have each burned real convergences:
 
+- **Explicit reviewer selection requires declared coverage.** Configure
+  `review.required_checks` in the consumer overlay with exact required check
+  names before using `review.job_pattern` or `--job-pattern`. Each required
+  check must complete; missing members keep waiting and skipped members fail.
+  Leave intentionally retired optional arms out of the required list. Patterns
+  select checks to wait on, and do not define membership through alternation.
+  See [the configuration contract](README.md#installation-and-consumer-values).
 - **Zero threads while a reviewer job is pending is not convergence** — that
   round's comments simply have not posted yet. Exiting there abandons live
   findings on the PR.
