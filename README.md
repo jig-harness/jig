@@ -26,9 +26,10 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
    maturity rung at a time ([adoption/brownfield.md](adoption/brownfield.md)).
 3. **Reference** — cherry-pick a single pattern (e.g., generated-artifact
    freshness gates) from its module.
-4. **Shared tooling** — consume agent skills and development tools as a pinned
-   release rather than copying them between repositories. Being established:
-   see [ROADMAP.md](ROADMAP.md) § Runnable tooling.
+4. **Shared tooling** — use Groundwork's agent skills in any repository without
+   copying them: install the `groundwork` plugin once per machine for Claude
+   Code or Codex and commit only your repository's values. See
+   [plugin/README.md](plugin/README.md).
 
 ## Structure
 
@@ -44,6 +45,8 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [adoption/](adoption/) | Greenfield and brownfield adoption paths |
 | [seeds/](seeds/) | Imported source material awaiting integration |
 | [docs/](docs/) | Founding charter and background analysis |
+| [plugin/](plugin/README.md) | The `groundwork` plugin: agent skills for Claude Code and Codex |
+| [tools/](tools/README.md) | Runnable development tools |
 
 ## Status
 

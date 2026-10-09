@@ -1,0 +1,17 @@
+{
+  "name": "groundwork",
+  "version": "0.2.0",
+  "description": "Groundwork's shared agent skills, such as resolve-review-comments. Each repository supplies its own values in .config/groundwork-overlay.yaml.",
+  "author": { "name": "Docomply" },
+  "homepage": "https://github.com/docomply/jig/blob/main/plugin/README.md",
+  "repository": "https://github.com/docomply/jig",
+  "keywords": ["code-review", "pull-requests", "agents"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Groundwork",
+    "shortDescription": "Shared agent skills for pull request work",
+    "developerName": "Docomply",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"]
+  }
+}

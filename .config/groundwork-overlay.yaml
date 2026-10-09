@@ -1,0 +1,34 @@
+# Groundwork's own values for its skills, read at run time by the plugin
+# (plugin/README.md § Configure a repository). Groundwork uses its own skills
+# on its pull requests like any other consumer.
+gates:
+  command: bun run gates
+review:
+  bots: ["docomply-review[bot]", "coderabbitai[bot]"]
+  # Not set: reviewer checks are recognised by name.
+  job_pattern: null
+  deferral_team: DOC
+  repo_label: groundwork
+  repo_slug: docomply/jig
+  taxonomy:
+    types: [bug, feature, infra, docs, chore]
+    repos:
+      - docomply
+      - website
+      - forge
+      - ai-review
+      - engineering-standards
+      - harness-toolkit
+      - groundwork
+      - finops-engine
+      - public-sources-mcp
+    sizes: [xs, small]
+    context_prefixes: ["agent:", "domain:", "codearea:"]
+    ownership_prefixes: ["agent:", "domain:"]
+    categories:
+      [correctness, data-integrity, security, compliance, ux, performance, tests, docs, drift, style]
+    provenance_label: pr-followup
+    epic_label: epic
+issue_tracker:
+  system: linear
+  team: DOC

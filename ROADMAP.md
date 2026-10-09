@@ -16,7 +16,7 @@ groundwork work starts here.
 | 4 | Port M7 review-harness core + M8 learning loop | ✅ done 2026-07-20 (M7/M8 carry the full contract — see below) |
 | 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ✅ done 2026-07-20 (all five modules carry the full contract; auditor v1 scores M0–M12; greenfield folded in — see below) |
 | ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing (now the active mode — all modules M0–M12 ported) |
-| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and consumed as pinned releases | kernel toolchain implemented; remaining extraction work follows § Runnable tooling |
+| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and shipped as the `groundwork` plugin for Claude Code and Codex | kernel toolchain and plugin distribution implemented; remaining extraction work follows § Runnable tooling |
 
 ## Phase 2 remainder (all closed 2026-07-19; next work is Phase 3)
 
@@ -213,10 +213,10 @@ rules in [AGENTS.md](AGENTS.md). Background: docomply's engineering-standards
 decision 0003 and its [extraction inventory](https://github.com/docomply/engineering-standards/blob/main/docs/extraction-inventory.md) classifies every unit and
 orders the move:
 
-1. **Kernel** — Bun/TypeScript toolchain, the Bash gates ported, an installer
-   (pinned release → per-host cache → per-worktree skill links for both Claude
-   Code and Codex), shared test helpers, and a local-checkout override for
-   developing against a working tree.
+1. **Kernel** — Bun/TypeScript toolchain, the Bash gates ported, shared test
+   helpers, and skill distribution: this repository is a plugin that Claude
+   Code and Codex install once per machine
+   ([plugin/README.md](plugin/README.md)).
 2. **Pilot** — `resolve-review-comments`, plus the low-coupling skills.
 3. **Issue-tracker planning cluster** — issue pickup, epic planning,
    batching, prioritisation, follow-up; the tracker interface is drawn here.
@@ -290,28 +290,25 @@ It is generic but sits inside a single very large file together with that
 organization's workflow conventions, so it needs its own seam before it can
 move.
 
-The [installer](tools/install/README.md) now packages self-contained skill
-scripts and importable shared helpers. Consumers import the helpers from
-`.groundwork/lib/`; link and copy installs are checked against the release
-manifest, including when no skills are selected. Consumer import switches and
-local-copy deletion still require a published immutable release pin.
-
-It records a digest/mode manifest, fetches immutable releases into an atomic
-host cache, renders consumer-specific Claude Code and Codex adapters, and checks
-them offline. Its local override builds working-tree snapshots. Acceptance
-tests exercise concurrent Git worktrees, copy fallback, tampering and headless
-installation in the native platform matrix. Consumer manifest pins, publication,
-pilot skill moves, old synchronizer removal and live remote-host validation
-remain the next rollout steps; no consumer has switched as part of this change.
+Skills ship as the `groundwork` plugin: [plugin/](plugin/) carries a Claude Code
+and a Codex plugin manifest, this repository a marketplace for each tool, and each machine installs it once
+([plugin/README.md](plugin/README.md)). Each consumer repository commits only
+its values, in `.config/groundwork-overlay.yaml`, which the skills read at run
+time. This replaced a per-worktree installer (pinned release, host cache,
+rendered adapters, links, a bootstrap run from install hooks and a git hook):
+the agent tools list skills when a session starts, so per-worktree installs
+needed a setup step in every place a worktree is created, while a per-machine
+plugin is visible everywhere. Releases up to `v0.1.1-review-pilot` remain
+tagged for repositories that have not migrated.
 
 ## Review-skill pilot preparation
 
-The operated TypeScript [review-resolution skill](skills/resolve-review-comments/README.md)
-and its suite now live here. Consumer policy comes from the installed overlay,
-and optional sibling skills resolve in the consumer worktree. The release
-packages the stable command paths and public ladder/conditional-request exports.
-Groundwork runs the moved behavioral suite; consumer-side tests retain the
-real driver integration. This is rollout preparation: publication, pin adoption,
-source retirement in the companion repositories and live host review loops
-remain pending the coordinated rollout. The skill README records the source
-revision and acceptance work.
+The operated TypeScript [review-resolution skill](plugin/skills/resolve-review-comments/README.md)
+and its suite now live here and ship in the plugin. Consumer policy is read at
+run time from the consumer repository's configuration, and optional sibling
+skills resolve in the consumer repository. Groundwork runs the moved behavioral
+suite and a plugin test that runs the scripts from outside this repository;
+consumer-side tests retain the real driver integration. Both harnesses were
+exercised against a live pull request through the installed plugin. Consumer
+migration from the per-worktree installer follows
+[the migration steps](plugin/README.md#migrating-from-the-per-worktree-installer).

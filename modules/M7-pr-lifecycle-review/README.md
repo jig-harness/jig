@@ -184,10 +184,11 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
 
 ## Port status
 
-The operated [review-resolution skill](../../skills/resolve-review-comments/README.md)
-now ships as runnable TypeScript alongside these practice references. It uses
-consumer configuration for tracker taxonomy, reviewers and gate commands;
-release publication and live consumer adoption remain rollout steps.
+The operated [review-resolution skill](../../plugin/skills/resolve-review-comments/README.md)
+now ships as runnable TypeScript in the `groundwork` plugin, installed once per
+machine for Claude Code and Codex ([plugin/README.md](../../plugin/README.md)).
+It reads each repository's own configuration for tracker taxonomy, reviewers
+and gate commands at run time.
 
 | Source (docomply `develop`) | Landed as |
 |-----------------------------|-----------|
@@ -223,7 +224,7 @@ the line "don't port the unproven" turns on:
 
 | Layer | Treatment of the bold-token encoding |
 |-------|--------------------------------------|
-| The [operated skill](../../skills/resolve-review-comments/README.md) and its `reply-to-thread.ts` | Moved as operated source, so it ships the bold leading token and enforces it at reply time. The skill is one mechanism, moved whole rather than rewritten into an encoding-neutral variant that would become a fork |
+| The [operated skill](../../plugin/skills/resolve-review-comments/README.md) and its `reply-to-thread.ts` | Moved as operated source, so it ships the bold leading token and enforces it at reply time. The skill is one mechanism, moved whole rather than rewritten into an encoding-neutral variant that would become a fork |
 | This module's practice references: [mappings.md](mappings.md), the [export adapter](reference/comment-resolution/normalize-thread-states.ts), the lifecycle contract | Encoding-**agnostic**. The invariant (a verdict is declared, in an anchored form, at reply time) is what they assert. [mappings.md](mappings.md) presents a leading token and a trailing trailer as alternatives and states no preference; adopter vocabulary lives in the adapter's `canon()`, and the token is its default only because a default is required |
 
 An adopter that does not run the operated skill is free to choose the trailer

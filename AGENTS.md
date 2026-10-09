@@ -11,8 +11,9 @@ vendor-agnostic, tech-stack-flexible, modular template. Its uses:
 greenfield template, brownfield upgrade path, **runnable auditor** that scores
 a target repo and produces actionable recommendations, and **shared runnable
 tooling** — the agent skills and development tools (PR review loops, issue
-pickup, workspace management, gates) that repositories consume as a pinned
-release instead of copying.
+pickup, workspace management, gates) that repositories use instead of
+copying. Skills ship as the `groundwork` plugin for Claude Code and Codex,
+installed once per machine ([plugin/README.md](plugin/README.md)).
 
 The placement rule for that tooling: a generic mechanism lives here; an
 organization's values (tracker team and labels, review bots, gate commands,
@@ -135,5 +136,12 @@ the enforcement ladder: *absent → convention-only → mechanically enforced*.
   `docs/`), `templates/` and test `fixtures/` out, while the issue-tracker
   gate covers everything, vendored material and templates included, except
   test `fixtures/` and its own pattern file.
+- **This repository is the `groundwork` plugin.** Both tools install it from
+  `main`, so everything under `plugin/` must run from a copy outside this
+  repository: follow [plugin/README.md § Add or change a skill](plugin/README.md#add-or-change-a-skill)
+  (skill-relative paths, consumer values read at run time, no `node_modules`
+  imports). Every pull request that changes `plugin/` bumps `version` in both
+  `plugin/.claude-plugin/plugin.json` and `plugin/.codex-plugin/plugin.json`
+  (machines only receive a new version); tag the merge commit `v<version>`.
 - HITL (human-in-the-loop) decisions: publishing/visibility, license, deleting
   seed material, and anything touching the IP scrub boundary — flag, don't act.

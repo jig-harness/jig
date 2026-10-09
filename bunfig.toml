@@ -1,4 +1,4 @@
 [test]
 # Fixtures are input data, including deliberate .test.ts examples.
 pathIgnorePatterns = ["**/fixtures/**", "**/fixture/**", ".context/**", "dist/**", "seeds/**"]
-preload = ["./lib/test-tmpdir-bun-preload.ts", "./skills/resolve-review-comments/__tests__/preload.ts"]
+preload = ["./lib/test-tmpdir-bun-preload.ts", "./plugin/skills/resolve-review-comments/__tests__/preload.ts"]

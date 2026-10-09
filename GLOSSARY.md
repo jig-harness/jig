@@ -5,14 +5,16 @@ capitalized as commonly written; cross-references are *italicized*.
 
 ## Core ideas
 
-- **Consumer overlay** — repository-specific values combined with shared
-  instructions during installation, such as gate commands and agent tool
-  permissions. The procedure stays shared while the values belong to the consumer.
-- **Release manifest** — a list of every file in a shipped release, with its
-  content fingerprint (a cryptographic digest) and executable bit. A consumer
-  pins the manifest's own digest so altered files or metadata fail verification.
-- **Content-addressed cache** — stored releases identified by their content
-  digest, so two payloads with the same friendly version label remain distinct.
+- **Consumer overlay** — a repository's own values for a shared procedure,
+  such as its gate command and reviewer names, kept in
+  `.config/groundwork-overlay.yaml` and read by the procedure when it runs.
+  The procedure stays shared while the values belong to the consumer.
+- **Plugin** — an installable bundle of skills (and possibly other agent
+  extensions) that an agent tool loads in every session. Groundwork ships its
+  skills as one plugin for Claude Code and Codex.
+- **Marketplace** — a catalog an agent tool installs plugins from; usually a
+  Git repository with a manifest listing its plugins. This repository is its
+  own marketplace.
 
 - **AI-native delivery** — building and maintaining software with AI coding
   agents as first-class participants: the repo is organized so agents can find

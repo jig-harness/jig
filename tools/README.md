@@ -6,22 +6,22 @@ Groundwork keeps reusable command-line tools here as they move in.
 
 ## Layout
 
-- `skills/<name>/SKILL.md` — agent procedures and their private supporting files.
+- `plugin/skills/<name>/SKILL.md` — agent procedures and their private
+  supporting files, shipped as the `groundwork` plugin ([plugin/README.md](../plugin/README.md)).
 - `tools/<area>/` — operated development commands grouped by responsibility.
 - `lib/` — shared code used by multiple commands, with no consumer-specific values.
   `lib/test-helpers/` and the temp-dir scope (`lib/test-tmpdir*.ts`) are the shared
   test support; `lib/guarded-git-spawn.ts` is the only sanctioned route to a raw
   spawn in tests that build scratch git repositories.
-  Pinned releases install these helpers under `.groundwork/lib/` in the consumer;
-  see [importing shared helpers](install/README.md#importing-shared-helpers).
 - `modules/M*/reference/` — the practice gates and worked examples already shipped
   with the modules. They stay beside the doctrine they enforce.
 - `scripts/` — Groundwork's own repository checks and build orchestration.
 
 A command binds a named host behind an interface when it needs one. Host names,
 tracker policies, gate commands and organization-specific values arrive from
-consumer configuration. The [installer](install/README.md) provides verified
-pinned releases, a per-host cache, per-worktree adapters and offline checks.
+consumer configuration, read at run time from the consumer repository.
+[plugin/](plugin/README.md) installs and checks the plugin on a machine and
+tests its layout.
 
 ## Runtime choice
 
