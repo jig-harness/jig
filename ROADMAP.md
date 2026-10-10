@@ -218,15 +218,16 @@ orders the move:
    Code and Codex install once per machine
    ([plugin/README.md](plugin/README.md)).
 2. **Pilot** — `resolve-review-comments`, plus the low-coupling skills.
-3. **Issue-tracker planning cluster** — issue pickup, epic planning,
-   batching, prioritisation, follow-up; the tracker interface is drawn here.
+3. **Issue-tracker planning cluster** — epic planning, batching,
+   prioritisation, follow-up; the tracker interface is drawn here.
 4. **Gates and workspace infrastructure** — the tooling every other step
    runs on: the change-area resolver (M3's reference implementation),
    cross-worktree locks and test infrastructure, remote gates, and the
    runnable form of M12 (Herdr workspace lifecycle; its status board calls the
    review skill's scripts and so moves with step 5).
-5. **PR drive loop** — moves as one unit with the review skill's remaining
-   consumers, including the status board and the debt report; see
+5. **PR drive loop** — moves as one unit with the issue-pickup skill that
+   starts it and the review skill's remaining consumers, including the status
+   board and the debt report; see
    [PR drive loop move](#pr-drive-loop-move).
 
 Out of scope: the reference implementation's dev dashboard. It embeds that
@@ -338,8 +339,15 @@ alone would need another. The set therefore moves together:
 
 1. **Inventory** the coupled set in the reference implementation: the
    drive-loop skill, the review skill, and every skill or tool that imports
-   from or spawns either (at least the status board and the debt report),
-   with their tests.
+   from or spawns either (at least the status board, the debt report and the
+   issue-pickup skill), with their tests. The issue-pickup skill starts a
+   drive once it opens a pull request, and the drive loop imports its handoff
+   code, so it belongs to the set. Inside the set that handoff code may move
+   to whichever skill owns it; the move need not cut the link first. The
+   issue-pickup skill ships here as `do-issue`, named for the mechanism rather
+   than a tracker: it reaches the tracker only through the interface drawn in
+   step 3 of [Runnable tooling](#runnable-tooling), and the organization's
+   tracker values arrive as configuration.
 2. **Split** each unit into the generic mechanism and the organization's
    values, which become fields of `.config/groundwork-overlay.yaml`, as the
    review skill's were.
@@ -355,8 +363,9 @@ alone would need another. The set therefore moves together:
    and every machine that works in that repository is
    [updated](plugin/README.md#update-pin-or-remove) to it, since a machine keeps
    its installed release until updated. A fresh session there then lists that
-   release's version and every moved command (the drive loop and the review
-   skill, not only the review skill). The review skill prefers a sibling skill
+   release's version and every command the step-1 inventory moved (the drive
+   loop, the review skill and `do-issue` among them, not only the review
+   skill). The review skill prefers a sibling skill
    in the repository's own `.claude/skills/` over the one beside it in the
    plugin, so the end-to-end check runs in a disposable checkout of that
    repository with the built-in coupled set absent. A drive-loop run there
