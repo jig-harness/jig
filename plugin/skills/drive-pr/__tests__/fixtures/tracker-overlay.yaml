@@ -1,0 +1,8 @@
+# A consumer overlay for the drive-pr suites that read the team key.
+issue_tracker:
+  adapter: linear
+  team: ENG
+review:
+  taxonomy:
+    epic_label: epic
+    provenance_label: follow-up

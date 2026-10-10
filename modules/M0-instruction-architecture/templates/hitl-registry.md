@@ -44,7 +44,7 @@ Each class names the rung at which the boundary is currently held:
 
 | # | Decision class | Why it stays human | Where enforced today | Rung |
 |---|----------------|--------------------|----------------------|------|
-| 1 | **Mark a PR ready for review** | Decides the PR is worth the expensive review layers and reviewers' attention. Judgment + cost. | <git-workflow rule / instruction file — agents drive up to this line and stop> | ⚙️ Convention-only |
+| 1 | **Mark a PR ready for review** | Decides the PR is worth the expensive review layers and reviewers' attention. Judgment + cost. A repository may delegate it to an unattended review driver that marks Ready after its first completed review round; record that here. | <git-workflow rule / instruction file — agents drive up to this line and stop> | ⚙️ Convention-only |
 | 2 | **Merge a PR** | The irreversible landing decision — ships to shared branches. Irreversibility + accountability. | <branch protection + required checks (mechanical); the merge click is human> | Mechanical + convention |
 | 3 | **Production deploys & destructive/irreversible ops** | Highest blast radius: prod data mutation, destructive migration, secret rotation. Irreversibility + accountability. | <manual-trigger-only workflow; deployment environment with required reviewers if configured> | ⚙️ Convention-only unless environment approval is configured |
 | 4 | **Changing what automation can block or veto** | Flipping a reviewer or gate from advisory to blocking changes what the automation can stop a human from shipping. Judgment + accountability. | <documented posture near the gate config; CODEOWNERS on that config if mechanized> | ⚙️ Convention-only |

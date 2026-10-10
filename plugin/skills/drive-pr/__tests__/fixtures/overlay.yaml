@@ -1,0 +1,26 @@
+# Consumer configuration for the drive-pr suite: the review skill's fixture
+# values plus the drive loop's own fields, with neutral names.
+repository:
+  base_branch: develop
+gates:
+  command: bun run gates
+review:
+  bots: ["review-bot[bot]"]
+  job_pattern: ""
+  reviewer_app: example-review
+  deferral_team: TASK
+  repo_label: project
+  repo_slug: example/project
+  taxonomy:
+    types: [bug, feature, infra, docs, chore]
+    repos: [project, website, runner, reviewer, standards, toolkit, groundwork, billing]
+    sizes: [xs, small]
+    categories: [correctness, data-integrity, security, compliance, ux, performance, tests, docs, drift, style]
+    context_prefixes: ["agent:", "domain:", "codearea:"]
+    ownership_prefixes: ["agent:", "domain:"]
+    provenance_label: pr-followup
+    epic_label: epic
+drive:
+  # A stand-in plan command: the round-plan probes write their stub at this
+  # path inside each scratch repository.
+  validation_plan_command: bun tools/change-areas/resolve.ts --files - --format json

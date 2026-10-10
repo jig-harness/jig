@@ -14,8 +14,9 @@ automation, and the human checkpoints kept explicit.
 
 ## Invariant
 
-> PRs open as **drafts**; a human marks Ready and a human merges
-> ([HITL](../../GLOSSARY.md)). The **mandatory review steps are selected by
+> PRs open as **drafts**; Ready is marked by a human, or by an unattended
+> review driver the repository adopts once that driver has completed its first
+> review round; a human merges ([HITL](../../GLOSSARY.md)). The **mandatory review steps are selected by
 > what changed** (via the [M3](../M3-change-area-catalog/) change-area
 > catalog), not by reviewer memory. Every review comment ends **resolved with
 > an audit trail** — in one of a **closed set of terminal states, declared by
@@ -36,9 +37,11 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
 
 1. **Draft-first lifecycle** — a PR opens as a [draft PR](../../GLOSSARY.md) so
    CI and bots run while the author still owns it; marking it **Ready** is a
-   deliberate human act, and so is the **merge**. The narrative contract —
-   open draft → self-review → automated + human review → resolve loops → gates
-   green → Ready → merge → tracker update — is the copyable
+   deliberate human act unless the repository delegates it to an adopted
+   review driver, and the **merge** is always a human act. The narrative contract —
+   open draft → self-review → automated + human review → resolve loops (Ready
+   once the draft reviewers settle, then the rest review) → gates green →
+   merge → tracker update — is the copyable
    [`PR-LIFECYCLE.md`](templates/PR-LIFECYCLE.md).
 2. **Change-area-selected reviews** — *which* mandatory reviews a PR needs is a
    generated projection of the [M3](../M3-change-area-catalog/) catalog (a
@@ -124,9 +127,10 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    treating fork code as *data*, never executing it in the privileged context.
    The [PR-target safety lint](reference/pr-target-safety/) fails a workflow
    that checks out and runs untrusted PR head code in a secret-bearing job.
-10. **Explicit HITL boundaries** — the human-only decision classes (mark Ready,
-   merge, promote a reviewer to blocking, expand scope, override a human
-   thread) are listed once in [`HITL-REGISTRY.md`](templates/HITL-REGISTRY.md)
+10. **Explicit HITL boundaries** — the human-only decision classes (merge,
+   promote a reviewer to blocking, expand scope, override a human thread, and
+   mark Ready unless the repository delegates it to a review driver) are
+   listed once in [`HITL-REGISTRY.md`](templates/HITL-REGISTRY.md)
    rather than scattered across skills and habits, so autonomous runs know
    exactly where to stop.
 
@@ -188,7 +192,13 @@ The operated [review-resolution skill](../../plugin/skills/resolve-review-commen
 now ships as runnable TypeScript in the `groundwork` plugin, installed once per
 machine for Claude Code and Codex ([plugin/README.md](../../plugin/README.md)).
 It reads each repository's own configuration for tracker taxonomy, reviewers
-and gate commands at run time.
+and gate commands at run time. The same plugin ships the
+[PR drive loop](../../GLOSSARY.md) that wraps it for unattended work on one
+pull request ([`drive-pr`](../../plugin/skills/drive-pr/README.md)), the
+issue-pickup skill that starts a drive (`do-issue`), and the
+[Review Arbiter](../../plugin/agents/review-arbiter.md) agent that rules on
+contested findings
+([setup](../../plugin/README.md#the-drive-loop-and-issue-pickup)).
 
 | Source (docomply `develop`) | Landed as |
 |-----------------------------|-----------|

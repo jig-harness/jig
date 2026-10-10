@@ -2,7 +2,7 @@
 
 The module [invariant](README.md) — draft PRs, change-area-selected reviews,
 layered comment-only-until-proven reviewers, a resolve-every-thread loop, a
-human Ready + merge, reviewer code and policy independent of the reviewed
+Ready by a human or an adopted review driver, a human merge, reviewer code and policy independent of the reviewed
 change, and fork-safe wiring — is tool-independent. This file maps its
 mechanisms onto concrete forges, [review bots](../../GLOSSARY.md), agent
 runtimes, [CI](../../GLOSSARY.md) providers, and
@@ -426,6 +426,11 @@ GitHub Actions and GitLab CI.
 | GitHub / GitLab issues | a `hitl` label revokes autonomous merge for the linked PR; a PR-template checkbox "threads resolved / follow-ups filed" |
 | Linear / Jira | a `hitl` label (see [M0](../M0-instruction-architecture/) / [M9](../M9-tasks-memory/)) marks a deliverable whose merge stays human; deferred threads become linked follow-up issues, whose ids are the `deferred` gate's trail |
 
-The human checkpoints (**mark Ready**, **merge**, **promote a reviewer to
-blocking**) are enforced by forge settings + the [HITL registry](templates/HITL-REGISTRY.md),
-not by a script — a bot must not hold those.
+The human checkpoints (**merge**, **promote a reviewer to blocking**) are
+enforced by forge settings + the [HITL registry](templates/HITL-REGISTRY.md),
+not by a script — a bot must not hold those. **Mark Ready** is the one
+checkpoint a repository may delegate: an unattended review driver such as
+Groundwork's `drive-pr` marks a draft Ready once its first review round has
+completed, so reviewers that skip drafts spend their pass on a head the
+draft-reviewing reviewer has already cleaned. The driver's opt-out
+(`--keep-draft`) keeps the step human.

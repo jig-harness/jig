@@ -113,6 +113,45 @@ test("every shipped skill is named after its directory and avoids repository pat
   }
 });
 
+test("the plugin serves the drive loop's skills and agent from both manifests", () => {
+  const claude = json("plugin/.claude-plugin/plugin.json");
+  const codex = json("plugin/.codex-plugin/plugin.json");
+  const skills = ["drive-pr", "do-issue", "resolve-review-comments"];
+  const agents = readdirSync(join(root, "plugin", "agents"))
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => name.slice(0, -".md".length));
+  expect(agents).toContain("review-arbiter");
+  for (const name of skills)
+    expect(existsSync(join(root, "plugin", "skills", name, "SKILL.md"))).toBe(
+      true,
+    );
+  // Both tools load every skills/<name>/SKILL.md through "./skills/". Claude
+  // Code loads agents/ by default and an `agents` key would replace that
+  // scan; Codex plugins carry no agents (see plugin/README.md).
+  expect(claude.agents).toBeUndefined();
+  expect(codex.agents).toBeUndefined();
+  for (const manifest of [claude, codex])
+    for (const name of [...skills, ...agents])
+      expect(String(manifest.description)).toContain(name);
+});
+
+test("every shipped agent is named after its file and inherits the session's model", () => {
+  const dir = join(root, "plugin", "agents");
+  for (const file of readdirSync(dir).filter((name) => name.endsWith(".md"))) {
+    const text = readFileSync(join(dir, file), "utf8");
+    const frontmatter = text.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? "";
+    expect(frontmatter).toMatch(
+      new RegExp(`^name: ${file.slice(0, -".md".length)}$`, "m"),
+    );
+    expect(frontmatter).toMatch(/^description: \S/m);
+    // Model routing is the consumer's choice, so the agent runs on the
+    // invoking session's model; Claude Code ignores hooks, mcpServers and
+    // permissionMode in plugin agents, so declaring them would only mislead.
+    for (const field of ["model", "hooks", "mcpServers", "permissionMode"])
+      expect(frontmatter).not.toMatch(new RegExp(`^${field}:`, "m"));
+  }
+});
+
 test("setup defaults to the Groundwork repository and rejects unknown flags", () => {
   const previous = process.env.GROUNDWORK_MARKETPLACE;
   delete process.env.GROUNDWORK_MARKETPLACE;

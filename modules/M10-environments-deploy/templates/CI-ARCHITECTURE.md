@@ -38,7 +38,7 @@ Every pull request runs the quick, diff-scoped checks: format, lint, unit tests,
 type checks, the change-area-selected reviews (see
 [M7](../../M7-pr-lifecycle-review/)), and any security/link/table gates. These
 are necessary but **not sufficient** — they see the diff, not the integrated
-system. A human still marks Ready and merges. PR gates *inform* that decision;
+system. A human still merges. PR gates *inform* that decision;
 they do not certify production-readiness.
 
 ### Stage 2 — post-merge verification advances the `verified` pointer

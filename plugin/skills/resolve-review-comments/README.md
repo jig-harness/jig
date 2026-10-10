@@ -103,10 +103,13 @@ thread filter; consumer bot names do not silently widen it to human threads.
 [triage rubric](references/triage-rubric.md) determines materiality and scope;
 the [deferral protocol](references/deferral-protocol.md) requires a tracked
 follow-up before a deferred thread resolves. The executable deferral adapter
-currently targets Linear behind a tracker interface.
+files those follow-ups in Linear directly, through Linear's GraphQL API; it
+does not yet use the tracker interface that `do-issue` and `drive-pr` reach
+the tracker through, so another tracker needs its own deferral adapter.
 
 The skill works independently. A sibling `drive-pr` skill, found in the
-repository's own `.claude/skills/drive-pr`, adds lease
+repository's own `.claude/skills/drive-pr` or else beside this skill in the
+plugin, adds lease
 fencing, self-inflicted finding labels, summary-only finding checks, and durable
 round state. A missing sibling is supported and limitations are reported; a
 present but unreadable or incomplete sibling integration fails visibly. Without

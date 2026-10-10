@@ -45,7 +45,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [adoption/](adoption/) | Greenfield and brownfield adoption paths |
 | [seeds/](seeds/) | Imported source material awaiting integration |
 | [docs/](docs/) | Founding charter and background analysis |
-| [plugin/](plugin/README.md) | The `groundwork` plugin: agent skills for Claude Code and Codex |
+| [plugin/](plugin/README.md) | The `groundwork` plugin: agent skills (`drive-pr`, `do-issue`, `resolve-review-comments`) and the `review-arbiter` agent for Claude Code and Codex |
 | [tools/](tools/README.md) | Runnable development tools |
 
 ## Status
@@ -74,8 +74,12 @@ mise exec -- bun run gates
 
 The gate command checks formatting, lint, types, all gate self-tests, the build,
 Markdown links/tables/glossary coverage, and tracker-reference exclusions.
-GitHub Actions runs the same command on Linux, macOS and Windows. The tests
-use Bun's built-in runner; `bun test` runs them alone. `bun run format` formats
+GitHub Actions runs the same command on Linux, macOS and Windows; there the
+long drive-pr suite runs in its own job, split into four parallel
+[test shards](GLOSSARY.md) on Linux and macOS, and Windows leaves out the
+POSIX-only suites ([scripts/gates.ts](scripts/gates.ts) says which and why).
+The tests use Bun's built-in runner; `bun run test` runs them alone (it sets
+the per-test timeout the slower suites need). `bun run format` formats
 TypeScript and configuration; `bun run build` bundles the command entry points
 into the ignored `dist/` directory.
 

@@ -19,7 +19,8 @@ update and release the plugin is in [plugin/README.md](../../plugin/README.md).
   ```
 
 - [plugin.test.ts](plugin.test.ts) pins both plugin manifests and both
-  marketplaces to one name and version, checks every skill's name and paths,
+  marketplaces to one name and version, checks that both manifests serve the
+  shipped skills and agents, checks every skill's and agent's name and paths,
   keeps the vendored YAML parser identical to the pinned package, and runs the
   review skill's scripts from a copy outside this repository against a scratch
   consumer repository, the way a plugin cache holds them.

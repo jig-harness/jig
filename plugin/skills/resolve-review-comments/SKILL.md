@@ -120,9 +120,11 @@ pass — step 3's decline ladder requires it:
 
 ```bash
 set -o pipefail
+DRIVE_PR=.claude/skills/drive-pr
+[ -e "$DRIVE_PR" ] || [ -L "$DRIVE_PR" ] || DRIVE_PR="${CLAUDE_SKILL_DIR}/../drive-pr"
 bun "${CLAUDE_SKILL_DIR}/scripts/list-unresolved-threads.ts" [PR] [--bots-only] \
-  | if [ -e .claude/skills/drive-pr ] || [ -L .claude/skills/drive-pr ]; then
-      bun .claude/skills/drive-pr/scripts/self-inflicted.ts [PR]
+  | if [ -e "$DRIVE_PR" ] || [ -L "$DRIVE_PR" ]; then
+      bun "$DRIVE_PR/scripts/self-inflicted.ts" [PR]
     else
       cat
     fi
@@ -138,13 +140,16 @@ its left-hand subshell do not reach the right-hand subshell. In a shell where
 Bun is not on `PATH`, put whatever makes it available (for example
 `eval "$(mise activate bash)"`) in its own preceding statement.
 
-The `[ -e .claude/skills/drive-pr ] || [ -L .claude/skills/drive-pr ]` guard is
+`DRIVE_PR` names the sibling `drive-pr` skill the same way the scripts'
+sibling lookup does: the repository's own `.claude/skills/drive-pr` when one
+is present, else the `drive-pr` skill beside this one in the plugin. The
+`[ -e "$DRIVE_PR" ] || [ -L "$DRIVE_PR" ]` guard is
 the standalone-install case, same policy as § "One refusal you may meet" below:
 no `/drive-pr` installed at all means every record simply lacks
 `selfInflicted`/`selfInflictedCommit`, which step 3 already treats as
 `unknown` — a supported degrade, not an error. `-e` alone is not enough to
 detect "installed": it follows symlinks and reports false for a dangling one,
-so a broken `.claude/skills/drive-pr` symlink (target moved or removed) would
+so a broken `drive-pr` symlink (target moved or removed) would
 silently take the `cat` branch — indistinguishable from a clean standalone
 install even though it is the half-installed case below, not that one. `-L`
 catches it: true for a symlink whether or not its target resolves, so a
@@ -190,7 +195,7 @@ paginated:
   decline a finding whose real category should have admitted it.
 
   Both `severity` and `category` are appended only by `self-inflicted.ts` —
-  a standalone install (the `[ -e .claude/skills/drive-pr ] || [ -L …]` `cat`
+  a standalone install (the `[ -e "$DRIVE_PR" ] || [ -L …]` `cat`
   branch above) never runs it, so a record from that path carries **neither**
   field at all, not `unknown`. `--severity` and `--category` are both
   required flags that refuse an omission outright, so pass `unknown`
@@ -612,7 +617,7 @@ Once a value is safely held, `printf '%s' "$REPLY" | ...` is fine — quoted
 expansion does not re-evaluate contents.
 
 **One refusal you may meet that is not about the body.** If
-the repository has a `drive-pr` skill (`.claude/skills/drive-pr`), `reply-to-thread.ts` checks that
+a sibling `drive-pr` skill is present (the repository's own or the plugin's), `reply-to-thread.ts` checks that
 tree's drive lease immediately before posting and **exits 11** when another
 live agent session in the same working tree holds it. Two sessions in one tree
 put two outcome replies on every thread, which cannot be repaired once posted

@@ -16,7 +16,7 @@ groundwork work starts here.
 | 4 | Port M7 review-harness core + M8 learning loop | ✅ done 2026-07-20 (M7/M8 carry the full contract — see below) |
 | 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ✅ done 2026-07-20 (all five modules carry the full contract; auditor v1 scores M0–M12; greenfield folded in — see below) |
 | ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing (now the active mode — all modules M0–M12 ported) |
-| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and shipped as the `groundwork` plugin for Claude Code and Codex | kernel toolchain and plugin distribution implemented; remaining extraction work follows § Runnable tooling |
+| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and shipped as the `groundwork` plugin for Claude Code and Codex | kernel toolchain and plugin distribution implemented; PR drive loop move landing with plugin 0.3.0; remaining extraction work follows § Runnable tooling |
 
 ## Phase 2 remainder (all closed 2026-07-19; next work is Phase 3)
 
@@ -219,16 +219,18 @@ orders the move:
    ([plugin/README.md](plugin/README.md)).
 2. **Pilot** — `resolve-review-comments`, plus the low-coupling skills.
 3. **Issue-tracker planning cluster** — epic planning, batching,
-   prioritisation, follow-up; the tracker interface is drawn here.
+   prioritisation, follow-up, and the debt report. They reuse the
+   [tracker interface](GLOSSARY.md) that `do-issue` brought with the PR drive
+   loop move (step 5) and extend it with the operations they need.
 4. **Gates and workspace infrastructure** — the tooling every other step
    runs on: the change-area resolver (M3's reference implementation),
    cross-worktree locks and test infrastructure, remote gates, and the
-   runnable form of M12 (Herdr workspace lifecycle; its status board calls the
-   review skill's scripts and so moves with step 5).
+   runnable form of M12 (Herdr workspace lifecycle). Its status board stays
+   with the reference implementation for now and calls the plugin's scripts.
 5. **PR drive loop** — moves as one unit with the issue-pickup skill that
-   starts it and the review skill's remaining consumers, including the status
-   board and the debt report; see
-   [PR drive loop move](#pr-drive-loop-move).
+   starts it and the Review Arbiter agent; see
+   [PR drive loop move](#pr-drive-loop-move). Landing with plugin 0.3.0,
+   ahead of steps 3 and 4.
 
 Out of scope: the reference implementation's dev dashboard. It embeds that
 organization's own operating model (its tracker workflow, epics, decisions
@@ -374,6 +376,31 @@ alone would need another. The set therefore moves together:
    after Groundwork's gates and the moved suites pass, the reference
    implementation's own gates and tests pass with the built-in set absent, and
    the same checks have run under both Claude Code and Codex.
+
+**Status: landing with plugin 0.3.0.** Steps 1 and 2 are done. Step 3 moves
+into the plugin:
+
+- `drive-pr`, including its fleet-health and fractal-metrics reports;
+- the issue-pickup skill as `do-issue`, which reaches the tracker only
+  through the [tracker interface](GLOSSARY.md) and its Linear adapter;
+- the [Review Arbiter](GLOSSARY.md) as the plugin agent `review-arbiter`;
+- drive-pr's terminal-states consistency check and the rule document it
+  enforces.
+
+The organization's values for these arrive through new
+`.config/groundwork-overlay.yaml` fields
+([plugin/README.md](plugin/README.md#the-drive-loop-and-issue-pickup)).
+Groundwork's CI runs the drive-pr suite, split into four parallel shards on
+Linux and macOS, and the terminal-states check; Windows leaves out the
+POSIX-only drive-pr and `do-issue` suites
+([scripts/gates.ts](scripts/gates.ts)). The reference implementation's own
+copies, including its frozen review skill, are deleted in the paired step-4
+change.
+
+Stays with the reference implementation and calls the plugin: its Herdr
+status board, the drive-loop banner hook, the refocus hook, its dashboard
+collectors, and the debt report, which moves later with the planning
+cluster (step 3 of [Runnable tooling](#runnable-tooling)).
 
 Until then the reference implementation keeps its own built-in copy of the
 review skill, frozen: fixes land here first, a fix it needs is ported the

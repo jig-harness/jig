@@ -1,0 +1,39 @@
+# A consumer overlay for the do-issue suite: the shape the skill reads.
+issue_tracker:
+  adapter: linear
+  team: ENG
+  states:
+    in_review: Code Review
+do_issue:
+  agents:
+    default: Backend Agent
+    integrator: Full-Stack Integrator Agent
+    catalog:
+      backend: Backend Agent
+      frontend: Frontend Agent
+      devops: DevOps Agent
+      docs: Documentation Agent
+    codearea_areas:
+      codearea:backend: backend
+      codearea:web: web
+      codearea:docs: docs
+      codearea:database: migrations
+    labels:
+      agent:backend: Backend Agent
+      agent:frontend: Frontend Agent
+      agent:devops: DevOps Agent
+      agent:docs: Documentation Agent
+      codearea:backend: Backend Agent
+      codearea:database: Backend Agent
+      codearea:docs: Documentation Agent
+      domain:platform: Full-Stack Integrator Agent
+    title_keywords:
+      test: Tester Agent
+      doc: Documentation Agent
+  scouts:
+    Backend Agent: [Schema Scout, Constraint Validator]
+    Frontend Agent: [Test Pattern Finder]
+    Tester Agent: [Test Pattern Finder]
+    Documentation Agent: [Doc Structure Scout]
+    DevOps Agent: []
+  execution_plan_block: execution-plan-v1

@@ -16,11 +16,22 @@ when they run.
 
 | Skill | What it does | Invoke as |
 |-------|--------------|-----------|
+| [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/groundwork:drive-pr` |
+| [do-issue](skills/do-issue/SKILL.md) | Picks up one issue from the issue tracker, routes it to the right agent, implements it, opens a draft pull request and starts `drive-pr` on it | `/groundwork:do-issue` |
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/groundwork:resolve-review-comments` |
+
+The plugin also ships agents (a [subagent](../GLOSSARY.md) is a separately prompted helper
+that a skill hands a narrow job to):
+
+| Agent | What it does | Available as |
+|-------|--------------|--------------|
+| [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `groundwork:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
 Contents: [requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
 [configure a repository](#configure-a-repository) ·
+[drive loop and issue pickup](#the-drive-loop-and-issue-pickup) ·
+[Codex notes](#codex-notes) ·
 [update or remove](#update-pin-or-remove) ·
 [where it works](#where-it-works) · [troubleshooting](#troubleshooting) ·
 [how it works](#how-it-works) · [add a skill](#add-or-change-a-skill) ·
@@ -36,6 +47,13 @@ Contents: [requirements](#requirements) ·
   version in [mise.toml](../mise.toml).
 - **git** and the **GitHub CLI** (`gh`), signed in with access to the
   repositories you work on.
+- **macOS or Linux for `drive-pr`.** Its driver supervises agent processes
+  through POSIX process groups and signals, so it does not run on Windows.
+  The other skills run on all three systems.
+- **Issue-tracker access for `do-issue`** (and for `drive-pr`'s tracker
+  reads): with the Linear adapter, `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in
+  the environment, or the Linear MCP server or `linear` command line tool
+  signed in.
 - **Read access to this repository.** It is private, so git must be able to
   fetch it without asking for a password. The simplest setup:
   `gh auth login`, then `gh auth setup-git`. The install commands below use the
@@ -93,6 +111,18 @@ Plugin skills carry the plugin's name as a prefix.
   own when the request matches its description.
 - **Codex:** ask for it by name ("use the groundwork:resolve-review-comments
   skill on PR 123"), or type `@` and choose it.
+
+For example:
+
+```text
+/groundwork:do-issue ENG-123          # pick up an issue; opens a draft PR and starts a drive
+/groundwork:drive-pr 456              # start an unattended drive of PR 456 in the background
+/groundwork:drive-pr --interactive 456   # one round in this session, then stop
+/groundwork:resolve-review-comments 456  # one review-resolution pass, no drive
+```
+
+Skills call the `review-arbiter` agent themselves when a finding is
+contested; you do not invoke it by hand.
 
 Run the agent from inside the repository you want it to work on. The skills
 read that repository's configuration and refuse to run in a repository that has
@@ -163,10 +193,110 @@ committed: no copy of the skill, no install script, no generated files.
    (`"permissions": { "allow": ["Bash(pnpm *)"] }` in `.claude/settings.json`)
    or approve it when asked.
 
-Some skills integrate with a repository's own skills. For example
-`resolve-review-comments` uses a `drive-pr` skill when the repository has one
-in `.claude/skills/drive-pr`; the skill's README says what each integration
-adds and what happens without it.
+The skills find each other beside themselves in the plugin: `drive-pr` runs
+`resolve-review-comments` for each round, and `do-issue` starts `drive-pr`.
+A repository that still keeps its own copy of one of these skills in
+`.claude/skills/<name>` overrides the plugin's sibling, because the review
+skill prefers the repository's copy; delete such leftovers when you adopt the
+plugin's version.
+
+## The drive loop and issue pickup
+
+`drive-pr` and `do-issue` read the same configuration file as the review
+skill. Every field below has a default except `issue_tracker.team`, which the
+tracker scripts require. A drive also needs an AI reviewer that publishes the
+check run, sticky comment and reviewed-commit marker described in the
+[drive-pr README](skills/drive-pr/README.md#consumer-configuration); a
+repository configured only for `resolve-review-comments` does not have that
+yet. Add a field only when its default does not fit.
+
+```yaml
+repository:
+  base_branch: develop        # default: the repository's default branch on GitHub
+review:
+  reviewer_app: example-review   # GitHub App whose check runs show the AI reviewer ran; default: none (any app's check run with a reviewer-shaped name)
+drive:
+  validation_plan_command: "bun tools/change-areas/resolve.ts --files - --format json"
+                              # reads changed files on stdin, prints a JSON validation plan; default: run gates.command
+  load_guard_command: "bun tools/dev/load-guard.ts --wait"   # waits while the machine is busy; default: none
+  change_areas_catalog: tools/change-areas/catalog.yaml       # change-area catalog for area-aware reports; default: none
+  reviews_drafts: true        # does the AI reviewer review draft pull requests
+issue_tracker:
+  team: ENG                   # issue-tracker team key; required by the tracker scripts
+  adapter: linear             # which tracker adapter to use; Linear is the only one today
+  file_command: "linear issue create"   # how an agent files an issue by hand
+  states:                     # the tracker's own names for the workflow states
+    backlog: Backlog
+    todo: Todo
+    in_progress: In Progress
+    in_review: In Review
+    done: Done
+    canceled: Canceled
+    triage: Triage
+    ops_pending: Ops Pending
+    duplicate: Duplicate
+do_issue:
+  agents:                     # which agent implements an issue
+    default: general-purpose
+    integrator: integrator
+    labels: { frontend: frontend-dev }          # issue label → agent
+    catalog: { api: backend-dev }               # catalog agent name → agent
+    codearea_areas: { "area:billing": billing } # issue label → change-area key
+  scouts:                     # agent → the scouts sent ahead of it (a list per agent)
+    backend-dev: [schema-scout, api-scout]
+  gates:                      # extra review skills a pickup must run first
+    - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
+  execution_plan_block: execution-plan-v1   # fenced block name read from an epic's description
+fleet_health:
+  config: .config/fleet-health.yaml         # fleet-health settings file
+  snapshot_dir: ~/.local/state/groundwork/dashboard   # where snapshots are written; `~` is expanded
+```
+
+The agent and scout names above are examples; use the agents your repository
+defines. Note the direction of `do_issue.scouts`: it maps an **agent** to the
+list of scouts that run before it, not a label to a scout.
+
+**Where a drive keeps its state.** A drive records its rounds, locks and
+leases (a [lease](../GLOSSARY.md) is a short-lived claim that one session owns the pull
+request's threads) outside the repository, in a per-clone folder:
+`~/.local/state/groundwork/drive-pr/<clone>/` by default. Set
+`DRIVE_PR_STATE_DIR` to move it. A machine that drove pull requests with an
+earlier built-in copy of the skill moves its old state with
+`bun <skill-dir>/scripts/migrate-state-dir.ts --from <old-dir>`. The
+[verification-fit](../GLOSSARY.md) log (the agent's recorded verdicts on whether each round's
+required validation was worth its cost) defaults to the Groundwork state
+folder too; `GROUNDWORK_VERIFICATION_FIT_LOG` overrides it.
+
+**How the skills reach the issue tracker.** `do-issue` and `drive-pr` talk to
+the tracker only through a small [tracker interface](../GLOSSARY.md) (read an issue with its
+comments, list its children, change its state, post a comment, run the
+reports' queries). An *adapter* implements that interface for one tracker;
+`issue_tracker.adapter` chooses it, and Linear is the only adapter today.
+`issue_tracker.states` translates the skills' state names (`in_progress`,
+`done`, …) into the tracker's own. Supporting another tracker means adding an
+adapter, not changing the skills.
+
+The remaining knobs are environment variables named `DRIVE_PR_*` (round
+limits, timeouts, repair budgets); the [drive-pr README](skills/drive-pr/README.md)
+lists them.
+
+## Codex notes
+
+- **Skills** work in Codex as in Claude Code. Codex does not fill in
+  `${CLAUDE_SKILL_DIR}`; each `SKILL.md` tells the agent to substitute the
+  skill's own directory.
+- **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
+  skills, MCP servers, apps and hooks, but not agents; Codex reads custom
+  agents only from its own agent folders (`~/.codex/agents/` or a
+  repository's `.codex/agents/`). In a Codex session, hand a contested
+  finding to a subagent that is given
+  [`agents/review-arbiter.md`](agents/review-arbiter.md) as its
+  instructions, or define the arbiter once as a Codex custom agent from that
+  file.
+- **The drive's default pass command** starts Claude Code
+  (`claude -p "/groundwork:drive-pr <PR>"`). To drive with Codex, put a Codex
+  command after the `--` in the
+  [start command](skills/drive-pr/README.md#how-to-start-it).
 
 ## Call a skill's scripts from repository code
 
@@ -197,8 +327,8 @@ Paths inside the cache change with each release, so never store them.
   background: `/plugin` → **Marketplaces** → `groundwork` →
   **Enable auto-update**.
 - **Pin** a machine to a release tag: add the marketplace at that tag,
-  `claude plugin install groundwork --marketplace https://github.com/docomply/jig.git#v0.2.0`,
-  or `codex plugin marketplace add https://github.com/docomply/jig.git --ref v0.2.0`.
+  `claude plugin install groundwork --marketplace https://github.com/docomply/jig.git#v0.3.0`,
+  or `codex plugin marketplace add https://github.com/docomply/jig.git --ref v0.3.0`.
   Versions are chosen per machine, not per repository: every repository on a
   machine uses the same release, so releases keep reading older configuration
   files unless their notes say otherwise.
@@ -267,6 +397,7 @@ plugin/.claude-plugin/plugin.json        Claude Code plugin manifest
 plugin/.codex-plugin/plugin.json         Codex plugin manifest
 plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
+plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
 ```
 
 The plugin is a directory of its own rather than the repository root for two
@@ -321,7 +452,17 @@ of the plugin:
 - **Harness frontmatter:** fields only one tool reads (Claude Code's
   `allowed-tools`, `argument-hint`) are ignored by the other.
 - **Tests:** keep the skill's tests in `plugin/skills/<name>/__tests__/`; extend
-  `tools/plugin/plugin.test.ts` when the skill reads consumer files.
+  `tools/plugin/plugin.test.ts` when the skill reads consumer files. A suite
+  that needs a POSIX system is listed in `POSIX_ONLY_SUITES` in
+  [scripts/gates.ts](../scripts/gates.ts), with the reason, so Windows CI
+  leaves it out; a suite too long for the gate job goes in `SEPARATE_SUITES`
+  and gets its own sharded job in
+  [the gates workflow](../.github/workflows/gates.yml).
+- **Agents:** put them in `plugin/agents/<name>.md` with `name: <name>` in
+  the frontmatter. Claude Code loads that folder without a manifest entry;
+  do not add an `agents` key to the manifest, which would replace the
+  folder scan. Leave the model unpinned so the agent runs on the session's
+  model.
 
 ## Release a new version
 

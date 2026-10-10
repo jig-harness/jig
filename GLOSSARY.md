@@ -216,7 +216,21 @@ capitalized as commonly written; cross-references are *italicized*.
   lease that fences the working tree so two agent sessions never reply to the
   same thread, labels for findings the pull request's own earlier commits
   caused, checks for findings that appear only in a reviewer's summary, and
-  round state that survives between invocations.
+  round state that survives between invocations. Groundwork ships it as the
+  `drive-pr` skill, and the `do-issue` skill starts it when it opens a pull
+  request.
+- **Terminal state** — one of the named end states a *PR drive loop* stops
+  in (converged, waiting on a human, conflicting, pull request closed, …),
+  each with its own exit code, so a script or a person can tell from the
+  exit alone what to do next.
+- **Lease** — a short-lived, renewable claim recorded on disk that says which
+  session currently owns a piece of work, such as a pull request's review
+  threads. Other sessions read it and stand back; a lease whose holder died
+  expires instead of blocking forever.
+- **Review Arbiter** — the judgment-only agent the *comment-resolution loop*
+  hands a contested finding to when the triage rubric cannot settle it. It
+  reads the code, rules fix now, reject, won't fix, defer or escalate, and
+  never edits; only an escalation reaches a human.
 - **Moot (as a resolution)** — the terminal state for a review finding whose
   anchored code no longer exists: deleted or rewritten by a later commit.
   Distinct from *rejected* on purpose — rejected asserts the reviewer was
@@ -277,6 +291,28 @@ capitalized as commonly written; cross-references are *italicized*.
 - **mise** — a tool that installs the exact runtime version recorded by a repository.
 - **Hard link** — another filesystem name for the same file. Creating the name
   atomically lets a lock claim publish a complete owner record in one operation.
+- **Subagent (plugin agent)** — a separately prompted helper with its own
+  instructions and tool list that a skill or session hands one narrow job to.
+  A plugin can ship subagents beside its skills; Claude Code loads them,
+  Codex reads them only from its own agent folders.
+- **Tracker interface and adapter** — the small set of issue-tracker
+  operations a skill is allowed to use (read an issue, list its children,
+  change its state, comment), and one implementation of that set for a
+  particular tracker. The skills call only the interface, so supporting a new
+  tracker means writing an adapter, not editing the skills.
+- **Test shard** — one slice of a test suite's files, run as its own CI job
+  so a long suite finishes in a fraction of the time on parallel machines.
+- **Refocus** — putting a piece of work's *intent chain* (why it exists: the
+  epic's intent, the issue's scope and acceptance criteria) back in front of an
+  agent after its context is compacted, and at the start of each review round,
+  so a long session does not drift from the goal it started with.
+- **Verification fit** — an agent's recorded verdict on whether the checks a
+  review round was required to run matched the risk of the change: too strict,
+  proportionate, or too lenient. The verdicts are evidence for tuning which
+  checks a change must run; they never change a round's checks by themselves.
+- **Fractal metrics** — the delivery process's scoreboard across many pull
+  requests: review rounds, follow-up issues and escaped defects, each compared
+  with a recorded baseline.
 
 - **REST (Representational State Transfer)** — a convention for reading and
   changing service resources through ordinary web requests.

@@ -9,11 +9,11 @@ criteria:
     requires: convention
     statement: >-
       The PR lifecycle is written down once — open as a draft, self-review,
-      review, resolve threads, human marks Ready, human merges — and referenced
-      by the instructions.
+      review, resolve threads, Ready (by a human or an adopted review driver),
+      human merges — and referenced by the instructions.
     observe:
-      - "a pr-lifecycle doc states the draft -> review -> resolve -> ready -> merge loop"
-      - "it names marking Ready and merging as human-only steps"
+      - "a pr-lifecycle doc states the draft -> review -> resolve loop (Ready inside it) -> merge"
+      - "it names merging as a human-only step and says who marks Ready"
 
   - id: self-review-before-request
     level: lite
@@ -134,8 +134,10 @@ criteria:
     level: strict
     requires: mechanical
     statement: >-
-      Marking Ready and merging are mechanically reserved to humans — branch
-      protection requires a human actor and green required checks.
+      Merging is mechanically reserved to humans — branch protection requires
+      a human actor and green required checks. (Who may mark Ready is a
+      convention, scored under hitl-registry-published: GitHub and GitLab let
+      any writer take the draft-to-Ready transition.)
     observe:
       - "branch protection requires required checks + review before merge"
       - "automation cannot self-merge (no bot bypass of the human merge step)"
@@ -144,12 +146,15 @@ criteria:
     level: strict
     requires: convention
     statement: >-
-      The human-only decision classes (mark Ready, merge, promote a reviewer to
-      blocking, expand scope, overrule a human) are listed in one registry, and
+      The human-only decision classes (merge, promote a reviewer to blocking,
+      expand scope, overrule a human, and mark Ready unless delegated to a
+      review driver) are listed in one registry, and
       a hitl label revokes autonomous merge.
     observe:
       - "a HITL decision registry enumerates the human-only decisions with a trigger each"
       - "a hitl label is defined and revokes autonomous merge for the linked PR"
+      - "the registry names who may mark Ready: humans, plus the review driver when the repository delegates to it"
+      - "on recent PRs, every draft-to-Ready transition was made by a human or by the declared review driver"
 
   - id: reviewer-promotion-gated-on-measurement
     level: strict

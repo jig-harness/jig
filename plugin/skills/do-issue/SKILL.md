@@ -1,0 +1,1113 @@
+---
+name: do-issue
+description: "Pick up one tracker issue and carry it to a driven pull request: scout, delegate, review, open the draft, arm the drive."
+argument-hint: "[issue-key]"
+allowed-tools: "Read Grep Glob Task Bash(bun *) Bash(git *) Bash(gh *) WebFetch AskUserQuestion"
+---
+
+# Do Issue — start or continue work
+
+Take one issue from the issue tracker and move it forward: on first pickup,
+mark it started, gather context, hand the implementation to the right agent,
+review the result and open a draft pull request (PR) whose review loop runs on
+its own; on a later invocation, continue where the work stands. An issue with
+sub-issues (an epic) is worked one sub-issue at a time, and its own status is
+kept in step with its children.
+
+Without this skill, each pickup is improvised: status moves are forgotten,
+context found by one session is lost to the next, mandatory reviews depend on
+someone remembering them, and a finished PR sits unreviewed until a human
+notices it.
+
+Groundwork maintains this procedure and ships it as the `groundwork` plugin.
+Each repository supplies its own values in `.config/groundwork-overlay.yaml`
+(see [Consumer configuration](#consumer-configuration)); the repository's own
+instructions supply its policy, label taxonomy and validation commands.
+
+### Paths and working directory
+
+`${CLAUDE_SKILL_DIR}` in the commands below stands for the absolute path of the
+directory containing this `SKILL.md`. Claude Code fills it in. In any other
+harness, replace it with that path yourself before running a command: a shell
+would expand the unset variable to an empty string. Sibling skills are reached
+the same way, e.g. `${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts`.
+
+Run every command from the root of the repository the issue belongs to. Never
+`cd` into the skill directory: the scripts find the repository and its
+configuration from the working directory.
+
+### How to read the step markers
+
+- **exact** — follow as written; substitute only the documented inputs and
+  explicitly supported options.
+- **judgment** — the shape shown is illustrative (for example a tool call in
+  one harness); use the available equivalent while keeping the required
+  fields, guards and data flow.
+
+### Consumer configuration
+
+Every field except `issue_tracker.team` is optional. The skill reads them at
+run time from `.config/groundwork-overlay.yaml`:
+
+| Field | What it sets | When absent |
+|-------|--------------|-------------|
+| `issue_tracker.adapter` | Which tracker adapter the scripts use (`linear` today; credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`) | `linear` |
+| `issue_tracker.team` | The tracker team or project the repository files into, as the key its issue identifiers carry (`ENG` for `ENG-123`) | Required: the tracker scripts stop with a message naming this field |
+| `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
+| `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
+| `do_issue.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
+| `do_issue.scouts` | Pre-flight scouts per agent, `{agent: [scouts]}` | No scouts |
+| `do_issue.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
+| `do_issue.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
+| `drive.change_areas_catalog` | Path to the repository's change-area catalog (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
+
+Canonical state keys are `backlog`, `todo`, `in_progress`, `in_review`,
+`done`, `canceled`, and optionally `triage`, `ops_pending` and `duplicate`.
+This document names states by key; read "`in_progress`" as "the tracker's
+name for it from `issue_tracker.states`".
+
+The skill also reads these labels by name, as conventions: `epic`, `hitl` and
+its `hitl:<stakeholder>` facets, `manual-ops`, `pr-followup`, a bug type label
+(`bug` or `type:bug`), `pattern:<slug>`, and the size labels `xs`, `small`,
+`medium`. A repository that does not use a label simply never triggers its
+rule.
+
+### Tracker operations
+
+The scripts reach the tracker through the tracker port in
+`${CLAUDE_SKILL_DIR}/scripts/lib/tracker/`, whose adapter the overlay's
+`issue_tracker.adapter` selects. A harness with a native integration for the
+same tracker may use it instead; the Linear forms are given as the adapter
+example.
+
+| Operation | Script form | Adapter example: Linear (MCP) |
+|-----------|-------------|-------------------------------|
+| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" <KEY>` | `mcp__linear__get_issue` (no children field) |
+| List comments | `bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" <KEY>` | `mcp__linear__list_comments` |
+| List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children <KEY>` | `mcp__linear__list_issues` with a parent filter |
+| Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition <KEY> <canonical-state>` | `mcp__linear__save_issue` with `state: <mapped name>` |
+| Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment <KEY> < body.md` | `mcp__linear__save_comment` |
+| File a new issue | The consumer's `issue_tracker.file_command` | — |
+
+Issue keys in this document look like `ENG-123`.
+
+### Asking the user
+
+Where this skill says "ask the user", use `AskUserQuestion` under Claude Code;
+in any other interactive harness, ask a plain-text numbered question and end
+the turn. Never pick on the user's behalf.
+
+## In the delivery loop
+
+- **Upstream**: whatever picks the work — the consumer's planning tooling or
+  a human — decides *which* issue to pick up. New issues are filed with
+  `issue_tracker.file_command`.
+- **Sideways**: if the consumer has a batching skill, a small issue whose
+  change area has siblings may be better closed together with them in one PR.
+  Step 4a checks and *suggests*; it never batches silently.
+- **Downstream**: this skill opens the draft PR and arms
+  `/groundwork:drive-pr`, which owns every review round from there.
+
+## Workflow
+
+### Step 1: Fetch the issue
+
+**exact** — `$ARGUMENTS` is the issue key.
+
+**Launcher context (optional).** A consumer's launcher (for example a script
+that opens a workspace straight from the tracker) may pre-fetch the issue and
+hand it over, typically as a cache file its instructions name, carrying
+`description`, `comments`, `sub_issue_ids` and `linked_issue_ids`. Use it only
+when it is fresh: under 30 minutes old, which must survive workspace setup
+between launch and agent start. Its comments count as in hand only when it
+carries an explicit comments array (`comments_cached: true`); a
+description-only context is not "an issue with no comments". Use
+`sub_issue_ids` instead of a children fetch when non-empty, and
+`linked_issue_ids` as background for scope. Log which context you used. Still
+fetch labels, state and parent below: launcher context never carries them.
+
+Fetch the issue with the script form:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "$ARGUMENTS"
+```
+
+It works for every adapter and also returns `sub_issue_analysis`. If it
+cannot run here (for example no tracker credential in this environment) and
+the harness has a native integration for the tracker, use that instead
+(**judgment** — Linear: `mcp__linear__get_issue({ id: "$ARGUMENTS" })`).
+
+Record which one succeeded as `trackerTransport` (`"script"` or `"native"`).
+Every later tracker call branches on this recorded value rather than
+re-deciding, so a run never calls the script on a host that only has the
+native integration, or the reverse.
+
+**If not found**: display the error with the script's suggestions.
+
+### Step 2: Check for prior scout findings
+
+**exact** — Fetch the complete comment context and use the selector result;
+do not judge freshness by hand.
+
+Comments are already in hand only when launcher context carried
+`comments_cached: true`. Otherwise fetch them on the recorded transport:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "$ARGUMENTS"
+```
+
+(**judgment** — native, Linear: `mcp__linear__list_comments({ issueId: "$ARGUMENTS" })`.)
+
+Exit `0` prints a JSON array of `{ body, createdAt }`; an empty array is a
+legitimate "no comments yet". A non-zero exit means the tracker is
+unreachable: treat it as "no findings comment" and take the `run` action
+below, rather than blocking on a store nothing can reach.
+
+A long-running issue can carry several **Scout Findings** comments. Choosing
+the newest and judging its freshness is a tested script, not hand-run prose:
+
+```bash
+echo "$COMMENTS_JSON" | bun "${CLAUDE_SKILL_DIR}/scripts/select_scout_finding.ts" --current-hash "$(git rev-parse --short HEAD)"
+```
+
+Pass the comment array through verbatim; each comment needs `body` plus
+whichever of `created_at` or `createdAt` it carries. The script keeps comments
+whose body opens with `## Scout Findings` and returns
+`{"action", "selectedIndex", "selectedHash", "reason"}`:
+
+| `action` | Means | Do |
+|----------|-------|----|
+| `reuse` | Same git hash as `--current-hash`, or the selected comment is under 24 hours old | Reuse the findings at `selectedIndex`; skip scouts |
+| `rerun` | Different or unreadable hash, and the timestamp is stale (missing, unparsable, in the future, or 24 hours or older) | Re-run scouts; post a fresh findings comment |
+| `run` | No findings comment | Run scouts; post one |
+
+Freshness fails closed: a timestamp counts as fresh only when it parses to a
+finite, non-negative age under 24 hours.
+
+### Step 3: Determine issue type
+
+**exact** — Route solely on whether the issue has sub-issues.
+
+- **No sub-issues** → Step 4a.
+- **Has sub-issues** → Step 4b.
+
+### Step 3.5: Write the intent-chain snapshot (Refocus)
+
+**exact** — Use the documented mapping and writer.
+
+The intent chain is the short statement of *why* this work exists — the
+epic's intent, the issue's scope and acceptance criteria — that
+[Refocus](https://github.com/docomply/jig/blob/main/GLOSSARY.md) puts
+back in front of an agent after its context is compacted, and at the top of
+every review round. Every invocation, first pickup and resume alike, writes
+`.context/intent-chain/<identifier>.md`.
+
+Item snapshots stay keyed by identifier for lookups outside a PR. Interactive
+Refocus reads only `.context/refocus-state/<session>.intent-chain.md`, a full
+copy atomically refreshed by that session's own pickup. The writer prefers
+`CLAUDE_CODE_SESSION_ID`, then `CODEX_THREAD_ID`. A later pickup by another
+session cannot replace this copy, even when it overwrites an item alias.
+Sessions without a matching copy inject nothing: they never guess from the
+branch or the shared `.current`. A fresh session must run pickup before
+Refocus can inject its chain. The injection itself is an optional consumer
+hook (for example a `refocus.sh` run on session start and on each prompt)
+that reads the session copy; the hook may additionally use its payload's
+`session_id`.
+
+Each successful write also emits `pickupId`, an immutable, content-addressed
+archive of the rendered chain and the identifiers it owns. Keep that token in
+the session's task notes and the worktree handoff. Later pickups cannot
+overwrite it. Archives unused for 90 days are pruned; a missing token or an
+expired archive is a missing source, never permission to guess from an item
+alias or `.current`.
+
+After opening the draft PR, pin this pickup before arming the drive:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/capture-intent-chain.ts" <PR> --pickup <pickupId>
+```
+
+Capture verifies the open PR, its head branch and an owned identifier. A later
+capture can use the original token even after another pickup; existing valid
+pins stay first-write-wins unless explicitly refreshed. If `pickupId` is null
+or capture refuses, report the missing chain and triage against the PR and the
+linked issue. Never substitute another pickup's token. The budget and
+truncation rules live only in `scripts/intent-chain.ts`; the hook and the
+drive re-apply its 4,000-character ceiling as a backstop and nothing more.
+
+Build the input from what Step 1 fetched, plus the issue's parent (a second
+get-issue call) when it has one:
+
+- **No sub-issues (Step 4a):** `epic` = the parent, `issue` = this issue.
+- **Has sub-issues and the `epic` label:** skip the write here. Step 4b writes
+  it once a sub-issue is selected, with this issue as `epic` and the selected
+  sub-issue as `issue`, so the calibration arm is bucketed by the sub-issue:
+  the unit each PR delivers.
+- **Has sub-issues, no `epic` label:** `epic` = the parent, `issue` = this
+  issue. Step 4b rewrites it with the selected sub-issue added as `subIssue`.
+
+Each entry is `{ identifier, title, updatedAt, description }`, copied verbatim
+from the tracker. Serialize the object as **one line** of compact JSON (every
+newline inside a description becomes an escaped `\n`) and pass it on stdin
+through a quoted heredoc. A one-line JSON body can never equal the heredoc's
+delimiter line, so tracker text cannot end the heredoc early:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/intent-chain.ts" <<'INTENT_CHAIN_JSON'
+{"epic":{"identifier":"ENG-100",…},"issue":{"identifier":"ENG-123",…}}
+INTENT_CHAIN_JSON
+```
+
+The script prints `{ path, sessionPath, pickupId, chars, arm, truncated, pointerErrors }`.
+`arm` is the Refocus calibration bucket: odd issue numbers are on and even
+ones off, unless `GROUNDWORK_REFOCUS=1|0` overrides it. When the arm is off,
+the snapshot is still written but nothing injects it. A non-zero exit never
+blocks the work: say in the status message that the snapshot was not written
+— or, when `pointerErrors` is non-empty, only partially (the content landed
+but an alias or pointer write failed, so a reader may see a stale or missing
+chain) — and continue.
+
+**When no hooks are loaded** (a harness without a hook system, or hooks not
+yet trusted): if the arm is `on`, re-read the writer's `sessionPath` after
+every compaction and before each review round, and answer its questions
+before your next step. Alongside each read, refresh the copy's retention
+clock (`touch <sessionPath> 2>/dev/null || true`, best effort): the writer
+prunes session copies untouched for 14 days, and a plain read does not update
+that time. If the copy is missing, or `sessionPath` is null or its write
+failed, preserve the tracker context fetched for this invocation in your
+handoff rather than reading another session's chain; never replace it with an
+identifier-keyed file or `.current`, which are mutable lookup sources. PR
+review rounds use the PR pin instead.
+
+### Step 4a: Standard start (no sub-issues)
+
+**judgment** — Scope the implementation, scout patterns and assess review
+findings against the issue. The status writes, scripts, templates and gate
+routing below remain **exact**.
+
+> **Batch check (issues labelled `xs`, `small` or `medium`), only if the
+> consumer has a batching skill.** Review cost is largely per PR, so several
+> small closures sharing one review cycle cost about what one does, and
+> parallel single-issue PRs over the same files become merge conflicts. Run
+> the batching skill's candidate check for this issue, telling it this
+> issue's repository and, when Step 1 shows the issue is already assigned to
+> you, that it is claimed by you — otherwise the check may read the anchor
+> issue itself as someone else's work and drop it from its own proposal. If
+> it proposes three or more coherent siblings, **suggest** the batch, naming
+> the keys, and let the human or the prompt decide. Never batch silently: the
+> human asked for this issue. Skip the check, and say so, when the issue
+> carries a sensitivity flag or is **urgent** priority: a batch built around
+> it could only proceed by deprioritising the very issue you were asked to
+> complete.
+
+> **Bug pattern pre-scout (bug issues without pattern evidence).** Run only
+> if all hold: (a) the issue carries the bug type label; (b) its body has no
+> `## Pattern` section, no `pattern:<slug>` label and no "Pattern scout ran"
+> line; (c) the bug is generalizable — a class of mistake likely repeated
+> elsewhere (a missing authorization or ownership filter, an off-by-one, a
+> swallowed error, a missing `await`, an unparameterized query, a hidden
+> dependency on the wall clock), not a typo, a single content fix or a
+> one-off data regression. Spawn one fast, inexpensive explore scout for
+> sibling occurrences of the same class before delegating. Three or fewer
+> mechanically identical siblings: add them to the delegation prompt as
+> further locations to fix in the same PR. Four or more, or siblings spanning
+> several owners or modules: **stop**, post a tracker comment listing them,
+> and ask the user whether to (1) expand this issue's scope, (2) file the
+> siblings as separate `pattern:<slug>` issues via `issue_tracker.file_command`,
+> or (3) fix the single instance and accept the latent debt. Never silently
+> fix one instance when the scout shows many: the next agent re-fixes the
+> same class. Skip the pre-scout, and say so, when the issue is clearly
+> isolated or already carries the evidence.
+
+> **Frontmatter pre-flight (documentation changes).** If the repository
+> validates documentation frontmatter against a schema and the plan proposes
+> frontmatter values (status, tags, lifecycle), check them against that
+> schema before delegating. Do not let the implementing agent invent values
+> from convention; fix the plan in the issue body first. The repository's
+> commit hook may catch it too, but pre-flighting saves a round trip.
+
+1. **exact** — **Mark the issue started** (if not already active): transition
+   it to `in_progress` and assign it to yourself.
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "$ARGUMENTS" in_progress
+   ```
+
+   (**judgment** — native, Linear:
+   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`.)
+
+2. **exact** — **Determine the agent and scouts**:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" issue.json
+   ```
+
+   It reads the issue JSON from Step 1 (a path, or `-` for stdin) and the
+   consumer's routing from the overlay:
+
+   - `do_issue.agents.default` — the agent when nothing else matches
+     (`general-purpose` when `do_issue.agents` is absent).
+   - `do_issue.agents.codearea_areas` — `{label: areaKey}`: an area label
+     selects an area in the change-area catalog (`drive.change_areas_catalog`),
+     and that area's own `agent` field is the primary signal.
+   - `do_issue.agents.catalog` — `{catalogAgent: agent}`: maps the catalog's
+     `agent` values to agent types.
+   - `do_issue.agents.labels` — `{label: agent}`: the fallback when no catalog
+     area matches.
+   - `do_issue.agents.title_keywords` — `{keyword: agent}`, optional: a last
+     resort matched against the title.
+   - `do_issue.agents.integrator` — the agent used when the issue routes to
+     several agents at once.
+   - `do_issue.scouts` — `{agent: [scouts]}`: the pre-flight scouts for the
+     chosen agent.
+
+   For example, a repository might route `agent:backend` to a "Backend Agent"
+   whose scouts are a schema scout and a constraint validator. Unless Step 2
+   returned `reuse`, spawn the scouts it names.
+
+3. **exact** — **Persist the findings to the tracker**: post a comment whose
+   first line is exactly `## Scout Findings (<hash>)`, where `<hash>` is
+   `git rev-parse --short HEAD`. That heading is the exact shape
+   `select_scout_finding.ts` parses in Step 2; any other wording makes the
+   hash unreadable on the next pass. The tracker is the store because the
+   findings must survive worktree deletion and be readable by a different
+   harness.
+
+   Scout findings are free-form generated text, so the body must never be
+   spliced into shell source — not in a double-quoted string, and not in a
+   heredoc with a fixed delimiter: a heredoc closes on any line equal to its
+   delimiter, so a body containing that line would end it early and run the
+   rest as shell. Pick a long, freshly invented random delimiter (never a
+   fixed string), confirm the body contains no line equal to it, and pipe the
+   body into the comment operation in one command:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "$ARGUMENTS" <<'<RANDOM_DELIMITER>'
+   ## Scout Findings (<hash>)
+
+   <findings body>
+   <RANDOM_DELIMITER>
+   ```
+
+   (**judgment** — native, Linear: `mcp__linear__save_comment` with the same
+   body; it takes the body as a parameter, so no shell is involved.)
+
+   A non-zero exit means the tracker cannot be written right now: proceed
+   with delegation anyway. The findings still live in this session for the
+   delegation prompt.
+
+4. **judgment** — **Delegate to the agent**: use the Task tool with
+   `subagent_type` from `determine_agent.ts`.
+
+   **Review gates — MANDATORY when declared.** Each entry of the overlay's
+   `do_issue.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
+   applies when the issue carries one of its `labels`, or the change will
+   plausibly touch one of its `paths`. For every applicable gate, end the
+   delegation prompt with this directive, verbatim except for the
+   substitutions:
+
+   > **Stop after authoring — do not commit and do not open a PR.** Report
+   > back (a) every file you created or modified that matches `<paths>` and
+   > (b) any other files that depend on those changes. The orchestrator will
+   > run `/<skill>` on them before green-lighting the commit. If it returns
+   > any `CRITICAL` finding, expect a follow-up to fix it; approval is required
+   > before commit.
+
+   When several gates apply, use one combined directive that lists every
+   gate's report items and skills in a single final block, so no gate is
+   omitted.
+
+   **After the agent returns, the orchestrator must:**
+
+   1. Run each applicable gate's skill over the reported files.
+   2. If any returns `REJECT` or `CRITICAL`, loop: send the findings to the same
+      agent with "fix and re-report paths", then review again.
+   3. Only after every gate approves, commit, run the validation plan and
+      open the PR.
+   4. If a PR number is already known (for example a re-review after a later
+      push), let the gate skill post its result on the PR when it supports
+      that.
+
+   **Escape hatch:** if the agent reports no file matching a label-triggered
+   gate's `paths` (the label over-applied), the orchestrator may skip that
+   gate, but **must** say in its status message "skipping /<skill> because: no
+   matching files touched". A silent skip is never acceptable. Gates exist
+   because a review rule kept only as convention fails silently every time
+   it slips someone's mind; this step turns it into orchestration.
+
+   **Human-in-the-loop (HITL) gate (applies to Step 4a and 4b):**
+
+   Read the issue's flag labels before delegating. If it has a parent, also
+   read the parent's current description, for direct pickup and Step 4b
+   selection alike, and run `select_execution_issue.ts` on it (see Step 4b):
+   its `gates` output may name this issue as a human gate with a reason. Treat
+   that as a human checkpoint with the same stop-and-clearance rule as
+   `hitl`. If the parent cannot be read, or its Execution Plan section is
+   missing its machine-readable block or the block is malformed, do not
+   delegate until the gate status can be checked (re-run the planner that
+   wrote it, e.g. a plan-epic skill, if the repository has one). A parent
+   without any Execution Plan has no plan gate. A plan cannot cancel a live
+   `hitl` label.
+
+   `hitl` is a restriction flag. Autonomy is the **default**: every issue
+   runs end to end (author → validation → commit → push → PR) unless `hitl`
+   or the parent plan's human gate applies. `hitl` exists for issues whose
+   deliverable *is* human judgment — spikes, research, root-cause analyses,
+   design decisions, plans, customer-facing copy, irreversible cutovers.
+
+   - **Neither `hitl` nor a plan human gate (default)** → proceed end to end
+     without pausing. After validation passes, run the **Pre-PR code review
+     gate** below, then open the draft PR (`gh pr create --draft`). A draft
+     is cheap, and CI feedback is valuable; the human still decides what
+     merges. Do **not** ask the user to pre-confirm the PR.
+   - **`hitl` or a plan human gate present** → do **not** delegate
+     implementation: the issue asks for judgment, not code. Run scouts,
+     summarise options, findings and a recommendation in a tracker comment,
+     and await explicit direction. If the human asks you to proceed anyway,
+     that is clearance: execute end to end on this run. Read the
+     `hitl:<stakeholder>` facets when present (for example `product`,
+     `technical`, `legal`, `commercial`); otherwise use the plan gate's
+     reason to name the responsible stakeholder. If a `hitl` issue carries no
+     facet, add the fitting one when you comment. For a `hitl:technical`
+     architectural call, use the repository's decision skill if it has one,
+     so the escalation arrives as a fixed record: options, what would have to
+     be true for each, and what would reverse the call.
+
+   This is **orthogonal** to the review gates: those run regardless of
+   `hitl`. `hitl` adds a human checkpoint; it never substitutes for an
+   automated gate, and its absence never bypasses one. Halting every
+   unlabelled issue for clearance would stall a fleet of agents on routine
+   work, because labelling lags reality; so agents open PRs by default and
+   humans gate *merges*, not *pushes*.
+
+   **Pre-PR code review gate (mandatory unless the diff is tiny):**
+
+   Run it after the implementing agent finishes and the validation plan
+   passes, **before** `git push` / `gh pr create --draft`. The validation plan is
+   the one the change-area catalog emits for the complete workspace change
+   when `drive.change_areas_catalog` is declared, and the repository's gate
+   command otherwise; do not substitute a fixed command list. `<base>` below
+   is the branch the PR will target (e.g. `origin/main`).
+
+   **Skip condition — fewer than 20 non-test lines changed (Tiers 1–3 only):**
+
+   ```bash
+   git diff <base>...HEAD -- \
+     ':!*.test.ts' ':!*.spec.ts' ':!*.test.tsx' ':!*.spec.tsx' ':!**/__tests__/**' \
+     | grep -c '^[+-][^+-]'
+   ```
+
+   Adjust the test-file patterns to the repository's languages. If the count
+   is under 20 (or zero), skip Tiers 1–3 and log
+   `"Pre-PR review skipped: N non-test lines changed (threshold: 20)."` The
+   skip does **not** extend to the catalog's `reviewSkills` or the runbook pass
+   below: a one-line change can still touch an area with a mandatory
+   specialist review.
+
+   **Runbook pass — unconditional when operator documentation changes.** If
+   the diff adds or changes any prescribed executable command in operator
+   documentation (runbooks) — in a fenced block or inline, with any binary —
+   run a dedicated reviewer pass over that runbook and treat its `CRITICAL`
+   findings as PR blockers in the **Fix loop** below. Point the reviewer at
+   the runbook explicitly: a whole-diff prompt spends its attention on code
+   and skims prose. It is mandatory because nothing else reads it — no
+   linter, type check or test runs a command written in a Markdown file —
+   and the 20-line skip does not apply, since a five-line edit to a
+   production step is exactly the change that most needs a reader. Run
+   `shellcheck` over the extracted shell blocks and fix what it reports;
+   install it first if `command -v shellcheck` finds nothing. Check:
+
+   - **Network calls (`curl`, `wget`, …)**: are the scheme and host checked
+     against an allowlist tied to the intended target? A size- and
+     time-bounded request can still reach a cloud metadata address or
+     another internal host; limits are an additional requirement, never a
+     substitute for the host check.
+   - **Credentialed commands (`gh`, cloud CLIs)**: does the step rely on
+     ambient credentials without stating which identity and scope, and could
+     a wrong identity silently succeed against the wrong target?
+   - **Destructive commands (`rm`, deletes, anything without undo)**: is the
+     target validated (no glob that could match wider than intended), and is
+     there a confirmation or dry-run step before the irreversible one?
+   - **Any prescribed command**: does variable input reach a shell unquoted,
+     including a one-liner assembled from an earlier step's output?
+
+   Apply any infrastructure-specific runbook checklist the repository
+   defines in addition, wherever its own trigger matches.
+
+   Regardless of whether Tiers 1–3 were skipped, invoke every skill in the
+   catalog's deduplicated `reviewSkills` for the touched areas once, and
+   treat a blocking result (`CRITICAL` or `REJECT`) as a PR blocker in the **Fix
+   loop**. Reuse an earlier review-gate approval for the same skill only
+   while its reviewed files are unchanged; rerun it after any fix touches
+   them — a stale approval does not cover the code the PR now ships.
+
+   **Tier 1 — Pattern checks (fast scout):** give a fast, inexpensive model
+   `git diff <base>...HEAD` (non-test files) and the repository's documented
+   coding rules (its agent instructions and any machine-readable rules file).
+   `CRITICAL` violations **block**: fix before proceeding.
+
+   **Tier 2 — Contract validation (parallel):** run the repository's own
+   contract and drift checks for the artifact types present — for example
+   database schema drift, generated API specification freshness, hand-written
+   type mirrors of a schema, and authorization or data-isolation filters on
+   queries. Tier 2 findings are **warnings** (non-blocking; include them
+   verbatim in the PR description under `## Review Notes`).
+
+   **Tier 3 — Semantic review:** spawn the strongest available reviewer with
+   the full diff, the issue description and acceptance criteria, and the
+   relevant framework context. It covers correctness and edge cases,
+   security (authorization, data isolation, injection), compliance with the
+   repository's architecture decisions and forbidden patterns, the domain
+   vocabulary the repository defines, boundary validation, and performance
+   red flags. If a review gate already ran on this change, the Tier 3
+   reviewer references its result but does not re-run it. Tier 3 `REJECT`
+   findings **block** the PR.
+
+   **Verdict summary format** (**exact** — keep the structure; fill the
+   values from this run):
+
+   ```
+   PRE-PR REVIEW SUMMARY
+   ──────────────────────────────────────────────
+   Files Reviewed:  <N>
+   Non-test lines:  <N>
+
+   Tier 1 (Patterns):  ✅ PASSED | ❌ BLOCKED   (rules checked: N, violations: N)
+   Tier 2 (Contracts): ✅ PASSED | ⚠️ WARNINGS  (per-check status)
+   Tier 3 (Semantic):  ✅ APPROVED | ❌ REJECTED
+   reviewSkills:       ✅ APPROVED | ❌ BLOCKED  (per-skill status; N/A if empty)
+   Runbook pass:       ✅ APPROVED | ❌ BLOCKED  (shellcheck: N findings; N/A if no runbook command changed)
+
+   VERDICT: APPROVED | APPROVED WITH WARNINGS | BLOCKED
+   Action:  <next step if not APPROVED>
+   ```
+
+   **Fix loop — if `BLOCKED` or `REJECTED`:** collect every `CRITICAL` and `REJECTED`
+   finding, including blocking `reviewSkills` and runbook results. Spawn the
+   same implementing agent type with every finding and the instruction:
+   *"Fix all `CRITICAL` and `REJECTED` findings. Warnings do not require fixes —
+   they will be noted in the PR body."* When it returns, re-run the complete
+   validation plan, then the whole gate again, including every
+   `reviewSkills` entry under the reuse rule above. Loop until the verdict is
+   `APPROVED` or `APPROVED WITH WARNINGS`.
+
+   - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings verbatim under
+     `## Review Notes` in the PR body, then push.
+   - **`APPROVED`**: `git push -u origin <branch>`.
+
+   **Pre-push hook failure protocol:** when the repository's pre-push hook
+   fails (type check, lint, tests), classify before acting:
+
+   1. **exact** — Run the failing command locally and capture the full error
+      list.
+   2. **judgment** — Classify each error:
+      - **Related**: a file, symbol or test this branch touches
+        (`git diff --name-only <base>...HEAD`), or a consumer of a changed
+        export. Fix it.
+      - **Unrelated**: a failure already on `<base>`, a flaky test, an
+        environment problem (network, missing secret, service not running,
+        port in use), or an error in a file this branch did not touch.
+   3. **judgment** — If only unrelated errors remain: do not bypass the hook.
+      Rebase onto a green `<base>`, repair the shared failure when it is
+      safely in scope, or stop and report the blocker. If the failure looks
+      systemic (flaky across branches, configuration drift, a missing CI
+      step), file a bug with `issue_tracker.file_command`, and use the
+      repository's reflection or feedback skill if it has one so the class
+      of failure gets a systematic fix.
+   4. **judgment** — If any error is related, fix it.
+   5. **judgment** — If you cannot tell, assume related and investigate.
+
+   Repository hooks are mandatory: a failing hook means the branch is not
+   ready to push. Never bypass one.
+
+   **Out-of-tree follow-ups — MANDATORY in the status message:**
+
+   When the PR opens, the status message to the user and the tracker comment
+   **must** include an `## Out-of-tree follow-ups` section listing every action
+   that must happen outside this PR for the change to fully land, for
+   example:
+
+   - secrets or configuration to provision in an environment before merge;
+   - a manual deployment sync, refresh or rollout after merge;
+   - repository settings: a secret, a branch-protection rule, a required
+     check;
+   - tracker labels, workflows or projects to create;
+   - domain-name, content-delivery or edge configuration to apply;
+   - cloud resources: database flags, access bindings, keys, buckets;
+   - a database migration to run by hand in an environment that does not
+     apply it automatically;
+   - communications: an announcement, a customer email, a status-page
+     update;
+   - a follow-up issue to file for a deliberate scope cut.
+
+   If there are none, write
+   `## Out-of-tree follow-ups\n\n_None — merging this PR completes the issue._`
+   Explicit "none" is required; silence is not. The user should never have
+   to ask what else is needed for this to land. If the repository's
+   instructions define a machine-readable follow-ups block in the PR body
+   (for example one its CI parses into an operations ledger), include it as
+   well: mandatory for `manual-ops` issues, with an explicit empty block and
+   a stated reason when the label turns out over-applied (then remove the
+   label with a comment explaining why).
+
+   **Arm the drive (terminal step, immediately after the draft PR opens):**
+
+   First capture the `pickupId` retained from Step 3.5 with the command
+   there, and report any refusal. The driver keeps that pin on re-arm; it
+   never discovers a new source from mutable item files.
+
+   The review loop does not start itself. An unarmed PR waits on human
+   memory, and most of the loop's calendar time is lost in exactly that
+   seam. Arming is part of opening the PR:
+
+   1. **exact** — **Always emit the exact unattended drive command** — in the
+      end-of-run status message **and** in the tracker comment that links the PR,
+      with the real PR number substituted. Prepare the comment now; post it
+      after step 3's arm check so it can report the observed outcome. Use the
+      portable `bun` form on **one line** (a `\` continuation is POSIX-shell
+      only and breaks on PowerShell and `cmd.exe`):
+
+      ```bash
+      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/groundwork:drive-pr --bots-only <PR>"
+      ```
+
+      The pass command (`claude -p "..."`) is Claude Code-specific; no other
+      harness has a documented equivalent. Do not guess one.
+
+      Include the drive's **observability handles** in the same comment. Take
+      the candidate log path from `drive.ts: driver log → ...` in the arm
+      output, or, when the arm was refused, from the refusing driver's
+      diagnostics or its row in
+      `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --json`. A
+      per-PR lock refusal always names this PR's own driver; a worktree lock
+      refusal can name a different PR, so first confirm the diagnostics'
+      `pr` field (or the row's `pr`) equals the PR being armed. A log for a
+      different PR is not this PR's handle; do not post it as one. Once
+      confirmed, verify the path is a regular file that can be opened for
+      append, and include it; otherwise say the driver log is unavailable or
+      unverified and include the arm diagnostic. `drive.ts` prints its log
+      path before acquiring either lock and writes the log best effort, so
+      neither the arm outcome nor the printed path proves the log exists.
+      Never post a template such as `<state dir>` as a path. Include the
+      fleet commands too: `drives.ts` lists live drives, and `drives.ts --stop
+      <PR>` stops this one (`--stop` needs a POSIX host with `ps`; the listing
+      works everywhere). These are what a human reaches for when the
+      background drive is an agent they have no window into.
+
+   2. **exact** — **Spawn that command in the background** (the harness's
+      background execution; do not block the session on it) when **both**
+      hold: no uncleared `hitl` checkpoint remains (the issue carries `hitl`
+      **and** this run did not receive explicit clearance), **and** the harness
+      is Claude Code, the only one with a documented pass command. Spawning
+      is then mandatory: an emitted but unspawned command reintroduces the
+      human-memory delay this step removes, and a `hitl` issue cleared this
+      run is no reason to withhold it. Report the task handle. The drive
+      works the draft immediately (some review bots review drafts, others
+      skip them) and marks the PR Ready after its first completed round, so
+      one human decision is left: the merge. For an uncleared `hitl`
+      checkpoint, or a harness without a documented pass command, emit the
+      command only: starting review rounds would pre-empt the human
+      judgment, and a guessed command is worse than one left for a human to
+      run.
+
+   3. **exact** — **Never start a second driver; the refusal is mechanical.**
+      `drive.ts` holds two single-instance locks for the life of a drive — a
+      worktree lock, acquired first, and a per-PR lock, acquired second — and
+      either can produce the exit-`11` refusal. The message names which lock,
+      its owner, and the diagnostics the claim carries: the PR that owner is
+      driving, its worktree and its log. Only a claim written by an older
+      driver is pid/hostname-only (see
+      `${CLAUDE_SKILL_DIR}/../drive-pr/references/terminal-states.md`
+      § The single-instance locks). Check the spawned task's output **once**,
+      a few seconds after issuing it — not immediately, and not in a poll
+      loop:
+      - Exit `11` on the **per-PR** lock → this PR is already being driven:
+        report "a drive is already live on #<PR>" with the holder's details;
+        do not retry and do not kill the other driver.
+      - Exit `11` on the **worktree** lock → read the diagnostics. The same
+        PR means already armed (report as above); a different PR means this
+        worktree is busy with other work (report the conflict; do not retry
+        or kill). Only when the claim predates diagnostics is the case
+        **ambiguous**: because the worktree lock comes first, a re-invocation
+        for this same PR from the same worktree also fails here. Report the
+        ambiguity itself, with the holder's pid and hostname (`drives.ts`
+        lists what that owner's other lock says), and let a human resolve
+        it. The step-1 command, posted right after this step, is the durable
+        handle for whoever does.
+      - Any other **non-zero** exit → a failed arm, not a running one:
+        report it with the exit code and captured output.
+      - Exit `0` → the drive already reached a terminal state within the
+        window: report its outcome rather than assuming it is running.
+      - Still running → armed; move on without further polling.
+
+      Post the prepared tracker comment with the arm outcome and the
+      observability handles. Report the log path's verified, unavailable or
+      unverified status independently of the arm outcome.
+
+   **Post-merge status rule (Step 4a and 4b):** when the PR merges to the
+   integration branch, transition the issue to `done` — unless a manual,
+   operational or legal step remains (an operator checklist, a drill, a
+   verification, a sign-off), in which case transition it to `ops_pending`.
+   Nothing else moves statuses; deployment state comes from git, not from the
+   tracker.
+
+   **`manual-ops` — surface the operator checklist and park in `ops_pending`,
+   not `done` (Step 4a and 4b):** when the issue carries `manual-ops`, the
+   orchestrator must:
+
+   1. **exact** — Extract the operator checklist from the issue body: a
+      section titled "Operator Checklist" or "Manual Steps", or any
+      explicitly enumerated out-of-band step.
+   2. **exact** — Include every item verbatim, as unchecked Markdown
+      checkboxes, in the PR's `## Out-of-tree follow-ups` section and the
+      closing tracker comment.
+   3. **exact** — On merge, transition the issue to `ops_pending` (not
+      `done`, and not left in `in_review`: the code is merged, so what
+      remains is human-owed work) and comment "PR merged → Ops Pending —
+      awaiting manual ops: [list the steps]." Do not advance to `done` until
+      every step is recorded as complete. If the tracker has no
+      `ops_pending` state, hold in `in_review` instead.
+   4. If the body has no checklist, comment: "This issue carries
+      `manual-ops` but has no operator checklist. Please add the steps to the
+      issue body before this can close." Never silently advance to `done`.
+
+   `manual-ops` exists because CI and deployment automation do **not** perform
+   these steps. A merge that silently advances to `done` leaves production
+   half-wired; parking makes the board honest about what remains.
+
+### Step 4b: Progress through sub-issues
+
+**judgment** — Evaluate live dependency and merge evidence, and preserve the
+human's choice when several candidates are eligible; the selector and
+snapshot mapping are **exact**.
+
+1. **exact** — **Check whether everything is complete**:
+   - `sub_issue_analysis.all_complete` → Step 5a.
+   - Otherwise, if every remaining incomplete sub-issue carries an
+     extractable-tail label (`hitl:legal`, `manual-ops` or `hitl:tactical`,
+     or `pr-followup`) → also Step 5a, which re-verifies eligibility under
+     the extract-and-close rule before acting. Otherwise an epic whose only
+     open work is a tail would pick that tail and work it as ordinary code.
+
+   `sub_issue_analysis` comes from `get_issue.ts`. On the native transport
+   (Linear's `get_issue` has no children field), build the same facts from a
+   children listing first.
+
+2. **exact** — **Read the Execution Plan from the parent description** (if
+   present). A planner (e.g. a plan-epic skill, if the repository has one)
+   writes a `## Execution Plan` section whose machine-readable content is the
+   fenced JSON block named by `do_issue.execution_plan_block` (default
+   `execution-plan-v1`). The Markdown around it is for humans; never parse
+   its steps, blockers or overrides as machine facts.
+
+   Run the selector with one JSON object on stdin:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/select_execution_issue.ts" < selection-input.json
+   ```
+
+   The input is `{ description, epic, live, mergedConflictEdges }`:
+   `description` is the parent description and `epic` its key; `live` maps
+   every child and predecessor key to `{ state, blockedBy }`, where `state` is
+   the tracker's state **type** (`triage`, `backlog`, `unstarted`, `started`,
+   `completed`, `canceled`) and `blockedBy` the live blocker keys. Fetch these
+   live, paging every relation listing and keeping `blocks` predecessors;
+   do not treat an `unknown` state type from a summary listing as live
+   evidence. (**judgment** — Linear adapter example: on the CLI, `linear api`
+   GraphQL `issue { identifier state { type } inverseRelations { nodes { type
+   issue { identifier state { type } } } pageInfo { hasNextPage endCursor } } }`;
+   on MCP, read relation state explicitly rather than assuming `get_issue`
+   includes blockers.) A failed read stays absent, which makes its candidates
+   ineligible. Start `mergedConflictEdges` empty; it holds only `from>to`
+   pairs whose delivering PR has been verified below.
+
+   The selector prints `{ present, eligible, gates, mergeConflicts }`.
+
+   **Decision logic:**
+
+   a. A missing block inside an existing Execution Plan, a duplicate or
+      malformed block, or a plan for a different epic is an error: stop and
+      name re-running the planner as the repair. There is no prose fallback.
+   b. Verify each `mergeConflicts` edge's delivering PR against its recorded
+      `conflictFiles`. Find the PRs in the predecessor's description and
+      comments; check issue reference, scope and changed files with
+      `gh pr view <URL> --json body,files,baseRefName,mergedAt`. Require it
+      to target the integration branch and have `mergedAt` set. A merged PR
+      for earlier work on the same issue does not clear a later open one.
+      Ambiguous or unreadable evidence keeps the pair out; `ops_pending`,
+      `todo` or the absence of a tracker blocker alone proves nothing.
+      Re-run the selector with the verified pairs.
+   c. `eligible` lists incomplete, eligible issues in band order, each
+      checked against its own plan predecessors and live blockers. Bands are
+      precedence depth, never whole-group barriers. Honour human checkpoints
+      from `gates` and live `hitl` labels before delegating.
+   d. If several issues are eligible, ask the user to choose. If none are,
+      report the blockers and the missing evidence.
+   e. Only when no Execution Plan exists at all (`present: false`), fall
+      back to `sub_issue_analysis.next_issue`.
+
+   **Epic-level snapshot fallback.** Whenever this issue carries the `epic`
+   label and this invocation ends without reaching item 4 with a selected
+   child — item 1 routing to Step 5a, every candidate ineligible, a pause for
+   the user's choice, or any other return without a `nextSubIssue` — rewrite
+   the intent-chain snapshot before returning: pass this issue as **both**
+   `epic` and `issue` (the identical object), no `subIssue`, no parent fetch.
+   This issue *is* the epic, so its own intent line, acceptance criteria and
+   scope must fill the epic slots; mapping its parent there would show an
+   empty or unrelated intent. Passing it again as `issue` is deliberate: the
+   issue-scope section has a protected floor under truncation that the epic
+   scope lacks, so this is the only way the epic's scope is guaranteed to
+   survive. (Acceptance criteria get no such protection in either slot.)
+   Step 3.5 skipped its write because item 4 was expected to cover it;
+   leaving both unwritten would present whatever an earlier child selection
+   wrote as current.
+
+   Let this write compute its arm normally from the epic's identifier. Do
+   not try to preserve a child's arm or work around a `GROUNDWORK_REFOCUS`
+   override: the arm is a pure function of the identifier, so the next
+   selected child re-derives its own arm when item 4 (or Step 3.5) writes
+   for it. This fallback's arm only governs injection while no child is
+   selected.
+
+3. **exact** — **Start the selected sub-issue**: transition it to
+   `in_progress` and assign it to yourself, as in Step 4a item 1.
+
+4. **exact** — **Fetch the selected sub-issue in full, then rewrite the
+   intent-chain snapshot** per Step 3.5's split. `nextSubIssue` (from
+   `sub_issue_analysis.next_issue`, or chosen in item 2) may carry only
+   key, title and state — a children listing does not include descriptions —
+   so building the snapshot from it would lose the sub-issue's scope. Fetch
+   it with get-issue first. Then: **if this issue carries `epic`**, pass the
+   fetched sub-issue as `issue` and this issue as `epic` (the arm is
+   bucketed by `issue`, and the epic's intent is read from `epic`);
+   **otherwise**, keep this issue as `issue` and pass the fetched sub-issue
+   as `subIssue`. Do this on every selection, including a move straight
+   from a just-completed sub-issue to the next, so the snapshot always names
+   the sub-issue actually being worked.
+
+5. **judgment** — **Delegate** as in Step 4a.
+
+### Step 5a: All sub-issues complete
+
+**exact** — Refresh every child, then obey the reconciler's verdict and the
+acceptance and `manual-ops` guards. The pseudocode below shows the required
+data flow, not an executable harness API.
+
+> **Parent status guard.** Never advance a parent beyond what its sub-issues
+> warrant: it reflects the *least-advanced* sub-issue. Among started states
+> the ladder is `in_progress` < `in_review` < `ops_pending`; `done` is
+> completed.
+>
+> | Condition | Parent status |
+> |-----------|---------------|
+> | Every sub-issue is `done`, or `canceled`/`duplicate` (abandoned, never completing) | `done` — capped at `ops_pending` if the **parent itself** carries `manual-ops` |
+> | Every sub-issue is merged-and-parked (`done`, `ops_pending`, `in_review`) or abandoned | The least advanced of those (any sub-issue in `in_review` → `in_review`; otherwise `ops_pending`) |
+> | Any sub-issue still in progress, to do or blocked | Keep `in_progress`; continue with Step 4b |
+>
+> `reconcile_parent_status.ts` implements and tests this table; do not
+> re-derive it by hand.
+
+> **Extract-and-close rule (an epic is done on its designed scope, not on a
+> child count of zero).** When an epic's code work is merged and every
+> remaining open child is a tail the epic was never scoped to finish — a
+> `hitl:legal` sign-off, `manual-ops` or `hitl:tactical` operations work, or
+> `pr-followup` review debt — extract each (remove it from the epic, link it
+> back to the epic, and move it to the repository's standing destination for
+> that kind of work, if it has one) and close the epic. This requires an
+> accepting verdict from the repository's epic acceptance review, or a human
+> waiver recorded on the epic: "every child is closed or extractable" is not
+> itself the authorization, because sub-issues marked done whose code never
+> landed are a recurring failure. If the repository has a tool that performs
+> the check, move, link and close, run it rather than doing the moves by
+> hand.
+
+1. **exact** — **Re-fetch every sub-issue's current state** — never rely on
+   stale data — and feed it to `reconcile_parent_status.ts`, which owns the
+   decision. A script cannot issue a harness's native tool calls, so fetching
+   (and, on the native transport, paginating) stays here; only the decision
+   moves out. Branch on Step 1's `trackerTransport`, normalize the result to
+   the script's transport-neutral `ReconcileInput`, and fail closed on every
+   gap:
+
+   ```typescript
+   let listing // ReconcileInput — see reconcile_parent_status.ts
+   if (trackerTransport === "native") {
+     // Adapter example: Linear MCP. Any rejected call or unreadable response
+     // routes to the same fail-closed `truncated` shape.
+     try {
+       const parent = mcp__linear__get_issue({ id: issue.id })
+       const fields = ["status", "statusType", "labels"]
+       // A missing or non-array `issues` reads like an empty page; if that
+       // page also said `hasNextPage: false` the listing would look complete.
+       const requireIssuesArray = (p) => {
+         if (!Array.isArray(p.issues)) throw new Error("Unreadable child listing")
+         return p
+       }
+       let page = requireIssuesArray(mcp__linear__list_issues({ parentId: issue.id, limit: 250, fields }))
+       const children = [...page.issues]
+       // Loop only on an explicit `true`, and only while each cursor is new:
+       // any repeated cursor (an echo, or a cycle A → B → A) means stuck.
+       const seenCursors = new Set()
+       let paginationStuck = false
+       while (page.hasNextPage === true) {
+         const cursor = page.cursor
+         if (cursor === undefined || seenCursors.has(cursor)) { paginationStuck = true; break }
+         seenCursors.add(cursor)
+         page = requireIssuesArray(mcp__linear__list_issues({ parentId: issue.id, limit: 250, cursor, fields }))
+         children.push(...page.issues)
+       }
+       // Complete only on an explicit final `hasNextPage === false`, no stuck
+       // cursor, and a real labels array on the parent: a missing `labels` is
+       // a partial fetch, and defaulting it to [] would hide `manual-ops`.
+       const complete = !paginationStuck && page.hasNextPage === false && parent.labels !== undefined
+       listing = complete
+         ? {
+             found: true,
+             parentLabels: parent.labels,
+             children: children.map(s => ({ state: { name: s.status, type: s.statusType }, labels: s.labels })),
+           }
+         : { found: true, truncated: true, parentLabels: [], children: [] }
+     } catch (err) {
+       listing = { found: true, truncated: true, parentLabels: [], children: [] }
+     }
+   } else {
+     // Script transport. A failed command, non-JSON stdout, or a literal
+     // `null` are all a failed listing, never a crash.
+     let parent
+     try {
+       parent = JSON.parse(run(`bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" ${issue.identifier}`))
+     } catch (err) {
+       parent = { found: false }
+     }
+     // `found: true` alone does not prove the response is for THIS issue:
+     // reconciling another epic's children and writing the result here would
+     // corrupt an unrelated issue's status.
+     if (parent?.found !== true || parent.identifier !== issue.identifier) {
+       listing = { found: false, parentLabels: [], children: [] }
+     } else {
+       // The parent's children listing carries no per-child labels, so every
+       // tail label would read as absent. Re-fetch EVERY child — completed
+       // and abandoned too, since a reopened child's stale terminal state
+       // must not go undetected.
+       //
+       // PHASE A — an agent action, not a script. For every child whose key
+       // matches /^[A-Za-z][A-Za-z0-9]*-\d+$/ (defense in depth before it
+       // reaches a command line), issue `get_issue.ts <key>` as its OWN Bash
+       // call, all in the SAME turn (parallel tool calls), never one at a
+       // time: each call may take up to 30 seconds. Build `childFetchResults`,
+       // a Map from the REQUESTED key to the parsed stdout; omit any call that
+       // exited non-zero or printed non-JSON.
+       //
+       // PHASE B — verify, then merge. A child's state is trustworthy only
+       // from a fetch that succeeded AND answered for that exact key.
+       const allChildren = [
+         ...(parent.sub_issue_analysis?.completed_issues ?? []),
+         ...(parent.sub_issue_analysis?.abandoned_issues ?? []),
+         ...(parent.sub_issue_analysis?.incomplete_issues ?? []),
+       ]
+       // `get_issue.ts` reports an unreadable state as type `unknown` with a
+       // name of `Unknown` or blank; no real workflow state looks like that.
+       const isUnreadableState = (s) =>
+         s?.type === 'unknown' && (s?.name === 'Unknown' || !s?.name?.trim())
+       const verifiedChildren = allChildren.map((c) => {
+         const fetched = childFetchResults.get(c.identifier)
+         if (fetched?.found !== true || fetched.identifier !== c.identifier || isUnreadableState(fetched.state)) {
+           return null
+         }
+         return { ...c, labels: fetched.labels, state: fetched.state ?? c.state }
+       })
+       // One unverified child makes the whole listing untrustworthy: its
+       // stale state alone could advance the parent wrongly.
+       listing = verifiedChildren.some((c) => c === null)
+         ? { found: true, truncated: true, parentLabels: [], children: [] }
+         : { found: true, parentLabels: parent.labels, children: verifiedChildren }
+     }
+   }
+   ```
+
+   Pipe `listing` (compact JSON) to the reconciler and parse its stdout as
+   `decision`:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/reconcile_parent_status.ts" < reconcile-input.json
+   ```
+
+2. **exact** — **Act on `decision.verdict`**. `decision.parentState` names a
+   state in title case (`Done`, `In Review`, `Ops Pending`, `In Progress`);
+   transition to the matching canonical key (`done`, `in_review`,
+   `ops_pending`, `in_progress`).
+
+   | `verdict` | Action |
+   |-----------|--------|
+   | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
+   | `keep_in_progress` | Go to Step 4b |
+   | `extract_and_close_eligible` | Verify the epic has an accepting verdict from the repository's epic acceptance review, or a recorded human waiver; if so, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no verdict or waiver yet |
+   | `set_status` | Transition the parent: `tracker.ts transition <KEY> <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
+
+   **`manual-ops` guard on parent completion.** When `decision.parentState`
+   is `Ops Pending` because the parent itself carries `manual-ops` (every
+   sub-issue is done, but the parent cannot close until its operator
+   checklist is acknowledged), comment with every unchecked item from the
+   parent's `## Operator Checklist` as unchecked checkboxes: "All sub-issues
+   are Done — PR merged → Ops Pending. Waiting for manual ops: [list the
+   steps]." If there is no such section, comment: "Parent carries
+   `manual-ops` but has no Operator Checklist. Add the steps to the issue
+   body before this can close." Never silently advance it to `done`. Without
+   an `ops_pending` state, cap at `in_review`.
+
+   **`manual-ops` guard on `extract_and_close_eligible`.** A parent carrying
+   `manual-ops` can never reach `done`, only `ops_pending`. Check
+   `listing.parentLabels` before acting: if `manual-ops` is present, extract
+   the tails but do not close the epic (a sweep tool's "no close" mode, if it
+   has one). Then explicitly transition the parent to `ops_pending` (or
+   `in_review` without that state) and post the operator-checklist comment
+   above. Leaving the epic at its old status (e.g. still `in_progress`) after
+   its tails moved would violate the status rule. `decision.reason` states
+   this distinction when it applies.
+
+3. **exact** — **Display completion.** Name abandoned children explicitly
+   rather than folding them into "complete": a reader must tell "X shipped"
+   from "X shipped, Y cancelled" at a glance. The denominator is the
+   eligible count (`total - abandoned`), matching `progress_percent`.
+
+   ```markdown
+   ## 🎉 All Sub-Issues Complete!
+
+   **Issue**: [ENG-123](https://tracker.example/ENG-123)
+   **Progress**: {completed}/{total - abandoned} complete ✅ ({progress_percent}%)
+   **Abandoned**: {abandoned} cancelled/duplicate (excluded from the count above)  <!-- omit when abandoned is 0 -->
+
+   **Next**: Create PR if code changes exist
+   ```
+
+## Headless runners
+
+A consumer may run this skill unattended inside its own runner. That
+runner's integration replaces each point where this skill asks the user (the
+Step 4b choice, an ambiguous requirement, a `hitl` clarification, the
+pre-push "cannot tell" branch) with its own escalation channel, and may
+report the milestones the skill already passes (issue fetched, plan ready,
+delegated, pre-PR review, draft PR opened). Payloads sent to a runner carry
+references (paths, commit hashes, PR and issue links), never file contents.
+Without such a runner, ask as in [Asking the user](#asking-the-user).
+
+## Error handling
+
+| Error | Solution |
+|-------|----------|
+| Issue not found | Check the key format; list the team's issues in the tracker (Linear: `linear issue list --team <issue_tracker.team>`) |
+| Tracker unreachable on one transport | Use the other transport recorded in Step 1 |
+| Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`), or use the harness's native integration |
+
+## Scripts reference
+
+| Script | Purpose | Input | Output |
+|--------|---------|-------|--------|
+| `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
+| `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
+| `tracker.ts` | Tracker operations: `children`, `transition`, `comment` | Operation, issue key, and a canonical state or a body on stdin | Operation result |
+| `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
+| `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (stdin) and `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
+| `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
+| `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (stdin) | JSON decision (`verdict`, `parentState`, `reason`) |
+| `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5) | `IntentChainInput` JSON (stdin or `--input`) | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`) |

@@ -1,4 +1,7 @@
-# The same native Bun gate set runs on every supported operating system.
+# The same native Bun gate set runs on every supported operating system. The
+# drive-pr suite is long and POSIX-only, so it runs in its own job, split into
+# parallel shards on Linux and macOS (see SEPARATE_SUITES and
+# POSIX_ONLY_SUITES in scripts/gates.ts).
 name: gates
 
 on:
@@ -21,6 +24,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # The drive-pr-suite job below runs the drive-pr suite; on Windows the
+      # gate script also leaves out the POSIX-only suites on its own.
+      GROUNDWORK_GATES_SKIP_SEPARATE_SUITES: "1"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
@@ -29,13 +36,37 @@ jobs:
       - name: Run gate set
         run: bun run gates
 
-  # Preserve the existing required status-check name while requiring all OSes.
+  drive-pr-suite:
+    name: drive-pr suite (${{ matrix.os }}, ${{ matrix.shard }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        shard: [1, 2, 3, 4]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The summary-findings tests position a reviewer against real commits
+          # of this repository, which a shallow checkout does not have.
+          fetch-depth: 0
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Check terminal states against their documentation
+        if: matrix.shard == 1
+        run: bun plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts
+      - name: Run this shard of the drive-pr suite
+        run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
+
+  # Preserve the existing required status-check name while requiring every job.
   gates:
-    needs: platform-gates
+    needs: [platform-gates, drive-pr-suite]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require every platform
+      - name: Require every platform and shard
         env:
-          RESULT: ${{ needs.platform-gates.result }}
-        run: test "$RESULT" = success
+          PLATFORMS: ${{ needs.platform-gates.result }}
+          DRIVE_PR: ${{ needs.drive-pr-suite.result }}
+        run: test "$PLATFORMS" = success && test "$DRIVE_PR" = success

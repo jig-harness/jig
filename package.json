@@ -4,13 +4,14 @@
     "@biomejs/biome": "2.5.15",
     "@types/bun": "1.4.2",
     "@types/js-yaml": "4.0.9",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "typescript6": "npm:@typescript/typescript6@6.0.2"
   },
   "packageManager": "bun@1.4.0",
   "private": true,
   "scripts": {
     "gates": "bun scripts/gates.ts",
-    "test": "bun test",
+    "test": "bun test --timeout 30000",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
     "format": "biome format --write .",

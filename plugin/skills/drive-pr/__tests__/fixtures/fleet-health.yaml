@@ -1,0 +1,49 @@
+# A consumer's fleet-health configuration, for the fleet-health and
+# fractal-metrics suites. Area keys name areas of change-areas-catalog.yaml.
+version: 1
+window:
+  days: 14
+progress:
+  product_areas:
+    - api
+    - web
+  weights:
+    merged_product_pr: 1
+    criterion_closed: 1
+    epic_accepted: 1
+ceremony:
+  free_rounds: 3
+  weights:
+    rounds_beyond_free: 1
+    followups_minted: 1
+    sdlc_issues_opened: 1
+  unmeasured:
+    drive_rearms: no durable record — drive state is per-clone
+    handoffs: no durable record — handoff files are per-worktree (.context/)
+signals:
+  stuck_epic:
+    days: 14
+  ceremony_ratio:
+    suspect_at: 5
+    high_at: 10
+    min_ceremony: 5
+  followup_depth:
+    suspect_at: 2
+    max_walk: 6
+  delivery_system_share:
+    suspect_at: null
+  review_carousel:
+    min_rounds: 12
+    high_rounds: 25
+    min_post_review_share: 0.45
+lifecycle:
+  cooldown_days: 14
+labels:
+  followup: follow-up
+  delivery_system: delivery-system
+ledger:
+  project: Debt
+baselines:
+  rounds_median:
+    value: 10
+    source: { file: baselines.md, needle: "| Bot-reviewed heads per PR, median | 10 |" }

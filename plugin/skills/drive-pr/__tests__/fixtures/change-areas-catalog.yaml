@@ -1,0 +1,19 @@
+# A change-area catalog for the fleet-health suites: the minimal schema the
+# sensor reads (paths, generated sources, area labels).
+areas:
+  api:
+    paths: ["src/api/**"]
+    generated:
+      - source: ["tools/codegen/**"]
+    labels: [codearea:api]
+  web:
+    paths: ["src/web/**"]
+  delivery-tools:
+    paths: ["tools/delivery/**", ".github/**"]
+    labels: [delivery-system]
+  ci:
+    paths: ["ci/**"]
+    linear:
+      labels: [delivery-system]
+  docs:
+    paths: ["docs/**", "**/*.md"]

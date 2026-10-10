@@ -42,10 +42,12 @@ review threads and issues.
 2. **Review rounds** — layered reviewers (in-house shadow reviewer, commercial
    bots, humans), with mandatory review steps selected by what changed.
 3. **Resolve every comment** — accept (fix + reply) or reject (reply with a
-   concrete reason), then resolve the thread; loop until zero unresolved
-   threads and the build is clean.
-4. **Human ready + merge** — a human marks Ready and merges (a HITL decision);
-   conflicts are resolved before merge, tracker updated after.
+   concrete reason), then resolve the thread. Once the draft reviewers settle,
+   a human, or an adopted review driver after its first completed round, marks
+   Ready, and the reviewers that wait for Ready join; loop until zero
+   unresolved threads and the build is clean.
+4. **Human merge** — a human merges (a HITL decision); conflicts are resolved
+   before merge, tracker updated after.
 
 ## The learning loop (wraps both)
 

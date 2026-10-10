@@ -15,7 +15,8 @@
 > the thing people follow.
 >
 > Invariant it encodes:
-> **PRs open as drafts; a human marks Ready and a human merges; every review
+> **PRs open as drafts; a human, or an adopted review driver after its first
+> completed round, marks Ready; a human merges; every review
 > thread ends resolved with an audit trail, in a terminal state the author
 > declares rather than one anybody infers later; and review is a loop over
 > rounds whose stop condition is a round that finds nothing left.**
@@ -26,8 +27,10 @@
 branch → open DRAFT PR → self-review → CI + automated review + human review
       → resolve-comments loop, one ROUND per push:
             resolve every thread → push → reviewers re-run → repeat
-            until a round is settled with nothing left  (not merely "nothing open")
-      → gates green → mark READY (human) → merge (human) → update tracker
+            once the draft reviewers settle: mark READY (human, or a review driver)
+            until a round after READY is settled with nothing left
+            (not merely "nothing open")
+      → gates green → merge (human) → update tracker
 ```
 
 Each stage below states its exit condition — you do not advance until it holds.
@@ -70,7 +73,8 @@ change-area catalog's review-gate projection decides (a migration pulls in the
 migration reviewer, an API change the API reviewer). Do not rely on memory.
 
 **Exit:** the mandatory reviewer set (per change-area) has been requested and
-has responded.
+every reviewer that reviews drafts has responded. The rest respond only once
+the PR is Ready, which happens inside step 4.
 **Executable:** the reviewers registered in
 [`review-config.yaml`](review-config.yaml); which humans are mandatory comes
 from [M3](../../M3-change-area-catalog/)'s review-gate projection.
@@ -112,6 +116,22 @@ Two things are **not** an agent's call and stop for a human
 - **Overruling a human.** An agent may not resolve a *human* reviewer's thread
   by rejection on its own judgment; a human decides.
 
+#### Ready happens inside the loop
+
+Reviewers fall into two sets: those that review drafts, and those that respond
+only once the PR is Ready — review bots that skip drafts, and human reviewers
+who wait for the Ready signal. Once a round has settled with every
+draft-reviewing reviewer, the PR is marked **Ready**: by a human, or, where the
+repository adopts an unattended review driver, by that driver once its first
+review round has completed. Either way, the reviewers that skip drafts then
+spend their pass on a head the draft reviewers have already cleaned.
+
+From Ready on, the loop waits on both sets: a round counts as settled only when
+every reviewer, the ones Ready summoned included, has reported on the current
+head. A driver whose convergence covered only the draft-reviewing reviewers has
+not finished this step; run the loop again once the newly summoned reviewers
+settle.
+
 #### Knowing when the loop is done
 
 Resolving a round means pushing, and pushing re-triggers the reviewers, so
@@ -124,25 +144,25 @@ are silent — no error is raised either way:
 - **Re-check that the PR is still open, every round.** A merge or close that
   lands mid-loop orphans every later fix onto a branch nothing will merge.
 
-**Exit:** a round in which every thread is Addressed / Rejected / Deferred / Moot
-with its trail, every reviewer has reported, and the PR is still open.
+**Exit:** the PR is Ready, and a round after Ready in which every thread is
+Addressed / Rejected / Deferred / Moot with its trail, every reviewer in both
+sets has reported, and the PR is still open.
 **Executable:** the unresolved-threads merge gate
 [`check-threads-resolved.ts`](../reference/comment-resolution/) — fed by the
 verdict export adapter, not by raw reply text — and the per-round
 [convergence check](../reference/review-convergence/), whose exit code drives the
 loop. Both are wired in [`mappings.md`](../mappings.md).
 
-### 5. Gates green, then Ready, then merge
+### 5. Gates green, then merge
 
-With all threads resolved and all required checks green, a **human marks the PR
-Ready** and a **human merges**. Both are deliberate human acts — the automated
-pipeline never marks Ready or merges on its own. Resolve conflicts against the
-base branch before merge; re-run gates if the merge changed the diff.
+With the PR Ready, all threads resolved and all required checks green, a
+**human merges**. The merge is always a deliberate human act — the automated
+pipeline never merges on its own. Resolve conflicts against the base branch before merge; re-run gates
+if the merge changed the diff.
 
-**Exit:** required checks green, zero open threads, human Ready + human merge.
-**Executable:** human-only forge actions (mark Ready, then Merge), enforced by
-branch protection requiring a human actor — see the
-[HITL registry](HITL-REGISTRY.md).
+**Exit:** required checks green, zero open threads, human merge.
+**Executable:** the merge is a human-only forge action, enforced by branch
+protection requiring a human actor — see the [HITL registry](HITL-REGISTRY.md).
 
 ### 6. Update the tracker
 
@@ -164,7 +184,9 @@ These decisions are **human-only** on every PR — never taken autonomously by a
 agent. See the [HITL registry](HITL-REGISTRY.md) for the full list and the
 rationale:
 
-- Marking a PR **Ready** for review.
+- Marking a PR **Ready** for review — unless the repository delegates it to an
+  adopted review driver (step 4), which is then the only automation that may
+  take it.
 - **Merging.**
 - **Expanding scope** beyond what the PR set out to do.
 - **Overruling a human** reviewer's thread.

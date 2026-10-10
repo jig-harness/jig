@@ -234,3 +234,57 @@ test("POSIX regex classes retain tracker pattern matching", async () => {
   expect(ere("[[:cntrl:]]").test("\t")).toBe(true);
   expect(() => ere("[[:unknown:]]")).toThrow();
 });
+
+test("the test step leaves out POSIX-only suites on Windows and separate suites on request", async () => {
+  const {
+    POSIX_ONLY_SUITES,
+    SEPARATE_SUITES,
+    SKIP_SEPARATE_ENV,
+    skippedSuites,
+    testArgs,
+  } = await import("./gates.ts");
+  expect(skippedSuites("linux", {})).toEqual([]);
+  expect(skippedSuites("darwin", { [SKIP_SEPARATE_ENV]: "1" })).toEqual(
+    SEPARATE_SUITES,
+  );
+  const windows = skippedSuites("win32", { [SKIP_SEPARATE_ENV]: "1" });
+  for (const suite of [...POSIX_ONLY_SUITES, ...SEPARATE_SUITES])
+    expect(windows).toContain(suite);
+  expect(testArgs([], ["**/fixtures/**"])).toEqual(["run", "test"]);
+  // Bun replaces the configured ignore list, so it must be passed along.
+  expect(testArgs(["suite/**"], ["**/fixtures/**"])).toEqual([
+    "run",
+    "test",
+    "--path-ignore-patterns=**/fixtures/**",
+    "--path-ignore-patterns=suite/**",
+  ]);
+});
+
+test("every suite the gate job leaves out runs in its own CI job", async () => {
+  const { SEPARATE_SUITES, SKIP_SEPARATE_ENV } = await import("./gates.ts");
+  const { load } = await import("js-yaml");
+  const workflow = load(
+    readFileSync(join(root, ".github/workflows/gates.yml"), "utf8"),
+  ) as {
+    jobs: Record<
+      string,
+      {
+        env?: Record<string, string>;
+        needs?: string[];
+        steps?: { run?: string }[];
+      }
+    >;
+  };
+  const jobs = workflow.jobs;
+  expect(jobs["platform-gates"]?.env?.[SKIP_SEPARATE_ENV]).toBe("1");
+  const runs = (jobs["drive-pr-suite"]?.steps ?? []).map((s) => s.run ?? "");
+  for (const suite of SEPARATE_SUITES) {
+    const dir = suite.replace(/\*\*$/, "");
+    expect(runs.some((run) => run.includes(`./${dir}`))).toBe(true);
+  }
+  expect(
+    runs.some((run) => run.includes("terminal-states-consistency.ts")),
+  ).toBe(true);
+  // The required status check `gates` must wait for the separate job too.
+  expect(jobs.gates?.needs).toEqual(["platform-gates", "drive-pr-suite"]);
+});
