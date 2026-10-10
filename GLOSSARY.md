@@ -210,6 +210,13 @@ capitalized as commonly written; cross-references are *italicized*.
   **rejected** (with a reason), **deferred** (with a filed follow-up), or *moot*
   — each leaving an audit trail. Scope expansion and overruling a human thread
   stay *HITL*.
+- **PR drive loop** — the procedure that wraps the *comment-resolution loop*
+  for unattended work on one pull request. The comment-resolution loop already
+  repeats *review rounds* until the reviewers settle; the drive loop adds a
+  lease that fences the working tree so two agent sessions never reply to the
+  same thread, labels for findings the pull request's own earlier commits
+  caused, checks for findings that appear only in a reviewer's summary, and
+  round state that survives between invocations.
 - **Moot (as a resolution)** — the terminal state for a review finding whose
   anchored code no longer exists: deleted or rewritten by a later commit.
   Distinct from *rejected* on purpose — rejected asserts the reviewer was

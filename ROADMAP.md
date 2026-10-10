@@ -223,8 +223,11 @@ orders the move:
 4. **Gates and workspace infrastructure** — the tooling every other step
    runs on: the change-area resolver (M3's reference implementation),
    cross-worktree locks and test infrastructure, remote gates, and the
-   runnable form of M12 (Herdr workspace lifecycle and status board).
-5. **PR drive loop.**
+   runnable form of M12 (Herdr workspace lifecycle; its status board calls the
+   review skill's scripts and so moves with step 5).
+5. **PR drive loop** — moves as one unit with the review skill's remaining
+   consumers, including the status board and the debt report; see
+   [PR drive loop move](#pr-drive-loop-move).
 
 Out of scope: the reference implementation's dev dashboard. It embeds that
 organization's own operating model (its tracker workflow, epics, decisions
@@ -312,3 +315,61 @@ consumer-side tests retain the real driver integration. Both harnesses were
 exercised against a live pull request through the installed plugin. Consumer
 migration from the per-worktree installer follows
 [the migration steps](plugin/README.md#migrating-from-the-per-worktree-installer).
+
+## PR drive loop move
+
+The [PR drive loop](GLOSSARY.md) is the reference implementation's skill that
+wraps the
+[review-resolution skill](plugin/skills/resolve-review-comments/README.md) for
+unattended work on one pull request. The review skill already repeats rounds
+until the reviewers settle; the drive loop adds what only it provides: a lease
+that fences the working tree so two agent sessions never answer the same
+thread, labels for findings the pull request's own earlier commits caused,
+checks for findings that appear only in a reviewer's summary, and round state
+that survives between invocations.
+
+The review skill ships in the plugin and five consumer repositories use it
+from there. The reference implementation does not yet: its own drive-loop
+skill and the review skill import and run each other's code, and its status
+board and other skills call the review skill's scripts by repository path.
+Splitting that set across the plugin boundary needed a lookup seam in every
+caller and a Groundwork checkout in its CI, and each further skill moved
+alone would need another. The set therefore moves together:
+
+1. **Inventory** the coupled set in the reference implementation: the
+   drive-loop skill, the review skill, and every skill or tool that imports
+   from or spawns either (at least the status board and the debt report),
+   with their tests.
+2. **Split** each unit into the generic mechanism and the organization's
+   values, which become fields of `.config/groundwork-overlay.yaml`, as the
+   review skill's were.
+3. **Move** the set into `plugin/skills/` in one change. Siblings then sit
+   beside each other in the plugin, so the existing sibling lookup applies
+   and no repository-path seam remains.
+4. **Retire** the reference implementation's copies in the same rollout and
+   switch its instructions to the plugin's commands. Installing a plugin does
+   not enable it in a repository, so the same change removes the setting that
+   disables `groundwork@groundwork` there, sets it to enabled as in
+   [plugin/README.md](plugin/README.md). Before any built-in copy is deleted,
+   the move's release is [published](plugin/README.md#release-a-new-version)
+   and every machine that works in that repository is
+   [updated](plugin/README.md#update-pin-or-remove) to it, since a machine keeps
+   its installed release until updated. A fresh session there then lists that
+   release's version and every moved command (the drive loop and the review
+   skill, not only the review skill). The review skill prefers a sibling skill
+   in the repository's own `.claude/skills/` over the one beside it in the
+   plugin, so the end-to-end check runs in a disposable checkout of that
+   repository with the built-in coupled set absent. A drive-loop run there
+   completes a review round, and the sibling paths the run invokes are
+   confirmed to belong to the installed release. The copies are deleted only
+   after Groundwork's gates and the moved suites pass, the reference
+   implementation's own gates and tests pass with the built-in set absent, and
+   the same checks have run under both Claude Code and Codex.
+
+Until then the reference implementation keeps its own built-in copy of the
+review skill, frozen: fixes land here first, a fix it needs is ported the
+same day and recorded in that copy's divergence notes, and the plugin is
+disabled in that repository so its sessions list only one review command. This
+is a bounded exception to "move, never copy" in
+[AGENTS.md](AGENTS.md#writing-conventions-mandatory): the copy is the original,
+not a rewrite, and step 4 above is its retirement condition.
