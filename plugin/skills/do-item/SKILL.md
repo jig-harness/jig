@@ -1,11 +1,11 @@
 ---
-name: do-issue
-description: "Pick up one tracker issue and carry it to a driven pull request: scout, delegate, review, open the PR, arm the drive."
+name: do-item
+description: "Pick up one work item from the tracker and carry it to a driven pull request: scout, delegate, review, open the PR, arm the drive."
 argument-hint: "[issue-key]"
 allowed-tools: "Read Grep Glob Task Bash(bun *) Bash(git *) Bash(gh *) WebFetch AskUserQuestion"
 ---
 
-# Do Issue — start or continue work
+# Do Item — start or continue work
 
 Take one issue from the issue tracker and move it forward: on first pickup,
 mark it started, gather context, hand the implementation to the right agent,
@@ -57,10 +57,10 @@ run time from `.config/groundwork-overlay.yaml`:
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
-| `do_issue.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
-| `do_issue.scouts` | Pre-flight scouts per agent, `{agent: [scouts]}` | No scouts |
-| `do_issue.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
-| `do_issue.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
+| `do_item.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
+| `do_item.scouts` | Pre-flight scouts per agent, `{agent: [scouts]}` | No scouts |
+| `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
+| `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
 | `drive.change_areas_catalog` | Path to the repository's change-area catalog (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
 | `repository.base_branch` | The integration branch pull requests land on | The repository's default branch |
 | `drive.reviews_drafts` | `false` makes new pull requests open Ready, since the reviewer would not review a draft | Pull requests open as drafts |
@@ -193,6 +193,17 @@ the turn. Never pick on the user's behalf.
 
 **exact** — `$ARGUMENTS` is the issue key.
 
+**Renamed configuration section.** If the configuration the scripts read has
+a top-level `do_issue` section, stop before doing anything else and tell the
+user to rename it to `do_item` (its fields are unchanged). That file is
+`$GROUNDWORK_OVERLAY` when it is set, otherwise
+`.config/groundwork-overlay.yaml` under `$GROUNDWORK_CONSUMER_ROOT` (when set)
+or the repository root. The old name is not read, so continuing would run
+without the repository's routing, scouts and mandatory review gates. The
+scripts refuse it with the same instruction, and that refusal is not a
+transport failure: never answer it by switching to the native integration
+below.
+
 **Launcher context (optional).** A consumer's launcher (for example a script
 that opens a workspace straight from the tracker) may pre-fetch the issue and
 hand it over, typically as a cache file its instructions name, carrying
@@ -212,6 +223,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "$ARGUMENTS"
 ```
 
 It works for every adapter and also returns `sub_issue_analysis`. If it
+stops on the renamed `do_issue` section, stop as above. If it
 cannot run here (for example no tracker credential in this environment) and
 the harness has a native integration for the tracker, use that instead
 (**judgment** — Linear: `mcp__linear__get_issue({ id: "$ARGUMENTS" })`).
@@ -425,20 +437,20 @@ routing below remain **exact**.
    It reads the issue JSON from Step 1 (a path, or `-` for stdin) and the
    consumer's routing from the overlay:
 
-   - `do_issue.agents.default` — the agent when nothing else matches
-     (`general-purpose` when `do_issue.agents` is absent).
-   - `do_issue.agents.codearea_areas` — `{label: areaKey}`: an area label
+   - `do_item.agents.default` — the agent when nothing else matches
+     (`general-purpose` when `do_item.agents` is absent).
+   - `do_item.agents.codearea_areas` — `{label: areaKey}`: an area label
      selects an area in the change-area catalog (`drive.change_areas_catalog`),
      and that area's own `agent` field is the primary signal.
-   - `do_issue.agents.catalog` — `{catalogAgent: agent}`: maps the catalog's
+   - `do_item.agents.catalog` — `{catalogAgent: agent}`: maps the catalog's
      `agent` values to agent types.
-   - `do_issue.agents.labels` — `{label: agent}`: the fallback when no catalog
+   - `do_item.agents.labels` — `{label: agent}`: the fallback when no catalog
      area matches.
-   - `do_issue.agents.title_keywords` — `{keyword: agent}`, optional: a last
+   - `do_item.agents.title_keywords` — `{keyword: agent}`, optional: a last
      resort matched against the title.
-   - `do_issue.agents.integrator` — the agent used when the issue routes to
+   - `do_item.agents.integrator` — the agent used when the issue routes to
      several agents at once.
-   - `do_issue.scouts` — `{agent: [scouts]}`: the pre-flight scouts for the
+   - `do_item.scouts` — `{agent: [scouts]}`: the pre-flight scouts for the
      chosen agent.
 
    For example, a repository might route `agent:backend` to a "Backend Agent"
@@ -484,7 +496,7 @@ routing below remain **exact**.
    pull request and `pull_requests.stacking` allows it.
 
    **Review gates — MANDATORY when declared.** Each entry of the overlay's
-   `do_issue.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
+   `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
    applies when the issue carries one of its `labels`, or the change will
    plausibly touch one of its `paths`. For every applicable gate, end the
    delegation prompt with this directive, verbatim except for the
@@ -890,7 +902,7 @@ snapshot mapping are **exact**.
 2. **exact** — **Read the Execution Plan from the parent description** (if
    present). A planner (e.g. a plan-epic skill, if the repository has one)
    writes a `## Execution Plan` section whose machine-readable content is the
-   fenced JSON block named by `do_issue.execution_plan_block` (default
+   fenced JSON block named by `do_item.execution_plan_block` (default
    `execution-plan-v1`). The Markdown around it is for humans; never parse
    its steps, blockers or overrides as machine facts.
 

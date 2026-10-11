@@ -7,7 +7,7 @@
  * returns what it was asked for or throws with a reason the caller records as a
  * GAP — never a shorter population presented as complete.
  *
- * The tracker is reached through do-issue's tracker port (the adapter the
+ * The tracker is reached through do-item's tracker port (the adapter the
  * consumer names in `issue_tracker.adapter`); the change-area catalog is the
  * consumer's file (`drive.change_areas_catalog`), read directly.
  */
@@ -21,12 +21,12 @@ import {
 } from "./fleet-health.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { openTracker } from "../../../do-issue/scripts/lib/tracker/index.ts";
-import { parseTrackerConfig } from "../../../do-issue/scripts/lib/tracker/config.ts";
+import { openTracker } from "../../../do-item/scripts/lib/tracker/index.ts";
+import { parseTrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
 import type {
   IssueComments,
   Tracker,
-} from "../../../do-issue/scripts/lib/tracker/port.ts";
+} from "../../../do-item/scripts/lib/tracker/port.ts";
 import {
   consumerRoot,
   OVERLAY_RELPATH,

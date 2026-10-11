@@ -18,7 +18,7 @@ and the deferral protocol are canonical in `/groundwork:resolve-review-comments`
 [`deferral-protocol.md`](../resolve-review-comments/references/deferral-protocol.md).
 Read them; this skill adds the *loop*, not a second vocabulary.
 
-**In the delivery loop** — upstream: [`/groundwork:do-issue`](../do-issue/SKILL.md)
+**In the delivery loop** — upstream: [`/groundwork:do-item`](../do-item/SKILL.md)
 opens the PR and arms this drive. Alongside: the repository's own
 continuous-integration (CI) repair procedure for red CI, and its
 merge-conflict procedure when the branch conflicts, if it has them.
@@ -288,7 +288,7 @@ ${CLAUDE_SKILL_DIR}/scripts/drive.ts 3947 --bots-only \
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode.
 
-Normally you do not run this by hand: a `/groundwork:do-issue` run **arms the
+Normally you do not run this by hand: a `/groundwork:do-item` run **arms the
 drive itself** the moment the draft PR opens (its § Arm the drive step).
 Manual invocation — `/groundwork:drive-pr [PR]`, which arms this same command
 (§ Entry mode) — is for PRs created outside that flow or re-arming after a
@@ -511,18 +511,18 @@ could forge or forget.
    mention) is context the PR does not claim to deliver, so its gate is not
    this PR's to honour and its lookup failing is not a reason to refuse. For
    each, read its labels with the `linear` CLI and, when it has a parent, the
-   parent's description too, applying `/groundwork:do-issue`'s gate check
-   ([`do-issue/SKILL.md`](../do-issue/SKILL.md) Steps 4a/4b: `hitl`, plus a
+   parent's description too, applying `/groundwork:do-item`'s gate check
+   ([`do-item/SKILL.md`](../do-item/SKILL.md) Steps 4a/4b: `hitl`, plus a
    parent `## Execution Plan` gate override naming the issue) rather than a
    copy of it here. A PR that references no issue has no
    checkpoint to honour; a referenced issue whose labels — or whose parent —
    cannot be read (lookup failure, auth, CLI error) has an **unknown**
    checkpoint — fail closed: do not arm, report the read failure (the same
-   stance `/groundwork:do-issue` takes on an unreadable gate). If any of them carries an
+   stance `/groundwork:do-item` takes on an unreadable gate). If any of them carries an
    uncleared checkpoint and this run has no human clearance to proceed
    end-to-end, print the
    command below and stop — review rounds pre-empt a judgment the issue exists
-   to collect (the same rule `/groundwork:do-issue`'s § Arm the drive applies).
+   to collect (the same rule `/groundwork:do-item`'s § Arm the drive applies).
 3. **Spawn the driver in the background** with the harness's background
    execution (Bash `run_in_background`), never blocking the session on it, in
    the portable one-line form:
@@ -576,7 +576,7 @@ could forge or forget.
    not touch the drive's state, threads, or worktree: the driver owns them.
 
 A harness with no documented headless pass command (anything but Claude Code)
-cannot arm: print the command and say why, as `/groundwork:do-issue` does. Do not
+cannot arm: print the command and say why, as `/groundwork:do-item` does. Do not
 substitute a guessed one.
 
 ### Driver pass: you are headless and one-shot
@@ -1044,7 +1044,7 @@ call.
 
 **Ask the handoff's scope question first — only when the section shows an
 actual chain.** The handoff file (`.context/pr-drive-<PR>.md`) carries an
-**Intent chain** section, re-read each round from the snapshot `/groundwork:do-issue`
+**Intent chain** section, re-read each round from the snapshot `/groundwork:do-item`
 wrote at pickup and pinned to this PR.
 Use `capture-intent-chain.ts <PR> --pickup <pickupId>` with the token retained
 from that pickup before arming the drive. The immutable archive survives later

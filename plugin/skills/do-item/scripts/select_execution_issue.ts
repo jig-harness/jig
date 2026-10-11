@@ -8,7 +8,7 @@
  * verified.
  * Output (JSON): `{ present, eligible, gates, mergeConflicts? }`.
  *
- * The block name comes from `do_issue.execution_plan_block` in the consumer
+ * The block name comes from `do_item.execution_plan_block` in the consumer
  * overlay (default `execution-plan-v1`).
  */
 import { existsSync } from "node:fs";
@@ -17,6 +17,7 @@ import {
   readOverlay,
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
 import { isEntryPoint } from "./lib/cli.ts";
+import { doItemSection } from "./lib/overlay.ts";
 import {
   DEFAULT_BLOCK,
   eligibleIssues,
@@ -34,15 +35,15 @@ export function executionPlanBlock(
     ? readOverlay()
     : null,
 ): string {
-  const section = overlay?.do_issue;
+  const section = doItemSection(overlay);
   if (section === undefined || section === null) return DEFAULT_BLOCK;
   if (typeof section !== "object" || Array.isArray(section))
-    throw new Error("do_issue must be a mapping");
+    throw new Error("do_item must be a mapping");
   const block = (section as Record<string, unknown>).execution_plan_block;
   if (block === undefined || block === null) return DEFAULT_BLOCK;
   if (typeof block !== "string" || !/^[A-Za-z0-9][\w.-]*$/.test(block))
     throw new Error(
-      "do_issue.execution_plan_block must be a fenced-block name such as execution-plan-v1",
+      "do_item.execution_plan_block must be a fenced-block name such as execution-plan-v1",
     );
   return block;
 }

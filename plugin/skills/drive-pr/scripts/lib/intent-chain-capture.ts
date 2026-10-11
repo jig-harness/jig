@@ -22,7 +22,7 @@ import {
   readPickup,
   renewPickup,
   withFileLock,
-} from "../../../do-issue/scripts/lib/intent-chain-pickup.ts";
+} from "../../../do-item/scripts/lib/intent-chain-pickup.ts";
 import { topLevelParagraphs } from "./markdown-paragraphs.ts";
 import {
   INTENT_CHAIN_SUBDIR,
@@ -32,7 +32,7 @@ import {
 
 /** A snapshot is budgeted at 4000 characters by the writer; this bound only
  * refuses a file that is not one, rather than copy something unbounded. */
-export { PICKUP_MAX_BYTES as CAPTURE_MAX_BYTES } from "../../../do-issue/scripts/lib/intent-chain-pickup.ts";
+export { PICKUP_MAX_BYTES as CAPTURE_MAX_BYTES } from "../../../do-item/scripts/lib/intent-chain-pickup.ts";
 
 export interface CaptureInput {
   pr: string;

@@ -1,5 +1,5 @@
 /**
- * scripts.test.ts — the do-issue script surface.
+ * scripts.test.ts — the do-item script surface.
  *
  * `determineAgents` is the one real decision procedure (catalog-primary,
  * label-fallback, title keywords, coordination arbitration), so it gets unit
@@ -178,11 +178,20 @@ describe("determineAgents", () => {
 
   it("refuses a malformed routing section", () => {
     expect(() =>
-      parseAgentRouting({ do_issue: { agents: { labels: ["x"] } } }),
-    ).toThrow("do_issue.agents.labels");
+      parseAgentRouting({ do_item: { agents: { labels: ["x"] } } }),
+    ).toThrow("do_item.agents.labels");
     expect(() =>
-      parseAgentRouting({ do_issue: { scouts: { "Backend Agent": "x" } } }),
-    ).toThrow("do_issue.scouts");
+      parseAgentRouting({ do_item: { scouts: { "Backend Agent": "x" } } }),
+    ).toThrow("do_item.scouts");
+  });
+
+  it("refuses the pre-rename do_issue section instead of ignoring it", () => {
+    expect(() =>
+      parseAgentRouting({ do_issue: { agents: { default: "x" } } }),
+    ).toThrow("now called do_item");
+    expect(() => parseAgentRouting({ do_issue: null, do_item: {} })).toThrow(
+      "now called do_item",
+    );
   });
 
   // Every table is keyed by external input (a label, a catalog `agent`
@@ -212,7 +221,7 @@ describe("determineAgents", () => {
   it("keeps a configured '__proto__' label as an ordinary entry", () => {
     const routing = parseAgentRouting(
       JSON.parse(
-        '{"do_issue":{"agents":{"labels":{"__proto__":"Odd Agent"}}}}',
+        '{"do_item":{"agents":{"labels":{"__proto__":"Odd Agent"}}}}',
       ) as Record<string, unknown>,
     );
     expect(determine(["__proto__"], "", null, routing).all_agents).toEqual([
@@ -238,7 +247,7 @@ describe("the CLI wrappers load under node as well as bun", () => {
   //
   let stubBin: string;
   beforeAll(() => {
-    stubBin = mkdtempSync(join(tmpdir(), "do-issue-stub-"));
+    stubBin = mkdtempSync(join(tmpdir(), "do-item-stub-"));
     writeFileSync(join(stubBin, "linear"), "#!/bin/sh\nexit 1\n", {
       mode: 0o755,
     });
@@ -546,7 +555,7 @@ describe("catalog agent resolution", () => {
   });
 
   it("reads the catalog the overlay names", () => {
-    const dir = mkdtempSync(join(tmpdir(), "do-issue-catalog-"));
+    const dir = mkdtempSync(join(tmpdir(), "do-item-catalog-"));
     try {
       writeFileSync(
         join(dir, "catalog.yaml"),
@@ -620,7 +629,7 @@ describe("get_issue.ts reads the issue through the tracker", () => {
   });
 
   const run = (payload: string, extra: string[] = []) => {
-    const bin = mkdtempSync(join(tmpdir(), "do-issue-linear-"));
+    const bin = mkdtempSync(join(tmpdir(), "do-item-linear-"));
     dirs.push(bin);
     writeFileSync(
       join(bin, "linear"),
@@ -870,7 +879,7 @@ describe("get_issue.ts reads the issue through the tracker", () => {
   });
 
   it("fails with exit 1 when the repository configures no team", () => {
-    const dir = mkdtempSync(join(tmpdir(), "do-issue-noteam-"));
+    const dir = mkdtempSync(join(tmpdir(), "do-item-noteam-"));
     dirs.push(dir);
     writeFileSync(
       join(dir, "overlay.yaml"),
@@ -896,7 +905,7 @@ describe("list_comments.ts", () => {
   const nodeBin = process.execPath.includes("/bun") ? "node" : process.execPath;
   let stubBin: string;
   beforeAll(() => {
-    stubBin = mkdtempSync(join(tmpdir(), "do-issue-comments-stub-"));
+    stubBin = mkdtempSync(join(tmpdir(), "do-item-comments-stub-"));
     writeFileSync(join(stubBin, "linear"), "#!/bin/sh\nexit 1\n", {
       mode: 0o755,
     });
@@ -939,7 +948,7 @@ describe("list_comments.ts", () => {
     payload: string,
     more: Array<{ variables: string; payload: string }> = [],
   ) => {
-    const bin = mkdtempSync(join(tmpdir(), "do-issue-comments-"));
+    const bin = mkdtempSync(join(tmpdir(), "do-item-comments-"));
     dirs.push(bin);
     writeFileSync(
       join(bin, "linear"),
@@ -1068,7 +1077,7 @@ describe("tracker.ts", () => {
     cases: Array<{ operation: string; variables: string; payload: string }>,
     input?: string,
   ) => {
-    const bin = mkdtempSync(join(tmpdir(), "do-issue-tracker-"));
+    const bin = mkdtempSync(join(tmpdir(), "do-item-tracker-"));
     dirs.push(bin);
     writeFileSync(join(bin, "linear"), linearApiStub(cases), { mode: 0o755 });
     return spawnSync(process.execPath, [join(SCRIPTS, "tracker.ts"), ...args], {
@@ -1102,6 +1111,28 @@ describe("tracker.ts", () => {
       ],
     });
     expect(run(["labels", "extra"], []).status).toBe(2);
+  });
+
+  it("refuses the pre-rename do_issue section when printing states or labels", () => {
+    const dir = mkdtempSync(join(tmpdir(), "do-item-tracker-"));
+    dirs.push(dir);
+    const overlay = join(dir, "overlay.yaml");
+    writeFileSync(
+      overlay,
+      "issue_tracker:\n  team: ENG\ndo_issue:\n  gates: []\n",
+    );
+    for (const op of ["states", "labels"]) {
+      const r = spawnSync(process.execPath, [join(SCRIPTS, "tracker.ts"), op], {
+        encoding: "utf8",
+        env: { ...gitCleanEnv(), GROUNDWORK_OVERLAY: overlay },
+      });
+      expect({ op, status: r.status, stdout: r.stdout }).toEqual({
+        op,
+        status: 1,
+        stdout: "",
+      });
+      expect(r.stderr).toContain("now called do_item");
+    }
   });
 
   it("moves an issue to the tracker's name for a canonical state", () => {

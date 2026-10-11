@@ -95,8 +95,8 @@ export type PassChildAnswer = true | false | null;
 
 /**
  * Any argv naming a top-level script under `drive-pr`'s,
- * `resolve-review-comments`'s or `do-issue`'s own `scripts/` directory —
- * `…/skills/(drive-pr|resolve-review-comments|do-issue)/scripts/<file>.ts`,
+ * `resolve-review-comments`'s or `do-item`'s own `scripts/` directory —
+ * `…/skills/(drive-pr|resolve-review-comments|do-item)/scripts/<file>.ts`,
  * whether the skills sit in the plugin install (`…/groundwork/<version>/skills/…`)
  * or in a consumer's own `.claude/skills/…` override, exactly two path
  * segments past `scripts`, so `scripts/lib/**` and
@@ -119,7 +119,7 @@ export type PassChildAnswer = true | false | null;
  * {@link isOwnHelperInvocation} — never searched across the whole string.
  */
 const OWN_HELPER_SCRIPT =
-  /[\\/]skills[\\/](?:drive-pr|resolve-review-comments|do-issue)[\\/]scripts[\\/][^\\/]+\.ts(?=[\s'"]|$)/;
+  /[\\/]skills[\\/](?:drive-pr|resolve-review-comments|do-item)[\\/]scripts[\\/][^\\/]+\.ts(?=[\s'"]|$)/;
 
 /**
  * Runtime interpreters `tsArgv()` (`proc.ts`) might invoke a helper script

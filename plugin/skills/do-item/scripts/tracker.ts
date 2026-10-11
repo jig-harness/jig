@@ -20,13 +20,12 @@
  */
 
 import { isEntryPoint } from "./lib/cli.ts";
-import { parseTrackerConfig } from "./lib/tracker/config.ts";
+import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import {
   CANONICAL_STATES,
   type CanonicalState,
   openTracker,
 } from "./lib/tracker/index.ts";
-import { readOverlay } from "../../resolve-review-comments/scripts/lib/consumer.ts";
 import { labelsAsConfig } from "../../resolve-review-comments/scripts/lib/tracker-labels.ts";
 
 const USAGE = `usage:
@@ -55,19 +54,13 @@ export async function main(argv: string[]): Promise<number> {
     switch (op) {
       case "states": {
         if (key !== undefined) return usage("states takes no argument");
-        console.log(
-          JSON.stringify(parseTrackerConfig(readOverlay()).states, null, 2),
-        );
+        console.log(JSON.stringify(ownTrackerConfig().states, null, 2));
         return 0;
       }
       case "labels": {
         if (key !== undefined) return usage("labels takes no argument");
         console.log(
-          JSON.stringify(
-            labelsAsConfig(parseTrackerConfig(readOverlay()).labels),
-            null,
-            2,
-          ),
+          JSON.stringify(labelsAsConfig(ownTrackerConfig().labels), null, 2),
         );
         return 0;
       }

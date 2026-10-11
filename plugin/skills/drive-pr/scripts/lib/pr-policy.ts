@@ -13,7 +13,7 @@
  * misspelt `stacking` would otherwise silently fall back to the default it was
  * written to change.
  *
- * `do-issue`'s `pr-plan.ts` applies the policy when a pull request is opened.
+ * `do-item`'s `pr-plan.ts` applies the policy when a pull request is opened.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

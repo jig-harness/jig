@@ -4,7 +4,7 @@
  * re-keyed by).
  *
  * Type: Writer
- * Input: JSON on stdin (or `--input <path>`) — the Linear data `/do-issue`
+ * Input: JSON on stdin (or `--input <path>`) — the Linear data `/do-item`
  *   (or `/work-batch`) already fetched; see `IntentChainInput`.
  * Output: `<worktree>/.context/intent-chain/<identifier>.md` (or
  *   `--out <path>` to override the content file directly — which writes NO
@@ -869,7 +869,7 @@ function pruneStale(dir: string): void {
  * Every OTHER identifier a branch for this work may legitimately be named
  * after: a batch's items (`/work-batch` names the branch after its
  * highest-priority item, not the anchor) and a selected sub-issue
- * (`/do-issue` keeps the parent as `issue` and adds the child as
+ * (`/do-item` keeps the parent as `issue` and adds the child as
  * `subIssue`). Non-PR source lookup resolves the branch identifier, so each gets a
  * copy for non-PR source lookup; the immutable pickup owns the same IDs.
  */
@@ -877,7 +877,7 @@ export function aliasIdentifiers(
   input: IntentChainInput,
   identifier: string,
 ): string[] {
-  // `items` is a batch-only field (`/do-issue` Step 3.5 sends it only from
+  // `items` is a batch-only field (`/do-item` Step 3.5 sends it only from
   // `/work-batch`): honoured for aliasing only in batch mode, so a malformed
   // single-issue input carrying `items` cannot overwrite another item's stored
   // chain (docomply-review, a reference-implementation pull request).

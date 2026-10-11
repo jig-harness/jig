@@ -102,7 +102,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
   });
 
   it("a helper script run from the plugin install, of any of the three skills → false", () => {
-    for (const skill of ["drive-pr", "resolve-review-comments", "do-issue"]) {
+    for (const skill of ["drive-pr", "resolve-review-comments", "do-item"]) {
       const rows: ProcRow[] = [
         { pid: DRIVER, ppid: 1, args: "drive.ts" },
         {

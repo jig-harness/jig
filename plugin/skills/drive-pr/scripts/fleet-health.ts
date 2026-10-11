@@ -96,7 +96,7 @@ import {
 } from "./lib/fleet-health-sources.ts";
 import { computeLoopMetrics, initiatingBotReviews } from "./lib/metrics.ts";
 import { type PrSample, resolveRepo, samplePr } from "./lib/sample.ts";
-import type { Tracker } from "../../do-issue/scripts/lib/tracker/port.ts";
+import type { Tracker } from "../../do-item/scripts/lib/tracker/port.ts";
 
 const DAY_MS = 86_400_000;
 const DEFAULT_LIMIT = 600;

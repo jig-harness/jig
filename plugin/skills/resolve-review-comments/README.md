@@ -104,7 +104,7 @@ thread filter; consumer bot names do not silently widen it to human threads.
 the [deferral protocol](references/deferral-protocol.md) requires a tracked
 follow-up before a deferred thread resolves. The executable deferral adapter
 files those follow-ups in Linear directly, through Linear's GraphQL API; it
-does not yet use the tracker interface that `do-issue` and `drive-pr` reach
+does not yet use the tracker interface that `do-item` and `drive-pr` reach
 the tracker through, so another tracker needs its own deferral adapter.
 
 The skill works independently. A sibling `drive-pr` skill, found in the

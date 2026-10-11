@@ -21,7 +21,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writePickup } from "../../do-issue/scripts/lib/intent-chain-pickup.ts";
+import { writePickup } from "../../do-item/scripts/lib/intent-chain-pickup.ts";
 import {
   type CaptureInput,
   captureIntentChain,
@@ -658,10 +658,7 @@ describe("late capture retains the original pickup", () => {
 });
 
 describe("actual writer pickup identity survives late capture", () => {
-  const writer = join(
-    import.meta.dir,
-    "../../do-issue/scripts/intent-chain.ts",
-  );
+  const writer = join(import.meta.dir, "../../do-item/scripts/intent-chain.ts");
   const scope = (text: string) => `## Scope\n\n${text}\n`;
 
   for (const mode of ["batch", "sub-issue"] as const) {

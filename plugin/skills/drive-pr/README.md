@@ -151,7 +151,7 @@ are documented where they act, in [`SKILL.md`](SKILL.md) and
 
 ## When to reach for it
 
-- **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/groundwork:do-issue` run arms the drive when it opens the draft PR. Typing `/groundwork:drive-pr [PR]` in a session does the same thing: the agent starts the driver below in the background, reports its log path, and stops — it does not work a round itself.
+- **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/groundwork:do-item` run arms the drive when it opens the draft PR. Typing `/groundwork:drive-pr [PR]` in a session does the same thing: the agent starts the driver below in the background, reports its log path, and stops — it does not work a round itself.
 - **You want exactly one round, interactively, with yourself in the loop** → `/groundwork:drive-pr --interactive [PR]` (one in-session round, then stop), or [`/groundwork:resolve-review-comments`](../resolve-review-comments/README.md) (the drive wraps it).
 - **CI is red and that's the only problem** → repair it directly, with the repository's CI-repair skill if it has one. (A drive already in flight repairs red CI itself, up to `DRIVE_PR_CI_REPAIR_ROUNDS` times; repair by hand when there is no drive running, or when its budget is spent.)
 
@@ -161,7 +161,7 @@ are documented where they act, in [`SKILL.md`](SKILL.md) and
 bun <skill-dir>/scripts/drive.ts <PR> --bots-only -- claude -p "/groundwork:drive-pr --bots-only <PR>"
 ```
 
-The `bun` prefix and the single line are both deliberate, so don't "tidy" them: running the `.ts` file directly relies on its shebang and works on macOS/Linux only, and a `\` continuation works only in a POSIX shell — this form also runs on PowerShell and `cmd.exe`. It is the same command `/groundwork:do-issue` emits and spawns when it arms the drive for you, and the one `/groundwork:drive-pr` spawns from a session. The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
+The `bun` prefix and the single line are both deliberate, so don't "tidy" them: running the `.ts` file directly relies on its shebang and works on macOS/Linux only, and a `\` continuation works only in a POSIX shell — this form also runs on PowerShell and `cmd.exe`. It is the same command `/groundwork:do-item` emits and spawns when it arms the drive for you, and the one `/groundwork:drive-pr` spawns from a session. The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
 
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default 10). `--dry-run` reports what each round would do and never invokes the pass. Starting it twice **in the same clone** is safe — see exit `11`. That is the exact reach: the lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. A separate clone — another machine, a CI checkout — takes its own lock and can drive the same PR at the same time.
 

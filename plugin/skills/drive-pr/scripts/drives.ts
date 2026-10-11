@@ -4,7 +4,7 @@
  *.
  *
  * A drive is routinely armed as a background child of a session that ends
- * long before the drive does (do-issue's "Arm the drive" step), so the
+ * long before the drive does (do-item's "Arm the drive" step), so the
  * running fleet is invisible by default: the locks name a pid, the pid has no
  * pane, and the refusal a second start meets ("another driver already holds
  * the … lock") names a process the operator has no window into. This command

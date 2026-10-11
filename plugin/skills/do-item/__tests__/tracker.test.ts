@@ -157,6 +157,16 @@ describe("tracker configuration", () => {
       process.env.GROUNDWORK_OVERLAY = path;
       expect(teamKeyOrNull()).toBe("ENG");
     });
+    it("opening the tracker refuses the pre-rename do_issue section", () => {
+      dir = mkdtempSync(join(tmpdir(), "tracker-config-"));
+      const path = join(dir, "overlay.yaml");
+      writeFileSync(
+        path,
+        "issue_tracker:\n  team: ENG\ndo_issue:\n  gates: []\n",
+      );
+      process.env.GROUNDWORK_OVERLAY = path;
+      expect(() => openTracker()).toThrow("now called do_item");
+    });
   });
 });
 

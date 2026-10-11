@@ -1,5 +1,5 @@
 /**
- * Shared CLI helpers for the do-issue scripts — the counterpart to
+ * Shared CLI helpers for the do-item scripts — the counterpart to
  * resolve-review-comments' `scripts/lib/cli.ts`.
  *
  * Each entry script carried a byte-identical `isEntryPoint` plus its

@@ -17,7 +17,7 @@ Contents: [the file](#the-file) ·
 [what is derived, not declared](#what-is-derived-not-declared) ·
 [`gates`](#gates) · [`review`](#review) · [`repository`](#repository) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
-[`issue_tracker`](#issue_tracker) · [`do_issue`](#do_issue) ·
+[`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
 [`fleet_health`](#fleet_health) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
@@ -31,7 +31,7 @@ Contents: [the file](#the-file) ·
   `GROUNDWORK_OVERLAY` points the skills at a different file altogether.
 - **Format.** YAML. JSON is valid YAML, so a JSON file works too.
 - **Missing file.** `resolve-review-comments` and the tracker scripts of
-  `do-issue` refuse to run: an installed skill in a repository that has not
+  `do-item` refuse to run: an installed skill in a repository that has not
   adopted it says so rather than guessing. `drive-pr`, the pull-request
   policy and the procedure skills run on their defaults.
 - **Unknown fields** are ignored at the top level and inside most sections, so
@@ -50,7 +50,7 @@ Contents: [the file](#the-file) ·
   catch the first kind only.
 - **Check it.** `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
   prints the review skill's values or what is missing;
-  `bun <plugin>/skills/do-issue/scripts/pr-plan.ts open` prints the pull-request
+  `bun <plugin>/skills/do-item/scripts/pr-plan.ts open` prints the pull-request
   policy as it applies to the current branch.
 
 ## What is derived, not declared
@@ -107,11 +107,11 @@ and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `repository.base_branch` | branch name, without `origin/` | Derived: the clone's `origin/HEAD`, else GitHub's default branch | drive-pr, do-issue, review, descar | The integration branch: where pull requests land and what rounds diff against. The required checks come from it only when there is no pull request to read; for a pull request they come from that pull request's own base, so a stacked layer is held to its predecessor branch's protection. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it |
+| `repository.base_branch` | branch name, without `origin/` | Derived: the clone's `origin/HEAD`, else GitHub's default branch | drive-pr, do-item, review, descar | The integration branch: where pull requests land and what rounds diff against. The required checks come from it only when there is no pull request to read; for a pull request they come from that pull request's own base, so a stacked layer is held to its predecessor branch's protection. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it |
 
 ## `pull_requests`
 
-How agents open and stack pull requests. `do-issue` applies it through
+How agents open and stack pull requests. `do-item` applies it through
 `scripts/pr-plan.ts` when it opens a pull request; `drive-pr` applies
 `mark_ready` as a drive runs. Merging is not configurable: a person merges.
 Without the section the policy is: one pull request
@@ -185,8 +185,8 @@ not resolve it either.
 |-------|------|-------------|---------|--------------|
 | `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout |
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
-| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-issue, review | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). `determine_agent.ts --catalog` overrides it for one run |
-| `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-issue | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
+| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). `determine_agent.ts --catalog` overrides it for one run |
+| `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
 
 ## `ci`
@@ -200,35 +200,40 @@ not resolve it either.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `linear` | do-issue, drive-pr | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
-| `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-issue, drive-pr, review | The key issue identifiers carry (`ENG` for `ENG-123`) |
-| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-issue (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read) | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate` |
-| `issue_tracker.labels.epic` | label | `epic`, else `review.taxonomy.epic_label` | do-issue, resolve-review-comments, drive-pr (fleet health) | Marks an issue whose sub-issues are worked one at a time |
-| `issue_tracker.labels.hitl` | label | `hitl` | do-issue | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
-| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-issue | A step a person performs outside the code; caps an epic at `ops_pending` |
-| `issue_tracker.labels.followup` | label | `pr-followup`, else `review.taxonomy.provenance_label` | do-issue, resolve-review-comments, drive-pr (fleet health) | Marks an issue filed from a review finding |
-| `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-issue | Any of these marks a bug |
-| `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-issue | A recurring pattern's label is `<prefix><slug>` |
-| `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-issue | Sizes whose issues the batch check may group into one pull request |
-| `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-issue | Open sub-issues an epic may hand off instead of finishing |
-| `issue_tracker.file_command` | text | Ask the user to file the issue | do-issue, resolve-review-comments, descar, github-actions, promote-memory | How an agent files a new issue by hand, such as a slash command |
+| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-item, drive-pr, review | The key issue identifiers carry (`ENG` for `ENG-123`) |
+| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read) | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate` |
+| `issue_tracker.labels.epic` | label | `epic`, else `review.taxonomy.epic_label` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue whose sub-issues are worked one at a time |
+| `issue_tracker.labels.hitl` | label | `hitl` | do-item | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
+| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item | A step a person performs outside the code; caps an epic at `ops_pending` |
+| `issue_tracker.labels.followup` | label | `pr-followup`, else `review.taxonomy.provenance_label` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue filed from a review finding |
+| `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-item | Any of these marks a bug |
+| `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item | A recurring pattern's label is `<prefix><slug>` |
+| `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-item | Sizes whose issues the batch check may group into one pull request |
+| `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-item | Open sub-issues an epic may hand off instead of finishing |
+| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, resolve-review-comments, descar, github-actions, promote-memory | How an agent files a new issue by hand, such as a slash command |
 
-## `do_issue`
+## `do_item`
+
+This section was called `do_issue` before the skill was renamed. The old name
+is not read: `do-item` stops and asks for the section to be renamed (its fields
+are unchanged), rather than running without the repository's routing and
+gates.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `do_issue.agents.default` | agent name | `general-purpose` | do-issue | Agent that implements an issue no rule routes |
-| `do_issue.agents.integrator` | agent name | `do_issue.agents.default` | do-issue | Agent that coordinates when more than two agents match |
-| `do_issue.agents.catalog` | map from catalog agent name to agent | none | do-issue | Translates the change-area catalog's `agent` values into the repository's agent names |
-| `do_issue.agents.codearea_areas` | map from issue label to area key | none | do-issue | Routes an issue to a change area by label |
-| `do_issue.agents.labels` | map from issue label to agent | none | do-issue | Label routing when the catalog gives no answer |
-| `do_issue.agents.title_keywords` | map from keyword to agent | none | do-issue | Last-resort routing on a case-insensitive title match |
-| `do_issue.scouts` | map from agent to a list of scouts | none | do-issue | Scouts that run before each agent. The key is the **agent**, not a label |
-| `do_issue.gates` | list of `{labels, paths, skill}` | none | do-issue | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
-| `do_issue.execution_plan_block` | name | `execution-plan-v1` | do-issue | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
+| `do_item.agents.default` | agent name | `general-purpose` | do-item | Agent that implements an issue no rule routes |
+| `do_item.agents.integrator` | agent name | `do_item.agents.default` | do-item | Agent that coordinates when more than two agents match |
+| `do_item.agents.catalog` | map from catalog agent name to agent | none | do-item | Translates the change-area catalog's `agent` values into the repository's agent names |
+| `do_item.agents.codearea_areas` | map from issue label to area key | none | do-item | Routes an issue to a change area by label |
+| `do_item.agents.labels` | map from issue label to agent | none | do-item | Label routing when the catalog gives no answer |
+| `do_item.agents.title_keywords` | map from keyword to agent | none | do-item | Last-resort routing on a case-insensitive title match |
+| `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
+| `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
+| `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
 
 The routing order and the gates are explained in
-[do-issue's SKILL.md](skills/do-issue/SKILL.md).
+[do-item's SKILL.md](skills/do-item/SKILL.md).
 
 ## `fleet_health`
 
@@ -396,7 +401,7 @@ issue_tracker:
     pattern_prefix: "pattern:"
     batch_sizes: [xs, small, medium]
     extractable_tails: [hitl:legal, hitl:tactical, manual-ops, pr-followup]
-do_issue:
+do_item:
   agents:
     default: general-purpose
     integrator: integrator

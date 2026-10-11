@@ -153,7 +153,7 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    the integration branch, or it is part of a forge-native stack whose
    metadata names the target, or the repository accepts plain branch chains
    and its tooling walks them. Groundwork's
-   [`do-issue`](../../plugin/skills/do-issue/SKILL.md) applies the policy with
+   [`do-item`](../../plugin/skills/do-item/SKILL.md) applies the policy with
    `pr-plan.ts` and refuses a PR that breaks it; the fields are in the
    [configuration reference](../../plugin/CONFIGURATION.md#pull_requests).
 
@@ -230,7 +230,7 @@ It reads each repository's own configuration for tracker taxonomy, reviewers
 and gate commands at run time. The same plugin ships the
 [PR drive loop](../../GLOSSARY.md) that wraps it for unattended work on one
 pull request ([`drive-pr`](../../plugin/skills/drive-pr/README.md)), the
-issue-pickup skill that starts a drive (`do-issue`, which applies the
+issue-pickup skill that starts a drive (`do-item`, which applies the
 declared pull-request shape through its `pr-plan.ts`), and the
 [Review Arbiter](../../plugin/agents/review-arbiter.md) agent that rules on
 contested findings

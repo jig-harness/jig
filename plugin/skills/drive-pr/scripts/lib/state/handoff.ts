@@ -31,11 +31,11 @@ import {
   utimesSync,
 } from "node:fs";
 import { basename, join } from "node:path";
-import { withFileLock } from "../../../../do-issue/scripts/lib/intent-chain-pickup.ts";
+import { withFileLock } from "../../../../do-item/scripts/lib/intent-chain-pickup.ts";
 import {
   issueKeySource,
   teamKeyOrNull,
-} from "../../../../do-issue/scripts/lib/tracker/config.ts";
+} from "../../../../do-item/scripts/lib/tracker/config.ts";
 import { git, gitIdentityEnv } from "../proc.ts";
 import { atomicWrite } from "./fsutil.ts";
 import type { DriveState } from "./schema.ts";
@@ -100,7 +100,7 @@ function cell(text: string): string {
 
 /**
  * The Refocus intent chain:
- * `/do-issue` writes one content file per work item under
+ * `/do-item` writes one content file per work item under
  * `.context/intent-chain/<identifier>.md`, next to this handoff file, plus a
  * worktree-wide pointer at `.context/intent-chain/.current` naming which
  * identifier is current — and every round's pass reads this handoff file
@@ -120,7 +120,7 @@ function cell(text: string): string {
  * That lookup is for pickup/source callers, not drive rounds. The interactive
  * hook (the consumer's refocus hook) uses a session-scoped copy to keep its
  * own chain after a later pickup; an unbound session reports missing scope.
- * See the doc comment atop `<skill-dir>/../do-issue/scripts/intent-chain.ts`
+ * See the doc comment atop `<skill-dir>/../do-item/scripts/intent-chain.ts`
  * for the full design.
  *
  * The chain is tracker data any collaborator can edit, so it goes inside an
@@ -137,7 +137,7 @@ function cell(text: string): string {
  *
  * The snapshot is resolved from the worktree's own `.context/`, NOT from
  * `handoffDir`: `$DRIVE_PR_HANDOFF_DIR` moves the handoff file, while
- * `/do-issue` always writes the snapshot into the worktree.
+ * `/do-item` always writes the snapshot into the worktree.
  * `$DRIVE_PR_INTENT_CHAIN_DIR` overrides that location for tests.
  */
 export const INTENT_CHAIN_SUBDIR = "intent-chain";
@@ -236,7 +236,7 @@ function regularFileOrNull(file: string): string | null {
 /** The PR-scoped pin `capture-intent-chain.ts` writes at drive arm:
  * `.context/intent-chain/pr.<N>.md`, a copy of the chain taken while the PR's
  * own head branch was verified to be the checked-out one. A PR number is the
- * one key no later `/do-issue` pickup can reuse, so a round that finds a pin
+ * one key no later `/do-item` pickup can reuse, so a round that finds a pin
  * reads only that pin — closing the two
  * substitutions an identifier key cannot: a branch that names no
  * item falling through to the worktree-wide `.current`, and a batch/sub-issue
@@ -354,7 +354,7 @@ export async function intentChainSection(
     return [
       ...head,
       pr === undefined
-        ? `_No readable \`.context/${INTENT_CHAIN_SUBDIR}/\` snapshot for this worktree's current item — \`/do-issue\` writes it at pickup. Triage against the PR and its linked issue instead, and say in the narrative that the chain was missing._`
+        ? `_No readable \`.context/${INTENT_CHAIN_SUBDIR}/\` snapshot for this worktree's current item — \`/do-item\` writes it at pickup. Triage against the PR and its linked issue instead, and say in the narrative that the chain was missing._`
         : `_No readable PR capture pin in \`.context/${INTENT_CHAIN_SUBDIR}/\` for this PR. Verify that the pickup source belongs to this PR, then run \`bun <skill-dir>/scripts/capture-intent-chain.ts ${/^[0-9]+$/.test(pr) ? pr : "<PR>"} --pickup <pickupId>\` using the token retained from that pickup. Triage against the PR and its linked issue meanwhile, and say in the narrative that the chain was missing._`,
     ];
   }
@@ -371,13 +371,13 @@ export async function intentChainSection(
     pr !== undefined &&
     basename(file) === prCaptureFileName(pr);
   if (forced === null && armLine === null) {
-    // `/do-issue` Step 3.5 cannot repair a PR pin: only the capture command
+    // `/do-item` Step 3.5 cannot repair a PR pin: only the capture command
     // replaces `pr.<N>.md` (from the discovery source for this PR's branch).
     return [
       ...head,
       isPin
         ? `_The PR capture pin \`.context/${INTENT_CHAIN_SUBDIR}/${basename(file)}\` has no arm line on its first line, so it was not written by \`intent-chain.ts\`. Verify that the pickup source belongs to this PR, then run \`bun <skill-dir>/scripts/capture-intent-chain.ts ${/^[0-9]+$/.test(pr) ? pr : "<PR>"} --pickup <pickupId>\` using the token retained from that pickup to replace it. Triage against the PR and its linked issue meanwhile, and say so in the narrative._`
-        : `_\`.context/${INTENT_CHAIN_SUBDIR}/\` has no arm line on its first line, so it was not written by \`intent-chain.ts\` — rewrite it via \`/do-issue\` Step 3.5. Triage against the PR and its linked issue meanwhile, and say so in the narrative._`,
+        : `_\`.context/${INTENT_CHAIN_SUBDIR}/\` has no arm line on its first line, so it was not written by \`intent-chain.ts\` — rewrite it via \`/do-item\` Step 3.5. Triage against the PR and its linked issue meanwhile, and say so in the narrative._`,
     ];
   }
   if ((forced ?? armLine?.[1]) === "off") {

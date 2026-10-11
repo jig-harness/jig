@@ -12,7 +12,7 @@
  * Issue pickup reads it to choose the next issue. This module is the format
  * contract: it validates the block strictly and refuses anything it cannot
  * read, because a guessed plan would start work out of order. The block name
- * is the consumer's (`do_issue.execution_plan_block`, default
+ * is the consumer's (`do_item.execution_plan_block`, default
  * `execution-plan-v1`); `__tests__/fixtures/*-execution-plan.md` pin the
  * format.
  */

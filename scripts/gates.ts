@@ -15,7 +15,7 @@ const root = join(import.meta.dir, "..");
  */
 export const POSIX_ONLY_SUITES = [
   "plugin/skills/drive-pr/**",
-  "plugin/skills/do-issue/**",
+  "plugin/skills/do-item/**",
 ];
 
 /**

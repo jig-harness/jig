@@ -8,11 +8,10 @@
  */
 
 import {
-  parseTrackerConfig,
+  ownTrackerConfig,
   requireTeamKey,
   type TrackerConfig,
 } from "./config.ts";
-import { readOverlay } from "../../../../resolve-review-comments/scripts/lib/consumer.ts";
 import { defaultTransport, linearTracker } from "./linear.ts";
 import type { Tracker } from "./port.ts";
 
@@ -40,7 +39,7 @@ export function knownAdapters(): string[] {
  * overlay is missing, names an unknown adapter, or declares no team.
  */
 export function openTracker(
-  config: TrackerConfig = parseTrackerConfig(readOverlay()),
+  config: TrackerConfig = ownTrackerConfig(),
 ): Tracker {
   const factory = Object.hasOwn(ADAPTERS, config.adapter)
     ? ADAPTERS[config.adapter]

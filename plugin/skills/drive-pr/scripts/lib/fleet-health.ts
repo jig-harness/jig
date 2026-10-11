@@ -28,7 +28,7 @@ import type {
   IssueFact,
   StartedIssueActivity,
   WindowSpec,
-} from "../../../do-issue/scripts/lib/tracker/port.ts";
+} from "../../../do-item/scripts/lib/tracker/port.ts";
 import type { FleetHealthConfig } from "./fleet-health-config.ts";
 
 /** The tracker facts the sensor reads, as the tracker port defines them. */

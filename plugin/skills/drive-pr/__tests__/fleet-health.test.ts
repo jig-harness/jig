@@ -24,8 +24,8 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
-import { parseTrackerConfig } from "../../do-issue/scripts/lib/tracker/config.ts";
-import { linearTracker } from "../../do-issue/scripts/lib/tracker/linear.ts";
+import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
+import { linearTracker } from "../../do-item/scripts/lib/tracker/linear.ts";
 import {
   BudgetError,
   MIN_GRAPHQL_BUDGET,

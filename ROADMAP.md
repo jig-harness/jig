@@ -221,7 +221,7 @@ orders the move:
    (chosen in [Skill moves after the drive loop](#skill-moves-after-the-drive-loop)).
 3. **Issue-tracker planning cluster** — epic planning, batching and
    prioritisation, each re-evaluated before it moves: they would reuse the
-   [tracker interface](GLOSSARY.md) that `do-issue` brought with the PR drive
+   [tracker interface](GLOSSARY.md) that `do-item` brought with the PR drive
    loop move (step 5), but much of their content is the organization's own
    tracker workflow. Follow-up, the debt report, epic acceptance review and
    the label tooling stay with the reference implementation.
@@ -351,7 +351,8 @@ together, in these steps:
    drive once it opens a pull request, and the drive loop imports its handoff
    code, so it belongs to the set. Inside the set that handoff code may move
    to whichever skill owns it; the move need not cut the link first. The
-   issue-pickup skill ships here as `do-issue`, named for the mechanism rather
+   issue-pickup skill ships here as `do-issue` (since renamed `do-item`),
+   named for the mechanism rather
    than a tracker: it reaches the tracker only through the interface drawn in
    step 3 of [Runnable tooling](#runnable-tooling), and the organization's
    tracker values arrive as configuration.
@@ -386,7 +387,9 @@ together, in these steps:
 plugin:
 
 - `drive-pr`, including its fleet-health and fractal-metrics reports;
-- the issue-pickup skill as `do-issue`, which reaches the tracker only
+- the issue-pickup skill as `do-issue` (since renamed `do-item`; see
+  [Configuration and naming follow-ups](#configuration-and-naming-follow-ups),
+  item 3), which reaches the tracker only
   through the [tracker interface](GLOSSARY.md) and its Linear adapter;
 - the [Review Arbiter](GLOSSARY.md) as the plugin agent `review-arbiter`;
 - drive-pr's terminal-states consistency check and the rule document it
@@ -397,7 +400,7 @@ The organization's values for these arrive through new
 ([plugin/README.md](plugin/README.md#the-drive-loop-and-issue-pickup)).
 Groundwork's CI runs the drive-pr suite, split into four parallel shards on
 Linux and macOS, and the terminal-states check; Windows leaves out the
-POSIX-only drive-pr and `do-issue` suites
+POSIX-only drive-pr and `do-item` suites
 ([scripts/gates.ts](scripts/gates.ts)). The paired step-4 change deleted the
 reference implementation's own copies, including its frozen review skill, and
 enabled the plugin there.
@@ -426,7 +429,8 @@ stops and names the missing setting instead of leaving the label behind.
 Plugin 0.7.0 makes how agents open pull requests a declared policy instead of
 an improvisation: `pull_requests` (stacking, stack depth, branch names, draft
 or Ready, when the drive marks a draft Ready, issue link, size budget,
-labels), applied by `do-issue`'s `pr-plan.ts`. Merging stays a human step;
+labels), applied by `do-issue`'s `pr-plan.ts` (the skill is now `do-item`).
+Merging stays a human step;
 delegating it is queued below. Every configuration field is now listed in one
 [reference](plugin/CONFIGURATION.md). A consumer that stacks pull requests
 declares `stacking` before its machines update; without it, 0.7.0 refuses to
@@ -488,7 +492,7 @@ implementation's copies are deleted in a paired change once 0.6.0 is
 installed where it works.
 
 **Batch 2: decision and explainer sheets** (plugin version not yet
-assigned; 0.8.0 is the tracker labels below). `decide` and
+assigned). `decide` and
 `explain` move as one unit. They render the same kind of sheet from a typed
 source, and today each keeps its own copy of the shared rendering kit,
 synchronized by a hook; in the plugin one copy serves both. The organization's
@@ -560,21 +564,22 @@ own pull request, opened against `main` once the one before it merges
    - the doctrine (M7 invariant, the human-in-the-loop registry's Merge row,
      the maturity criteria) changes in the same pull request, in the
      direction the decision picks.
-2. **Tracker labels (0.8.0).** `issue_tracker.labels` maps each label role
-   the skills act on (epic, the human-in-the-loop flag and its facets, manual
-   operations, review follow-up, bug, pattern prefix, batch sizes, the tails
+2. ~~**Tracker labels.**~~ — ✅ done 2026-10-11 (plugin 0.8.0).
+   `issue_tracker.labels` maps each label role the skills act on (epic, the
+   human-in-the-loop flag and its facets, manual operations, review follow-up, bug, pattern prefix, batch sizes, the tails
    an epic may hand off) to the tracker's own label, and the parent-status
-   reconciliation reads `issue_tracker.states`. Built on branch
-   `feature/tracker-labels-config`.
-3. **Rename `do-issue` to `do-item`.** "Issue" ties the skill to one kind of
-   tracker; the skill picks up a work item from whatever the tracker adapter
-   reads, including a plan file. The rename covers the skill directory, the
-   `/groundwork:do-item` command, the plugin manifests and documentation, the
-   path pattern `drive-pr`'s `lib/pass-child.ts` recognises as a skill script,
-   and the `do_issue` configuration section, which becomes `do_item`. The
-   skills keep reading `do_issue` when `do_item` is absent (setting both is an
-   error) for at least one release, and say so on use. Consumers update their
-   instructions and configuration in a paired change.
+   reconciliation reads `issue_tracker.states`.
+3. ~~**Rename `do-issue` to `do-item`.**~~ — ✅ done 2026-10-11 (plugin
+   0.9.0). "Issue" tied the skill to one kind of tracker; the skill picks up a
+   work item from whatever the tracker adapter reads, including a plan file.
+   The skill directory, the `/groundwork:do-item` command, the plugin
+   manifests and documentation, the path pattern `drive-pr`'s
+   `lib/pass-child.ts` recognises as a skill script, and the configuration
+   section (`do_issue` → `do_item`) all changed together, with no
+   compatibility alias: a `do_issue` section is no longer read, and the skill
+   stops and names the rename rather than running without it. Consumers
+   update their instructions and configuration in a paired change before
+   their machines update.
 4. **Stacked pull requests in `drive-pr`.** A round's validation plan and
    change set are computed against the integration branch, so an upper stack
    layer's plan includes the layers below it, and the pre-push check of the

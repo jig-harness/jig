@@ -879,7 +879,7 @@ describe("main", () => {
   // default-path/pointer-writing code (see main()'s `outOverride` branch) —
   // so none of them could catch the writer reading a session-id env var
   // ($CLAUDE_SESSION_ID) Claude Code never actually sets. This test runs the
-  // CLI the way `/do-issue` really invokes it — no `--out`, in a real git
+  // CLI the way `/do-item` really invokes it — no `--out`, in a real git
   // repo, with $CLAUDE_CODE_SESSION_ID set — and checks every file the
   // consumer's Refocus hook reads from. The hook itself stays in the
   // consumer repository, so its side of the path is tested there.
@@ -948,7 +948,7 @@ describe("main", () => {
     }
   });
 
-  // Runs the writer the way `/do-issue` does (no `--out`) in a scratch git
+  // Runs the writer the way `/do-item` does (no `--out`) in a scratch git
   // repo, as a subprocess: `repoRoot()` reads git from the process's own cwd.
   function runWriter(
     repo: string,

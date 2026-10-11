@@ -141,7 +141,7 @@ export function issueResult(
     description: issue.description,
     updatedAt: issue.updatedAt,
     // `{ name: "Unknown", type: "unknown" }` is the unreadable-state sentinel
-    // the reconciler and do-issue's SKILL.md reject, so it is emitted only
+    // the reconciler and do-item's SKILL.md reject, so it is emitted only
     // when the tracker gave neither field. A real state named "Unknown"
     // with no category keeps its empty type and stays readable.
     state:

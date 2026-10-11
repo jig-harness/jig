@@ -1,10 +1,10 @@
-# A consumer overlay for the do-issue suite: the shape the skill reads.
+# A consumer overlay for the do-item suite: the shape the skill reads.
 issue_tracker:
   adapter: linear
   team: ENG
   states:
     in_review: Code Review
-do_issue:
+do_item:
   agents:
     default: Backend Agent
     integrator: Full-Stack Integrator Agent

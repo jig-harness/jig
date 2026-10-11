@@ -136,7 +136,7 @@
  *   2  usage error
  */
 
-import { teamKeyOrNull } from "../../do-issue/scripts/lib/tracker/config.ts";
+import { teamKeyOrNull } from "../../do-item/scripts/lib/tracker/config.ts";
 import { fail, isEntryPoint, runMain } from "./lib/cli.ts";
 import {
   anchorLine,

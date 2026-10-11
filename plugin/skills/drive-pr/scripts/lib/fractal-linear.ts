@@ -1,7 +1,7 @@
 /**
  * The tracker half of the fractal-SDLC scoreboard.
  *
- * Reads through do-issue's tracker port (the adapter the consumer names in
+ * Reads through do-item's tracker port (the adapter the consumer names in
  * `issue_tracker.adapter`); what it reads is the consumer's fleet-health
  * configuration (`lib/fleet-health-config.ts`):
  *
@@ -26,7 +26,7 @@ import {
 import type {
   LedgerIssue,
   Tracker,
-} from "../../../do-issue/scripts/lib/tracker/port.ts";
+} from "../../../do-item/scripts/lib/tracker/port.ts";
 
 export interface LinearWindow {
   sinceMs: number;

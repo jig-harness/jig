@@ -23,6 +23,7 @@ import {
   parseTrackerLabels,
   type TrackerLabels,
 } from "../../../../resolve-review-comments/scripts/lib/tracker-labels.ts";
+import { refuseRenamedSection } from "../overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./port.ts";
 
 export interface TrackerConfig {
@@ -58,7 +59,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * parked; all abandoned), so a tracker without a separate triage, operations
  * or duplicate state loses nothing by aliasing them. Naming `ops_pending`
  * like `in_review` is how a tracker with no operations state holds a merged
- * issue in review, the fallback do-issue documents.
+ * issue in review, the fallback do-item documents.
  */
 const ALIASABLE_STATES: ReadonlyArray<ReadonlyArray<CanonicalState>> = [
   ["triage", "backlog", "todo"],
@@ -138,6 +139,18 @@ export function parseTrackerConfig(
 /** The consumer's tracker settings; throws when the overlay is missing or invalid. */
 export function trackerConfig(): TrackerConfig {
   return parseTrackerConfig(readOverlay());
+}
+
+/**
+ * The tracker settings as this skill's own scripts read them: like
+ * `trackerConfig`, but refusing an overlay that predates the rename, so no
+ * do-item script accepts a configuration another one refuses. Other skills
+ * read `trackerConfig`; the `do_issue` section is not theirs to police.
+ */
+export function ownTrackerConfig(): TrackerConfig {
+  const overlay = readOverlay();
+  refuseRenamedSection(overlay);
+  return parseTrackerConfig(overlay);
 }
 
 /**

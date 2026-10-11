@@ -583,6 +583,6 @@ optional), and an `artifact_detection` map.
 
 ```
 before opening a pull request → /groundwork:review → Tier 1 blocks if critical → Tier 2 blocks on a failing blocking check, other warnings in the PR body → Tier 3 required for db/api
-/groundwork:do-issue <issue> → runs the same tiers as its pre-PR code review gate
+/groundwork:do-item <issue> → runs the same tiers as its pre-PR code review gate
 CI: the repository's ADR rule check, pattern tier only
 ```

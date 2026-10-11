@@ -254,19 +254,22 @@ describe("shared execution-plan-v1 pickup", () => {
     expect(executionPlanBlock(null)).toBe("execution-plan-v1");
     expect(
       executionPlanBlock({
-        do_issue: { execution_plan_block: "delivery-plan" },
+        do_item: { execution_plan_block: "delivery-plan" },
       }),
     ).toBe("delivery-plan");
     expect(() =>
-      executionPlanBlock({ do_issue: { execution_plan_block: "a b" } }),
+      executionPlanBlock({ do_item: { execution_plan_block: "a b" } }),
     ).toThrow("fenced-block name");
+    expect(() =>
+      executionPlanBlock({ do_issue: { execution_plan_block: "x" } }),
+    ).toThrow("now called do_item");
   });
   it("selects through the CLI with the overlay's block name", () => {
     const dir = mkdtempSync(join(tmpdir(), "execution-plan-"));
     try {
       writeFileSync(
         join(dir, "overlay.yaml"),
-        "do_issue:\n  execution_plan_block: delivery-plan\n",
+        "do_item:\n  execution_plan_block: delivery-plan\n",
       );
       const description = fixture("plan-epic").replace(
         "```execution-plan-v1",

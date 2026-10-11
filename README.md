@@ -45,7 +45,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [adoption/](adoption/) | Greenfield and brownfield adoption paths |
 | [seeds/](seeds/) | Imported source material awaiting integration |
 | [docs/](docs/) | Founding charter and background analysis |
-| [plugin/](plugin/README.md) | The `groundwork` plugin: agent skills (`drive-pr`, `do-issue`, `resolve-review-comments`) and the `review-arbiter` agent for Claude Code and Codex |
+| [plugin/](plugin/README.md) | The `groundwork` plugin: agent skills (`drive-pr`, `do-item`, `resolve-review-comments`) for Claude Code and Codex, and the `review-arbiter` agent for Claude Code ([Codex setup](plugin/README.md#codex-notes)) |
 | [tools/](tools/README.md) | Runnable development tools |
 
 ## Status

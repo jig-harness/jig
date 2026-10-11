@@ -16,7 +16,7 @@
  * listings degrade to pid/host, and nothing that decides liveness or recovery
  * reads line 2. Before an earlier change the record was pid/host only, which is why an
  * exit-11 refusal could name its holder but not what that holder was doing;
- * the do-issue arming step documented that as an ambiguity a human had to
+ * the do-item arming step documented that as an ambiguity a human had to
  * resolve by hand.
  */
 

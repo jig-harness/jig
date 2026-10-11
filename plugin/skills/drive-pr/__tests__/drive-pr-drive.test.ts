@@ -1329,7 +1329,7 @@ describe("drive.ts loop control", () => {
   });
 
   it("strips CLAUDECODE from the pass env — a nested spawn must not look like a nested Claude Code session (docomply-review round 7, a reference-implementation pull request)", async () => {
-    // do-issue's "Arm the drive" step spawns drive.ts from INSIDE a live
+    // do-item's "Arm the drive" step spawns drive.ts from INSIDE a live
     // Claude Code session, so drive.ts itself inherits CLAUDECODE=1. Passed
     // through unchanged to the `claude -p` pass command, that marker makes
     // the pass refuse to start as a nested session — silently, after this

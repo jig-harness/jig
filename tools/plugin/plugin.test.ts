@@ -116,7 +116,7 @@ test("every shipped skill is named after its directory and avoids repository pat
 test("the plugin serves the drive loop's skills and agent from both manifests", () => {
   const claude = json("plugin/.claude-plugin/plugin.json");
   const codex = json("plugin/.codex-plugin/plugin.json");
-  const skills = ["drive-pr", "do-issue", "resolve-review-comments"];
+  const skills = ["drive-pr", "do-item", "resolve-review-comments"];
   const agents = readdirSync(join(root, "plugin", "agents"))
     .filter((name) => name.endsWith(".md"))
     .map((name) => name.slice(0, -".md".length));

@@ -5,7 +5,7 @@
  *
  * The routing is the consumer's, read from `.config/groundwork-overlay.yaml`:
  *
- *   do_issue:
+ *   do_item:
  *     agents:
  *       default: <agent>              # nothing matched; default general-purpose
  *       integrator: <agent>           # more than two agents; default `default`
@@ -47,6 +47,7 @@ import {
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
 import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
 import { isEntryPoint, parseArgs } from "./lib/cli.ts";
+import { doItemSection } from "./lib/overlay.ts";
 
 /** The agent used when the consumer declares none. */
 export const DEFAULT_AGENT = "general-purpose";
@@ -83,45 +84,45 @@ function stringMap(v: unknown, where: string): Record<string, string> {
   return out;
 }
 
-/** Validate `do_issue.agents` and `do_issue.scouts` from a parsed overlay. */
+/** Validate `do_item.agents` and `do_item.scouts` from a parsed overlay. */
 export function parseAgentRouting(
   overlay: Record<string, unknown>,
 ): AgentRouting {
-  const section = overlay.do_issue ?? {};
-  if (!isRecord(section)) throw new Error("do_issue must be a mapping");
+  const section = doItemSection(overlay) ?? {};
+  if (!isRecord(section)) throw new Error("do_item must be a mapping");
   const agents = section.agents ?? {};
-  if (!isRecord(agents)) throw new Error("do_issue.agents must be a mapping");
+  if (!isRecord(agents)) throw new Error("do_item.agents must be a mapping");
   const name = (v: unknown, where: string, fallback: string): string => {
     if (v === undefined || v === null) return fallback;
     if (typeof v !== "string" || v.trim() === "")
       throw new Error(`${where} must be a nonempty string`);
     return v;
   };
-  const dflt = name(agents.default, "do_issue.agents.default", DEFAULT_AGENT);
+  const dflt = name(agents.default, "do_item.agents.default", DEFAULT_AGENT);
   const scoutsRaw = section.scouts ?? {};
   if (!isRecord(scoutsRaw))
-    throw new Error("do_issue.scouts must map an agent to a list of scouts");
+    throw new Error("do_item.scouts must map an agent to a list of scouts");
   const scouts: Record<string, string[]> = Object.create(null);
   for (const [agent, list] of Object.entries(scoutsRaw)) {
     if (
       !Array.isArray(list) ||
       list.some((s) => typeof s !== "string" || s.trim() === "")
     )
-      throw new Error(`do_issue.scouts.${agent} must be a list of scout names`);
+      throw new Error(`do_item.scouts.${agent} must be a list of scout names`);
     scouts[agent] = list as string[];
   }
   return {
     default: dflt,
-    integrator: name(agents.integrator, "do_issue.agents.integrator", dflt),
-    catalog: stringMap(agents.catalog, "do_issue.agents.catalog"),
+    integrator: name(agents.integrator, "do_item.agents.integrator", dflt),
+    catalog: stringMap(agents.catalog, "do_item.agents.catalog"),
     codeareaAreas: stringMap(
       agents.codearea_areas,
-      "do_issue.agents.codearea_areas",
+      "do_item.agents.codearea_areas",
     ),
-    labels: stringMap(agents.labels, "do_issue.agents.labels"),
+    labels: stringMap(agents.labels, "do_item.agents.labels"),
     titleKeywords: stringMap(
       agents.title_keywords,
-      "do_issue.agents.title_keywords",
+      "do_item.agents.title_keywords",
     ),
     scouts,
   };

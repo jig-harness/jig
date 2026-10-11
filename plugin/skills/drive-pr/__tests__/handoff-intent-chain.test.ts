@@ -1,7 +1,7 @@
 /**
  * The Refocus intent chain in the per-round handoff (plan W1
  * step 3; re-keyed by): every round's pass reads
- * `.context/pr-drive-<PR>.md` first, so the chain `/do-issue` wrote to
+ * `.context/pr-drive-<PR>.md` first, so the chain `/do-item` wrote to
  * `.context/intent-chain/pr.<N>.md` — captured against the verified PR head
  * at arm — must appear there — wrapped as untrusted Linear data, carrying
  * the triage scope question, and saying so explicitly when it is missing or
@@ -313,7 +313,7 @@ describe("handoff intent-chain section", () => {
   });
 
   it("prefers the identifier the checked-out branch names over the worktree-wide .current pointer", () => {
-    // A later, unrelated /do-issue pickup in the same worktree moves
+    // A later, unrelated /do-item pickup in the same worktree moves
     // `.current` on to a different item; a drive-pr round must keep reading
     // ITS OWN PR's chain regardless, because it always runs with that PR's
     // branch checked out. Subprocess, same reason as the sibling test above:
@@ -599,7 +599,7 @@ describe("handoff intent-chain section", () => {
   // NOT the writer's wider identifier grammar: a branch is a slug namespace, and
   // the wider grammar misreads a permitted identifier-free slug as an item and
   // fails the handoff closed. The writer side of the grammar is pinned in
-  // do-issue's own test.
+  // do-item's own test.
   it("resolves an <TEAM>-<n> item from a branch name, case-insensitively, delimiter required", () => {
     expect(identifierFromBranchName("feature/ENG-8554-slug")).toBe("ENG-8554");
     expect(identifierFromBranchName("feature/eng-12-slug")).toBe("ENG-12");
@@ -750,7 +750,7 @@ describe("handoff intent-chain section", () => {
       writeFileSync(join(chainDir(), prCaptureFileName("42")), "no arm line\n");
       const bare = (await intentChainSection(dir, undefined, "42")).join("\n");
       expect(bare).toContain("has no arm line");
-      // /do-issue Step 3.5 cannot repair a PR pin; only the capture command can.
+      // /do-item Step 3.5 cannot repair a PR pin; only the capture command can.
       expect(bare).toContain("capture-intent-chain.ts 42");
       expect(bare).not.toContain("Step 3.5");
     });

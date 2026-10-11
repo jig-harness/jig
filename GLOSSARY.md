@@ -247,7 +247,7 @@ capitalized as commonly written; cross-references are *italicized*.
   same thread, labels for findings the pull request's own earlier commits
   caused, checks for findings that appear only in a reviewer's summary, and
   round state that survives between invocations. Groundwork ships it as the
-  `drive-pr` skill, and the `do-issue` skill starts it when it opens a pull
+  `drive-pr` skill, and the `do-item` skill starts it when it opens a pull
   request.
 - **Terminal state** — one of the named end states a *PR drive loop* stops
   in (converged, waiting on a human, conflicting, pull request closed, …),

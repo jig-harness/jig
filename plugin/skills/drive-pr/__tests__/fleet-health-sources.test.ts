@@ -20,13 +20,13 @@
 
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { parseTrackerConfig } from "../../do-issue/scripts/lib/tracker/config.ts";
+import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import {
   type LinearTransport,
   linearTracker,
   parseIssueFact,
-} from "../../do-issue/scripts/lib/tracker/linear.ts";
-import type { Tracker } from "../../do-issue/scripts/lib/tracker/port.ts";
+} from "../../do-item/scripts/lib/tracker/linear.ts";
+import type { Tracker } from "../../do-item/scripts/lib/tracker/port.ts";
 import { parseConfig } from "../scripts/lib/fleet-health-config.ts";
 import {
   fetchAcceptedEpics,

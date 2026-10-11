@@ -11,6 +11,8 @@
 
 import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   isReconcileInputShape,
@@ -709,6 +711,29 @@ describe("reconcile_parent_status.ts (CLI entrypoint)", () => {
       stdout: "",
     });
     expect(r.stderr).toContain("Groundwork configuration not found");
+  });
+
+  it("refuses to decide from an overlay with the pre-rename do_issue section", () => {
+    const dir = mkdtempSync(join(tmpdir(), "reconcile-overlay-"));
+    try {
+      const overlay = join(dir, "overlay.yaml");
+      writeFileSync(overlay, "do_issue:\n  gates: []\n");
+      const r = run(
+        JSON.stringify({
+          parentLabels: [],
+          children: [{ state: { name: "Done", type: "completed" } }],
+        }),
+        [],
+        { GROUNDWORK_OVERLAY: overlay },
+      );
+      expect({ status: r.status, stdout: r.stdout }).toEqual({
+        status: 1,
+        stdout: "",
+      });
+      expect(r.stderr).toContain("now called do_item");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("rejects a stray positional argument (this script takes none)", () => {

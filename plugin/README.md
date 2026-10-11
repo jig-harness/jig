@@ -17,7 +17,7 @@ when they run.
 | Skill | What it does | Invoke as |
 |-------|--------------|-----------|
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/groundwork:drive-pr` |
-| [do-issue](skills/do-issue/SKILL.md) | Picks up one issue from the issue tracker, routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/groundwork:do-issue` |
+| [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/groundwork:do-item` |
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/groundwork:resolve-review-comments` |
 | [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/groundwork:review` |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/groundwork:fix-ci` |
@@ -59,7 +59,7 @@ Contents: [requirements](#requirements) ·
 - **macOS or Linux for `drive-pr`.** Its driver supervises agent processes
   through POSIX process groups and signals, so it does not run on Windows.
   The other skills run on all three systems.
-- **Issue-tracker access for `do-issue`** (and for `drive-pr`'s tracker
+- **Issue-tracker access for `do-item`** (and for `drive-pr`'s tracker
   reads): with the Linear adapter, `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in
   the environment, or the Linear MCP server or `linear` command line tool
   signed in.
@@ -124,7 +124,7 @@ Plugin skills carry the plugin's name as a prefix.
 For example:
 
 ```text
-/groundwork:do-issue ENG-123          # pick up an issue; opens a PR and starts a drive
+/groundwork:do-item ENG-123           # pick up an issue; opens a PR and starts a drive
 /groundwork:drive-pr 456              # start an unattended drive of PR 456 in the background
 /groundwork:drive-pr --interactive 456   # one round in this session, then stop
 /groundwork:resolve-review-comments 456  # one review-resolution pass, no drive
@@ -206,7 +206,7 @@ committed: no copy of the skill, no install script, no generated files.
    or approve it when asked.
 
 The skills find each other beside themselves in the plugin: `drive-pr` runs
-`resolve-review-comments` for each round, and `do-issue` starts `drive-pr`.
+`resolve-review-comments` for each round, and `do-item` starts `drive-pr`.
 A repository that still keeps its own copy of one of these skills in
 `.claude/skills/<name>` overrides the plugin's sibling, because the review
 skill prefers the repository's copy; delete such leftovers when you adopt the
@@ -214,7 +214,7 @@ plugin's version.
 
 ## The drive loop and issue pickup
 
-`drive-pr` and `do-issue` read the same configuration file as the review
+`drive-pr` and `do-item` read the same configuration file as the review
 skill. Every field below has a default except `issue_tracker.team`, which the
 tracker scripts require. A drive also needs an AI reviewer that publishes the
 check run, sticky comment and reviewed-commit marker described in the
@@ -259,7 +259,7 @@ issue_tracker:
     triage: Triage
     ops_pending: Ops Pending
     duplicate: Duplicate
-do_issue:
+do_item:
   agents:                     # which agent implements an issue
     default: general-purpose
     integrator: integrator
@@ -277,7 +277,7 @@ fleet_health:
 ```
 
 The agent and scout names above are examples; use the agents your repository
-defines. Note the direction of `do_issue.scouts`: it maps an **agent** to the
+defines. Note the direction of `do_item.scouts`: it maps an **agent** to the
 list of scouts that run before it, not a label to a scout.
 
 **Add `.context/` to `.gitignore`.** A drive keeps working files there, at
@@ -301,7 +301,7 @@ earlier built-in copy of the skill moves its old state with
 required validation was worth its cost) defaults to the Groundwork state
 folder too; `GROUNDWORK_VERIFICATION_FIT_LOG` overrides it.
 
-**How the skills reach the issue tracker.** `do-issue` and `drive-pr` talk to
+**How the skills reach the issue tracker.** `do-item` and `drive-pr` talk to
 the tracker only through a small [tracker interface](../GLOSSARY.md) (read an issue with its
 comments, list its children, change its state, post a comment, run the
 reports' queries). An *adapter* implements that interface for one tracker;

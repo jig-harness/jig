@@ -22,7 +22,7 @@
  * invalid consumer overlay (the state names and labels come from it).
  *
  * Runs under Bun and under Node ≥ 22.18 (type stripping): only `node:` APIs,
- * erasable-syntax-only TypeScript — the same contract as the other do-issue
+ * erasable-syntax-only TypeScript — the same contract as the other do-item
  * scripts.
  */
 
@@ -35,7 +35,7 @@ import {
   KNOWN_STATE_TYPES,
   stateNameEquals,
 } from "./get_issue.ts";
-import { defaultStateName, trackerConfig } from "./lib/tracker/config.ts";
+import { defaultStateName, ownTrackerConfig } from "./lib/tracker/config.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./lib/tracker/port.ts";
 import { isEntryPoint, parseArgs } from "./lib/cli.ts";
 
@@ -246,7 +246,7 @@ export function reconcileParentStatus(
   // to "keep_in_progress" — the very Step 4b loop this rule exists to break.
   if (allIncompleteAreExtractable) {
     // sweep-epic.ts's own close guard refuses `--close` outright on an epic
-    // carrying the manual-operations label (do-issue § Step 5a caps such an
+    // carrying the manual-operations label (do-item § Step 5a caps such an
     // epic at `ops_pending`, never `done`) — the reason must say so up
     // front, since the plain reading of this verdict ("run sweep-epic.ts")
     // would otherwise dispatch a call that guard rejects.
@@ -572,7 +572,7 @@ async function main(): Promise<number> {
   // manual-operations label and could set a parent to done.
   let vocabulary: ReconcileVocabulary;
   try {
-    const config = trackerConfig();
+    const config = ownTrackerConfig();
     vocabulary = { labels: config.labels, states: config.states };
   } catch (err) {
     console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);

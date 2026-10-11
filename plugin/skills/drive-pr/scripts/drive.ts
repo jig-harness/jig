@@ -2044,7 +2044,7 @@ function teeConsoleTo(logPath: string): void {
 }
 
 // `drive.ts` is itself very often launched from inside a live Claude Code
-// session (do-issue's "Arm the drive" step spawns it in the background), and
+// session (do-item's "Arm the drive" step spawns it in the background), and
 // a spawned child inherits that session's env by default — including
 // CLAUDECODE, which the `claude` CLI sets to recognize a nested invocation of
 // itself. Passed through unchanged to a `claude -p` pass command, that marker
@@ -2430,7 +2430,7 @@ async function main(): Promise<number> {
   const mailboxDir = await resolveMailboxDir();
 
   // The durable log. A drive is routinely armed as a background
-  // child of a session that ends long before the drive does (do-issue's
+  // child of a session that ends long before the drive does (do-item's
   // "Arm the drive" step), and its console output dies with that session — so
   // every line this process prints is ALSO appended here, beside the per-PR
   // state it belongs to. The PASS is deliberately not captured: it runs with

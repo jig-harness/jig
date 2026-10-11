@@ -17,7 +17,7 @@
  *               threads raised after the first ladder band, and the
  *               share of threads raised on code written after review began
  *               (post-review "self-inflicted", temporal not causal), with its trend by week.
- *   Linear side (the issue tracker, through do-issue's tracker port) the
+ *   Linear side (the issue tracker, through do-item's tracker port) the
  *               follow-up cohort created in the window (mints/day, open,
  *               closure share, priorityless share, median age), epic
  *               open/completed counts, and the debt ledger as context.
