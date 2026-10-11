@@ -685,6 +685,7 @@ async function checkUntriagedThreads(
   // that function's own header for the measured case).
   const touchedFiles = await changedFilesSinceExcludingMerges(
     root,
+    pr,
     rb.base,
     gitTimeoutSec,
   );

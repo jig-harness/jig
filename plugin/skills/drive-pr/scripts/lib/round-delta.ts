@@ -46,7 +46,7 @@
  */
 
 import { isGitSha, short } from "./cli.ts";
-import { BASE_BRANCH_UNKNOWN, baseRef } from "./overlay.ts";
+import { prBaseRef } from "./overlay.ts";
 import { git, run, tsArgv } from "./proc.ts";
 
 /**
@@ -167,15 +167,25 @@ export async function changedFilesSince(
  * population is "reachable from HEAD, minus reachable from `since` OR
  * `origin/<base>`", computed in one walk rather than approximated by
  * excluding merge commits and hoping nothing else slipped through.
+ *
+ * `<base>` is the pull request's own base (`prBaseRef`), not the integration
+ * branch. For a stacked layer, a base sync merges in the layer below, whose
+ * commits are not on the integration branch yet; excluding only what the
+ * integration branch reaches would count them as this round's own.
  */
 export async function changedFilesSinceExcludingMerges(
   root: string,
+  pr: string,
   since: string,
   timeoutSec?: number,
 ): Promise<string[] | null> {
-  // No base branch, no exclusion set: fail closed like any other failed read.
-  const ref = await baseRef(root);
-  if (ref === null) return null;
+  // No base, no exclusion set: fail closed like any other failed read.
+  const resolved = await prBaseRef(root, pr, timeoutSec);
+  if ("error" in resolved) {
+    process.stderr.write(`${resolved.error}\n`);
+    return null;
+  }
+  const ref = resolved.ref;
   // `-c core.quotePath=false` on both reads (an earlier change finding,
   // coderabbitai): `core.quotePath` defaults to true, which backslash-octal-
   // escapes a non-ASCII path in `--name-only`/`ls-files` output. The
@@ -295,15 +305,16 @@ export async function roundBase(
 ): Promise<RoundBase> {
   const cumulativeBase = async (reason: string): Promise<RoundBase> => {
     const note = `${reason}, so the round base falls back to the cumulative merge-base (fail-closed)`;
-    const ref = await baseRef(root);
-    if (ref === null) {
+    const resolved = await prBaseRef(root, pr, timeoutSec);
+    if ("error" in resolved) {
       return {
         base: "",
         sha: null,
-        note: `${note}, and ${BASE_BRANCH_UNKNOWN}`,
+        note: `${note}, and ${resolved.error}`,
         reason,
       };
     }
+    const ref = resolved.ref;
     const mb = await git(["-C", root, "merge-base", ref, "HEAD"], {
       stderr: "inherit",
       timeoutSec,

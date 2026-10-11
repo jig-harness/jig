@@ -580,14 +580,13 @@ own pull request, opened against `main` once the one before it merges
    stops and names the rename rather than running without it. Consumers
    update their instructions and configuration in a paired change before
    their machines update.
-4. **Stacked pull requests in `drive-pr`.** A round's validation plan and
-   change set are computed against the integration branch, so an upper stack
-   layer's plan includes the layers below it, and the pre-push check of the
-   files a round touched can count commits a base sync brought in. Both should
-   use the pull request's own base. Required checks for a stacked layer should
-   come from the integration branch's protection rather than the feature
-   branch's. Base syncs stay merges: no rebase or force-push under a running
-   drive.
+4. ~~**Stacked pull requests in `drive-pr`.**~~ — ✅ done 2026-10-11 (plugin
+   0.9.1). A round's validation plan and change set use the pull request's
+   own base, so an upper layer's plan covers that layer alone and the
+   pre-push check of the files a round touched no longer counts commits a
+   base sync brought in from the layer below. A stacked layer's required checks are its base's plus
+   those of the branch the stack's bottom layer targets. Base syncs stay
+   merges: no rebase or force-push under a running drive.
 5. **`/groundwork:audit`.** The auditor as a recurring skill rather than a
    one-time adoption step. `audit/` moves into `plugin/skills/audit/`, leaving
    a pointer. It has two layers: a mechanical check of how the repository's

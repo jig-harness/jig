@@ -812,7 +812,7 @@ export function makeRebasePausedRepo(name: string): {
  * is pointed at D.
  *
  * Exercises an earlier change finding 2:
- * `changedFilesSinceExcludingMerges(root, verifiedSha)` must report ONLY
+ * `changedFilesSinceExcludingMerges(root, pr, verifiedSha)` must report ONLY
  * `round-only.txt` (R's own file) as touched by this round — never
  * `develop-only.txt` (D's file, imported solely by the base-sync merge M) —
  * even though a plain `git diff verifiedSha` (what `changedFilesSince` used
@@ -1066,7 +1066,7 @@ set -euo pipefail
     case "$command:$json_fields" in
       'pr checks:name,bucket,state'|'repo view:owner,name'|\
       'pr view:number'|'pr view:state'|'pr view:headRefOid'|\
-      'pr view:baseRefName'|'pr view:state,isDraft'|\
+      'pr view:baseRefName'|'pr view:baseRefName,url'|'pr view:state,isDraft'|\
       'pr view:state,headRefOid,labels'|\
       'pr view:state,headRefOid,baseRefOid'|\
       'pr view:state,baseRefName,headRefName,headRefOid'|\
@@ -2171,6 +2171,7 @@ export function writeFixture(f: Fixture): { dir: string; stateDir: string } {
     headRepositoryOwner: { login: f.headRepoOwner ?? "example-org" },
     headRepository: { name: "example-repo" },
     nameWithOwner: "example-org/example-repo",
+    url: "https://github.com/example-org/example-repo/pull/999",
   });
   w("pr-view.json", prView(head, baseHead));
   if (f.dirtyOnFinalVerify) {

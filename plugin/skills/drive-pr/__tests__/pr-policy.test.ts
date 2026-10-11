@@ -15,6 +15,7 @@ import {
   findPrTemplates,
   inferTitleFormat,
   issueLinkLine,
+  MAX_CHAIN_WALK,
   markReadyDueAfterRound,
   type OpenPull,
   parseLinkEligibility,
@@ -27,6 +28,7 @@ import {
   resolveOpenAs,
   SLUG_MAX,
   slugify,
+  stackRoot,
   walkChain,
 } from "../scripts/lib/pr-policy.ts";
 
@@ -328,6 +330,88 @@ describe("walkChain", () => {
     ).toEqual([pull(1, "a", "main")]);
     expect(() => parseOpenPulls([{ number: 1, headRefName: "a" }])).toThrow();
     expect(() => parseOpenPulls({})).toThrow();
+  });
+});
+
+describe("stackRoot", () => {
+  const pull = (
+    number: number,
+    head: string,
+    base: string,
+    fork = false,
+  ): OpenPull => ({
+    number,
+    url: `https://github.com/o/r/pull/${number}`,
+    headRefName: head,
+    baseRefName: base,
+    isCrossRepository: fork,
+  });
+  const stack = [
+    pull(23, "f/a", "main"),
+    pull(24, "f/b", "f/a"),
+    pull(25, "f/c", "f/b"),
+  ];
+
+  it("walks a layer's base down to the branch the stack lands on", () => {
+    expect(stackRoot("f/b", "main", stack)).toEqual({
+      ok: true,
+      root: "main",
+      layers: [24, 23],
+    });
+  });
+
+  it("returns a base no open pull request owns as its own root", () => {
+    expect(stackRoot("release/2", "main", stack)).toEqual({
+      ok: true,
+      root: "release/2",
+      layers: [],
+    });
+  });
+
+  it("stops at the trunk even when an open pull request has it as its head", () => {
+    const withRelease = [...stack, pull(30, "main", "production")];
+    expect(stackRoot("f/a", "main", withRelease)).toEqual({
+      ok: true,
+      root: "main",
+      layers: [23],
+    });
+  });
+
+  it("does not follow a pull request from a fork", () => {
+    expect(stackRoot("f/x", "main", [pull(31, "f/x", "f/y", true)])).toEqual({
+      ok: true,
+      root: "f/x",
+      layers: [],
+    });
+  });
+
+  it("refuses a branch several open pull requests have as their head", () => {
+    const r = stackRoot("f/a", "main", [...stack, pull(32, "f/a", "dev")]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain("#23, #32");
+  });
+
+  it("reaches a root no pull request owns at the same depth as the trunk", () => {
+    const chain = (root: string) =>
+      Array.from({ length: MAX_CHAIN_WALK }, (_, i) =>
+        pull(100 + i, `l${i}`, i === MAX_CHAIN_WALK - 1 ? root : `l${i + 1}`),
+      );
+    for (const root of ["main", "release/2"]) {
+      const r = stackRoot("l0", "main", chain(root));
+      expect(r.ok && r.root).toBe(root);
+    }
+    const r = stackRoot("l0", "main", [
+      ...chain("l-extra"),
+      pull(99, "l-extra", "main"),
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain("longer than");
+  });
+
+  it("refuses a loop", () => {
+    const r = stackRoot("x", "main", [pull(40, "x", "y"), pull(41, "y", "x")]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain("loops back");
   });
 });
 

@@ -1508,7 +1508,61 @@ describe("summary-findings marker overrides", () => {
   });
 });
 
+/**
+ * A `gh` that answers pull request #999's base (`develop`) and the repository
+ * (`acme/widgets`) a scratch clone's `origin` must fetch, and hands every
+ * other call to the harness's own `gh`. A round's base is the pull request's,
+ * so a scratch clone without either refuses to plan.
+ */
+function prBaseGh(): string {
+  const dir = mkdtempSync(join(tmpRoot, "pr-base-gh-"));
+  writeFileSync(
+    join(dir, "gh"),
+    `#!/bin/sh
+case "$*" in
+  "pr view 999 --json baseRefName -q .baseRefName") echo develop ;;
+  "pr view 999 --json baseRefName,url") echo '{"baseRefName":"develop","url":"https://github.com/acme/widgets/pull/999"}' ;;
+  "repo view --json owner,name") echo '{"owner":{"login":"acme"},"name":"widgets"}' ;;
+  *) exec "${binDir}/gh" "$@" ;;
+esac
+`,
+  );
+  chmodSync(join(dir, "gh"), 0o755);
+  return dir;
+}
+
+/** Point a scratch clone's `origin` at the repository `prBaseGh` answers. */
+function addOrigin(repo: string): void {
+  Bun.spawnSync(
+    ["git", "remote", "add", "origin", "https://github.com/acme/widgets.git"],
+    { cwd: repo, env: gitCleanEnv(), stdout: "ignore", stderr: "ignore" },
+  );
+}
+
 describe("round-delta.ts", () => {
+  // The helpers under test run git in this process. Inherited routing
+  // variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE from a hook or a parent
+  // git process) override `-C dir` and would point them at the real checkout,
+  // so each call runs with those variables dropped and the environment
+  // restored afterwards.
+  async function inScrubbedEnv<T>(
+    extra: Record<string, string>,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const saved = { ...process.env };
+    try {
+      for (const k of Object.keys(process.env))
+        if (k.startsWith("GIT_") || k.startsWith("DRIVE_PR_"))
+          delete process.env[k];
+      Object.assign(process.env, extra);
+      return await fn();
+    } finally {
+      for (const k of Object.keys(process.env))
+        if (!(k in saved)) delete process.env[k];
+      Object.assign(process.env, saved);
+    }
+  }
+
   // an earlier change finding (coderabbitai): git quotes a pathname containing
   // a literal `"` or `\` regardless of `core.quotePath` — that setting only
   // controls the SEPARATE non-ASCII-escaping behavior. A `\n`-split of
@@ -1547,7 +1601,11 @@ describe("round-delta.ts", () => {
     git("add", "-A");
     git("commit", "-qm", "quoted path", "--no-verify");
 
-    const result = await changedFilesSinceExcludingMerges(dir, since, 30);
+    addOrigin(dir);
+    const result = await inScrubbedEnv(
+      { PATH: `${prBaseGh()}:${process.env.PATH}` },
+      () => changedFilesSinceExcludingMerges(dir, "999", since, 30),
+    );
     expect(result).not.toBeNull();
     expect(result).toContain(quotedName);
   });
@@ -1576,7 +1634,9 @@ describe("round-delta.ts", () => {
     git("add", "-A");
     git("commit", "-qm", "quoted path", "--no-verify");
 
-    const result = await changedFilesSince(dir, since, 30);
+    const result = await inScrubbedEnv({}, () =>
+      changedFilesSince(dir, since, 30),
+    );
     expect(result).not.toBeNull();
     expect(result).toContain(quotedName);
   });
@@ -1584,11 +1644,12 @@ describe("round-delta.ts", () => {
 
 describe("round-plan.ts", () => {
   async function roundPlan(args: string[], stateDir: string, repo: string) {
+    addOrigin(repo);
     const proc = Bun.spawn([join(SCRIPTS, "round-plan.ts"), "999", ...args], {
       cwd: repo,
       env: {
         ...gitCleanEnv(),
-        PATH: `${binDir}:${process.env.PATH}`,
+        PATH: `${prBaseGh()}:${binDir}:${process.env.PATH}`,
         DRIVE_PR_STATE_DIR: stateDir,
       },
       stdout: "pipe",
@@ -1731,6 +1792,7 @@ describe("round-plan.ts", () => {
       // `git merge-base origin/develop HEAD`, so the scratch repo needs that
       // ref to exist. A plain ref update is enough — no remote is contacted.
       git(["update-ref", "refs/remotes/origin/develop", c0]);
+      addOrigin(repo);
 
       mkdirSync(join(repo, "tools", "change-areas"), { recursive: true });
       writeFileSync(join(repo, ADDED_REL), "added in C1\n");
@@ -1814,7 +1876,7 @@ ${second}
         env: {
           ...gitCleanEnv(),
           ...IDENTITY,
-          PATH: `${shimDir}:${binDir}:${process.env.PATH}`,
+          PATH: `${shimDir}:${prBaseGh()}:${binDir}:${process.env.PATH}`,
           DRIVE_PR_STATE_DIR: stateDir,
         },
         stdout: "pipe",
@@ -2011,7 +2073,7 @@ ${second}
             ...IDENTITY,
             // `binDir` carries the gh/git stubs this harness needs; what it does
             // NOT carry is bun.
-            PATH: `${dir}:${binDir}:/usr/bin:/bin`,
+            PATH: `${dir}:${prBaseGh()}:${binDir}:/usr/bin:/bin`,
             DRIVE_PR_STATE_DIR: stateDir,
           },
           stdout: "pipe",
@@ -2137,7 +2199,7 @@ exec ${real} "$@"
           env: {
             ...gitCleanEnv(),
             ...IDENTITY,
-            PATH: `${gitDir}:${resolverShim({ body: DELTA_FULL })}:${binDir}:${process.env.PATH}`,
+            PATH: `${gitDir}:${resolverShim({ body: DELTA_FULL })}:${prBaseGh()}:${binDir}:${process.env.PATH}`,
             DRIVE_PR_STATE_DIR: stateDir,
           },
           stdout: "pipe",

@@ -16,7 +16,8 @@ import {
   overlayPath,
   readOverlay,
 } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
-import { ghCall, git } from "./proc.ts";
+import { verifyOriginIsPrRepo } from "./base-drift.ts";
+import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 
 let cache: { key: string; value: Record<string, unknown> } | undefined;
 
@@ -229,10 +230,14 @@ const baseBranchCache = new Map<string, string | null>();
  * The branch pull requests target and rounds diff against, without the
  * remote prefix: `DRIVE_PR_BASE_BRANCH`, else `repository.base_branch`, else
  * derived — the clone's `origin/HEAD` when it has one (no network), else
- * `gh repo view --json defaultBranchRef`. Cached per process and repository.
+ * `gh repo view --json defaultBranchRef`. A derived answer is cached per
+ * process and repository.
  * `null` when none of them answers; callers fail closed on it.
  */
-export async function baseBranch(root: string): Promise<string | null> {
+export async function baseBranch(
+  root: string,
+  timeoutSec?: number,
+): Promise<string | null> {
   const explicit =
     nonEmptyEnv("DRIVE_PR_BASE_BRANCH") ??
     optionalString("repository", "base_branch");
@@ -249,7 +254,7 @@ export async function baseBranch(root: string): Promise<string | null> {
       "--short",
       "refs/remotes/origin/HEAD",
     ],
-    { stderr: "ignore" },
+    { stderr: "ignore", timeoutSec: gitTimeout(timeoutSec) },
   );
   const fromHead = head.stdout.trim();
   if (head.code === 0 && fromHead.startsWith("origin/"))
@@ -264,21 +269,221 @@ export async function baseBranch(root: string): Promise<string | null> {
         "-q",
         ".defaultBranchRef.name",
       ],
-      { cwd: root, stderr: "ignore" },
+      { cwd: root, stderr: "ignore", timeoutSec },
     );
     const name = view.stdout.trim();
     if (view.code === 0 && /^[^\s~^:?*[\\]+$/.test(name)) derived = name;
   }
-  baseBranchCache.set(root, derived);
+  // Only an answer is cached: a call that failed, or ran out of a caller's
+  // tighter deadline, is retried by the next caller.
+  if (derived !== null) baseBranchCache.set(root, derived);
   return derived;
 }
 
-/** `origin/<base branch>`, or `null` when the base branch is unknown. */
-export async function baseRef(root: string): Promise<string | null> {
-  const branch = await baseBranch(root);
-  return branch === null ? null : `origin/${branch}`;
-}
-
-/** The sentence a caller prints when `baseRef` returns `null`. */
+/** The sentence a caller prints when `baseBranch` returns `null`. */
 export const BASE_BRANCH_UNKNOWN =
   "the base branch is unknown: set repository.base_branch in .config/groundwork-overlay.yaml (or DRIVE_PR_BASE_BRANCH), or give this clone an origin/HEAD (git remote set-head origin --auto)";
+
+/**
+ * The branch pull request `pr` targets, without the remote prefix, or `null`
+ * when it cannot be read. `pr === ""` reads the pull request of the current
+ * branch. For a stacked layer this is the layer below, not the integration
+ * branch.
+ */
+export async function pullRequestBaseBranch(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<string | null> {
+  const selector = pr === "" ? [] : [pr];
+  const view = await ghCall(
+    ["pr", "view", ...selector, "--json", "baseRefName", "-q", ".baseRefName"],
+    { cwd: root, stderr: "ignore", timeoutSec },
+  );
+  const name = view.stdout.trim();
+  return view.code === 0 && /^[^\s~^:?*[\\]+$/.test(name) ? name : null;
+}
+
+/**
+ * Whether the current branch has a pull request, or `null` when it cannot be
+ * told. A detached HEAD is `null`, not `false`: it only says the branch cannot
+ * be named, and the checked-out commit may still be a pull request's head.
+ */
+async function currentBranchHasPullRequest(
+  root: string,
+  timeoutSec?: number,
+): Promise<boolean | null> {
+  const head = await git(
+    ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"],
+    { stderr: "ignore", timeoutSec: gitTimeout(timeoutSec) },
+  );
+  const branch = head.stdout.trim();
+  if (head.code !== 0 || branch === "") return null;
+  const list = await ghCall(
+    [
+      "pr",
+      "list",
+      "--head",
+      branch,
+      "--state",
+      "all",
+      "--json",
+      "number",
+      "-q",
+      "length",
+    ],
+    { cwd: root, stderr: "ignore", timeoutSec },
+  );
+  const count = list.stdout.trim();
+  if (list.code !== 0 || !/^\d+$/.test(count)) return null;
+  return count !== "0";
+}
+
+/**
+ * The branch pull request `pr` targets and the `owner/name` of the repository
+ * the pull request itself lives in, read from its own URL, or `null` when
+ * either cannot be read. Taking the repository from the pull request rather
+ * than from `gh repo view` binds it to the selector: a pull request URL from
+ * another repository names that repository, not this clone's.
+ */
+async function pullRequestBase(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<{ branch: string; repo: string } | null> {
+  const selector = pr === "" ? [] : [pr];
+  const view = await ghCall(
+    ["pr", "view", ...selector, "--json", "baseRefName,url"],
+    { cwd: root, stderr: "ignore", timeoutSec },
+  );
+  if (view.code !== 0) return null;
+  let meta: { baseRefName?: unknown; url?: unknown };
+  try {
+    meta = JSON.parse(view.stdout) as typeof meta;
+  } catch {
+    return null;
+  }
+  const branch = typeof meta.baseRefName === "string" ? meta.baseRefName : "";
+  const url = typeof meta.url === "string" ? meta.url : "";
+  const repo = /^https?:\/\/[^/]+\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/.exec(url);
+  if (repo === null || !/^[^\s~^:?*[\\]+$/.test(branch)) return null;
+  return { branch, repo: repo[1] as string };
+}
+
+const prBaseRefCache = new Map<string, { ref: string } | { error: string }>();
+
+/**
+ * `refs/remotes/origin/<branch>` for the branch pull request `pr` targets: the
+ * base a round diffs against. A stacked layer's base is the layer below, so
+ * its round sees only its own layer and never counts what a base sync brought
+ * in from the layers beneath it. `pr === ""` reads the current branch's pull
+ * request; a branch positively established to have none diffs against the
+ * integration branch.
+ *
+ * Fails closed, with the reason, when the pull request's base cannot be
+ * established: the pull request cannot be read (including on a detached
+ * HEAD, where `pr` must be given), `origin` is not the repository the pull
+ * request lives in (compared by owner and name; `repo-url.ts` says why hosts
+ * are not), or the base has no remote-tracking ref in this clone. No
+ * other branch stands in for it: the integration branch can cover fewer files
+ * than the real base (a file a lower layer changed and this layer changed
+ * back, or a backport whose commit the integration branch already holds).
+ * Every git and `gh` call is bounded by `timeoutSec` when it is given.
+ * Cached per process, repository and pull request.
+ */
+export async function prBaseRef(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<{ ref: string } | { error: string }> {
+  const key = `${root}\0${pr}`;
+  const cached = prBaseRefCache.get(key);
+  if (cached !== undefined) return cached;
+  const result = await resolvePrBaseRef(root, pr, timeoutSec);
+  prBaseRefCache.set(key, result);
+  return result;
+}
+
+async function resolvePrBaseRef(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<{ ref: string } | { error: string }> {
+  const which =
+    pr === "" ? "this branch's pull request" : `pull request #${pr}`;
+  const base = await pullRequestBase(root, pr, timeoutSec);
+  if (base === null) {
+    if (
+      pr === "" &&
+      (await currentBranchHasPullRequest(root, timeoutSec)) === false
+    ) {
+      const branch = await baseBranch(root, timeoutSec);
+      if (branch === null) return { error: BASE_BRANCH_UNKNOWN };
+      const tracked = await trackingRef(
+        root,
+        branch,
+        "the integration branch",
+        timeoutSec,
+      );
+      if ("ref" in tracked)
+        process.stderr.write(
+          `note: this branch has no pull request; diffing against the integration branch ${tracked.ref}\n`,
+        );
+      return tracked;
+    }
+    return {
+      error: `cannot read the base branch of ${which}, which the round diffs against${pr === "" ? "; name the pull request explicitly" : ""}`,
+    };
+  }
+  const check = await verifyOriginIsPrRepo(
+    boundedGit(timeoutSec),
+    root,
+    base.repo,
+  );
+  if (!check.ok)
+    return {
+      error: `cannot trust origin/${base.branch}, the base of ${which}: ${check.why}`,
+    };
+  return trackingRef(root, base.branch, `the base of ${which}`, timeoutSec);
+}
+
+/**
+ * `refs/remotes/origin/<branch>` once it is verified to name a commit in this
+ * clone. Fully qualified: a local branch named `origin/<branch>` would make
+ * the shorthand resolve to something other than the ref verified here.
+ */
+async function trackingRef(
+  root: string,
+  branch: string,
+  role: string,
+  timeoutSec?: number,
+): Promise<{ ref: string } | { error: string }> {
+  const ref = `refs/remotes/origin/${branch}`;
+  const tracking = await git(
+    ["-C", root, "rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
+    { stderr: "ignore", timeoutSec: gitTimeout(timeoutSec) },
+  );
+  if (tracking.code !== 0)
+    return {
+      error: `origin/${branch}, ${role}, is not in this clone; run git fetch origin +refs/heads/${branch}:${ref}`,
+    };
+  return { ref };
+}
+
+/** A git runner whose every call is held to the caller's smaller timeout. */
+function boundedGit(timeoutSec?: number): typeof git {
+  return (args, opts) =>
+    git(args, {
+      ...opts,
+      timeoutSec:
+        timeoutSec === undefined
+          ? opts?.timeoutSec
+          : Math.min(timeoutSec, opts?.timeoutSec ?? gitCallTimeoutSeconds()),
+    });
+}
+
+/** The git deadline, tightened to a caller's smaller timeout when it has one. */
+function gitTimeout(timeoutSec?: number): number {
+  const bound = gitCallTimeoutSeconds();
+  return timeoutSec === undefined ? bound : Math.min(timeoutSec, bound);
+}

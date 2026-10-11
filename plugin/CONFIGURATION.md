@@ -66,7 +66,7 @@ field only to override the derivation:
 | Title convention | A commitlint configuration (`commitlint.config.*`, `.commitlintrc*`, `commitlint` in `package.json`) that names the Conventional Commits rules, such as `@commitlint/config-conventional`; else at least 80% of the last 30 non-merge trunk commit subjects following [Conventional Commits](https://www.conventionalcommits.org/), and at least five such subjects to judge from | Whether titles take `type(scope): summary` | `pull_requests.title_format` |
 | Delete head branches on merge | GitHub repository settings | Warning for `branch` stacking: without it GitHub does not retarget the layer above a merged one | none: change the setting |
 | Code owners | `.github/CODEOWNERS`, `CODEOWNERS` or `docs/CODEOWNERS` | Reported only: GitHub requests those reviewers itself | none |
-| Required checks | The base branch's protection and rulesets | Which checks certify a converged head | `ci.required_checks` |
+| Required checks | The protection and rulesets of the branch the pull request (or its stack) lands on | Which checks certify a converged head | `ci.required_checks` |
 | Draft or Ready on opening | `drive.reviews_drafts: false` means Ready | How a pull request opens | `pull_requests.open_as` |
 
 ## `gates`
@@ -107,7 +107,7 @@ and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `repository.base_branch` | branch name, without `origin/` | Derived: the clone's `origin/HEAD`, else GitHub's default branch | drive-pr, do-item, review, descar | The integration branch: where pull requests land and what rounds diff against. The required checks come from it only when there is no pull request to read; for a pull request they come from that pull request's own base, so a stacked layer is held to its predecessor branch's protection. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it |
+| `repository.base_branch` | branch name, without `origin/` | Derived: the clone's `origin/HEAD`, else GitHub's default branch | drive-pr, do-item, review, descar | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or `origin` is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it |
 
 ## `pull_requests`
 
@@ -193,7 +193,7 @@ not resolve it either.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `ci.required_checks` | list of distinct check names; `[]` means none | Derived from the base branch's protection and rulesets | drive-pr | Checks that must complete on the converged head before the drive certifies it. Required, and not empty, when `ci.hold_label` is set |
+| `ci.required_checks` | list of distinct check names; `[]` means none | Derived from the protection and rulesets of the pull request's base, and of the branch its stack lands on | drive-pr | Checks that must complete on the converged head before the drive certifies it. Required, and not empty, when `ci.hold_label` is set |
 | `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md) |
 
 ## `issue_tracker`

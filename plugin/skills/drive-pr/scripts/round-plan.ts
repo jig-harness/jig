@@ -2,9 +2,14 @@
 /**
  * Resolve the validation plan to run before this round's commit and push.
  *
- * CUMULATIVE by default: the PR's whole diff against the base branch
- * (`origin/<repository.base_branch>`), checked after every review fix, not
- * merely once per PR.
+ * CUMULATIVE by default: the PR's whole diff against its own base
+ * (`origin/<base>`), checked after every review fix, not merely once per PR.
+ * For a stacked layer the base is the layer below, so the plan covers this
+ * layer alone; the layers beneath are validated by their own drives. A branch
+ * with no pull request diffs against the integration branch
+ * (`repository.base_branch`); a pull request whose base cannot be read,
+ * fetched or trusted is refused rather than planned against another branch
+ * (`prBaseRef`).
  *
  * Where the plan comes from is the consumer's: `drive.validation_plan_command`
  * in `.config/groundwork-overlay.yaml` reads the changed files on stdin (one
@@ -85,10 +90,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fail, isEntryPoint, runMain, short } from "./lib/cli.ts";
 import {
-  BASE_BRANCH_UNKNOWN,
-  baseRef,
   gatesCommand,
   loadGuardCommand,
+  prBaseRef,
   shellArgv,
   validationPlanCommand,
 } from "./lib/overlay.ts";
@@ -320,8 +324,9 @@ async function main(): Promise<number> {
 
   let base = "";
   if (mode === "cumulative") {
-    const ref = await baseRef(root);
-    if (ref === null) fail(1, `round-plan: ${BASE_BRANCH_UNKNOWN}`);
+    const resolved = await prBaseRef(root, pr);
+    if ("error" in resolved) fail(1, `round-plan: ${resolved.error}`);
+    const ref = resolved.ref;
     const mb = await git(["merge-base", ref, "HEAD"], {
       stderr: "inherit",
     });

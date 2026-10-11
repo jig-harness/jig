@@ -1650,10 +1650,10 @@ Then resolve the plan over the tree you just settled:
 ${CLAUDE_SKILL_DIR}/scripts/round-plan.ts [PR]
 ```
 
-It resolves the validation plan for the PR's **whole** diff against the base
-branch (`origin/<base>`; [README.md § Consumer
-configuration](README.md#consumer-configuration) says how the base is found)
-and prints exactly what to run. The plan is the repository's: when it sets
+It resolves the validation plan for the PR's **whole** diff against the PR's
+own base (`origin/<base>`: for a stacked layer, the layer below; [README.md §
+Consumer configuration](README.md#consumer-configuration) says when it uses
+the integration branch instead, and when it refuses) and prints exactly what to run. The plan is the repository's: when it sets
 `drive.validation_plan_command`, `round-plan.ts` runs that command with the
 changed files on stdin and prints the plan it returns — local checks,
 verification checks, an optional remote test box, and review skills to run;

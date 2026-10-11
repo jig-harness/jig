@@ -174,6 +174,16 @@ describe("required checks from branch protection", () => {
  * require something else. The fake `gh` refuses label edits and timeline
  * reads: neither may happen without a hold.
  */
+const STACKED_ON_MAIN = JSON.stringify([
+  {
+    number: 998,
+    url: "https://github.com/acme/widgets/pull/998",
+    headRefName: "release",
+    baseRefName: "main",
+    isCrossRepository: false,
+  },
+]);
+
 function noHoldRepo(opts: {
   overlay: string;
   runs: object[];
@@ -192,6 +202,12 @@ function noHoldRepo(opts: {
   statusList?: object[];
   /** `fail`: the pull request's base branch cannot be read. */
   base?: "fail";
+  /**
+   * The open pull requests, as `gh pr list` returns them; `fail`: the list
+   * cannot be read. Unset, none. Under `STACKED_ON_MAIN`, `main`'s
+   * protection answers and requires `trunk-gate`.
+   */
+  pulls?: string;
   /** Raw `--slurp`ed timeline pages; unset, a timeline read is refused. */
   timeline?: string;
 }): {
@@ -241,6 +257,7 @@ function noHoldRepo(opts: {
         creator: { login, type: "Bot" },
       })),
   ]);
+  const stacked = opts.pulls === STACKED_ON_MAIN;
   const gh = join(bin, "gh");
   writeFileSync(
     gh,
@@ -257,8 +274,12 @@ case "$*" in
     ${branch} ;;
   "api --paginate --slurp repos/{owner}/{repo}/rules/branches/release?per_page=100")
     ${rules} ;;
-  "api repos/{owner}/{repo}/branches/main"|"api --paginate --slurp repos/{owner}/{repo}/rules/branches/main?per_page=100")
-    echo "the repository's base branch is not this pull request's base" >&2; exit 2 ;;
+  "pr list --state open --limit 1000 --json number,url,headRefName,baseRefName,isCrossRepository")
+    ${opts.pulls === "fail" ? "echo 'gh: HTTP 502' >&2; exit 1" : `printf '%s\\n' '${opts.pulls ?? "[]"}'`} ;;
+  "api repos/{owner}/{repo}/branches/main")
+    ${stacked ? `printf '%s\\n' '{"name":"main","protection":{"enabled":true,"required_status_checks":{"contexts":["trunk-gate"]}}}'` : `echo "the repository's base branch is not this pull request's base" >&2; exit 2`} ;;
+  "api --paginate --slurp repos/{owner}/{repo}/rules/branches/main?per_page=100")
+    ${stacked ? `printf '%s\\n' '[[]]'` : `echo "the repository's base branch is not this pull request's base" >&2; exit 2`} ;;
   "api --paginate --slurp repos/{owner}/{repo}/commits/${HEAD}/check-runs?per_page=100")
     printf '%s\\n' '${checkRuns}' ;;
   "api --paginate --slurp repos/{owner}/{repo}/commits/${HEAD}/status?per_page=100")
@@ -289,10 +310,12 @@ esac
 function run(
   env: Record<string, string | undefined>,
   args: string[],
+  cwd?: string,
 ): { code: number; stdout: string; stderr: string } {
   const result = Bun.spawnSync(
     [CI_HOLD, ...args, "999", "--expect-head", HEAD],
     {
+      cwd,
       env,
       stdout: "pipe",
       stderr: "pipe",
@@ -448,6 +471,68 @@ describe("required checks judged as branch protection judges them", () => {
       "cannot read the base branch of pull request #999",
     );
     expect(await Bun.file(repo.log).text()).not.toContain("branches/main");
+  });
+
+  it("holds a stacked layer to its base's checks and those of the branch its stack lands on", async () => {
+    const runs = [
+      checkRun("gate-passed", "success", 1),
+      checkRun("lint", "success", 2),
+    ];
+    const without = noHoldRepo({
+      overlay: DERIVED,
+      runs,
+      pulls: STACKED_ON_MAIN,
+    });
+    expect(run(without.env, ["final-ready", "--require-success"]).code).toBe(4);
+    const log = await Bun.file(without.log).text();
+    expect(log).toContain("branches/main");
+    expect(log).toContain("branches/release");
+    const withoutBase = noHoldRepo({
+      overlay: DERIVED,
+      runs: [
+        checkRun("lint", "success", 2),
+        checkRun("trunk-gate", "success", 3),
+      ],
+      pulls: STACKED_ON_MAIN,
+    });
+    expect(
+      run(withoutBase.env, ["final-ready", "--require-success"]).code,
+    ).toBe(4);
+    const withBoth = noHoldRepo({
+      overlay: DERIVED,
+      runs: [...runs, checkRun("trunk-gate", "success", 3)],
+      pulls: STACKED_ON_MAIN,
+    });
+    expect(run(withBoth.env, ["final-ready", "--require-success"]).code).toBe(
+      0,
+    );
+  });
+
+  it("fails closed when the integration branch a stack walk stops at is unknown", async () => {
+    const repo = noHoldRepo({
+      overlay: "ci: {}\n",
+      runs: [checkRun("gate-passed", "success", 1)],
+      pulls: STACKED_ON_MAIN,
+    });
+    const clone = mkdtempSync(join(tmpdir(), "drive-pr-ci-policy-clone-"));
+    roots.push(clone);
+    Bun.spawnSync(["git", "init", "-q", clone]);
+    const result = run(repo.env, ["final-ready"], clone);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("integration branch is unknown");
+    expect(await Bun.file(repo.log).text()).not.toContain("branches/");
+  });
+
+  it("fails closed when the open pull requests that would show a stack cannot be read", async () => {
+    const repo = noHoldRepo({
+      overlay: DERIVED,
+      runs: [checkRun("gate-passed", "success", 1)],
+      pulls: "fail",
+    });
+    const result = run(repo.env, ["final-ready"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("is a stack layer");
+    expect(await Bun.file(repo.log).text()).not.toContain("branches/");
   });
 
   it("counts a neutral required check as passing", () => {

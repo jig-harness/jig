@@ -5,7 +5,10 @@
  * Required checks come from `ci.required_checks` when the repository declares
  * them, else from the protection of the pull request's base branch on GitHub
  * (classic branch protection and rulesets together), so a repository whose
- * protection already names its required checks configures nothing.
+ * protection already names its required checks configures nothing. A stacked
+ * layer's base is the feature branch below it, which is rarely protected, so
+ * its checks also include those of the branch the stack's bottom layer
+ * targets: the branch every layer lands on in the end.
  *
  * The hold is opt-in. A repository whose workflows skip their expensive jobs
  * while a label is present, and run them in full when it is removed, names
@@ -19,8 +22,10 @@ import { consumerRoot } from "../../../resolve-review-comments/scripts/lib/consu
 import {
   baseBranch,
   ciHoldLabelSetting,
+  pullRequestBaseBranch,
   requiredChecksSetting,
 } from "./overlay.ts";
+import { listOpenPulls, stackRoot } from "./pr-policy.ts";
 import { ghCall } from "./proc.ts";
 
 export interface CiPolicy {
@@ -197,14 +202,15 @@ async function ghJson(
 }
 
 /**
- * The checks the branch's protection requires. Throws naming what could not
- * be read. Both sources are read on every call: a ruleset and classic
- * protection can each require checks, and either may be absent.
+ * The checks the branch's protection requires, uncombined (the caller merges
+ * them with `mergeRequiredChecks`). Throws naming what could not be read.
+ * Both sources are read on every call: a ruleset and classic protection can
+ * each require checks, and either may be absent.
  */
 async function derivedRequiredChecks(
   root: string,
   branch: string,
-): Promise<{ names: string[]; apps: Map<string, number[]> }> {
+): Promise<RequiredCheck[]> {
   const encoded = encodeURIComponent(branch);
   const [branchInfo, rules] = await Promise.all([
     ghJson([`repos/{owner}/{repo}/branches/${encoded}`], root),
@@ -228,17 +234,46 @@ async function derivedRequiredChecks(
   if (classic === null) throw failure("branch protection", "malformed");
   const fromRules = rulesetContexts(rules.value);
   if (fromRules === null) throw failure("rulesets", "malformed");
-  return mergeRequiredChecks([classic, fromRules]);
+  return [...classic, ...fromRules];
 }
 
-/** The pull request's base branch, or `null` when it cannot be read. */
-async function prBaseBranch(pr: string, root: string): Promise<string | null> {
-  const view = await ghCall(
-    ["pr", "view", pr, "--json", "baseRefName", "-q", ".baseRefName"],
-    { cwd: root, stderr: "ignore" },
-  );
-  const name = view.stdout.trim();
-  return view.code === 0 && name !== "" ? name : null;
+/**
+ * The branches whose protection names the checks pull request `pr` must
+ * pass: its base, and for a stacked layer also the branch the stack's bottom
+ * layer targets (`stackRoot`). The layer merges into its base under that
+ * branch's protection, and its changes land on the root under the root's.
+ * The reason, rather than branches, when the base, the integration branch
+ * the walk stops at, or the open pull requests that would show a stack
+ * cannot be read.
+ */
+async function protectedBranchesOf(
+  pr: string,
+  root: string,
+): Promise<{ branches: string[] } | { error: string }> {
+  const base = await pullRequestBaseBranch(root, pr);
+  if (base === null)
+    return {
+      error: `cannot read the base branch of pull request #${pr}, whose protection names the required checks`,
+    };
+  // Without the integration branch the walk has no stop: an open release
+  // pull request from it would carry the walk on to the release branch.
+  const trunk = await baseBranch(root);
+  if (trunk === null)
+    return {
+      error: `cannot tell whether #${pr}'s base ${base} is a stack layer, because the integration branch is unknown`,
+    };
+  if (base === trunk) return { branches: [base] };
+  const pulls = await listOpenPulls(root);
+  if (pulls === null)
+    return {
+      error: `cannot list the open pull requests that would show whether #${pr}'s base ${base} is a stack layer`,
+    };
+  const walk = stackRoot(base, trunk, pulls);
+  if (!walk.ok)
+    return {
+      error: `cannot tell which branch #${pr}'s stack lands on: ${walk.reason}`,
+    };
+  return { branches: walk.root === base ? [base] : [base, walk.root] };
 }
 
 const cache = new Map<string, CiPolicy>();
@@ -248,10 +283,12 @@ const cache = new Map<string, CiPolicy>();
  * operator-facing message when the configuration is invalid or the required
  * checks can be neither read from configuration nor derived; callers fail
  * closed on it. Checks are derived from the protection of the pull request's
- * base branch; an unreadable base is an error, never a fallback to another
- * branch's protection, which may require less. Without `pr`, they are
- * derived from the repository's base branch (`repository.base_branch` or the
- * default branch).
+ * base branch and, for a stacked layer, of the branch its stack lands on
+ * (`protectedBranchesOf`); an unreadable base, integration branch or stack is
+ * an error, never a fallback to another branch's protection, which may
+ * require less. Without `pr`, they are derived from
+ * the repository's base branch (`repository.base_branch` or the default
+ * branch).
  */
 export async function ciPolicy(
   pr?: string,
@@ -266,18 +303,30 @@ export async function ciPolicy(
       derived: false,
       holdLabel,
     };
-  const branch =
-    pr === undefined ? await baseBranch(root) : await prBaseBranch(pr, root);
-  if (branch === null)
-    throw new Error(
-      pr === undefined
-        ? "cannot tell which branch's protection names the required checks; list them in ci.required_checks in .config/groundwork-overlay.yaml"
-        : `cannot read the base branch of pull request #${pr}, whose protection names the required checks; retry, or list them in ci.required_checks in .config/groundwork-overlay.yaml`,
-    );
-  const key = `${root}\0${branch}`;
+  let branches: string[];
+  if (pr === undefined) {
+    const integration = await baseBranch(root);
+    if (integration === null)
+      throw new Error(
+        "cannot tell which branch's protection names the required checks; list them in ci.required_checks in .config/groundwork-overlay.yaml",
+      );
+    branches = [integration];
+  } else {
+    const target = await protectedBranchesOf(pr, root);
+    if ("error" in target)
+      throw new Error(
+        `${target.error}; retry, or list them in ci.required_checks in .config/groundwork-overlay.yaml`,
+      );
+    branches = target.branches;
+  }
+  const key = `${root}\0${branches.join("\0")}`;
   const cached = cache.get(key);
   if (cached !== undefined) return { ...cached, holdLabel };
-  const derived = await derivedRequiredChecks(root, branch);
+  const derived = mergeRequiredChecks(
+    await Promise.all(
+      branches.map((branch) => derivedRequiredChecks(root, branch)),
+    ),
+  );
   const policy = {
     requiredChecks: derived.names,
     requiredApps: derived.apps,

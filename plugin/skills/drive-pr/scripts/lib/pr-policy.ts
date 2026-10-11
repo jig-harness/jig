@@ -529,6 +529,51 @@ export function walkChain(
   return { ok: true, layers };
 }
 
+/**
+ * The branch a stack bottoms out on, walking down from `branch` (a pull
+ * request's base) through open pull requests until a branch that no open,
+ * same-repository pull request has as its head, or `trunk`. A pull request
+ * that is not stacked gets its own base back with no layers. Stops at
+ * `trunk` even when an open pull request has it as its head (a release pull
+ * request from the integration branch, say): that is the trunk, not a layer.
+ */
+export function stackRoot(
+  branch: string,
+  trunk: string,
+  pulls: OpenPull[],
+):
+  | { ok: true; root: string; layers: number[] }
+  | { ok: false; reason: string } {
+  const layers: number[] = [];
+  const seen = new Set<string>();
+  let current = branch;
+  while (current !== trunk) {
+    if (seen.has(current))
+      return { ok: false, reason: `the chain loops back to ${current}` };
+    seen.add(current);
+    const owners = pulls.filter(
+      (p) => p.headRefName === current && !p.isCrossRepository,
+    );
+    if (owners.length === 0) break;
+    if (owners.length > 1)
+      return {
+        ok: false,
+        reason: `${current} is the head of several open pull requests (${owners.map((p) => `#${p.number}`).join(", ")})`,
+      };
+    // Checked only when another hop would be taken, so a root without an
+    // owning pull request is reached at the same depth as `trunk`.
+    if (layers.length >= MAX_CHAIN_WALK)
+      return {
+        ok: false,
+        reason: `the chain is longer than ${MAX_CHAIN_WALK} pull requests`,
+      };
+    const owner = owners[0] as OpenPull;
+    layers.push(owner.number);
+    current = owner.baseRefName;
+  }
+  return { ok: true, root: current, layers };
+}
+
 /** Parse `gh pr list --json number,url,headRefName,baseRefName,isCrossRepository`. */
 export function parseOpenPulls(json: unknown): OpenPull[] {
   if (!Array.isArray(json))
