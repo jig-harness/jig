@@ -6,7 +6,13 @@
  */
 
 import { parseReviewRound } from "../../summary-findings.ts";
-import { isReviewerLogin, reviewerApp } from "../overlay.ts";
+import {
+  isReviewerLogin,
+  reviewedShaMarker,
+  reviewerApp,
+  reviewerCheckPattern,
+  stickyMarker,
+} from "../overlay.ts";
 import { ghCall, run, tsArgv } from "../proc.ts";
 
 // ── Reviewer identity ────────────────────────────────────────────────────────
@@ -34,8 +40,7 @@ import { ghCall, run, tsArgv } from "../proc.ts";
 // run, that sibling's success can attest a review the posting check never
 // performed. The whole point of binding (app, name) is lost if the name half
 // matches the siblings it exists to exclude.
-const REVIEWER_CHECK_RAW =
-  process.env.DRIVE_PR_REVIEWER_CHECK || "^ai[ _-]?review(\\s*\\(.+\\))?$";
+const REVIEWER_CHECK_RAW = reviewerCheckPattern();
 
 /** POSIX character classes → JS, so an override written for the bash/jq
  * dialect (`[[:space:]]`) keeps matching under `RegExp`. */
@@ -51,12 +56,11 @@ export const REVIEWER_CHECK = new RegExp(posixToJs(REVIEWER_CHECK_RAW), "i");
 // The reviewer stamps the SHA it reviewed into its own sticky comment. That is
 // a second, independent witness to the check-run: measured on #3938, the marker
 // still named the PREVIOUS commit while the aggregate checks view read settled.
-export const SHA_MARKER = process.env.DRIVE_PR_SHA_MARKER || "ai-reviewed-sha";
+export const SHA_MARKER = reviewedShaMarker();
 // Which of the reviewer's comments is the sticky. The reviewer also posts
 // inline comments and may post auxiliary ones; any of those quoting or carrying
 // a SHA marker would otherwise override the real witness.
-export const STICKY_MARKER =
-  process.env.DRIVE_PR_STICKY_MARKER || "<!-- ai-code-review -->";
+export const STICKY_MARKER = stickyMarker();
 
 export interface CheckRun {
   name: string;
@@ -177,6 +181,142 @@ export async function commitStatusesFor(
     }
   }
   return statuses;
+}
+
+/**
+ * Does the head carry any CI evidence besides the reviewer's own? A head
+ * certified on the overall verdict alone needs it: with nothing registered
+ * yet, that verdict reads green. The combined-status read carries no
+ * publisher, so a status whose context reads as the reviewer's check is
+ * never counted, whoever published it: a missed independent status only
+ * keeps the head waiting, where a counted reviewer status would certify it.
+ */
+export function hasNonReviewerCi(
+  runs: readonly CheckRun[],
+  statuses: readonly CommitStatus[],
+): boolean {
+  return (
+    statuses.some((status) => !REVIEWER_CHECK.test(status.context)) ||
+    runs.some((run) => !isReviewerCheck(run))
+  );
+}
+
+const appIds = new Map<string, number | null>();
+
+/** The app slug behind a bot account's login; `""` for any other login. */
+function botSlug(login: string): string {
+  return login.endsWith("[bot]") ? login.slice(0, -5) : "";
+}
+
+/** The id of the GitHub App whose bot account is `login`, or `null`. */
+async function appIdOfBot(login: string): Promise<number | null> {
+  const slug = botSlug(login);
+  if (slug === "") return null;
+  const known = appIds.get(slug);
+  if (known !== undefined) return known;
+  const r = await ghCall(
+    ["api", `apps/${encodeURIComponent(slug)}`, "-q", ".id"],
+    { stderr: "ignore" },
+  );
+  const id = Number(r.stdout.trim());
+  const appId = r.code === 0 && Number.isSafeInteger(id) && id > 0 ? id : null;
+  // A failed read is not cached: it is not evidence the app does not exist.
+  if (r.code === 0) appIds.set(slug, appId);
+  return appId;
+}
+
+/**
+ * Most bot publishers whose app is looked up for one read. Each lookup is a
+ * sequential GitHub call, and `drive-state.ts set-verified`'s whole-process
+ * deadline (`finalVerifyTimeoutSeconds`) counts them; more publishers than
+ * this fail the read closed rather than outrun that deadline.
+ */
+export const MAX_STATUS_PUBLISHERS = 4;
+
+/**
+ * The newest status of each `contexts` entry from each publisher on `sha`,
+ * with the GitHub App that published it, for a required check pinned to an
+ * app. State and publisher come from the same status record, so a pinned
+ * requirement is judged on that app's own newest status and never on another
+ * publisher's state. Contexts compare case-insensitively, as GitHub's status
+ * contexts do. `null` when the list cannot be read or names more than
+ * `MAX_STATUS_PUBLISHERS` unresolved publishers; a status whose publisher is
+ * not an app, or whose app cannot be resolved, carries `appId: null` and so
+ * meets no pin.
+ */
+export async function statusesByPublisher(
+  owner: string,
+  repo: string,
+  sha: string,
+  contexts: readonly string[],
+): Promise<(CommitStatus & { appId: number | null })[] | null> {
+  const wanted = new Set(contexts.map((context) => context.toLowerCase()));
+  const r = await ghCall(
+    [
+      "api",
+      "--paginate",
+      "--slurp",
+      `repos/${owner}/${repo}/commits/${sha}/statuses?per_page=100`,
+    ],
+    { stderr: "ignore" },
+  );
+  if (r.code !== 0) return null;
+  const pages = parsePages(r.stdout);
+  if (pages === null) return null;
+  const newest = new Map<
+    string,
+    { id: number; creator: string; status: CommitStatus }
+  >();
+  for (const page of pages) {
+    if (!Array.isArray(page)) return null;
+    for (const raw of page as Array<Record<string, unknown> | null>) {
+      const context = raw?.context;
+      const id = raw?.id;
+      const state = raw?.state;
+      if (
+        typeof context !== "string" ||
+        typeof id !== "number" ||
+        typeof state !== "string"
+      )
+        return null;
+      if (!wanted.has(context.toLowerCase())) continue;
+      const creator = raw?.creator as Record<string, unknown> | null;
+      const login =
+        creator?.type === "Bot" && typeof creator.login === "string"
+          ? creator.login
+          : "";
+      const key = `${context.toLowerCase()}\n${login}`;
+      const known = newest.get(key);
+      if (known === undefined || id > known.id)
+        newest.set(key, {
+          id,
+          creator: login,
+          status: {
+            context,
+            state,
+            description:
+              typeof raw?.description === "string" ? raw.description : null,
+          },
+        });
+    }
+  }
+  const unresolved = new Set(
+    [...newest.values()]
+      .map((entry) => entry.creator)
+      .filter((login) => login !== "" && !appIds.has(botSlug(login))),
+  );
+  if (unresolved.size > MAX_STATUS_PUBLISHERS) return null;
+  // One lookup per publisher, failures included: `appIdOfBot` does not cache
+  // a failed read, and one publisher may own many required contexts.
+  const resolved = new Map<string, number | null>();
+  for (const login of new Set(
+    [...newest.values()].map((entry) => entry.creator),
+  ))
+    resolved.set(login, await appIdOfBot(login));
+  return [...newest.values()].map((entry) => ({
+    ...entry.status,
+    appId: resolved.get(entry.creator) ?? null,
+  }));
 }
 
 /** Is this check-run the posting reviewer's own check? */
@@ -362,8 +502,8 @@ export function failingStatusNames(
 /**
  * The individual failing check-run and commit-status names, unparsed — the
  * structured counterpart to `ciVerdictOf`'s rendered string. A caller that
- * needs to test one of these names for exact membership (`REQUIRED_FULL_CI_
- * CHECKS`, say) must use this rather than re-splitting `ciVerdictOf`'s output
+ * needs to test one of these names for exact membership (the required
+ * checks, say) must use this rather than re-splitting `ciVerdictOf`'s output
  * on `,`/`;`: a name that itself contains either delimiter cannot round-trip
  * through that split — e.g. a non-required check literally named
  * `Schema gate, shard 1` would split into `['Schema gate', 'shard 1']` and
@@ -626,4 +766,32 @@ export async function summaryFindings(
   } catch {
     return null;
   }
+}
+
+/**
+ * `statuses`, plus each publisher's own newest status for every `pinned`
+ * context, so a pinned requirement can be met by a status its app
+ * published. The combined statuses carry no `appId` and so meet no pin. No
+ * read when nothing pinned has a status; `null` when the publishers cannot
+ * be read.
+ */
+export async function attributeStatuses(
+  owner: string,
+  repo: string,
+  sha: string,
+  statuses: readonly CommitStatus[],
+  pinned: readonly string[],
+): Promise<(CommitStatus & { appId?: number | null })[] | null> {
+  const contexts = [...new Set(pinned)].filter((context) =>
+    statuses.some((status) => sameContext(status.context, context)),
+  );
+  if (contexts.length === 0) return [...statuses];
+  const published = await statusesByPublisher(owner, repo, sha, contexts);
+  if (published === null) return null;
+  return [...statuses, ...published];
+}
+
+/** Status contexts are case-insensitive on GitHub. */
+export function sameContext(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
 }

@@ -1,14 +1,10 @@
-/** Mechanical predicates shared by the `ci:hold` transition and its tests. */
+/**
+ * Mechanical predicates shared by the CI-hold transition and its tests. The
+ * hold label and the required check names are the repository's
+ * (`lib/ci-policy.ts`); every predicate takes them as arguments.
+ */
 
 import { isGitSha } from "./cli.ts";
-
-export const CI_HOLD_LABEL = "ci:hold";
-export const FINAL_CI_WITNESS = "Schema gate";
-export const REQUIRED_FULL_CI_CHECKS = [
-  "code-quality-and-build",
-  "tests",
-  FINAL_CI_WITNESS,
-] as const;
 
 export interface LabelTransition {
   id: string;
@@ -30,9 +26,46 @@ export interface CheckRunLite {
   status: string;
   conclusion: string | null;
   startedAt: string | null;
+  /** The GitHub App that published the run; `null` when the payload omits it. */
+  appId: number | null;
 }
 
-export function parsePrSnapshot(raw: unknown): PrSnapshot | null {
+/** A legacy commit status on the head: the latest state per context. */
+export interface StatusLite {
+  context: string;
+  state: string;
+  /**
+   * The GitHub App that published this status record, read only when a
+   * pinned requirement needs it; `null` when it is not an app's or could not
+   * be established. Absent (a combined-status entry, which names no
+   * publisher), the status meets no pinned requirement.
+   */
+  appId?: number | null;
+}
+
+/**
+ * Evidence beyond the head's check runs. `apps` pins a required check to the
+ * GitHub Apps that must publish it, as branch protection and rulesets can: a
+ * same-named result from another app does not satisfy a pin, and a check
+ * pinned to several apps needs a passing result from each. `statuses` lets a
+ * required context be met by a legacy commit status, as GitHub allows, and a
+ * pinned one only by that app's own newest status; statuses are read only
+ * without an unlabel floor or watermark, because a status carries no run id
+ * to prove it ran after the hold was released.
+ */
+export interface RequiredEvidence {
+  apps?: ReadonlyMap<string, readonly number[]>;
+  statuses?: readonly StatusLite[];
+}
+
+/**
+ * `held` is whether `holdLabel` is present; always `false` for a repository
+ * without a hold label.
+ */
+export function parsePrSnapshot(
+  raw: unknown,
+  holdLabel: string | null,
+): PrSnapshot | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw))
     return null;
   const value = raw as Record<string, unknown>;
@@ -51,12 +84,15 @@ export function parsePrSnapshot(raw: unknown): PrSnapshot | null {
       return null;
     const label = entry as Record<string, unknown>;
     if (typeof label.name !== "string" || label.name === "") return null;
-    if (label.name === CI_HOLD_LABEL) held = true;
+    if (holdLabel !== null && label.name === holdLabel) held = true;
   }
   return { state: value.state, head: value.headRefOid, held };
 }
 
-export function ciHoldTransitions(raw: unknown): LabelTransition[] | null {
+export function ciHoldTransitions(
+  raw: unknown,
+  holdLabel: string,
+): LabelTransition[] | null {
   if (!Array.isArray(raw)) return null;
   const transitions: LabelTransition[] = [];
   for (const value of raw) {
@@ -83,7 +119,7 @@ export function ciHoldTransitions(raw: unknown): LabelTransition[] | null {
       return null;
     const label = event.label as Record<string, unknown>;
     if (typeof label.name !== "string") return null;
-    if (label.name !== CI_HOLD_LABEL) continue;
+    if (label.name !== holdLabel) continue;
     if (
       typeof event.actor !== "object" ||
       event.actor === null ||
@@ -113,8 +149,11 @@ export function ciHoldTransitions(raw: unknown): LabelTransition[] | null {
   return transitions;
 }
 
-export function newestCiHoldTransition(raw: unknown): LabelTransition | null {
-  const transitions = ciHoldTransitions(raw);
+export function newestCiHoldTransition(
+  raw: unknown,
+  holdLabel: string,
+): LabelTransition | null {
+  const transitions = ciHoldTransitions(raw, holdLabel);
   return transitions?.at(-1) ?? null;
 }
 
@@ -171,6 +210,14 @@ export function parseCheckRuns(raw: unknown): CheckRunLite[] | null {
         run.started_at === null || run.started_at === undefined
           ? null
           : String(run.started_at);
+      const app = run.app;
+      const appId =
+        typeof app === "object" &&
+        app !== null &&
+        !Array.isArray(app) &&
+        Number.isSafeInteger((app as Record<string, unknown>).id)
+          ? ((app as Record<string, unknown>).id as number)
+          : null;
       if (
         typeof id !== "number" ||
         !Number.isSafeInteger(id) ||
@@ -189,20 +236,13 @@ export function parseCheckRuns(raw: unknown): CheckRunLite[] | null {
         status,
         conclusion,
         startedAt,
+        appId,
       });
     }
   }
   return result;
 }
 
-/**
- * A completed, non-skipped Schema gate on this exact head. Its conclusion may
- * be failure: this predicate proves the unlabel-triggered run registered;
- * the overall CI verdict decides whether the drive waits or stops. `after` is the
- * server timestamp of the `unlabeled` event; it keeps an older synchronize
- * run from satisfying the final-CI wait while GitHub is still scheduling the
- * unlabel-triggered workflow.
- */
 /**
  * The newest run for `name`+`head`, by id — selected BEFORE any freshness or
  * completion check, never after. An earlier version of every caller below
@@ -224,79 +264,72 @@ function newestRunFor(
   runs: readonly CheckRunLite[],
   name: string,
   head: string,
+  appId?: number,
 ): CheckRunLite | undefined {
   return runs
-    .filter((run) => run.name === name && run.headSha === head)
+    .filter(
+      (run) =>
+        run.name === name &&
+        run.headSha === head &&
+        (appId === undefined || run.appId === appId),
+    )
     .sort((a, b) => a.id - b.id)
     .at(-1);
 }
 
-export function freshSchemaGate(
-  runs: readonly CheckRunLite[],
-  head: string,
-  after: string,
-  watermark = 0,
-  strictAfter = false,
-): CheckRunLite | null {
-  const floor = Date.parse(after);
-  if (!isGitSha(head) || !Number.isFinite(floor)) return null;
-  const newest = newestRunFor(runs, FINAL_CI_WITNESS, head);
-  if (
-    newest === undefined ||
-    newest.id <= watermark ||
-    newest.status !== "completed" ||
-    newest.conclusion === null ||
-    newest.conclusion === "skipped" ||
-    newest.startedAt === null
-  )
-    return null;
-  const started = Date.parse(newest.startedAt);
-  if (strictAfter ? started <= floor : started < floor) return null;
-  return newest;
-}
-
-/** Initial PR-open CI only needs a completed witness; it predates any hold. */
-export function completedInitialSchemaGate(
-  runs: readonly CheckRunLite[],
-  head: string,
-): CheckRunLite | null {
-  if (!isGitSha(head)) return null;
-  const newest = newestRunFor(runs, FINAL_CI_WITNESS, head);
-  if (
-    newest === undefined ||
-    newest.status !== "completed" ||
-    newest.conclusion === null ||
-    newest.conclusion === "skipped" ||
-    newest.startedAt === null
-  )
-    return null;
-  return newest;
-}
-
 /**
- * The branch-protection checks from the opening/full run have all registered
- * and reached a non-skipped terminal result. Failures count as complete: the
- * caller separately decides whether a red head may continue through review.
+ * Every required check has registered on this exact head and its newest run
+ * reached a non-skipped terminal result. Failures count as complete unless
+ * `requireSuccess`: the caller separately decides whether a red head may
+ * continue through review. `after` is the server timestamp of the hold's
+ * `unlabeled` event; it keeps an older held run from satisfying the final-CI
+ * wait while GitHub is still scheduling the unlabel-triggered workflows. An
+ * empty `required` list is vacuously complete: the caller relies on the
+ * overall CI verdict.
+ *
+ * `protectionPasses` judges a run as GitHub's branch protection does: a
+ * skipped run (a job an `if:` condition skipped) and a neutral one both
+ * pass. Only a repository without a hold may pass it: under a hold, a skipped
+ * run is the held synchronize run the hold suppressed, never evidence of
+ * full CI, and the hold witness keeps requiring `success`.
  */
 export function completedRequiredCi(
   runs: readonly CheckRunLite[],
+  required: readonly string[],
   head: string,
   after?: string,
   requireSuccess = false,
   watermark = 0,
   strictAfter = false,
+  protectionPasses = false,
+  evidence: RequiredEvidence = {},
 ): boolean {
   if (!isGitSha(head)) return false;
   const floor = after === undefined ? null : Date.parse(after);
   if (floor !== null && !Number.isFinite(floor)) return false;
-  return REQUIRED_FULL_CI_CHECKS.every((name) => {
-    const newest = newestRunFor(runs, name, head);
+  const met = (name: string, appId: number | undefined): boolean => {
+    const newest = newestRunFor(runs, name, head, appId);
+    if (newest === undefined && floor === null && watermark === 0) {
+      // Status contexts are case-insensitive on GitHub; check-run names
+      // are not, so only this fallback folds case.
+      const status = evidence.statuses?.find(
+        (s) =>
+          s.context.toLowerCase() === name.toLowerCase() &&
+          (appId === undefined || s.appId === appId),
+      );
+      if (status !== undefined) {
+        if (status.state === "success") return true;
+        if (status.state === "failure" || status.state === "error")
+          return !requireSuccess;
+        return false;
+      }
+    }
     if (
       newest === undefined ||
       newest.id <= watermark ||
       newest.status !== "completed" ||
       newest.conclusion === null ||
-      newest.conclusion === "skipped" ||
+      (newest.conclusion === "skipped" && !protectionPasses) ||
       newest.startedAt === null
     )
       return false;
@@ -304,35 +337,90 @@ export function completedRequiredCi(
       const started = Date.parse(newest.startedAt);
       if (strictAfter ? started <= floor : started < floor) return false;
     }
-    return !requireSuccess || newest.conclusion === "success";
-  });
+    return (
+      !requireSuccess ||
+      newest.conclusion === "success" ||
+      (protectionPasses &&
+        (newest.conclusion === "skipped" || newest.conclusion === "neutral"))
+    );
+  };
+  return required.every((name) =>
+    pinsOf(name, evidence.apps).every((appId) => met(name, appId)),
+  );
 }
 
-/** Evidence required before adding or re-adding the hold. */
+/** The apps a required check is pinned to; `[undefined]` for any app. */
+function pinsOf(
+  name: string,
+  apps: ReadonlyMap<string, readonly number[]> | undefined,
+): readonly (number | undefined)[] {
+  const pins = apps?.get(name);
+  return pins === undefined || pins.length === 0 ? [undefined] : pins;
+}
+
+/**
+ * Required (check, app) pairs with no run on `head` from that app: only these
+ * can be met by a commit status, so only these need statuses read.
+ */
+export function requirementsWithoutRun(
+  runs: readonly CheckRunLite[],
+  required: readonly string[],
+  head: string,
+  apps?: ReadonlyMap<string, readonly number[]>,
+): { context: string; appId: number | undefined }[] {
+  return required.flatMap((context) =>
+    pinsOf(context, apps)
+      .filter((appId) => newestRunFor(runs, context, head, appId) === undefined)
+      .map((appId) => ({ context, appId })),
+  );
+}
+
+/** The latest start among the required checks' newest runs on `head`. */
+export function requiredCiStartedAt(
+  runs: readonly CheckRunLite[],
+  required: readonly string[],
+  head: string,
+  apps?: ReadonlyMap<string, readonly number[]>,
+): string | null {
+  let latest: string | null = null;
+  for (const name of required)
+    for (const appId of pinsOf(name, apps)) {
+      const startedAt =
+        newestRunFor(runs, name, head, appId)?.startedAt ?? null;
+      if (
+        startedAt !== null &&
+        (latest === null || Date.parse(startedAt) > Date.parse(latest))
+      )
+        latest = startedAt;
+    }
+  return latest;
+}
+
+/**
+ * Evidence required before adding or re-adding the hold: the PR-open run of
+ * every required check has completed, or, after a release, the run the
+ * unlabel triggered has.
+ */
 export function completedHoldPrecondition(
   runs: readonly CheckRunLite[],
+  required: readonly string[],
   head: string,
   latest: LabelTransition | null,
   watermark = 0,
   strictAfter = false,
-): CheckRunLite | null {
-  if (latest === null) {
-    if (!completedRequiredCi(runs, head)) return null;
-    return completedInitialSchemaGate(runs, head);
-  }
-  if (latest.event !== "unlabeled") return null;
-  if (
-    !completedRequiredCi(
-      runs,
-      head,
-      latest.createdAt,
-      false,
-      watermark,
-      strictAfter,
-    )
-  )
-    return null;
-  return freshSchemaGate(runs, head, latest.createdAt, watermark, strictAfter);
+): boolean {
+  if (required.length === 0) return false;
+  if (latest === null) return completedRequiredCi(runs, required, head);
+  if (latest.event !== "unlabeled") return false;
+  return completedRequiredCi(
+    runs,
+    required,
+    head,
+    latest.createdAt,
+    false,
+    watermark,
+    strictAfter,
+  );
 }
 
 export function checkRunWatermark(

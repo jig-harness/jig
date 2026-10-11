@@ -137,18 +137,29 @@ export interface HeldItem {
 }
 
 /**
- * Durable ownership/evidence for the temporary `ci:hold` label.
+ * Durable ownership/evidence for the repository's temporary CI hold label
+ * (`ci.hold_label`).
  *
  * A labelled event id is the compare-and-set token: the driver may remove the
- * label only while that event is still the newest transition for `ci:hold`.
+ * label only while that event is still the newest transition of the label.
  * Once removed, the unlabeled event's server timestamp becomes the lower bound
- * for the final `Schema gate` check-run which proves the full-CI rerun belongs
- * to that removal rather than to an earlier, skipped synchronize run.
+ * for the required check-runs, which proves the full-CI rerun belongs to that
+ * removal rather than to an earlier, skipped synchronize run.
  */
+/** The hold label of every drive written before `ci.hold_label` existed. */
+export const LEGACY_CI_HOLD_LABEL = "ci:hold";
+
 export type CiHoldState =
   | {
       phase: "acquiring";
       previousEventId: string | null;
+      /**
+       * The label this acquisition adds. A first acquisition names no
+       * transition yet, so this is what ties it to the configured label.
+       * Absent only in a record written before the label was configurable,
+       * when it was always `LEGACY_CI_HOLD_LABEL`.
+       */
+      label?: string;
       head: string;
       actor: string;
       createdAt: string;
@@ -548,6 +559,11 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
       )
         return false;
       if (typeof hold.head !== "string" || !isGitSha(hold.head)) return false;
+      if (
+        hold.label !== undefined &&
+        (typeof hold.label !== "string" || hold.label.length === 0)
+      )
+        return false;
     }
     if (hold.phase === "held") {
       if (typeof hold.addedAtHead !== "string" || !isGitSha(hold.addedAtHead))

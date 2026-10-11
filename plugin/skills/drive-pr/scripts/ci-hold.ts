@@ -1,8 +1,11 @@
 #!/usr/bin/env bun
 
 /**
- * Own the temporary `ci:hold` label without ever deleting another actor's
- * transition. The GitHub timeline event id is the compare-and-set token.
+ * Own the repository's temporary CI-hold label (`ci.hold_label`) without ever
+ * deleting another actor's transition. The GitHub timeline event id is the
+ * compare-and-set token. A repository without a hold label has nothing to
+ * own: `ensure`, `release` and `rollback` print `disabled` and succeed, and
+ * `final-ready` proves the required checks on the exact head directly.
  *
  * Usage:
  *   ci-hold.ts ensure [PR] --expect-head SHA
@@ -10,27 +13,27 @@
  *   ci-hold.ts rollback [PR] --expect-head SHA
  *   ci-hold.ts final-ready [PR] --expect-head SHA [--require-success]
  *
- * `--require-success` (final-ready only) additionally requires the Schema
- * gate witness and every required check to have concluded `success`, not
+ * `--require-success` (final-ready only) additionally requires every
+ * required check (`lib/ci-policy.ts`) to have concluded `success`, not
  * merely `completed` — see `finalReady`'s own doc comment for why this is
  * opt-in rather than the default.
  */
 
 import {
-  CI_HOLD_LABEL,
   checkRunWatermark,
   ciHoldTransitions,
   completedHoldPrecondition,
-  completedInitialSchemaGate,
   completedRequiredCi,
-  freshSchemaGate,
   type LabelTransition,
   mutationProven,
   ownsHeldTransition,
   type PrSnapshot,
   parseCheckRuns,
   parsePrSnapshot,
+  requiredCiStartedAt,
+  requirementsWithoutRun,
 } from "./lib/ci-hold.ts";
+import { type CiPolicy, ciPolicy, holdLabelPolicy } from "./lib/ci-policy.ts";
 import { fail, isDigits, isGitSha, runMain, sleep } from "./lib/cli.ts";
 import { ghCall, git, gitCallTimeoutSeconds, resolvePr } from "./lib/proc.ts";
 import {
@@ -38,13 +41,29 @@ import {
   resolveFenceContext,
 } from "./lib/state/lease.ts";
 import { lockHeartbeatMs } from "./lib/state/lock.ts";
-import type { CiHoldState } from "./lib/state/schema.ts";
+import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
 import { openStore } from "./lib/state/store.ts";
 import {
+  attributeStatuses,
   checkRunsFor,
   ciVerdictOf,
   commitStatusesFor,
+  hasNonReviewerCi,
 } from "./lib/status/evidence.ts";
+
+let policy: CiPolicy = {
+  requiredChecks: [],
+  requiredApps: new Map(),
+  derived: false,
+  holdLabel: null,
+};
+
+/** The hold label; only the hold's own transitions call this. */
+function holdLabel(): string {
+  if (policy.holdLabel === null)
+    fail(1, "ci-hold: no hold label is configured (ci.hold_label)");
+  return policy.holdLabel;
+}
 
 function usage(): never {
   fail(
@@ -63,7 +82,10 @@ async function snapshot(pr: string): Promise<PrSnapshot | null> {
   ]);
   if (result.code !== 0) return null;
   try {
-    return parsePrSnapshot(JSON.parse(result.stdout) as unknown);
+    return parsePrSnapshot(
+      JSON.parse(result.stdout) as unknown,
+      policy.holdLabel,
+    );
   } catch {
     return null;
   }
@@ -75,7 +97,8 @@ async function viewer(): Promise<string | null> {
   return login === "" ? null : login;
 }
 
-async function transitions(pr: string): Promise<LabelTransition[] | null> {
+/** Every event on the PR's timeline, or `null` when it cannot be read. */
+async function timelineEvents(pr: string): Promise<unknown[] | null> {
   const result = await ghCall([
     "api",
     "--paginate",
@@ -85,11 +108,15 @@ async function transitions(pr: string): Promise<LabelTransition[] | null> {
   if (result.code !== 0) return null;
   try {
     const pages = JSON.parse(result.stdout) as unknown;
-    if (!Array.isArray(pages)) return null;
-    return ciHoldTransitions(pages.flat());
+    return Array.isArray(pages) ? pages.flat() : null;
   } catch {
     return null;
   }
+}
+
+async function transitions(pr: string): Promise<LabelTransition[] | null> {
+  const events = await timelineEvents(pr);
+  return events === null ? null : ciHoldTransitions(events, holdLabel());
 }
 
 const latestOf = (values: readonly LabelTransition[]): LabelTransition | null =>
@@ -168,6 +195,45 @@ async function writeCiState(
 
 async function readCiState(pr: string): Promise<CiHoldState | null> {
   return (await openStore(pr)).read().state.ciHold;
+}
+
+/** The label transition a recorded hold names, if its phase names one. */
+function recordedTransitionId(recorded: CiHoldState | null): string | null {
+  if (recorded === null) return null;
+  if (recorded.phase === "acquiring") return recorded.previousEventId;
+  if (recorded.phase === "releasing") return recorded.heldEventId;
+  return recorded.eventId;
+}
+
+/**
+ * The recorded hold must be a transition of the configured label. A
+ * renamed `ci.hold_label` would otherwise read the new label's empty
+ * timeline, acquire it, and overwrite the record that authorizes removing
+ * the old one. An interrupted first acquisition names no transition, so it
+ * is matched on the label it recorded; one recorded before the label was
+ * configurable added `LEGACY_CI_HOLD_LABEL`.
+ */
+async function assertRecordedHoldMatchesLabel(pr: string): Promise<void> {
+  const recorded = await readCiState(pr);
+  const recordedId = recordedTransitionId(recorded);
+  if (recorded === null) return;
+  const renamed = `if ci.hold_label was renamed, configure the label it was recorded under until this drive converges and releases it`;
+  if (recorded.phase === "acquiring") {
+    const label = recorded.label ?? LEGACY_CI_HOLD_LABEL;
+    if (label !== holdLabel())
+      fail(
+        1,
+        `ci-hold: the CI hold acquisition recorded for this PR adds '${label}', not '${holdLabel()}'; ${renamed}`,
+      );
+  }
+  if (recordedId === null) return;
+  const timeline = await transitions(pr);
+  if (timeline === null) fail(1, "ci-hold: cannot read the label timeline");
+  if (!timeline.some((transition) => transition.id === recordedId))
+    fail(
+      1,
+      `ci-hold: the CI hold recorded for this PR is not a '${holdLabel()}' transition; ${renamed}`,
+    );
 }
 
 async function ensure(pr: string, expectedPushHead: string): Promise<number> {
@@ -321,7 +387,7 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     }
     await writeCiState(pr, null);
     console.error(
-      `ci-hold: '${CI_HOLD_LABEL}' is present but its latest transition is not owned by this drive; leaving it untouched`,
+      `ci-hold: '${holdLabel()}' is present but its latest transition is not owned by this drive; leaving it untouched`,
     );
     return 4;
   }
@@ -370,22 +436,23 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   ) {
     await writeCiState(pr, null);
     console.error(
-      `ci-hold: the latest '${CI_HOLD_LABEL}' removal is not a release owned by this drive; refusing to re-add it`,
+      `ci-hold: the latest '${holdLabel()}' removal is not a release owned by this drive; refusing to re-add it`,
     );
     return 4;
   }
   const observed = completedHoldPrecondition(
     runs,
+    policy.requiredChecks,
     head,
     latest,
     watermark,
     persisted?.phase === "released" && persisted.source === "external",
   );
-  if (observed === null) {
+  if (!observed) {
     console.error(
       latest?.event === "unlabeled"
-        ? "ci-hold: the Schema gate triggered by the latest unlabel has not completed on this head; refusing to re-add the hold yet"
-        : "ci-hold: initial Schema gate has not completed on this head; waiting before suppressing intermediate CI",
+        ? "ci-hold: the required checks triggered by the latest unlabel have not completed on this head; refusing to re-add the hold yet"
+        : "ci-hold: the initial required checks have not completed on this head; waiting before suppressing intermediate CI",
     );
     return 4;
   }
@@ -413,18 +480,19 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   await writeCiState(pr, {
     phase: "acquiring",
     previousEventId: beforeId === "" ? null : beforeId,
+    label: holdLabel(),
     head,
     actor: login,
     createdAt: new Date().toISOString(),
     checkRunWatermark: preHoldWatermark,
   });
-  const add = await ghCall(["pr", "edit", pr, "--add-label", CI_HOLD_LABEL]);
+  const add = await ghCall(["pr", "edit", pr, "--add-label", holdLabel()]);
   const mutation = await transitionAfter(pr, beforeId, "labeled", login);
   const confirmed = await snapshot(pr);
   if (mutation?.intervening === true) {
     await writeCiState(pr, null);
     console.error(
-      `ci-hold: another '${CI_HOLD_LABEL}' transition raced label acquisition; leaving the live label untouched and refusing ownership`,
+      `ci-hold: another '${holdLabel()}' transition raced label acquisition; leaving the live label untouched and refusing ownership`,
     );
     return 4;
   }
@@ -560,7 +628,7 @@ async function release(pr: string, head: string): Promise<number> {
   if (!ownsHeldTransition(persisted, latest)) {
     await writeCiState(pr, null);
     console.error(
-      `ci-hold: '${CI_HOLD_LABEL}' no longer matches this drive's labelled event; leaving it untouched`,
+      `ci-hold: '${holdLabel()}' no longer matches this drive's labelled event; leaving it untouched`,
     );
     return 4;
   }
@@ -601,7 +669,7 @@ async function release(pr: string, head: string): Promise<number> {
     "edit",
     pr,
     "--remove-label",
-    CI_HOLD_LABEL,
+    holdLabel(),
   ]);
   const mutation = await transitionAfter(
     pr,
@@ -623,7 +691,7 @@ async function release(pr: string, head: string): Promise<number> {
         "edit",
         pr,
         "--add-label",
-        CI_HOLD_LABEL,
+        holdLabel(),
       ]);
       const restoreMutation =
         restoreBefore === null
@@ -646,7 +714,7 @@ async function release(pr: string, head: string): Promise<number> {
       if (!restoreProven) {
         fail(
           1,
-          `ci-hold: ownership changed during removal; add-label exited ${restore.code} and restoration could not be proven from the timeline and live label, so reconcile '${CI_HOLD_LABEL}' manually`,
+          `ci-hold: ownership changed during removal; add-label exited ${restore.code} and restoration could not be proven from the timeline and live label, so reconcile '${holdLabel()}' manually`,
         );
       }
     } else {
@@ -718,7 +786,7 @@ async function release(pr: string, head: string): Promise<number> {
  * `set-verified`. Two rounds running a SEPARATE, cheaper re-check fell out
  * of sync with the initial proof: round 12 added the aggregate
  * `ciVerdictOf` check but only ever re-verified IT on refresh, never
- * `completedRequiredCi`/the witness — so a required check superseded by a
+ * `completedRequiredCi` — so a required check superseded by a
  * fresher SKIPPED run (which `ciVerdictOf`'s own `PASSING_CONCLUSIONS`
  * treats as passing, unlike `completedRequiredCi`) slipped past the
  * re-check even though it would have failed the initial proof
@@ -733,46 +801,72 @@ async function finalCiProofGreen(
   head: string,
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
   requireSuccess: boolean,
-): Promise<{ ok: true; startedAt: string } | { ok: false }> {
+): Promise<{ ok: true; startedAt: string | null } | { ok: false }> {
   const runs = await checkRuns(head);
   if (runs === null) return { ok: false };
-  const witness =
+  const required = policy.requiredChecks;
+  const apps = policy.requiredApps;
+  const noHold = policy.holdLabel === null;
+  // A required context with no check run on the head may be a legacy commit
+  // status; read them only then, and never against an unlabel floor.
+  const withoutRun =
     persisted === null
-      ? completedInitialSchemaGate(runs, head)
-      : freshSchemaGate(
-          runs,
-          head,
-          persisted.createdAt,
-          persisted.checkRunWatermark,
-          persisted.source === "external",
-        );
+      ? requirementsWithoutRun(runs, required, head, apps)
+      : [];
+  const read =
+    withoutRun.length > 0
+      ? await commitStatusesFor("{owner}", "{repo}", head)
+      : [];
+  if (read === null) return { ok: false };
+  const statuses = await attributeStatuses(
+    "{owner}",
+    "{repo}",
+    head,
+    read,
+    withoutRun.flatMap((r) => (r.appId === undefined ? [] : [r.context])),
+  );
+  if (statuses === null) return { ok: false };
   const requiredFresh =
     persisted === null
-      ? completedRequiredCi(runs, head, undefined, requireSuccess)
+      ? completedRequiredCi(
+          runs,
+          required,
+          head,
+          undefined,
+          requireSuccess,
+          0,
+          false,
+          noHold,
+          { apps, statuses },
+        )
       : completedRequiredCi(
           runs,
+          required,
           head,
           persisted.createdAt,
           requireSuccess,
           persisted.checkRunWatermark,
           persisted.source === "external",
+          false,
+          { apps },
         );
-  if (
-    witness === null ||
-    witness.startedAt === null ||
-    (requireSuccess && witness.conclusion !== "success") ||
-    !requiredFresh
-  )
-    return { ok: false };
+  if (!requiredFresh) return { ok: false };
   if (requireSuccess && !(await requiredCiAggregateIsGreen(head)))
     return { ok: false };
-  return { ok: true, startedAt: witness.startedAt };
+  // Branch protection names no check: the overall verdict decides, and it
+  // reads green before any workflow has registered on the head.
+  if (required.length === 0 && policy.derived && !(await anyCiOnHead(head)))
+    return { ok: false };
+  return {
+    ok: true,
+    startedAt: requiredCiStartedAt(runs, required, head, apps),
+  };
 }
 
 /**
  * The same aggregate CI verdict `drive-state.ts`'s `proveCiGreen()` already
  * requires — check-runs AND legacy commit statuses, not check-runs alone.
- * `finalReady`'s own witness/`completedRequiredCi` checks only ever read
+ * `finalReady`'s own `completedRequiredCi` check only ever reads
  * check-runs, so a legacy status context turning pending or failing after
  * `announce-merge-ready.ts`'s initial snapshot was invisible to every later
  * `--require-success` confirmation, which could then post or preserve a
@@ -790,6 +884,17 @@ async function requiredCiAggregateIsGreen(head: string): Promise<boolean> {
   ]);
   if (allRuns === null || statuses === null) return false;
   return ciVerdictOf(allRuns, statuses, false, head) === "green";
+}
+
+/** Has any non-reviewer check run or commit status registered on `head`? */
+async function anyCiOnHead(head: string): Promise<boolean> {
+  const [allRuns, statuses] = await Promise.all([
+    checkRunsFor("{owner}", "{repo}", head),
+    commitStatusesFor("{owner}", "{repo}", head),
+  ]);
+  return (
+    allRuns !== null && statuses !== null && hasNonReviewerCi(allRuns, statuses)
+  );
 }
 
 /**
@@ -812,15 +917,16 @@ async function requiredCiAggregateIsGreen(head: string): Promise<boolean> {
  * fail-closed checks in this codebase already apply (chatgpt-codex-
  * connector, PR #4681 round 15).
  *
- * `expectEmptyTimeline` selects which timeline shape the caller's branch
- * requires — `true` for "no hold was ever applied" (never a member other
- * than the always-empty initial branch), the persisted event id otherwise.
+ * `expectation` selects which timeline shape the caller's branch requires —
+ * `emptyTimeline` for "no hold was ever applied", the persisted event id
+ * otherwise, and `null` for a repository without a hold label, whose
+ * timeline is never read.
  */
 async function stillCurrentForFinalReady(
   pr: string,
   head: string,
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
-  expectation: { emptyTimeline: true } | { latestTransitionId: string },
+  expectation: { emptyTimeline: true } | { latestTransitionId: string } | null,
   requireSuccess: boolean,
 ): Promise<boolean> {
   if (requireSuccess) {
@@ -840,13 +946,15 @@ async function stillCurrentForFinalReady(
   // accepted residual `drive-state.ts`'s own `stillFullyCurrent()`/
   // post-write check documents for the same reason. This ordering puts
   // that irreducible tail on the one fact worth protecting most.
-  const finalTimeline = await transitions(pr);
-  if (finalTimeline === null) return false;
-  const timelineMatches =
-    "emptyTimeline" in expectation
-      ? finalTimeline.length === 0
-      : latestOf(finalTimeline)?.id === expectation.latestTransitionId;
-  if (!timelineMatches) return false;
+  if (expectation !== null) {
+    const finalTimeline = await transitions(pr);
+    if (finalTimeline === null) return false;
+    const timelineMatches =
+      "emptyTimeline" in expectation
+        ? finalTimeline.length === 0
+        : latestOf(finalTimeline)?.id === expectation.latestTransitionId;
+    if (!timelineMatches) return false;
+  }
   const finalLive = await snapshot(pr);
   return (
     finalLive !== null &&
@@ -865,13 +973,25 @@ async function finalReady(
   if (live === null) fail(1, "ci-hold: cannot read the PR state");
   if (live.state !== "OPEN") return 5;
   if (live.head !== head || live.held) return 4;
+  if (policy.holdLabel === null) {
+    // No hold exists: every push ran full CI, so the required checks on this
+    // exact head are the witness.
+    const proof = await finalCiProofGreen(head, null, requireSuccess);
+    if (!proof.ok) return 4;
+    if (
+      !(await stillCurrentForFinalReady(pr, head, null, null, requireSuccess))
+    )
+      return 4;
+    process.stdout.write(`${proof.startedAt ?? ""}\n`);
+    return 0;
+  }
   const persisted = await readCiState(pr);
   const timeline = await transitions(pr);
   if (timeline === null) fail(1, "ci-hold: cannot read the label timeline");
   if (persisted === null) {
     if (timeline.length !== 0) return 4;
-    // No intermediate hold was ever applied: the PR-open Schema gate is the
-    // full-CI witness for this exact head.
+    // No intermediate hold was ever applied: the PR-open run of the required
+    // checks is the full-CI witness for this exact head.
     const initialProof = await finalCiProofGreen(head, null, requireSuccess);
     if (!initialProof.ok) return 4;
     if (
@@ -884,7 +1004,7 @@ async function finalReady(
       ))
     )
       return 4;
-    process.stdout.write(`${initialProof.startedAt}\n`);
+    process.stdout.write(`${initialProof.startedAt ?? ""}\n`);
     return 0;
   }
   if (persisted.phase !== "released" || persisted.head !== head) return 4;
@@ -946,6 +1066,40 @@ async function main(): Promise<number> {
   }
   pr = await resolvePr(pr);
   if (!isDigits(pr) || !isGitSha(head)) usage();
+  const configError = (error: unknown): never =>
+    fail(
+      1,
+      `ci-hold: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  let holdLabel: string | null = null;
+  try {
+    holdLabel = holdLabelPolicy();
+  } catch (error) {
+    configError(error);
+  }
+  if (holdLabel === null) {
+    // A hold an earlier drive recorded under a configuration that had one
+    // may still own a live label: refusing beats leaving it on a PR whose
+    // workflows keep skipping their jobs.
+    const recorded = await readCiState(pr);
+    if (recorded !== null && recorded.phase !== "released")
+      fail(
+        1,
+        "ci-hold: this PR has a CI hold label recorded by an earlier drive, but ci.hold_label is not configured; configure ci.hold_label (and ci.required_checks) again with the label that drive used, 'ci:hold' before release 0.5.0, so that the drive can release it",
+      );
+    if (command !== "final-ready") {
+      // No hold label: intermediate pushes run normal CI and there is no
+      // label to acquire, release or roll back.
+      process.stdout.write("disabled\n");
+      return 0;
+    }
+  }
+  try {
+    policy = await ciPolicy(pr);
+  } catch (error) {
+    configError(error);
+  }
+  if (policy.holdLabel !== null) await assertRecordedHoldMatchesLabel(pr);
   if (command === "ensure" || command === "release" || command === "rollback") {
     const fence = await resolveFenceContext("ci-hold.ts");
     const remoteLock =

@@ -130,7 +130,7 @@ consumer polling `--json` for one of these four will never see it there.
 
 | State | Exit | Meaning |
 |---|---|---|
-| `CONVERGED` | 3 (`drive.ts`: 0) | The posting reviewer completed on **this exact head**, its recorded reviewed-SHA equals that head, zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the `ci:hold` transition it owns, waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead |
+| `CONVERGED` | 3 (`drive.ts`: 0) | The posting reviewer completed on **this exact head**, its recorded reviewed-SHA equals that head, zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead |
 | `PR_NOT_OPEN` | 5 | Merged or closed — detected **before** any push, so nothing lands on an orphaned branch |
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and does **not** re-arm |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
@@ -196,23 +196,31 @@ could not be read, `2` usage. Full table and the evidence behind each:
 
 **exact** — Keep the hold ownership, exact-head witnesses, and repair routing prescribed here.
 
-The PR-open head runs full CI. Before the first intermediate fix push,
-`finish-round.ts` waits until every required branch-protection check has completed, adds
-`ci:hold`, and records the resulting GitHub timeline-event id. The
-repository's synchronize workflows are expected to honour the label: they skip
-their expensive jobs while a required witness check fails fast (the check
-names the drive waits on are `REQUIRED_FULL_CI_CHECKS` and `FINAL_CI_WITNESS`
-in `scripts/lib/ci-hold.ts`), so the held head is visibly non-green rather than
-falsely mergeable; the posting reviewer continues independently.
+The required checks are the repository's `ci.required_checks`, by default the
+checks its base branch's protection requires (`scripts/lib/ci-policy.ts`).
+Without a hold label (`ci.hold_label` unset) every push runs full CI: the
+hold steps below print `disabled` and do nothing, and at convergence `drive.ts`
+waits for every required check to complete on the exact head, then requires
+the overall non-reviewer CI verdict to be green before it writes the
+PR-global `verifiedSha` or exits 0.
+
+With a hold label, the PR-open head runs full CI. Before the first
+intermediate fix push, `finish-round.ts` waits until every required check has
+completed, adds the label, and records the resulting GitHub timeline-event id.
+The repository's synchronize workflows are expected to honour the label: they
+skip their expensive jobs while a required check fails fast, so the held head
+is visibly non-green rather than falsely mergeable; the posting reviewer
+continues independently.
 
 At reviewer convergence, `drive.ts` removes the label only when that same
-labelled event is still the newest `ci:hold` transition. A human remove/re-add
-therefore transfers control: the drive leaves the label untouched. Removing
-the owned label fires every workflow's `unlabeled` trigger. The drive waits for
-successful exact-head required checks whose starts are no earlier than that
-server-side unlabeled-event timestamp and whose run ids exceed the pre-unlabel
-watermark. It then requires the overall non-reviewer CI verdict to be green
-before it writes the PR-global `verifiedSha` or exits 0.
+labelled event is still the newest transition of the label. A human
+remove/re-add therefore transfers control: the drive leaves the label
+untouched. Removing the owned label fires every workflow's `unlabeled`
+trigger. The drive waits for successful exact-head required checks whose
+starts are no earlier than that server-side unlabeled-event timestamp and whose
+run ids exceed the pre-unlabel watermark. It then requires the overall
+non-reviewer CI verdict to be green before it writes the PR-global
+`verifiedSha` or exits 0.
 
 **A red verdict there is a repair round, not a stop**. Up to
 `DRIVE_PR_CI_REPAIR_ROUNDS` times (default 2), the driver dispatches a
@@ -1842,8 +1850,9 @@ inside the last one:
    refusal does not fire for it — and neither is a thread a human already
    *parked* (`drive-state.ts park`), including one `triage-thread.ts` itself
    refused to reply to (e.g. `commentsTruncated` — § 4 below);
-2. `ci-hold.ts ensure` — after observing all required PR-open checks, adds or
-   confirms this drive's durable `ci:hold` ownership;
+2. `ci-hold.ts ensure` — in a repository with a hold label, after observing
+   all required PR-open checks, adds or confirms this drive's durable
+   ownership of the label (without one, prints `disabled`);
 3. `guarded-push.ts` — the push, with the PR's liveness re-checked at the
    instant of the push and an explicit refspec at its own head branch;
 4. `drive-state.ts stamp-held` — stamps the pushed SHA onto the holds *this*

@@ -225,7 +225,17 @@ export function finalVerifyTimeoutSeconds(): number {
   // post-write check could clear it on a stale head/hold/CI — the exact
   // false-certificate window the post-write check exists to close
   // (chatgpt-codex-connector, a reference-implementation pull request round 9).
-  const GH_BOUND_CALLS = 15;
+  //
+  // On top of that chain: the CI policy's own reads (2: the PR's base
+  // branch, then its protection and rulesets in parallel), and per proof,
+  // when a pinned requirement falls back to commit statuses, the status
+  // list (1) plus one app lookup per publisher, capped at
+  // MAX_STATUS_PUBLISHERS (lib/status/evidence.ts, mirrored here to keep
+  // the shared timeout layer free of that import). A failed lookup is not
+  // cached, so each of the three proofs may repeat them.
+  const PROOFS = 3;
+  const MAX_STATUS_PUBLISHERS = 4;
+  const GH_BOUND_CALLS = 15 + 2 + PROOFS * (1 + MAX_STATUS_PUBLISHERS);
   // set-verified can take THREE separate lock acquisitions in its worst
   // case, not two: the PR-wide remote-mutation lock, the state mutex for the
   // certificate write, and — when the post-write `stillFullyCurrent()` check

@@ -189,14 +189,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import {
-  CI_HOLD_LABEL,
   ciHoldTransitions,
-  completedInitialSchemaGate,
   completedRequiredCi,
-  freshSchemaGate,
   parseCheckRuns,
   parsePrSnapshot,
+  requirementsWithoutRun,
 } from "./lib/ci-hold.ts";
+import { type CiPolicy, ciPolicy } from "./lib/ci-policy.ts";
+import { ciHoldLabelSetting } from "./lib/overlay.ts";
 import {
   ExitError,
   fail,
@@ -263,9 +263,11 @@ import {
 } from "./lib/state/schema.ts";
 import { openStore } from "./lib/state/store.ts";
 import {
+  attributeStatuses,
   checkRunsFor,
   ciVerdictOf,
   commitStatusesFor,
+  hasNonReviewerCi,
 } from "./lib/status/evidence.ts";
 
 function usage(): void {
@@ -641,19 +643,34 @@ function rawTextMentionsJsonKey(text: string, target: string): boolean {
   return false;
 }
 
+/** The repository's CI-hold label (`ci.hold_label`), or `null` when it has none. */
+function holdLabel(): string | null {
+  return ciHoldLabelSetting() ?? null;
+}
+
+/** How messages name the hold label. */
+function holdLabelName(): string {
+  return holdLabel() ?? "CI hold";
+}
+
 /**
- * The PR's ci:hold label-transition timeline, straight from GitHub — the
+ * The PR's CI-hold label-transition timeline, straight from GitHub — the
  * live source of truth a local state file can only ever cache. Shared by
  * `set-verified` (freshness proof) and `reset` (destructive-recovery guard):
  * a local file's raw bytes can be truncated before the `ciHold` key was ever
  * serialized — `freshState()` emits it after several other fields — so
  * scanning only those bytes for evidence produces a false "no evidence" on a
  * transition that is very much live on GitHub (chatgpt-codex-connector, PR
- * #4681 round 9).
+ * #4681 round 9). Unreadable (`null`) for a repository without a hold label:
+ * an older drive may have held under a label the configuration no longer
+ * names, and no timeline read can rule that out. `set-verified` does not
+ * read it in that mode.
  */
 async function readCiHoldTimeline(
   pr: string,
 ): Promise<ReturnType<typeof ciHoldTransitions>> {
+  const label = holdLabel();
+  if (label === null) return null;
   const result = await ghCall([
     "api",
     "--paginate",
@@ -663,7 +680,7 @@ async function readCiHoldTimeline(
   if (result.code !== 0) return null;
   try {
     const pages = JSON.parse(result.stdout) as unknown;
-    return Array.isArray(pages) ? ciHoldTransitions(pages.flat()) : null;
+    return Array.isArray(pages) ? ciHoldTransitions(pages.flat(), label) : null;
   } catch {
     return null;
   }
@@ -1551,7 +1568,10 @@ async function main(): Promise<number> {
         if (live.code !== 0) fail(1, "set-verified: cannot read the PR");
         let snapshot: ReturnType<typeof parsePrSnapshot>;
         try {
-          snapshot = parsePrSnapshot(JSON.parse(live.stdout) as unknown);
+          snapshot = parsePrSnapshot(
+            JSON.parse(live.stdout) as unknown,
+            holdLabel(),
+          );
         } catch {
           fail(1, "set-verified: cannot parse the PR snapshot");
         }
@@ -1564,21 +1584,35 @@ async function main(): Promise<number> {
           fail(4, `set-verified: PR head is ${snapshot.head}, not ${a.sha}`);
         }
         if (snapshot.held) {
-          fail(4, `set-verified: '${CI_HOLD_LABEL}' is still present`);
+          fail(4, `set-verified: '${holdLabelName()}' is still present`);
         }
 
         const current = store.read().state;
         if (current.ciHold !== null && current.ciHold.phase !== "released") {
-          fail(4, `set-verified: '${CI_HOLD_LABEL}' transition is not settled`);
+          fail(
+            4,
+            `set-verified: '${holdLabelName()}' transition is not settled`,
+          );
         }
-        if (
-          current.ciHold?.phase === "released" &&
-          current.ciHold.head !== a.sha
-        ) {
+        // Without a hold label every push ran full CI, so a released record
+        // left by an earlier drive is settled history, not evidence this head
+        // must be measured against.
+        const settledHold = holdLabel() === null ? null : current.ciHold;
+        if (settledHold !== null && settledHold.head !== a.sha) {
           fail(4, "set-verified: the recorded unlabel belongs to another head");
         }
-        const readTimeline = () => readCiHoldTimeline(pr);
-        const expectedTransition = current.ciHold?.eventId ?? null;
+        let policy: CiPolicy;
+        try {
+          policy = await ciPolicy(pr);
+        } catch (error) {
+          fail(
+            1,
+            `set-verified: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        const readTimeline = async () =>
+          policy.holdLabel === null ? [] : await readCiHoldTimeline(pr);
+        const expectedTransition = settledHold?.eventId ?? null;
         const timeline = await readTimeline();
         if (
           timeline === null ||
@@ -1586,7 +1620,10 @@ async function main(): Promise<number> {
             ? timeline.length !== 0
             : timeline.at(-1)?.id !== expectedTransition)
         ) {
-          fail(4, "set-verified: ci:hold transition history is not settled");
+          fail(
+            4,
+            `set-verified: ${holdLabelName()} transition history is not settled`,
+          );
         }
         // ONE predicate for "does CI genuinely prove this head is done and
         // green" — called for the INITIAL proof below AND, unchanged, for
@@ -1596,8 +1633,8 @@ async function main(): Promise<number> {
         // aggregate-only `ciVerdictOf` re-check treats `skipped` as
         // passing, so a newer skipped run for a required check could
         // supersede the successful post-unlabel run without either
-        // refresh noticing, even though `freshSchemaGate`/
-        // `completedRequiredCi` — the INITIAL proof's own predicates —
+        // refresh noticing, even though `completedRequiredCi` — the
+        // INITIAL proof's own predicate —
         // would reject it (chatgpt-codex-connector, a reference-implementation pull request round 7, on
         // top of round 6's fix to this same function). Sharing one
         // implementation for "prove CI green" makes that class of drift
@@ -1625,38 +1662,6 @@ async function main(): Promise<number> {
           if (runs === null) {
             return { ok: false, reason: "check-runs are malformed" };
           }
-          const witness =
-            current.ciHold?.phase === "released"
-              ? freshSchemaGate(
-                  runs,
-                  a.sha,
-                  current.ciHold.createdAt,
-                  current.ciHold.checkRunWatermark,
-                  current.ciHold.source === "external",
-                )
-              : completedInitialSchemaGate(runs, a.sha);
-          const requiredFresh =
-            current.ciHold?.phase === "released"
-              ? completedRequiredCi(
-                  runs,
-                  a.sha,
-                  current.ciHold.createdAt,
-                  true,
-                  current.ciHold.checkRunWatermark,
-                  current.ciHold.source === "external",
-                )
-              : completedRequiredCi(runs, a.sha, undefined, true);
-          if (
-            witness === null ||
-            witness.conclusion !== "success" ||
-            !requiredFresh
-          ) {
-            return {
-              ok: false,
-              reason:
-                "no successful Schema gate proves full CI after the relevant unlabel event",
-            };
-          }
           const [allRuns, statuses] = await Promise.all([
             checkRunsFor("{owner}", "{repo}", a.sha),
             commitStatusesFor("{owner}", "{repo}", a.sha),
@@ -1664,12 +1669,74 @@ async function main(): Promise<number> {
           if (allRuns === null || statuses === null) {
             return { ok: false, reason: "cannot read complete CI evidence" };
           }
+          const apps = policy.requiredApps;
+          const attributed =
+            settledHold !== null
+              ? statuses
+              : await attributeStatuses(
+                  "{owner}",
+                  "{repo}",
+                  a.sha,
+                  statuses,
+                  requirementsWithoutRun(
+                    runs,
+                    policy.requiredChecks,
+                    a.sha,
+                    apps,
+                  ).flatMap((r) => (r.appId === undefined ? [] : [r.context])),
+                );
+          if (attributed === null) {
+            return {
+              ok: false,
+              reason: "cannot read commit status publishers",
+            };
+          }
+          const requiredFresh =
+            settledHold !== null
+              ? completedRequiredCi(
+                  runs,
+                  policy.requiredChecks,
+                  a.sha,
+                  settledHold.createdAt,
+                  true,
+                  settledHold.checkRunWatermark,
+                  settledHold.source === "external",
+                  false,
+                  { apps },
+                )
+              : completedRequiredCi(
+                  runs,
+                  policy.requiredChecks,
+                  a.sha,
+                  undefined,
+                  true,
+                  0,
+                  false,
+                  policy.holdLabel === null,
+                  { apps, statuses: attributed },
+                );
+          if (!requiredFresh) {
+            return {
+              ok: false,
+              reason:
+                "the required checks have not all succeeded on this head since the hold was last released",
+            };
+          }
           const verdict = ciVerdictOf(allRuns, statuses, false, a.sha);
           if (verdict !== "green") {
             return {
               ok: false,
               reason: `final non-reviewer CI is '${verdict}'`,
             };
+          }
+          // Branch protection names no check, and with nothing registered
+          // on the head the verdict above reads green.
+          if (
+            policy.requiredChecks.length === 0 &&
+            policy.derived &&
+            !hasNonReviewerCi(allRuns, statuses)
+          ) {
+            return { ok: false, reason: "no CI has registered on this head" };
           }
           return { ok: true };
         }
@@ -1717,7 +1784,7 @@ async function main(): Promise<number> {
               ? timeline.length !== 0
               : timeline.at(-1)?.id !== expectedTransition)
           ) {
-            return { ok: false, reason: "ci:hold changed" };
+            return { ok: false, reason: `${holdLabelName()} changed` };
           }
           const live = await ghCall([
             "pr",
@@ -1729,7 +1796,10 @@ async function main(): Promise<number> {
           let snap: ReturnType<typeof parsePrSnapshot> = null;
           if (live.code === 0) {
             try {
-              snap = parsePrSnapshot(JSON.parse(live.stdout) as unknown);
+              snap = parsePrSnapshot(
+                JSON.parse(live.stdout) as unknown,
+                holdLabel(),
+              );
             } catch {
               snap = null;
             }
@@ -1737,7 +1807,7 @@ async function main(): Promise<number> {
           if (snap?.state !== "OPEN" || snap.head !== a.sha || snap.held) {
             return {
               ok: false,
-              reason: "PR state, head, or ci:hold changed",
+              reason: `PR state, head, or ${holdLabelName()} changed`,
             };
           }
           return { ok: true };
@@ -1751,7 +1821,10 @@ async function main(): Promise<number> {
         }
         await store.update((s) => {
           if (JSON.stringify(s.ciHold) !== JSON.stringify(current.ciHold)) {
-            fail(4, "set-verified: ci:hold changed before verification commit");
+            fail(
+              4,
+              `set-verified: ${holdLabelName()} changed before verification commit`,
+            );
           }
           return { ...s, verifiedSha: a.sha };
         });
@@ -3403,21 +3476,21 @@ async function main(): Promise<number> {
         }
         if (ciHoldEvidenceInconclusive) {
           console.error(
-            `drive-state.ts: refusing to reset PR #${pr} — its state file exists but does not confirm the absence of a ci:hold transition, and live evidence could not rule one out either.`,
-            `\n  A missing/malformed \`ciHold\` field, or a file that fails to parse at all, is not evidence the transition it may have recorded is gone — only an explicit \`ciHold: null\` or GitHub's live '${CI_HOLD_LABEL}' timeline can confirm there is nothing to preserve. Inspect ${store.file} and PR #${pr}'s timeline by hand: if there is truly no ci:hold evidence worth preserving, remove the file directly rather than through reset; if there is, reconcile the live label with ci-hold.ts first.`,
+            `drive-state.ts: refusing to reset PR #${pr} — its state file exists but does not confirm the absence of a ${holdLabelName()} transition, and live evidence could not rule one out either.`,
+            `\n  A missing/malformed \`ciHold\` field, or a file that fails to parse at all, is not evidence the transition it may have recorded is gone — only an explicit \`ciHold: null\` or GitHub's live '${holdLabelName()}' timeline can confirm there is nothing to preserve. Inspect ${store.file} and PR #${pr}'s timeline by hand: if there is truly no ${holdLabelName()} evidence worth preserving, remove the file directly rather than through reset; if there is, reconcile the live label with ci-hold.ts first.`,
           );
           return 9;
         }
         if (ownsCiHold) {
           console.error(
-            `drive-state.ts: refusing to reset PR #${pr} while this drive still owns '${CI_HOLD_LABEL}'.`,
+            `drive-state.ts: refusing to reset PR #${pr} while this drive still owns '${holdLabelName()}'.`,
             `\n  Resetting would erase the only event id that authorizes its eventual removal. Let the drive converge and release it, or reconcile the live label with ci-hold.ts first.`,
           );
           return 9;
         }
         if (hasCiHoldEvidence) {
           console.error(
-            `drive-state.ts: refusing to reset PR #${pr} while it holds a released '${CI_HOLD_LABEL}' transition.`,
+            `drive-state.ts: refusing to reset PR #${pr} while it holds a released '${holdLabelName()}' transition.`,
             `\n  GitHub's label timeline never returns to empty once any transition has happened, so erasing this record would make ci-hold.ts final-ready reject every future head permanently — there would be no persisted transition to validate freshness against, and no way to reconstruct which one used to be current. Reconcile the live label with ci-hold.ts instead of resetting.`,
           );
           return 9;

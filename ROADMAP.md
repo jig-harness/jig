@@ -409,3 +409,33 @@ disabled in that repository so its sessions list only one review command. This
 is a bounded exception to "move, never copy" in
 [AGENTS.md](AGENTS.md#writing-conventions-mandatory): the copy is the original,
 not a rewrite, and step 4 above is its retirement condition.
+
+### Values the moved skills still assume
+
+Step 2 split most of the organization's values into configuration, but a
+second consumer showed that the split missed some. Plugin 0.5.0 moves these
+into configuration:
+
+- the continuous-integration checks a drive waits for, now
+  `ci.required_checks`, derived from the base branch's protection by default;
+- the [CI hold](GLOSSARY.md), now opt-in through `ci.hold_label`;
+- the AI reviewer's check name and comment markers, now `review.*` fields.
+
+The reference implementation relies on the hold, so its configuration gains
+`ci.hold_label` and `ci.required_checks` before its machines update to 0.5.0.
+An older release ignores the new fields; without them, 0.5.0 runs full CI on
+every push there, and a drive that still owns a label from an earlier release
+stops and names the missing setting instead of leaving the label behind.
+
+Still bound to the reference implementation's setup, to move into
+configuration when the next consumer needs them:
+
+- `do-issue`'s parent-status reconciliation compares fixed state names
+  (`In Review`, `Ops Pending`, …) instead of `issue_tracker.states`, and fixed
+  labels (`hitl:legal`, `manual-ops`, `hitl:tactical`, `pr-followup`) for the
+  work an epic may leave behind;
+- the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
+  with fixed label groups, instead of going through the tracker interface;
+- the drive pushes to and fetches from a remote named `origin`;
+- summary-finding severity is read only from the two reviewers the reference
+  implementation runs.

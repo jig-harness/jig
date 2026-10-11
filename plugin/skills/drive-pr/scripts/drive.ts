@@ -147,7 +147,7 @@ import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format } from "node:util";
-import { REQUIRED_FULL_CI_CHECKS } from "./lib/ci-hold.ts";
+import { ciPolicy } from "./lib/ci-policy.ts";
 import {
   CLAIM_PREFIX,
   type ClaimDiag,
@@ -3424,7 +3424,9 @@ async function main(): Promise<number> {
           return 1;
         }
 
-        // Intermediate synchronize pushes ran under `ci:hold`. Release only
+        // Intermediate synchronize pushes ran under the CI hold, when the
+        // repository has one (`ci.hold_label`; without it `release` prints
+        // `disabled` and nothing below waits on an unlabel). Release only
         // after convergence, the clean-tree certification, and the Ready
         // transition above have all settled. `ci-hold.ts` compares the
         // persisted labelled timeline-event id before removing anything, so a
@@ -3437,13 +3439,13 @@ async function main(): Promise<number> {
         if (release.code === 5) return 5;
         if (release.code === 4) {
           console.error(
-            "review converged, but 'ci:hold' is externally owned or the head moved; not removing it or reporting merge-ready",
+            "review converged, but the CI hold label is externally owned or the head moved; not removing it or reporting merge-ready",
           );
           return 4;
         }
         if (release.code !== 0) {
           console.error(
-            `review converged, but releasing ci:hold failed (exit ${release.code})`,
+            `review converged, but releasing the CI hold label failed (exit ${release.code})`,
           );
           return 1;
         }
@@ -3453,7 +3455,7 @@ async function main(): Promise<number> {
           // final decision. Let GitHub schedule the unlabel-triggered workflows
           // and re-read all evidence from the top.
           console.error(
-            "ci:hold removed; waiting for full CI on the converged head",
+            "CI hold label removed; waiting for full CI on the converged head",
           );
           await sleep(5);
           continue;
@@ -3648,7 +3650,7 @@ async function main(): Promise<number> {
         //
         // Every entry must ALSO be present in `finalFailingCheckRunNames`
         // (review finding): membership in
-        // `REQUIRED_FULL_CI_CHECKS` alone is a name test, blind to whether
+        // the required checks alone is a name test, blind to whether
         // the entry came from a check-run or a legacy commit status, but
         // `finalCi.code === 4`'s ambiguity is a check-run-freshness fact only
         // — `completedRequiredCi()` never reads a commit status. A required
@@ -3664,6 +3666,15 @@ async function main(): Promise<number> {
         // the status-sourced one, which carries no freshness ambiguity at
         // all and must be treated as an actionable failure regardless of
         // what the check-run side is doing.
+        let requiredChecks: readonly string[];
+        try {
+          requiredChecks = (await ciPolicy(pr)).requiredChecks;
+        } catch (error) {
+          console.error(
+            `could not read the required checks: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          return 1;
+        }
         const staleRequiredFailure =
           finalCi.code === 4 &&
           finalFailingNames !== null &&
@@ -3672,7 +3683,7 @@ async function main(): Promise<number> {
           finalFailingNames.length > 0 &&
           finalFailingNames.every(
             (name) =>
-              (REQUIRED_FULL_CI_CHECKS as readonly string[]).includes(name) &&
+              requiredChecks.includes(name) &&
               finalFailingCheckRunNames.includes(name) &&
               !finalFailingStatusNames.includes(name),
           );
@@ -3799,7 +3810,7 @@ async function main(): Promise<number> {
           !finalVerdictPending
         ) {
           console.error(
-            `review converged and the final Schema gate ran, but the fresh non-reviewer CI verdict is '${finalVerdict || "unknown"}'; stopping for /fix-ci`,
+            `review converged and the required checks ran, but the fresh non-reviewer CI verdict is '${finalVerdict || "unknown"}'; stopping for /fix-ci`,
           );
           if (finalVerdict.startsWith("failing:") && ciRepairBudget > 0) {
             console.error(

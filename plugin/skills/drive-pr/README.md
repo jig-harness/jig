@@ -8,7 +8,7 @@ quiet ways: a session declares the PR finished while a reviewer is still
 running, a fix is pushed to a PR that has already merged, or a long drive dies
 with its context and nobody notices.
 
-**What it does.** `/groundwork:drive-pr` runs a PR's review rounds unattended until exactly one terminal state: it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the change-proportional validation plan, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long converge never depends on one session surviving. It works draft PRs from birth and marks them Ready for review after its first completed round, so a paid external reviewer sees an already-cleaned head. After the PR-open continuous-integration (CI) run, it owns a temporary `ci:hold` label across intermediate fix pushes: the repository's workflows skip their expensive jobs on a held head while a required witness check fails fast, so those heads stay visibly non-green. At reviewer convergence it removes only its own latest label transition and waits for the unlabel-triggered full CI before reporting success. External removals retain the strongest available run-id watermark and require check starts strictly after the removal's second-granularity timestamp, so an ambiguous same-second run is rerun rather than trusted. When that CI comes back red, or when the PR conflicts with its base and no findings are left, it does not hand the job straight back: it runs a bounded **repair round** — a CI repair for the red CI, a base merge and conflict resolution for the conflict — and re-gates, falling back to the stop below only once that budget is spent. It stops on a state it names precisely: the terminal ones — convergence verified against the exact commit, a merged/closed PR, a conflict it could not resolve, findings that genuinely need you — plus the operational stops in the table below. It never approves, never merges, and never bypasses a hook.
+**What it does.** `/groundwork:drive-pr` runs a PR's review rounds unattended until exactly one terminal state: it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the change-proportional validation plan, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long converge never depends on one session surviving. It works draft PRs from birth and marks them Ready for review after its first completed round, so a paid external reviewer sees an already-cleaned head. Before reporting success it waits for the repository's required continuous-integration (CI) checks on the exact final head. A repository can opt into a [CI hold](#ci-hold): after the PR-open CI run, the drive owns a temporary label across intermediate fix pushes, the repository's workflows skip their expensive jobs on a held head while a required check fails fast, so those heads stay visibly non-green, and at reviewer convergence it removes only its own latest label transition and waits for the unlabel-triggered full CI. External removals retain the strongest available run-id watermark and require check starts strictly after the removal's second-granularity timestamp, so an ambiguous same-second run is rerun rather than trusted. When that CI comes back red, or when the PR conflicts with its base and no findings are left, it does not hand the job straight back: it runs a bounded **repair round** — a CI repair for the red CI, a base merge and conflict resolution for the conflict — and re-gates, falling back to the stop below only once that budget is spent. It stops on a state it names precisely: the terminal ones — convergence verified against the exact commit, a merged/closed PR, a conflict it could not resolve, findings that genuinely need you — plus the operational stops in the table below. It never approves, never merges, and never bypasses a hook.
 
 This page is for **you, the human** — the operator contract agents follow is the skill itself: [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
 
@@ -38,13 +38,23 @@ field of the wrong type, is an error rather than a silent default.
 
 | Field | What it does | Default |
 |-------|--------------|---------|
-| `review.reviewer_app` | The GitHub App slug whose check runs, and whose sticky summary comment (posted as `<app>[bot]`), are the AI reviewer's evidence for convergence. `DRIVE_PR_REVIEWER_APP` overrides it | None: reviewer check runs are recognised by name alone (`DRIVE_PR_REVIEWER_CHECK`, default `^ai[ _-]?review(\s*\(.+\))?$`) from any app, and the sticky comment is accepted only from a login listed in `review.bots` |
+| `review.reviewer_app` | The GitHub App slug whose check runs, and whose sticky summary comment (posted as `<app>[bot]`), are the AI reviewer's evidence for convergence. `DRIVE_PR_REVIEWER_APP` overrides it | None: reviewer check runs are recognised by name alone (`review.reviewer_check_pattern`) from any app, and the sticky comment is accepted only from a login listed in `review.bots` |
+| `review.reviewer_check_pattern` | Anchored regular expression (case-insensitive; POSIX classes such as `[[:space:]]` are accepted) naming the posting reviewer's check run. `DRIVE_PR_REVIEWER_CHECK` overrides it | `^ai[ _-]?review(\s*\(.+\))?$` |
+| `review.sticky_marker` | Text that identifies the reviewer's sticky summary comment. `DRIVE_PR_STICKY_MARKER` overrides it | `<!-- ai-code-review -->` |
+| `review.reviewed_sha_marker` | Marker the reviewer stamps the commit it reviewed with, inside that comment. `DRIVE_PR_SHA_MARKER` overrides it | `ai-reviewed-sha` |
 | `repository.base_branch` | The branch rounds diff against (`origin/<branch>`). `DRIVE_PR_BASE_BRANCH` overrides it | Derived: the clone's `origin/HEAD` when it has one, else `gh repo view --json defaultBranchRef`, cached per process |
 | `drive.validation_plan_command` | A command that reads the changed files (one per line) on stdin and prints the validation plan as JSON on stdout: `{validation: {localChecks: [...], verificationChecks: [...], testbox: {required, command, warmupCommand, requiredBy}}, reviewSkills: [...]}`. `round-plan.ts` runs it through the shell from the repository root | Unset: the plan is the single local check `gates.command` |
 | `drive.load_guard_command` | A command `round-plan.ts` runs (in text mode) before printing the plan, which waits until the machine's load allows heavy checks | Unset: no load guard |
 | `drive.change_areas_catalog` | Path, relative to the repository root, to a change-area catalog: YAML whose `areas:` map holds area key → `{paths: [globs], ...}`. `verification-fit.ts` validates `--area` against its keys | Unset: `--area` is recorded unchecked and the script reports the catalog as not configured |
 | `drive.reviews_drafts` | `true` or `false`: does the AI reviewer review draft PRs. Used only to explain a draft PR that has no reviewer check run yet | Unset: unknown, and no hint is given |
+| `ci.required_checks` | The exact check names that must complete on the converged head before the drive certifies it (and, with a hold, that must run again after the hold is removed). `[]` means none: the drive relies on the overall CI verdict alone, which is green even when no CI has registered on the head. Without a hold, the drive judges each required check as branch protection does: a skipped or neutral result passes, and a legacy commit status of that name can stand in for a check run. With a hold, required checks must be check runs, since only a run's id proves it ran after the hold was removed. Unrelated to `review.required_checks`, which names the review skill's reviewer checks | Derived: the checks the pull request's base branch requires, from classic branch protection and active rulesets together. A check that protection pins to a GitHub App counts only when that app publishes it, as a check run or a commit status; a check pinned to several apps (classic protection to one, a ruleset to another) needs a passing result from each. When the base requires none, the drive also waits until some non-reviewer CI has registered on the head; a commit status named like the reviewer's check does not count. A base branch or protection that cannot be read is an error that asks for this field; the drive never falls back to another branch's protection |
+| `ci.hold_label` | A label the repository's workflows honour on intermediate pushes: while it is present they skip their expensive jobs, and removing it runs them in full (see [§ CI hold](#ci-hold)). Requires `ci.required_checks`, listing only checks that run again when the label is removed | Unset: no hold. Every push runs the repository's normal CI and the drive never adds or removes a label |
 | `drive.escape_baseline_doc` | Path, relative to the repository root, to the document recording the human-judged defect-escape baseline (`## Baseline window: <from> → <to>` headings, each followed by an `**Escape rate: <n> of <total> ...**` line). The loop-cost reports print its latest figure next to their speed numbers | `docs/review-loop-baseline.md`; a missing document reads as "unmeasured" |
+
+**Ignore `.context/`.** The drive keeps working files (its handoff note,
+mailbox, foreground-wait records) in `.context/` at the root of the working
+tree, and it refuses to push or certify a tree with untracked files. Add
+`.context/` to the repository's `.gitignore`.
 
 The drive also uses two fields `resolve-review-comments` already reads:
 `gates.command` (the complete local checks) and `review.bots` (reviewer
@@ -55,19 +65,20 @@ review skill's own passes; the drive's convergence decision does not read them.
 configured is not enough to drive. The drive certifies convergence from one
 posting reviewer that provides all of these:
 
-- a check run whose name matches `DRIVE_PR_REVIEWER_CHECK` (default
-  `^ai[ _-]?review(\s*\(.+\))?$`), from `review.reviewer_app` when one is set;
-- a sticky summary comment carrying `DRIVE_PR_STICKY_MARKER` (default
-  `<!-- ai-code-review -->`);
-- in that comment, the commit it reviewed, stamped as `DRIVE_PR_SHA_MARKER`
-  (default `ai-reviewed-sha`).
+- a check run whose name matches `review.reviewer_check_pattern`, from
+  `review.reviewer_app` when one is set;
+- a sticky summary comment carrying `review.sticky_marker`;
+- in that comment, the commit it reviewed, stamped with
+  `review.reviewed_sha_marker`.
 
 A reviewer without that protocol, such as CodeRabbit on its own, never
 produces the evidence, and the drive waits in `AWAITING_REVIEWER` until
-`--timeout`. Final certification also waits for a fixed set of required
-continuous-integration checks (`REQUIRED_FULL_CI_CHECKS` in
-`scripts/lib/ci-hold.ts`), which a repository's workflows must publish under
-those names. Neither requirement is checked before a drive starts.
+`--timeout`. This requirement is not checked before a drive starts.
+
+Final certification then waits for the repository's required
+continuous-integration checks (`ci.required_checks`, by default the ones its
+base branch's protection requires) to complete on the exact converged head,
+and for the overall non-reviewer CI verdict to be green.
 
 A minimal configuration for a repository whose AI reviewer is a GitHub App and
 whose base branch is not the clone's default:
@@ -92,6 +103,26 @@ configuration, because they describe one machine's layout:
 | `DRIVE_PR_STATE_DIR` | The drive's state directory (see § Where its state lives) | `~/.local/state/groundwork/drive-pr/<clone-key>/` |
 | `GROUNDWORK_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/groundwork/verification-fit.jsonl` |
 | `DRIVE_PR_REAPER_LAUNCHD_LABEL`, `DRIVE_PR_REAPER_CRONTAB_MARKER` | Name a scheduled `reap-state.ts --delete` job, so `migrate-state-dir.ts` refuses while it is enabled | Unset: no schedule is checked |
+
+### CI hold
+
+Without a hold, every intermediate push runs the repository's full CI, and
+the drive simply waits for it on the final head. A repository whose CI is too
+expensive for that can let the drive suppress it between review rounds:
+
+1. Name a label in `ci.hold_label` and list `ci.required_checks`.
+2. Make every expensive workflow honour it: skip the heavy jobs on a
+   `synchronize` event while the label is present, run in full on the
+   `unlabeled` event for that label, and fail (rather than skip) a required
+   check while held, so a held head is visibly not mergeable.
+
+The drive then adds the label before its first intermediate push, once the
+PR-open run of every required check has completed, and records the GitHub
+timeline event that added it. At convergence it removes the label only if
+that event is still the newest transition of the label (a person who removes
+and re-adds it takes control), and certifies the head only on required checks
+that started after the removal. A drive that dies mid-round leaves the label
+behind; see [§ The exit states](#the-exit-states--what-you-do-now) for the recovery.
 
 ### Push hold
 
@@ -134,7 +165,7 @@ The `bun` prefix and the single line are both deliberate, so don't "tidy" them: 
 
 | Exit | State | What you do |
 |------|-------|-------------|
-| `0` | **`CONVERGED`** | The exact head is reviewer-clean, the worktree is clean, `ci:hold` is absent, and full non-reviewer CI is green with a fresh exact-head witness from the required checks. The merge decision is yours, never the drive's. **One caveat that is not optional:** if this drive marked the PR Ready, convergence is against the draft-reviewing AI reviewer **only** — marking Ready is what summons the reviewers that skip drafts, so anything they post lands *after* the drive ends. The drive says so on stderr; re-run it once they settle. `drive.ts` does **not** post the merge-ready announcement itself — run `bun <skill-dir>/scripts/announce-merge-ready.ts <PR>` if you want one on the PR. It re-checks convergence, non-reviewer CI, the absent hold, and a clean worktree before posting. `--dry-run` never invokes a pass, so a `0` from it is either this same convergence (the gate reached it first) or simply the command it *would* have run — the printed output says which. |
+| `0` | **`CONVERGED`** | The exact head is reviewer-clean, the worktree is clean, the CI hold label (if the repository has one) is absent, and full non-reviewer CI is green with a fresh exact-head witness from the required checks. The merge decision is yours, never the drive's. **One caveat that is not optional:** if this drive marked the PR Ready, convergence is against the draft-reviewing AI reviewer **only** — marking Ready is what summons the reviewers that skip drafts, so anything they post lands *after* the drive ends. The drive says so on stderr; re-run it once they settle. `drive.ts` does **not** post the merge-ready announcement itself — run `bun <skill-dir>/scripts/announce-merge-ready.ts <PR>` if you want one on the PR. It re-checks convergence, non-reviewer CI, the absent hold, and a clean worktree before posting. `--dry-run` never invokes a pass, so a `0` from it is either this same convergence (the gate reached it first) or simply the command it *would* have run — the printed output says which. |
 | `5` | **PR not open** (`PR_NOT_OPEN`) | The PR merged or closed while driving. Usually nothing to do — but if it happened *mid-round*, `guarded-push.ts` refused the push and **this round's commits are still local**, deliberately, so the work stays visible instead of landing on an orphaned branch. Check `git log origin/<branch>..HEAD` and either port those commits somewhere that will merge or discard them on purpose. |
 | `8` | **HITL-parked** (`HITL_PARKED`) | Everything left needs a human call — arbiter escalations, human threads, parked summary findings. Read the round report / the `.context/pr-drive-<PR>.md` handoff, decide the parked items, then re-run the same command. It will **not** re-arm itself. |
 | `9` | **Conflicting, nothing to work, and the repair budget is spent** (`PR_CONFLICTING`) | Either the drive spent the conflict-repair budget (`DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1) trying to resolve it and could not, or no repair pass ran at all — the budget is `0`/disabled, or the PR's base ref could not be read. Either way, merge the PR's **own base** in — not necessarily the default branch, since a release or stacked PR has a different one. The drive prints the exact command (`git fetch origin && git merge origin/<base>`) rather than guessing; use that. Then resolve, run the emitted validation plan, push, re-run. (A conflicting PR gets zero `pull_request` CI until you do.) |
@@ -150,7 +181,7 @@ The `bun` prefix and the single line are both deliberate, so don't "tidy" them: 
 | `19` | `MAILBOX_PAUSE_TIMEOUT` | A mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 30 minutes). Send `resume --target pause`, then re-arm. The driver releases its locks on this exit. |
 | `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. Repair CI by hand, then re-arm. |
 
-One red-CI cause is worth ruling out before you repair anything: a drive that **died** mid-round leaves its `ci:hold` label behind, and the repository's held-head check then fails the required witness check on a perfectly healthy PR. Check `gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `gh pr edit <PR> --remove-label "ci:hold"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
+One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails a required check on a perfectly healthy PR. Check `gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
 
 ## What it will never do
 

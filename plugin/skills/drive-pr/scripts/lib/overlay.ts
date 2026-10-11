@@ -86,6 +86,45 @@ export function reviewerLabel(): string {
   return app === "" ? "the AI reviewer" : `'${app}'`;
 }
 
+/**
+ * The anchored pattern naming the posting reviewer's check run:
+ * `DRIVE_PR_REVIEWER_CHECK`, else `review.reviewer_check_pattern`, else
+ * `AI review` with an optional parenthesised arm suffix.
+ */
+export function reviewerCheckPattern(): string {
+  return (
+    nonEmptyEnv("DRIVE_PR_REVIEWER_CHECK") ??
+    optionalString("review", "reviewer_check_pattern") ??
+    "^ai[ _-]?review(\\s*\\(.+\\))?$"
+  );
+}
+
+/**
+ * The marker that identifies the reviewer's sticky summary comment:
+ * `DRIVE_PR_STICKY_MARKER`, else `review.sticky_marker`, else
+ * `<!-- ai-code-review -->`.
+ */
+export function stickyMarker(): string {
+  return (
+    nonEmptyEnv("DRIVE_PR_STICKY_MARKER") ??
+    optionalString("review", "sticky_marker") ??
+    "<!-- ai-code-review -->"
+  );
+}
+
+/**
+ * The marker the reviewer stamps its reviewed commit with in that comment:
+ * `DRIVE_PR_SHA_MARKER`, else `review.reviewed_sha_marker`, else
+ * `ai-reviewed-sha`.
+ */
+export function reviewedShaMarker(): string {
+  return (
+    nonEmptyEnv("DRIVE_PR_SHA_MARKER") ??
+    optionalString("review", "reviewed_sha_marker") ??
+    "ai-reviewed-sha"
+  );
+}
+
 /** `review.bots`: the logins the review skill treats as reviewers. */
 export function reviewBots(): string[] {
   const bots = section("review").bots;
@@ -143,6 +182,34 @@ export function reviewsDrafts(): boolean | undefined {
       `drive.reviews_drafts must be true or false: ${overlayPath()}`,
     );
   return value;
+}
+
+/**
+ * `ci.required_checks`: the exact check-run names that certify a head, or
+ * `undefined` when not configured (the drive then derives them from the base
+ * branch's protection). An empty list is a deliberate "none".
+ */
+export function requiredChecksSetting(): string[] | undefined {
+  const value = section("ci").required_checks;
+  if (value === undefined || value === null) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.some((name) => typeof name !== "string" || name.trim() === "") ||
+    new Set(value).size !== value.length
+  )
+    throw new Error(
+      `ci.required_checks must be a list of distinct nonempty check names: ${overlayPath()}`,
+    );
+  return value as string[];
+}
+
+/**
+ * `ci.hold_label`: the label the repository's workflows honour by skipping
+ * their expensive jobs on intermediate pushes, or `undefined` when the
+ * repository has no such convention (every push runs its normal CI).
+ */
+export function ciHoldLabelSetting(): string | undefined {
+  return optionalString("ci", "hold_label");
 }
 
 /**

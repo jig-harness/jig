@@ -223,6 +223,14 @@ capitalized as commonly written; cross-references are *italicized*.
   in (converged, waiting on a human, conflicting, pull request closed, …),
   each with its own exit code, so a script or a person can tell from the
   exit alone what to do next.
+- **CI hold** — an opt-in label a *PR drive loop* puts on a pull request
+  between review rounds so the repository's continuous-integration workflows
+  skip their expensive jobs on intermediate pushes; removing it runs them in
+  full once, on the final head. Only for repositories whose workflows are
+  written to honour the label.
+- **Required checks** — the continuous-integration checks a repository's
+  branch protection requires to pass before a pull request may merge. A drive
+  derives them from the protection settings unless the repository lists them.
 - **Lease** — a short-lived, renewable claim recorded on disk that says which
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died

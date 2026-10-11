@@ -134,8 +134,9 @@ the review round's own handling.
 ## What `CONVERGED` requires
 
 `drive-status.ts` exit 3 is the review verdict described below. The unattended
-`drive.ts` deliberately has a stronger exit-0 contract: if it applied
-`ci:hold` during intermediate rounds, it must still own the newest labelled
+`drive.ts` deliberately has a stronger exit-0 contract: every required check
+must have completed on the exact head, and if it applied the repository's CI
+hold label during intermediate rounds, it must still own the newest labelled
 timeline event, remove that label, and observe successful exact-head required
 checks whose runs started after the `unlabeled` event and whose ids exceed the
 pre-unlabel watermark, plus an overall green non-reviewer-CI verdict. Until

@@ -48,7 +48,11 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
-import { isReviewerLogin } from "./lib/overlay.ts";
+import {
+  isReviewerLogin,
+  reviewedShaMarker,
+  stickyMarker,
+} from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
 
 // ── Pure parsing (unit-tested directly; no network) ─────────────────────────
@@ -92,15 +96,15 @@ export interface SummaryReport {
 /**
  * The reviewer's sticky comment is marked; every other bot comment is not.
  *
- * Read from the SAME environment overrides `drive-status.ts` uses, because this
- * parser and that script have to be looking at the same comment. Hard-coding
- * the defaults here means a configured `DRIVE_PR_STICKY_MARKER` sends `drive-status.ts` to a
- * custom sticky while this parser finds no sticky at all — and "no sticky" is
- * read as zero summary findings, so a custom-marker repo converges over every
- * unanchored finding the reviewer ever posted.
+ * Read from the SAME setting `drive-status.ts` uses (`review.sticky_marker`
+ * or `DRIVE_PR_STICKY_MARKER`), because this parser and that script have to
+ * be looking at the same comment. Hard-coding the default here means a
+ * configured marker sends `drive-status.ts` to a custom sticky while this
+ * parser finds no sticky at all — and "no sticky" is read as zero summary
+ * findings, so a custom-marker repo converges over every unanchored finding
+ * the reviewer ever posted.
  */
-export const STICKY_MARKER =
-  process.env.DRIVE_PR_STICKY_MARKER || "<!-- ai-code-review -->";
+export const STICKY_MARKER = stickyMarker();
 
 /**
  * The marker the reviewer stamps its reviewed SHA into. Same override, same
@@ -108,7 +112,7 @@ export const STICKY_MARKER =
  * it silently degrades every slot to the shared `nohead` scope, where an answer
  * given on one head marks a *different* finding addressed on the next.
  */
-export const SHA_MARKER = process.env.DRIVE_PR_SHA_MARKER || "ai-reviewed-sha";
+export const SHA_MARKER = reviewedShaMarker();
 
 /** Extract the reviewed SHA the reviewer stamped, under whatever marker name. */
 export function reviewedShaFrom(body: string): string | undefined {

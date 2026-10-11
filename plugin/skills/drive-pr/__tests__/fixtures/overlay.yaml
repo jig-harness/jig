@@ -24,3 +24,8 @@ drive:
   # A stand-in plan command: the round-plan probes write their stub at this
   # path inside each scratch repository.
   validation_plan_command: bun tools/change-areas/resolve.ts --files - --format json
+ci:
+  # The suite exercises the label hold: workflows skip their expensive jobs
+  # while the label is present and run them in full when it is removed.
+  hold_label: "ci:hold"
+  required_checks: [code-quality-and-build, tests, Schema gate]

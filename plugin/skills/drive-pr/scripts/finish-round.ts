@@ -7,7 +7,8 @@
  * with a per-kind branch inside the last one. Every step of it is load-bearing
  * and none of it is discoverable from the scripts themselves:
  *
- *   ci-hold.ts ensure                   own `ci:hold` before an intermediate push
+ *   ci-hold.ts ensure                   own the CI hold label (when the repository
+ *                                       has one) before an intermediate push
  *   guarded-push.ts                     the push, liveness-rechecked
  *   drive-state.ts stamp-held           per-hold push provenance
  *   drive-status.ts --json --no-count   head-sync wait; the flag is what keeps
@@ -115,8 +116,9 @@
  *   2  usage error
  *   3  refused BEFORE pushing: dirty worktree, unconcluded git operation, or a
  *      working tree that could not be read at all
- *   4  refused BEFORE pushing: the initial Schema gate has not completed,
- *      the head moved, or an externally-owned `ci:hold` is present
+ *   4  refused BEFORE pushing: the initial required checks have not
+ *      completed, the head moved, or an externally-owned CI hold label is
+ *      present
  *   5  the PR is no longer open — nothing was pushed (guarded-push.ts's own 5,
  *      same code and meaning; drive-status.ts uses it identically). Also
  *      returned by the untriaged-thread check itself (an earlier change
@@ -1375,7 +1377,7 @@ async function main(): Promise<number> {
     return done(
       4,
       "CI_HOLD_WAIT",
-      `ci:hold is not safely owned on the current PR head; wait for initial CI or reconcile the external label, then re-run`,
+      `the CI hold label is not safely owned on the current PR head; wait for initial CI or reconcile the external label, then re-run`,
     );
   }
   if (holdRes.code !== 0) {
@@ -1409,12 +1411,13 @@ async function main(): Promise<number> {
       { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
     );
     if (rollback.code === 0) {
-      console.error(
-        "finish-round.ts: the push provably did not land; released the ci:hold acquired for it",
-      );
+      if (rollback.stdout.trim() !== "disabled")
+        console.error(
+          "finish-round.ts: the push provably did not land; released the CI hold label acquired for it",
+        );
     } else if (rollback.code !== 5) {
       console.error(
-        `finish-round.ts: retained ci:hold after the failed push because rollback could not prove the ref stayed unchanged (exit ${rollback.code})`,
+        `finish-round.ts: retained the CI hold label after the failed push because rollback could not prove the ref stayed unchanged (exit ${rollback.code})`,
       );
     }
   }

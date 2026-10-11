@@ -24,6 +24,7 @@ import {
   run,
 } from "../scripts/lib/proc";
 import { threadFrom } from "../scripts/lib/sample.ts";
+import { MAX_STATUS_PUBLISHERS } from "../scripts/lib/status/evidence.ts";
 import { TRUSTED_ASSOCIATIONS } from "../scripts/summary-findings";
 
 import {
@@ -1623,6 +1624,11 @@ describe("driveStatusOnceTimeoutSeconds() outlives drive-status.ts --once's evid
 
 describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case sequential GitHub-call chain (chatgpt-codex-connector, a reference-implementation pull request round 9)", () => {
   const PROC = join(SCRIPTS, "lib", "proc.ts");
+  // The 15-call success chain, the CI policy's 2 sequential reads, and per
+  // proof (3) the commit-status list plus up to MAX_STATUS_PUBLISHERS app
+  // lookups. proc.ts mirrors that cap as a literal; reading it from
+  // evidence.ts here makes a changed cap fail these assertions.
+  const CALLS = 15 + 2 + 3 * (1 + MAX_STATUS_PUBLISHERS);
 
   function readTimeouts(env: Record<string, string>): {
     gh: number;
@@ -1646,7 +1652,7 @@ describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case seq
     return JSON.parse(out) as { gh: number; finalVerify: number };
   }
 
-  it("budgets 15 sequential GitHub calls, not the success path's rounded estimate", () => {
+  it("budgets the success path's 15 sequential GitHub calls, not a rounded estimate", () => {
     // set-verified's success path makes exactly 15 sequential `gh` calls:
     // the initial PR-view read (1) + the initial timeline read (1) + the
     // initial proveCiGreen() (3) + preWrite's stillFullyCurrent() (1 PR view
@@ -1655,7 +1661,7 @@ describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case seq
     // parent kill the child after store.update() persists verifiedSha but
     // before the compensating post-write check can clear it.
     const result = readTimeouts({ GH_CALL_TIMEOUT: "30" });
-    expect(result.finalVerify).toBe(900 + 15 * result.gh + 15 * 2);
+    expect(result.finalVerify).toBe(900 + CALLS * result.gh + CALLS * 2);
   });
 
   it("budgets THREE lock acquisitions, not two (chatgpt-codex-connector, a reference-implementation pull request round 12)", () => {
@@ -1668,7 +1674,7 @@ describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case seq
     // the total-seconds assertion above, so a future GH-call-count change
     // doesn't silently also have to know this number.
     const result = readTimeouts({ GH_CALL_TIMEOUT: "30" });
-    const ghPortion = 15 * result.gh + 15 * 2;
+    const ghPortion = CALLS * result.gh + CALLS * 2;
     expect(result.finalVerify - ghPortion).toBe(3 * 300);
   });
 

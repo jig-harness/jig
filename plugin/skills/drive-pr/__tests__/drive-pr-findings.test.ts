@@ -3220,6 +3220,12 @@ describe("finish-round.ts", () => {
     repo?: { dir: string; head: string };
     /** Reuse an EXISTING state dir instead of the fixture's fresh one. */
     stateDir?: string;
+    /**
+     * Reuse an EXISTING fixture dir, so a re-run sees the GitHub side an
+     * earlier run left (labels, timeline, posted comments) rather than a
+     * fresh PR that never carried them.
+     */
+    fixtureDir?: string;
     /** Runs against the state dir in force, from the probe's own tree. */
     seedState?: (ctx: {
       stateDir: string;
@@ -3231,12 +3237,17 @@ describe("finish-round.ts", () => {
 
   async function finishRound(opts: FinishOpts = {}) {
     const repo = opts.repo ?? scratchWithOrigin();
-    const { dir, stateDir: fresh } = writeFixture({
-      threads: [{ id: "PRRT_live", path: "a.ts", bot: true }],
-      ...(opts.fixture ?? {}),
-      head: repo.head,
-    });
+    const { dir, stateDir: fresh } =
+      opts.fixtureDir === undefined
+        ? writeFixture({
+            threads: [{ id: "PRRT_live", path: "a.ts", bot: true }],
+            ...(opts.fixture ?? {}),
+            head: repo.head,
+          })
+        : { dir: opts.fixtureDir, stateDir: undefined };
     const stateDir = opts.stateDir ?? fresh;
+    if (stateDir === undefined)
+      throw new Error("a reused fixture dir needs its state dir too");
     const pushLog = join(dir, "pushed.log");
     const gitBin = recordingGit(dir, pushLog);
     await opts.seedState?.({ stateDir, fixtureDir: dir, cwd: repo.dir });
@@ -3990,10 +4001,11 @@ describe("finish-round.ts", () => {
     const second = await finishRound({
       repo: first.repo,
       stateDir: first.stateDir,
+      fixtureDir: first.fixtureDir,
     });
     expect(second.exitCode).toBe(0);
     expect(second.report.items).toEqual([]);
-    expect(second.posted).toBe("");
+    expect(second.posted).toBe(first.posted);
   });
 
   it("refuses a held finding whose claim is still live, rather than answering it twice", async () => {

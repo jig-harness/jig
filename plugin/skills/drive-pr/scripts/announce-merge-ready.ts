@@ -32,6 +32,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { announcedIds, announcements, OPENER } from "./lib/announce.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
+import { ciHoldLabelSetting } from "./lib/overlay.ts";
+
+/** How messages name the repository's CI-hold label. */
+const holdName = (): string => ciHoldLabelSetting() ?? "CI hold";
 import { fail, isDigits, readStdinAll, runMain, short } from "./lib/cli.ts";
 import {
   ciHoldTimeoutSeconds,
@@ -67,7 +71,10 @@ async function readLiveness(pr: string): Promise<Liveness | null> {
   );
   if (r.code !== 0) return null;
   try {
-    const parsed = parsePrSnapshot(JSON.parse(r.stdout) as unknown);
+    const parsed = parsePrSnapshot(
+      JSON.parse(r.stdout) as unknown,
+      ciHoldLabelSetting() ?? null,
+    );
     if (parsed === null) return null;
     return {
       state: parsed.state,
@@ -401,7 +408,7 @@ async function main(): Promise<number> {
       if (standing === null) {
         fail(
           1,
-          `announce-merge-ready: cannot read PR #${pr}'s comments while ci:hold is present — remove any standing merge-ready announcement by hand.`,
+          `announce-merge-ready: cannot read PR #${pr}'s comments while ${holdName()} is present — remove any standing merge-ready announcement by hand.`,
         );
       }
       for (const id of announcedIds(standing, live.head)) {
@@ -475,7 +482,7 @@ async function main(): Promise<number> {
   if (live.ciHeld) {
     fail(
       4,
-      "announce-merge-ready: review converged, but 'ci:hold' is still present. The drive must release its owned transition and establish full CI before this read-only announcer can proceed.",
+      `announce-merge-ready: review converged, but '${holdName()}' is still present. The drive must release its owned transition and establish full CI before this read-only announcer can proceed.`,
     );
   }
 
@@ -558,7 +565,7 @@ async function main(): Promise<number> {
     }
     fail(
       finalCi === 5 ? 5 : finalCi === 4 ? 4 : 1,
-      `announce-merge-ready: final CI/ci:hold evidence is stale or unreadable (exit ${finalCi})`,
+      `announce-merge-ready: final CI/${holdName()} evidence is stale or unreadable (exit ${finalCi})`,
     );
   }
 
@@ -766,12 +773,12 @@ async function main(): Promise<number> {
         );
         return 1;
       }
-      if (name === "ci:hold") liveHeld = true;
+      if (name === ciHoldLabelSetting()) liveHeld = true;
     }
     if (liveHeld) {
       liveConfirmedHeld = true;
       console.error(
-        "announce-merge-ready: 'ci:hold' appeared during the announcement check — refusing to act.",
+        `announce-merge-ready: '${holdName()}' appeared during the announcement check — refusing to act.`,
       );
       return 4;
     }
@@ -874,7 +881,7 @@ async function main(): Promise<number> {
     ) {
       console.error(
         `announce-merge-ready: withdrawing now-stale announcement(s) on ${head} — ` +
-          `${liveConfirmedHeld ? "ci:hold was applied" : liveConfirmedDraft ? "the PR is a draft again" : "mergeability changed"} after they were posted.`,
+          `${liveConfirmedHeld ? `${holdName()} was applied` : liveConfirmedDraft ? "the PR is a draft again" : "mergeability changed"} after they were posted.`,
       );
       for (const id of ids) {
         const del = await ghCall(

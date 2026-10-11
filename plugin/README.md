@@ -221,6 +221,9 @@ drive:
   load_guard_command: "bun tools/dev/load-guard.ts --wait"   # waits while the machine is busy; default: none
   change_areas_catalog: tools/change-areas/catalog.yaml       # change-area catalog for area-aware reports; default: none
   reviews_drafts: true        # does the AI reviewer review draft pull requests
+ci:
+  required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
+  hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
 issue_tracker:
   team: ENG                   # issue-tracker team key; required by the tracker scripts
   adapter: linear             # which tracker adapter to use; Linear is the only one today
@@ -255,6 +258,16 @@ fleet_health:
 The agent and scout names above are examples; use the agents your repository
 defines. Note the direction of `do_issue.scouts`: it maps an **agent** to the
 list of scouts that run before it, not a label to a scout.
+
+**Add `.context/` to `.gitignore`.** A drive keeps working files there, at
+the root of the working tree, and refuses to push or certify a tree with
+untracked files.
+
+**Continuous integration.** Without configuration a drive waits, on the final
+head, for the checks the base branch's protection requires, and every push
+runs the repository's normal CI. `ci.required_checks` names the checks instead;
+`ci.hold_label` lets workflows written for it skip expensive jobs between
+review rounds (see the [drive-pr README](skills/drive-pr/README.md#ci-hold)).
 
 **Where a drive keeps its state.** A drive records its rounds, locks and
 leases (a [lease](../GLOSSARY.md) is a short-lived claim that one session owns the pull

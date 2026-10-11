@@ -12,9 +12,7 @@ import { join } from "node:path";
 import {
   ciHoldTransitions,
   completedHoldPrecondition,
-  completedInitialSchemaGate,
   completedRequiredCi,
-  freshSchemaGate,
   mutationProven,
   newestCiHoldTransition,
   ownsHeldTransition,
@@ -25,6 +23,13 @@ import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import { freshState, isUsableState } from "../scripts/lib/state/schema.ts";
 
 const HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+/** The hold label and required checks of the suite's consumer configuration. */
+const HOLD = "ci:hold";
+const REQUIRED = ["code-quality-and-build", "tests", "Schema gate"];
+/** The drive suite's consumer configuration, which declares both. */
+const HOLD_OVERLAY = join(import.meta.dir, "fixtures", "overlay.yaml");
+/** One required check on its own, for the single-check freshness cases. */
+const WITNESS = ["Schema gate"];
 
 function writeGhStub(path: string, body: string): void {
   const guard = `#!/usr/bin/env bash
@@ -331,31 +336,34 @@ describe("ci:hold evidence", () => {
 
   it("uses the newest matching timeline transition as the ownership token", () => {
     expect(
-      newestCiHoldTransition([
-        {
-          id: 1,
-          node_id: "LE_1",
-          event: "labeled",
-          label: { name: "ci:hold" },
-          actor: { login: "drive" },
-          created_at: "2026-09-10T10:00:00Z",
-        },
-        {
-          id: 2,
-          node_id: "LE_2",
-          event: "unlabeled",
-          label: { name: "ci:hold" },
-          actor: { login: "human" },
-          created_at: "2026-09-10T10:01:00Z",
-        },
-        {
-          id: 3,
-          event: "labeled",
-          label: { name: "unrelated" },
-          actor: { login: "drive" },
-          created_at: "2026-09-10T10:02:00Z",
-        },
-      ]),
+      newestCiHoldTransition(
+        [
+          {
+            id: 1,
+            node_id: "LE_1",
+            event: "labeled",
+            label: { name: "ci:hold" },
+            actor: { login: "drive" },
+            created_at: "2026-09-10T10:00:00Z",
+          },
+          {
+            id: 2,
+            node_id: "LE_2",
+            event: "unlabeled",
+            label: { name: "ci:hold" },
+            actor: { login: "human" },
+            created_at: "2026-09-10T10:01:00Z",
+          },
+          {
+            id: 3,
+            event: "labeled",
+            label: { name: "unrelated" },
+            actor: { login: "drive" },
+            created_at: "2026-09-10T10:02:00Z",
+          },
+        ],
+        HOLD,
+      ),
     ).toEqual({
       id: "LE_2",
       event: "unlabeled",
@@ -366,22 +374,25 @@ describe("ci:hold evidence", () => {
 
   it("fails closed when a labelled timeline event is malformed", () => {
     expect(
-      newestCiHoldTransition([
-        {
-          node_id: "LE_owned",
-          event: "labeled",
-          label: { name: "ci:hold" },
-          actor: { login: "drive" },
-          created_at: "2026-09-10T10:00:00Z",
-        },
-        {
-          node_id: "LE_unreadable",
-          event: "labeled",
-          label: { name: "ci:hold" },
-          actor: null,
-          created_at: "2026-09-10T10:01:00Z",
-        },
-      ]),
+      newestCiHoldTransition(
+        [
+          {
+            node_id: "LE_owned",
+            event: "labeled",
+            label: { name: "ci:hold" },
+            actor: { login: "drive" },
+            created_at: "2026-09-10T10:00:00Z",
+          },
+          {
+            node_id: "LE_unreadable",
+            event: "labeled",
+            label: { name: "ci:hold" },
+            actor: null,
+            created_at: "2026-09-10T10:01:00Z",
+          },
+        ],
+        HOLD,
+      ),
     ).toBeNull();
   });
 
@@ -393,7 +404,27 @@ describe("ci:hold evidence", () => {
     // (chatgpt-codex-connector, a reference-implementation pull request round 4).
     for (const malformed of [null, "not-an-object", 42, [], [1, 2]]) {
       expect(
-        ciHoldTransitions([
+        ciHoldTransitions(
+          [
+            {
+              node_id: "LE_owned",
+              event: "labeled",
+              label: { name: "ci:hold" },
+              actor: { login: "drive" },
+              created_at: "2026-09-10T10:00:00Z",
+            },
+            malformed,
+          ],
+          HOLD,
+        ),
+      ).toBeNull();
+    }
+    // An array whose OWN elements are otherwise well-formed events must
+    // still fail closed — arrays are not valid timeline entries at all,
+    // regardless of what they contain.
+    expect(
+      ciHoldTransitions(
+        [
           {
             node_id: "LE_owned",
             event: "labeled",
@@ -401,32 +432,18 @@ describe("ci:hold evidence", () => {
             actor: { login: "drive" },
             created_at: "2026-09-10T10:00:00Z",
           },
-          malformed,
-        ]),
-      ).toBeNull();
-    }
-    // An array whose OWN elements are otherwise well-formed events must
-    // still fail closed — arrays are not valid timeline entries at all,
-    // regardless of what they contain.
-    expect(
-      ciHoldTransitions([
-        {
-          node_id: "LE_owned",
-          event: "labeled",
-          label: { name: "ci:hold" },
-          actor: { login: "drive" },
-          created_at: "2026-09-10T10:00:00Z",
-        },
-        [
-          {
-            node_id: "LE_hidden",
-            event: "labeled",
-            label: { name: "ci:hold" },
-            actor: { login: "human" },
-            created_at: "2026-09-10T10:01:00Z",
-          },
+          [
+            {
+              node_id: "LE_hidden",
+              event: "labeled",
+              label: { name: "ci:hold" },
+              actor: { login: "human" },
+              created_at: "2026-09-10T10:01:00Z",
+            },
+          ],
         ],
-      ]),
+        HOLD,
+      ),
     ).toBeNull();
   });
 
@@ -467,11 +484,10 @@ describe("ci:hold evidence", () => {
 
   it("does not accept a skipped Schema gate as the final witness, even over an older success", () => {
     // The newest run (id 2, skipped) is selected first and validated on its
-    // own terms — it does not qualify, and completedInitialSchemaGate does
-    // NOT fall back to the older, completed-success run behind it. Falling
-    // back to superseded evidence is exactly the class of bug PR #4681
-    // round 2 closed for completedRequiredCi/freshSchemaGate; this fixture
-    // pins the identical invariant for completedInitialSchemaGate.
+    // own terms — it does not qualify, and completedRequiredCi does NOT fall
+    // back to the older, completed-success run behind it, with or without
+    // an unlabel floor. Falling back to superseded evidence is exactly the
+    // class of bug PR #4681 round 2 closed.
     const runs = parseCheckRuns({
       check_runs: [
         {
@@ -495,10 +511,16 @@ describe("ci:hold evidence", () => {
       ],
     });
     expect(runs).not.toBeNull();
-    expect(completedInitialSchemaGate(runs ?? [], HEAD)).toBeNull();
+    expect(completedRequiredCi(runs ?? [], WITNESS, HEAD)).toBe(false);
     expect(
-      freshSchemaGate(runs ?? [], HEAD, "2026-09-10T10:00:00Z"),
-    ).toBeNull();
+      completedRequiredCi(
+        runs ?? [],
+        WITNESS,
+        HEAD,
+        "2026-09-10T10:00:00Z",
+        false,
+      ),
+    ).toBe(false);
   });
 
   it("accepts a non-skipped exact-head Schema gate after the unlabel", () => {
@@ -518,8 +540,14 @@ describe("ci:hold evidence", () => {
       },
     ]);
     expect(
-      freshSchemaGate(runs ?? [], HEAD, "2026-09-10T10:00:00Z"),
-    ).not.toBeNull();
+      completedRequiredCi(
+        runs ?? [],
+        WITNESS,
+        HEAD,
+        "2026-09-10T10:00:00Z",
+        false,
+      ),
+    ).toBe(true);
   });
 
   it("parses the production check-runs shape without a nonexistent created_at field", () => {
@@ -545,6 +573,7 @@ describe("ci:hold evidence", () => {
         status: "completed",
         conclusion: "success",
         startedAt: "2026-09-10T10:00:00Z",
+        appId: null,
       },
     ]);
   });
@@ -564,8 +593,14 @@ describe("ci:hold evidence", () => {
       ],
     });
     expect(
-      freshSchemaGate(runs ?? [], HEAD, "2026-09-10T10:00:00Z"),
-    ).not.toBeNull();
+      completedRequiredCi(
+        runs ?? [],
+        WITNESS,
+        HEAD,
+        "2026-09-10T10:00:00Z",
+        false,
+      ),
+    ).toBe(true);
   });
 
   it("rejects a run queued before unlabel even when it starts afterward", () => {
@@ -583,8 +618,15 @@ describe("ci:hold evidence", () => {
       ],
     });
     expect(
-      freshSchemaGate(runs ?? [], HEAD, "2026-09-10T10:00:00Z", 40),
-    ).toBeNull();
+      completedRequiredCi(
+        runs ?? [],
+        WITNESS,
+        HEAD,
+        "2026-09-10T10:00:00Z",
+        false,
+        40,
+      ),
+    ).toBe(false);
   });
 
   it("uses the run-id watermark to order same-second unlabel evidence", () => {
@@ -602,8 +644,15 @@ describe("ci:hold evidence", () => {
       ],
     });
     expect(
-      freshSchemaGate(runs ?? [], HEAD, "2026-09-10T10:00:00Z", 40),
-    ).not.toBeNull();
+      completedRequiredCi(
+        runs ?? [],
+        WITNESS,
+        HEAD,
+        "2026-09-10T10:00:00Z",
+        false,
+        40,
+      ),
+    ).toBe(true);
   });
 
   it("requires a strictly later start when no pre-unlabel watermark survived", () => {
@@ -620,8 +669,16 @@ describe("ci:hold evidence", () => {
       ],
     });
     expect(
-      freshSchemaGate(runs ?? [], HEAD, "2026-09-10T10:00:00Z", 0, true),
-    ).toBeNull();
+      completedRequiredCi(
+        runs ?? [],
+        WITNESS,
+        HEAD,
+        "2026-09-10T10:00:00Z",
+        false,
+        0,
+        true,
+      ),
+    ).toBe(false);
   });
 
   it("requires every branch-protection check before acquiring the first hold", () => {
@@ -638,8 +695,10 @@ describe("ci:hold evidence", () => {
         }),
       ),
     });
-    expect(completedRequiredCi(runs ?? [], HEAD)).toBe(true);
-    expect(completedRequiredCi((runs ?? []).slice(1), HEAD)).toBe(false);
+    expect(completedRequiredCi(runs ?? [], REQUIRED, HEAD)).toBe(true);
+    expect(completedRequiredCi((runs ?? []).slice(1), REQUIRED, HEAD)).toBe(
+      false,
+    );
   });
 
   it("waits for a newer queued rerun rather than falling back to an older success (PR #4681 round 2, supersedes round 1)", () => {
@@ -690,7 +749,7 @@ describe("ci:hold evidence", () => {
         },
       ],
     });
-    expect(completedRequiredCi(runs ?? [], HEAD)).toBe(false);
+    expect(completedRequiredCi(runs ?? [], REQUIRED, HEAD)).toBe(false);
     // Once the newest run itself concludes successfully, the check qualifies.
     const resolved = parseCheckRuns({
       check_runs: [
@@ -712,19 +771,25 @@ describe("ci:hold evidence", () => {
         },
       ],
     });
-    expect(completedRequiredCi(resolved ?? [], HEAD)).toBe(true);
+    expect(completedRequiredCi(resolved ?? [], REQUIRED, HEAD)).toBe(true);
   });
 
   it("fails closed on malformed PR label entries", () => {
     expect(
-      parsePrSnapshot({ state: "OPEN", headRefOid: HEAD, labels: [null] }),
+      parsePrSnapshot(
+        { state: "OPEN", headRefOid: HEAD, labels: [null] },
+        HOLD,
+      ),
     ).toBeNull();
     expect(
-      parsePrSnapshot({
-        state: "OPEN",
-        headRefOid: HEAD,
-        labels: [{ name: "ci:hold" }],
-      }),
+      parsePrSnapshot(
+        {
+          state: "OPEN",
+          headRefOid: HEAD,
+          labels: [{ name: "ci:hold" }],
+        },
+        HOLD,
+      ),
     ).toEqual({ state: "OPEN", head: HEAD, held: true });
   });
 
@@ -748,8 +813,12 @@ describe("ci:hold evidence", () => {
       actor: "human",
       createdAt: "2026-09-10T10:00:00Z",
     };
-    expect(completedHoldPrecondition(runs ?? [], HEAD, unlabel)).toBeNull();
-    expect(completedHoldPrecondition(runs ?? [], HEAD, null)).toBeNull();
+    expect(completedHoldPrecondition(runs ?? [], REQUIRED, HEAD, unlabel)).toBe(
+      false,
+    );
+    expect(completedHoldPrecondition(runs ?? [], REQUIRED, HEAD, null)).toBe(
+      false,
+    );
   });
 
   it("gives the composite helper enough time for every bounded sub-call", () => {
@@ -825,6 +894,7 @@ esac
         env: {
           ...process.env,
           PATH: `${bin}:${process.env.PATH ?? ""}`,
+          GROUNDWORK_OVERLAY: HOLD_OVERLAY,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
           // set-ci-hold is test-only fixture seeding (PR #4681 round 4) —
@@ -1547,6 +1617,7 @@ esac
         env: {
           ...process.env,
           PATH: `${bin}:${process.env.PATH ?? ""}`,
+          GROUNDWORK_OVERLAY: HOLD_OVERLAY,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
         },
@@ -1628,11 +1699,10 @@ esac
   });
 
   it("--require-success refuses when the Schema gate witness itself completed with a non-success conclusion", () => {
-    // Same bug, second instance: completedInitialSchemaGate/freshSchemaGate
-    // only require "completed, non-skipped" too, so a failed Schema gate run
-    // was still accepted as the witness. set-verified (drive-state.ts)
-    // already re-checks `witness.conclusion !== 'success'` for the identical
-    // proof; `--require-success` makes finalReady match it.
+    // Same bug, second instance: a required check that completed with a
+    // non-success conclusion is "completed, non-skipped", so it satisfies the
+    // freshness proof. set-verified (drive-state.ts) requires success for
+    // the identical proof; `--require-success` makes finalReady match it.
     const { bin, stateDir } = fakeGh(runsWith("success", "failure"));
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
   });

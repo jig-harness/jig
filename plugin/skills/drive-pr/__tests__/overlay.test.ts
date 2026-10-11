@@ -10,10 +10,15 @@ import { join } from "node:path";
 import {
   baseBranch,
   changeAreasCatalogPath,
+  ciHoldLabelSetting,
   isReviewerLogin,
+  requiredChecksSetting,
+  reviewedShaMarker,
   reviewerApp,
+  reviewerCheckPattern,
   reviewerLabel,
   reviewsDrafts,
+  stickyMarker,
   validationPlanCommand,
 } from "../scripts/lib/overlay.ts";
 import { isReviewerCheck } from "../scripts/lib/status/evidence.ts";
@@ -22,6 +27,9 @@ const KEYS = [
   "GROUNDWORK_OVERLAY",
   "DRIVE_PR_REVIEWER_APP",
   "DRIVE_PR_BASE_BRANCH",
+  "DRIVE_PR_REVIEWER_CHECK",
+  "DRIVE_PR_STICKY_MARKER",
+  "DRIVE_PR_SHA_MARKER",
 ] as const;
 let saved: Record<string, string | undefined>;
 let dir: string;
@@ -116,5 +124,59 @@ describe("base branch and catalog", () => {
     );
     overlay("repository: {}\n");
     expect(changeAreasCatalogPath("/repo")).toBeUndefined();
+  });
+});
+
+describe("reviewer protocol", () => {
+  it("defaults to the AI review check and its markers", () => {
+    overlay("review:\n  bots: []\n");
+    expect(reviewerCheckPattern()).toBe("^ai[ _-]?review(\\s*\\(.+\\))?$");
+    expect(stickyMarker()).toBe("<!-- ai-code-review -->");
+    expect(reviewedShaMarker()).toBe("ai-reviewed-sha");
+  });
+
+  it("reads the configuration file, and the environment overrides it", () => {
+    overlay(
+      'review:\n  reviewer_check_pattern: "^Bot review$"\n  sticky_marker: "<!-- bot -->"\n  reviewed_sha_marker: bot-sha\n',
+    );
+    expect(reviewerCheckPattern()).toBe("^Bot review$");
+    expect(stickyMarker()).toBe("<!-- bot -->");
+    expect(reviewedShaMarker()).toBe("bot-sha");
+    process.env.DRIVE_PR_REVIEWER_CHECK = "^env$";
+    process.env.DRIVE_PR_STICKY_MARKER = "<!-- env -->";
+    process.env.DRIVE_PR_SHA_MARKER = "env-sha";
+    expect(reviewerCheckPattern()).toBe("^env$");
+    expect(stickyMarker()).toBe("<!-- env -->");
+    expect(reviewedShaMarker()).toBe("env-sha");
+  });
+});
+
+describe("CI policy settings", () => {
+  it("are unset by default", () => {
+    overlay("gates:\n  command: x\n");
+    expect(requiredChecksSetting()).toBeUndefined();
+    expect(ciHoldLabelSetting()).toBeUndefined();
+  });
+
+  it("read the required checks and the hold label", () => {
+    overlay(
+      'ci:\n  required_checks: [build, "lint · test"]\n  hold_label: "ci:hold"\n',
+    );
+    expect(requiredChecksSetting()).toEqual(["build", "lint · test"]);
+    expect(ciHoldLabelSetting()).toBe("ci:hold");
+  });
+
+  it("accept an explicit empty list of required checks", () => {
+    overlay("ci:\n  required_checks: []\n");
+    expect(requiredChecksSetting()).toEqual([]);
+  });
+
+  it("refuse malformed values", () => {
+    overlay("ci:\n  required_checks: build\n");
+    expect(() => requiredChecksSetting()).toThrow("ci.required_checks");
+    overlay('ci:\n  required_checks: ["", x]\n');
+    expect(() => requiredChecksSetting()).toThrow("ci.required_checks");
+    overlay("ci:\n  hold_label: 3\n");
+    expect(() => ciHoldLabelSetting()).toThrow("ci.hold_label");
   });
 });
