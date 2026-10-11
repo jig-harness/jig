@@ -97,6 +97,33 @@ describe("tracker configuration", () => {
     ).toThrow("adapter");
   });
 
+  it("refuses two states named alike, outside an aliasable group", () => {
+    expect(() =>
+      parseTrackerConfig({
+        issue_tracker: { states: { in_review: "In Progress" } },
+      }),
+    ).toThrow(
+      "issue_tracker.states.in_progress and issue_tracker.states.in_review both name 'In Progress'",
+    );
+    expect(() =>
+      parseTrackerConfig({
+        issue_tracker: { states: { done: "in review" } },
+      }),
+    ).toThrow("both name");
+    const aliased = parseTrackerConfig({
+      issue_tracker: {
+        states: {
+          triage: "Backlog",
+          duplicate: "Canceled",
+          ops_pending: "In Review",
+        },
+      },
+    });
+    expect(aliased.states.triage).toBe("Backlog");
+    expect(aliased.states.duplicate).toBe("Canceled");
+    expect(aliased.states.ops_pending).toBe("In Review");
+  });
+
   it("names the missing field when a team is required", () => {
     expect(() => requireTeamKey(parseTrackerConfig({}))).toThrow(
       "issue_tracker.team",

@@ -7,6 +7,8 @@
  *     team: ENG                # the key issue identifiers carry
  *     states:                  # canonical state → the tracker's own name
  *       in_progress: In Progress
+ *     labels:                  # label role → the tracker's own label
+ *       epic: epic
  *
  * Every field is optional here; an operation that needs one it lacks fails
  * with a message naming the field.
@@ -17,6 +19,10 @@ import {
   overlayPath,
   readOverlay,
 } from "../../../../resolve-review-comments/scripts/lib/consumer.ts";
+import {
+  parseTrackerLabels,
+  type TrackerLabels,
+} from "../../../../resolve-review-comments/scripts/lib/tracker-labels.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./port.ts";
 
 export interface TrackerConfig {
@@ -25,6 +31,8 @@ export interface TrackerConfig {
   team: string | null;
   /** canonical state → tracker state name, defaults filled in. */
   states: Record<CanonicalState, string>;
+  /** The labels the skills act on, by role, defaults filled in. */
+  labels: TrackerLabels;
 }
 
 export const DEFAULT_ADAPTER = "linear";
@@ -42,6 +50,44 @@ export const TEAM_KEY_PATTERN = /^[A-Z][A-Z0-9]*$/;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * States that may share one tracker name: each group reads the same way
+ * wherever a name is mapped back to a state (all not started; merged and
+ * parked; all abandoned), so a tracker without a separate triage, operations
+ * or duplicate state loses nothing by aliasing them. Naming `ops_pending`
+ * like `in_review` is how a tracker with no operations state holds a merged
+ * issue in review, the fallback do-issue documents.
+ */
+const ALIASABLE_STATES: ReadonlyArray<ReadonlyArray<CanonicalState>> = [
+  ["triage", "backlog", "todo"],
+  ["in_review", "ops_pending"],
+  ["canceled", "duplicate"],
+];
+
+/**
+ * Refuse two states named alike outside one aliasable group. The skills map a
+ * tracker's state name back to its canonical state (a child "in review" caps
+ * its parent there); an `in_review` named like `in_progress` would read every
+ * active child as parked.
+ */
+function refuseAmbiguousStates(states: Record<CanonicalState, string>): void {
+  const group = (s: CanonicalState) =>
+    ALIASABLE_STATES.findIndex((g) => g.includes(s));
+  const seen = new Map<string, CanonicalState>();
+  for (const s of CANONICAL_STATES) {
+    const key = states[s].trim().toLowerCase();
+    const other = seen.get(key);
+    if (
+      other !== undefined &&
+      (group(other) === -1 || group(other) !== group(s))
+    )
+      throw new Error(
+        `issue_tracker.states.${other} and issue_tracker.states.${s} both name '${states[s]}'; each state needs its own name`,
+      );
+    seen.set(key, s);
+  }
 }
 
 /** Validate the `issue_tracker` section of a parsed overlay. */
@@ -85,7 +131,8 @@ export function parseTrackerConfig(
       states[key as CanonicalState] = name;
     }
   }
-  return { adapter, team, states };
+  refuseAmbiguousStates(states);
+  return { adapter, team, states, labels: parseTrackerLabels(overlay) };
 }
 
 /** The consumer's tracker settings; throws when the overlay is missing or invalid. */

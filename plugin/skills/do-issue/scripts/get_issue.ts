@@ -20,7 +20,13 @@
 
 import { isEntryPoint, parseArgs } from "./lib/cli.ts";
 import { openTracker } from "./lib/tracker/index.ts";
-import type { Issue, IssueState, Tracker } from "./lib/tracker/port.ts";
+import {
+  CANONICAL_STATES,
+  type CanonicalState,
+  type Issue,
+  type IssueState,
+  type Tracker,
+} from "./lib/tracker/port.ts";
 
 interface ChildOut {
   identifier: string;
@@ -60,6 +66,19 @@ const COMPLETED_STATE_NAMES = new Set([
 ]);
 
 /**
+ * Whether a tracker state name is the given configured name. Names compare
+ * trimmed and case-insensitively everywhere a state name is matched, so the
+ * child classification below and the parent-status reconciler cannot
+ * disagree about one state.
+ */
+export function stateNameEquals(
+  name: string | undefined,
+  configured: string,
+): boolean {
+  return (name ?? "").trim().toLowerCase() === configured.trim().toLowerCase();
+}
+
+/**
  * Which completion bucket a sub-issue's state falls in.
  *
  * `abandoned` (canceled, duplicate) is terminal but not delivered: such a
@@ -68,11 +87,14 @@ const COMPLETED_STATE_NAMES = new Set([
  *
  * Category first, name second. Once the category is recognized it alone
  * decides; a state named "Canceled Backlog Items" whose category is
- * `completed` is done. Name patterns are the fallback for a tracker answer
- * that carries no category.
+ * `completed` is done. Names are the fallback for a tracker answer that
+ * carries no category: the consumer's own `issue_tracker.states` names
+ * first, when given, so a `done` named "Shipped" is complete and an
+ * `in_review` named "Closed" is not; then the common English names.
  */
 export function classifyChildState(
   state: Partial<IssueState> | undefined,
+  stateNames?: Readonly<Record<CanonicalState, string>>,
 ): "completed" | "abandoned" | "incomplete" {
   const type = (state?.type ?? "").toLowerCase();
   if (KNOWN_STATE_TYPES.has(type)) {
@@ -81,13 +103,27 @@ export function classifyChildState(
     return "incomplete";
   }
   const name = (state?.name ?? "").trim().toLowerCase();
+  const configured =
+    stateNames === undefined
+      ? undefined
+      : CANONICAL_STATES.find((s) => stateNameEquals(name, stateNames[s]));
+  if (configured === "canceled" || configured === "duplicate")
+    return "abandoned";
+  if (configured === "done") return "completed";
+  if (configured !== undefined) return "incomplete";
   if (ABANDONED_STATE_NAMES.has(name)) return "abandoned";
   if (COMPLETED_STATE_NAMES.has(name)) return "completed";
   return "incomplete";
 }
 
-/** The script's JSON answer for one issue. */
-export function issueResult(issue: Issue): Record<string, unknown> {
+/**
+ * The script's JSON answer for one issue. `stateNames` are the tracker's own
+ * names for the canonical states, read when a child's state has no category.
+ */
+export function issueResult(
+  issue: Issue,
+  stateNames?: Readonly<Record<CanonicalState, string>>,
+): Record<string, unknown> {
   // Child labels keep the `{ name }` shape `reconcile_parent_status.ts` reads.
   const children: ChildOut[] = issue.children.map((c) => ({
     identifier: c.identifier,
@@ -104,10 +140,17 @@ export function issueResult(issue: Issue): Record<string, unknown> {
     title: issue.title,
     description: issue.description,
     updatedAt: issue.updatedAt,
-    state: {
-      name: issue.state.name || "Unknown",
-      type: issue.state.type || "unknown",
-    },
+    // `{ name: "Unknown", type: "unknown" }` is the unreadable-state sentinel
+    // the reconciler and do-issue's SKILL.md reject, so it is emitted only
+    // when the tracker gave neither field. A real state named "Unknown"
+    // with no category keeps its empty type and stays readable.
+    state:
+      issue.state.name || issue.state.type
+        ? {
+            name: issue.state.name || "Unknown",
+            type: issue.state.type,
+          }
+        : { name: "Unknown", type: "unknown" },
     labels: issue.labels,
     url: issue.url,
     parent: issue.parent,
@@ -121,7 +164,7 @@ export function issueResult(issue: Issue): Record<string, unknown> {
     const abandoned: ChildOut[] = [];
     const incomplete: ChildOut[] = [];
     for (const child of children) {
-      const bucket = classifyChildState(child.state);
+      const bucket = classifyChildState(child.state, stateNames);
       if (bucket === "completed") completed.push(child);
       else if (bucket === "abandoned") abandoned.push(child);
       else incomplete.push(child);
@@ -177,7 +220,11 @@ export async function getIssue(
   } catch (err) {
     return notFound(issueId, err instanceof Error ? err.message : String(err));
   }
-  return issue === null ? notFound(issueId, "") : issueResult(issue);
+  if (issue === null) return notFound(issueId, "");
+  const stateNames = Object.fromEntries(
+    CANONICAL_STATES.map((s) => [s, tracker.stateName(s)]),
+  ) as Record<CanonicalState, string>;
+  return issueResult(issue, stateNames);
 }
 
 async function main(): Promise<number> {

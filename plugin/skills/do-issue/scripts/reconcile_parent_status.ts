@@ -18,14 +18,25 @@
  * Usage:
  *     echo "$RECONCILE_INPUT_JSON" | bun reconcile_parent_status.ts
  *
- * Exit codes: 0 decided, 2 usage, 1 unreadable/invalid stdin.
+ * Exit codes: 0 decided, 2 usage, 1 unreadable/invalid stdin or a missing/
+ * invalid consumer overlay (the state names and labels come from it).
  *
  * Runs under Bun and under Node ≥ 22.18 (type stripping): only `node:` APIs,
  * erasable-syntax-only TypeScript — the same contract as the other do-issue
  * scripts.
  */
 
-import { classifyChildState, KNOWN_STATE_TYPES } from "./get_issue.ts";
+import {
+  DEFAULT_TRACKER_LABELS,
+  type TrackerLabels,
+} from "../../resolve-review-comments/scripts/lib/tracker-labels.ts";
+import {
+  classifyChildState,
+  KNOWN_STATE_TYPES,
+  stateNameEquals,
+} from "./get_issue.ts";
+import { defaultStateName, trackerConfig } from "./lib/tracker/config.ts";
+import { CANONICAL_STATES, type CanonicalState } from "./lib/tracker/port.ts";
 import { isEntryPoint, parseArgs } from "./lib/cli.ts";
 
 /** A label as either transport supplies it: a flat string (MCP, get_issue.ts) or `{ name }`. */
@@ -52,7 +63,7 @@ export interface ReconcileInput {
    * if it were the complete set.
    */
   truncated?: boolean;
-  /** The PARENT issue's own labels (checked for `manual-ops`). */
+  /** The PARENT issue's own labels (checked for the manual-operations label). */
   parentLabels: LabelLike[];
   /** Every sub-issue, already paginated to completion by the caller. */
   children: ReconcileChildInput[];
@@ -64,31 +75,46 @@ export type ReconcileVerdict =
   | "extract_and_close_eligible"
   | "set_status";
 
-export type ParentState = "Done" | "Ops Pending" | "In Progress" | "In Review";
+/** The canonical states a parent can be set to; `issue_tracker.states` names them. */
+export type ParentState = "done" | "ops_pending" | "in_progress" | "in_review";
 
 export interface ReconcileDecision {
   verdict: ReconcileVerdict;
+  /** The canonical state to transition the parent to (`tracker.ts transition`). */
   parentState: ParentState | null;
+  /** The tracker's own name for `parentState`. */
+  parentStateName: string | null;
   reason: string;
 }
+
+/** The tracker vocabulary the decision reads: label roles and state names. */
+export interface ReconcileVocabulary {
+  labels: TrackerLabels;
+  states: Record<CanonicalState, string>;
+}
+
+/** Every role and state at its default. */
+export const DEFAULT_VOCABULARY: ReconcileVocabulary = {
+  labels: DEFAULT_TRACKER_LABELS,
+  states: Object.fromEntries(
+    CANONICAL_STATES.map((s) => [s, defaultStateName(s)]),
+  ) as Record<CanonicalState, string>,
+};
 
 /**
  * A tail an epic was never scoped to finish — its presence on every
  * remaining incomplete child is what makes the epic extract-and-close
- * eligible instead of stuck "In Progress" forever. Mirrors SKILL.md's
- * `EXTRACTABLE_TAILS` (Step 5a) — kept here as the one place that list is
- * evaluated now that the surrounding decision has a callsite.
+ * eligible instead of stuck "In Progress" forever. The labels come from
+ * `issue_tracker.labels.extractable_tails` (default: the `legal` and
+ * `tactical` facets of the human-in-the-loop label, the manual-operations
+ * label and the review follow-up label); this is the one place the list is
+ * evaluated.
  */
-export const EXTRACTABLE_TAILS = [
-  "hitl:legal",
-  "manual-ops",
-  "hitl:tactical",
-  "pr-followup",
-] as const;
 
 /**
  * The "started"-type sub-issue states that still count as "merged and
- * parked" for the parent-status guard, checked by exact NAME rather than
+ * parked" for the parent-status guard, checked by NAME (`stateNameEquals`:
+ * trimmed, case-insensitive) rather than
  * `classifyChildState`'s `type`-based bucket. "In Review" and "Ops Pending"
  * share `type: "started"` with "In Progress" (all three are started-category states), so the
  * `type` field alone cannot tell a parked child from a genuinely active one
@@ -105,18 +131,18 @@ export const EXTRACTABLE_TAILS = [
  * through as parked purely because "Done" is spelled correctly, even though
  * its own `type` says the work is still active.
  */
-export const PARKED_ACTIVE_STATE_NAMES = ["In Review", "Ops Pending"] as const;
+export const PARKED_ACTIVE_STATES = ["in_review", "ops_pending"] as const;
 
 /** Least → most advanced, for capping the parent at its least-advanced open sub-issue. */
 export const STATE_LADDER = [
-  "In Progress",
-  "In Review",
-  "Ops Pending",
+  "in_progress",
+  "in_review",
+  "ops_pending",
 ] as const;
 
 /**
  * Whether a child's exact `state.name` may be trusted for the
- * `PARKED_ACTIVE_STATE_NAMES` fallback — mirrors `classifyChildState`'s own
+ * `PARKED_ACTIVE_STATES` fallback — mirrors `classifyChildState`'s own
  * precedence: a recognized `type` is authoritative over the name, and only
  * an absent/unrecognized type defers to it. Without this, a corrupted or
  * mismatched record like `{ name: 'In Review', type: 'unstarted' }` — Todo,
@@ -138,35 +164,46 @@ function labelName(l: LabelLike | undefined): string {
 
 export function reconcileParentStatus(
   input: ReconcileInput,
+  vocabulary: ReconcileVocabulary = DEFAULT_VOCABULARY,
 ): ReconcileDecision {
+  const { labels, states } = vocabulary;
+  const decide = (
+    verdict: ReconcileVerdict,
+    parentState: ParentState | null,
+    reason: string,
+  ): ReconcileDecision => ({
+    verdict,
+    parentState,
+    parentStateName: parentState === null ? null : states[parentState],
+    reason,
+  });
+  const tails = labels.extractableTails.join(" / ");
   const found = input.found ?? true;
   if (!found) {
-    return {
-      verdict: "listing_failed",
-      parentState: null,
-      reason:
-        "Sub-issue listing failed — the Linear refresh did not succeed. Report the error and do not reconcile parent status.",
-    };
+    return decide(
+      "listing_failed",
+      null,
+      "Sub-issue listing failed — the tracker refresh did not succeed. Report the error and do not reconcile parent status.",
+    );
   }
   const truncated = input.truncated ?? false;
   if (truncated) {
-    return {
-      verdict: "listing_failed",
-      parentState: null,
-      reason:
-        "Sub-issue listing is incomplete — pagination did not confirm every child was fetched. Report the error and do not reconcile parent status.",
-    };
+    return decide(
+      "listing_failed",
+      null,
+      "Sub-issue listing is incomplete — pagination did not confirm every child was fetched. Report the error and do not reconcile parent status.",
+    );
   }
 
   const children = input.children;
   const parentHasManualOps = input.parentLabels
     .map(labelName)
-    .includes("manual-ops");
+    .includes(labels.manualOps);
 
   // An empty `children` array (no sub-issues) needs no special case — every
   // predicate below is vacuously true over `[]`, so a childless parent reads
   // as "all done".
-  const buckets = children.map((c) => classifyChildState(c.state));
+  const buckets = children.map((c) => classifyChildState(c.state, states));
   const allDone = buckets.every((b) => b !== "incomplete");
 
   const incompleteChildren = children.filter(
@@ -199,7 +236,7 @@ export function reconcileParentStatus(
     incompleteChildren.length > 0 &&
     incompleteChildren.every((c) =>
       (c.labels ?? []).some((l) =>
-        (EXTRACTABLE_TAILS as readonly string[]).includes(labelName(l)),
+        labels.extractableTails.includes(labelName(l)),
       ),
     );
 
@@ -208,18 +245,18 @@ export function reconcileParentStatus(
   // never in MERGED_OR_PARKED), so falling through would route straight back
   // to "keep_in_progress" — the very Step 4b loop this rule exists to break.
   if (allIncompleteAreExtractable) {
-    return {
-      verdict: "extract_and_close_eligible",
-      parentState: null,
-      // sweep-epic.ts's own close guard refuses `--close` outright on an
-      // epic carrying `manual-ops` (do-issue § Step 5a caps such an epic at
-      // "Ops Pending", never "Done") — the reason must say so up front,
-      // since the plain reading of this verdict ("run sweep-epic.ts") would
-      // otherwise dispatch a call that guard rejects.
-      reason: parentHasManualOps
-        ? 'Every remaining incomplete sub-issue carries an extractable tail label (hitl:legal / manual-ops / hitl:tactical / pr-followup) — but the PARENT itself carries manual-ops, so sweep-epic.ts refuses `--close` on it. Verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts --no-close to move the tails and leave the epic open (capped at "Ops Pending") until its own operator checklist clears.'
-        : "Every remaining incomplete sub-issue carries an extractable tail label (hitl:legal / manual-ops / hitl:tactical / pr-followup) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts instead of setting a status here.",
-    };
+    // sweep-epic.ts's own close guard refuses `--close` outright on an epic
+    // carrying the manual-operations label (do-issue § Step 5a caps such an
+    // epic at `ops_pending`, never `done`) — the reason must say so up
+    // front, since the plain reading of this verdict ("run sweep-epic.ts")
+    // would otherwise dispatch a call that guard rejects.
+    return decide(
+      "extract_and_close_eligible",
+      null,
+      parentHasManualOps
+        ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — but the PARENT itself carries ${labels.manualOps}, so sweep-epic.ts refuses \`--close\` on it. Verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts --no-close to move the tails and leave the epic open (capped at "${states.ops_pending}") until its own operator checklist clears.`
+        : `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts instead of setting a status here.`,
+    );
   }
 
   // A child already bucketed completed/abandoned by `classifyChildState` is
@@ -230,45 +267,44 @@ export function reconcileParentStatus(
   // `{ name: 'Done', type: 'started' }` read as parked even though its own
   // `type` says the work is still active, which then starved the ladder
   // lookup below of any valid entry. Only a child still bucketed
-  // "incomplete" falls back to the exact-name check, gated by
+  // "incomplete" falls back to the name check, gated by
   // `nameTrustworthyForParkedCheck` so a recognized non-"started" type (e.g.
   // `{ name: 'In Review', type: 'unstarted' }`, or an "Ops Pending" name
   // with a `backlog`/`triage` type) can't have its name override a type that
   // explicitly says the work hasn't started — that is the one case
   // `classifyChildState`'s `type`-based bucket cannot resolve on its own
-  // (see `PARKED_ACTIVE_STATE_NAMES`).
+  // (see `PARKED_ACTIVE_STATES`).
   const allMergedOrParked = children.every(
     (c, i) =>
       buckets[i] !== "incomplete" ||
       (nameTrustworthyForParkedCheck(c.state) &&
-        (PARKED_ACTIVE_STATE_NAMES as readonly string[]).includes(
-          c.state?.name ?? "",
+        PARKED_ACTIVE_STATES.some((key) =>
+          stateNameEquals(c.state?.name, states[key]),
         )),
   );
 
   if (!allMergedOrParked) {
-    return {
-      verdict: "keep_in_progress",
-      parentState: null,
-      reason:
-        'At least one sub-issue is still in progress/todo/blocked — keep the parent "In Progress" and continue with Step 4b.',
-    };
+    return decide(
+      "keep_in_progress",
+      null,
+      `At least one sub-issue is still in progress/todo/blocked — keep the parent "${states.in_progress}" and continue with Step 4b.`,
+    );
   }
 
   if (allDone) {
-    return {
-      verdict: "set_status",
-      parentState: parentHasManualOps ? "Ops Pending" : "Done",
-      reason: parentHasManualOps
-        ? 'All sub-issues are Done (or Canceled/Duplicate); the parent carries manual-ops, so it is capped at "Ops Pending" until the operator checklist is acknowledged.'
+    return decide(
+      "set_status",
+      parentHasManualOps ? "ops_pending" : "done",
+      parentHasManualOps
+        ? `All sub-issues are Done (or Canceled/Duplicate); the parent carries ${labels.manualOps}, so it is capped at "${states.ops_pending}" until the operator checklist is acknowledged.`
         : "All sub-issues are Done (or Canceled/Duplicate).",
-    };
+    );
   }
 
   // Reached only when every child is merged-or-parked AND not all are
   // Done/Canceled/Duplicate — so at least one child has bucket "incomplete"
   // (else `allDone` above would have returned), and `allMergedOrParked`
-  // above only accepts an "incomplete"-bucket child whose exact name is "In
+  // above only accepts an "incomplete"-bucket child whose name is "In
   // Review" or "Ops Pending" — both members of STATE_LADDER. The filtered
   // array below can therefore never be empty here.
   //
@@ -284,16 +320,18 @@ export function reconcileParentStatus(
   const ladderIndexes = children
     .filter((_, i) => buckets[i] === "incomplete")
     .map((c) =>
-      (STATE_LADDER as readonly string[]).indexOf(c.state?.name ?? ""),
+      STATE_LADDER.findIndex((key) =>
+        stateNameEquals(c.state?.name, states[key]),
+      ),
     )
     .filter((i) => i >= 0);
   const parentState = STATE_LADDER[Math.min(...ladderIndexes)] as ParentState;
 
-  return {
-    verdict: "set_status",
+  return decide(
+    "set_status",
     parentState,
-    reason: `All sub-issues are merged-and-parked but not all Done — capping the parent at the least-advanced sub-issue state ("${parentState}").`,
-  };
+    `All sub-issues are merged-and-parked but not all Done — capping the parent at the least-advanced sub-issue state ("${states[parentState]}").`,
+  );
 }
 
 /** Runtime guard for the parsed stdin payload — see the `main()` call site. */
@@ -529,7 +567,18 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  console.log(JSON.stringify(reconcileParentStatus(input)));
+  // The overlay is required, like every other tracker script: run from the
+  // wrong directory, defaults would silently miss the consumer's own
+  // manual-operations label and could set a parent to done.
+  let vocabulary: ReconcileVocabulary;
+  try {
+    const config = trackerConfig();
+    vocabulary = { labels: config.labels, states: config.states };
+  } catch (err) {
+    console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+  console.log(JSON.stringify(reconcileParentStatus(input, vocabulary)));
   return 0;
 }
 

@@ -834,6 +834,15 @@ describe("get_issue.ts reads the issue through the tracker", () => {
     expect([a.completed, a.abandoned, a.incomplete]).toEqual([1, 0, 1]);
   });
 
+  it("emits the unreadable-state sentinel only when the tracker gave neither state field", () => {
+    expect(
+      run(issueJson({ state: '{"name":"Unknown","type":""}' })).json.state,
+    ).toEqual({ name: "Unknown", type: "" });
+    expect(
+      run(issueJson({ state: '{"name":"","type":""}' })).json.state,
+    ).toEqual({ name: "Unknown", type: "unknown" });
+  });
+
   it("handles an all-abandoned child set without dividing by zero", () => {
     const r = run(
       issueJson({
@@ -1076,6 +1085,23 @@ describe("tracker.ts", () => {
       in_review: "Code Review",
       in_progress: "In Progress",
     });
+  });
+
+  it("prints the label vocabulary, defaults filled in", () => {
+    const r = run(["labels"], []);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      epic: "epic",
+      hitl: "hitl",
+      manual_ops: "manual-ops",
+      extractable_tails: [
+        "hitl:legal",
+        "hitl:tactical",
+        "manual-ops",
+        "pr-followup",
+      ],
+    });
+    expect(run(["labels", "extra"], []).status).toBe(2);
   });
 
   it("moves an issue to the tracker's name for a canonical state", () => {

@@ -124,6 +124,27 @@ describe("loadConfig", () => {
     expect(loadConfig().ledger.label).toBe("deferred");
   });
 
+  it("takes the epic and follow-up labels from issue_tracker.labels, and leaves an unnamed follow-up unmeasured", () => {
+    const path = join(repo, ".config", "fleet-health.yaml");
+    writeFileSync(
+      path,
+      readFileSync(FIXTURE, "utf8")
+        .replace("  followup: follow-up\n", "")
+        .replace(/^  epic: .*\n/m, ""),
+    );
+    overlay(
+      "issue_tracker:\n  labels:\n    epic: Initiative\n    followup: review-fu\n",
+    );
+    expect(loadConfig().labels.epic).toBe("Initiative");
+    expect(loadConfig().labels.followup).toBe("review-fu");
+    overlay("issue_tracker:\n  team: OPS\n");
+    expect(loadConfig().labels.followup).toBeNull();
+    overlay(
+      "issue_tracker:\n  labels:\n    epic: Epic\nreview:\n  taxonomy:\n    epic_label: Initiative\n",
+    );
+    expect(() => loadConfig()).toThrow(/name different labels/);
+  });
+
   it("rejects a labels or ledger key the sensor does not read", () => {
     const base = {
       version: 1,

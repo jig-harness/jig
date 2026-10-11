@@ -217,7 +217,11 @@
  * only carries the POSIX direct-execution path.
  */
 
-import { reviewConfig } from "./lib/consumer.ts";
+import { readOverlay, reviewConfig } from "./lib/consumer.ts";
+import {
+  DEFAULT_TRACKER_LABELS,
+  parseTrackerLabels,
+} from "./lib/tracker-labels.ts";
 import { fail, isEntryPoint, readStdinAll, runMain } from "./lib/cli.ts";
 import {
   CANONICAL_SEVERITIES,
@@ -267,9 +271,20 @@ const consumer = (() => {
   }
 })();
 export const BATCH_SIZES = consumer.taxonomy?.sizes ?? ["xs", "small"];
-export const PROVENANCE_LABEL =
-  consumer.taxonomy?.provenance_label ?? "pr-followup";
-export const EPIC_LABEL = consumer.taxonomy?.epic_label ?? "epic";
+/**
+ * The follow-up and epic labels: `issue_tracker.labels`, else the older
+ * `review.taxonomy` fields, else the defaults (`lib/tracker-labels.ts`).
+ */
+const labels = (() => {
+  try {
+    return parseTrackerLabels(readOverlay());
+  } catch (error) {
+    consumerError ??= error instanceof Error ? error.message : String(error);
+    return DEFAULT_TRACKER_LABELS;
+  }
+})();
+export const PROVENANCE_LABEL = labels.followup;
+export const EPIC_LABEL = labels.epic;
 export const BATCH_REPOS = consumer.taxonomy?.repos ?? [];
 export const BATCH_TYPES = consumer.taxonomy?.types ?? [];
 export const REVIEW_CATEGORIES = consumer.taxonomy?.categories ?? [];

@@ -35,12 +35,13 @@ Contents: [the file](#the-file) ·
   adopted it says so rather than guessing. `drive-pr`, the pull-request
   policy and the procedure skills run on their defaults.
 - **Unknown fields** are ignored at the top level and inside most sections, so
-  other tooling can share the file. Two places are exceptions. In
-  `pull_requests` an unknown key is an error: a misspelt `stacking` would
-  otherwise silently keep the default it was written to change. In
-  `review.taxonomy` every key other than `provenance_label` and `epic_label`
-  is read as a list of distinct, nonempty strings, so an unrelated key there
-  is an error too.
+  other tooling can share the file. The maps whose keys the skills look up
+  are strict instead: there a misspelt key would silently keep the default it
+  was written to change, so it is an error. They are `pull_requests`,
+  `issue_tracker.states` (keys are canonical states) and
+  `issue_tracker.labels` (keys are label roles). In `review.taxonomy` every
+  key other than `provenance_label` and `epic_label` is read as a list of
+  distinct, nonempty strings, so an unrelated key there is an error too.
 - **Wrong types** depend on the reader. `resolve-review-comments` and the
   pull-request policy refuse them with an error that names the field and the
   file. Some `drive-pr` readers treat a wrong-typed value as absent and use
@@ -92,8 +93,8 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 | `review.taxonomy.categories` | list of names | only `unknown` | resolve-review-comments | Allowed finding categories |
 | `review.taxonomy.context_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of labels carried from the pull request onto its follow-ups. Requires `ownership_prefixes` |
 | `review.taxonomy.ownership_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of ownership labels; two findings share a batch only when these agree. Required when `types`, `repos` or `context_prefixes` is set |
-| `review.taxonomy.provenance_label` | label | `pr-followup` | resolve-review-comments, drive-pr (fleet health) | Label marking an issue as a review follow-up |
-| `review.taxonomy.epic_label` | label | `epic` | resolve-review-comments, drive-pr (fleet health) | Label marking an issue as an epic |
+| `review.taxonomy.provenance_label` | label | `pr-followup` | resolve-review-comments, drive-pr (fleet health) | Older name for `issue_tracker.labels.followup`, still read when that is unset; the two may not disagree |
+| `review.taxonomy.epic_label` | label | `epic` | resolve-review-comments, drive-pr (fleet health) | Older name for `issue_tracker.labels.epic`, still read when that is unset; the two may not disagree |
 | `review.reviewer_app` | GitHub App slug | none: reviewer checks recognised by name from any app, summary comment accepted only from `review.bots` | drive-pr | App whose check runs and `<app>[bot]` summary comment are the AI reviewer's evidence. `DRIVE_PR_REVIEWER_APP` overrides it |
 | `review.reviewer_check_pattern` | anchored regular expression | `^ai[ _-]?review(\s*\(.+\))?$` | drive-pr | Name of the posting reviewer's check run. `DRIVE_PR_REVIEWER_CHECK` overrides it |
 | `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. `DRIVE_PR_STICKY_MARKER` overrides it |
@@ -201,7 +202,15 @@ not resolve it either.
 |-------|------|-------------|---------|--------------|
 | `issue_tracker.adapter` | adapter name | `linear` | do-issue, drive-pr | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
 | `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-issue, drive-pr, review | The key issue identifiers carry (`ENG` for `ENG-123`) |
-| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-issue | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error |
+| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-issue (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read) | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate` |
+| `issue_tracker.labels.epic` | label | `epic`, else `review.taxonomy.epic_label` | do-issue, resolve-review-comments, drive-pr (fleet health) | Marks an issue whose sub-issues are worked one at a time |
+| `issue_tracker.labels.hitl` | label | `hitl` | do-issue | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
+| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-issue | A step a person performs outside the code; caps an epic at `ops_pending` |
+| `issue_tracker.labels.followup` | label | `pr-followup`, else `review.taxonomy.provenance_label` | do-issue, resolve-review-comments, drive-pr (fleet health) | Marks an issue filed from a review finding |
+| `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-issue | Any of these marks a bug |
+| `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-issue | A recurring pattern's label is `<prefix><slug>` |
+| `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-issue | Sizes whose issues the batch check may group into one pull request |
+| `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-issue | Open sub-issues an epic may hand off instead of finishing |
 | `issue_tracker.file_command` | text | Ask the user to file the issue | do-issue, resolve-review-comments, descar, github-actions, promote-memory | How an agent files a new issue by hand, such as a slash command |
 
 ## `do_issue`
@@ -264,8 +273,8 @@ below marked required must be present, and an unknown key is an error.
 | `signals.review_carousel.high_rounds` | whole number ≥ `min_rounds` | yes | Reviewed heads at which the suspicion is high |
 | `signals.review_carousel.min_post_review_share` | number 0–1 | yes | Share of the change made after review began that marks a carousel |
 | `lifecycle.cooldown_days` | whole number ≥ 0 | yes | Days a suspicion that a diagnosis comment closed stays closed before it can be raised again |
-| `labels.epic` | label, or `null` | no; default `review.taxonomy.epic_label`, else `epic` | Label marking an epic |
-| `labels.followup` | label, or `null` | no; default `review.taxonomy.provenance_label`; `null` means follow-ups are not measured | Label marking a review follow-up |
+| `labels.epic` | label, or `null` | no; default the overlay's epic label (`issue_tracker.labels.epic` or `review.taxonomy.epic_label`), else `epic` | Label marking an epic |
+| `labels.followup` | label, or `null` | no; default the overlay's explicitly declared follow-up label (`issue_tracker.labels.followup` or `review.taxonomy.provenance_label`); explicit `null`, or no label declared in either file, means follow-ups are not measured | Label marking a review follow-up |
 | `labels.delivery_system` | label, or `null` | no; unset means not measured | Label a delivery-system change area and its issues carry |
 | `ledger.label` | label, or `null` | no; default `labels.followup` | Label of the debt ledger `fractal-metrics.ts` reports |
 | `ledger.project` | tracker project, or `null` | no | A project whose issues also belong to the ledger |
@@ -378,6 +387,15 @@ issue_tracker:
     done: Done
     canceled: Canceled
     duplicate: Duplicate
+  labels:                                # label role -> the tracker's label
+    epic: epic
+    hitl: hitl                           # facets: hitl:<stakeholder>
+    manual_ops: manual-ops
+    followup: pr-followup
+    bug: [bug, type:bug]
+    pattern_prefix: "pattern:"
+    batch_sizes: [xs, small, medium]
+    extractable_tails: [hitl:legal, hitl:tactical, manual-ops, pr-followup]
 do_issue:
   agents:
     default: general-purpose

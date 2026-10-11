@@ -432,13 +432,15 @@ delegating it is queued below. Every configuration field is now listed in one
 declares `stacking` before its machines update; without it, 0.7.0 refuses to
 stack.
 
+Plugin 0.8.0 reads the labels the skills act on (epic, human-in-the-loop
+flag, manual operations, review follow-up, bug, pattern, batch sizes, the
+tails an epic may hand off) from `issue_tracker.labels`, and the
+parent-status reconciliation reads the tracker's own state names from
+`issue_tracker.states`.
+
 Still bound to the reference implementation's setup, to move into
 configuration when the next consumer needs them:
 
-- `do-issue`'s parent-status reconciliation compares fixed state names
-  (`In Review`, `Ops Pending`, …) instead of `issue_tracker.states`, and fixed
-  labels (`hitl:legal`, `manual-ops`, `hitl:tactical`, `pr-followup`) for the
-  work an epic may leave behind;
 - the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
   with fixed label groups, instead of going through the tracker interface;
 - the drive pushes to and fetches from a remote named `origin`;

@@ -8,6 +8,7 @@
  *     bun tracker.ts transition <issue-key> <canonical-state>
  *     bun tracker.ts comment <issue-key>          # body on stdin
  *     bun tracker.ts states                       # canonical → tracker names
+ *     bun tracker.ts labels                       # label role → tracker labels
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, ops_pending, duplicate.
@@ -26,12 +27,14 @@ import {
   openTracker,
 } from "./lib/tracker/index.ts";
 import { readOverlay } from "../../resolve-review-comments/scripts/lib/consumer.ts";
+import { labelsAsConfig } from "../../resolve-review-comments/scripts/lib/tracker-labels.ts";
 
 const USAGE = `usage:
   tracker.ts children <issue-key>
   tracker.ts transition <issue-key> <canonical-state>
   tracker.ts comment <issue-key>   (body on stdin)
-  tracker.ts states`;
+  tracker.ts states
+  tracker.ts labels`;
 
 async function readStdin(): Promise<string> {
   process.stdin.setEncoding("utf8");
@@ -54,6 +57,17 @@ export async function main(argv: string[]): Promise<number> {
         if (key !== undefined) return usage("states takes no argument");
         console.log(
           JSON.stringify(parseTrackerConfig(readOverlay()).states, null, 2),
+        );
+        return 0;
+      }
+      case "labels": {
+        if (key !== undefined) return usage("labels takes no argument");
+        console.log(
+          JSON.stringify(
+            labelsAsConfig(parseTrackerConfig(readOverlay()).labels),
+            null,
+            2,
+          ),
         );
         return 0;
       }

@@ -56,6 +56,7 @@ run time from `.config/groundwork-overlay.yaml`:
 | `issue_tracker.team` | The tracker team or project the repository files into, as the key its issue identifiers carry (`ENG` for `ENG-123`) | Required: the tracker scripts stop with a message naming this field |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
+| `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
 | `do_issue.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
 | `do_issue.scouts` | Pre-flight scouts per agent, `{agent: [scouts]}` | No scouts |
 | `do_issue.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
@@ -73,11 +74,26 @@ Canonical state keys are `backlog`, `todo`, `in_progress`, `in_review`,
 This document names states by key; read "`in_progress`" as "the tracker's
 name for it from `issue_tracker.states`".
 
-The skill also reads these labels by name, as conventions: `epic`, `hitl` and
-its `hitl:<stakeholder>` facets, `manual-ops`, `pr-followup`, a bug type label
-(`bug` or `type:bug`), `pattern:<slug>`, and the size labels `xs`, `small`,
-`medium`. A repository that does not use a label simply never triggers its
-rule.
+The skill acts on a few labels as process signals, by role:
+
+| Role (`issue_tracker.labels.<role>`) | Default | What it signals |
+|---------------------------------------|---------|-----------------|
+| `epic` | `epic` | An issue whose sub-issues are worked one at a time |
+| `hitl` | `hitl` | A deliverable that is a human's judgment; its facets are `<hitl>:<stakeholder>` (`hitl:legal`, `hitl:product`, …) |
+| `manual_ops` | `manual-ops` | A step a person performs outside the code |
+| `followup` | `pr-followup` | An issue filed from a review finding |
+| `bug` | `bug`, `type:bug` | A bug |
+| `pattern_prefix` | `pattern:` | A recurring pattern, `<prefix><slug>` |
+| `batch_sizes` | `xs`, `small`, `medium` | Sizes the batch check may group |
+| `extractable_tails` | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | Open sub-issues an epic may hand off instead of finishing |
+
+This document writes each label by its default name; read it as the
+repository's label for that role. A list-valued role (`bug`, `batch_sizes`,
+`extractable_tails`) is a membership test against the repository's whole
+list, never against the default names, which a repository may replace
+entirely. `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" labels`
+prints the repository's labels, defaults filled in. A repository that does not
+use a label never triggers its rule.
 
 ### Pull-request policy
 
@@ -348,7 +364,8 @@ review rounds use the PR pin instead.
 findings against the issue. The status writes, scripts, templates and gate
 routing below remain **exact**.
 
-> **Batch check (issues labelled `xs`, `small` or `medium`), only if the
+> **Batch check (issues carrying any label in the repository's
+> `batch_sizes` list, by default `xs`, `small` or `medium`), only if the
 > consumer has a batching skill.** Review cost is largely per PR, so several
 > small closures sharing one review cycle cost about what one does, and
 > parallel single-issue PRs over the same files become merge conflicts. Run
@@ -859,9 +876,10 @@ snapshot mapping are **exact**.
 
 1. **exact** — **Check whether everything is complete**:
    - `sub_issue_analysis.all_complete` → Step 5a.
-   - Otherwise, if every remaining incomplete sub-issue carries an
-     extractable-tail label (`hitl:legal`, `manual-ops` or `hitl:tactical`,
-     or `pr-followup`) → also Step 5a, which re-verifies eligibility under
+   - Otherwise, if every remaining incomplete sub-issue carries a label in
+     the repository's `extractable_tails` list (by default `hitl:legal`,
+     `hitl:tactical`, `manual-ops` and `pr-followup`; `tracker.ts labels`
+     prints the list in effect) → also Step 5a, which re-verifies eligibility under
      the extract-and-close rule before acting. Otherwise an epic whose only
      open work is a tail would pick that tail and work it as ordinary code.
 
@@ -991,9 +1009,10 @@ data flow, not an executable harness API.
 
 > **Extract-and-close rule (an epic is done on its designed scope, not on a
 > child count of zero).** When an epic's code work is merged and every
-> remaining open child is a tail the epic was never scoped to finish — a
+> remaining open child is a tail the epic was never scoped to finish — one
+> carrying a label in the repository's `extractable_tails` list (by default a
 > `hitl:legal` sign-off, `manual-ops` or `hitl:tactical` operations work, or
-> `pr-followup` review debt — extract each (remove it from the epic, link it
+> `pr-followup` review debt) — extract each (remove it from the epic, link it
 > back to the epic, and move it to the repository's standing destination for
 > that kind of work, if it has one) and close the epic. This requires an
 > accepting verdict from the repository's epic acceptance review, or a human
@@ -1114,10 +1133,12 @@ data flow, not an executable harness API.
    bun "${CLAUDE_SKILL_DIR}/scripts/reconcile_parent_status.ts" < reconcile-input.json
    ```
 
-2. **exact** — **Act on `decision.verdict`**. `decision.parentState` names a
-   state in title case (`Done`, `In Review`, `Ops Pending`, `In Progress`);
-   transition to the matching canonical key (`done`, `in_review`,
-   `ops_pending`, `in_progress`).
+2. **exact** — **Act on `decision.verdict`**. `decision.parentState` is the
+   canonical state to transition the parent to (`done`, `in_review`,
+   `ops_pending`, `in_progress`), and `decision.parentStateName` the
+   tracker's name for it. The reconciler reads the repository's state names
+   and labels (`issue_tracker.states`, `issue_tracker.labels`), so a child in
+   the tracker's own review state counts as parked whatever it is called.
 
    | `verdict` | Action |
    |-----------|--------|
@@ -1127,7 +1148,7 @@ data flow, not an executable harness API.
    | `set_status` | Transition the parent: `tracker.ts transition <KEY> <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
 
    **`manual-ops` guard on parent completion.** When `decision.parentState`
-   is `Ops Pending` because the parent itself carries `manual-ops` (every
+   is `ops_pending` because the parent itself carries `manual-ops` (every
    sub-issue is done, but the parent cannot close until its operator
    checklist is acknowledged), comment with every unchecked item from the
    parent's `## Operator Checklist` as unchecked checkboxes: "All sub-issues
@@ -1187,10 +1208,10 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 |--------|---------|-------|--------|
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
-| `tracker.ts` | Tracker operations: `children`, `transition`, `comment` | Operation, issue key, and a canonical state or a body on stdin | Operation result |
+| `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body on stdin | Operation result |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (stdin) and `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
-| `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (stdin) | JSON decision (`verdict`, `parentState`, `reason`) |
+| `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
 | `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue <KEY> --title <title>`, or `open [--issue <KEY>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5) | `IntentChainInput` JSON (stdin or `--input`) | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`) |

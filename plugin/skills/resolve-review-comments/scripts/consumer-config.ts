@@ -19,6 +19,7 @@ import {
   reviewConfig,
   reviewerSelection,
 } from "./lib/consumer.ts";
+import { parseTrackerLabels } from "./lib/tracker-labels.ts";
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
@@ -58,6 +59,16 @@ async function main(): Promise<number> {
     fail(
       2,
       `consumer-config: ${overlayPath()}: ${err instanceof Error ? err.message : err}; declare the exact required check names, or set job_pattern to null to recognise reviewer checks by name`,
+    );
+  }
+  // The labels a deferral files with: checked now, not when the first
+  // finding is deferred.
+  try {
+    parseTrackerLabels(overlay);
+  } catch (err) {
+    fail(
+      2,
+      `consumer-config: ${overlayPath()}: ${err instanceof Error ? err.message : err}`,
     );
   }
   const lines: [string, string][] = [

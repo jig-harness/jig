@@ -9,7 +9,7 @@
  *
  *   labels:        # tracker labels the sensor reads
  *     epic: epic                    # default review.taxonomy.epic_label, else `epic`
- *     followup: follow-up           # default review.taxonomy.provenance_label; unset = not measured
+ *     followup: follow-up           # default the overlay's declared follow-up label; null, or none declared = not measured
  *     delivery_system: delivery     # the label a delivery-system change area and issue carry; unset = not measured
  *   ledger:        # the debt ledger fractal-metrics reports
  *     label: follow-up              # default labels.followup
@@ -37,6 +37,10 @@ import {
   consumerRoot,
   OVERLAY_RELPATH,
 } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+import {
+  parseTrackerLabels,
+  type TrackerLabels,
+} from "../../../resolve-review-comments/scripts/lib/tracker-labels.ts";
 import { load as loadYaml } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
 
 /** Repo-relative default — also the config's display label in errors. */
@@ -97,13 +101,23 @@ export function overlayContext(root: string): ConfigContext {
       `${path}: could not be read (${err instanceof Error ? err.message : String(err)})`,
     );
   }
+  let labels: TrackerLabels;
+  try {
+    labels = parseTrackerLabels(isRecordValue(overlay) ? overlay : {});
+  } catch (err) {
+    throw new FleetHealthConfigError(
+      `${path}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   const at = (p: string | null): string | null =>
     p === null ? null : isAbsolute(p) ? p : join(root, p);
   return {
     root,
     teamKey: stringAt(overlay, "issue_tracker", "team"),
-    epicLabel: stringAt(overlay, "review", "taxonomy", "epic_label"),
-    followupLabel: stringAt(overlay, "review", "taxonomy", "provenance_label"),
+    // Only a label the consumer named counts: an unnamed follow-up label
+    // means follow-ups are not measured, not that the default is measured.
+    epicLabel: labels.declared.has("epic") ? labels.epic : null,
+    followupLabel: labels.declared.has("followup") ? labels.followup : null,
     catalogPath: at(stringAt(overlay, "drive", "change_areas_catalog")),
     configPath: at(stringAt(overlay, "fleet_health", "config")),
   };
