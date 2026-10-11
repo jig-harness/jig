@@ -722,6 +722,42 @@ else process.exitCode = 1;
   expect(rejected.anomaly).toContain("duplicated mapping key");
 });
 
+test("the procedure skills read the consumer's values from a plugin copy", () => {
+  const consumer = consumerRepo(
+    "procedure",
+    `adr:
+  directory: records/decisions
+fix_ci:
+  regenerate_commands: ["bun run generate"]
+`,
+  );
+  mkdirSync(join(consumer, "records", "decisions"), { recursive: true });
+  writeFileSync(
+    join(consumer, "records", "decisions", "ADR-0007-cache.md"),
+    "# ADR-0007\n",
+  );
+  writeFileSync(join(consumer, "bun.lock"), "");
+  const cache = join(scratch, "cache", "skills");
+  const run = (script: string) =>
+    spawnSync(process.execPath, [join(cache, script)], {
+      cwd: consumer,
+      env,
+      encoding: "utf8",
+    });
+
+  const adr = run("adr/scripts/locate.ts");
+  expectSpawnExit({ ...adr, exitCode: adr.status }, 0);
+  expect(JSON.parse(adr.stdout)).toMatchObject({
+    directory: "records/decisions",
+    next: "0008",
+  });
+
+  const fixCi = run("fix-ci/scripts/consumer-config.ts");
+  expectSpawnExit({ ...fixCi, exitCode: fixCi.status }, 0);
+  expect(fixCi.stdout).toContain("package_manager: bun (from bun.lock)\n");
+  expect(fixCi.stdout).toContain("  - bun run generate\n");
+});
+
 test("the plugin carries no dependency outside its own directory", () => {
   // Nothing above the copied plugin provides node_modules, so a script that
   // still imported a package would have failed in the tests above; keep the

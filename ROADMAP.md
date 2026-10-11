@@ -16,7 +16,7 @@ groundwork work starts here.
 | 4 | Port M7 review-harness core + M8 learning loop | ✅ done 2026-07-20 (M7/M8 carry the full contract — see below) |
 | 5 | M6/M9/M10/M11/M12, auditor v1 (scored maturity assessment; dogfood re-audit of docomply), greenfield path integrating project-kickoff | ✅ done 2026-07-20 (all five modules carry the full contract; auditor v1 scores M0–M12; greenfield folded in — see below) |
 | ∞ | Backflow: evaluate each new reference-implementation lesson for porting | standing (now the active mode — all modules M0–M12 ported) |
-| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and shipped as the `groundwork` plugin for Claude Code and Codex | kernel toolchain and plugin distribution implemented; PR drive loop move landing with plugin 0.3.0; remaining extraction work follows § Runnable tooling |
+| 6 | **Runnable tooling**: Bun/TypeScript toolchain; agent skills and dev tools moved from the reference implementation and shipped as the `groundwork` plugin for Claude Code and Codex | kernel toolchain, plugin distribution and the PR drive loop move landed (plugin 0.3.0); next moves follow § Skill moves after the drive loop |
 
 ## Phase 2 remainder (all closed 2026-07-19; next work is Phase 3)
 
@@ -217,11 +217,14 @@ orders the move:
    helpers, and skill distribution: this repository is a plugin that Claude
    Code and Codex install once per machine
    ([plugin/README.md](plugin/README.md)).
-2. **Pilot** — `resolve-review-comments`, plus the low-coupling skills.
-3. **Issue-tracker planning cluster** — epic planning, batching,
-   prioritisation, follow-up, and the debt report. They reuse the
+2. **Pilot** — `resolve-review-comments`, plus the low-coupling skills
+   (chosen in [Skill moves after the drive loop](#skill-moves-after-the-drive-loop)).
+3. **Issue-tracker planning cluster** — epic planning, batching and
+   prioritisation, each re-evaluated before it moves: they would reuse the
    [tracker interface](GLOSSARY.md) that `do-issue` brought with the PR drive
-   loop move (step 5) and extend it with the operations they need.
+   loop move (step 5), but much of their content is the organization's own
+   tracker workflow. Follow-up, the debt report, epic acceptance review and
+   the label tooling stay with the reference implementation.
 4. **Gates and workspace infrastructure** — the tooling every other step
    runs on: the change-area resolver (M3's reference implementation),
    cross-worktree locks and test infrastructure, remote gates, and the
@@ -229,7 +232,7 @@ orders the move:
    with the reference implementation for now and calls the plugin's scripts.
 5. **PR drive loop** — moves as one unit with the issue-pickup skill that
    starts it and the Review Arbiter agent; see
-   [PR drive loop move](#pr-drive-loop-move). Landing with plugin 0.3.0,
+   [PR drive loop move](#pr-drive-loop-move). Landed with plugin 0.3.0,
    ahead of steps 3 and 4.
 
 Out of scope: the reference implementation's dev dashboard. It embeds that
@@ -321,23 +324,25 @@ migration from the per-worktree installer follows
 
 ## PR drive loop move
 
-The [PR drive loop](GLOSSARY.md) is the reference implementation's skill that
+The [PR drive loop](GLOSSARY.md) was the reference implementation's skill that
 wraps the
 [review-resolution skill](plugin/skills/resolve-review-comments/README.md) for
-unattended work on one pull request. The review skill already repeats rounds
-until the reviewers settle; the drive loop adds what only it provides: a lease
+unattended work on one pull request; it now ships in the plugin as `drive-pr`.
+The review skill repeats rounds until the reviewers settle; the drive loop adds
+what only it provides: a lease
 that fences the working tree so two agent sessions never answer the same
 thread, labels for findings the pull request's own earlier commits caused,
 checks for findings that appear only in a reviewer's summary, and round state
 that survives between invocations.
 
-The review skill ships in the plugin and five consumer repositories use it
-from there. The reference implementation does not yet: its own drive-loop
-skill and the review skill import and run each other's code, and its status
-board and other skills call the review skill's scripts by repository path.
-Splitting that set across the plugin boundary needed a lookup seam in every
-caller and a Groundwork checkout in its CI, and each further skill moved
-alone would need another. The set therefore moves together:
+Before this move, the review skill already shipped in the plugin and five
+consumer repositories used it from there, but the reference implementation
+did not: its own drive-loop skill and the review skill imported and ran each
+other's code, and its status board and other skills called the review skill's
+scripts by repository path. Splitting that set across the plugin boundary
+needed a lookup seam in every caller and a Groundwork checkout in its CI, and
+each further skill moved alone would need another. The set therefore moved
+together, in these steps:
 
 1. **Inventory** the coupled set in the reference implementation: the
    drive-loop skill, the review skill, and every skill or tool that imports
@@ -377,8 +382,8 @@ alone would need another. The set therefore moves together:
    implementation's own gates and tests pass with the built-in set absent, and
    the same checks have run under both Claude Code and Codex.
 
-**Status: landing with plugin 0.3.0.** Steps 1 and 2 are done. Step 3 moves
-into the plugin:
+**Status: landed with plugin 0.3.0** (2026-10-11). Step 3 moved into the
+plugin:
 
 - `drive-pr`, including its fleet-health and fractal-metrics reports;
 - the issue-pickup skill as `do-issue`, which reaches the tracker only
@@ -393,22 +398,13 @@ The organization's values for these arrive through new
 Groundwork's CI runs the drive-pr suite, split into four parallel shards on
 Linux and macOS, and the terminal-states check; Windows leaves out the
 POSIX-only drive-pr and `do-issue` suites
-([scripts/gates.ts](scripts/gates.ts)). The reference implementation's own
-copies, including its frozen review skill, are deleted in the paired step-4
-change.
+([scripts/gates.ts](scripts/gates.ts)). The paired step-4 change deleted the
+reference implementation's own copies, including its frozen review skill, and
+enabled the plugin there.
 
 Stays with the reference implementation and calls the plugin: its Herdr
 status board, the drive-loop banner hook, the refocus hook, its dashboard
-collectors, and the debt report, which moves later with the planning
-cluster (step 3 of [Runnable tooling](#runnable-tooling)).
-
-Until then the reference implementation keeps its own built-in copy of the
-review skill, frozen: fixes land here first, a fix it needs is ported the
-same day and recorded in that copy's divergence notes, and the plugin is
-disabled in that repository so its sessions list only one review command. This
-is a bounded exception to "move, never copy" in
-[AGENTS.md](AGENTS.md#writing-conventions-mandatory): the copy is the original,
-not a rewrite, and step 4 above is its retirement condition.
+collectors, and the debt report.
 
 ### Values the moved skills still assume
 
@@ -439,3 +435,89 @@ configuration when the next consumer needs them:
 - the drive pushes to and fetches from a remote named `origin`;
 - summary-finding severity is read only from the two reviewers the reference
   implementation runs.
+
+## Skill moves after the drive loop
+
+With the drive loop moved, the remaining reference-implementation skills were
+re-evaluated one by one (2026-10-11). A skill moves when its procedure is
+generic and the organization's values in it can become configuration or be
+detected from the repository. It stays when most of its content is the
+organization's own workflow. Each move follows the [AGENTS.md](AGENTS.md)
+rules: the skill brings its own tests, its tracker references are resolved,
+and the reference implementation's copy is deleted in a paired change once
+every machine that works there has the release that adds it.
+
+**Batch 1: procedure skills** (plugin 0.6.0). Mostly instructions. Their only
+code dependencies outside the skill are on skills the plugin already ships:
+`adr`'s and `fix-ci`'s scripts import the review skill's shared helpers
+(`resolve-review-comments/scripts/lib/`), `fix-ci` runs the drive loop's
+round planner, and `review` lists threads through the review skill's script.
+The batch therefore needs no new seam:
+
+- `descar` (pairs with M4's de-scarring lint), `promote-memory` (M8's memory
+  promotion cycle) and `adr` (M5);
+- `review` (reviews a diff against the repository's standards and decision
+  rules), `fix-ci` and `github-actions`;
+- `programmatic-execution` and `design-brief-builder`.
+
+Their paths into the organization's repository become overlay fields or
+detection. `fix-ci`'s Bash and Python log parser is first replaced by a Bun
+script in the reference implementation and operated there; that exact source
+and its tests then move with the skill, so the move never rewrites a parallel
+copy.
+
+Status: in the plugin from 0.6.0 (configuration in
+[plugin/README.md](plugin/README.md#the-procedure-skills)). The scripts the
+skills ran in Bash (`descar`'s open-pull-request exclusion, corpus order and
+reading list; `adr`'s rules validation) are Bun scripts with tests. The
+`fix-ci` parser's output matched the Python parser's on the same fixtures,
+apart from intended changes: a regeneration hint that names the configuration
+field, and drift hints recognised for every package manager. The reference
+implementation's copies are deleted in a paired change once 0.6.0 is
+installed where it works.
+
+**Batch 2: decision and explainer sheets** (plugin 0.7.0). `decide` and
+`explain` move as one unit. They render the same kind of sheet from a typed
+source, and today each keeps its own copy of the shared rendering kit,
+synchronized by a hook; in the plugin one copy serves both. The organization's
+colour palette becomes a neutral default.
+
+`decide` also checks the prose of a decision request with a vendored
+[Simplified Technical English](GLOSSARY.md) linter (`ste-lint`, Python, written by a third
+party under a permissive licence), wrapped by a local Python script.
+Groundwork ships no Python, so both are rewritten in TypeScript in the
+reference implementation, which operates the port before the move brings that
+exact source and its tests here:
+
+1. Port the upstream linter and the wrapper into one Bun module with the same
+   command-line flags, JSON output and exit codes.
+2. Capture the Python output for every existing fixture and a corpus of real
+   decision texts, and require identical findings (rule, line and severity)
+   from the port. Record the comparison in the
+   [migration parity record](scripts/migration-parity.md).
+3. Keep the upstream licence notice with the port: it is a translation of that
+   code.
+4. Delete the Python files once the port replaces them in the reference
+   implementation, before `decide` moves.
+
+**Later:** `scaffolding-update` (keeps agent instruction files in step with
+decisions and audits them; M0), with its paths as configuration; and
+`solid-review`, once its generic procedure is split from the stack-specific
+checks it carries today.
+
+**Stays with the reference implementation:** `followup` (post-merge triage,
+including the epic-closure sweep) and `ops-drain`, both built around that
+organization's promotion ledger; `epic-acceptance-review` and the
+`debt-report`; the issue-label skills `linear` and `linear-validation`, whose
+generic part already exists as M9's label taxonomy and lint; and the
+product-bound skills the extraction inventory lists.
+
+**Not moved: third-party lineage.** Groundwork may be published. A skill that
+came from a public skill collection, or that still visibly follows one, does
+not move here; a repository that wants it installs it from its source. This
+excludes `skill-creator` and `webapp-testing` (Anthropic's skills), `caveman`,
+`zoom-out`, `resolving-merge-conflicts`, `diagnosing-bugs` and
+`requirements-brainstorm` (adapted from mattpocock/skills), `verify-completion`
+(obra/superpowers), and `freeze` and `product-review` (garrytan/gstack). A
+debugging skill may still be written for Groundwork from scratch; it does not
+start from `diagnosing-bugs`.

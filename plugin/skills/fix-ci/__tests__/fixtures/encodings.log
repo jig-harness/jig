@@ -1,0 +1,8 @@
+lint	Run biome	2026-03-02T10:16:00.8Z src/catalog/badge.tsx:5:1 lint Ã Unused import.
+lint	Run biome	2026-03-02T10:16:00.9Z src/catalog/badge.tsx:5:1 lint Ã Unused import.
+gates	Grep gates	2026-03-02T10:21:01.0Z ::error::xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+gates	Grep gates	2026-03-02T10:21:01.1Z error: 🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒
+test	Run tests	2026-03-02T10:22:00.0Z FAIL src/emoji/🛒cart.test.ts
+test	Run tests	2026-03-02T10:22:00.1Z FAIL src/emoji/basket.test.ts
+test	Run tests	2026-03-02T10:22:00.2Z FAIL src/emoji/ａpron.test.ts
+loneerror: split on a lone carriage return

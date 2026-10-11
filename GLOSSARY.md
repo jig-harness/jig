@@ -164,6 +164,25 @@ capitalized as commonly written; cross-references are *italicized*.
 - **De-scarring** — cleaning a finished document of review findings,
   corrections, and reviewer dialogue ("scars") so it reads cleanly; the
   history stays in PRs, issues, and git — not in the artifact.
+- **Scar class** — one of the four kinds of scar *de-scarring* removes from a
+  promoted document: review dialogue (S1), a correction-in-place ledger (S2), a
+  completed-work ledger (S3), and an archaeological layer of superseded states
+  (S4).
+- **Keep test** — the de-scarring question for each sentence: would a reader
+  who never saw the old state decide wrongly without it? If yes, the sentence
+  stays, rewritten as a present-tense constraint.
+- **Design brief bundle** — the numbered set of Markdown files and images
+  handed to an external design session as its only input.
+- **Reality grounding** — comparing a design's assumptions with the actual
+  schema and code, citing file and line, to find where they agree and where
+  they differ.
+- **Anti-prescription audit** — a check of a design brief before it goes out
+  that removes answers decided in advance, so the designer solves the problem
+  instead of drawing the author's solution.
+- **Simplified Technical English** — a controlled form of English
+  (ASD-STE100), first written for aircraft maintenance manuals: one meaning per
+  word, short sentences, active verbs. A prose linter can check text against
+  its structural rules, for example text that asks a human to decide.
 - **Flag label** — an issue-tracker label that *drives process* rather than
   just categorizing (e.g., "has-migration" → a mandatory review gate fires).
 - **Worktree** — a git feature giving one repository multiple working
@@ -189,6 +208,9 @@ capitalized as commonly written; cross-references are *italicized*.
   against them before it's ever allowed to block anything.
 - **Review lens** — one additive, numbered check taught to a reviewer (a
   prompt module or checklist bullet), typically born from a documented miss.
+- **Tiered review** — a review that runs cheap pattern checks first, contract
+  checks second, and an expensive semantic review last; each tier can block
+  or warn, and a change only pays for the tiers its file types need.
 - **Miss→lens flywheel** — the improvement loop: an external reviewer or human
   catches what the automated reviewer missed → the miss is classified, filed,
   and reconstructed as an *eval fixture* → a new *lens* is added → validated →

@@ -19,6 +19,14 @@ when they run.
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/groundwork:drive-pr` |
 | [do-issue](skills/do-issue/SKILL.md) | Picks up one issue from the issue tracker, routes it to the right agent, implements it, opens a draft pull request and starts `drive-pr` on it | `/groundwork:do-issue` |
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/groundwork:resolve-review-comments` |
+| [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/groundwork:review` |
+| [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/groundwork:fix-ci` |
+| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, caching and the repository's own workflow conventions | `/groundwork:github-actions` |
+| [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/groundwork:adr` |
+| [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/groundwork:descar` |
+| [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/groundwork:promote-memory` |
+| [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/groundwork:programmatic-execution` |
+| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool, grounded in the repository's real schema and code | `/groundwork:design-brief-builder` |
 
 The plugin also ships agents (a [subagent](../GLOSSARY.md) is a separately prompted helper
 that a skill hands a narrow job to):
@@ -31,6 +39,7 @@ Contents: [requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
 [configure a repository](#configure-a-repository) ·
 [drive loop and issue pickup](#the-drive-loop-and-issue-pickup) ·
+[procedure skills](#the-procedure-skills) ·
 [Codex notes](#codex-notes) ·
 [update or remove](#update-pin-or-remove) ·
 [where it works](#where-it-works) · [troubleshooting](#troubleshooting) ·
@@ -292,6 +301,41 @@ adapter, not changing the skills.
 The remaining knobs are environment variables named `DRIVE_PR_*` (round
 limits, timeouts, repair budgets); the [drive-pr README](skills/drive-pr/README.md)
 lists them.
+
+## The procedure skills
+
+The skills from `review` to `design-brief-builder` in the table above need no
+configuration: each one detects what it can from the repository (its base
+branch, package manager, decision-record folder, documentation root) and falls
+back to generic guidance where a repository has nothing to detect. They read
+the fields the drive loop uses when present (`repository.base_branch`,
+`gates.command`, `drive.validation_plan_command`,
+`drive.change_areas_catalog`, `issue_tracker.*`, `review.bots`). Set one of
+these only when detection picks the wrong thing:
+
+```yaml
+adr:
+  directory: docs/adr                 # decision records; default: detected (docs/adr, doc/adr, docs/decisions, …)
+  rules_file: docs/adr/rules.yaml     # machine-readable rules (Groundwork M5); default: detected, else none
+descar:
+  lint_command: "bun scripts/check-scars.ts"   # scar lint taking document paths; default: detected, else a manual read
+promote_memory:
+  lint_command: "bun tools/memory-lint.ts {file}"   # memory check, {dir}/{file} placeholders, exit 0 = clean; default: none
+  target_dir: docs/retrospection      # where promoted pages go (YYYY/MM/ below it); default: docs/retrospection
+fix_ci:
+  regenerate_commands:                # commands that regenerate committed generated files CI checks; default: none
+    - bun run generate:api
+github_actions:
+  conventions_doc: docs/ci.md         # the repository's workflow conventions; default: searched for, else generic guidance
+design_brief:
+  kit: docs/design-kit                # voice, colours and type, rubric, logo; default: detected, else the design-language document
+  design_language: docs/design.md     # design-language document; default: detected
+  prototypes: design/prototypes       # where finished design bundles land; default: ask
+```
+
+`review` finds the decision rules through `adr`'s locator, and `fix-ci` runs
+its validation plan through `drive-pr`'s round planner, so the plugin keeps
+them together.
 
 ## Codex notes
 

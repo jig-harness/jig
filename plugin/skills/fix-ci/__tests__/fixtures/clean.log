@@ -1,0 +1,4 @@
+build	Run tsc	2026-03-02T10:15:01.1234567Z ##[group]Run bun run typecheck
+build	Run tsc	2026-03-02T10:15:04.0Z Checked 214 files in 3s. No fixes applied.
+test	Run tests	2026-03-02T10:17:10.0Z  128 pass
+test	Run tests	2026-03-02T10:17:10.0Z  0 fail

@@ -77,9 +77,7 @@ Read in this order when starting a session here:
   rule above. Port it by moving the operated source here and deleting the
   reference implementation's copy in the same rollout, never by rewriting a
   parallel copy. A rewritten copy becomes a fork the moment the original takes
-  its next fix. The one standing exception is the reference implementation's
-  frozen built-in review skill, kept until the PR drive loop moves
-  ([ROADMAP.md](ROADMAP.md#pr-drive-loop-move)); that move deletes it.
+  its next fix.
 - Markdown: blank line before every table (many renderers break otherwise).
 
 ## Module contract

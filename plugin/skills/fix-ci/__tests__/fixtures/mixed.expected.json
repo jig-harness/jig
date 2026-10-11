@@ -1,0 +1,210 @@
+{
+  "run_id": "4242",
+  "errors_found": 24,
+  "summary": {
+    "schema_drift": 2,
+    "build_error": 2,
+    "drift_check": 6,
+    "typescript": 2,
+    "biome_lint": 3,
+    "test_failure": 3,
+    "gate_failure": 5,
+    "process_exit": 1
+  },
+  "files_affected": [
+    "packages/checkout/src/pay.spec.tsx",
+    "packages/checkout/src/pay.tsx",
+    "src/cart/total.test.ts",
+    "src/cart/total.ts",
+    "src/catalog/item.ts",
+    "src/catalog/list.tsx",
+    "src/catalog/search.ts"
+  ],
+  "errors": [
+    {
+      "category": "schema_drift",
+      "job": "db",
+      "step": "Check schema",
+      "raw": "Schema drift detected between migrations and schema.sql",
+      "message": "Schema drift detected - regenerate the schema (fix_ci.regenerate_commands)"
+    },
+    {
+      "category": "schema_drift",
+      "job": "db",
+      "step": "Check schema",
+      "raw": "schema:check step did fail with exit code 1",
+      "message": "Schema drift detected - regenerate the schema (fix_ci.regenerate_commands)"
+    },
+    {
+      "category": "build_error",
+      "job": "build",
+      "step": "Run build",
+      "raw": "error: Cannot find module '@shop/money' from 'src/cart/total.ts'",
+      "message": "error: Cannot find module '@shop/money' from 'src/cart/total.ts'"
+    },
+    {
+      "category": "build_error",
+      "job": "build",
+      "step": "Run build",
+      "raw": "Module not found: Error: Can't resolve './currency'",
+      "message": "Module not found: Error: Can't resolve './currency'"
+    },
+    {
+      "category": "drift_check",
+      "job": "api",
+      "step": "Check spec",
+      "raw": "OpenAPI spec drift: openapi.json differs from the routes",
+      "message": "OpenAPI spec drift: openapi.json differs from the routes"
+    },
+    {
+      "category": "drift_check",
+      "job": "api",
+      "step": "Check spec",
+      "raw": "Generated client is OUT OF SYNC with the spec",
+      "message": "Generated client is OUT OF SYNC with the spec"
+    },
+    {
+      "category": "drift_check",
+      "job": "api",
+      "step": "Check spec",
+      "raw": "Please run `pnpm openapi:generate` and commit the result",
+      "message": "Please run `pnpm openapi:generate` and commit the result"
+    },
+    {
+      "category": "drift_check",
+      "job": "api",
+      "step": "Check spec",
+      "raw": "Type-surface drift in packages/types",
+      "message": "Type-surface drift in packages/types"
+    },
+    {
+      "category": "drift_check",
+      "job": "api",
+      "step": "Check spec",
+      "raw": "Error-code drift: 2 codes missing from the registry",
+      "message": "Error-code drift: 2 codes missing from the registry"
+    },
+    {
+      "category": "drift_check",
+      "job": "api",
+      "step": "Check spec",
+      "raw": "Hint: regenerate the SDK before pushing",
+      "message": "Hint: regenerate the SDK before pushing"
+    },
+    {
+      "category": "typescript",
+      "job": "build",
+      "step": "Run tsc",
+      "raw": "src/cart/total.ts(12,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+      "file": "src/cart/total.ts",
+      "line": 12,
+      "column": 7,
+      "code": "TS2322",
+      "message": "Type 'string' is not assignable to type 'number'."
+    },
+    {
+      "category": "typescript",
+      "job": "build",
+      "step": "Run tsc",
+      "raw": "packages/checkout/src/pay.tsx(3,1): error TS7006: Parameter 'order' implicitly has an 'any' type.",
+      "file": "packages/checkout/src/pay.tsx",
+      "line": 3,
+      "column": 1,
+      "code": "TS7006",
+      "message": "Parameter 'order' implicitly has an 'any' type."
+    },
+    {
+      "category": "biome_lint",
+      "job": "lint",
+      "step": "Run biome",
+      "raw": "src/catalog/search.ts lint/suspicious/noExplicitAny  Unexpected any. Specify a different type.",
+      "file": "src/catalog/search.ts",
+      "rule": "lint/suspicious/noExplicitAny",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "category": "biome_lint",
+      "job": "lint",
+      "step": "Run biome",
+      "raw": "src/catalog/list.tsx:44:9 lint/style/useConst error This let declares a variable that is never reassigned.",
+      "file": "src/catalog/list.tsx",
+      "rule": "",
+      "message": "This let declares a variable that is never reassigned."
+    },
+    {
+      "category": "biome_lint",
+      "job": "lint",
+      "step": "Run biome",
+      "raw": "src/catalog/item.ts:8:3 format error Formatter would have printed different content.",
+      "file": "src/catalog/item.ts",
+      "rule": "",
+      "message": "Formatter would have printed different content."
+    },
+    {
+      "category": "test_failure",
+      "job": "test",
+      "step": "Run tests",
+      "raw": "FAIL src/cart/total.test.ts",
+      "file": "src/cart/total.test.ts",
+      "message": ""
+    },
+    {
+      "category": "test_failure",
+      "job": "test",
+      "step": "Run tests",
+      "raw": "src/cart/total.test.ts > cart total > applies the discount > expected 90 to be 81",
+      "file": "src/cart/total.test.ts",
+      "message": "cart total > applies the discount > expected 90 to be 81"
+    },
+    {
+      "category": "test_failure",
+      "job": "test",
+      "step": "Run tests",
+      "raw": "FAIL packages/checkout/src/pay.spec.tsx",
+      "file": "packages/checkout/src/pay.spec.tsx",
+      "message": ""
+    },
+    {
+      "category": "gate_failure",
+      "job": "gates",
+      "step": "Grep gates",
+      "raw": "::error file=src/cart/total.ts,line=3::direct fetch call is not allowed here",
+      "message": "::error file=src/cart/total.ts,line=3::direct fetch call is not allowed here"
+    },
+    {
+      "category": "gate_failure",
+      "job": "gates",
+      "step": "Grep gates",
+      "raw": "❌ any-type count rose from 4 to 5",
+      "message": "❌ any-type count rose from 4 to 5"
+    },
+    {
+      "category": "gate_failure",
+      "job": "gates",
+      "step": "Grep gates",
+      "raw": "✗ placeholder check: 1 file uses the wrong brace style",
+      "message": "✗ placeholder check: 1 file uses the wrong brace style"
+    },
+    {
+      "category": "gate_failure",
+      "job": "gates",
+      "step": "Grep gates",
+      "raw": "FAILED: link check found 2 broken links",
+      "message": "FAILED: link check found 2 broken links"
+    },
+    {
+      "category": "gate_failure",
+      "job": "gates",
+      "step": "Grep gates",
+      "raw": "Error: ratchet exceeded in src/legacy/report.ts",
+      "message": "Error: ratchet exceeded in src/legacy/report.ts"
+    },
+    {
+      "category": "process_exit",
+      "job": "gates",
+      "step": "Grep gates",
+      "raw": "##[error]Process completed with exit code 1.",
+      "message": "##[error]Process completed with exit code 1."
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+build	Run tsc	2026-03-02T10:15:01.1234567Z ##[group]Run bun run typecheck
+build	Run tsc	2026-03-02T10:15:04.0000000Z src/cart/total.ts(12,7): error TS2322: Type 'string' is not assignable to type 'number'.
+build	Run tsc	2026-03-02T10:15:04.0000001Z src/cart/total.ts(12,7): error TS2322: Type 'string' is not assignable to type 'number'.
+build	Run tsc	2026-03-02T10:15:04.0000002Z packages/checkout/src/pay.tsx(3,1): error TS7006: Parameter 'order' implicitly has an 'any' type.
+lint	Run biome	2026-03-02T10:16:00.5Z src/catalog/search.ts lint/suspicious/noExplicitAny  Unexpected any. Specify a different type.
+lint	Run biome	2026-03-02T10:16:00.6Z src/catalog/list.tsx:44:9 lint/style/useConst error This let declares a variable that is never reassigned.
+lint	Run biome	2026-03-02T10:16:00.7Z src/catalog/item.ts:8:3 format error Formatter would have printed different content.
+test	Run tests	2026-03-02T10:17:10.0Z FAIL src/cart/total.test.ts
+test	Run tests	2026-03-02T10:17:10.1Z src/cart/total.test.ts > cart total > applies the discount > expected 90 to be 81
+test	Run tests	2026-03-02T10:17:11.0Z FAIL packages/checkout/src/pay.spec.tsx
+build	Run build	2026-03-02T10:18:00.0Z error: Cannot find module '@shop/money' from 'src/cart/total.ts'
+build	Run build	2026-03-02T10:18:00.1Z Module not found: Error: Can't resolve './currency'
+db	Check schema	2026-03-02T10:19:00.0Z Schema drift detected between migrations and schema.sql
+db	Check schema	2026-03-02T10:19:00.1Z schema:check step did fail with exit code 1
+api	Check spec	2026-03-02T10:20:00.0Z OpenAPI spec drift: openapi.json differs from the routes
+api	Check spec	2026-03-02T10:20:00.1Z Generated client is OUT OF SYNC with the spec
+api	Check spec	2026-03-02T10:20:00.2Z Please run `pnpm openapi:generate` and commit the result
+api	Check spec	2026-03-02T10:20:00.3Z Type-surface drift in packages/types
+api	Check spec	2026-03-02T10:20:00.4Z Error-code drift: 2 codes missing from the registry
+api	Check spec	2026-03-02T10:20:00.5Z Hint: regenerate the SDK before pushing
+gates	Grep gates	2026-03-02T10:21:00.0Z ::error file=src/cart/total.ts,line=3::direct fetch call is not allowed here
+gates	Grep gates	2026-03-02T10:21:00.1Z ##[error]Process completed with exit code 1.
+gates	Grep gates	2026-03-02T10:21:00.2Z ❌ any-type count rose from 4 to 5
+gates	Grep gates	2026-03-02T10:21:00.3Z ✗ placeholder check: 1 file uses the wrong brace style
+gates	Grep gates	2026-03-02T10:21:00.4Z FAILED: link check found 2 broken links
+gates	Grep gates	2026-03-02T10:21:00.5Z     Error: ratchet exceeded in src/legacy/report.ts
+gates	Grep gates	2026-03-02T10:21:00.6Z this line mentions an error: but not at the start
+noise	Setup	2026-03-02T10:14:00.0Z Downloading action repository 'actions/checkout@v6'
+noise	Setup	2026-03-02T10:14:00.1Z 
+plain line without any prefix: nothing to see

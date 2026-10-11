@@ -1,0 +1,69 @@
+{
+  "run_id": "4242",
+  "errors_found": 7,
+  "summary": {
+    "biome_lint": 1,
+    "test_failure": 3,
+    "gate_failure": 3
+  },
+  "files_affected": [
+    "src/catalog/badge.tsx",
+    "src/emoji/basket.test.ts",
+    "src/emoji/ａpron.test.ts",
+    "src/emoji/🛒cart.test.ts"
+  ],
+  "errors": [
+    {
+      "category": "biome_lint",
+      "job": "lint",
+      "step": "Run biome",
+      "raw": "src/catalog/badge.tsx:5:1 lint Ã Unused import.",
+      "file": "src/catalog/badge.tsx",
+      "rule": "",
+      "message": "Unused import."
+    },
+    {
+      "category": "test_failure",
+      "job": "test",
+      "step": "Run tests",
+      "raw": "FAIL src/emoji/🛒cart.test.ts",
+      "file": "src/emoji/🛒cart.test.ts",
+      "message": ""
+    },
+    {
+      "category": "test_failure",
+      "job": "test",
+      "step": "Run tests",
+      "raw": "FAIL src/emoji/basket.test.ts",
+      "file": "src/emoji/basket.test.ts",
+      "message": ""
+    },
+    {
+      "category": "test_failure",
+      "job": "test",
+      "step": "Run tests",
+      "raw": "FAIL src/emoji/ａpron.test.ts",
+      "file": "src/emoji/ａpron.test.ts",
+      "message": ""
+    },
+    {
+      "category": "gate_failure",
+      "job": "gates",
+      "step": "Grep gates",
+      "raw": "::error::xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "message": "::error::xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "category": "gate_failure",
+      "job": "gates",
+      "step": "Grep gates",
+      "raw": "error: 🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒",
+      "message": "error: 🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒🛒"
+    },
+    {
+      "category": "gate_failure",
+      "raw": "error: split on a lone carriage return",
+      "message": "error: split on a lone carriage return"
+    }
+  ]
+}
