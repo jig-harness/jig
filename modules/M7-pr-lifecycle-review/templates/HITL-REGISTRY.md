@@ -31,7 +31,7 @@ Convention-only entries are marked so — a tracked state, not a resting place.
 
 | Decision class | Why it must stay human | Trigger / where it bites |
 |----------------|------------------------|--------------------------|
-| Mark a PR **Ready** for review | Signals "worth a human's time"; only the author can judge readiness. A repository may delegate it to an unattended review driver, which marks Ready after its first completed review round; record that choice here | Draft→Ready transition |
+| Mark a PR **Ready** for review | Signals "worth a human's time"; only the author can judge readiness. A repository may delegate it to an unattended review driver, which marks Ready after the review round, or at the convergence, the repository declares; record that choice here | Draft→Ready transition |
 | **Merge** a PR | The irreversible act; the point accountability attaches to | Merge button / branch protection requiring a human actor |
 | **Release / promote to production** | Blast radius; needs a human owning the go/no-go | Deploy-promotion step (see [M10](../../M10-environments-deploy/)) |
 | **Expand a PR's scope** | Silent scope creep hides risk and defeats review | Resolve-comments loop, when a fix reaches outside stated scope |

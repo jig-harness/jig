@@ -963,10 +963,11 @@ reasons that have nothing to do with the change.
 The reasoning for every answer is in its own outcome comment on this PR; that is
 the artefact to read back if a finding matters.
 
-Merging it remains a human decision — the driver marks a converged PR Ready
-for review itself (after its first round, or here if it converged before
-running one), so this is the driver reporting that it has nothing left to do,
-not an approval.`;
+Merging it remains a human decision — unless the repository marks Ready
+never, the driver marks a converged PR Ready for review itself (after the
+round the repository declares, or here if it converged before reaching it),
+so this is the driver reporting that it has nothing left to do, not an
+approval.`;
 
   if (followups.replace(/\s/g, "") !== "") {
     body += `

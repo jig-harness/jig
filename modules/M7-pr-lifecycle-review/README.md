@@ -14,9 +14,14 @@ automation, and the human checkpoints kept explicit.
 
 ## Invariant
 
-> PRs open as **drafts**; Ready is marked by a human, or by an unattended
-> review driver the repository adopts once that driver has completed its first
-> review round; a human merges ([HITL](../../GLOSSARY.md)). The **mandatory review steps are selected by
+> PRs open as **drafts**, unless the repository declares that they open
+> Ready because none of its reviewers reviews drafts; Ready is marked by a human, or by an unattended
+> review driver the repository adopts, at the review round (or the
+> convergence) the repository declares; a human merges ([HITL](../../GLOSSARY.md)). **How a PR is shaped is declared
+> policy, not an agent's improvisation**: its base, whether it may
+> [stack](../../GLOSSARY.md) on another PR, its branch name and its size; and
+> every PR's final integration target is resolvable by tooling, from its base
+> or from stack metadata. The **mandatory review steps are selected by
 > what changed** (via the [M3](../M3-change-area-catalog/) change-area
 > catalog), not by reviewer memory. Every review comment ends **resolved with
 > an audit trail** — in one of a **closed set of terminal states, declared by
@@ -38,7 +43,9 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
 1. **Draft-first lifecycle** — a PR opens as a [draft PR](../../GLOSSARY.md) so
    CI and bots run while the author still owns it; marking it **Ready** is a
    deliberate human act unless the repository delegates it to an adopted
-   review driver, and the **merge** is always a human act. The narrative contract —
+   review driver, and the **merge** is always a human act. A repository whose
+   reviewers all skip drafts may declare that PRs open Ready instead, since
+   there a draft only delays the first review. The narrative contract —
    open draft → self-review → automated + human review → resolve loops (Ready
    once the draft reviewers settle, then the rest review) → gates green →
    merge → tracker update — is the copyable
@@ -133,14 +140,34 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    listed once in [`HITL-REGISTRY.md`](templates/HITL-REGISTRY.md)
    rather than scattered across skills and habits, so autonomous runs know
    exactly where to stop.
+11. **Declared pull-request shape** — whether a PR may be based on another
+   open PR's branch ([stacked](../../GLOSSARY.md)), how deep a stack may grow,
+   how branches are named, how a PR links its issue, and how large it may be
+   are one written policy, read by the agent that opens the PR.
+   Without it an agent improvises, and the improvisation fails quietly: a
+   hand-built stack whose layers target feature branches gives every
+   base-scoped tool (a reviewer that loads its policy from the trunk, branch
+   protection, deploy previews) nothing to resolve the final target from, so
+   those tools skip the PR and nobody notices. The policy states the
+   invariant **every PR's final target is resolvable**: either the PR targets
+   the integration branch, or it is part of a forge-native stack whose
+   metadata names the target, or the repository accepts plain branch chains
+   and its tooling walks them. Groundwork's
+   [`do-issue`](../../plugin/skills/do-issue/SKILL.md) applies the policy with
+   `pr-plan.ts` and refuses a PR that breaks it; the fields are in the
+   [configuration reference](../../plugin/CONFIGURATION.md#pull_requests).
 
 ## Maturity levels
 
-- **Lite** — PRs open as drafts and a human marks Ready and merges; the
+- **Lite** — PRs open as drafts (or Ready, where the repository declares
+  that none of its reviewers reviews drafts), a human marks any draft Ready,
+  and a human merges; the
   lifecycle is written down once (`PR-LIFECYCLE.md`) and self-review before
   requesting review is expected. Review may be humans-only; enforcement may be
   convention.
-- **Standard** — mandatory reviews are selected by change-area
+- **Standard** — the pull-request shape policy (stacking, branch names,
+  issue link, size) is declared where the PR-opening agent reads
+  it; mandatory reviews are selected by change-area
   ([M3](../M3-change-area-catalog/)); at least one automated reviewer runs
   **comment-only** with a written precision bar for ever blocking; the
   comment-resolution loop is a contract (addressed/rejected/deferred/moot,
@@ -154,7 +181,9 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
   reply, at write time, with an opt-out for replies that are not verdicts; the
   review loop's stop condition is a mechanical convergence check rather than a
   judgement call; the HITL decision registry is published and the `hitl`
-  label revokes autonomous merge; reviewer promotion comment-only→blocking is
+  label revokes autonomous merge; the pull-request shape policy is applied by
+  the tool that opens PRs, so a stack whose final target cannot be resolved is
+  refused rather than opened; reviewer promotion comment-only→blocking is
   gated on measured precision from the [M8](../M8-learning-loop/) corpus; the
   gates ship with self-tests run in CI.
 
@@ -185,6 +214,12 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    cannot end the loop quietly.
 6. Fill in [`HITL-REGISTRY.md`](templates/HITL-REGISTRY.md) and wire the `hitl`
    label / draft rules to it.
+7. Declare the pull-request shape: whether PRs may stack and how (forge-native
+   stacks or plain branch chains), the maximum stack depth, branch naming,
+   the issue link, and the size budget. With Groundwork's plugin
+   that is the `pull_requests` section of `.config/groundwork-overlay.yaml`
+   ([reference](../../plugin/CONFIGURATION.md#pull_requests)); per-tool
+   options are in [mappings.md](mappings.md#stacked-pull-requests).
 
 ## Port status
 
@@ -195,7 +230,8 @@ It reads each repository's own configuration for tracker taxonomy, reviewers
 and gate commands at run time. The same plugin ships the
 [PR drive loop](../../GLOSSARY.md) that wraps it for unattended work on one
 pull request ([`drive-pr`](../../plugin/skills/drive-pr/README.md)), the
-issue-pickup skill that starts a drive (`do-issue`), and the
+issue-pickup skill that starts a drive (`do-issue`, which applies the
+declared pull-request shape through its `pr-plan.ts`), and the
 [Review Arbiter](../../plugin/agents/review-arbiter.md) agent that rules on
 contested findings
 ([setup](../../plugin/README.md#the-drive-loop-and-issue-pickup)).

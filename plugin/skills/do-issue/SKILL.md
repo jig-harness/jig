@@ -1,6 +1,6 @@
 ---
 name: do-issue
-description: "Pick up one tracker issue and carry it to a driven pull request: scout, delegate, review, open the draft, arm the drive."
+description: "Pick up one tracker issue and carry it to a driven pull request: scout, delegate, review, open the PR, arm the drive."
 argument-hint: "[issue-key]"
 allowed-tools: "Read Grep Glob Task Bash(bun *) Bash(git *) Bash(gh *) WebFetch AskUserQuestion"
 ---
@@ -9,8 +9,9 @@ allowed-tools: "Read Grep Glob Task Bash(bun *) Bash(git *) Bash(gh *) WebFetch 
 
 Take one issue from the issue tracker and move it forward: on first pickup,
 mark it started, gather context, hand the implementation to the right agent,
-review the result and open a draft pull request (PR) whose review loop runs on
-its own; on a later invocation, continue where the work stands. An issue with
+review the result and open a pull request (PR) the way the repository's
+pull-request policy says, then start its review loop; on a later invocation,
+continue where the work stands. An issue with
 sub-issues (an epic) is worked one sub-issue at a time, and its own status is
 kept in step with its children.
 
@@ -60,6 +61,12 @@ run time from `.config/groundwork-overlay.yaml`:
 | `do_issue.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
 | `do_issue.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
 | `drive.change_areas_catalog` | Path to the repository's change-area catalog (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
+| `repository.base_branch` | The integration branch pull requests land on | The repository's default branch |
+| `drive.reviews_drafts` | `false` makes new pull requests open Ready, since the reviewer would not review a draft | Pull requests open as drafts |
+| `pull_requests.*` | How pull requests are opened and stacked: `stacking`, `max_stack_depth`, `open_as`, `mark_ready`, `branch_name`, `issue_link`, `size_budget`, `labels`, `title_format` (see [Pull-request policy](#pull-request-policy)) | One pull request per change against the integration branch, branch `<key>-<title>`, draft, `Closes <key>`; a human merges |
+
+Every field, its type and its default are in the plugin's
+[configuration reference](../../CONFIGURATION.md).
 
 Canonical state keys are `backlog`, `todo`, `in_progress`, `in_review`,
 `done`, `canceled`, and optionally `triage`, `ops_pending` and `duplicate`.
@@ -71,6 +78,62 @@ its `hitl:<stakeholder>` facets, `manual-ops`, `pr-followup`, a bug type label
 (`bug` or `type:bug`), `pattern:<slug>`, and the size labels `xs`, `small`,
 `medium`. A repository that does not use a label simply never triggers its
 rule.
+
+### Pull-request policy
+
+**exact** — Never improvise how a pull request is named, based, opened or
+sized. `scripts/pr-plan.ts` applies the repository's policy (`pull_requests`
+and the facts derived from the repository) and prints what to do:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue <KEY> --title "<issue title>"
+bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue <KEY> [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
+```
+
+- `branch` prints the branch name for the issue. Create the working branch
+  with it from the planned base before the implementing agent writes
+  anything. When the harness has already created the working branch and its
+  instructions forbid renaming it, keep that branch and say so in the status
+  message; the issue-link line in the body still links the pull request.
+- `open` prints the plan for the current branch, after validation and the
+  pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
+  fixes (`createArgs`: base, `--draft` or not, labels), commands to run after
+  creating it (`afterCreate`, such as linking a native stack, with
+  `<PR URL>` replaced by the URL `gh pr create` prints), the title convention, the template(s) to fill
+  in, the issue-link line, the size against its budget, how it will be
+  merged, and warnings. Then open it with exactly those arguments:
+
+  ```bash
+  gh pr create <createArgs...> --title "<title in the planned convention>" --body-file <body.md>
+  ```
+
+  Fill the body from the planned template when there is one, put the
+  issue-link line in it, and repeat every warning in the status message.
+  Then run each `afterCreate` command.
+
+Exit codes of `open`: `0` plan printed; `3` the policy refuses this pull
+request, with the reason and the remedy on stderr; `1` the policy or a
+repository fact could not be read; `2` usage. On `3`, follow the remedy, never
+work around it:
+
+- **Stacking refused** (`pull_requests.stacking: none`, a base that does not
+  lead to the integration branch, or a stack deeper than `max_stack_depth`):
+  open against the integration branch once the predecessor merges, or
+  deliver the dependent change in the same pull request. Never base a pull
+  request on another branch by hand.
+- **Over `size_budget`**: split the change into pull requests that each fit
+  (as a stack when `stacking` allows one, opening each upper layer with
+  `--stack-on` the layer below). Only when it genuinely cannot be split,
+  re-run with `--accept-oversize "<why>"` and state that reason under
+  `## Size` in the body.
+
+`--stack-on <branch>` asks to base the pull request on the head branch of
+another open pull request instead of the integration branch. Use it only
+when this change builds on that pull request's unmerged work and the policy
+allows stacking. With `stacking: native` the plan's `afterCreate` links the
+new pull request into a GitHub stack with the gh-stack extension; with
+`branch` it is a plain chain, and the plan warns when merged branches are not
+deleted (GitHub then does not retarget the layer above).
 
 ### Tracker operations
 
@@ -105,7 +168,7 @@ the turn. Never pick on the user's behalf.
 - **Sideways**: if the consumer has a batching skill, a small issue whose
   change area has siblings may be better closed together with them in one PR.
   Step 4a checks and *suggests*; it never batches silently.
-- **Downstream**: this skill opens the draft PR and arms
+- **Downstream**: this skill opens the PR and arms
   `/groundwork:drive-pr`, which owns every review round from there.
 
 ## Workflow
@@ -221,7 +284,7 @@ overwrite it. Archives unused for 90 days are pruned; a missing token or an
 expired archive is a missing source, never permission to guess from an item
 alias or `.current`.
 
-After opening the draft PR, pin this pickup before arming the drive:
+After opening the PR, pin this pickup before arming the drive:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/capture-intent-chain.ts" <PR> --pickup <pickupId>
@@ -397,7 +460,11 @@ routing below remain **exact**.
    delegation prompt.
 
 4. **judgment** — **Delegate to the agent**: use the Task tool with
-   `subagent_type` from `determine_agent.ts`.
+   `subagent_type` from `determine_agent.ts`. First create the working
+   branch named by `pr-plan.ts branch` (**exact**; see
+   [Pull-request policy](#pull-request-policy)), from the integration branch,
+   or from the predecessor's branch when this change builds on an unmerged
+   pull request and `pull_requests.stacking` allows it.
 
    **Review gates — MANDATORY when declared.** Each entry of the overlay's
    `do_issue.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
@@ -457,9 +524,10 @@ routing below remain **exact**.
 
    - **Neither `hitl` nor a plan human gate (default)** → proceed end to end
      without pausing. After validation passes, run the **Pre-PR code review
-     gate** below, then open the draft PR (`gh pr create --draft`). A draft
-     is cheap, and CI feedback is valuable; the human still decides what
-     merges. Do **not** ask the user to pre-confirm the PR.
+     gate** below, then open the PR as the
+     [pull-request policy](#pull-request-policy) plans it (a draft unless
+     the policy says Ready). A PR is cheap, and CI feedback is valuable; the
+     human still decides what merges. Do **not** ask the user to pre-confirm the PR.
    - **`hitl` or a plan human gate present** → do **not** delegate
      implementation: the issue asks for judgment, not code. Run scouts,
      summarise options, findings and a recommendation in a tracker comment,
@@ -483,11 +551,13 @@ routing below remain **exact**.
    **Pre-PR code review gate (mandatory unless the diff is tiny):**
 
    Run it after the implementing agent finishes and the validation plan
-   passes, **before** `git push` / `gh pr create --draft`. The validation plan is
+   passes, **before** `git push` / `gh pr create`. The validation plan is
    the one the change-area catalog emits for the complete workspace change
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
-   is the branch the PR will target (e.g. `origin/main`).
+   is the branch the PR will target, as `origin/<base>`: the integration
+   branch, or the predecessor's branch for a stacked PR (the `base` that
+   `pr-plan.ts open` prints).
 
    **Skip condition — fewer than 20 non-test lines changed (Tiers 1–3 only):**
 
@@ -595,6 +665,10 @@ routing below remain **exact**.
      `## Review Notes` in the PR body, then push.
    - **`APPROVED`**: `git push -u origin <branch>`.
 
+   Then run `pr-plan.ts open` and open the PR exactly as it plans
+   ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy
+   refusal: follow its remedy before opening anything.
+
    **Pre-push hook failure protocol:** when the repository's pre-push hook
    fails (type check, lint, tests), classify before acting:
 
@@ -650,7 +724,7 @@ routing below remain **exact**.
    a stated reason when the label turns out over-applied (then remove the
    label with a comment explaining why).
 
-   **Arm the drive (terminal step, immediately after the draft PR opens):**
+   **Arm the drive (terminal step, immediately after the PR opens):**
 
    First capture the `pickupId` retained from Step 3.5 with the command
    there, and report any refusal. The driver keeps that pin on re-arm; it
@@ -703,7 +777,9 @@ routing below remain **exact**.
       human-memory delay this step removes, and a `hitl` issue cleared this
       run is no reason to withhold it. Report the task handle. The drive
       works the draft immediately (some review bots review drafts, others
-      skip them) and marks the PR Ready after its first completed round, so
+      skip them) and marks the PR Ready at the point
+      `pull_requests.mark_ready` declares (after the first completed round
+      by default), so
       one human decision is left: the merge. For an uncleared `hitl`
       checkpoint, or a harness without a documented pass command, emit the
       command only: starting review rounds would pre-empt the human
@@ -885,7 +961,13 @@ snapshot mapping are **exact**.
    from a just-completed sub-issue to the next, so the snapshot always names
    the sub-issue actually being worked.
 
-5. **judgment** — **Delegate** as in Step 4a.
+5. **judgment** — **Delegate** as in Step 4a. When the selected
+   sub-issue builds on a sibling whose pull request is still open, the
+   pull-request policy decides what happens: with `pull_requests.stacking:
+   none` (the default), do not start it on top of that branch; wait for the
+   sibling to merge, or ask the user to choose another eligible sub-issue.
+   With `native` or `branch`, branch from the sibling's head branch and open
+   with `pr-plan.ts open --stack-on <that branch>`.
 
 ### Step 5a: All sub-issues complete
 
@@ -1087,7 +1169,7 @@ runner's integration replaces each point where this skill asks the user (the
 Step 4b choice, an ambiguous requirement, a `hitl` clarification, the
 pre-push "cannot tell" branch) with its own escalation channel, and may
 report the milestones the skill already passes (issue fetched, plan ready,
-delegated, pre-PR review, draft PR opened). Payloads sent to a runner carry
+delegated, pre-PR review, PR opened). Payloads sent to a runner carry
 references (paths, commit hashes, PR and issue links), never file contents.
 Without such a runner, ask as in [Asking the user](#asking-the-user).
 
@@ -1110,4 +1192,5 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (stdin) and `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (stdin) | JSON decision (`verdict`, `parentState`, `reason`) |
+| `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue <KEY> --title <title>`, or `open [--issue <KEY>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5) | `IntentChainInput` JSON (stdin or `--input`) | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`) |

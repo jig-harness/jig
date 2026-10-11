@@ -423,6 +423,15 @@ An older release ignores the new fields; without them, 0.5.0 runs full CI on
 every push there, and a drive that still owns a label from an earlier release
 stops and names the missing setting instead of leaving the label behind.
 
+Plugin 0.7.0 makes how agents open pull requests a declared policy instead of
+an improvisation: `pull_requests` (stacking, stack depth, branch names, draft
+or Ready, when the drive marks a draft Ready, issue link, size budget,
+labels), applied by `do-issue`'s `pr-plan.ts`. Merging stays a human step;
+delegating it is queued below. Every configuration field is now listed in one
+[reference](plugin/CONFIGURATION.md). A consumer that stacks pull requests
+declares `stacking` before its machines update; without it, 0.7.0 refuses to
+stack.
+
 Still bound to the reference implementation's setup, to move into
 configuration when the next consumer needs them:
 
@@ -476,7 +485,8 @@ field, and drift hints recognised for every package manager. The reference
 implementation's copies are deleted in a paired change once 0.6.0 is
 installed where it works.
 
-**Batch 2: decision and explainer sheets** (plugin 0.7.0). `decide` and
+**Batch 2: decision and explainer sheets** (plugin version not yet
+assigned; 0.8.0 is the tracker labels below). `decide` and
 `explain` move as one unit. They render the same kind of sheet from a typed
 source, and today each keeps its own copy of the shared rendering kit,
 synchronized by a hook; in the plugin one copy serves both. The organization's
@@ -521,3 +531,68 @@ excludes `skill-creator` and `webapp-testing` (Anthropic's skills), `caveman`,
 (obra/superpowers), and `freeze` and `product-review` (garrytan/gstack). A
 debugging skill may still be written for Groundwork from scratch; it does not
 start from `diagnosing-bugs`.
+
+## Configuration and naming follow-ups
+
+The pull-request policy (plugin 0.7.0) made the first group of
+per-repository choices explicit. These follow it, in this order. Each is its
+own pull request, opened against `main` once the one before it merges
+(Groundwork's own `pull_requests.stacking` is `none`).
+
+1. **Delegated merge (`pull_requests.merge: auto-on-converged`).** Lets a
+   converged drive arm the forge's auto-merge for the exact head it
+   certified. It relaxes "a human merges", so the doctrine change is approved
+   on its own. Work in progress is on branch
+   `feature/auto-merge-on-converged`; before it opens as a pull request the
+   design must guarantee that:
+   - the delegation and the merge method are read only from sources the pull
+     request cannot change, fetched fresh at the moment of the decision, and
+     the integration branch is resolved independently of the pull request's
+     own `repository.base_branch`;
+   - revoking the delegation, or any condition that refuses it, withdraws an
+     auto-merge an earlier run armed, whatever the policy then says;
+   - `drive.ts` leaves the decision to the helper instead of gating on the
+     pull request's own copy of the policy;
+   - an armed auto-merge is bound to the certified head and cannot arm before
+     the reviewers summoned by Ready have reported;
+   - the doctrine (M7 invariant, the human-in-the-loop registry's Merge row,
+     the maturity criteria) changes in the same pull request, in the
+     direction the decision picks.
+2. **Tracker labels (0.8.0).** `issue_tracker.labels` maps each label role
+   the skills act on (epic, the human-in-the-loop flag and its facets, manual
+   operations, review follow-up, bug, pattern prefix, batch sizes, the tails
+   an epic may hand off) to the tracker's own label, and the parent-status
+   reconciliation reads `issue_tracker.states`. Built on branch
+   `feature/tracker-labels-config`.
+3. **Rename `do-issue` to `do-item`.** "Issue" ties the skill to one kind of
+   tracker; the skill picks up a work item from whatever the tracker adapter
+   reads, including a plan file. The rename covers the skill directory, the
+   `/groundwork:do-item` command, the plugin manifests and documentation, the
+   path pattern `drive-pr`'s `lib/pass-child.ts` recognises as a skill script,
+   and the `do_issue` configuration section, which becomes `do_item`. The
+   skills keep reading `do_issue` when `do_item` is absent (setting both is an
+   error) for at least one release, and say so on use. Consumers update their
+   instructions and configuration in a paired change.
+4. **Stacked pull requests in `drive-pr`.** A round's validation plan and
+   change set are computed against the integration branch, so an upper stack
+   layer's plan includes the layers below it, and the pre-push check of the
+   files a round touched can count commits a base sync brought in. Both should
+   use the pull request's own base. Required checks for a stacked layer should
+   come from the integration branch's protection rather than the feature
+   branch's. Base syncs stay merges: no rebase or force-push under a running
+   drive.
+5. **`/groundwork:audit`.** The auditor as a recurring skill rather than a
+   one-time adoption step. `audit/` moves into `plugin/skills/audit/`, leaving
+   a pointer. It has two layers: a mechanical check of how the repository's
+   configuration fits (unknown or deprecated keys, derivations that fail,
+   declared values the repository contradicts, unused features), and the
+   module maturity scoring. A committed `.config/groundwork-audit.yaml`
+   records the version audited, the scores, and declined recommendations with
+   a revisit condition, so a re-run reports what is fixed, still open,
+   regressed or new. Configuration fields and maturity criteria gain
+   `since: <version>` markers so a re-run can say what Groundwork added since
+   the last audit. Read-only by default; applying is opt-in.
+6. **More tracker adapters.** Jira and a plan file kept in the repository.
+   Open decisions: the plan file's format (one file for the plan, or
+   one per item), and whether the reporting operations of the tracker
+   interface may be optional for an adapter that cannot answer them.

@@ -8,11 +8,12 @@ criteria:
     level: lite
     requires: convention
     statement: >-
-      The PR lifecycle is written down once — open as a draft, self-review,
+      The PR lifecycle is written down once — open as a draft (or Ready, where
+      the repository declares that no reviewer reviews drafts), self-review,
       review, resolve threads, Ready (by a human or an adopted review driver),
       human merges — and referenced by the instructions.
     observe:
-      - "a pr-lifecycle doc states the draft -> review -> resolve loop (Ready inside it) -> merge"
+      - "a pr-lifecycle doc states the draft -> review -> resolve loop (Ready inside it) -> merge, or, where the repository declares that no reviewer reviews drafts, the Ready-at-open review -> resolve -> merge loop"
       - "it names merging as a human-only step and says who marks Ready"
 
   - id: self-review-before-request
@@ -141,6 +142,29 @@ criteria:
     observe:
       - "branch protection requires required checks + review before merge"
       - "automation cannot self-merge (no bot bypass of the human merge step)"
+
+  - id: pr-shape-policy-declared
+    level: standard
+    requires: convention
+    statement: >-
+      How pull requests are shaped is declared once where the PR-opening agent
+      reads it: whether they may stack and how, the maximum stack depth,
+      branch naming, the issue link, and a size budget.
+    observe:
+      - "a configuration file or instructions section declares the stacking mode (none, forge-native, or plain branch chains)"
+      - "the same place declares branch naming, the issue link and the size budget, or states the defaults apply"
+
+  - id: pr-final-target-resolvable
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every open PR's final integration target is resolvable by tooling, and
+      the tool that opens PRs refuses one whose target is not: a stack the
+      policy forbids, a base no open PR chain leads from, a stack deeper than
+      allowed, or a change over the size budget without a stated reason.
+    observe:
+      - "the PR-opening tool applies the declared policy and exits non-zero on a violation"
+      - "on recent PRs, every base is the integration branch, a forge-native stack, or a chain of open same-repository PRs ending at it"
 
   - id: hitl-registry-published
     level: strict

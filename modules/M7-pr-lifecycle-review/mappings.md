@@ -397,6 +397,29 @@ The decision line is also
 [reflection trigger](../M8-learning-loop/reference/reflection-trigger/) input, so
 keep `decision.txt` around for that step.
 
+## Stacked pull requests
+
+A stack is only safe when every tool that reads settings from a PR's base can
+work out where the stack finally lands. The options differ in where that
+answer lives:
+
+| Option | How a layer is opened | Where the final target is recorded | What base-scoped tools must do |
+|--------|-----------------------|------------------------------------|--------------------------------|
+| No stacking | Every PR targets the integration branch | The base itself | Nothing |
+| GitHub native stacks | `gh pr create --base <predecessor branch>`, then link it with the [gh-stack](https://github.com/github/gh-stack) extension: `gh stack link <stack number> <new>` to append to an existing stack (only on its top), or `gh stack link --base <trunk> <bottom> … <predecessor> <new>` to start one, each pull request by URL (a bare number that is also a local branch's name is read as that branch and pushed); `gh stack submit` for a whole local stack | GitHub's stack record (its Stacks API), merged members included; each layer's base is still its predecessor's branch, and only the bottom layer targets the trunk | Read the stack record; a walk of open PRs misses merged members and upper layers |
+| Graphite | `gt create`, `gt submit` | Graphite's own stack record; on the forge, a plain branch chain | Walk the chain, or read Graphite's record |
+| [ghstack](https://github.com/ezyang/ghstack) | `ghstack` (submit) | Nowhere on the forge: each PR targets its own synthetic `gh/<user>/<n>/base` branch, which no open PR owns, and `ghstack land` lands the commits on the trunk | Recognise the `gh/<user>/<n>/base` pattern as "lands on the trunk"; a walk of open PRs stops at the first synthetic base |
+| git-town, Sapling, Jujutsu | Each tool's submit command | A plain branch chain on the forge | Walk the chain |
+| Plain branch chaining | `gh pr create --base <predecessor branch>` | Nowhere: only the chain of open PRs, head to base | Walk the chain: each hop is the one open, same-repository PR whose head is the current branch, until the trunk |
+| GitLab | `glab stack` (stacked diffs), or merge requests targeting a predecessor's branch | Per merge request, the target branch | Walk the chain |
+| Gerrit | A relation chain of dependent changes | The chain's target branch, on every change | Nothing |
+
+A plain chain breaks when a lower layer merges and its branch is kept: the
+layer above then targets a branch no open PR owns. GitHub retargets the
+dependent PR automatically only when the merged head branch is deleted, so a
+repository that allows plain chains should turn on "Automatically delete head
+branches".
+
 ## Review bots / harness (the tool registry)
 
 Each reviewer is one entry in [`review-config.yaml`](templates/review-config.yaml)
@@ -430,7 +453,8 @@ The human checkpoints (**merge**, **promote a reviewer to blocking**) are
 enforced by forge settings + the [HITL registry](templates/HITL-REGISTRY.md),
 not by a script — a bot must not hold those. **Mark Ready** is the one
 checkpoint a repository may delegate: an unattended review driver such as
-Groundwork's `drive-pr` marks a draft Ready once its first review round has
-completed, so reviewers that skip drafts spend their pass on a head the
-draft-reviewing reviewer has already cleaned. The driver's opt-out
+Groundwork's `drive-pr` marks a draft Ready at the point
+`pull_requests.mark_ready` declares (after its first review round by default,
+after a later round, or only at convergence), so reviewers that skip drafts
+spend their pass on a head the draft-reviewing reviewer has already cleaned. The driver's opt-out
 (`--keep-draft`) keeps the step human.

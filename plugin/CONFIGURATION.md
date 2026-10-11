@@ -1,0 +1,414 @@
+# Configuration reference: `.config/groundwork-overlay.yaml`
+
+The Groundwork skills hold the procedure; each repository holds its own
+values. Without one place listing those values, a repository adopts a skill
+by trial and error: an agent improvises what the repository never stated (how
+to name a branch, whether pull requests may stack), and a
+misspelt field silently keeps its default. This document lists every field
+the skills read, its type, what it does, what happens when it is absent, and
+which skill reads it. It is the complete reference; the skill READMEs explain
+the behaviour behind each field.
+
+The file is the repository's [consumer overlay](../GLOSSARY.md): its own
+values, laid over the shared procedure. Every field is optional unless its
+row says otherwise. Add a field only when its default does not fit.
+
+Contents: [the file](#the-file) ·
+[what is derived, not declared](#what-is-derived-not-declared) ·
+[`gates`](#gates) · [`review`](#review) · [`repository`](#repository) ·
+[`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
+[`issue_tracker`](#issue_tracker) · [`do_issue`](#do_issue) ·
+[`fleet_health`](#fleet_health) ·
+[procedure skills](#procedure-skills) ·
+[environment variables](#environment-variables) ·
+[complete example](#complete-example)
+
+## The file
+
+- **Location.** `.config/groundwork-overlay.yaml` at the root of the
+  repository. The root is the nearest folder above the working directory that
+  holds `.git`; `GROUNDWORK_CONSUMER_ROOT` overrides it, and
+  `GROUNDWORK_OVERLAY` points the skills at a different file altogether.
+- **Format.** YAML. JSON is valid YAML, so a JSON file works too.
+- **Missing file.** `resolve-review-comments` and the tracker scripts of
+  `do-issue` refuse to run: an installed skill in a repository that has not
+  adopted it says so rather than guessing. `drive-pr`, the pull-request
+  policy and the procedure skills run on their defaults.
+- **Unknown fields** are ignored at the top level and inside most sections, so
+  other tooling can share the file. Two places are exceptions. In
+  `pull_requests` an unknown key is an error: a misspelt `stacking` would
+  otherwise silently keep the default it was written to change. In
+  `review.taxonomy` every key other than `provenance_label` and `epic_label`
+  is read as a list of distinct, nonempty strings, so an unrelated key there
+  is an error too.
+- **Wrong types** depend on the reader. `resolve-review-comments` and the
+  pull-request policy refuse them with an error that names the field and the
+  file. Some `drive-pr` readers treat a wrong-typed value as absent and use
+  the default instead: `review.bots` when it is not a list (entries that are
+  not strings are dropped), and the `fleet_health` fields. The checks below
+  catch the first kind only.
+- **Check it.** `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
+  prints the review skill's values or what is missing;
+  `bun <plugin>/skills/do-issue/scripts/pr-plan.ts open` prints the pull-request
+  policy as it applies to the current branch.
+
+## What is derived, not declared
+
+Groundwork reads a fact from the repository when the repository already
+states it, instead of asking for it twice. These have no field, or have a
+field only to override the derivation:
+
+| Fact | Where it is read | Used for | Override |
+|------|------------------|----------|----------|
+| Integration branch (the branch pull requests land on) | The clone's `origin/HEAD`, else GitHub's default branch | Pull-request base, round diffs, CI policy | `repository.base_branch`, `DRIVE_PR_BASE_BRANCH` |
+| Pull-request template | `pull_request_template.md` (or `.txt`, any letter case) in the root, `.github/` or `docs/`, and the files of a `PULL_REQUEST_TEMPLATE/` folder there | The body an agent fills in | none: edit the template |
+| Title convention | A commitlint configuration (`commitlint.config.*`, `.commitlintrc*`, `commitlint` in `package.json`) that names the Conventional Commits rules, such as `@commitlint/config-conventional`; else at least 80% of the last 30 non-merge trunk commit subjects following [Conventional Commits](https://www.conventionalcommits.org/), and at least five such subjects to judge from | Whether titles take `type(scope): summary` | `pull_requests.title_format` |
+| Delete head branches on merge | GitHub repository settings | Warning for `branch` stacking: without it GitHub does not retarget the layer above a merged one | none: change the setting |
+| Code owners | `.github/CODEOWNERS`, `CODEOWNERS` or `docs/CODEOWNERS` | Reported only: GitHub requests those reviewers itself | none |
+| Required checks | The base branch's protection and rulesets | Which checks certify a converged head | `ci.required_checks` |
+| Draft or Ready on opening | `drive.reviews_drafts: false` means Ready | How a pull request opens | `pull_requests.open_as` |
+
+## `gates`
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, descar | The repository's complete local checks, run before every push |
+
+## `review`
+
+How review threads are resolved and how the drive recognises its AI reviewer.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `review.bots` | list of logins | **Required by `resolve-review-comments`**. `drive-pr`: none | resolve-review-comments, drive-pr, review | Reviewer accounts (`coderabbitai[bot]`) whose threads the review skill works. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins |
+| `review.job_pattern` | regular expression, or `null` | Reviewer checks recognised by name | resolve-review-comments | Which check runs the review skill waits on. Setting it requires `review.required_checks`. `--job-pattern` overrides it |
+| `review.required_checks` | list of distinct check names | none | resolve-review-comments | Reviewer checks that must each complete before a round is judged. Required when `review.job_pattern` is set. Unrelated to `ci.required_checks` |
+| `review.deferral_team` | team key | **Required by `resolve-review-comments`** | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
+| `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments | Repository label put on filed follow-ups; must be one of `review.taxonomy.repos` |
+| `review.repo_slug` | `owner/name` | Empty, which fails unless `--repo-slug` is given | resolve-review-comments | Repository whose links a deferred finding must point into |
+| `review.taxonomy.types` | list of labels | none | resolve-review-comments | Type labels a follow-up may carry. Requires `ownership_prefixes` |
+| `review.taxonomy.repos` | list of labels | none | resolve-review-comments | Repository labels a follow-up may carry. Requires `ownership_prefixes` |
+| `review.taxonomy.sizes` | list of labels | `[xs, small]` | resolve-review-comments | Size labels a batch of follow-ups may carry |
+| `review.taxonomy.categories` | list of names | only `unknown` | resolve-review-comments | Allowed finding categories |
+| `review.taxonomy.context_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of labels carried from the pull request onto its follow-ups. Requires `ownership_prefixes` |
+| `review.taxonomy.ownership_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of ownership labels; two findings share a batch only when these agree. Required when `types`, `repos` or `context_prefixes` is set |
+| `review.taxonomy.provenance_label` | label | `pr-followup` | resolve-review-comments, drive-pr (fleet health) | Label marking an issue as a review follow-up |
+| `review.taxonomy.epic_label` | label | `epic` | resolve-review-comments, drive-pr (fleet health) | Label marking an issue as an epic |
+| `review.reviewer_app` | GitHub App slug | none: reviewer checks recognised by name from any app, summary comment accepted only from `review.bots` | drive-pr | App whose check runs and `<app>[bot]` summary comment are the AI reviewer's evidence. `DRIVE_PR_REVIEWER_APP` overrides it |
+| `review.reviewer_check_pattern` | anchored regular expression | `^ai[ _-]?review(\s*\(.+\))?$` | drive-pr | Name of the posting reviewer's check run. `DRIVE_PR_REVIEWER_CHECK` overrides it |
+| `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. `DRIVE_PR_STICKY_MARKER` overrides it |
+| `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. `DRIVE_PR_SHA_MARKER` overrides it |
+
+The [resolve-review-comments README](skills/resolve-review-comments/README.md)
+and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
+
+## `repository`
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `repository.base_branch` | branch name, without `origin/` | Derived: the clone's `origin/HEAD`, else GitHub's default branch | drive-pr, do-issue, review, descar | The integration branch: where pull requests land and what rounds diff against. The required checks come from it only when there is no pull request to read; for a pull request they come from that pull request's own base, so a stacked layer is held to its predecessor branch's protection. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it |
+
+## `pull_requests`
+
+How agents open and stack pull requests. `do-issue` applies it through
+`scripts/pr-plan.ts` when it opens a pull request; `drive-pr` applies
+`mark_ready` as a drive runs. Merging is not configurable: a person merges.
+Without the section the policy is: one pull request
+per change against the integration branch, branch named `<key>-<title>`,
+opened as a draft, closing its issue on merge, merged by a human.
+
+| Field | Values | When absent | What it does |
+|-------|--------|-------------|--------------|
+| `pull_requests.stacking` | `none`, `native`, `branch` | `none` | Whether a pull request may be based on another open pull request's branch instead of the integration branch. See [stacking](#stacking) |
+| `pull_requests.max_stack_depth` | whole number ≥ 1 | no cap | Most pull requests one stack may hold, the new one included. Needs `stacking` other than `none` |
+| `pull_requests.open_as` | `draft`, `ready` | `ready` when `drive.reviews_drafts` is `false`, else `draft` | How a new pull request opens |
+| `pull_requests.mark_ready` | whole number ≥ 1, `converged`, `never` | `1` | When `drive-pr` marks a draft Ready for review: after round N completes, only once the draft-reviewing reviewer has nothing left (`converged`), or never (a person marks it). A draft that converges before round N is marked at convergence, since reviewers that skip drafts would otherwise never see it. Marking Ready summons those reviewers, so a later number spends their review on a cleaner head |
+| `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Example: `feature/{key_lower}-{slug}` |
+| `pull_requests.issue_link` | `closes`, `refs`, `none` | `closes` | The line linking the pull request to its issue: `Closes ENG-12` (merging closes the issue), `Refs ENG-12` (linked, left open), or none |
+| `pull_requests.size_budget` | whole number ≥ 1 | no budget | Most changed lines (added plus deleted, against the pull request's base) one pull request may carry. Over it, `pr-plan.ts` refuses: split the change (into a stack when stacking is allowed), or state why it cannot be split with `--accept-oversize <reason>` and put the reason in the body |
+| `pull_requests.labels` | list of label names | none | Labels added when the pull request opens, such as `agent-authored`. Each must already exist in the repository |
+| `pull_requests.title_format` | `conventional`, `free` | Derived (see [above](#what-is-derived-not-declared)) | Whether titles follow Conventional Commits. With squash merges the title becomes the trunk commit, so it matters |
+
+### Stacking
+
+A *[stacked pull request](../GLOSSARY.md)* is based on another open pull
+request's branch rather than the integration branch, so dependent work can be
+reviewed before what it builds on merges. Stacks have a cost: any tool that
+reads its settings from a pull request's base (an AI reviewer that loads its
+policy from the integration branch, branch-protection rules, deploy previews)
+has to work out where the stack finally lands, and a stack built by hand gives
+it nothing to work from but the chain of branches.
+
+- **`none`**: every pull request targets the integration branch.
+  `pr-plan.ts open --stack-on <branch>` refuses. Dependent work waits for its
+  predecessor to merge, or goes into the same pull request.
+- **`native`**: dependent pull requests form a GitHub stack, which records
+  each pull request's final target in GitHub's own stack metadata. The agent
+  opens the pull request against its predecessor's branch, then links it with
+  the [gh-stack](https://github.com/github/gh-stack) extension.
+  `pr-plan.ts` reads the stacks GitHub already records (its Stacks API) and
+  prints the link command: when the predecessor is the top of an existing
+  stack, `gh stack link <stack number> <new>`, which appends and lets the
+  extension carry every existing member forward, merged ones included;
+  when no layer is in a stack yet,
+  `gh stack link --base <integration branch> <bottom> … <predecessor> <new>`.
+  Every pull request is given by its URL, never its number: the extension
+  reads a number that is also a local branch's name as that branch, and
+  pushes it.
+  It refuses a predecessor below a stack's top (the extension only appends),
+  a stack that lands on another branch, a chain that disagrees with the
+  stack (its open members, bottom to top, must be exactly the chain of
+  bases), a layer the extension will not add to a new stack (auto-merge
+  enabled, or queued for merge), an append when a local branch has the
+  stack's number as its name (the extension would read the number as that
+  branch), and a missing extension; it fails when the Stacks API, the
+  layers' eligibility, or whether such a local branch exists cannot be read. These are the checks the extension
+  makes only after the pull request exists, so a refusal here keeps it from
+  being created outside the stack.
+  `max_stack_depth` counts every member the stack keeps, merged ones
+  included, because the extension carries them all forward.
+- **`branch`**: plain base-branch chaining, with no stack metadata. Tools
+  must walk the chain themselves. `pr-plan.ts` warns when the repository
+  does not delete head branches on merge, because then GitHub does not
+  retarget the layer above a merged one, and the walk breaks at the merged
+  layer until someone retargets it by hand.
+
+For `native` and `branch`, `--stack-on` must name the head branch of exactly
+one open pull request from this repository, whose chain of bases reaches the
+integration branch; anything else is refused, because base-scoped tools could
+not resolve it either.
+
+## `drive`
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout |
+| `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
+| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-issue, review | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). `determine_agent.ts --catalog` overrides it for one run |
+| `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-issue | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
+| `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
+
+## `ci`
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `ci.required_checks` | list of distinct check names; `[]` means none | Derived from the base branch's protection and rulesets | drive-pr | Checks that must complete on the converged head before the drive certifies it. Required, and not empty, when `ci.hold_label` is set |
+| `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md) |
+
+## `issue_tracker`
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `issue_tracker.adapter` | adapter name | `linear` | do-issue, drive-pr | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-issue, drive-pr, review | The key issue identifiers carry (`ENG` for `ENG-123`) |
+| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-issue | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error |
+| `issue_tracker.file_command` | text | Ask the user to file the issue | do-issue, resolve-review-comments, descar, github-actions, promote-memory | How an agent files a new issue by hand, such as a slash command |
+
+## `do_issue`
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `do_issue.agents.default` | agent name | `general-purpose` | do-issue | Agent that implements an issue no rule routes |
+| `do_issue.agents.integrator` | agent name | `do_issue.agents.default` | do-issue | Agent that coordinates when more than two agents match |
+| `do_issue.agents.catalog` | map from catalog agent name to agent | none | do-issue | Translates the change-area catalog's `agent` values into the repository's agent names |
+| `do_issue.agents.codearea_areas` | map from issue label to area key | none | do-issue | Routes an issue to a change area by label |
+| `do_issue.agents.labels` | map from issue label to agent | none | do-issue | Label routing when the catalog gives no answer |
+| `do_issue.agents.title_keywords` | map from keyword to agent | none | do-issue | Last-resort routing on a case-insensitive title match |
+| `do_issue.scouts` | map from agent to a list of scouts | none | do-issue | Scouts that run before each agent. The key is the **agent**, not a label |
+| `do_issue.gates` | list of `{labels, paths, skill}` | none | do-issue | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
+| `do_issue.execution_plan_block` | name | `execution-plan-v1` | do-issue | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
+
+The routing order and the gates are explained in
+[do-issue's SKILL.md](skills/do-issue/SKILL.md).
+
+## `fleet_health`
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `fleet_health.config` | path, relative to the root or absolute | `.config/fleet-health.yaml` | drive-pr | The fleet-health settings file, described [below](#the-fleet-health-file) |
+| `fleet_health.snapshot_dir` | folder; `~` is expanded, relative paths resolve against the root | `~/.local/state/groundwork/dashboard` | drive-pr | Where the fleet-health snapshot is read from. `DEV_DASHBOARD_DIR` overrides it |
+
+### The fleet-health file
+
+The fleet-health sensor (`drive-pr`'s `fleet-health.ts`, and the
+`fractal-metrics.ts` ledger and baselines) compares a window's *ceremony*
+(review rounds, follow-ups, delivery-process issues) with its *progress*
+(merged product work, closed acceptance criteria, accepted epics) and raises
+suspicions when one outweighs the other. Its definitions and thresholds are
+the repository's, in their own file, because a built-in threshold nobody
+chose would be a confident answer to an unasked question. So this file is
+stricter than the overlay: it must exist for the sensor to run, every key
+below marked required must be present, and an unknown key is an error.
+
+| Field | Type | Required | What it does |
+|-------|------|----------|--------------|
+| `version` | `1` | yes | Schema version |
+| `window.days` | whole number, 1–366 | yes | Default window length in days (`--days` overrides it) |
+| `progress.product_areas` | non-empty list of distinct change-area keys | yes | Change areas whose merged work counts as product progress |
+| `progress.weights.merged_product_pr` | number ≥ 0 | yes | Progress units per merged pull request in a product area |
+| `progress.weights.criterion_closed` | number ≥ 0 | yes | Progress units per closed acceptance criterion |
+| `progress.weights.epic_accepted` | number ≥ 0 | yes | Progress units per accepted epic |
+| `ceremony.free_rounds` | whole number ≥ 0 | yes | Review rounds per pull request that count as normal, not ceremony |
+| `ceremony.weights.rounds_beyond_free` | number ≥ 0 | yes | Ceremony units per review round beyond the free ones |
+| `ceremony.weights.followups_minted` | number ≥ 0 | yes | Ceremony units per review follow-up issue filed |
+| `ceremony.weights.sdlc_issues_opened` | number ≥ 0 | yes | Ceremony units per issue opened against the delivery process itself |
+| `ceremony.unmeasured` | map from unit name to reason | yes (may be `{}`) | Ceremony the sensor cannot measure, each with the reason stated |
+| `signals.stuck_epic.days` | whole number, 1–366 | yes | Days without activity before a started epic counts as stuck |
+| `signals.ceremony_ratio.suspect_at` | number ≥ 0 | yes | Ceremony-to-progress ratio at which an epic is suspected |
+| `signals.ceremony_ratio.high_at` | number ≥ `suspect_at` | yes | Ratio at which the suspicion is high. An epic with ceremony and no progress is raised at maximum severity |
+| `signals.ceremony_ratio.min_ceremony` | whole number ≥ 1 | yes | Least weighted ceremony before an epic can be raised at all |
+| `signals.followup_depth.suspect_at` | whole number ≥ 1 | yes | Follow-up chain depth (a follow-up of a follow-up …) at which a pull request is suspected |
+| `signals.followup_depth.max_walk` | whole number, 1–20 | yes | Deepest chain walked |
+| `signals.delivery_system_share.suspect_at` | number 0–1, or `null` | yes | Share of merged change in delivery-system areas at which to raise; `null` reports it without raising |
+| `signals.review_carousel.min_rounds` | whole number, above `ceremony.free_rounds` | yes | Reviewed heads at which a pull request can be a review carousel |
+| `signals.review_carousel.high_rounds` | whole number ≥ `min_rounds` | yes | Reviewed heads at which the suspicion is high |
+| `signals.review_carousel.min_post_review_share` | number 0–1 | yes | Share of the change made after review began that marks a carousel |
+| `lifecycle.cooldown_days` | whole number ≥ 0 | yes | Days a suspicion that a diagnosis comment closed stays closed before it can be raised again |
+| `labels.epic` | label, or `null` | no; default `review.taxonomy.epic_label`, else `epic` | Label marking an epic |
+| `labels.followup` | label, or `null` | no; default `review.taxonomy.provenance_label`; `null` means follow-ups are not measured | Label marking a review follow-up |
+| `labels.delivery_system` | label, or `null` | no; unset means not measured | Label a delivery-system change area and its issues carry |
+| `ledger.label` | label, or `null` | no; default `labels.followup` | Label of the debt ledger `fractal-metrics.ts` reports |
+| `ledger.project` | tracker project, or `null` | no | A project whose issues also belong to the ledger |
+| `ledger.closed_state_types` | non-empty list of state types | no; default `[completed, canceled, duplicate]` | Tracker state types that close a ledger issue |
+| `baselines.<metric>.value` | number | per baseline | A recorded baseline for one scoreboard metric |
+| `baselines.<metric>.source` | `{file, needle}` | no | The document recording that number and a substring that must still appear in it, so a stale baseline is caught |
+
+The team key comes from `issue_tracker.team` and the change-area catalog from
+`drive.change_areas_catalog`. The signal lifecycle and what a diagnosis
+comment looks like are described in the header of
+`skills/drive-pr/scripts/fleet-health.ts`.
+
+## Procedure skills
+
+The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
+`promote-memory`, `programmatic-execution`, `design-brief-builder`) detect
+what they need from the repository; set a field only when detection picks
+the wrong thing. `programmatic-execution` reads no field.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet | adr, review | Where the decision records live. A configured folder must exist |
+| `adr.rules_file` | path, relative to the root | Detected: the one tracked `adr-rules.yaml`, `.adr-rules.yaml` or `adr-rules/rules.yaml`; several matches are an error | adr, review | The machine-readable decision-rules catalog. A configured file must exist |
+| `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the document is checked by hand | descar | Lint that finds review scars in documents |
+| `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
+| `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
+| `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
+| `github_actions.conventions_doc` | path, relative to the root | Searched for in the instructions and docs; else generic guidance | github-actions | The document describing the repository's workflows and their conventions |
+| `design_brief.kit` | folder, relative to the root | Detected: a tracked folder ending in `design-kit` or `design_kit` | design-brief-builder | The design kit: voice, colours and type, rubric, component previews, logo |
+| `design_brief.design_language` | path, relative to the root | Detected: the first tracked `*design-language*.md` or `*design-system*.md` | design-brief-builder | The written design canon |
+| `design_brief.prototypes` | folder, relative to the root | none: the agent asks | design-brief-builder | Where finished design bundles land, one folder per flow |
+
+Each skill's `SKILL.md` explains how its fields are used.
+
+## Environment variables
+
+These are set per machine or per run, not committed:
+
+| Variable | What it does |
+|----------|--------------|
+| `GROUNDWORK_OVERLAY` | Path of the configuration file to read instead of the repository's own |
+| `GROUNDWORK_CONSUMER_ROOT` | The repository root, instead of the nearest folder holding `.git` |
+| `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
+| `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
+| `DRIVE_PR_STATE_DIR` | Where a drive keeps its rounds, locks and leases |
+| `GROUNDWORK_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
+| `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
+| `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
+
+## Complete example
+
+Every section, with values a typical repository might set. Copy only what
+differs from the defaults.
+
+```yaml
+gates:
+  command: bun run gates                 # required by resolve-review-comments
+review:
+  bots: ["coderabbitai[bot]", "example-review[bot]"]   # required by resolve-review-comments
+  deferral_team: ENG                     # required by resolve-review-comments
+  repo_label: web
+  repo_slug: example/web
+  job_pattern: "^AI review"
+  required_checks: ["AI review"]
+  taxonomy:
+    types: [bug, feature, chore, docs]
+    repos: [web, api]
+    sizes: [xs, small]
+    categories: [correctness, security, tests, docs, style]
+    context_prefixes: ["area:"]
+    ownership_prefixes: ["team:"]
+    provenance_label: pr-followup
+    epic_label: epic
+  reviewer_app: example-review
+  reviewer_check_pattern: "^ai[ _-]?review(\\s*\\(.+\\))?$"
+  sticky_marker: "<!-- ai-code-review -->"
+  reviewed_sha_marker: ai-reviewed-sha
+repository:
+  base_branch: develop                   # default: the repository's default branch
+pull_requests:
+  stacking: branch                       # none | native | branch
+  max_stack_depth: 4
+  open_as: draft                         # draft | ready
+  mark_ready: 1                          # after round N | converged | never
+  branch_name: "feature/{key_lower}-{slug}"
+  issue_link: closes                     # closes | refs | none
+  size_budget: 600
+  labels: [agent-authored]
+  title_format: conventional             # conventional | free
+drive:
+  validation_plan_command: "bun tools/change-areas/resolve.ts --files - --format json"
+  load_guard_command: "bun tools/dev/load-guard.ts --wait"
+  change_areas_catalog: tools/change-areas/catalog.yaml
+  reviews_drafts: true
+  escape_baseline_doc: docs/review-loop-baseline.md
+ci:
+  required_checks: [build, test]
+  hold_label: ci:hold
+issue_tracker:
+  adapter: linear
+  team: ENG                              # required by the tracker scripts
+  file_command: "linear issue create"
+  states:
+    triage: Triage
+    backlog: Backlog
+    todo: Todo
+    in_progress: In Progress
+    in_review: In Review
+    ops_pending: Ops Pending
+    done: Done
+    canceled: Canceled
+    duplicate: Duplicate
+do_issue:
+  agents:
+    default: general-purpose
+    integrator: integrator
+    catalog: { api: backend-dev }
+    codearea_areas: { "area:billing": billing }
+    labels: { frontend: frontend-dev }
+    title_keywords: { migration: backend-dev }
+  scouts:
+    backend-dev: [schema-scout, api-scout]
+  gates:
+    - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
+  execution_plan_block: execution-plan-v1
+fleet_health:
+  config: .config/fleet-health.yaml
+  snapshot_dir: ~/.local/state/groundwork/dashboard
+adr:
+  directory: docs/adr
+  rules_file: docs/adr/rules.yaml
+descar:
+  lint_command: "bun scripts/check-scars.ts"
+promote_memory:
+  lint_command: "bun tools/memory-lint.ts --dir {dir} --file {file}"
+  target_dir: docs/retrospection
+fix_ci:
+  regenerate_commands:
+    - bun run generate:api
+github_actions:
+  conventions_doc: docs/ci.md
+design_brief:
+  kit: docs/design-kit
+  design_language: docs/design.md
+  prototypes: design/prototypes
+```

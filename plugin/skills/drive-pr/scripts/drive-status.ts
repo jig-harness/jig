@@ -149,7 +149,8 @@
  *                       Measured false 2026-08-13 (#4053, #4041):
  *                       `docomply-review` reviews drafts, so a draft is
  *                       driven like any other PR and `mark-ready.ts` marks it
- *                       Ready after the first completed round — see
+ *                       Ready at the round pull_requests.mark_ready
+ *                       declares — see
  *                       lib/status/evaluate.ts's header. Not recycled: an old
  *                       log's `10` should mean nothing, not something new
  *   7  REVIEWER_FAILED  [state] the posting reviewer's check-run did not

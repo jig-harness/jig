@@ -34,6 +34,7 @@ import {
   QUOTA_PARKED_EXIT,
   resolveHandoffAt,
 } from "../scripts/drive";
+import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
 import { claudeAdapter } from "../scripts/lib/quota/claude.ts";
 import { cloneKey } from "../scripts/lib/state/clone-key";
 import { appendDirective } from "../scripts/lib/state/mailbox";
@@ -138,6 +139,23 @@ describe("mark-ready.ts", () => {
     existsSync(join(dir, "ready-calls"))
       ? readFileSync(join(dir, "ready-calls"), "utf8").trim().split("\n")
       : [];
+
+  it("--round applies pull_requests.mark_ready: not due before round N, due from it", async () => {
+    const { dir, stateDir } = writeFixture({ threads: [], isDraft: true });
+    const overlay = join(dir, "mark-ready-overlay.yaml");
+    writeFileSync(overlay, "pull_requests:\n  mark_ready: 2\n");
+    const early = await markReady(dir, stateDir, ["--round", "1"], {
+      GROUNDWORK_OVERLAY: overlay,
+    });
+    expect(early).toMatchObject({ outcome: "not-due", exitCode: 0 });
+    expect(calls(dir)).toEqual([]);
+    const due = await markReady(dir, stateDir, ["--round", "2"], {
+      GROUNDWORK_OVERLAY: overlay,
+    });
+    expect(due.outcome).toBe("marked");
+    expect(calls(dir)).toEqual(["999"]);
+    expect((await markReady(dir, stateDir, ["--round", "x"])).exitCode).toBe(2);
+  });
 
   it("marks a draft Ready, once, and records it durably", async () => {
     const { dir, stateDir } = writeFixture({ threads: [], isDraft: true });
@@ -1392,6 +1410,121 @@ describe("drive.ts loop control", () => {
     expect((await state(stateDir, ["ready-marked", "999"])).stdout.trim()).toBe(
       "0",
     );
+  });
+
+  /**
+   * The suite's own configuration (reviewer identities, markers) plus a
+   * `pull_requests` section: replacing the file would change what
+   * convergence means.
+   */
+  function withPolicy(dir: string, pullRequests: Record<string, unknown>) {
+    const path = join(dir, "policy-overlay.json");
+    const suite = loadYaml(
+      readFileSync(process.env.GROUNDWORK_OVERLAY as string, "utf8"),
+    ) as Record<string, unknown>;
+    writeFileSync(
+      path,
+      JSON.stringify({ ...suite, pull_requests: pullRequests }),
+    );
+    return { env: { GROUNDWORK_OVERLAY: path } };
+  }
+
+  it("pull_requests.mark_ready: N waits for round N before marking Ready", async () => {
+    const early = writeFixture({
+      threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      isDraft: true,
+    });
+    const r1 = await runDriveIn(
+      early.dir,
+      early.stateDir,
+      ["--no-head-sync", "--max-rounds", "1", "--", ...PASS_LOUD],
+      undefined,
+      withPolicy(early.dir, { mark_ready: 2 }),
+    );
+    expect(r1.stderr).toContain("RAN_THE_PASS");
+    expect(existsSync(join(early.dir, "ready-calls"))).toBe(false);
+  });
+
+  it("pull_requests.mark_ready: N marks Ready once round N completes", async () => {
+    const due = writeFixture({
+      threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      isDraft: true,
+    });
+    const r2 = await runDriveIn(
+      due.dir,
+      due.stateDir,
+      ["--no-head-sync", "--max-rounds", "2", "--", ...PASS_NOOP],
+      undefined,
+      {
+        env: {
+          ...withPolicy(due.dir, { mark_ready: 2 }).env,
+          DRIVE_PR_STALL_ROUNDS: "0",
+        },
+      },
+    );
+    expect(r2.stderr).toContain("round 2 completed");
+    expect(
+      readFileSync(join(due.dir, "ready-calls"), "utf8").trim().split("\n"),
+    ).toHaveLength(1);
+  });
+
+  it.each(["never", "converged"])(
+    "pull_requests.mark_ready: %s does not mark Ready after a round",
+    async (markReady) => {
+      const { dir, stateDir } = writeFixture({
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+        isDraft: true,
+      });
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--max-rounds", "1", "--", ...PASS_LOUD],
+        undefined,
+        withPolicy(dir, { mark_ready: markReady }),
+      );
+      expect(r.stderr).toContain("RAN_THE_PASS");
+      expect(existsSync(join(dir, "ready-calls"))).toBe(false);
+    },
+  );
+
+  it("pull_requests.mark_ready: never also keeps a converged draft a draft", async () => {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      reviewedSha: scratchClean.head,
+      head: scratchClean.head,
+      isDraft: true,
+    });
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      ["--no-head-sync", "--", ...PASS_NOOP],
+      undefined,
+      withPolicy(dir, { mark_ready: "never" }),
+    );
+    // Converged and stopped normally, so the absent call is the policy, not a
+    // drive that died before reaching the transition.
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toContain("converged after");
+    expect(existsSync(join(dir, "ready-calls"))).toBe(false);
+  });
+
+  it("pull_requests.mark_ready: converged marks a converged draft Ready", async () => {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      reviewedSha: scratchClean.head,
+      head: scratchClean.head,
+      isDraft: true,
+    });
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      ["--no-head-sync", "--", ...PASS_NOOP],
+      undefined,
+      withPolicy(dir, { mark_ready: "converged" }),
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toContain("converged after");
+    expect(readFileSync(join(dir, "ready-calls"), "utf8").trim()).toBe("999");
   });
 
   it("--keep-draft still records an already-Ready PR via the round-loop pre-pass call (docomply-review round 14, a reference-implementation pull request)", async () => {

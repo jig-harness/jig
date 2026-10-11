@@ -17,7 +17,7 @@ when they run.
 | Skill | What it does | Invoke as |
 |-------|--------------|-----------|
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/groundwork:drive-pr` |
-| [do-issue](skills/do-issue/SKILL.md) | Picks up one issue from the issue tracker, routes it to the right agent, implements it, opens a draft pull request and starts `drive-pr` on it | `/groundwork:do-issue` |
+| [do-issue](skills/do-issue/SKILL.md) | Picks up one issue from the issue tracker, routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/groundwork:do-issue` |
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/groundwork:resolve-review-comments` |
 | [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/groundwork:review` |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/groundwork:fix-ci` |
@@ -124,7 +124,7 @@ Plugin skills carry the plugin's name as a prefix.
 For example:
 
 ```text
-/groundwork:do-issue ENG-123          # pick up an issue; opens a draft PR and starts a drive
+/groundwork:do-issue ENG-123          # pick up an issue; opens a PR and starts a drive
 /groundwork:drive-pr 456              # start an unattended drive of PR 456 in the background
 /groundwork:drive-pr --interactive 456   # one round in this session, then stop
 /groundwork:resolve-review-comments 456  # one review-resolution pass, no drive
@@ -156,8 +156,11 @@ committed: no copy of the skill, no install script, no generated files.
      deferral_team: ENG              # issue-tracker team for follow-ups
    ```
 
-   Every field, required or optional, is listed in the skill's
-   [configuration table](skills/resolve-review-comments/README.md#consumer-configuration).
+   Every field of every skill, its type, its default and what the skills
+   derive instead of asking for, is in the
+   [configuration reference](CONFIGURATION.md); the skill's own
+   [configuration table](skills/resolve-review-comments/README.md#consumer-configuration)
+   explains its fields.
    Fields a skill does not read are ignored, so other tooling can share the
    file. Check it by running the skill's first step from the repository:
    `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
@@ -217,11 +220,20 @@ tracker scripts require. A drive also needs an AI reviewer that publishes the
 check run, sticky comment and reviewed-commit marker described in the
 [drive-pr README](skills/drive-pr/README.md#consumer-configuration); a
 repository configured only for `resolve-review-comments` does not have that
-yet. Add a field only when its default does not fit.
+yet. Add a field only when its default does not fit. The
+[configuration reference](CONFIGURATION.md) lists every field, including the
+`pull_requests` policy below.
 
 ```yaml
 repository:
   base_branch: develop        # default: the repository's default branch on GitHub
+pull_requests:                # how agents open and stack pull requests
+  stacking: none              # none | native (GitHub stacks) | branch (plain chains); default none
+  open_as: draft              # draft | ready; default draft
+  mark_ready: 1               # drive marks a draft Ready after round N | converged | never; default 1
+  branch_name: "{key_lower}-{slug}"   # must contain {key} or {key_lower}
+  issue_link: closes          # closes | refs | none
+  size_budget: 600            # changed lines per pull request; default: no budget
 review:
   reviewer_app: example-review   # GitHub App whose check runs show the AI reviewer ran; default: none (any app's check run with a reviewer-shaped name)
 drive:
@@ -332,6 +344,9 @@ design_brief:
   design_language: docs/design.md     # design-language document; default: detected
   prototypes: design/prototypes       # where finished design bundles land; default: ask
 ```
+
+Every field, with its default and the detection behind it, is in the
+[configuration reference](CONFIGURATION.md#procedure-skills).
 
 `review` finds the decision rules through `adr`'s locator, and `fix-ci` runs
 its validation plan through `drive-pr`'s round planner, so the plugin keeps

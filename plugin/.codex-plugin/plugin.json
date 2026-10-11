@@ -1,6 +1,6 @@
 {
   "name": "groundwork",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Groundwork shared agent tooling: drive-pr runs a pull request's review rounds unattended, do-issue works an issue-tracker issue through to a pull request, resolve-review-comments settles review threads, the review-arbiter agent rules on contested findings, and procedure skills cover reviewing a change (review), repairing failing CI (fix-ci), GitHub Actions workflows (github-actions), architecture decision records (adr), de-scarring documents (descar), promoting agent memory (promote-memory), bulk read-only analysis (programmatic-execution) and design briefs (design-brief-builder). Each repository supplies its own values in .config/groundwork-overlay.yaml.",
   "author": { "name": "Docomply" },
   "homepage": "https://github.com/docomply/jig/blob/main/plugin/README.md",

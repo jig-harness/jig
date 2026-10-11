@@ -19,7 +19,7 @@ and the deferral protocol are canonical in `/groundwork:resolve-review-comments`
 Read them; this skill adds the *loop*, not a second vocabulary.
 
 **In the delivery loop** — upstream: [`/groundwork:do-issue`](../do-issue/SKILL.md)
-opens the draft PR and arms this drive. Alongside: the repository's own
+opens the PR and arms this drive. Alongside: the repository's own
 continuous-integration (CI) repair procedure for red CI, and its
 merge-conflict procedure when the branch conflicts, if it has them.
 Downstream: a human merges, then whatever the merge still owes (issue state,
@@ -47,7 +47,7 @@ working directory and from their own location.
 
 The repository's own values — the AI reviewer's GitHub App, the base branch,
 the command that turns a diff into a validation plan, the change-area catalog,
-whether the reviewer reviews drafts — are optional fields in
+whether the reviewer reviews drafts, when a draft is marked Ready — are optional fields in
 `.config/groundwork-overlay.yaml`, read at run time. Every one has a default,
 so a repository that sets none of them still drives. The field list and the
 defaults are in [README.md § Consumer configuration](README.md#consumer-configuration);
@@ -71,7 +71,7 @@ The scripts spawn each other via their own runtime, so a drive started either
 way stays self-consistent; `gh` and `git` are the only external binaries they
 call.
 
-## Drafts are driven, and marked Ready after the first round
+## Drafts are driven, and marked Ready at the declared round
 
 **exact** — Follow the scripted Ready transition and its guards; do not infer a transition from review counts.
 
@@ -94,7 +94,12 @@ round the drive marks it Ready itself** (`mark-ready.ts`, called by `drive.ts`;
 step 7 below for an interactive round). That ordering is the point: a paid
 external reviewer gets one pass per push, and it is spent on a head whose
 obvious findings from the draft-reviewing reviewer are already cleaned up
-rather than on the branch's first draft. `--keep-draft` opts out.
+rather than on the branch's first draft. When it marks Ready is the
+repository's `pull_requests.mark_ready`: after round N (default `1`),
+`converged` (only once the draft-reviewing reviewer has nothing left), or
+`never`. A draft that converges before its round N is marked at convergence,
+since the reviewers that skip drafts would otherwise never see it.
+`--keep-draft` is `never` for one run.
 
 The transition is **once per PR and durable** (`readyMarkedRound` in the drive
 state, written only once `gh pr ready` is confirmed; the in-flight claim is a
@@ -130,7 +135,7 @@ consumer polling `--json` for one of these four will never see it there.
 
 | State | Exit | Meaning |
 |---|---|---|
-| `CONVERGED` | 3 (`drive.ts`: 0) | The posting reviewer completed on **this exact head**, its recorded reviewed-SHA equals that head, zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead |
+| `CONVERGED` | 3 (`drive.ts`: 0) | The posting reviewer completed on **this exact head**, its recorded reviewed-SHA equals that head, zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead. |
 | `PR_NOT_OPEN` | 5 | Merged or closed — detected **before** any push, so nothing lands on an orphaned branch |
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and does **not** re-arm |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
@@ -159,14 +164,17 @@ draft-skipping reviewers have never seen as "safe to merge". The lease is a leas
 either takes the transition over or finds the other driver already finished it.
 
 It sits **behind** the clean-worktree gate, so a drive that converges with exit
-`12` before completing any round leaves the PR a draft. It never *reverts* a
-Ready PR: `mark-ready.ts` runs at the end of every completed round and is
-durably once-only, so a drive that has completed even one round has already
-marked the PR, and exit `12` on a later round leaves it Ready with an unclean
-worktree behind it. So the PR is still a draft in exactly two cases: no round
-completed (convergence at the very first gate), or the drive was started with
-`--keep-draft`, which skips `mark-ready.ts` however many rounds run — there the
-draft is the requested outcome, not a transition still owed.
+`12` while the PR is still owed the transition leaves it a draft. It never
+*reverts* a Ready PR: `mark-ready.ts` runs at the end of every completed round
+from the round `pull_requests.mark_ready` declares (default `1`) and is durably
+once-only, so a drive that has completed that round has already marked the PR,
+and exit `12` on a later round leaves it Ready with an unclean worktree behind
+it. So the PR is still a draft when no completed round has reached the
+declared one (convergence before it, including at the very first gate), when
+the repository marks Ready only at convergence (`converged`), or when it never
+does (`never`, or a drive started with `--keep-draft`, which skips
+`mark-ready.ts` however many rounds run). In the first two the transition is
+still owed; in the last the draft is the requested outcome.
 `gh pr ready` spends the external reviewer's
 one-pass-per-push budget on whatever head is current at that instant, and over a
 dirty worktree that is precisely the head about to change once the leftovers are
@@ -716,6 +724,8 @@ ${CLAUDE_SKILL_DIR}/scripts/drive-status.ts [PR] --json --once --bump-attempt
 
 Proceed only on exit `0`. Anything else is the answer for *this* gate's own
 question ("is there new reviewer work") — report it and stop *this round*.
+A `CONVERGED` draft in an interactive round may still owe the Ready
+transition first: § 7 says when.
 
 `--bump-attempt` is the single pass-start entry point: on exit `0`
 it records this pass on this head — the durable counter § 3's `reflectDue`
@@ -1948,8 +1958,21 @@ something you must act on, not to run a clean round.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts [PR] --reason "round N completed"
+${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts [PR] --round N --reason "round N completed"
 ```
+
+`--round N` applies `pull_requests.mark_ready`: before the configured round,
+or when the repository marks Ready only at convergence or never, it prints
+`not-due` and does nothing.
+
+**At convergence, in an interactive round.** When § 1's gate answers
+`CONVERGED` (exit 3) on a PR that is still a draft, there is no round to work,
+but the transition may still be owed: under `pull_requests.mark_ready:
+converged`, or a round number the drive converged before reaching. Unless the
+repository marks Ready `never` or the round runs with `--keep-draft`, run
+`mark-ready.ts [PR] --reason "converged"` without `--round`, which is the
+transition `drive.ts` makes at convergence, then stop. The reviewers it
+summons are the next gate's to wait for.
 
 The round is done: findings triaged, replies posted, fixes pushed, threads
 resolved. That is the moment the paid external reviewers are worth summoning —

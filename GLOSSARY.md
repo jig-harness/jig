@@ -154,6 +154,14 @@ capitalized as commonly written; cross-references are *italicized*.
   architecture doc).
 - **Draft PR** — a pull request opened in "not ready for review" state so CI
   and bots can run while a human decides when it's worth reviewers' attention.
+- **Stacked pull request** — a pull request based on another open pull
+  request's branch instead of the integration branch, so dependent work can
+  be reviewed before what it builds on merges. A *native* stack records the
+  final target in the forge's own stack metadata; a plain *branch chain*
+  records it nowhere, and tools have to walk the chain of bases to find it.
+- **Pull-request policy** — a repository's declared rules for how pull
+  requests are shaped: whether they may stack, how branches are named, how a
+  pull request links its issue, and how large it may be.
 - **HITL (human-in-the-loop)** — a decision class that must be made by a
   human, never autonomously by an agent (merges, releases, destructive
   operations, scope expansions). Kept in an explicit registry.

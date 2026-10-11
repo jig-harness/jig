@@ -15,8 +15,9 @@
 > the thing people follow.
 >
 > Invariant it encodes:
-> **PRs open as drafts; a human, or an adopted review driver after its first
-> completed round, marks Ready; a human merges; every review
+> **PRs open as drafts (or Ready, where the repository declares so because
+> none of its reviewers reviews drafts); a human, or an adopted review driver at the round the
+> repository declares, marks Ready; a human merges; every review
 > thread ends resolved with an audit trail, in a terminal state the author
 > declares rather than one anybody infers later; and review is a loop over
 > rounds whose stop condition is a round that finds nothing left.**
@@ -42,8 +43,12 @@ Draft means "CI and bots may run; humans need not look yet" — it is the
 author's workspace, not a review request. The PR description links its tracked
 work item and states what changed and how it was verified.
 
-**Exit:** a draft PR exists; its description names the change and the
-verification done.
+If none of your reviewers reviews drafts, a draft only delays the first
+review; such a repository may declare that PRs open Ready, which starts the
+loop already past [Ready happens inside the loop](#ready-happens-inside-the-loop).
+
+**Exit:** a draft PR exists (or a Ready one, where declared); its description
+names the change and the verification done.
 **Executable:** your forge's draft-PR command — `gh pr create --draft`, or a
 GitLab `Draft:` title prefix (per-forge in [`mappings.md`](../mappings.md)).
 
@@ -122,8 +127,9 @@ Reviewers fall into two sets: those that review drafts, and those that respond
 only once the PR is Ready — review bots that skip drafts, and human reviewers
 who wait for the Ready signal. Once a round has settled with every
 draft-reviewing reviewer, the PR is marked **Ready**: by a human, or, where the
-repository adopts an unattended review driver, by that driver once its first
-review round has completed. Either way, the reviewers that skip drafts then
+repository adopts an unattended review driver, by that driver at the point
+the repository declares: after a given review round, or only once the
+draft-reviewing reviewers have nothing left. Either way, the reviewers that skip drafts then
 spend their pass on a head the draft reviewers have already cleaned.
 
 From Ready on, the loop waits on both sets: a round counts as settled only when

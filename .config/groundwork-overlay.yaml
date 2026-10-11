@@ -30,5 +30,8 @@ review:
     provenance_label: pr-followup
     epic_label: epic
 issue_tracker:
-  system: linear
+  adapter: linear
   team: DOC
+pull_requests:
+  # One pull request per change against main; a person merges.
+  stacking: none

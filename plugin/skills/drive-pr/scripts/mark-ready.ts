@@ -24,7 +24,7 @@
  * one pass lands on a head that has already been cleaned up instead of on the
  * first draft of it.
  *
- * Usage: mark-ready.ts [PR] [--reason TEXT]
+ * Usage: mark-ready.ts [PR] [--reason TEXT] [--round N]
  *
  * Exit codes:
  *   0  the call itself did not fail — this covers `marked`, `already-ready`,
@@ -66,6 +66,9 @@
  *                   the transition over, so this is safe to leave rather than
  *                   wait on
  *   not-open        the PR is merged or closed (exit 5)
+ *   not-due         `--round` only: `pull_requests.mark_ready` does not make
+ *                   the transition due after this round (a later round, only
+ *                   at convergence, or never); nothing read, nothing done
  *   still-draft     `--record-only` only: the PR is genuinely a draft as of
  *                   this read — nothing recorded, nothing dispatched, and the
  *                   transition is left to a later, ordinary call
@@ -86,6 +89,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fail, isDigits, runMain, sleep, testDelaySeconds } from "./lib/cli.ts";
 import {
+  type MarkReady,
+  markReadyDueAfterRound,
+  prPolicy,
+} from "./lib/pr-policy.ts";
+import {
   ghCall,
   helperTimeoutSeconds,
   resolvePr,
@@ -97,12 +105,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const driveState = join(here, "drive-state.ts");
 
 function usage(): void {
-  console.error(`usage: mark-ready.ts [PR] [--reason TEXT]
+  console.error(`usage: mark-ready.ts [PR] [--reason TEXT] [--round N]
 
   Marks a DRAFT pull request Ready for review, at most once per PR.
   With PR omitted, resolves the current branch's PR.
 
   --reason TEXT   what earned the transition, for the stderr line only.
+  --round N       the round that just completed: print 'not-due' and do
+                   nothing unless pull_requests.mark_ready makes the
+                   transition due after it. For a round run by hand;
+                   drive.ts applies the same rule itself.
   --record-only   never fire 'gh pr ready' — only record an already-Ready
                    observation (or confirm the durable state), and return
                    'still-draft' with no side effect if the PR is genuinely a
@@ -114,15 +126,24 @@ interface Args {
   pr: string;
   reason: string;
   recordOnly: boolean;
+  /** `--round`: the completed round, or `null` when not given. */
+  round: number | null;
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { pr: "", reason: "", recordOnly: false };
+  const a: Args = { pr: "", reason: "", recordOnly: false, round: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
     if (arg === "--record-only") {
       a.recordOnly = true;
+      continue;
+    }
+    if (arg === "--round") {
+      const value = argv[++i];
+      if (value === undefined || !isDigits(value) || Number(value) < 1)
+        fail(2, "--round requires a round number of at least 1");
+      a.round = Number(value);
       continue;
     }
     if (arg === "--reason") {
@@ -246,6 +267,21 @@ async function main(): Promise<number> {
   if (a.pr !== "" && !isDigits(a.pr)) {
     usage();
     fail(2, `not a PR number: ${a.pr}`);
+  }
+  if (a.round !== null && !a.recordOnly) {
+    let markReady: MarkReady;
+    try {
+      markReady = prPolicy().markReady;
+    } catch (e) {
+      fail(1, `mark-ready.ts: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (!markReadyDueAfterRound(markReady, a.round)) {
+      console.error(
+        `mark-ready.ts: not due after round ${a.round} (pull_requests.mark_ready: ${markReady})`,
+      );
+      console.log("not-due");
+      return 0;
+    }
   }
   const pr = await resolvePr(a.pr);
   if (pr === "") {

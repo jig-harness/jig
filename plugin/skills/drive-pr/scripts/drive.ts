@@ -22,8 +22,11 @@
  *                    measured — see below.
  *   --bots-only      count only bot-authored threads (pass it to the agent
  *                    too).
- *   --keep-draft     do NOT mark a draft PR Ready for review after the first
- *                    completed round. Off by default: repo policy births every
+ *   --keep-draft     do NOT mark a draft PR Ready for review at all; the same
+ *                    as `pull_requests.mark_ready: never` for this run. When
+ *                    the drive marks a draft Ready is otherwise
+ *                    `pull_requests.mark_ready`: after round N (default 1),
+ *                    or only at convergence. Off by default: repo policy births every
  *                    PR as a draft, `docomply-review` reviews drafts but
  *                    CodeRabbit refuses them, so the drive clears the in-house
  *                    findings and THEN marks the PR Ready, spending the paid
@@ -182,6 +185,11 @@ import {
   unconcludedGitOpMarker,
 } from "./lib/proc.ts";
 import { reviewerLabel } from "./lib/overlay.ts";
+import {
+  type MarkReady,
+  markReadyDueAfterRound,
+  prPolicy,
+} from "./lib/pr-policy.ts";
 import {
   describe as describeQuota,
   detectQuotaBlock,
@@ -2352,6 +2360,17 @@ async function main(): Promise<number> {
   const maxRoundsN = Number.parseInt(maxRounds, 10);
   if (maxRoundsN < 1) fail(2, "--max-rounds must be at least 1");
 
+  // When a draft is marked Ready: `--keep-draft` wins, else the repository's
+  // `pull_requests.mark_ready`. Read once, up front: an unreadable policy
+  // stops the drive rather than guessing when to summon more reviewers.
+  let markReadyPolicy: MarkReady = 1;
+  try {
+    markReadyPolicy = prPolicy().markReady;
+  } catch (e) {
+    fail(1, `drive.ts: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (markReadyPolicy === "never") keepDraft = true;
+
   // The flag is the env var's front door, validated HERE rather than in
   // `passTimeoutSeconds()`: a typo on the command line must refuse at exit 2
   // like every other bad flag, where the env var's own reader falls back to
@@ -4099,7 +4118,8 @@ async function main(): Promise<number> {
       // There is no `case 10`. It was `PR_IS_DRAFT`, terminal and un-re-armed
       // on the premise that no reviewer arm looks at a draft; `docomply-review`
       // reviews drafts (measured — see mark-ready.ts), so a drive on one now
-      // proceeds and marks it Ready itself after the first completed round.
+      // proceeds and marks it Ready itself at the round
+      // `pull_requests.mark_ready` declares.
       // The CODE stays retired rather than being recycled for something else:
       // an operator reading `10` out of an old log or a wrapper script should
       // find nothing rather than a different meaning.
@@ -5098,7 +5118,7 @@ async function main(): Promise<number> {
     //     --max-rounds while the PR remains draft" this once did. So the second
     //     consecutive one stops the drive and says which command to run by
     //     hand.
-    if (!keepDraft) {
+    if (!keepDraft && markReadyDueAfterRound(markReadyPolicy, round)) {
       const rc = await run(
         tsArgv(markReady, [pr, "--reason", `round ${round} completed`]),
         { stderr: "inherit", timeoutSec: markReadyTimeoutSeconds() },
