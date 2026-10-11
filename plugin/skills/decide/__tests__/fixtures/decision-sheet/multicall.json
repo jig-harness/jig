@@ -1,0 +1,830 @@
+{
+  "schema": "decision-sheet/v1",
+  "id": "ENG-310",
+  "url": "https://tracker.example.com/acme/issue/ENG-310",
+  "title": "D03: How the catalogue cache combines its layers and counts its expiry",
+  "owners": [
+    "technical",
+    "product",
+    "commercial",
+    "tactical"
+  ],
+  "priority": "Medium",
+  "reversibility": "Most calls are cheap to change before launch. A wrong expiry that shows an old price to a customer cannot be undone.",
+  "verifiedAt": {
+    "date": "2026-10-03",
+    "commit": "222d2d77e7"
+  },
+  "question": "Each product page needs one effective cache policy: a start time, a lifetime, an expiry and a final action. Several layers can contribute to that policy. Decide how the layers combine, what happens when they conflict, and how the times are counted.",
+  "currentBehaviour": [
+    {
+      "text": "The cache uses one policy per product page: the first policy that matches. A linked category policy supplies the lifetime and the final action. Otherwise the policy's own values do.",
+      "source": "services/catalog/src/cache/policy-resolver.ts (first-match-wins, lines 5-18)"
+    },
+    {
+      "text": "Global cache defaults never set the expiry of a page, but several places read them. The warm-up job starts a page if the shop has any active global default. The admin dashboard shows the final action of the shop's top global default on every page, not the page's own action. The cache report, the stock report and the public /v1 API also use them.",
+      "source": "warmup.ts:164-191; cache-views.service.ts:323-350; cache-report.service.ts; openapi.yaml"
+    },
+    {
+      "text": "For a policy linked to a category policy, the resolver ignores the policy's own lifetime and final action. The database still lets both be stored on the same policy.",
+      "source": "policy-resolver.ts:568-581; db_schema.sql check_policy_link"
+    },
+    {
+      "text": "Image overrides use a separate path. They do not change the expiry of the page.",
+      "source": "services/catalog/src/images/image-cache.service.ts"
+    },
+    {
+      "text": "The edge cache keeps its own copy and reads the max-age header. ENG-301 added that header, and it counts from the response time.",
+      "source": "services/edge/src/headers.ts#maxAge"
+    },
+    {
+      "text": "A price change from the pricing service clears the page entry. A stock change does not clear it.",
+      "source": "services/pricing/src/events.ts#onPriceChanged"
+    },
+    {
+      "text": "The resolver counts a lifetime in seconds from the time the entry was written. A one-day lifetime therefore ends at a different hour each day, and it moves by one hour on a clock change.",
+      "source": "policy-resolver.ts#expiresAt"
+    },
+    {
+      "text": "A background job refreshes hot products before they expire. The job runs every five minutes and skips a page that another process has locked.",
+      "source": "services/catalog/src/cache/refresh-job.ts"
+    },
+    {
+      "text": "No page in production has an expiry in the past today.",
+      "source": "query on the production replica, 2026-10-02"
+    },
+    {
+      "text": "The cache removes the least recently used entry when its memory is full. The removal does not check whether the entry belongs to a hot product.",
+      "source": "services/catalog/src/cache/store.ts (evict, lines 40-72)"
+    }
+  ],
+  "settled": [
+    {
+      "text": "The category policy is the baseline for every product in that category. A product override can change it but must give a reason. The merchandising team agreed to this, and this sheet does not reopen it.",
+      "source": "ENG-302 (ruling of 2026-09-20)"
+    },
+    {
+      "text": "The pricing service is the only source of a price. The cache stores a price but never calculates one.",
+      "source": "ENG-198 description"
+    },
+    {
+      "text": "Each page has exactly one effective policy.",
+      "source": "AGENTS.md § Caching"
+    },
+    {
+      "text": "An override needs a named owner and a reason that the dashboard shows.",
+      "source": "ENG-302 (ruling of 2026-09-20)"
+    }
+  ],
+  "hiddenBranches": [
+    {
+      "title": "The dashboard already shows the wrong final action",
+      "text": "The admin dashboard shows the final action of the global default on every page. A page whose own policy says remove can show refresh. Merchandisers act on what the dashboard shows. So a wrong label can already lead to a wrong manual purge today, before any of these calls is made.",
+      "action": "Fix the dashboard label first, under ENG-303, whatever this decision says."
+    },
+    {
+      "title": "A separate shop layer changes what a global default means",
+      "text": "Under {call:a} a separate shop layer would replace the global defaults. Today the global defaults have no owner and no review. A new layer needs both before it can set the expiry of a page. Without them, the layer is a second baseline that nobody maintains.",
+      "action": "If {call:a} keeps a separate layer, write ADR-0045 for it and link ENG-303. Otherwise retire the global defaults in the same release. Tell the merchandising team which pages change, and keep the old values in the release notes for one month."
+    },
+    {
+      "title": "Overrides can already disagree",
+      "text": "Nothing today stops a product override that is shorter than its category policy. The database stores both values. The resolver uses the override, and the dashboard shows the category value.",
+      "action": "Count the overrides that are shorter than their category under ENG-305 before you answer {call:a} and {call:c}."
+    },
+    {
+      "title": "A clock change moves the hour",
+      "text": "A lifetime counted in seconds from the write time drifts by one hour twice a year in the shop's time zone. A page that must expire at midnight then expires at 23:00 or at 01:00. Customers in the shop's time zone see the old price for one more hour, or the new price one hour early. A sale that starts at midnight starts late.",
+      "action": "Decide in {call:e} whether an expiry follows the shop's local clock."
+    },
+    {
+      "title": "The edge cache counts from a different moment",
+      "text": "The edge cache counts max-age from the response time, not from the write time. So the edge copy can outlive the cache entry by up to one lifetime. A purge then has to reach both copies, and today it reaches only the cache.",
+      "action": "Track the edge alignment under ENG-306 and in D05."
+    },
+    {
+      "title": "A refresh can fail without a trace",
+      "text": "The refresh job skips a locked page and writes no log line. If the lock never clears, the page shows its old entry until the lifetime ends. The dashboard shows the page as fresh because it reads the policy, not the entry. Nobody is told, and the next refresh starts from the same lock.",
+      "action": "Add a warning for a skipped refresh under ENG-307. The warning affects {call:c}, {call:e} and {call:f}."
+    }
+  ],
+  "calls": [
+    {
+      "id": "a",
+      "title": "How the layers combine",
+      "owners": [
+        "product",
+        "technical"
+      ],
+      "question": "Does the shop keep a separate global layer above the category policies, or does each page take its policy from its category alone?",
+      "facts": [
+        {
+          "text": "D05 holds the edge alignment. ENG-302 decided that the category policy is the baseline. Neither says whether a shop-wide default can still set a lifetime that no category states.",
+          "source": "ENG-310 description"
+        },
+        {
+          "text": "Twelve shops use a global default today. Nine of them use it only because the setup wizard created one. Three set a longer lifetime on purpose, for a seasonal sale that keeps the same prices for a week.",
+          "source": "query on the production replica, 2026-10-02"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "S1",
+          "label": "Category policy only",
+          "detail": "A page in a category that has a policy, and no override on the page."
+        },
+        {
+          "id": "S2",
+          "label": "Shop default is longer",
+          "detail": "The global default is longer than the category policy."
+        },
+        {
+          "id": "S3",
+          "label": "No category policy",
+          "detail": "A page whose category has no policy."
+        }
+      ],
+      "options": [
+        {
+          "id": "1",
+          "name": "A separate shop layer",
+          "summary": "Keep the global defaults as a layer of their own. The cache takes the longest lifetime of the shop layer and the category policy. The dashboard shows which layer set the value for each page.",
+          "keep": [
+            "The seasonal sales keep working as they do now.",
+            "A shop can set one value for all of its pages."
+          ],
+          "pay": [
+            "The shop layer needs an owner and a review.",
+            "Two baselines can disagree, and the dashboard must show both."
+          ],
+          "rightWhen": "Many shops need one value for every page, and categories are too fine.",
+          "obligation": "Give the shop layer a named owner and a review date in the dashboard.",
+          "outcomes": {
+            "S1": {
+              "kind": "safe",
+              "text": "The category value, as the shop layer agrees"
+            },
+            "S2": {
+              "kind": "human",
+              "text": "The shop layer wins, and someone must check"
+            },
+            "S3": {
+              "kind": "safe",
+              "text": "The shop layer sets the value alone"
+            }
+          }
+        },
+        {
+          "id": "2",
+          "name": "Category policy with a reasoned shop override",
+          "summary": "The category policy is the only baseline. A shop can override it for a set of pages, with a reason and an end date. When the end date passes, the category policy applies again.",
+          "keep": [
+            "One baseline for every page, as ENG-302 decided.",
+            "A seasonal sale still gets its longer lifetime, with a reason."
+          ],
+          "pay": [
+            "The nine shops that have a global default only by accident lose it. Their pages fall back to the category policy.",
+            "The override needs an end date, and the dashboard must show the overrides that will end soon.",
+            "The migration touches every shop that has a global default."
+          ],
+          "rightWhen": "The category is the right baseline, and a shop-wide value is an exception.",
+          "obligation": "Write ADR-0045 for the override layer before the migration starts. List the twelve shops and the value each one keeps.",
+          "outcomes": {
+            "S1": {
+              "kind": "neutral",
+              "text": "No change: the category value applies"
+            },
+            "S2": {
+              "kind": "safe",
+              "text": "The override, with a reason"
+            },
+            "S3": {
+              "kind": "safe",
+              "text": "The override sets the value"
+            }
+          }
+        },
+        {
+          "id": "3",
+          "name": "Category policy only",
+          "summary": "Remove the global defaults. Every page takes its policy from its category, or from a product override.",
+          "keep": [
+            "The simplest model.",
+            "No layer exists that the dashboard does not show."
+          ],
+          "pay": [
+            "The seasonal sales stop working.",
+            "Three shops must move their value into each category.",
+            "A page without a category policy has no lifetime at all."
+          ],
+          "rightWhen": "Every category has a policy, and no shop needs a shop-wide value for a sale.",
+          "outcomes": {
+            "S1": {
+              "kind": "safe",
+              "text": "The category value"
+            },
+            "S2": {
+              "kind": "risk",
+              "text": "The longer value is lost without a choice"
+            },
+            "S3": {
+              "kind": "neutral",
+              "text": "No policy: the page is not cached"
+            }
+          }
+        }
+      ],
+      "recommended": "2",
+      "why": "It keeps one baseline, as ENG-302 decided, and still lets a seasonal sale keep its prices for a week. {opt:1} keeps two baselines that can disagree. The edge alignment in D05 is the same for both options, so it does not decide this call."
+    },
+    {
+      "id": "b",
+      "title": "Who owns a conflict between two layers",
+      "owners": [
+        "commercial",
+        "product"
+      ],
+      "question": "When two layers set different lifetimes for the same page, does the cache wait for a named owner to choose, or does a fixed rule choose without a person?",
+      "facts": [
+        {
+          "text": "A conflict today is invisible. The resolver takes the first match, and nothing records that a second policy also matched. Support learns about a conflict only when a customer reports an old price.",
+          "source": "policy-resolver.ts#resolve"
+        },
+        {
+          "text": "The import in ENG-210 writes product lines that can carry their own lifetime. That adds a third layer.",
+          "source": "ENG-210"
+        },
+        {
+          "text": "ENG-302 requires a named owner for each override. It says nothing about an owner for a conflict.",
+          "source": "ENG-302 (ruling of 2026-09-20)"
+        },
+        {
+          "text": "Under {call:a,opt:2} the conflicts are between a category policy and an override. D05 adds the edge copy as a fourth source of a lifetime, but it does not set a value of its own.",
+          "source": "ENG-310 description, D05"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "S1",
+          "label": "Override shorter than category",
+          "detail": "A product override sets a shorter lifetime than its category policy."
+        },
+        {
+          "id": "S2",
+          "label": "Two overrides disagree",
+          "detail": "Two overrides match the same page with different values."
+        },
+        {
+          "id": "S3",
+          "label": "No owner",
+          "detail": "The override has no named owner any more."
+        }
+      ],
+      "options": [
+        {
+          "id": "1",
+          "name": "Owned conflict, blocks the purge",
+          "summary": "Record each conflict with a named owner. Until the owner chooses, the cache keeps the current entry and the purge job skips the page. The dashboard lists the open conflicts by owner, with the age of each conflict and the two values that disagree. A conflict older than one week goes to the team lead.",
+          "keep": [
+            "A person chooses each conflict.",
+            "No page loses its entry because of a guess."
+          ],
+          "pay": [
+            "The open conflicts need someone to work through them.",
+            "A page can keep an old entry while it waits."
+          ],
+          "rightWhen": "Conflicts are rare, and a wrong price costs more than a slow update.",
+          "obligation": "Set the escalation deadline in D09.",
+          "outcomes": {
+            "S1": {
+              "kind": "human",
+              "text": "The owner chooses the value"
+            },
+            "S2": {
+              "kind": "human",
+              "text": "The owner chooses the value"
+            },
+            "S3": {
+              "kind": "human",
+              "text": "The team lead chooses the value"
+            }
+          }
+        },
+        {
+          "id": "2",
+          "name": "Longest lifetime wins",
+          "summary": "A fixed rule chooses: the longest lifetime wins. No person is involved.",
+          "keep": [
+            "No queue and no waiting.",
+            "Fully automatic."
+          ],
+          "pay": [
+            "A short override, set for a reason, is lost without a choice.",
+            "Nobody learns that two layers disagree.",
+            "The longest value can show an old price for longer than any layer intended."
+          ],
+          "rightWhen": "Conflicts are frequent and the values are close to each other.",
+          "outcomes": {
+            "S1": {
+              "kind": "risk",
+              "text": "The category value wins, the override is lost"
+            },
+            "S2": {
+              "kind": "risk",
+              "text": "The longer override wins without a choice"
+            },
+            "S3": {
+              "kind": "safe",
+              "text": "The value stays, as no other matches"
+            }
+          }
+        }
+      ],
+      "ruling": {
+        "option": "1",
+        "recordUrl": "https://tracker.example.com/acme/issue/ENG-310#ruling",
+        "ruledAt": "2026-10-05"
+      }
+    },
+    {
+      "id": "c",
+      "title": "Whether an override may be shorter",
+      "owners": [
+        "commercial",
+        "technical"
+      ],
+      "question": "Can a product override set a shorter lifetime than its category policy?",
+      "facts": [
+        {
+          "text": "A short lifetime increases the load on the pricing service. Each page that expires is fetched again on the next visit. On a sale day the load on the pricing service grows ten times, and a very short override on a popular page can cause most of that load by itself.",
+          "source": "load test of 2026-09-12"
+        },
+        {
+          "text": "The merchandising team sets a short override when a price is likely to change during the day, for example for a flash sale.",
+          "source": "interview with the merchandising team"
+        },
+        {
+          "text": "Nothing checks an override against its category today. A value of one second is accepted, and so is a value of one year. The dashboard shows neither as unusual.",
+          "source": "override.schema.ts#lifetime"
+        },
+        {
+          "text": "The category policy is maintained by the catalogue team. The overrides are set by the merchandising team.",
+          "source": "AGENTS.md § Ownership"
+        }
+      ],
+      "options": [
+        {
+          "id": "1",
+          "name": "Shorter only with a reason and a floor",
+          "summary": "An override can be shorter than its category, but it needs a reason, and it cannot go below a floor of five minutes. The check runs when the override is saved and again at each refresh, because the category policy can change after the override is saved. A failed check keeps the category value and warns the owner.",
+          "keep": [
+            "A flash sale still gets a short lifetime.",
+            "The pricing service is protected by the floor."
+          ],
+          "pay": [
+            "Each short override needs a reason.",
+            "The floor is one more value to maintain."
+          ],
+          "rightWhen": "Short overrides are useful for some sales, and the load on the pricing service has a limit.",
+          "obligation": "Show the floor and the reason in the dashboard, next to each override."
+        },
+        {
+          "id": "2",
+          "name": "Never shorter than the category",
+          "summary": "An override can only make the lifetime longer. A shorter value is rejected when it is saved.",
+          "keep": [
+            "The simplest rule."
+          ],
+          "pay": [
+            "A flash sale cannot get a short lifetime, so its price can stay old for the full category lifetime."
+          ],
+          "rightWhen": "Flash sales are rare, or they use a separate price path."
+        },
+        {
+          "id": "3",
+          "name": "Shorter without a check",
+          "summary": "Keep today's behaviour: any value is accepted. This is {opt:2} without the rejection.",
+          "keep": [
+            "No change for the merchandising team."
+          ],
+          "pay": [
+            "A very short override can overload the pricing service.",
+            "Nobody sees the risky values."
+          ],
+          "rightWhen": "The load on the pricing service is never a problem."
+        },
+        {
+          "id": "4",
+          "name": "Shorter only for a sale",
+          "summary": "An override can be shorter only while a sale runs. The sale end date ends the override.",
+          "keep": [
+            "Short values are tied to a real event."
+          ],
+          "pay": [
+            "The cache must know the sale calendar, which lives in another service and changes often during the day."
+          ],
+          "rightWhen": "Every short override in practice belongs to a sale, and the sale calendar is reliable."
+        }
+      ],
+      "recommended": "1",
+      "why": "{opt:1} keeps the flash sale working and protects the pricing service with a floor. The second check at refresh matters because the category policy can change after the override is saved. Without {opt:1}, a short override stays even when its category gets longer. {call:g,opt:1} closes the way around this check: an override with no category at all.",
+      "openInput": "Commercial: confirm that five minutes is a floor that every flash sale can work with, or name a lower value."
+    },
+    {
+      "id": "d",
+      "title": "Which moment starts the lifetime",
+      "owners": [
+        "technical",
+        "product"
+      ],
+      "question": "Does a lifetime start when the entry is written, when the page is published, or at a fixed time of day? The answer decides when an old price can still show after a change.",
+      "facts": [
+        {
+          "text": "The resolver starts the lifetime when the entry is written. A page that is written at 23:59 with a one-day lifetime expires at 23:59 the next day.",
+          "source": "policy-resolver.ts#expiresAt"
+        },
+        {
+          "text": "A pre-order page is written when the product is created, but it is published later. Its lifetime can end before anyone sees it.",
+          "source": "services/catalog/src/preorder/publish.ts"
+        },
+        {
+          "text": "The pricing service sends a price change as an event. The event clears the entry, so the next write starts a new lifetime. A missed event leaves the old entry until its lifetime ends.",
+          "source": "services/pricing/src/events.ts"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "S1",
+          "label": "Regular product",
+          "detail": "Written and published at once."
+        },
+        {
+          "id": "S2",
+          "label": "Pre-order",
+          "detail": "Written at creation, published days later."
+        },
+        {
+          "id": "S3",
+          "label": "Price change",
+          "detail": "The price changes during a lifetime."
+        }
+      ],
+      "options": [
+        {
+          "id": "1",
+          "name": "Start at the write time",
+          "summary": "Keep the write time as the start, and write a pre-order page again when it is published, so its lifetime starts at the moment that anyone can see it. A price change event clears the entry as it does today, and the next visit writes it again with a new lifetime. Nothing else in the resolver changes.",
+          "keep": [
+            "The resolver keeps one clear rule.",
+            "A pre-order page gets a full lifetime after it is published."
+          ],
+          "pay": [
+            "The publish step must write the page."
+          ],
+          "rightWhen": "Most pages are written and published at once, and the publish step is easy to change.",
+          "obligation": "Add a write to the publish step of the pre-order flow. Test that a pre-order page that is published after its first lifetime has ended gets a fresh entry. Show the start time of each entry in the dashboard so that support can see when a lifetime began.",
+          "outcomes": {
+            "S1": {
+              "kind": "safe",
+              "text": "The lifetime starts on publish"
+            },
+            "S2": {
+              "kind": "safe",
+              "text": "The page is written again on publish"
+            },
+            "S3": {
+              "kind": "safe",
+              "text": "The event clears the entry"
+            }
+          }
+        },
+        {
+          "id": "2",
+          "name": "Start at the publish time",
+          "summary": "Store the publish time and start the lifetime there.",
+          "keep": [
+            "Pre-orders are correct."
+          ],
+          "pay": [
+            "A new field on every entry, which ENG-302 did not plan.",
+            "Pages that are never published have no start.",
+            "Two clocks to keep in step."
+          ],
+          "rightWhen": "Many pages are published long after they are written.",
+          "outcomes": {
+            "S1": {
+              "kind": "safe",
+              "text": "Same as the write time"
+            },
+            "S2": {
+              "kind": "neutral",
+              "text": "Correct, with a new field to maintain"
+            },
+            "S3": {
+              "kind": "neutral",
+              "text": "The event still clears the entry"
+            }
+          }
+        },
+        {
+          "id": "3",
+          "name": "Start at midnight",
+          "summary": "Every lifetime starts at the next midnight in the shop's time zone.",
+          "keep": [
+            "Easy to explain."
+          ],
+          "pay": [
+            "A price change during the day waits until midnight if its event is missed."
+          ],
+          "rightWhen": "Prices change only once a day.",
+          "outcomes": {
+            "S1": {
+              "kind": "safe",
+              "text": "Fine"
+            },
+            "S2": {
+              "kind": "human",
+              "text": "Someone checks pre-orders"
+            },
+            "S3": {
+              "kind": "risk",
+              "text": "An old price shows until midnight"
+            }
+          }
+        }
+      ],
+      "recommended": "1",
+      "why": "The write time is already the rule, and ENG-302 planned no new field on the entry. {call:d,opt:1} fixes the one case where the write time is wrong, the pre-order, with one extra write when the page is published. The price change case is the same for every option because the event clears the entry.",
+      "openInput": "Product: confirm that the publish step of the pre-order flow can write the page without a delay."
+    },
+    {
+      "id": "e",
+      "title": "How the end of a lifetime is counted",
+      "owners": [
+        "technical"
+      ],
+      "question": "Does a lifetime end after a fixed number of seconds, or at the same hour on the shop's local clock, so that a clock change does not move it?",
+      "facts": [
+        {
+          "text": "The resolver adds the lifetime in seconds to the start time. On the night of a clock change, a one-day lifetime ends one hour early or one hour late.",
+          "source": "policy-resolver.ts#expiresAt"
+        },
+        {
+          "text": "Sales start at midnight on the shop's local clock. A page that expires at 23:00 instead of at midnight shows the sale price one hour before the sale starts. A page that expires at 01:00 shows the old price for the first hour of the sale, which is the busiest hour of a sale day.",
+          "source": "sales calendar, services/sales/src/calendar.ts#startsAt"
+        },
+        {
+          "text": "The edge cache counts max-age in seconds and does not know the shop's time zone. It cannot follow a local clock without a change to the headers. D05 holds that change.",
+          "source": "services/edge/src/headers.ts#maxAge"
+        },
+        {
+          "text": "Every shop has one time zone in its settings. No shop sells across two time zones today.",
+          "source": "services/shops/src/settings.ts#timeZone"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "S1",
+          "label": "A one-day lifetime",
+          "detail": "On a normal day."
+        },
+        {
+          "id": "S2",
+          "label": "A one-hour lifetime",
+          "detail": "On any day."
+        },
+        {
+          "id": "S3",
+          "label": "Clock change",
+          "detail": "A one-day lifetime on the night of a clock change."
+        }
+      ],
+      "options": [
+        {
+          "id": "1",
+          "name": "End at the same hour on the shop's local clock",
+          "summary": "A lifetime of one day or longer ends at the same hour on the shop's local clock. A shorter lifetime ends after a fixed number of seconds.",
+          "keep": [
+            "A sale starts on time, also on a clock change.",
+            "The rule matches how the merchandising team thinks about a day."
+          ],
+          "pay": [
+            "The resolver must read the shop's time zone, and the edge cache still counts seconds."
+          ],
+          "rightWhen": "Sales start at a fixed hour, and the shops sell in one time zone each.",
+          "obligation": "Read the shop's time zone in the resolver. Test both clock changes. Document that the edge cache still counts seconds, and that the edge copy can therefore be one hour off on the night of a clock change until D05 changes the headers. Tell the merchandising team which rule applies to a lifetime shorter than one day.",
+          "outcomes": {
+            "S1": {
+              "kind": "neutral",
+              "text": "No change"
+            },
+            "S2": {
+              "kind": "neutral",
+              "text": "No change, seconds as now"
+            },
+            "S3": {
+              "kind": "safe",
+              "text": "Ends at the right hour"
+            }
+          }
+        },
+        {
+          "id": "2",
+          "name": "End after a fixed number of seconds",
+          "summary": "Keep today's rule: every lifetime ends after a fixed number of seconds, whatever the local clock says.",
+          "keep": [
+            "No change to the resolver.",
+            "The cache and the edge cache count the same way."
+          ],
+          "pay": [
+            "A sale on the night of a clock change starts one hour early or late.",
+            "Nobody notices until it happens."
+          ],
+          "rightWhen": "No sale ever starts at a fixed local hour.",
+          "outcomes": {
+            "S1": {
+              "kind": "neutral",
+              "text": "No change"
+            },
+            "S2": {
+              "kind": "safe",
+              "text": "Exact"
+            },
+            "S3": {
+              "kind": "neutral",
+              "text": "One hour off"
+            }
+          }
+        }
+      ],
+      "recommended": "1",
+      "why": "Sales start at midnight on the local clock, so a lifetime of one day or longer must end there too. The edge cache keeps counting seconds until D05 changes its headers. That is a known gap of one hour on two nights a year, and the dashboard can show it.",
+      "openInput": "Technical: confirm that no shop plans to sell across two time zones."
+    },
+    {
+      "id": "f",
+      "title": "What an expired entry must do",
+      "owners": [
+        "tactical",
+        "commercial"
+      ],
+      "question": "When an entry expires, must the cache refresh it before it shows the page again?",
+      "facts": [
+        {
+          "text": "Today an expired entry is removed. The next visit waits for the pricing service and writes a new entry. On a sale day this wait is long, because many pages expire at the same moment and every first visit waits for the same slow service.",
+          "source": "services/catalog/src/cache/store.ts#get"
+        },
+        {
+          "text": "The refresh job renews hot products before they expire. Other pages are not renewed and wait for their next visit.",
+          "source": "services/catalog/src/cache/refresh-job.ts"
+        },
+        {
+          "text": "D06 decides how long a visitor may wait for a page. It sets two seconds as the limit for a product page. A refresh on a sale day can take longer than that.",
+          "source": "D06, latency budget"
+        }
+      ],
+      "options": [
+        {
+          "id": "1",
+          "name": "Refresh before showing again",
+          "summary": "An expired entry is never shown. The cache refreshes it first. D09 sets the deadline by which the refresh must finish before the page shows an error.",
+          "keep": [
+            "No old price is shown.",
+            "The deadline is explicit and lives in D09."
+          ],
+          "pay": [
+            "A visitor can wait for the refresh, up to the deadline that D09 sets."
+          ],
+          "rightWhen": "An old price costs more than a slow page.",
+          "obligation": "Set the deadline in D09, and show a page error when the refresh misses it."
+        },
+        {
+          "id": "2",
+          "name": "Show the old entry, refresh after",
+          "summary": "Show the expired entry once more and refresh it in the background.",
+          "keep": [
+            "Pages stay fast on a sale day."
+          ],
+          "pay": [
+            "A visitor can see an old price for one visit after the lifetime has ended."
+          ],
+          "rightWhen": "A fast page matters more than an exact price."
+        }
+      ],
+      "recommended": "1",
+      "why": "The price on the page is the price the customer pays, so an old price is never acceptable after its lifetime has ended. D09 can set a deadline that keeps most pages within the budget."
+    },
+    {
+      "id": "g",
+      "title": "Whether an unlinked override is allowed",
+      "owners": [
+        "product",
+        "commercial"
+      ],
+      "question": "Can an override exist without a link to a category policy, or must every override name the category it changes?",
+      "facts": [
+        {
+          "text": "About a third of the overrides today have no category link.",
+          "source": "query on the production replica, 2026-10-02"
+        },
+        {
+          "text": "The importer creates an unlinked override when a product line carries its own lifetime and the product has no category yet. Users create one when they set a lifetime on a product from the search page, which does not show the category. Neither path warns the user.",
+          "source": "services/catalog/src/import/import-executor.ts#writeOverride; apps/admin/src/search/quick-edit.tsx"
+        },
+        {
+          "text": "An unlinked override is not checked by {call:c}, because there is no category value to compare it with. It sets the lifetime alone.",
+          "source": "override.schema.ts#categoryId (nullable)"
+        }
+      ],
+      "options": [
+        {
+          "id": "1",
+          "name": "Every override cites its category",
+          "summary": "An override must name its category. The importer and the search page must ask for one. Products without a category get one before an override is saved, or the override is rejected with a message that names the missing category.",
+          "keep": [
+            "Every override can be checked by {call:c}.",
+            "The dashboard can group overrides by category."
+          ],
+          "pay": [
+            "The importer needs a change.",
+            "Products without a category, about a tenth, need one before ENG-302 applies.",
+            "The search page needs a category field, which makes a quick edit slower for the merchandising team on a busy day.",
+            "The existing unlinked overrides need a migration."
+          ],
+          "rightWhen": "The category is the baseline, and an override is always a change to it.",
+          "obligation": "Migrate the existing unlinked overrides under ENG-302, and change the importer together with ENG-210."
+        },
+        {
+          "id": "2",
+          "name": "Unlinked overrides stay allowed",
+          "summary": "Keep today's behaviour. An unlinked override sets the lifetime without any check.",
+          "keep": [
+            "No migration."
+          ],
+          "pay": [
+            "The check of {call:c} can be avoided by leaving out the category.",
+            "The dashboard cannot group them."
+          ],
+          "rightWhen": "Unlinked overrides are rare and harmless."
+        }
+      ],
+      "recommended": "1",
+      "why": "A third of the overrides are unlinked today, so they are not rare. Without {call:g,opt:1}, every rule of {call:c} has a way around it. The importer change is small and can ship with ENG-210, which already touches the same code."
+    }
+  ],
+  "interplay": [
+    {
+      "from": "a",
+      "to": "c",
+      "text": "Under {call:a,opt:2} an override sits on a policy that knows its category. {call:c} can check it when the override is saved, and must check again at refresh because the category can change."
+    },
+    {
+      "from": "c",
+      "to": "g",
+      "text": "{call:c,opt:1} stops a shorter override on a linked policy. {call:g,opt:1} stops the way around it: an unlinked override with no category, which both users and the importer create today."
+    },
+    {
+      "from": "g",
+      "to": "ENG-210",
+      "text": "{call:g,opt:1} changes what the importer can write when the supplier feed and the warehouse disagree. Decide ENG-210 together with g."
+    },
+    {
+      "from": "d",
+      "to": "D05",
+      "text": "The pre-order case lives in the edge headers too, so D05 must carry the start field."
+    },
+    {
+      "from": "d",
+      "to": "e",
+      "text": "A publish write starts a new lifetime at the publish hour. Otherwise {call:d,opt:1} with {call:e,opt:1} ends one hour early on a clock change."
+    },
+    {
+      "from": "e",
+      "to": "f",
+      "text": "{call:e} fixes the last valid moment. {call:f} decides what that moment requires, D09 sets the refresh deadline, and D02 counts its warm-up lead time back from the expiry."
+    }
+  ],
+  "myRead": "Choose {call:a,opt:2}, {call:b,opt:1}, {call:c,opt:1} with {call:g,opt:1}, {call:d,opt:1}, {call:e,opt:1} and {call:f,opt:1}. Together they keep the category baseline visible, never show an entry past its lifetime on a guess, and count every time on one clock. Before you rule, fix the dashboard label under ENG-303 and add the warning for a skipped refresh under ENG-307. Neither depends on these calls. The open inputs of {call:c} and {call:e} decide details, not the direction. {call:d} needs one check of the pre-order flow.",
+  "glossary": [
+    {
+      "term": "Effective policy",
+      "meaning": "The one lifetime, expiry and final action that the cache applies to a page."
+    },
+    {
+      "term": "Expiry",
+      "meaning": "The moment after which the cache must not show an entry without a refresh."
+    },
+    {
+      "term": "Category / product",
+      "meaning": "The two levels that a policy can sit on. A product override changes its category policy, as ENG-302 decided."
+    },
+    {
+      "term": "Edge cache",
+      "meaning": "The copy of a page that the content delivery network keeps close to the customer."
+    },
+    {
+      "term": "Hot product",
+      "meaning": "A product page with enough visits that the refresh job renews it before it expires."
+    }
+  ]
+}

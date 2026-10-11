@@ -1,0 +1,203 @@
+{
+  "schema": "decision-sheet/v1",
+  "id": "ENG-210",
+  "url": "https://tracker.example.com/acme/issue/ENG-210",
+  "title": "Which count wins when the supplier feed and the warehouse system disagree?",
+  "owners": [
+    "technical",
+    "product"
+  ],
+  "priority": "High",
+  "reversibility": "The default is easy to change for future imports. An order taken for stock that does not exist cannot be filled on time.",
+  "verifiedAt": {
+    "date": "2026-10-03",
+    "commit": "222d2d77e7"
+  },
+  "question": "The nightly catalogue import reads each product line's stock count and availability (in stock or sold out) from the supplier feed. The product line also matches an item in the warehouse system. Sometimes the two disagree. Decide which value the import uses when nobody makes an explicit choice.",
+  "currentBehaviour": [
+    {
+      "text": "If the product line matches a warehouse item exactly, the import uses the warehouse values. It drops the supplier feed's own values.",
+      "source": "services/catalog/src/import/import-executor.ts#resolveStock"
+    },
+    {
+      "text": "The wizard lists every conflict. You cannot continue until each conflict has a choice. One button, \"Accept Defaults\", sets the default for all visible conflicts in one click.",
+      "source": "apps/admin/src/components/import/import-conflict-step.tsx#handleAcceptDefaults"
+    },
+    {
+      "text": "An API caller that sends no override gets the warehouse values. The mismatch is a warning only.",
+      "source": "services/api/src/routes/import.routes.ts (overrides are optional)"
+    },
+    {
+      "text": "This default keeps the behaviour the importer had before. Nobody chose it for business reasons.",
+      "source": "ENG-210 description"
+    }
+  ],
+  "hiddenBranches": [
+    {
+      "title": "The parser fix has already landed",
+      "text": "ENG-210 says that our feed parser \"is being corrected\". That fix (ENG-198, PR #5156) merged on 2026-10-01, a few hours after this issue. Before the fix, some mismatches came from errors in our own parser. After the fix, a remaining mismatch is more likely to come from the supplier's data. Nobody counted the remaining mismatches.",
+      "action": "Count the mismatches in the pilot supplier's feed before you decide."
+    },
+    {
+      "title": "Two causes need two answers",
+      "text": "A mismatch can be a deliberate supplier choice, for example a supplier that holds back units for a large customer. It can also be an error in the feed. If most mismatches are deliberate, the supplier's value is correct. If most are errors, the warehouse value is correct.",
+      "action": "Product: confirm whether a supplier can legitimately report a count that is lower than the warehouse count."
+    }
+  ],
+  "calls": [
+    {
+      "id": "a",
+      "scenarios": [
+        {
+          "id": "A",
+          "label": "Feed counts lower",
+          "detail": "Feed: Sold out or a lower count. Warehouse: In stock or a higher count."
+        },
+        {
+          "id": "B",
+          "label": "Warehouse counts lower",
+          "detail": "Feed: In stock or a higher count. Warehouse: Sold out or a lower count."
+        }
+      ],
+      "outcomeMeaning": {
+        "safe": "never higher than either source",
+        "risk": "can oversell with no choice per product line",
+        "human": "blocked until someone chooses"
+      },
+      "options": [
+        {
+          "id": "1",
+          "name": "Warehouse wins",
+          "tag": "current",
+          "summary": "Keep today's default. The wizard shows the mismatch as a warning.",
+          "outcomes": {
+            "A": {
+              "kind": "risk",
+              "text": "Higher than the supplier's own count"
+            },
+            "B": {
+              "kind": "safe",
+              "text": "The lower warehouse count"
+            }
+          },
+          "keep": [
+            "One reference count for every supplier.",
+            "No code change."
+          ],
+          "pay": [
+            "The import can show more stock than the supplier's own system. This is the unsafe direction for a shop.",
+            "\"Accept Defaults\" applies this to every conflict in one click.",
+            "API callers get it without any choice."
+          ],
+          "rightWhen": "Most mismatches are errors in the feed, and the warehouse count is the count that the shop must sell from."
+        },
+        {
+          "id": "2",
+          "name": "Supplier wins",
+          "summary": "Use the feed's values when they differ. Link the warehouse item only when the values agree.",
+          "outcomes": {
+            "A": {
+              "kind": "safe",
+              "text": "The lower feed count"
+            },
+            "B": {
+              "kind": "risk",
+              "text": "Higher than the warehouse count"
+            }
+          },
+          "keep": [
+            "The import shows what the supplier's own system says. The supplier sees no surprise."
+          ],
+          "pay": [
+            "An error in the feed becomes our count, including a count that is higher than the warehouse count.",
+            "The import stores a product line that differs with its own values. It does not link that line to the warehouse item."
+          ],
+          "rightWhen": "Most mismatches are deliberate supplier choices."
+        },
+        {
+          "id": "3",
+          "name": "Lower count wins, then review",
+          "summary": "For each product line, take the lower count and prefer sold out over in stock. Mark the line needs_review.",
+          "outcomes": {
+            "A": {
+              "kind": "safe",
+              "text": "The lower value, marked for review"
+            },
+            "B": {
+              "kind": "safe",
+              "text": "The lower value, marked for review"
+            }
+          },
+          "keep": [
+            "The import never shows more stock than either source.",
+            "A human still reviews each mismatch later."
+          ],
+          "pay": [
+            "The shop can show less stock than both sources hold. A product that shows as sold out also loses sales.",
+            "A line can combine the count of one source with the availability of the other. Neither source states that combination."
+          ],
+          "rightWhen": "You cannot tell errors from deliberate choices, and you want a safe value now with a review later.",
+          "obligation": "Someone must own and clear the needs_review queue. Define how to compare counts in different units, for example boxes and single items."
+        },
+        {
+          "id": "4",
+          "name": "Block until someone chooses",
+          "summary": "No default. Every mismatch needs an explicit choice before the import runs.",
+          "outcomes": {
+            "A": {
+              "kind": "human",
+              "text": "A human chooses"
+            },
+            "B": {
+              "kind": "human",
+              "text": "A human chooses"
+            }
+          },
+          "keep": [
+            "A human decides each mismatch. The tool assumes nothing."
+          ],
+          "pay": [
+            "More work for each large import. A full catalogue has about 500 product lines. The number of mismatches in it is not known.",
+            "The wizard already blocks until each conflict has a choice. The real change is to narrow or remove \"Accept Defaults\", and to reject API imports that have open mismatches."
+          ],
+          "rightWhen": "Mismatches are few, and a catalogue manager runs the import.",
+          "obligation": "The API rejection is a contract change. Label it api-change and announce it in the API changelog."
+        }
+      ],
+      "subQuestions": [
+        {
+          "title": "API callers",
+          "question": "API callers have no wizard. Must an import that has a mismatch and no override fail?",
+          "byOption": {
+            "1": "Rejecting is the only safeguard. Without it, an API import can show more stock without any choice.",
+            "2": "Rejecting is the only safeguard against a count that is higher than the warehouse count.",
+            "3": "Rejecting is not necessary. The import uses the lower value and marks the line for review.",
+            "4": "The import must fail. Otherwise the API skips the check that the wizard enforces."
+          }
+        }
+      ],
+      "notes": [
+        "A smaller, separate point: the name and the code of one warehouse item can disagree. Then the import uses the code and treats it as an exact match (confidence 1.0). It also raises an item_mismatch warning."
+      ]
+    }
+  ],
+  "myRead": "Count the remaining mismatches first. If they are few, choose 4. If they are many, choose 3. Do not keep 1 or 2 as an unattended default: each can show more stock without a choice for each line, in opposite directions.",
+  "glossary": [
+    {
+      "term": "Supplier feed",
+      "meaning": "The daily file of stock counts that each supplier sends."
+    },
+    {
+      "term": "In stock / Sold out",
+      "meaning": "Available to order / not available to order."
+    },
+    {
+      "term": "Safety stock",
+      "meaning": "The units that the warehouse keeps back and never offers for sale."
+    },
+    {
+      "term": "Product line",
+      "meaning": "One entry in the supplier feed. It carries the count and the availability."
+    }
+  ]
+}

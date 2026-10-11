@@ -187,6 +187,19 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Anti-prescription audit** — a check of a design brief before it goes out
   that removes answers decided in advance, so the designer solves the problem
   instead of drawing the author's solution.
+- **Decision sheet** — a self-contained HTML page for one call a human must
+  make, rendered from a typed source: the question, the options, what would
+  have to be true for each, and a citation for every claim. Groundwork's
+  decision skill writes one when it escalates instead of ruling.
+- **Explainer sheet** — a cited, commit-dated page (HTML and Markdown) of how
+  part of a system works today: the flow as numbered steps, claims grouped in
+  sections, each with its source.
+- **Sheet kit** — the shared reading system both sheets are built on: layout,
+  citations in the margin, escaping, and a freshness guard that compares the
+  citations against the commit the facts were checked at.
+- **Precedent pass** — the mechanical search of a repository's ADRs, policy
+  files, rules and glossary that runs before an agent rules on a dilemma, so a
+  question already decided is answered from the record, not re-decided.
 - **Simplified Technical English** — a controlled form of English
   (ASD-STE100), first written for aircraft maintenance manuals: one meaning per
   word, short sentences, active verbs. A prose linter can check text against

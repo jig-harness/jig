@@ -1,0 +1,234 @@
+{
+  "violations": [
+    {
+      "file": "edge-cases.md",
+      "line": 5,
+      "col": 13,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 7,
+      "col": 13,
+      "rule": "passive-voice",
+      "level": "advisory",
+      "match": "were sent",
+      "message": "Possible passive voice. Name the actor and use an active verb, unless the actor is unknown or irrelevant."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 7,
+      "col": 37,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 7,
+      "col": 55,
+      "rule": "present-perfect",
+      "level": "advisory",
+      "match": "has failed",
+      "message": "Compound tense. Use simple past/present unless current relevance is the point (then keep and flag)."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 7,
+      "col": 72,
+      "rule": "present-perfect",
+      "level": "advisory",
+      "match": "have shipped",
+      "message": "Compound tense. Use simple past/present unless current relevance is the point (then keep and flag)."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 9,
+      "col": 9,
+      "rule": "present-perfect",
+      "level": "advisory",
+      "match": "have failed",
+      "message": "Compound tense. Use simple past/present unless current relevance is the point (then keep and flag)."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 9,
+      "col": 52,
+      "rule": "present-perfect",
+      "level": "advisory",
+      "match": "have seen",
+      "message": "Compound tense. Use simple past/present unless current relevance is the point (then keep and flag)."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 11,
+      "col": 1,
+      "rule": "dangling-conjunction",
+      "level": "advisory-free",
+      "match": "Confirm the address and",
+      "message": "List item ends with a coordinating conjunction. Complete the item or join it with the next item."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 11,
+      "col": 3,
+      "rule": "synonym-rotation",
+      "level": "advisory-free",
+      "match": "Confirm",
+      "message": "'confirm' and 'check' name the same action. Pick one and use it every time."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 12,
+      "col": 1,
+      "rule": "dangling-conjunction",
+      "level": "advisory-free",
+      "match": "Check the parcel. Then verify the label OR",
+      "message": "List item ends with a coordinating conjunction. Complete the item or join it with the next item."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 12,
+      "col": 26,
+      "rule": "synonym-rotation",
+      "level": "advisory-free",
+      "match": "verify",
+      "message": "'verify' and 'check' name the same action. Pick one and use it every time."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 13,
+      "col": 3,
+      "rule": "dangling-conjunction",
+      "level": "advisory-free",
+      "match": "Start the run and",
+      "message": "List item ends with a coordinating conjunction. Complete the item or join it with the next item."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 21,
+      "col": 22,
+      "rule": "passive-voice",
+      "level": "advisory",
+      "match": "was sent",
+      "message": "Possible passive voice. Name the actor and use an active verb, unless the actor is unknown or irrelevant."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 21,
+      "col": 41,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 21,
+      "col": 46,
+      "rule": "present-perfect",
+      "level": "advisory",
+      "match": "has arrived",
+      "message": "Compound tense. Use simple past/present unless current relevance is the point (then keep and flag)."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 22,
+      "col": 29,
+      "rule": "marketing-adjective",
+      "level": "advisory-free",
+      "match": "seamless",
+      "message": "Marketing adjective. Delete, or replace with the measurement that earns the claim."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 22,
+      "col": 39,
+      "rule": "marketing-adjective",
+      "level": "advisory-free",
+      "match": "robust",
+      "message": "Marketing adjective. Delete, or replace with the measurement that earns the claim."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 30,
+      "col": 7,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 34,
+      "col": 1,
+      "rule": "passive-voice",
+      "level": "advisory",
+      "match": "\u0130s written",
+      "message": "Possible passive voice. Name the actor and use an active verb, unless the actor is unknown or irrelevant."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 34,
+      "col": 34,
+      "rule": "passive-voice",
+      "level": "advisory",
+      "match": "was \u017fet",
+      "message": "Possible passive voice. Name the actor and use an active verb, unless the actor is unknown or irrelevant."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 34,
+      "col": 44,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 34,
+      "col": 49,
+      "rule": "phrasal-verb",
+      "level": "advisory-free",
+      "match": "spun up",
+      "message": "Soft phrasal verb. Use the single plain verb (start, contact, read, begin)."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 35,
+      "col": 1,
+      "rule": "nominalization",
+      "level": "advisory-free",
+      "match": "Perform an analysis",
+      "message": "Action frozen into a noun. Use the verb (analyze, not perform an analysis of)."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 36,
+      "col": 20,
+      "rule": "synonym-rotation",
+      "level": "advisory-free",
+      "match": "employ",
+      "message": "'employ' and 'use' name the same action. Pick one and use it every time."
+    },
+    {
+      "file": "edge-cases.md",
+      "line": 36,
+      "col": 58,
+      "rule": "synonym-rotation",
+      "level": "advisory-free",
+      "match": "get",
+      "message": "'get' and 'fetch' name the same action. Pick one and use it every time."
+    }
+  ],
+  "count": 25,
+  "hard_count": 16,
+  "baseline": 0,
+  "words": 174,
+  "per_100_words": 14.4
+}

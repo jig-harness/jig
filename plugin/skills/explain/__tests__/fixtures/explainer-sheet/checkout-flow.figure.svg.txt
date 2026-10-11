@@ -1,0 +1,192 @@
+<svg viewBox="0 0 927 404" role="img" lang="en" aria-labelledby="fig-checkout-flow--archify-diagram-title fig-checkout-flow--archify-diagram-description" data-preset="classic" data-quality-profile="showcase" id="fig-checkout-flow" data-source-sha256="d77f8e63a90f1541781fc579b0db7a60486a1b95e7ccbfb6bc554589b02e39c7" data-archify-pin="d8e4daf2610d512821365f41b139d874b29efe81"><style>#fig-checkout-flow{--arrow:#cbd5e1;--arrow-emphasis:oklch(0.4428 0.1137 253.74);--backend-fill:oklch(0.93 0.035 250);--backend-stroke:oklch(0.4428 0.1137 253.74);--cloud-fill:oklch(0.93 0.06 138);--cloud-stroke:oklch(0.55 0.15 142);--database-stroke:oklch(0.51 0.18 277);--grid:color-mix(in srgb, #e2e8f0 60%, #fafaf9);--lane-fill:color-mix(in srgb, #fafaf9 70%, transparent);--lane-stroke:#e2e8f0;--mask:#ffffff;--security-fill:oklch(0.93 0.05 82);--security-stroke:oklch(0.66 0.14 72);--text:#1e293b;--text-dim:#94a3b8;--text-muted:#64748b}#fig-checkout-flow,#fig-checkout-flow *{margin:0;padding:0;box-sizing:border-box}#fig-checkout-flow{width:100%;min-width:min(900px, 100%);display:block;transform-origin:0 0}#fig-checkout-flow .c-grid{stroke:var(--grid);fill:none}#fig-checkout-flow .c-mask{fill:var(--mask);stroke:none}#fig-checkout-flow .c-backend{fill:var(--backend-fill);stroke:var(--backend-stroke)}#fig-checkout-flow .c-cloud{fill:var(--cloud-fill);stroke:var(--cloud-stroke)}#fig-checkout-flow .c-security{fill:var(--security-fill);stroke:var(--security-stroke)}#fig-checkout-flow .t-primary{fill:var(--text)}#fig-checkout-flow .t-muted{fill:var(--text-muted)}#fig-checkout-flow .t-dim{fill:var(--text-dim)}#fig-checkout-flow .t-backend{fill:var(--backend-stroke)}#fig-checkout-flow .t-database{fill:var(--database-stroke)}#fig-checkout-flow .t-security{fill:var(--security-stroke)}#fig-checkout-flow .semantic-sigil{fill:none;stroke:currentColor;stroke-width:1.35;stroke-linecap:round;stroke-linejoin:round;opacity:0.76;pointer-events:none}#fig-checkout-flow .semantic-sigil > *{vector-effect:non-scaling-stroke}#fig-checkout-flow .s-backend{color:var(--backend-stroke)}#fig-checkout-flow .s-cloud{color:var(--cloud-stroke)}#fig-checkout-flow .s-security{color:var(--security-stroke)}#fig-checkout-flow [data-detail-anchor]{transform-box:fill-box;transform-origin:center}#fig-checkout-flow .a-default{stroke:var(--arrow);fill:none}#fig-checkout-flow .a-emphasis{stroke:var(--arrow-emphasis);fill:none}#fig-checkout-flow .a-security{stroke:var(--security-stroke);fill:none;stroke-dasharray:5,5}#fig-checkout-flow .a-dashed{stroke:var(--database-stroke);fill:none;stroke-dasharray:4,4}#fig-checkout-flow .m-default{fill:var(--arrow)}#fig-checkout-flow .m-emphasis{fill:var(--arrow-emphasis)}#fig-checkout-flow .m-security{fill:var(--security-stroke)}#fig-checkout-flow .m-dashed{fill:var(--database-stroke)}#fig-checkout-flow .c-security-group{fill:transparent;stroke:var(--security-stroke);stroke-dasharray:4,4}#fig-checkout-flow .c-lane{fill:var(--lane-fill);stroke:var(--lane-stroke);stroke-dasharray:6,6}#fig-checkout-flow text{font-family:'Inter', system-ui, -apple-system, sans-serif!important}#fig-checkout-flow .c-security-group{stroke:oklch(0.66 0.14 72)!important}</style>
+        <title id="fig-checkout-flow--archify-diagram-title">Order Checkout Today</title>
+        <desc id="fig-checkout-flow--archify-diagram-description">How a submitted cart gets its order total, and when it gets none</desc>
+        
+        <defs>
+          <marker id="fig-checkout-flow--arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default"></polygon>
+          </marker>
+          <marker id="fig-checkout-flow--arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis"></polygon>
+          </marker>
+          <marker id="fig-checkout-flow--arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security"></polygon>
+          </marker>
+          <marker id="fig-checkout-flow--arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed"></polygon>
+          </marker>
+          <pattern id="fig-checkout-flow--grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"></path>
+          </pattern>
+        </defs>
+
+        
+        <rect width="100%" height="100%" fill="url(#fig-checkout-flow--grid)"></rect>
+
+        
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="859" height="104" rx="10" class="c-lane" stroke-width="1"></rect>
+        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / Checkout</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="176" width="859" height="104" rx="10" class="c-lane" stroke-width="1"></rect>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="exception-lane" data-composition-frame-id="lane-1-exception" x="46" y="182" width="847" height="92" rx="8" class="c-security-group" stroke-width="1"></rect>
+        <text x="54" y="198" class="t-security" font-size="10" font-weight="600">EX / Fails closed</text>
+
+        
+        <line x1="48" y1="35" x2="585.2" y2="35" class="a-default" stroke-width="1.1"></line>
+        <rect x="48" y="27" width="537.2" height="16" rx="4" class="c-mask"></rect>
+        <text x="316.6" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">Price</text>
+        <line x1="646.4000000000001" y1="35" x2="886.8000000000001" y2="35" class="a-emphasis" stroke-width="1.1"></line>
+        <rect x="646.4000000000001" y="27" width="240.39999999999998" height="16" rx="4" class="c-mask"></rect>
+        <text x="766.6000000000001" y="39" class="t-backend" font-size="8" font-weight="600" text-anchor="middle">Fulfil</text>
+
+        
+
+
+        
+        <path data-edge-from="cart" data-edge-to="rule" data-edge-label="has address" data-edge-key="0" data-composition-points="140,119;210.8,119" d="M 140 119 L 210.8 119" class="a-emphasis" stroke-width="1.8" marker-end="url(#fig-checkout-flow--arrowhead-emphasis)"></path>
+        <path data-edge-from="held" data-edge-to="retry" data-edge-label="retry" data-edge-key="1" data-composition-points="344.8,243;302.8,243" d="M 344.8 243 L 302.8 243" class="a-dashed" stroke-width="1.4" marker-end="url(#fig-checkout-flow--arrowhead-dashed)"></path>
+        <path data-edge-from="pay" data-edge-to="ship" data-edge-label="captured" data-edge-key="2" data-composition-points="738.4000000000001,119;794.8000000000001,119" d="M 738.4000000000001 119 L 794.8000000000001 119" class="a-emphasis" stroke-width="1.8" marker-end="url(#fig-checkout-flow--arrowhead-emphasis)"></path>
+        <path data-edge-from="retry" data-edge-to="rule" data-edge-label="price again" data-edge-key="3" data-composition-points="256.8,217;256.8,145" d="M 256.8 217 L 256.8 145" class="a-dashed" stroke-width="1.4" marker-end="url(#fig-checkout-flow--arrowhead-dashed)"></path>
+        <path data-edge-from="rule" data-edge-to="stock" data-edge-key="4" data-composition-points="302.8,119;344.8,119" d="M 302.8 119 L 344.8 119" class="a-emphasis" stroke-width="1.8" marker-end="url(#fig-checkout-flow--arrowhead-emphasis)"></path>
+        <path data-edge-from="stock" data-edge-to="held" data-edge-label="missing input" data-edge-key="5" data-composition-points="390.8,93;390.8,77;911,77;911,243;436.8,243" d="M 390.8 93 L 390.8 77 L 911 77 L 911 243 L 436.8 243" class="a-security" stroke-width="1.4" marker-end="url(#fig-checkout-flow--arrowhead-security)"></path>
+        <path data-edge-from="stock" data-edge-to="total" data-edge-label="reserved" data-edge-key="6" data-composition-points="390.8,145;390.8,161;539.2,161;539.2,145" d="M 390.8 145 L 390.8 161 L 539.2 161 L 539.2 145" class="a-emphasis" stroke-width="1.8" marker-end="url(#fig-checkout-flow--arrowhead-emphasis)"></path>
+        <path data-edge-from="total" data-edge-to="pay" data-edge-label="on total" data-edge-key="7" data-composition-points="585.2,119;646.4000000000001,119" d="M 585.2 119 L 646.4000000000001 119" class="a-emphasis" stroke-width="1.8" marker-end="url(#fig-checkout-flow--arrowhead-emphasis)"></path>
+
+        
+        <g id="fig-checkout-flow--node-cart" data-node-id="cart" data-node-label="Cart submitted" aria-label="Focus Cart submitted, address read, Checkout › Price" data-node-kind="backend" data-node-sublabel="address read" data-node-context="Checkout › Price">
+          <title>Cart submitted · address read · Checkout › Price</title>
+          <rect x="48" y="93" width="92" height="52" rx="6" class="c-mask"></rect>
+          <rect x="48" y="93" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"></rect>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(54 99) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"></path>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="94" y="114" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Cart submitted</text>
+          <text data-detail="context" x="94" y="131" class="t-muted" font-size="8" text-anchor="middle">address read</text>
+        </g>
+
+        <g id="fig-checkout-flow--node-rule" data-node-id="rule" data-node-label="Price rule" aria-label="Focus Price rule, tax, shipping, Checkout › Price" data-node-kind="backend" data-node-sublabel="tax, shipping" data-node-context="Checkout › Price">
+          <title>Price rule · tax, shipping · Checkout › Price</title>
+          <rect x="210.8" y="93" width="92" height="52" rx="6" class="c-mask"></rect>
+          <rect x="210.8" y="93" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"></rect>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(216.8 99) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"></path>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="256.8" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Price rule</text>
+          <text data-detail="context" x="256.8" y="131" class="t-muted" font-size="8" text-anchor="middle">tax, shipping</text>
+        </g>
+
+        <g id="fig-checkout-flow--node-stock" data-node-id="stock" data-node-label="Stock" aria-label="Focus Stock, warehouse reserve, Checkout › Price" data-node-kind="backend" data-node-sublabel="warehouse reserve" data-node-context="Checkout › Price">
+          <title>Stock · warehouse reserve · Checkout › Price</title>
+          <rect x="344.8" y="93" width="92" height="52" rx="6" class="c-mask"></rect>
+          <rect x="344.8" y="93" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"></rect>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(350.8 99) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"></path>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="390.8" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Stock</text>
+          <text data-detail="context" x="390.8" y="131" class="t-muted" font-size="8" text-anchor="middle">warehouse reserve</text>
+        </g>
+
+        <g id="fig-checkout-flow--node-total" data-node-id="total" data-node-label="Order total" aria-label="Focus Order total, subtotal plus tax, Checkout › Price" data-node-kind="cloud" data-node-sublabel="subtotal plus tax" data-node-context="Checkout › Price">
+          <title>Order total · subtotal plus tax · Checkout › Price</title>
+          <rect x="493.20000000000005" y="93" width="92" height="52" rx="6" class="c-mask"></rect>
+          <rect x="493.20000000000005" y="93" width="92" height="52" rx="6" class="c-cloud" stroke-width="1.5"></rect>
+          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(499.20000000000005 99) scale(0.6875)">
+            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"></path>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="539.2" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Order total</text>
+          <text data-detail="context" x="539.2" y="131" class="t-muted" font-size="8" text-anchor="middle">subtotal plus tax</text>
+        </g>
+
+        <g id="fig-checkout-flow--node-pay" data-node-id="pay" data-node-label="Payment" aria-label="Focus Payment, card charged, Checkout › Fulfil" data-node-kind="cloud" data-node-sublabel="card charged" data-node-context="Checkout › Fulfil">
+          <title>Payment · card charged · Checkout › Fulfil</title>
+          <rect x="646.4000000000001" y="93" width="92" height="52" rx="6" class="c-mask"></rect>
+          <rect x="646.4000000000001" y="93" width="92" height="52" rx="6" class="c-cloud" stroke-width="1.5"></rect>
+          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(652.4000000000001 99) scale(0.6875)">
+            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"></path>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="692.4000000000001" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Payment</text>
+          <text data-detail="context" x="692.4000000000001" y="131" class="t-muted" font-size="8" text-anchor="middle">card charged</text>
+        </g>
+
+        <g id="fig-checkout-flow--node-ship" data-node-id="ship" data-node-label="Shipment" aria-label="Focus Shipment, fraud hold blocks, Checkout › Fulfil" data-node-kind="security" data-node-sublabel="fraud hold blocks" data-node-context="Checkout › Fulfil">
+          <title>Shipment · fraud hold blocks · Checkout › Fulfil</title>
+          <rect x="794.8000000000001" y="93" width="92" height="52" rx="6" class="c-mask"></rect>
+          <rect x="794.8000000000001" y="93" width="92" height="52" rx="6" class="c-security" stroke-width="1.5"></rect>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(800.8000000000001 99) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"></path>
+            <path d="m5.8 8 1.5 1.5 3-3"></path>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="840.8000000000001" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Shipment</text>
+          <text data-detail="context" x="840.8000000000001" y="131" class="t-muted" font-size="8" text-anchor="middle">fraud hold blocks</text>
+        </g>
+
+        <g id="fig-checkout-flow--node-retry" data-node-id="retry" data-node-label="Retry sweep" aria-label="Focus Retry sweep, every 15 min, Fails closed › Price" data-node-kind="backend" data-node-sublabel="every 15 min" data-node-context="Fails closed › Price">
+          <title>Retry sweep · every 15 min · Fails closed › Price</title>
+          <rect x="210.8" y="217" width="92" height="52" rx="6" class="c-mask"></rect>
+          <rect x="210.8" y="217" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"></rect>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(216.8 223) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"></path>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="256.8" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Retry sweep</text>
+          <text data-detail="context" x="256.8" y="255" class="t-muted" font-size="8" text-anchor="middle">every 15 min</text>
+        </g>
+
+        <g id="fig-checkout-flow--node-held" data-node-id="held" data-node-label="Held" aria-label="Focus Held, no total, Fails closed › Price" data-node-kind="security" data-node-sublabel="no total" data-node-context="Fails closed › Price">
+          <title>Held · no total · Fails closed › Price</title>
+          <rect x="344.8" y="217" width="92" height="52" rx="6" class="c-mask"></rect>
+          <rect x="344.8" y="217" width="92" height="52" rx="6" class="c-security" stroke-width="1.5"></rect>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(350.8 223) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"></path>
+            <path d="m5.8 8 1.5 1.5 3-3"></path>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="390.8" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Held</text>
+          <text data-detail="context" x="390.8" y="255" class="t-muted" font-size="8" text-anchor="middle">no total</text>
+        </g>
+
+        
+        <g data-detail="context" data-edge-from="cart" data-edge-to="rule" data-edge-label="has address" data-edge-key="0">
+          <rect x="144" y="99" width="62.8" height="14" rx="3" class="c-mask"></rect>
+          <text x="175.4" y="109" class="t-backend" font-size="8" text-anchor="middle">has address</text>
+        </g>
+        <g data-detail="context" data-edge-from="held" data-edge-to="retry" data-edge-label="retry" data-edge-key="1">
+          <rect x="306.8" y="223" width="34" height="14" rx="3" class="c-mask"></rect>
+          <text x="323.8" y="233" class="t-database" font-size="8" text-anchor="middle">retry</text>
+        </g>
+        <g data-detail="context" data-edge-from="pay" data-edge-to="ship" data-edge-label="captured" data-edge-key="2">
+          <rect x="742.4" y="99" width="48.4" height="14" rx="3" class="c-mask"></rect>
+          <text x="766.6000000000001" y="109" class="t-backend" font-size="8" text-anchor="middle">captured</text>
+        </g>
+        <g data-detail="context" data-edge-from="retry" data-edge-to="rule" data-edge-label="price again" data-edge-key="3">
+          <rect x="225.4" y="197" width="62.8" height="14" rx="3" class="c-mask"></rect>
+          <text x="256.8" y="207" class="t-database" font-size="8" text-anchor="middle">price again</text>
+        </g>
+        <g data-detail="context" data-edge-from="stock" data-edge-to="held" data-edge-label="missing input" data-edge-key="5">
+          <rect x="614.7" y="57" width="72.4" height="14" rx="3" class="c-mask"></rect>
+          <text x="650.9" y="67" class="t-security" font-size="8" text-anchor="middle">missing input</text>
+        </g>
+        <g data-detail="context" data-edge-from="stock" data-edge-to="total" data-edge-label="reserved" data-edge-key="6">
+          <rect x="440.8" y="141" width="48.4" height="14" rx="3" class="c-mask"></rect>
+          <text x="465" y="151" class="t-backend" font-size="8" text-anchor="middle">reserved</text>
+        </g>
+        <g data-detail="context" data-edge-from="total" data-edge-to="pay" data-edge-label="on total" data-edge-key="7">
+          <rect x="591.6" y="99" width="48.4" height="14" rx="3" class="c-mask"></rect>
+          <text x="615.8000000000001" y="109" class="t-backend" font-size="8" text-anchor="middle">on total</text>
+        </g>
+
+        
+        <g data-legend="" data-legend-bridge="">
+          <text x="20" y="304" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Checkout step" data-legend-x="20" data-legend-baseline="324" data-legend-width="100">
+            <rect x="20" y="316" width="14" height="9" rx="2" class="c-backend" stroke-width="1"></rect>
+            <text x="42" y="324" class="t-muted" font-size="7.5" font-weight="500">Checkout step</text>
+          </g>
+          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="Gated or held" data-legend-x="127" data-legend-baseline="324" data-legend-width="100">
+            <rect x="127" y="316" width="14" height="9" rx="2" class="c-security" stroke-width="1"></rect>
+            <text x="149" y="324" class="t-muted" font-size="7.5" font-weight="500">Gated or held</text>
+          </g>
+          <g data-legend-semantic-kind="cloud" data-legend-kind="cloud" data-legend-label="Outcome" data-legend-x="234" data-legend-baseline="324" data-legend-width="74">
+            <rect x="234" y="316" width="14" height="9" rx="2" class="c-cloud" stroke-width="1"></rect>
+            <text x="256" y="324" class="t-muted" font-size="7.5" font-weight="500">Outcome</text>
+          </g>
+        </g>
+      </svg>

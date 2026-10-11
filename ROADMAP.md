@@ -491,8 +491,7 @@ field, and drift hints recognised for every package manager. The reference
 implementation's copies are deleted in a paired change once 0.6.0 is
 installed where it works.
 
-**Batch 2: decision and explainer sheets** (plugin version not yet
-assigned). `decide` and
+**Batch 2: decision and explainer sheets** (plugin 0.10.0). `decide` and
 `explain` move as one unit. They render the same kind of sheet from a typed
 source, and today each keeps its own copy of the shared rendering kit,
 synchronized by a hook; in the plugin one copy serves both. The organization's
@@ -515,6 +514,18 @@ exact source and its tests here:
    code.
 4. Delete the Python files once the port replaces them in the reference
    implementation, before `decide` moves.
+
+Status: in the plugin from 0.10.0. The port's output was byte-identical to the
+Python's over 874 files and 20 command-line cases
+([migration parity record](scripts/migration-parity.md)). The sheet kit has
+one copy, in `decide`, which `explain` imports. The kit carries a neutral
+default palette, and every test fixture taken from the organization's own
+decisions was replaced by a neutral one of the same structure. The precedent
+search reads its sources from configuration and uses Bun's built-in Markdown
+parser instead of npm packages. The browser tests need Google Chrome and skip
+without it; `GROUNDWORK_REQUIRE_BROWSER=1` makes them required. The reference
+implementation's copies, its sync tool and its sheet-kit hook are deleted in
+a paired change once 0.10.0 is installed where it works.
 
 **Later:** `scaffolding-update` (keeps agent instruction files in step with
 decisions and audits them; M0), with its paths as configuration; and

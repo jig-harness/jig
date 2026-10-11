@@ -1,0 +1,36 @@
+{
+  "violations": [
+    {
+      "file": "crlf.md",
+      "line": 1,
+      "col": 9,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    },
+    {
+      "file": "crlf.md",
+      "line": 2,
+      "col": 12,
+      "rule": "passive-voice",
+      "level": "advisory",
+      "match": "was sent",
+      "message": "Possible passive voice. Name the actor and use an active verb, unless the actor is unknown or irrelevant."
+    },
+    {
+      "file": "crlf.md",
+      "line": 3,
+      "col": 1,
+      "rule": "dangling-conjunction",
+      "level": "advisory-free",
+      "match": "First item and",
+      "message": "List item ends with a coordinating conjunction. Complete the item or join it with the next item."
+    }
+  ],
+  "count": 3,
+  "hard_count": 2,
+  "baseline": 0,
+  "words": 14,
+  "per_100_words": 21.4
+}

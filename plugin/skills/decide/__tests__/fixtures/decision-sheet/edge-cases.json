@@ -1,0 +1,270 @@
+{
+  "schema": "decision-sheet/v1",
+  "id": "FIXTURE-01",
+  "url": "https://tracker.example.com/acme/issue/FIXTURE-01",
+  "title": "Layout fixture: five options, a call without scenarios, no hidden branches, no glossary",
+  "owners": [
+    "technical",
+    "product"
+  ],
+  "priority": "Low",
+  "reversibility": "Fixture text. This sheet tests layout only and holds no real decision.",
+  "verifiedAt": {
+    "date": "2026-10-03",
+    "commit": "222d2d77e7"
+  },
+  "question": "Fixture text. A decision with two calls. Call {call:a} has five options and four scenarios. Call {call:b} has no scenarios, so it has no outcome matrix, and its options have no obligation.",
+  "currentBehaviour": [
+    {
+      "text": "Fixture claim one, with a source.",
+      "source": "packages/fixture/src/one.ts#example"
+    },
+    {
+      "text": "Fixture claim two, with a longer text that wraps onto a second line at the reading measure of the main column.",
+      "source": "docs/fixture.md §2"
+    }
+  ],
+  "calls": [
+    {
+      "id": "a",
+      "title": "Five options against four scenarios",
+      "owners": [
+        "technical"
+      ],
+      "question": "Fixture question for a 5 × 4 outcome matrix.",
+      "scenarios": [
+        {
+          "id": "S1",
+          "label": "Scenario one",
+          "detail": "Fixture detail line."
+        },
+        {
+          "id": "S2",
+          "label": "Scenario two",
+          "detail": "Fixture detail line."
+        },
+        {
+          "id": "S3",
+          "label": "Scenario three",
+          "detail": "Fixture detail line."
+        },
+        {
+          "id": "S4",
+          "label": "Scenario four",
+          "detail": "Fixture detail line."
+        }
+      ],
+      "outcomeMeaning": {
+        "safe": "Fixture legend sentence.",
+        "risk": "Fixture legend sentence.",
+        "human": "Fixture legend sentence.",
+        "neutral": "Fixture legend sentence."
+      },
+      "options": [
+        {
+          "id": "1",
+          "name": "Fixture option one",
+          "tag": "current",
+          "summary": "Fixture summary for {opt:1}.",
+          "keep": [
+            "Fixture gain."
+          ],
+          "pay": [
+            "Fixture cost.",
+            "A second fixture cost."
+          ],
+          "rightWhen": "Fixture condition.",
+          "outcomes": {
+            "S1": {
+              "kind": "safe",
+              "text": "Fixture outcome text"
+            },
+            "S2": {
+              "kind": "risk",
+              "text": "Fixture outcome text"
+            },
+            "S3": {
+              "kind": "human",
+              "text": "Fixture outcome text"
+            },
+            "S4": {
+              "kind": "neutral",
+              "text": "Fixture outcome text"
+            }
+          }
+        },
+        {
+          "id": "2",
+          "name": "Fixture option two",
+          "summary": "Fixture summary for {opt:2}.",
+          "keep": [
+            "Fixture gain."
+          ],
+          "pay": [
+            "Fixture cost.",
+            "A second fixture cost."
+          ],
+          "rightWhen": "Fixture condition.",
+          "obligation": "Fixture obligation.",
+          "outcomes": {
+            "S1": {
+              "kind": "safe",
+              "text": "Fixture outcome text"
+            },
+            "S2": {
+              "kind": "safe",
+              "text": "Fixture outcome text"
+            },
+            "S3": {
+              "kind": "neutral",
+              "text": "Fixture outcome text"
+            },
+            "S4": {
+              "kind": "safe",
+              "text": "Fixture outcome text"
+            }
+          }
+        },
+        {
+          "id": "3",
+          "name": "Fixture option three",
+          "summary": "Fixture summary for {opt:3}.",
+          "keep": [
+            "Fixture gain."
+          ],
+          "pay": [
+            "Fixture cost.",
+            "A second fixture cost."
+          ],
+          "rightWhen": "Fixture condition.",
+          "outcomes": {
+            "S1": {
+              "kind": "risk",
+              "text": "Fixture outcome text"
+            },
+            "S2": {
+              "kind": "human",
+              "text": "Fixture outcome text"
+            },
+            "S3": {
+              "kind": "safe",
+              "text": "Fixture outcome text"
+            },
+            "S4": {
+              "kind": "neutral",
+              "text": "Fixture outcome text"
+            }
+          }
+        },
+        {
+          "id": "4",
+          "name": "Fixture option four",
+          "summary": "Fixture summary for {opt:4}.",
+          "keep": [
+            "Fixture gain."
+          ],
+          "pay": [
+            "Fixture cost.",
+            "A second fixture cost."
+          ],
+          "rightWhen": "Fixture condition.",
+          "obligation": "Fixture obligation.",
+          "outcomes": {
+            "S1": {
+              "kind": "human",
+              "text": "Fixture outcome text"
+            },
+            "S2": {
+              "kind": "human",
+              "text": "Fixture outcome text"
+            },
+            "S3": {
+              "kind": "human",
+              "text": "Fixture outcome text"
+            },
+            "S4": {
+              "kind": "human",
+              "text": "Fixture outcome text"
+            }
+          }
+        },
+        {
+          "id": "5",
+          "name": "Fixture option five",
+          "summary": "Fixture summary for {opt:5}.",
+          "keep": [
+            "Fixture gain."
+          ],
+          "pay": [
+            "Fixture cost.",
+            "A second fixture cost."
+          ],
+          "rightWhen": "Fixture condition.",
+          "outcomes": {
+            "S1": {
+              "kind": "neutral",
+              "text": "Fixture outcome text"
+            },
+            "S2": {
+              "kind": "risk",
+              "text": "Fixture outcome text"
+            },
+            "S3": {
+              "kind": "risk",
+              "text": "Fixture outcome text"
+            },
+            "S4": {
+              "kind": "safe",
+              "text": "Fixture outcome text"
+            }
+          }
+        }
+      ],
+      "recommended": "2",
+      "why": "Fixture reason in one sentence."
+    },
+    {
+      "id": "b",
+      "title": "Two options, no scenarios",
+      "owners": [
+        "product"
+      ],
+      "question": "Fixture question for a call with no matrix.",
+      "options": [
+        {
+          "id": "1",
+          "name": "Fixture option one",
+          "summary": "Fixture summary.",
+          "keep": [
+            "Fixture gain."
+          ],
+          "pay": [
+            "Fixture cost."
+          ],
+          "rightWhen": "Fixture condition."
+        },
+        {
+          "id": "2",
+          "name": "Fixture option two",
+          "summary": "Fixture summary.",
+          "keep": [
+            "Fixture gain."
+          ],
+          "pay": [
+            "Fixture cost."
+          ],
+          "rightWhen": "Fixture condition."
+        }
+      ],
+      "openInput": "Product: a fixture input that someone still owes."
+    }
+  ],
+  "interplay": [
+    {
+      "from": "a",
+      "to": "b",
+      "text": "Fixture: the choice in {call:a} narrows the options in {call:b}."
+    }
+  ],
+  "myRead": "Fixture text for the overall recommendation."
+}

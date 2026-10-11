@@ -1,0 +1,208 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Order Checkout Today",
+    "subtitle": "How a submitted cart gets its order total, and when it gets none",
+    "output": "checkout-flow.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "priced",
+        "label": "Order priced",
+        "focus": [
+          "cart",
+          "rule",
+          "stock",
+          "total",
+          "pay"
+        ],
+        "note": "Every input is present: the order gets a total and the payment worker charges the card."
+      },
+      {
+        "id": "held",
+        "label": "Fails closed",
+        "focus": [
+          "rule",
+          "stock",
+          "held",
+          "retry"
+        ],
+        "note": "A missing or conflicting input leaves the total empty; the retry sweep prices the order again later."
+      }
+    ],
+    "legend": {
+      "entries": {
+        "backend": {
+          "label": "Checkout step"
+        },
+        "cloud": {
+          "label": "Outcome"
+        },
+        "security": {
+          "label": "Gated or held"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "checkout",
+      "label": "Checkout"
+    },
+    {
+      "id": "held",
+      "label": "Fails closed",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "price",
+      "label": "Price",
+      "fromCol": 0,
+      "toCol": 3
+    },
+    {
+      "id": "fulfil",
+      "label": "Fulfil",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "cart",
+    "rule",
+    "stock",
+    "total",
+    "pay",
+    "ship"
+  ],
+  "nodes": [
+    {
+      "id": "cart",
+      "lane": "checkout",
+      "col": 0,
+      "type": "backend",
+      "label": "Cart submitted",
+      "sublabel": "address read"
+    },
+    {
+      "id": "rule",
+      "lane": "checkout",
+      "col": 1,
+      "type": "backend",
+      "label": "Price rule",
+      "sublabel": "tax, shipping"
+    },
+    {
+      "id": "stock",
+      "lane": "checkout",
+      "col": 2,
+      "type": "backend",
+      "label": "Stock",
+      "sublabel": "warehouse reserve"
+    },
+    {
+      "id": "total",
+      "lane": "checkout",
+      "col": 3,
+      "type": "cloud",
+      "label": "Order total",
+      "sublabel": "subtotal plus tax"
+    },
+    {
+      "id": "pay",
+      "lane": "checkout",
+      "col": 4,
+      "type": "cloud",
+      "label": "Payment",
+      "sublabel": "card charged"
+    },
+    {
+      "id": "ship",
+      "lane": "checkout",
+      "col": 5,
+      "type": "security",
+      "label": "Shipment",
+      "sublabel": "fraud hold blocks"
+    },
+    {
+      "id": "held",
+      "lane": "held",
+      "col": 2,
+      "type": "security",
+      "label": "Held",
+      "sublabel": "no total"
+    },
+    {
+      "id": "retry",
+      "lane": "held",
+      "col": 1,
+      "type": "backend",
+      "label": "Retry sweep",
+      "sublabel": "every 15 min"
+    }
+  ],
+  "edges": [
+    {
+      "from": "cart",
+      "to": "rule",
+      "label": "has address",
+      "variant": "emphasis"
+    },
+    {
+      "from": "rule",
+      "to": "stock",
+      "variant": "emphasis"
+    },
+    {
+      "from": "stock",
+      "to": "total",
+      "label": "reserved",
+      "variant": "emphasis"
+    },
+    {
+      "from": "total",
+      "to": "pay",
+      "label": "on total",
+      "variant": "emphasis"
+    },
+    {
+      "from": "pay",
+      "to": "ship",
+      "label": "captured",
+      "variant": "emphasis"
+    },
+    {
+      "from": "stock",
+      "to": "held",
+      "label": "missing input",
+      "variant": "security"
+    },
+    {
+      "from": "held",
+      "to": "retry",
+      "label": "retry",
+      "variant": "dashed"
+    },
+    {
+      "from": "retry",
+      "to": "rule",
+      "label": "price again",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Fails closed",
+      "items": [
+        "No valid rule, a conflicting region or tax category, or an invalid warehouse setting gives held_configuration",
+        "A stock level the source cannot give yet gives held_stock",
+        "A held order has no total, so the payment worker never selects it"
+      ]
+    }
+  ]
+}

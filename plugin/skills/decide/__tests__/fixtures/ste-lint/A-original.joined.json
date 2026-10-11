@@ -1,0 +1,72 @@
+{
+  "violations": [
+    {
+      "file": "A-original.md",
+      "line": 3,
+      "col": 1,
+      "rule": "long-sentence",
+      "level": "advisory-free",
+      "match": "67 words",
+      "message": "Sentence has 67 words (cap 25). Split it."
+    },
+    {
+      "file": "A-original.md",
+      "line": 3,
+      "col": 263,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    },
+    {
+      "file": "A-original.md",
+      "line": 3,
+      "col": 281,
+      "rule": "passive-voice",
+      "level": "advisory",
+      "match": "is raised",
+      "message": "Possible passive voice. Name the actor and use an active verb, unless the actor is unknown or irrelevant."
+    },
+    {
+      "file": "A-original.md",
+      "line": 5,
+      "col": 1,
+      "rule": "long-sentence",
+      "level": "advisory-free",
+      "match": "33 words",
+      "message": "Sentence has 33 words (cap 25). Split it."
+    },
+    {
+      "file": "A-original.md",
+      "line": 5,
+      "col": 232,
+      "rule": "passive-voice",
+      "level": "advisory",
+      "match": "being corrected",
+      "message": "Possible passive voice. Name the actor and use an active verb, unless the actor is unknown or irrelevant."
+    },
+    {
+      "file": "A-original.md",
+      "line": 5,
+      "col": 336,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    },
+    {
+      "file": "A-original.md",
+      "line": 11,
+      "col": 75,
+      "rule": "semicolon",
+      "level": "advisory-free",
+      "match": ";",
+      "message": "STE bans the semicolon (Rule 8.1). Split into separate sentences."
+    }
+  ],
+  "count": 7,
+  "hard_count": 5,
+  "baseline": 0,
+  "words": 246,
+  "per_100_words": 2.8
+}

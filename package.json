@@ -4,6 +4,8 @@
     "@biomejs/biome": "2.5.15",
     "@types/bun": "1.4.2",
     "@types/js-yaml": "4.0.9",
+    "happy-dom": "20.11.6",
+    "playwright-core": "1.62.1",
     "typescript": "7.0.2",
     "typescript6": "npm:@typescript/typescript6@6.0.2"
   },

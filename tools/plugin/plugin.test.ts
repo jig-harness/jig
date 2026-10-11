@@ -758,6 +758,89 @@ fix_ci:
   expect(fixCi.stdout).toContain("  - bun run generate\n");
 });
 
+test("the sheet skills run from the plugin copy and share one sheet kit", () => {
+  const cache = join(scratch, "cache", "skills");
+  // One kit, in the decide skill; explain reaches it through its sibling.
+  expect(
+    existsSync(join(cache, "decide", "scripts", "sheet-kit", "html.ts")),
+  ).toBe(true);
+  expect(existsSync(join(cache, "explain", "scripts", "sheet-kit"))).toBe(
+    false,
+  );
+  const consumer = consumerRepo(
+    "sheets",
+    "adr:\n  directory: docs/decisions\ndecide:\n  policy_files: [CLAUDE.md]\n",
+  );
+  mkdirSync(join(consumer, "docs", "decisions"), { recursive: true });
+  writeFileSync(
+    join(consumer, "docs", "decisions", "ADR-0001-cache-eviction.md"),
+    "# ADR-0001: Cache eviction\nThe catalogue cache evicts by age.\n",
+  );
+  writeFileSync(join(consumer, "CLAUDE.md"), "## Caching\nCache reads only.\n");
+  const run = (args: string[]) =>
+    spawnSync(process.execPath, args, {
+      cwd: consumer,
+      env,
+      encoding: "utf8",
+    });
+
+  const precedent = run([
+    join(cache, "decide", "scripts", "resolve-precedent.ts"),
+    "cache eviction by age",
+    "--json",
+  ]);
+  expectSpawnExit({ ...precedent, exitCode: precedent.status }, 0);
+  const report = JSON.parse(precedent.stdout);
+  expect(report.sources.adrDirectory).toBe("docs/decisions");
+  expect(report.sources.policyFiles).toEqual(["CLAUDE.md"]);
+  expect(report.candidates[0].file).toBe(
+    "docs/decisions/ADR-0001-cache-eviction.md",
+  );
+
+  const trigger = run([
+    join(cache, "decide", "scripts", "decision-sheet", "decision-sheet.ts"),
+    "trigger",
+    "--facets",
+    "technical,product",
+    "--options",
+    "2",
+  ]);
+  expectSpawnExit({ ...trigger, exitCode: trigger.status }, 0);
+  expect(JSON.parse(trigger.stdout).sheet).toBe(true);
+
+  const source = join(consumer, "explainer.json");
+  writeFileSync(
+    source,
+    JSON.stringify({
+      schema: "explainer-sheet/v1",
+      id: "cache-reads",
+      title: "How the catalogue cache is read",
+      verifiedAt: { date: "2026-10-04", commit: "abcdef1" },
+      summary: "Reads go through the cache.",
+      scope: { covers: ["Cache reads"] },
+      sections: [
+        {
+          id: "reads",
+          title: "Reads",
+          claims: [{ text: "The cache evicts by age.", source: "CLAUDE.md" }],
+        },
+      ],
+    }),
+  );
+  const out = join(consumer, "out");
+  const render = run([
+    join(cache, "explain", "scripts", "explainer-sheet", "explainer-sheet.ts"),
+    "render",
+    source,
+    "--out",
+    out,
+  ]);
+  expectSpawnExit({ ...render, exitCode: render.status }, 0);
+  const sheet = readFileSync(join(out, "cache-reads-explainer.html"), "utf8");
+  expect(sheet.startsWith("<!doctype html>")).toBe(true);
+  expect(sheet).toContain("The cache evicts by age.");
+});
+
 test("the plugin carries no dependency outside its own directory", () => {
   // Nothing above the copied plugin provides node_modules, so a script that
   // still imported a package would have failed in the tests above; keep the

@@ -566,8 +566,8 @@ routing below remain **exact**.
      `technical`, `legal`, `commercial`); otherwise use the plan gate's
      reason to name the responsible stakeholder. If a `hitl` issue carries no
      facet, add the fitting one when you comment. For a `hitl:technical`
-     architectural call, use the repository's decision skill if it has one,
-     so the escalation arrives as a fixed record: options, what would have to
+     architectural call, use `/groundwork:decide`, so the escalation
+     arrives as a fixed record: options, what would have to
      be true for each, and what would reverse the call.
 
    This is **orthogonal** to the review gates: those run regardless of

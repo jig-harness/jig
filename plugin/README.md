@@ -27,6 +27,8 @@ when they run.
 | [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/groundwork:promote-memory` |
 | [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/groundwork:programmatic-execution` |
 | [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool, grounded in the repository's real schema and code | `/groundwork:design-brief-builder` |
+| [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/groundwork:decide` |
+| [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/groundwork:explain` |
 
 The plugin also ships agents (a [subagent](../GLOSSARY.md) is a separately prompted helper
 that a skill hands a narrow job to):
@@ -316,7 +318,7 @@ lists them.
 
 ## The procedure skills
 
-The skills from `review` to `design-brief-builder` in the table above need no
+The skills from `review` to `explain` in the table above need no
 configuration: each one detects what it can from the repository (its base
 branch, package manager, decision-record folder, documentation root) and falls
 back to generic guidance where a repository has nothing to detect. They read
@@ -343,10 +345,23 @@ design_brief:
   kit: docs/design-kit                # voice, colours and type, rubric, logo; default: detected, else the design-language document
   design_language: docs/design.md     # design-language document; default: detected
   prototypes: design/prototypes       # where finished design bundles land; default: ask
+decide:
+  policy_files: [AGENTS.md]           # files whose ## sections are standing policy; default: [AGENTS.md]
+  rules_directory: .claude/rules      # conditional rules, one per .md file; default: .claude/rules
+  glossary_file: CONTEXT.md           # canonical vocabulary (**Term**: / _Avoid_: lines); default: CONTEXT.md
+  architect_agent: architect          # subagent that rules in phase 3; default: a briefed general-purpose subagent
+  escalation_labels: [agent:architect]   # extra labels on an escalated issue, beside hitl; default: none
+explain:
+  figure_build_command: "bun tools/figure.ts"   # builds one figure, given its stem; default: explainers have no figures
 ```
 
 Every field, with its default and the detection behind it, is in the
 [configuration reference](CONFIGURATION.md#procedure-skills).
+
+`decide` and `explain` render with one shared sheet kit, which lives in
+`decide`; `decide` also checks the prose of a decision request with a
+Simplified Technical English linter, a TypeScript port of a third-party tool
+(see its [README](skills/decide/scripts/ste-lint/README.md)).
 
 `review` finds the decision rules through `adr`'s locator, and `fix-ci` runs
 its validation plan through `drive-pr`'s round planner, so the plugin keeps

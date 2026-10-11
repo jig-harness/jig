@@ -295,13 +295,14 @@ comment looks like are described in the header of
 ## Procedure skills
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
-`promote-memory`, `programmatic-execution`, `design-brief-builder`) detect
+`promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
+`explain`) detect
 what they need from the repository; set a field only when detection picks
 the wrong thing. `programmatic-execution` reads no field.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet | adr, review | Where the decision records live. A configured folder must exist |
+| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet, and `decide` and `explain` then use `docs/adr` | adr, review, decide, explain | Where the decision records live. `decide` searches them for precedent, and `decide` and `explain` resolve a bare `ADR-NNNN` citation there when they check a sheet's freshness. `adr` and `review` require a configured folder to exist; `decide` and `explain` do not check, and find no records in a missing one |
 | `adr.rules_file` | path, relative to the root | Detected: the one tracked `adr-rules.yaml`, `.adr-rules.yaml` or `adr-rules/rules.yaml`; several matches are an error | adr, review | The machine-readable decision-rules catalog. A configured file must exist |
 | `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the document is checked by hand | descar | Lint that finds review scars in documents |
 | `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
@@ -311,6 +312,12 @@ the wrong thing. `programmatic-execution` reads no field.
 | `design_brief.kit` | folder, relative to the root | Detected: a tracked folder ending in `design-kit` or `design_kit` | design-brief-builder | The design kit: voice, colours and type, rubric, component previews, logo |
 | `design_brief.design_language` | path, relative to the root | Detected: the first tracked `*design-language*.md` or `*design-system*.md` | design-brief-builder | The written design canon |
 | `design_brief.prototypes` | folder, relative to the root | none: the agent asks | design-brief-builder | Where finished design bundles land, one folder per flow |
+| `decide.policy_files` | list of paths, relative to the root | `[AGENTS.md]` | decide | Instruction files whose `##` sections are standing policy |
+| `decide.rules_directory` | folder, relative to the root | `.claude/rules` | decide | Conditional rules, one rule per `.md` file |
+| `decide.glossary_file` | path, relative to the root | `CONTEXT.md` | decide, explain | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line |
+| `decide.architect_agent` | agent name | A briefed general-purpose subagent | decide | The subagent that rules on a dilemma; a name the agent tool does not know falls back to the default |
+| `decide.escalation_labels` | list of labels | none | decide | Labels added beside `issue_tracker.labels.hitl` and its facets when a call is escalated |
+| `explain.figure_build_command` | shell command; the figure's stem is appended | none: explainers have no figures | explain | Builds one explainer figure |
 
 Each skill's `SKILL.md` explains how its fields are used.
 
@@ -434,4 +441,12 @@ design_brief:
   kit: docs/design-kit
   design_language: docs/design.md
   prototypes: design/prototypes
+decide:
+  policy_files: [AGENTS.md]
+  rules_directory: .claude/rules
+  glossary_file: CONTEXT.md
+  architect_agent: architect
+  escalation_labels: [agent:architect]
+explain:
+  figure_build_command: "bun tools/figure.ts"
 ```

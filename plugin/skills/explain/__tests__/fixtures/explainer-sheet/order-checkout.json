@@ -1,0 +1,354 @@
+{
+  "schema": "explainer-sheet/v1",
+  "id": "order-checkout",
+  "title": "How an online shop's order checkout works today",
+  "url": "https://tracker.example.com/acme/issue/ENG-123",
+  "verifiedAt": {
+    "date": "2026-10-04",
+    "commit": "4f2a9c1e07"
+  },
+  "summary": "The shop computes an order's total when the customer submits a cart that has a shipping address. Checkout picks the first matching price rule of the store, and takes the tax rate and shipping class from the regional tax rate it cites, or from the rule itself. It reserves stock in a warehouse chosen from the rule, the store or the default, and adds tax and shipping to the subtotal. If any input is missing or disagrees, the order gets a hold status and no total. A payment worker charges the card once the total is set; a fraud hold blocks only the later shipment.",
+  "scope": {
+    "covers": [
+      "When checkout pricing runs and what triggers it again",
+      "How one price rule is chosen for an order",
+      "How stock is reserved and the order total is computed",
+      "When checkout fails closed and leaves the total empty",
+      "How the total leads to a card payment",
+      "Which features read store-wide price rules instead of the total"
+    ],
+    "excludes": [
+      "Pricing of single cart lines: discounts and line overrides (ENG-130)",
+      "The returns and refund workflow after shipment, and its proposed redesign (ENG-141)",
+      "Gift cards and store credit as a way to pay (ENG-152)",
+      "Tax rates, shipping classes and currencies themselves: read the tax rate table instead"
+    ]
+  },
+  "figures": [
+    {
+      "id": "checkout-flow",
+      "title": "How a submitted cart gets its order total",
+      "caption": "The checkout path of {step:1} to {step:8}, and the hold branch that leaves the total empty. It leaves out the triggers that run pricing again and the payment states after the charge.",
+      "diagram": "docs/diagrams/checkout-flow.workflow.json"
+    }
+  ],
+  "flow": [
+    {
+      "id": "1",
+      "title": "The cart is submitted",
+      "text": "The checkout handler accepts a cart only when every line has a current price. It then prices the order if the cart has a shipping address. Without an address, it leaves the total empty.",
+      "source": "src/checkout/submit.ts#submitCart; src/checkout/submit.ts#deferPricing"
+    },
+    {
+      "id": "2",
+      "title": "Later runs fill the gaps",
+      "text": "The same pricing runs when an address is added to a submitted cart, and when carts merge or a coupon is applied. A retry sweep every 15 minutes prices submitted carts that still have no total.",
+      "source": "src/checkout/enqueue-pricing.ts; src/workers/address-added.worker.ts; src/workers/pricing-retry-sweep.worker.ts#createPricingRetrySweep; src/jobs/scheduler.ts"
+    },
+    {
+      "id": "3",
+      "title": "One price rule is chosen",
+      "text": "Checkout reads the price rules of the store in priority order. It keeps only rules valid on the order date. The first rule that matches applies.",
+      "source": "src/checkout/pricing.service.ts#priceOrder"
+    },
+    {
+      "id": "4",
+      "title": "The rule gives tax and shipping",
+      "text": "A rule linked to a regional tax rate takes that rate and its shipping class. An unlinked rule uses its own tax rate and shipping class.",
+      "source": "src/checkout/pricing.service.ts#buildQuote"
+    },
+    {
+      "id": "5",
+      "title": "Stock is reserved",
+      "text": "Checkout finds the warehouse on the rule, else the store, else the shop default. With none set, the default is the main warehouse. It then reserves every line in that warehouse.",
+      "source": "src/inventory/reserve.ts#chooseWarehouse; src/checkout/pricing.service.ts#buildQuote"
+    },
+    {
+      "id": "6",
+      "title": "The total is computed and stored",
+      "text": "The total is the subtotal plus tax plus shipping. A digital-only order has no shipping. The result is written to the order only if its inputs did not change while it was being priced.",
+      "source": "src/checkout/pricing.service.ts#computeTotal; src/checkout/apply-quote.ts#applyQuote"
+    },
+    {
+      "id": "7",
+      "title": "The card is charged",
+      "text": "A payment worker charges orders with reserved stock and a stored total that are not paid yet. If the card was already authorized at checkout, the charge for that order is queued at once.",
+      "source": "src/payments/charge.service.ts#findChargeableOrders; src/checkout/apply-quote.ts#applyQuote"
+    },
+    {
+      "id": "8",
+      "title": "The shipment is released",
+      "text": "After payment, one database routine releases the shipment. An active fraud hold makes that routine refuse the whole batch. The hold does not change the total.",
+      "source": "db/migrations/0042_release_shipments.sql#release_shipments; src/shipping/label.service.ts#createLabelService"
+    }
+  ],
+  "sections": [
+    {
+      "id": "rule-selection",
+      "title": "Which price rule applies",
+      "intro": "These details refine {step:3} and {step:4}.",
+      "claims": [
+        {
+          "text": "Checkout uses one price rule per order: the first one that matches. Rules in state draft are skipped.",
+          "source": "src/checkout/pricing.service.ts#fetchPriceRules; src/checkout/pricing.service.ts#priceOrder"
+        },
+        {
+          "text": "A rule with no condition and no customer group matches every order. A rule with customer groups matches the customer's group. A rule with a condition matches when the condition is true for the cart.",
+          "source": "src/checkout/pricing.service.ts#priceOrder"
+        },
+        {
+          "text": "A rule with valid_from or valid_to applies only if those dates cover the order date. If the order date is empty, only rules with no validity dates apply. If no rule is valid, the order becomes held_configuration with the reason 'no rule valid on the order date'.",
+          "source": "src/checkout/pricing.service.ts#priceOrder"
+        },
+        {
+          "text": "A condition with a syntax error skips that rule. Any other condition error stops pricing and leaves the total empty, so a broader rule cannot apply by accident. If no rule matches at all, pricing also stops with an error.",
+          "source": "src/checkout/pricing.service.ts#priceOrder"
+        },
+        {
+          "text": "For a rule linked to a regional tax rate, checkout ignores the rule's own tax rate and shipping class. The database still lets both be stored on the same rule.",
+          "source": "src/checkout/pricing.service.ts#buildQuote; db/schema.sql (check_rule_link)"
+        },
+        {
+          "text": "A missing tax rate counts as zero. A missing shipping class counts as standard.",
+          "source": "src/checkout/pricing.service.ts#fetchTaxRate; src/checkout/pricing.service.ts#buildQuote"
+        },
+        {
+          "text": "An unlinked custom rule prices normally. Its order records rate_source 'none' and no tax table.",
+          "source": "src/checkout/pricing.service.ts#buildQuote"
+        }
+      ]
+    },
+    {
+      "id": "total-computation",
+      "title": "How stock and the total are computed, and when they are not",
+      "intro": "These details refine {step:5} and {step:6}. When an input is missing or disagrees, the order gets a hold status, a reason and no total, so the payment worker in {step:7} never selects it.",
+      "claims": [
+        {
+          "text": "A warehouse setting has a region and a source. The region names where the goods ship from. The source says where the shop reads the stock level for that region.",
+          "source": "src/inventory/reserve.ts#WarehouseSetting"
+        },
+        {
+          "text": "The supported sources are the main warehouse, a manual stock count, a supplier feed, a store pickup point, and the main warehouse plus a safety margin.",
+          "source": "src/inventory/reserve.ts#StockSource"
+        },
+        {
+          "text": "A stock level read from a supplier feed counts only if the feed is newer than the store's freshness limit. Otherwise the order becomes held_stock with the reason 'supplier stock needs confirmation'.",
+          "source": "src/checkout/pricing.service.ts#buildQuote"
+        },
+        {
+          "text": "The total is the subtotal plus tax plus shipping, computed in whole cents. Nothing rounds to the nearest whole currency unit.",
+          "source": "src/checkout/pricing.service.ts#computeTotal"
+        },
+        {
+          "text": "Tax is rounded per line, not per order. For example, three lines of 0.333 tax each give 0.99, not 1.00.",
+          "source": "src/checkout/pricing.service.ts#computeTotal"
+        },
+        {
+          "text": "A digital-only order has no shipping. Only an order with reserved stock may carry a total, and the database enforces this.",
+          "source": "src/checkout/apply-quote.ts#applyQuote; db/schema.sql (orders_reserved_total_check)"
+        },
+        {
+          "text": "The order stores the total, its tax breakdown, the applied price rule, regional tax rate and tax table. It repeats them in metadata.pricing.",
+          "source": "src/checkout/apply-quote.ts#applyQuote"
+        },
+        {
+          "text": "If the product's tax category disagrees with the regional tax rate the rule cites, the order becomes held_configuration. The reason is 'product tax category disagrees with configured rate'.",
+          "source": "src/checkout/pricing.service.ts#buildQuote"
+        },
+        {
+          "text": "If the warehouse region conflicts with the shipping address region, the order becomes held_configuration. A store manager can accept the conflict on the price rule with a recorded reason. Then the rule prices.",
+          "source": "src/checkout/pricing.service.ts#buildQuote; src/inventory/reserve.ts#canShipTo"
+        },
+        {
+          "text": "An invalid warehouse setting, or the region 'other', makes the order held_configuration.",
+          "source": "src/checkout/pricing.service.ts#buildQuote"
+        },
+        {
+          "text": "If the configured source has no stock level yet, the order becomes held_stock. An unknown stock level never falls back to the main warehouse.",
+          "source": "src/checkout/pricing.service.ts#buildQuote"
+        },
+        {
+          "text": "The retry sweep prices held orders again after a back-off.",
+          "source": "src/workers/pricing-retry-sweep.worker.ts#createPricingRetrySweep"
+        }
+      ]
+    },
+    {
+      "id": "recalculation",
+      "title": "When the total is cleared and recomputed",
+      "claims": [
+        {
+          "text": "Database triggers watch the inputs of pricing. These include the cart's lines, address, coupon and customer group, the price rules, the warehouse defaults and the tax rates.",
+          "source": "db/migrations/0051_pricing_invalidation.sql#invalidate_order_inputs; db/migrations/0051_pricing_invalidation.sql#invalidate_rule_inputs"
+        },
+        {
+          "text": "When such an input changes on a submitted order, the trigger clears its total, reservation and citations. The retry sweep in {step:2} then prices it again.",
+          "source": "db/migrations/0051_pricing_invalidation.sql#invalidate_order_inputs"
+        },
+        {
+          "text": "An order in charging or charged keeps its total when an input changes. Only a revision counter changes, so a running pricing pass cannot write stale results.",
+          "source": "db/migrations/0051_pricing_invalidation.sql#invalidate_order_inputs; src/checkout/apply-quote.ts#applyQuote"
+        },
+        {
+          "text": "Shipped, refunded and cancelled orders are never changed by a new pricing pass.",
+          "source": "src/checkout/apply-quote.ts#PROTECTED_ORDER_STATUSES; db/migrations/0051_pricing_invalidation.sql#order_is_protected"
+        }
+      ]
+    },
+    {
+      "id": "other-readers",
+      "title": "What reads the order total, and what reads store-wide price rules instead",
+      "claims": [
+        {
+          "text": "Store-wide price rules (the store_price_rules table) never set an order's total. Checkout does not read them.",
+          "source": "src/checkout/pricing.service.ts#PricingServiceDeps"
+        },
+        {
+          "text": "A manual change from submitted to charging is allowed if the order has an address and the store has any active store-wide price rule. It does not check the total.",
+          "source": "src/orders/lifecycle.ts#transitionState"
+        },
+        {
+          "text": "The order list shows the shipping class of the store's top-priority active store-wide price rule on every order awaiting payment. It does not show the order's own shipping class. With no such rule, it shows standard.",
+          "source": "src/orders/order-views.service.ts#deriveListShipping"
+        },
+        {
+          "text": "The order list marks an order as ready to ship when its payment is captured before today's UTC date.",
+          "source": "src/orders/order-views.service.ts#createOrderViewsService"
+        },
+        {
+          "text": "The daily sales report counts an order as late from the day after its promised ship date. The same report also summarizes the store-wide price rules.",
+          "source": "src/reports/daily-sales.aggregator.ts#createDailySalesAggregator"
+        },
+        {
+          "text": "Promotions count the store-wide price rules in each campaign. The rules are also managed through the public /v1/stores/:storeId/price-rules API.",
+          "source": "src/promotions/campaigns.service.ts#createCampaignsService; src/routes/price-rules.routes.ts; api/openapi.yaml"
+        },
+        {
+          "text": "The endpoint that explains an order's total returns a fixed placeholder: 'Standard (flat rate)', 20 percent tax, standard shipping. The service marks it provisional since ENG-97. The route's response schema does not declare that flag.",
+          "source": "src/orders/explain-total.ts#getTotalExplanation; src/orders/helpers.ts#flatRateTotal; src/routes/orders.routes.ts#TotalExplanationResponseSchema"
+        }
+      ]
+    },
+    {
+      "id": "holds-seeds",
+      "title": "Line discounts, fraud holds and seeded rates",
+      "claims": [
+        {
+          "text": "Line discounts and line price overrides use a separate path. They do not change the order total until the cart is priced again.",
+          "source": "src/cart/line-pricing.service.ts#createLinePricingService; src/orders/explain-total.ts#getLineExplanation"
+        },
+        {
+          "text": "A fraud hold blocks shipment. It never changes the total, and the payment worker does not check it.",
+          "source": "db/migrations/0042_release_shipments.sql#release_shipments; src/payments/charge.service.ts#findChargeableOrders"
+        },
+        {
+          "text": "The seeded 2024 and 2025 regional tax rates are rewritten in place by every database migration job, which runs on each deploy.",
+          "source": "db/seeds/05-tax-rates-2024.sql; db/seeds/06-tax-rates-2025.sql; db/Dockerfile"
+        },
+        {
+          "text": "The demo store seed has rule inserts that link a regional tax rate, and others that carry their own tax rate with no link.",
+          "source": "db/seeds/08-demo-store.sql"
+        }
+      ]
+    },
+    {
+      "id": "recorded-decisions",
+      "title": "Decisions already recorded",
+      "intro": "ADR-0012 and ENG-118 settled these points before this explainer was written.",
+      "claims": [
+        {
+          "text": "Region and source stay separate. The warehouse table's region list is the only region vocabulary.",
+          "source": "docs/adr/0012-warehouse-selection.md (decision 1); ADR-0012"
+        },
+        {
+          "text": "A store manager can accept a region conflict with a recorded reason, per price rule.",
+          "source": "docs/adr/0012-warehouse-selection.md (decision 2)"
+        },
+        {
+          "text": "Any change to the total returns an order in charging to submitted. A lower total is applied and flagged, not held. The return to submitted is not built yet.",
+          "source": "docs/adr/0012-warehouse-selection.md (decision 3); db/migrations/0051_pricing_invalidation.sql (ENG-125)"
+        },
+        {
+          "text": "The tax rate table is the single source for every tax rate and shipping class. Nobody types these values from memory.",
+          "source": "docs/checkout/tax-rates.md; ENG-118"
+        }
+      ]
+    }
+  ],
+  "openQuestions": [
+    "How store-wide price rules, price rules and regional tax rates compose into one effective price is open under ENG-123.",
+    "Rounding is open under ENG-123: the code rounds tax per line, and whether the order total should round once instead is not decided.",
+    "An order in charging or charged keeps a stale total when its inputs change. Revoking it is owned by ENG-125.",
+    "Edits to tax reference data, including a seed rewrite of a tax rate, do not trigger a new pricing pass. The same holds for cart fields read only by rule conditions and the default warehouse setting (ENG-133).",
+    "A digital-only order has no shipment, so the release routine never picks it up. What delivers it is open under ENG-152.",
+    "The total explanation endpoint still returns a placeholder instead of the stored quote (ENG-97)."
+  ],
+  "terms": [
+    {
+      "term": "Order total",
+      "meaning": "The amount in orders.total_cents: the subtotal plus tax plus shipping. From this amount the payment worker charges the card. It does not by itself release the shipment."
+    },
+    {
+      "term": "Subtotal",
+      "meaning": "The sum of the cart lines before tax and shipping."
+    },
+    {
+      "term": "Region / source",
+      "meaning": "Region: where the goods ship from. Source: where the shop reads the stock level for that region (ENG-118)."
+    },
+    {
+      "term": "Effective price",
+      "meaning": "The one subtotal, tax, shipping and total that apply to an order."
+    },
+    {
+      "term": "Price rule",
+      "meaning": "A row in the price rules table of a store. It matches orders and cites a regional tax rate or carries a custom tax rate and shipping class."
+    },
+    {
+      "term": "Regional tax rate",
+      "meaning": "One entry of the tax rate table: a region, a rate, a shipping class and a validity period."
+    },
+    {
+      "term": "Store-wide price rule",
+      "meaning": "A rule a store defines across its catalogue, stored in store_price_rules. Today it does not set any order total."
+    },
+    {
+      "term": "Reservation",
+      "meaning": "Stock set aside in one warehouse for the lines of one order until it ships or is cancelled."
+    },
+    {
+      "term": "Hold status",
+      "meaning": "held_configuration means the rules or settings need a fix. held_stock means the stock source has no usable level yet."
+    },
+    {
+      "term": "Fraud hold",
+      "meaning": "A flag that, while active, blocks shipment and refunds of an order."
+    }
+  ],
+  "related": [
+    {
+      "text": "ENG-123: the pricing decision this explainer supports",
+      "url": "https://tracker.example.com/acme/issue/ENG-123"
+    },
+    {
+      "text": "ENG-110: checkout reliability epic",
+      "url": "https://tracker.example.com/acme/issue/ENG-110"
+    },
+    {
+      "text": "ENG-118: warehouse selection design and its recorded decisions",
+      "url": "https://tracker.example.com/acme/issue/ENG-118"
+    },
+    {
+      "text": "ENG-125: invalidation of charging states",
+      "url": "https://tracker.example.com/acme/issue/ENG-125"
+    },
+    {
+      "text": "ENG-133: pricing inputs not yet watched by triggers",
+      "url": "https://tracker.example.com/acme/issue/ENG-133"
+    },
+    {
+      "text": "ENG-152: delivery of digital-only orders",
+      "url": "https://tracker.example.com/acme/issue/ENG-152"
+    }
+  ]
+}
