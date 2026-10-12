@@ -439,6 +439,17 @@ never filed, and the gap it leaves ships as if it were closed. Flag every
 unnamed deferral as a warning and require either a filed issue or its
 removal.
 
+**Every tier: a loosened ratchet goes to a person.** A commit in the range
+that carries a `Ratchet-Loosen: <rule>: <reason>` trailer lowers a rule the
+repository's ratchet gate holds (the M1 ratchet: a rule may keep its existing
+findings but must not gain new ones). List every such trailer in the summary
+as a finding for a person to confirm, with the rule and the reason given,
+whatever the gates say:
+
+```bash
+git log --format='%h %(trailers:key=Ratchet-Loosen,valueonly,separator=%x2C )' <base>..HEAD | grep -v '^[0-9a-f]* *$'
+```
+
 **Tier 2, contract validation (mid-size model):** run the repository's own
 contract and drift checks for the artifact types present, in parallel. For
 example:

@@ -59,7 +59,7 @@ function quotedKey(line: string): { name: string; after: string } | undefined {
     const c = line[i] ?? "";
     if (quote === '"' && c === "\\") {
       const next = line[++i];
-      if (next === undefined) return;
+      if (next === undefined) return undefined;
       if (next !== '"' && next !== "\\")
         malformed(
           `malformed catalog — unsupported escape sequence \\${next} in quoted key`,
@@ -75,6 +75,7 @@ function quotedKey(line: string): { name: string; after: string } | undefined {
       return rest.startsWith(":") ? { name, after: rest.slice(1) } : undefined;
     } else name += c;
   }
+  return undefined;
 }
 
 function disallowedTrailing(rest: string): boolean {

@@ -66,7 +66,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { calendarDate, type MergedPr, mergedPrs } from "./defect-escape.ts";
-import { fail, isDigits, isEntryPoint, runMain } from "./lib/cli.ts";
+import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   readRecordedEscapeBaseline,
   renderEscapeAnchor,
@@ -734,4 +734,4 @@ async function main(): Promise<number> {
   return gaps.length === 0 ? 0 : 3;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("fractal-metrics", main);
+if (import.meta.main) runMain("fractal-metrics", main);

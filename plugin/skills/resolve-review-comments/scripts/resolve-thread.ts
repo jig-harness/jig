@@ -11,11 +11,11 @@
  * never resolve a thread with no audit trail.
  */
 
-import { isEntryPoint, runMain } from "./lib/cli.ts";
+import { runMain } from "./lib/cli.ts";
 import { ghOrExit } from "./lib/gh.ts";
 import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 
-// Gated behind isEntryPoint rather than run at module scope: this module's
+// Gated behind `import.meta.main` rather than run at module scope: this module's
 // side effect is a MUTATION, so importing it — the pattern the rest of this
 // family supports for its pure helpers — would resolve a thread for real.
 // See the sibling note in unresolve-thread.ts.
@@ -45,4 +45,4 @@ mutation($threadId:ID!){
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("resolve-thread", main);
+if (import.meta.main) runMain("resolve-thread", main);

@@ -5187,12 +5187,9 @@ export async function clearAllLeases(
       lock.release();
       // One lock per lease FILE, so this is the one place locks are created in
       // bulk. Each registers exit/SIGINT/SIGTERM handlers that nothing else
-      // removes, and past ten trees Node warns about the leak on stderr — the
-      // same stream `reset`'s preserved-lease report uses, so the warning lands
-      // in the middle of the diagnostic an operator has to read. (Bun, the
-      // default runtime, stays silent; the scripts also advertise Node ≥22.18,
-      // where it fires.) Disposal is after `release`, never before: the
-      // handlers exist to release an abnormally terminated hold.
+      // removes, so without disposal they pile up on the process for the rest
+      // of its life, one set per tree. Disposal is after `release`, never
+      // before: the handlers exist to release an abnormally terminated hold.
       lock.dispose();
     }
   }

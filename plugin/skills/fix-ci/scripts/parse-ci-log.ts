@@ -31,10 +31,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import {
-  isEntryPoint,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { runMain } from "../../resolve-review-comments/scripts/lib/cli.ts";
 import { run } from "../../resolve-review-comments/scripts/lib/proc.ts";
 
 export type Category =
@@ -445,5 +442,5 @@ export async function main(
   return 0;
 }
 
-if (isEntryPoint(import.meta.url))
+if (import.meta.main)
   runMain("parse-ci-log", () => main(process.argv.slice(2)));

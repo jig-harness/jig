@@ -1,0 +1,41 @@
+// Jig's wiring for the M1 ratchet gate
+// (modules/M1-gates-enforcement-ladder/reference/ratchet/). Which rules are
+// ratcheted is not listed here: a rule at "warn" in biome.json, and a flag in
+// tsconfig.ratchet.json, is ratcheted by being there.
+{
+  "counters": [
+    {
+      "name": "biome",
+      "format": "biome-json",
+      "command": [
+        "biome",
+        "lint",
+        "--reporter=json",
+        "--max-diagnostics=none",
+        "."
+      ]
+    },
+    {
+      "name": "types",
+      "format": "tsc",
+      "command": ["bun", "check", "--no-pretty", "--all", "-p", "tsconfig.ratchet.json"]
+    },
+    {
+      "name": "suppressions",
+      "format": "grep",
+      "files": "\\.(ts|tsx|js|mjs|cjs)$",
+      "patterns": {
+        "biome-ignore": "biome-ignore(-all|-start)?\\s",
+        "fallow-ignore": "fallow-ignore(-next-line|-file)?\\s",
+        "ts-expect-error": "@ts-(expect-error|ignore|nocheck)\\b"
+      }
+    }
+  ],
+  "configs": [
+    { "path": "biome.json", "kind": "biome" },
+    { "path": "tsconfig.json", "kind": "tsconfig" },
+    { "path": "tsconfig.ratchet.json", "kind": "tsconfig" },
+    { "path": ".fallowrc.jsonc", "kind": "fallow" }
+  ],
+  "support": ["tools/quality/grit"]
+}

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "../../../../lib/guarded-git-spawn.ts";
 
-export const SCRIPTS = join(import.meta.dir, "..", "scripts");
+const SCRIPTS = join(import.meta.dir, "..", "scripts");
 
 export interface Run {
   code: number;

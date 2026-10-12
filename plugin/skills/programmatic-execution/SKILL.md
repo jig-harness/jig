@@ -62,7 +62,7 @@ files and docs.
 import fs, { globSync } from 'node:fs';
 import path from 'node:path';
 
-// Runs on Node 22.18+ (TypeScript and fs.globSync) or Bun.
+// Runs on Node 24+ (TypeScript and fs.globSync) or Bun.
 // Drop dependency and build output.
 const skip = (f: string) => /(^|\/)(node_modules|dist|build)\//.test(f);
 
@@ -163,7 +163,7 @@ files.forEach(file => {
 import fs, { globSync } from 'node:fs';
 import path from 'node:path';
 
-// Built-in modules for file operations and pattern matching (Node 22.18+ or Bun)
+// Built-in modules for file operations and pattern matching (Node 24+ or Bun)
 // Avoid shell commands (less portable)
 ```
 
@@ -304,8 +304,8 @@ per-file content out of context; the saving grows with the number of files.
 
 ## Requirements
 
-- A JavaScript runtime the shell can start: Bun, or Node 22.18 or later (the first
-  release that runs TypeScript files without a flag)
+- A JavaScript runtime the shell can start: Bun, or Node 24 or later (which
+  runs TypeScript files without a flag and provides `fs.globSync`)
 - File system access to the repository
 - Built-in modules only: `node:fs` (including `globSync`) and `node:path`
 

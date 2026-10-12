@@ -68,7 +68,7 @@ import {
 } from "../scripts/lib/sample.ts";
 // `renderReport`/`resolveEscapeBaseline`/`runReport` are exported from the
 // CLI itself — safe to import directly because `loop-metrics.ts`
-// guards its `runMain(...)` call with `isEntryPoint`, so importing it here
+// guards its `runMain(...)` call with `import.meta.main`, so importing it here
 // does NOT also execute `main()` (which would hit the network) as a side
 // effect.
 import {

@@ -222,7 +222,7 @@ import {
   DEFAULT_TRACKER_LABELS,
   parseTrackerLabels,
 } from "./lib/tracker-labels.ts";
-import { fail, isEntryPoint, readStdinAll, runMain } from "./lib/cli.ts";
+import { fail, readStdinAll, runMain } from "./lib/cli.ts";
 import {
   CANONICAL_SEVERITIES,
   CATEGORY_UNKNOWN,
@@ -3303,4 +3303,4 @@ export async function runDeferBatch(
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("defer-batch", main);
+if (import.meta.main) runMain("defer-batch", main);

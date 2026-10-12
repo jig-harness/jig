@@ -2256,7 +2256,7 @@ describe("no script mutates anything at import time", () => {
   // `unresolve-thread.ts` ran its GraphQL mutation at module scope, so merely
   // IMPORTING it posted — and the sweep below, which spawns every script with
   // `--help`, was safe only because it stubs `gh`.
-  // The whole family gates side effects behind isEntryPoint; this asserts it
+  // The whole family gates side effects behind `import.meta.main`; this asserts it
   // rather than trusting the harness.
   const entries = readdirSync(SCRIPTS).filter((f) => f.endsWith(".ts"));
 
@@ -2303,67 +2303,6 @@ describe("no script mutates anything at import time", () => {
         stderr: "",
       });
       rmSync(probeDir, { recursive: true, force: true });
-    });
-  }
-});
-
-describe("every script loads under node as well as bun", () => {
-  // Same claim, same probe as drive-pr's suite: SKILL.md § interop advertises
-  // these scripts to non-bun harnesses, and Node's strip-only TypeScript
-  // refuses sugar bun accepts — an extensionless import or a parameter
-  // property is a load failure only node ever sees. A usage error is a pass;
-  // a module-resolution or syntax error is not.
-  const nodeBin = process.execPath.includes("/bun") ? "node" : process.execPath;
-  const entries = [...new Bun.Glob("**/*.ts").scanSync(SCRIPTS)].sort();
-
-  // A `--help` argv makes most scripts fail fast as a usage error, but the
-  // one-argument scripts (resolve-thread.ts, unresolve-thread.ts) read it as
-  // a thread id and would spawn the REAL `gh` — a mutation attempt leaving
-  // the test suite, flaky at best. The probe only asks whether the module
-  // graph LOADS, so `gh` is a stub that fails instantly.
-  let sweepBin: string;
-  beforeAll(() => {
-    sweepBin = mkdtempSync(join(tmpdir(), "rrc-sweep-gh-"));
-    writeFileSync(
-      join(sweepBin, process.platform === "win32" ? "gh.cmd" : "gh"),
-      process.platform === "win32" ? "@exit /b 1\r\n" : "#!/bin/sh\nexit 1\n",
-      { mode: 0o755 },
-    );
-  });
-  afterAll(() => {
-    rmSync(sweepBin, { recursive: true, force: true });
-  });
-
-  it("sweeps a non-empty script set", () => {
-    expect(entries).toContain("await-round.ts");
-    expect(entries).toContain("converge.ts");
-    expect(entries).toContain("reply-to-thread.ts");
-  });
-
-  for (const rel of entries) {
-    it(`${rel} loads under node`, () => {
-      const r = spawnSync(nodeBin, [join(SCRIPTS, rel), "--help"], {
-        encoding: "utf8",
-        // Same isolation `runScript` pins, and for the same reason (see the
-        // gitCleanEnv comment): a probe inheriting the suite's cwd runs from
-        // the REAL checkout, and these scripts resolve their round counters
-        // through `git rev-parse --git-dir`. `--help` happening to fail fast
-        // is a behavioural accident of each script, not a guard.
-        cwd: repoDir,
-        input: "",
-        env: {
-          ...gitCleanEnv(),
-          PATH: `${sweepBin}${delimiter}${process.env.PATH}`,
-          GH_CALL_TIMEOUT: "1",
-        },
-      });
-      expect({
-        rel,
-        loadFailure:
-          /ERR_MODULE_NOT_FOUND|ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX|ERR_UNKNOWN_FILE_EXTENSION|Bun is not defined/.test(
-            r.stderr ?? "",
-          ),
-      }).toEqual({ rel, loadFailure: false });
     });
   }
 });

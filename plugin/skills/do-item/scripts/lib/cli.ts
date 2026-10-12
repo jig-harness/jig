@@ -1,36 +1,24 @@
 /**
  * Shared CLI helpers for the do-item scripts — the counterpart to
- * resolve-review-comments' `scripts/lib/cli.ts`.
- *
- * Each entry script carried a byte-identical `isEntryPoint` plus its
- * explanatory comment, and each hand-rolled the same argv walk its own way.
- * One copy of each lives here.
- *
- * `node:` APIs only, erasable-syntax-only TypeScript: these run under Bun and
- * under Node ≥ 22.18 (type stripping), same as their callers.
+ * resolve-review-comments' `scripts/lib/cli.ts`: the entry runner and the
+ * argv walk every entry script shares.
  */
-
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 /**
- * Is the module at `moduleUrl` the process's entry script?
- *
- * NOT `import.meta.main` (a Bun global Node gained only in v24.2 — below that
- * it reads `undefined` and the script silently prints nothing). Both runtimes
- * realpath the entry module's URL while argv[1] stays as typed, so both sides
- * are realpath'd before comparing — this survives invocation through the
- * `.agents/skills/` symlink farm and macOS's /var → /private/var link.
+ * Run an entry script's `main` and set the exit code it returns. A rejection
+ * is printed with its stack and exits 1, the same status an unhandled
+ * rejection gives, so a failure is never mistaken for a result.
  */
-export function isEntryPoint(moduleUrl: string): boolean {
-  const argv1 = process.argv[1];
-  if (argv1 === undefined) return false;
-  try {
-    return realpathSync(resolve(argv1)) === fileURLToPath(moduleUrl);
-  } catch {
-    return false;
-  }
+export function runEntry(main: () => Promise<number>): void {
+  main().then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error: unknown) => {
+      console.error(error);
+      process.exitCode = 1;
+    },
+  );
 }
 
 export interface ParsedArgs {
@@ -112,13 +100,12 @@ export function parseArgs(
     // positional, however it is spelled. This is how a caller passes a path
     // that itself starts with a dash.
     //
-    // MEASURED CAVEAT: only the Node entry point can use it. `bun script.ts --
-    // -x` strips the `--` before argv reaches the script, while `node
-    // script.ts -- -x` passes it through, so a dash-leading path is
-    // addressable under Node and not under Bun. Handled here rather than
-    // worked around because the parser's job is the argv it is given; the
-    // runtime difference belongs in the caller's docs, and the unit tests
-    // exercise this function directly for exactly that reason.
+    // MEASURED CAVEAT: Bun consumes a `--` that directly follows the script
+    // path (`bun script.ts -- -x` hands the script only `-x`); a `--` after
+    // any other argument, or a second one, reaches the script. Handled here
+    // rather than worked around because the parser's job is the argv it is
+    // given, and the unit tests exercise this function directly for exactly
+    // that reason.
     if (a === "--") {
       positionals.push(...argv.slice(i + 1));
       break;

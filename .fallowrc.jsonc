@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // Scripts that a SKILL.md, a gate or CI runs by path. Nothing imports them,
+  // so without this list fallow would report every one as an unused file.
+  "entry": [
+    "scripts/*.ts",
+    "audit/*.ts",
+    "tools/**/*.ts",
+    "plugin/skills/*/scripts/*.ts",
+    "plugin/skills/*/scripts/*/*.ts",
+    "modules/*/reference/**/*.ts"
+  ],
+  "ignorePatterns": [
+    "**/fixtures/**",
+    "**/templates/**",
+    "**/vendor/**",
+    "seeds/**",
+    "dist/**",
+    ".context/**"
+  ],
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "error",
+    "duplicate-exports": "warn",
+    // CRAP weighs complexity by test coverage. Bun writes coverage only as
+    // lcov, which fallow does not read, so fallow estimates coverage from the
+    // import graph; a score built on that guess informs but does not gate.
+    "complexity-crap": "warn"
+  },
+  "duplicates": {
+    "mode": "mild"
+  },
+  "audit": {
+    "gate": "new-only"
+  }
+}

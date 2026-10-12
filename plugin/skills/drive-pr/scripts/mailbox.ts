@@ -1,69 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Send messages and directives into a running `drive.ts`, from a live
- * session in the same working tree — a human, or the orchestrating session
- * that spawned the drive. See `lib/state/mailbox.ts` for the mechanism
- * (append-only JSONL logs under `.context/drive-mailbox/`) and why it is
- * shaped the way it is.
- *
- * Usage:
- *   mailbox.ts send <pr> --kind note --from NAME --body TEXT
- *   mailbox.ts send <pr> --kind directive --from NAME --command CMD [--body TEXT]
- *       CMD is one of: hold-push, pause, stop, resume
- *       resume additionally requires: --target hold-push|pause|stop
- *   mailbox.ts check <pr>
- *       A PURE READ: prints unseen messages as JSON, acknowledging nothing.
- *       Safe to call as often as anything wants, from anywhere — nothing
- *       in `drive.ts`'s own loop calls this today (see SKILL.md's "The
- *       drive mailbox" section), so it does not interpret what it reports
- *       either — that is left to whatever calls it, except for
- *       `gate-state` below, which is the one place a directive is turned
- *       into a decision.
- *   mailbox.ts ack <pr> --id ID [--id ID ...]
- *       Acknowledges specific message ids (status: 'received') so a later
- *       `check` does not re-report them. The ONLY way a message is ever
- *       marked seen — deliberately separate from `check` itself, so the
- *       caller acks only once IT has confirmed its own successful handling
- *       of a message, not merely that `check`'s stdout write returned (see
- *       this command's own doc comment in the source for why that
- *       distinction matters).
- *   mailbox.ts respond <pr> --id ID --response TEXT
- *       Records a driver's answer to a specific message id (status: 'done').
- *       The sender polls for this with `mailbox.ts outbox <pr>`, below.
- *   mailbox.ts outbox <pr>
- *       Prints every outbox record (ack/response) for this PR — the read
- *       side of `respond`'s "sender polls for this" promise. Unlike `check`,
- *       this does not mutate anything: it is a plain read, safe to call as
- *       often as a sender wants while waiting for a response.
- *   mailbox.ts gate-state <pr>
- *       Prints the CURRENT directive state — hold-push / pause / stop, each
- *       active or not, latest directive wins. `ok: false` in the JSON means
- *       the state could not be determined (ambiguous, not merely absent) —
- *       every caller that gates an irreversible action on this must treat
- *       that as blocked, never as clear. `guarded-push.ts` does exactly
- *       that via `isPushHeld()` directly; this subcommand exists for a human
- *       or orchestrator to inspect the same state without pushing anything.
- *   mailbox.ts repair <pr> [--dry-run]
- *       The one deliberate exception to "inbox.jsonl is append-only": drops
- *       only the lines that fail to parse as JSON at all — an interrupted
- *       write's truncated tail, the one thing that can otherwise poison
- *       `gate-state`/`isPushHeld` forever with no later append able to
- *       out-vote it. Never drops a line that parses, however it later
- *       shape-validates. `--dry-run` reports what would be dropped without
- *       writing.
- *
- * `--from` defaults to $USER when omitted (a human sending interactively);
- * there is no default for an orchestrating session — name yourself.
- *
- * Exit codes: 0 success, 2 usage error (including a PR argument
- * `resolvePrArg` could not resolve to a numeric PR — a usage problem, not
- * a read failure), 1 an unreadable mailbox file (`check`, `outbox`, or
- * `repair` reading a file that exists but could not be read as one — see
- * `readMailboxFile`'s absent/unreadable split in `lib/state/mailbox.ts`).
- */
-
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import { resolvePr } from "./lib/proc.ts";
 import {
@@ -416,8 +351,4 @@ async function main(): Promise<number> {
   }
 }
 
-const isEntryPoint =
-  process.argv[1] !== undefined &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-
-if (isEntryPoint) runMain("mailbox.ts", main);
+if (import.meta.main) runMain("mailbox.ts", main);

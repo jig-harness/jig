@@ -162,9 +162,45 @@ Design points to settle in the pull request:
   one external repository, as the
   [calibration run](audit/calibration/2026-07-19-execa.md) did by hand.
 
+### 6. A shared runtime kernel and diagnostics
+
+The plugin's scripts each solve the same problems by hand: decoding JSON
+from `gh` and configuration files, retrying, releasing locks on a signal,
+reading the clock. When one fails, the cause is often lost (an error turned
+into a default answer, a child's error output discarded), and nothing
+records how long anything took. The ratchet now counts those patterns; this
+item gives each a named replacement and then moves the code onto it.
+
+- **Shared code and logging.** A `plugin/shared/` directory, beside
+  `skills/` (both manifests already ship `assets/` there; check both tools'
+  installs before merging), for code more than one skill uses. It starts
+  with: type guards and `decodeJson(text, guard)`; an error helper that
+  keeps the cause; an injectable clock; and a logger that writes to standard
+  error at the level `JIG_LOG` sets (`JIG_LOG_FORMAT=text|json`). The shared
+  modules other skills import today from `resolve-review-comments` move
+  there. The command-line boundary prints the stack under `JIG_LOG=debug`.
+  `run()` keeps the last few kilobytes of a failed child's error output. The
+  driver log gets a timestamp and level per line and a size cap. The 11
+  local record guards move onto the shared one, and that rule becomes an
+  error.
+- **The drive loop on the kernel, and traces.** Shared retry and polling,
+  and one process-wide registry that releases resources (`using` and
+  `DisposableStack`) on return, error and signal, newest first, replacing
+  each lock's own signal handlers and `drive.ts`'s hand-ordered release.
+  `JIG_TRACE=1` writes timed spans as JSON lines under
+  `~/.local/state/jig/traces/` for every `gh` and `git` call, lock wait,
+  poll and pass, carried to child processes through `TRACEPARENT` and
+  reaped by `reap-state.ts`; records hold command names, exit codes and
+  durations, never arguments' contents or output. Kept apart from the first
+  step because it changes the drive loop's signal handling.
+- **Burn-downs**, as code is touched: the 91 `exactOptionalPropertyTypes`
+  errors; the copies of `proc.ts`, `cli.ts` and `gh-conditional.ts` that
+  drive-pr and resolve-review-comments each keep; the duplicated block in
+  `fleet-health.ts`; fallow's complexity hotspots.
+
 ## Next
 
-### 6. Delegated merge (`pull_requests.merge: auto-on-converged`)
+### 7. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
 Lets a converged drive arm the forge's auto-merge for the exact head it
 certified. It relaxes "a human merges", so the doctrine change is approved on
@@ -185,7 +221,7 @@ before it opens as a pull request the design must guarantee that:
   maturity criteria) changes in the same pull request, in the direction the
   decision picks.
 
-### 7. Values the skills still assume
+### 8. Values the skills still assume
 
 Move into configuration when a consumer needs them:
 
@@ -196,7 +232,7 @@ Move into configuration when a consumer needs them:
 - summary-finding severity is parsed only for the reviewers whose comment
   formats the drive already knows.
 
-### 8. Jig's own Simplified Technical English linter
+### 9. Jig's own Simplified Technical English linter
 
 `decide`'s `ste-lint` is a faithful TypeScript translation of a third-party
 Python linter, kept output-identical to it. Rewrite it as Jig's own
@@ -206,7 +242,7 @@ today), and keep crediting the original
 ([Credits](plugin/RECOMMENDED-SKILLS.md#credits)). The parity record and the
 golden files from the Python linter then retire with the translation.
 
-### 9. More tracker adapters
+### 10. More tracker adapters
 
 Jira, and a plan file kept in the repository. Both wait on the open decisions
 below.

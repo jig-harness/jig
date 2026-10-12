@@ -13,8 +13,6 @@
  * in the past is the one exception, and deliberately not this asymmetry's
  * uncertainty case at all: the window is open RIGHT NOW, which is certain,
  * not ambiguous — see `planFor()`'s own `Math.max(rawMs, 0)`.
- *
- * Runs under Bun and Node >= 22.18: `node:` APIs only, erasable syntax only.
  */
 
 import { claudeAdapter } from "./claude.ts";

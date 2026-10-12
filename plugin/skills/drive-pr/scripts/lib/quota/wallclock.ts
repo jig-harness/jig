@@ -17,14 +17,12 @@
  *      rather than sleeping. This function is deliberately not the place that
  *      decides plausibility — it reports what the text says.
  *
- * No date library: `Intl.DateTimeFormat` with a `timeZone` is the only zone
- * database available to both runtimes, and it is enough. The offset is
+ * No date library: `Intl.DateTimeFormat` with a `timeZone` is the built-in
+ * zone database, and it is enough. The offset is
  * recovered by asking what wall clock the zone shows at a known instant, then
  * inverted — applied twice, because the offset at the ANSWER can differ from
  * the offset at `now` across a DST boundary, which is precisely the night a
  * five-hour sleep is most likely to cross.
- *
- * Runs under Bun and Node >= 22.18: `node:` APIs only, erasable syntax only.
  */
 
 /** Zone-shown wall clock at `instant`, as the numbers a formatter reports. */

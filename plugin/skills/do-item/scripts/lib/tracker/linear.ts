@@ -10,8 +10,6 @@
  * Reads are defensive: a page that cannot be read, a connection that reports
  * more pages than were read, or a node of the wrong shape throws. Linear pages
  * nested connections silently, so every nested read carries its `pageInfo`.
- *
- * Only `node:` APIs and global `fetch`; runs under Bun and Node >= 22.18.
  */
 
 import { spawnSync } from "node:child_process";
@@ -46,8 +44,8 @@ export type LinearTransport = (
  * entity does not exist (or is not visible), which a read reports as absent.
  */
 export class LinearApiError extends Error {
-  // Declared fields, not parameter properties: Node's type stripping only
-  // erases syntax, and parameter properties generate code.
+  // Declared fields, not parameter properties: the repository's TypeScript
+  // settings allow erasable syntax only, and parameter properties generate code.
   readonly status: number | null;
   readonly notFound: boolean;
   constructor(message: string, status: number | null, notFound = false) {

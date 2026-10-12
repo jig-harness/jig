@@ -46,7 +46,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { calendarDate } from "./defect-escape.ts";
-import { fail, isDigits, isEntryPoint, runMain } from "./lib/cli.ts";
+import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   buildReport,
   type CommentFact,
@@ -995,4 +995,4 @@ async function main(): Promise<number> {
   return outcome.failed.length === 0 ? 0 : 3;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("fleet-health", main);
+if (import.meta.main) runMain("fleet-health", main);

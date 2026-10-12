@@ -34,9 +34,8 @@
  *     bun get_issue.ts ENG-123 | bun determine_agent.ts -
  *     bun determine_agent.ts - --catalog /path/to/catalog.yaml
  *
- * Runs under Bun and under Node ≥ 22.18 (type stripping). YAML parsing uses
- * the review skill's vendored js-yaml build (the plugin cache has no
- * `node_modules`).
+ * YAML parsing uses the review skill's vendored js-yaml build (the plugin
+ * cache has no `node_modules`).
  */
 
 import { readFileSync } from "node:fs";
@@ -46,7 +45,7 @@ import {
   readOverlay,
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
 import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
-import { isEntryPoint, parseArgs } from "./lib/cli.ts";
+import { parseArgs, runEntry } from "./lib/cli.ts";
 import { doItemSection } from "./lib/overlay.ts";
 
 /** The agent used when the consumer declares none. */
@@ -361,8 +360,4 @@ async function main(): Promise<number> {
   }
 }
 
-if (isEntryPoint(import.meta.url)) {
-  main().then((code) => {
-    process.exitCode = code;
-  });
-}
+if (import.meta.main) runEntry(main);

@@ -129,9 +129,11 @@ export interface DecisionSource {
 }
 
 export class SourceError extends Error {
-  constructor(readonly problems: string[]) {
+  readonly problems: string[];
+  constructor(problems: string[]) {
     super(`invalid decision source:\n- ${problems.join("\n- ")}`);
     this.name = "SourceError";
+    this.problems = problems;
   }
 }
 

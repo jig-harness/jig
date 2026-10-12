@@ -235,7 +235,10 @@ function pyInt(text: string): number {
 }
 
 class PyFloat {
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 }
 
 /** Python `json.dumps(value, indent=2)`, with its default `ensure_ascii`. */

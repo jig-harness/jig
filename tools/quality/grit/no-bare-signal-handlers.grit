@@ -1,0 +1,12 @@
+// Flags a process-wide exit or signal handler registered ad hoc: each one
+// runs in registration order with every other, so release order is decided by
+// load order rather than by the code that owns the resource. The call is
+// matched as written; an alias of process.on or process.once is not followed.
+or { `process.on($event, $handler)`, `process.once($event, $handler)` } as $register where {
+  $event <: or { `"exit"`, `"SIGINT"`, `"SIGTERM"`, `"SIGHUP"` },
+  register_diagnostic(
+    span = $register,
+    message = "jig/no-bare-signal-handlers: an ad hoc process exit or signal handler. Register cleanup in one place that releases in order.",
+    severity = "warn"
+  )
+}

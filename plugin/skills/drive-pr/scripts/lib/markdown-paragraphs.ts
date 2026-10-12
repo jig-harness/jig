@@ -154,9 +154,8 @@ class BlockScanner {
   /** Indented code begun on a lazy line ends with that line. */
   private closeAtNextLine: Block | undefined;
 
-  // A plain field, not a constructor parameter property: Node's type
-  // stripping cannot run parameter properties, and the scripts must load
-  // under Node as well as Bun.
+  // A plain field, not a constructor parameter property: the repository's
+  // TypeScript settings allow erasable syntax only.
   private readonly body: string;
 
   constructor(body: string) {

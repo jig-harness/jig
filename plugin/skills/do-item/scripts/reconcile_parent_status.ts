@@ -18,10 +18,6 @@
  *
  * Exit codes: 0 decided, 2 usage, 1 unreadable/invalid stdin or a missing/
  * invalid consumer overlay (the state names and labels come from it).
- *
- * Runs under Bun and under Node ≥ 22.18 (type stripping): only `node:` APIs,
- * erasable-syntax-only TypeScript — the same contract as the other do-item
- * scripts.
  */
 
 import {
@@ -35,7 +31,7 @@ import {
 } from "./get_issue.ts";
 import { defaultStateName, ownTrackerConfig } from "./lib/tracker/config.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./lib/tracker/port.ts";
-import { isEntryPoint, parseArgs } from "./lib/cli.ts";
+import { parseArgs, runEntry } from "./lib/cli.ts";
 
 /** A label as either transport supplies it: a flat string (MCP, get_issue.ts) or `{ name }`. */
 export type LabelLike = string | { name?: string };
@@ -575,8 +571,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) {
-  main().then((code) => {
-    process.exitCode = code;
-  });
-}
+if (import.meta.main) runEntry(main);

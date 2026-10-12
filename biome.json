@@ -20,9 +20,54 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended",
+      "complexity": {
+        "noUselessCatch": "error"
+      },
+      "correctness": {
+        "noUnusedImports": "error"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error"
+      },
+      "style": {
+        "noEnum": "error",
+        "noNamespace": "error",
+        "noParameterProperties": "error"
+      },
+      "suspicious": {
+        "noEmptyBlockStatements": "warn",
+        "useErrorMessage": "error"
+      }
     }
   },
+  "plugins": [
+    {
+      "path": "./tools/quality/grit/json-parse-cast.grit",
+      "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    },
+    {
+      "path": "./tools/quality/grit/catch-return-default.grit",
+      "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    },
+    {
+      "path": "./tools/quality/grit/stderr-ignore.grit",
+      "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    },
+    {
+      "path": "./tools/quality/grit/no-local-record-guard.grit",
+      "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    },
+    {
+      "path": "./tools/quality/grit/no-raw-exit.grit",
+      "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    },
+    {
+      "path": "./tools/quality/grit/no-bare-signal-handlers.grit",
+      "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    }
+  ],
   "assist": {
     "enabled": false
   }

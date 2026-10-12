@@ -14,11 +14,9 @@
  * 1 the tracker unavailable or its answer unusable. A partial comment list is
  * never printed: the scout-finding reuse check would read it as the whole
  * history.
- *
- * Runs under Bun and under Node ≥ 22.18 (type stripping).
  */
 
-import { isEntryPoint, parseArgs } from "./lib/cli.ts";
+import { parseArgs, runEntry } from "./lib/cli.ts";
 import { openTracker } from "./lib/tracker/index.ts";
 import type { IssueComment, Tracker } from "./lib/tracker/port.ts";
 
@@ -63,8 +61,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) {
-  main().then((code) => {
-    process.exitCode = code;
-  });
-}
+if (import.meta.main) runEntry(main);

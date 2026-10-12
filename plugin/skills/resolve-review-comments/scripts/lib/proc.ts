@@ -653,12 +653,11 @@ export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
 }
 
 /**
- * Argv for a sibling `.ts` script, run under the SAME runtime executing this
- * one (`process.execPath` is bun under bun, node under node) — the
- * cross-platform replacement for relying on a `#!/usr/bin/env bun` shebang,
- * which Windows cannot honour. This also retires the bash scripts' need to
- * source `mise-init.sh` before shelling out to `bun`: there is no PATH lookup
- * left to fail.
+ * Argv for a sibling `.ts` script, run under the SAME Bun binary executing
+ * this one (`process.execPath`) — the cross-platform replacement for relying
+ * on a `#!/usr/bin/env bun` shebang, which Windows cannot honour. There is no
+ * PATH lookup for `bun` either, so a shell that has not activated mise cannot
+ * make it fail.
  */
 export function tsArgv(scriptPath: string, args: string[] = []): string[] {
   return [process.execPath, scriptPath, ...args];

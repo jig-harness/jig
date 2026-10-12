@@ -30,7 +30,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   fail,
-  isEntryPoint,
   runMain,
 } from "../../resolve-review-comments/scripts/lib/cli.ts";
 import { generatedEntries, regenerateFor } from "./lib/classify.ts";
@@ -429,4 +428,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("conflict-map", main);
+if (import.meta.main) runMain("conflict-map", main);

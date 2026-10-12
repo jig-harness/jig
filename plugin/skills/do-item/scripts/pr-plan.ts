@@ -31,8 +31,6 @@
  *      (stack on nothing, wait for the predecessor, split the change, or
  *      state why it cannot be split with --accept-oversize)
  *   1  the policy or a repository fact could not be read
- *
- * Runs under Bun and under Node ≥ 22.18 (type stripping).
  */
 
 import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
@@ -58,7 +56,7 @@ import {
   walkChain,
 } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, git } from "../../drive-pr/scripts/lib/proc.ts";
-import { isEntryPoint, parseArgs } from "./lib/cli.ts";
+import { parseArgs, runEntry } from "./lib/cli.ts";
 
 /** Stands for the URL `gh pr create` prints for the new pull request. */
 const PR_PLACEHOLDER = "<PR URL>";
@@ -472,8 +470,4 @@ async function main(): Promise<number> {
   return 2;
 }
 
-if (isEntryPoint(import.meta.url)) {
-  main().then((code) => {
-    process.exitCode = code;
-  });
-}
+if (import.meta.main) runEntry(main);

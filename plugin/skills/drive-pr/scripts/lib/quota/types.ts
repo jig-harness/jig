@@ -29,10 +29,6 @@
  * optional capability that only some adapters can implement; it is deliberately
  * NOT in this interface yet (see the epic), because designing it around the one
  * vendor that supports it is how the seam would rot.
- *
- * Runs under Bun and under Node >= 22.18 (type stripping): only `node:` APIs,
- * no `Bun.*` globals, erasable-syntax-only TypeScript, explicit `.ts`
- * specifiers.
  */
 
 /**

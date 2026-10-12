@@ -21,7 +21,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   fail,
-  isEntryPoint,
   runMain,
 } from "../../resolve-review-comments/scripts/lib/cli.ts";
 import {
@@ -237,4 +236,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("consumer-config", main);
+if (import.meta.main) runMain("consumer-config", main);

@@ -161,7 +161,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { stagingLive } from "./lib/claim.ts";
-import { fail, isEntryPoint, runMain } from "./lib/cli.ts";
+import { fail, runMain } from "./lib/cli.ts";
 import {
   atomicWrite,
   createExclusiveDurable,
@@ -1362,10 +1362,6 @@ async function main(): Promise<number> {
   return 0;
 }
 
-// Guarded the same way reap-state.ts / drive.ts / summary-findings.ts guard
-// their own entry — see cli.ts's `isEntryPoint` doc comment for why a bare
-// `argv[1]` comparison is not enough (a symlinked invocation path resolves
-// differently under it than under `import.meta.url`). Unguarded, merely
-// IMPORTING this module for its exported helpers would run the whole
-// migration against the importing process's own repository.
-if (isEntryPoint(import.meta.url)) runMain("migrate-legacy-state.ts", main);
+// Unguarded, merely IMPORTING this module for its exported helpers would run
+// the whole migration against the importing process's own repository.
+if (import.meta.main) runMain("migrate-legacy-state.ts", main);

@@ -43,9 +43,6 @@
  *     section is already gone;
  *   - out-of-scope lines are kept or dropped whole, the first line is always
  *     kept, and every line is capped at LINE_CAP with a trailing marker.
- *
- * Runs under Bun and under Node ≥ 22.18 (type stripping): only `node:` APIs,
- * erasable-syntax-only TypeScript — same contract as the sibling scripts.
  */
 
 import { spawnSync } from "node:child_process";
@@ -59,7 +56,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { isEntryPoint, parseArgs } from "./lib/cli.ts";
+import { parseArgs } from "./lib/cli.ts";
 import {
   prunePickups,
   withFileLock,
@@ -1017,4 +1014,4 @@ export function main(argv: string[]): number {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) process.exit(main(process.argv.slice(2)));
+if (import.meta.main) process.exit(main(process.argv.slice(2)));

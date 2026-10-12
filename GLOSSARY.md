@@ -95,6 +95,19 @@ capitalized as commonly written; cross-references are *italicized*.
   that way while its precision is being proven. Every advisory gate carries
   a promotion condition (when it becomes blocking); advisory-forever is a
   tracked smell.
+- **Ratchet** — a gate that tolerates the findings a codebase already has
+  but fails any change that adds to them, so the count can only go down. A
+  rule held at a ratchet is promoted to a hard error once its count reaches
+  zero.
+- **GritQL** — a query language for matching patterns in source code by its
+  structure rather than its text, used to write custom lint rules. Biome runs
+  GritQL rules as plugins.
+- **Dead code** — code nothing uses: files no entry point reaches, exports no
+  module imports, dependencies no file loads.
+- **Cyclomatic and cognitive complexity** — two counts of how hard a function
+  is to follow: cyclomatic counts the independent paths through it, cognitive
+  weighs nesting and breaks in the flow. CRAP (change risk anti-patterns)
+  combines complexity with test coverage.
 - **Process marker** — a literal tag in a commit-message body (e.g.
   `[reviewed: db-migration]`) recording that a mandatory process step
   happened, required by a commit-msg hook and re-verified by a gate the

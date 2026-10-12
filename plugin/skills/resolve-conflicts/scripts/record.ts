@@ -25,7 +25,6 @@
 import { relative, resolve, sep } from "node:path";
 import {
   fail,
-  isEntryPoint,
   runMain,
 } from "../../resolve-review-comments/scripts/lib/cli.ts";
 import { droppedLines, resolvedText } from "./lib/drops.ts";
@@ -153,4 +152,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("record", main);
+if (import.meta.main) runMain("record", main);

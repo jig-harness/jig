@@ -1232,10 +1232,9 @@ const UNCONCLUDED_GIT_OP_MARKERS = [
 ];
 
 /**
- * `process.argv.slice(1)` under a bare `-e <script>` is exactly the trailing
- * argv this is invoked with, under both bun and node (no `eval`/script-path
- * placeholder occupies a slot) — verified empirically against both runtimes.
- * `require`, not `import`, because `-e` defaults to CommonJS on both.
+ * `process.argv.slice(1)` under a bare `bun -e <script>` is exactly the
+ * trailing argv this is invoked with (no `eval`/script-path placeholder
+ * occupies a slot) — verified empirically.
  */
 const MARKER_PROBE_SCRIPT = `
 const { existsSync } = require('node:fs');
@@ -1280,10 +1279,9 @@ export async function unconcludedGitOpMarker(
 }
 
 /**
- * Argv for a sibling `.ts` script, run under the SAME runtime executing this
- * one (`process.execPath` is bun under bun, node under node) — the
- * cross-platform replacement for relying on a `#!/usr/bin/env bun` shebang,
- * which Windows cannot honour.
+ * Argv for a sibling `.ts` script, run under the SAME Bun binary executing
+ * this one (`process.execPath`) — the cross-platform replacement for relying
+ * on a `#!/usr/bin/env bun` shebang, which Windows cannot honour.
  */
 export function tsArgv(scriptPath: string, args: string[] = []): string[] {
   return [process.execPath, scriptPath, ...args];
@@ -1365,7 +1363,7 @@ export function pidAlive(pid: number, host: string): boolean {
  * Part of the exit-11 refusal contract: the lease refusals name a liveness
  * check as the way to decide whether to override, so an instruction the reader
  * cannot execute makes the refusal unrecoverable in practice. These scripts
- * support Windows deliberately (`node:` APIs only, no coreutils), where `ps` is
+ * support Windows deliberately (no coreutils), where `ps` is
  * not normally present — so the command is selected rather than hardcoded.
  *
  * `host` decides whose machine it runs ON; `platform` decides the syntax. The

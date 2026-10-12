@@ -42,8 +42,8 @@
  *
  *   A probe whose assertion names a spawn boundary — an exit code crossing a
  *   process, argv handling, env inheritance, signal delivery, two REAL
- *   processes contending, type-stripping under `node` — stays a spawn, however
- *   slow. `guarded-push.ts`'s deadline probes take 10s each and must.
+ *   processes contending — stays a spawn, however slow.
+ *   `guarded-push.ts`'s deadline probes take 10s each and must.
  *
  *   A probe whose assertion names LOGIC — a total function of its input, a
  *   parse, a fold — calls that function. Reaching it through a whole `drive.ts`

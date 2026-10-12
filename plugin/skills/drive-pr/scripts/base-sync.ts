@@ -106,9 +106,6 @@
  *   1  A step failed. Read its diagnostic.
  */
 
-import { existsSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   type BaseDrift,
   type DriftVerdict,
@@ -1067,26 +1064,8 @@ async function main(): Promise<number> {
   }
 }
 
-// Guarded the same way reap-state.ts / defect-escape.ts / summary-findings.ts
-// / round-plan.ts guard their own entry: this module's side effect is real
-// git/gh I/O and a process exit code, and unconditionally running `main()` at
-// import time would fire that against the IMPORTING process's own argv —
-// exactly what base-sync.test.ts now does to reach `alreadyPushing` directly.
-// `existsSync` + `realpathSync` (not the bare `resolve(argv[1]) ===
-// fileURLToPath(...)` defect-escape.ts, summary-findings.ts and
-// round-plan.ts still use) because a symlinked invocation path leaves
-// `process.argv[1]` unresolved under Node while `fileURLToPath(import.meta.url)`
-// is already canonical — reap-state.ts's own comment has the measurement.
-let isEntryPoint = false;
-if (process.argv[1] !== undefined) {
-  try {
-    isEntryPoint =
-      existsSync(process.argv[1]) &&
-      realpathSync(resolve(process.argv[1])) === fileURLToPath(import.meta.url);
-  } catch {
-    // Unresolvable argv[1] — fail closed, same as the ENOENT case above.
-  }
-}
-if (isEntryPoint) {
+// Run only as a script: the tests import this module for its helpers, and
+// `main()` performs real git and gh calls.
+if (import.meta.main) {
   runMain("base-sync.ts", main);
 }

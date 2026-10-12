@@ -62,12 +62,12 @@ where this file says "the configured …", that is where the value comes from.
 
 **exact** — Use the documented runtime forms; the invocation syntax and script contracts are fixed.
 
-Every script under `scripts/` is TypeScript on `node:` APIs only — no bash, no
-`jq`, no coreutils — so the same files run for any agent (Claude Code, Codex,
+Every script under `scripts/` is TypeScript run by Bun — no bash, no `jq`, no
+coreutils — so the same files run for any agent (Claude Code, Codex,
 or a human) on macOS, Linux and Windows. Two equivalent invocation forms:
 
 - `bun ${CLAUDE_SKILL_DIR}/scripts/<name>.ts …` — works everywhere,
-  including Windows; also `node <name>.ts` on Node ≥ 22.18 (type stripping).
+  including Windows.
 - `${CLAUDE_SKILL_DIR}/scripts/<name>.ts …` — direct execution via the
   `#!/usr/bin/env bun` shebang, macOS/Linux only. The examples below use this
   short form; prefix `bun ` on Windows.

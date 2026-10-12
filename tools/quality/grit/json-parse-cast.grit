@@ -1,0 +1,19 @@
+// Flags a cast of JSON.parse's result to a concrete type: the cast checks
+// nothing, so malformed input surfaces later, far from where it was read.
+// `as unknown` is the correct way to drop JSON.parse's `any` and is allowed;
+// `as unknown as T` is the same unchecked cast in two steps, and a typed
+// declaration (`const v: T = JSON.parse(x)`) is the same cast without `as`.
+// The call is matched as written; an alias of JSON.parse is not followed.
+or {
+  `JSON.parse($...) as unknown as $type`,
+  `JSON.parse($...) as $type`,
+  `const $_: $type = JSON.parse($...)`,
+  `let $_: $type = JSON.parse($...)`
+} as $cast where {
+  not $type <: `unknown`,
+  register_diagnostic(
+    span = $cast,
+    message = "jig/json-parse-cast: the cast checks nothing. Parse to `unknown` and narrow it with a type guard.",
+    severity = "warn"
+  )
+}

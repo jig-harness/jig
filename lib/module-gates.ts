@@ -630,7 +630,7 @@ function entries(
   emit();
   return { keys, entries: records };
 }
-export function labelTaxonomy(args: string[], env: Environment): Result {
+function labelTaxonomy(args: string[], env: Environment): Result {
   const path = args[0] || env.TAXONOMY || "label-taxonomy.yaml";
   if (!file(path)) return error(`taxonomy not found: ${path}`);
   const parsed = entries(path, ["id", "fires"]);

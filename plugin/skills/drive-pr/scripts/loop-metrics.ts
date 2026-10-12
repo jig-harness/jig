@@ -54,7 +54,7 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, isDigits, isEntryPoint, runMain } from "./lib/cli.ts";
+import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   type EscapeBaseline,
   readRecordedEscapeBaseline,
@@ -312,4 +312,4 @@ async function main(): Promise<number> {
 // copy — importing this module for that must not also execute `main()` as a
 // side effect (which would parse `process.argv`, resolve a PR and hit the
 // network). Same pattern as `defect-escape.ts`/`round-plan.ts`/`self-inflicted.ts`.
-if (isEntryPoint(import.meta.url)) runMain("loop-metrics", main);
+if (import.meta.main) runMain("loop-metrics", main);

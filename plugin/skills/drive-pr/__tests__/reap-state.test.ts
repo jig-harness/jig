@@ -1959,52 +1959,21 @@ describe("dry run against the DEFAULT (no $DRIVE_PR_STATE_DIR) resolution path",
 });
 
 describe("the CLI entry-point guard survives a symlinked invocation path", () => {
-  // `process.argv[1]` is left UNRESOLVED under Node when invoked through a
-  // symlink (verbatim as invoked), while `fileURLToPath(import.meta.url)` is
-  // already canonical — a symlinked checkout (routine for a cron job's
-  // working copy) made the guard compare unequal and silently skip `main()`,
-  // so the scheduled reaper did nothing while still exiting 0.
-  // Measured that Bun itself already
-  // canonicalizes `argv[1]` (so this never fires under the production cron
-  // invocation, which always uses bun) — but Node compatibility is this
-  // skill's own explicit, tested requirement, so both runtimes are checked
-  // here rather than assuming Bun's behavior generalizes.
-
-  function runReapViaSymlink(runtime: string): {
-    stdout: string;
-    exitCode: number;
-  } | null {
+  // A symlinked checkout is routine for a cron job's working copy. If the
+  // entry-point guard failed to recognise the script through the link, it
+  // would silently skip `main()`, and the scheduled reaper would do nothing
+  // while still exiting 0.
+  it("still runs main() when invoked through a symlink", () => {
     // Under `root`, not a separate temp dir — `afterAll` cleans up `root`
     // wholesale, matching every other fixture in this file.
     const linkDir = mkdtempSync(join(root, "reap-symlink-"));
     const link = join(linkDir, "reap-state.ts");
     symlinkSync(REAP, link);
-    const stateDir = freshStateDir();
-    try {
-      const proc = Bun.spawnSync([runtime, link], {
-        cwd: repo,
-        env: cleanEnv({ DRIVE_PR_STATE_DIR: stateDir }),
-      });
-      return { stdout: proc.stdout.toString(), exitCode: proc.exitCode };
-    } catch {
-      return null; // runtime not resolvable on this machine — caller skips
-    }
-  }
-
-  it("still runs main() under bun when invoked through a symlink", () => {
-    const r = runReapViaSymlink(process.execPath);
-    expect(r).not.toBeNull();
-    expect(r?.exitCode).toBe(0);
-    expect(r?.stdout).toContain("DRY RUN");
-  });
-
-  it("still runs main() under node when invoked through a symlink", () => {
-    const r = runReapViaSymlink("node");
-    if (r === null) {
-      console.warn("node not found on PATH — skipping this runtime check");
-      return;
-    }
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain("DRY RUN");
+    const proc = Bun.spawnSync([process.execPath, link], {
+      cwd: repo,
+      env: cleanEnv({ DRIVE_PR_STATE_DIR: freshStateDir() }),
+    });
+    expect(proc.exitCode).toBe(0);
+    expect(proc.stdout.toString()).toContain("DRY RUN");
   });
 });

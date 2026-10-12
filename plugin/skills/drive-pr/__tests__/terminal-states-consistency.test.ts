@@ -3,15 +3,17 @@
  * drift check.
  *
  * It runs as part of the repository's `bun test`, never from the plugin
- * cache: the checker needs the TypeScript compiler API (`typescript6`, a
- * repository devDependency).
+ * cache: the checker needs the TypeScript compiler's API (the `typescript`
+ * package, a repository devDependency). The checker talks to the compiler as
+ * a separate server process, shared by every test here and stopped once the
+ * suite is done.
  *
  * Every fixture below is mutated from a form the checker is known to accept — a
  * passing test alone proves nothing about whether the assertion is reachable at
  * all.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +28,7 @@ import {
 } from "../scripts/lib/status/terminal-states.ts";
 import {
   buildReservedExitCodes,
+  closeTypeScriptService,
   driverOnlyExitBindings,
   driveStatusTsSourcePath,
   findBareLiteralExits,
@@ -37,6 +40,8 @@ import {
   runCheck,
   scanOutOfBandNamePairings,
 } from "./terminal-states-consistency.ts";
+
+afterAll(closeTypeScriptService);
 
 /** Every `category: 'driver-only'` key in the real `TERMINAL_STATES` —
  * derived, not a second hand-typed copy of `DriverOnlyStateName`'s members,
@@ -66,7 +71,10 @@ describe("runCheck — forms that MUST be read correctly", () => {
     return file;
   };
 
-  const withCorpus = (entries: string[], fn: () => void): void => {
+  const withCorpus = async (
+    entries: string[],
+    fn: () => Promise<void> | void,
+  ): Promise<void> => {
     const previous = process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES;
     process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES = entries.join(":");
     const error = console.error;
@@ -74,7 +82,7 @@ describe("runCheck — forms that MUST be read correctly", () => {
     console.error = () => {};
     console.log = () => {};
     try {
-      fn();
+      await fn();
     } finally {
       console.error = error;
       console.log = log;
@@ -99,14 +107,14 @@ describe("runCheck — forms that MUST be read correctly", () => {
     "",
   ].join("\n");
 
-  test("drive-status-header: exit + identifier on the same line, including the two-line continuation form", () => {
+  test("drive-status-header: exit + identifier on the same line, including the two-line continuation form", async () => {
     const file = corpus("drive-status.ts", driveStatusHeaderGood);
-    withCorpus([`${file}=drive-status-header`], () =>
-      expect(runCheck()).toBe(0),
+    await withCorpus([`${file}=drive-status-header`], async () =>
+      expect(await runCheck()).toBe(0),
     );
   });
 
-  test("skill-md-table: state-first column order", () => {
+  test("skill-md-table: state-first column order", async () => {
     // The annotated CONVERGED form ("3 (`drive.ts`: 0)") has its own
     // dedicated, mutation-tested coverage below ("an annotated exit cell …
     // is read for its PRIMARY code") — this fixture stays plain so it tests
@@ -125,10 +133,12 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${file}=skill-md-table`], () => expect(runCheck()).toBe(0));
+    await withCorpus([`${file}=skill-md-table`], async () =>
+      expect(await runCheck()).toBe(0),
+    );
   });
 
-  test('pipe-table-exit-first: exit-first column order, and a multi-name cell split on " / "', () => {
+  test('pipe-table-exit-first: exit-first column order, and a multi-name cell split on " / "', async () => {
     const file = corpus(
       "terminal-states.md",
       [
@@ -142,12 +152,12 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${file}=pipe-table-exit-first`], () =>
-      expect(runCheck()).toBe(0),
+    await withCorpus([`${file}=pipe-table-exit-first`], async () =>
+      expect(await runCheck()).toBe(0),
     );
   });
 
-  test("a bold, mixed-case, or prose cell with NO embedded backtick token is correctly SKIPPED, not misread as an identifier", () => {
+  test("a bold, mixed-case, or prose cell with NO embedded backtick token is correctly SKIPPED, not misread as an identifier", async () => {
     // "PR not open" (no backticks at all) is human prose (README.md's
     // actual style for a genuinely un-annotated row) — the checker must not
     // guess an identifier out of it, and must not choke on it either.
@@ -168,12 +178,12 @@ describe("runCheck — forms that MUST be read correctly", () => {
     // DRIVE_HELD_BY_OTHER_WORKTREE) — set minPairs=2 to match. `+remap`
     // matches README.md's own real corpus entry: it shows only the
     // drive.ts-remapped code for CONVERGED, never drive-status.ts's raw one.
-    withCorpus([`${file}=pipe-table-exit-first+remap=2`], () =>
-      expect(runCheck()).toBe(0),
+    await withCorpus([`${file}=pipe-table-exit-first+remap=2`], async () =>
+      expect(await runCheck()).toBe(0),
     );
   });
 
-  test("a prose cell with a canonical state named INLINE in backticks is read via the embedded form, not skipped", () => {
+  test("a prose cell with a canonical state named INLINE in backticks is read via the embedded form, not skipped", async () => {
     // "**PR not open** (`PR_NOT_OPEN`)" is README.md's own real style:
     // prose stays human-readable, but the canonical state rides along in
     // backticks so this checker can still verify the row — closing the gap
@@ -192,8 +202,8 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${file}=pipe-table-exit-first+remap=3`], () =>
-      expect(runCheck()).toBe(0),
+    await withCorpus([`${file}=pipe-table-exit-first+remap=3`], async () =>
+      expect(await runCheck()).toBe(0),
     );
 
     // And the mutation: a wrong exit code behind the same embedded form must
@@ -211,12 +221,12 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${wrong}=pipe-table-exit-first+remap=3`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus([`${wrong}=pipe-table-exit-first+remap=3`], async () =>
+      expect(await runCheck()).toBe(1),
     );
   });
 
-  test('an annotated exit cell ("3 (`drive.ts`: 0)") is read for its PRIMARY code, not silently dropped', () => {
+  test('an annotated exit cell ("3 (`drive.ts`: 0)") is read for its PRIMARY code, not silently dropped', async () => {
     // The real regression: SKILL.md's own CONVERGED row uses exactly this
     // shape, and a whole-cell-anchored EXIT_CELL made it invisible to the
     // checker entirely — the one row the whole feature exists to police went
@@ -234,9 +244,9 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus(
+    await withCorpus(
       [`${file}=skill-md-table=3=## Terminal states`],
-      () => expect(runCheck()).toBe(0), // 3 pairs, including CONVERGED at its primary code 3
+      async () => expect(await runCheck()).toBe(0), // 3 pairs, including CONVERGED at its primary code 3
     );
     // And the mutation: the annotated cell's PRIMARY code must still be
     // checked, not waved through because it carries an annotation.
@@ -253,12 +263,13 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${wrong}=skill-md-table=3=## Terminal states`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus(
+      [`${wrong}=skill-md-table=3=## Terminal states`],
+      async () => expect(await runCheck()).toBe(1),
     );
   });
 
-  test("EXIT_CELL rejects a malformed suffix on the exit code instead of silently accepting its digit prefix", () => {
+  test("EXIT_CELL rejects a malformed suffix on the exit code instead of silently accepting its digit prefix", async () => {
     // Each of these carries a real identifier (PR_NOT_OPEN) behind a
     // corrupted exit cell — `5oops`/`5.5`/a garbage suffix after a
     // backtick-wrapped digit. An unanchored EXIT_CELL still captured the
@@ -281,9 +292,9 @@ describe("runCheck — forms that MUST be read correctly", () => {
           "",
         ].join("\n"),
       );
-      withCorpus(
+      await withCorpus(
         [`${file}=pipe-table-exit-first=2=## Exit codes`],
-        () => expect(runCheck()).toBe(1), // population floor: only HITL_PARKED's row still yields a pair
+        async () => expect(await runCheck()).toBe(1), // population floor: only HITL_PARKED's row still yields a pair
       );
     }
 
@@ -301,12 +312,13 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${clean}=pipe-table-exit-first=2=## Exit codes`], () =>
-      expect(runCheck()).toBe(0),
+    await withCorpus(
+      [`${clean}=pipe-table-exit-first=2=## Exit codes`],
+      async () => expect(await runCheck()).toBe(0),
     );
   });
 
-  test("CONVERGED's drive.ts remap (exit 0) is accepted ONLY in a file flagged `documentsDriveTsRemap` — every other file requires drive-status.ts's own exit 3, header included", () => {
+  test("CONVERGED's drive.ts remap (exit 0) is accepted ONLY in a file flagged `documentsDriveTsRemap` — every other file requires drive-status.ts's own exit 3, header included", async () => {
     // Applying the remap allowance to every non-header file lets a genuinely
     // wrong `CONVERGED` → `0` row pass in ANY prose file, not just the one
     // (README.md) that actually documents drive.ts's operator-facing exit
@@ -329,8 +341,8 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${prose}=pipe-table-exit-first+remap`], () =>
-      expect(runCheck()).toBe(0),
+    await withCorpus([`${prose}=pipe-table-exit-first+remap`], async () =>
+      expect(await runCheck()).toBe(0),
     );
 
     // A prose file NOT flagged as documenting the remap — e.g. references/
@@ -349,8 +361,8 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${unflaggedProse}=pipe-table-exit-first`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus([`${unflaggedProse}=pipe-table-exit-first`], async () =>
+      expect(await runCheck()).toBe(1),
     );
 
     const header = corpus(
@@ -364,12 +376,12 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${header}=drive-status-header`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus([`${header}=drive-status-header`], async () =>
+      expect(await runCheck()).toBe(1),
     );
   });
 
-  test("extraction is bounded to the named heading’s section — an unrelated table elsewhere in the same file is ignored", () => {
+  test("extraction is bounded to the named heading’s section — an unrelated table elsewhere in the same file is ignored", async () => {
     // A stage-flow table with bare `0`–`9` first cells can sit BEFORE the
     // real terminal-states section. Without a heading bound, a row there that
     // happens to pair a small number with an ALL-CAPS token reads as a
@@ -398,13 +410,13 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus(
+    await withCorpus(
       [`${file}=pipe-table-exit-first=3=## The drive's terminal states`],
-      () => expect(runCheck()).toBe(0),
+      async () => expect(await runCheck()).toBe(0),
     );
   });
 
-  test("a heading that matches nothing fails CLOSED via the population floor, not silently to a full-file scan", () => {
+  test("a heading that matches nothing fails CLOSED via the population floor, not silently to a full-file scan", async () => {
     const file = corpus(
       "missing-heading.md",
       [
@@ -417,9 +429,9 @@ describe("runCheck — forms that MUST be read correctly", () => {
         "",
       ].join("\n"),
     );
-    withCorpus(
+    await withCorpus(
       [`${file}=pipe-table-exit-first=1=## A heading that does not exist`],
-      () => expect(runCheck()).toBe(1),
+      async () => expect(await runCheck()).toBe(1),
     );
   });
 });
@@ -433,7 +445,10 @@ describe("runCheck — drift MUST be caught", () => {
     return file;
   };
 
-  const withCorpus = (entries: string[], fn: () => void): void => {
+  const withCorpus = async (
+    entries: string[],
+    fn: () => Promise<void> | void,
+  ): Promise<void> => {
     const previous = process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES;
     process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES = entries.join(":");
     const error = console.error;
@@ -441,7 +456,7 @@ describe("runCheck — drift MUST be caught", () => {
     console.error = () => {};
     console.log = () => {};
     try {
-      fn();
+      await fn();
     } finally {
       console.error = error;
       console.log = log;
@@ -451,7 +466,7 @@ describe("runCheck — drift MUST be caught", () => {
     }
   };
 
-  test("fails when a doc states the WRONG exit code for a real state (the develop/PR_CONFLICTING shape)", () => {
+  test("fails when a doc states the WRONG exit code for a real state (the develop/PR_CONFLICTING shape)", async () => {
     const file = corpus(
       "wrong-exit.md",
       [
@@ -466,12 +481,12 @@ describe("runCheck — drift MUST be caught", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${file}=pipe-table-exit-first`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus([`${file}=pipe-table-exit-first`], async () =>
+      expect(await runCheck()).toBe(1),
     );
   });
 
-  test("fails when a doc names a state that does not exist at all", () => {
+  test("fails when a doc names a state that does not exist at all", async () => {
     const file = corpus(
       "unknown-state.md",
       [
@@ -485,12 +500,12 @@ describe("runCheck — drift MUST be caught", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${file}=pipe-table-exit-first`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus([`${file}=pipe-table-exit-first`], async () =>
+      expect(await runCheck()).toBe(1),
     );
   });
 
-  test("CONVERGED's drive.ts remap (0) is accepted in a `+remap`-flagged file — its raw drive-status.ts exit (3) is NOT, there", () => {
+  test("CONVERGED's drive.ts remap (0) is accepted in a `+remap`-flagged file — its raw drive-status.ts exit (3) is NOT, there", async () => {
     const file = corpus(
       "converged-remap.md",
       [
@@ -504,8 +519,8 @@ describe("runCheck — drift MUST be caught", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${file}=pipe-table-exit-first+remap`], () =>
-      expect(runCheck()).toBe(0),
+    await withCorpus([`${file}=pipe-table-exit-first+remap`], async () =>
+      expect(await runCheck()).toBe(0),
     );
 
     // The replace-not-extend half: a remap-flagged file is operator-facing
@@ -525,12 +540,13 @@ describe("runCheck — drift MUST be caught", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${rawInFlagged}=pipe-table-exit-first+remap`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus(
+      [`${rawInFlagged}=pipe-table-exit-first+remap`],
+      async () => expect(await runCheck()).toBe(1),
     );
   });
 
-  test("but CONVERGED at any OTHER wrong exit is still caught — additionalExitCodes is not a wildcard", () => {
+  test("but CONVERGED at any OTHER wrong exit is still caught — additionalExitCodes is not a wildcard", async () => {
     const file = corpus(
       "converged-wrong.md",
       [
@@ -544,12 +560,12 @@ describe("runCheck — drift MUST be caught", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${file}=pipe-table-exit-first+remap`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus([`${file}=pipe-table-exit-first+remap`], async () =>
+      expect(await runCheck()).toBe(1),
     );
   });
 
-  test("fails on the population floor — a table reformatted past what the extractor recognizes must not read as clean", () => {
+  test("fails on the population floor — a table reformatted past what the extractor recognizes must not read as clean", async () => {
     // Mutating this away (e.g. accepting < the floor) must be caught here —
     // a gate's guard is proven only by a test that fails without it.
     const file = corpus(
@@ -562,19 +578,19 @@ describe("runCheck — drift MUST be caught", () => {
         "",
       ].join("\n"),
     );
-    withCorpus([`${file}=pipe-table-exit-first`], () =>
-      expect(runCheck()).toBe(1),
+    await withCorpus([`${file}=pipe-table-exit-first`], async () =>
+      expect(await runCheck()).toBe(1),
     );
   });
 
-  test("fails when a corpus file does not exist", () => {
-    withCorpus(
+  test("fails when a corpus file does not exist", async () => {
+    await withCorpus(
       [`${join(dir, "was-renamed-away.md")}=pipe-table-exit-first`],
-      () => expect(runCheck()).toBe(1),
+      async () => expect(await runCheck()).toBe(1),
     );
   });
 
-  test("a healthy file does not mask a silent or broken sibling", () => {
+  test("a healthy file does not mask a silent or broken sibling", async () => {
     const healthy = corpus(
       "healthy.md",
       [
@@ -601,9 +617,9 @@ describe("runCheck — drift MUST be caught", () => {
         "",
       ].join("\n"),
     );
-    withCorpus(
+    await withCorpus(
       [`${healthy}=pipe-table-exit-first`, `${broken}=pipe-table-exit-first`],
-      () => expect(runCheck()).toBe(1),
+      async () => expect(await runCheck()).toBe(1),
     );
   });
 });
@@ -614,8 +630,8 @@ describe("runCheck — the real repo corpus", () => {
   // self-consistent today. A future edit to any of them that
   // documents a pair TERMINAL_STATES does not contain fails THIS test, not
   // just the fixture-driven ones above.
-  test("the shipped corpus is drift-free", () => {
-    expect(runCheck()).toBe(0);
+  test("the shipped corpus is drift-free", async () => {
+    expect(await runCheck()).toBe(0);
   });
 });
 
@@ -701,11 +717,11 @@ describe("runCheck — requiredIdentifiers wired end to end through the TEST_REQ
     return file;
   };
 
-  const withRequired = (
+  const withRequired = async (
     filesEntry: string,
     required: readonly string[],
-    fn: () => void,
-  ): void => {
+    fn: () => Promise<void> | void,
+  ): Promise<void> => {
     const prevFiles = process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES;
     const prevRequired = process.env.DRIVE_PR_TERMINAL_STATES_TEST_REQUIRED;
     process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES = filesEntry;
@@ -715,7 +731,7 @@ describe("runCheck — requiredIdentifiers wired end to end through the TEST_REQ
     console.error = () => {};
     console.log = () => {};
     try {
-      fn();
+      await fn();
     } finally {
       console.error = error;
       console.log = log;
@@ -728,7 +744,7 @@ describe("runCheck — requiredIdentifiers wired end to end through the TEST_REQ
     }
   };
 
-  test("a fixture carrying every required identifier passes", () => {
+  test("a fixture carrying every required identifier passes", async () => {
     const file = corpus(
       "healthy.md",
       [
@@ -742,14 +758,14 @@ describe("runCheck — requiredIdentifiers wired end to end through the TEST_REQ
         "",
       ].join("\n"),
     );
-    withRequired(
+    await withRequired(
       `${file}=pipe-table-exit-first=3=## Exit codes`,
       ["ROUND_READY", "CONVERGED", "PR_NOT_OPEN"],
-      () => expect(runCheck()).toBe(0),
+      async () => expect(await runCheck()).toBe(0),
     );
   });
 
-  test("ONE required row silently dropped — total count still clears the floor, requiredIdentifiers still catches it", () => {
+  test("ONE required row silently dropped — total count still clears the floor, requiredIdentifiers still catches it", async () => {
     const file = corpus(
       "partial-loss.md",
       [
@@ -765,10 +781,10 @@ describe("runCheck — requiredIdentifiers wired end to end through the TEST_REQ
         "",
       ].join("\n"),
     );
-    withRequired(
+    await withRequired(
       `${file}=pipe-table-exit-first=3=## Exit codes`,
       ["ROUND_READY", "PR_NOT_OPEN", "HITL_PARKED", "PR_CONFLICTING"],
-      () => expect(runCheck()).toBe(1),
+      async () => expect(await runCheck()).toBe(1),
     );
   });
 });
@@ -857,7 +873,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
   const realImport =
     "import { driverOnlyExitCode } from './lib/status/terminal-states.ts';";
 
-  test("both constants correctly bound via driverOnlyExitCode(...): no mismatches", () => {
+  test("both constants correctly bound via driverOnlyExitCode(...): no mismatches", async () => {
     const source = [
       realImport,
       "export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS');",
@@ -866,23 +882,25 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
       ");",
       "",
     ].join("\n");
-    expect(findConstantProvenanceMismatches(source, bindings)).toEqual([]);
+    expect(await findConstantProvenanceMismatches(source, bindings)).toEqual(
+      [],
+    );
   });
 
-  test("a constant reverted to a bare literal that still holds the RIGHT value is caught — this is exactly what findExitConstantMismatches cannot see", () => {
+  test("a constant reverted to a bare literal that still holds the RIGHT value is caught — this is exactly what findExitConstantMismatches cannot see", async () => {
     const source = [
       realImport,
       "export const MAX_ROUNDS_EXIT = 6;", // reverted, but 6 is still correct
       "export const SINGLE_INSTANCE_LOCK_EXIT = driverOnlyExitCode('SINGLE_INSTANCE_LOCK');",
       "",
     ].join("\n");
-    const mismatches = findConstantProvenanceMismatches(source, bindings);
+    const mismatches = await findConstantProvenanceMismatches(source, bindings);
     expect(mismatches).toHaveLength(1);
     expect(mismatches[0]?.constantName).toBe("MAX_ROUNDS_EXIT");
     expect(mismatches[0]?.reason).toContain("MAX_ROUNDS_EXIT");
   });
 
-  test("a driverOnlyExitCode(...) call with the WRONG state-name argument is caught", () => {
+  test("a driverOnlyExitCode(...) call with the WRONG state-name argument is caught", async () => {
     const source = [
       realImport,
       // copy-paste mistake: names the wrong TERMINAL_STATES key
@@ -890,18 +908,18 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
       "export const SINGLE_INSTANCE_LOCK_EXIT = driverOnlyExitCode('SINGLE_INSTANCE_LOCK');",
       "",
     ].join("\n");
-    const mismatches = findConstantProvenanceMismatches(source, bindings);
+    const mismatches = await findConstantProvenanceMismatches(source, bindings);
     expect(mismatches).toHaveLength(1);
     expect(mismatches[0]?.constantName).toBe("MAX_ROUNDS_EXIT");
   });
 
-  test("a missing declaration entirely is caught, not silently skipped", () => {
+  test("a missing declaration entirely is caught, not silently skipped", async () => {
     const source = [
       realImport,
       "export const SINGLE_INSTANCE_LOCK_EXIT = driverOnlyExitCode('SINGLE_INSTANCE_LOCK');",
       "",
     ].join("\n");
-    const mismatches = findConstantProvenanceMismatches(source, bindings);
+    const mismatches = await findConstantProvenanceMismatches(source, bindings);
     expect(mismatches).toHaveLength(1);
     expect(mismatches[0]?.constantName).toBe("MAX_ROUNDS_EXIT");
     expect(mismatches[0]?.reason).toContain(
@@ -909,7 +927,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
     );
   });
 
-  test("a top-level exported `let` (not `const`) is NOT treated as the canonical binding — a reassignment elsewhere could break it without this gate ever noticing", () => {
+  test("a top-level exported `let` (not `const`) is NOT treated as the canonical binding — a reassignment elsewhere could break it without this gate ever noticing", async () => {
     const source = [
       realImport,
       // Same provenance and value as the clean shape, but declared `let`:
@@ -919,7 +937,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
       "export const SINGLE_INSTANCE_LOCK_EXIT = driverOnlyExitCode('SINGLE_INSTANCE_LOCK');",
       "",
     ].join("\n");
-    const mismatches = findConstantProvenanceMismatches(source, bindings);
+    const mismatches = await findConstantProvenanceMismatches(source, bindings);
     expect(mismatches).toHaveLength(1);
     expect(mismatches[0]?.constantName).toBe("MAX_ROUNDS_EXIT");
     expect(mismatches[0]?.reason).toContain(
@@ -927,7 +945,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
     );
   });
 
-  test("a decoy declaration inside a NESTED function does not rescue a reverted top-level export", () => {
+  test("a decoy declaration inside a NESTED function does not rescue a reverted top-level export", async () => {
     const source = [
       realImport,
       // The real, top-level export was reverted to a bare literal...
@@ -942,19 +960,19 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
       "}",
       "",
     ].join("\n");
-    const mismatches = findConstantProvenanceMismatches(source, bindings);
+    const mismatches = await findConstantProvenanceMismatches(source, bindings);
     expect(mismatches).toHaveLength(1);
     expect(mismatches[0]?.constantName).toBe("MAX_ROUNDS_EXIT");
   });
 
-  test("driverOnlyExitCode imported from a DIFFERENT module is not accepted as the real one", () => {
+  test("driverOnlyExitCode imported from a DIFFERENT module is not accepted as the real one", async () => {
     const source = [
       "import { driverOnlyExitCode } from './some-other-module.ts';",
       "export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS');",
       "export const SINGLE_INSTANCE_LOCK_EXIT = driverOnlyExitCode('SINGLE_INSTANCE_LOCK');",
       "",
     ].join("\n");
-    const mismatches = findConstantProvenanceMismatches(source, bindings);
+    const mismatches = await findConstantProvenanceMismatches(source, bindings);
     expect(mismatches).toHaveLength(2);
     expect(mismatches.map((m) => m.constantName).sort()).toEqual([
       "MAX_ROUNDS_EXIT",
@@ -962,14 +980,14 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
     ]);
   });
 
-  test('a decoy module specifier merely CONTAINING "terminal-states" is not accepted as the real one (a substring test via .includes would let ./fake-terminal-states.ts satisfy it)', () => {
+  test('a decoy module specifier merely CONTAINING "terminal-states" is not accepted as the real one (a substring test via .includes would let ./fake-terminal-states.ts satisfy it)', async () => {
     const source = [
       "import { driverOnlyExitCode } from './fake-terminal-states.ts';",
       "export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS');",
       "export const SINGLE_INSTANCE_LOCK_EXIT = driverOnlyExitCode('SINGLE_INSTANCE_LOCK');",
       "",
     ].join("\n");
-    const mismatches = findConstantProvenanceMismatches(source, bindings);
+    const mismatches = await findConstantProvenanceMismatches(source, bindings);
     expect(mismatches).toHaveLength(2);
     expect(mismatches.map((m) => m.constantName).sort()).toEqual([
       "MAX_ROUNDS_EXIT",
@@ -1018,7 +1036,7 @@ describe("driverOnlyExitBindings — requires a real module for live export valu
 });
 
 describe("findBareLiteralExits — a real AST scan, not a text/regex match", () => {
-  test("a bare-literal return of a tracked exit code is found, with its line number", () => {
+  test("a bare-literal return of a tracked exit code is found, with its line number", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (true) {",
@@ -1027,33 +1045,33 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match", () 
       "  return 0;",
       "}",
     ].join("\n");
-    const found = findBareLiteralExits(source);
+    const found = await findBareLiteralExits(source);
     expect(found).toEqual([{ line: 3, value: 6, kind: "return" }]);
   });
 
-  test("the named constant form is NOT flagged — this is the clean, post-fix shape", () => {
+  test("the named constant form is NOT flagged — this is the clean, post-fix shape", async () => {
     const source = [
       "export const MAX_ROUNDS_EXIT = 6;",
       "async function main(): Promise<number> {",
       "  return MAX_ROUNDS_EXIT;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([]);
+    expect(await findBareLiteralExits(source)).toEqual([]);
   });
 
-  test('a NON-EXPORTED top-level const is not the canonical binding and IS flagged — the exemption is for the exported constant, not for "any top-level declaration"', () => {
+  test('a NON-EXPORTED top-level const is not the canonical binding and IS flagged — the exemption is for the exported constant, not for "any top-level declaration"', async () => {
     const source = [
       "const exit = 6;", // top-level, but never exported — not a driver-only-exit constant
       "async function main(): Promise<number> {",
       "  return exit;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 3, value: 6, kind: "return" },
     ]);
   });
 
-  test("a numeric literal that is part of a LARGER expression is not mistaken for a bare exit-code return", () => {
+  test("a numeric literal that is part of a LARGER expression is not mistaken for a bare exit-code return", async () => {
     // Parse, don't pattern-match: this is exactly the false-positive
     // class a text/regex match over "return ... 6" would trip on, and a real
     // AST-level check (matching only when the WHOLE return expression is the
@@ -1066,10 +1084,10 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match", () 
       "  return heartbeatStaleMs() / 6;", // BinaryExpression, not the literal
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([]);
+    expect(await findBareLiteralExits(source)).toEqual([]);
   });
 
-  test("15/16 (PASS_DEADLINE_EXIT/QUOTA_PARKED_EXIT — already had named constants before) ARE flagged, same as the other four", () => {
+  test("15/16 (PASS_DEADLINE_EXIT/QUOTA_PARKED_EXIT — already had named constants before) ARE flagged, same as the other four", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (a) {",
@@ -1078,63 +1096,63 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match", () 
       "  return 16;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 3, value: 15, kind: "return" },
       { line: 5, value: 16, kind: "return" },
     ]);
   });
 
-  test("a genuinely unrelated numeric return (not one of the tracked driver-only codes) is not flagged", () => {
+  test("a genuinely unrelated numeric return (not one of the tracked driver-only codes) is not flagged", async () => {
     const source = [
       "async function countThings(): Promise<number> {",
       "  return 42;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([]);
+    expect(await findBareLiteralExits(source)).toEqual([]);
   });
 
-  test("a parenthesized bare literal — return (6); — is caught", () => {
+  test("a parenthesized bare literal — return (6); — is caught", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return (6);",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 2, value: 6, kind: "return" },
     ]);
   });
 
-  test("a unary-plus bare literal — return +6; — is caught", () => {
+  test("a unary-plus bare literal — return +6; — is caught", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return +6;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 2, value: 6, kind: "return" },
     ]);
   });
 
-  test("a unary-MINUS literal is NOT caught — a driver-only exit code is never legitimately negative, so -6 is not this bypass class", () => {
+  test("a unary-MINUS literal is NOT caught — a driver-only exit code is never legitimately negative, so -6 is not this bypass class", async () => {
     const source = ["function unrelated(): number {", "  return -6;", "}"].join(
       "\n",
     );
-    expect(findBareLiteralExits(source)).toEqual([]);
+    expect(await findBareLiteralExits(source)).toEqual([]);
   });
 
-  test("a local const alias — const exit = 6; return exit; — is caught", () => {
+  test("a local const alias — const exit = 6; return exit; — is caught", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const exit = 6;",
       "  return exit;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 3, value: 6, kind: "return" },
     ]);
   });
 
-  test("identifier resolution is scoped to the ENCLOSING FUNCTION only — a same-named alias in a different, unrelated function is not resolved across the boundary", () => {
+  test("identifier resolution is scoped to the ENCLOSING FUNCTION only — a same-named alias in a different, unrelated function is not resolved across the boundary", async () => {
     const source = [
       "function elsewhere(): number {",
       "  const exit = 6; // unrelated local in a DIFFERENT function",
@@ -1145,10 +1163,10 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match", () 
       "  return exit;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([]);
+    expect(await findBareLiteralExits(source)).toEqual([]);
   });
 
-  test("multiple sites across the file are all found, each with its own correct line number", () => {
+  test("multiple sites across the file are all found, each with its own correct line number", async () => {
     const source = [
       "async function main(): Promise<number> {", // line 1
       "  if (a) {", // 2
@@ -1163,58 +1181,58 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match", () 
       "  return 14;", // 11
       "}", // 12
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 3, value: 11, kind: "return" },
       { line: 6, value: 12, kind: "return" },
       { line: 11, value: 14, kind: "return" },
     ]);
   });
 
-  test("deliberately NOT scoped to main/runRepairPass by name — a bare literal in ANY function is caught, per this scan’s own documented scope note", () => {
+  test("deliberately NOT scoped to main/runRepairPass by name — a bare literal in ANY function is caught, per this scan’s own documented scope note", async () => {
     const source = [
       "async function someRenamedOrExtractedHelper(): Promise<number> {",
       "  return 6;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 2, value: 6, kind: "return" },
     ]);
   });
 
-  test("a TypeScript `as` wrapper — return 6 as number; — is caught", () => {
+  test("a TypeScript `as` wrapper — return 6 as number; — is caught", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return 6 as number;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 2, value: 6, kind: "return" },
     ]);
   });
 
-  test("a `satisfies` wrapper — return 6 satisfies number; — is caught", () => {
+  test("a `satisfies` wrapper — return 6 satisfies number; — is caught", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return 6 satisfies number;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 2, value: 6, kind: "return" },
     ]);
   });
 
-  test("nested wrappers combine — return +(6 as number); — is caught", () => {
+  test("nested wrappers combine — return +(6 as number); — is caught", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return +(6 as number);",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 2, value: 6, kind: "return" },
     ]);
   });
 
-  test("a shadowed BLOCK-scoped local does not steal a return that correctly reads the outer, canonical binding", () => {
+  test("a shadowed BLOCK-scoped local does not steal a return that correctly reads the outer, canonical binding", async () => {
     // The real fix: `const exit = MAX_ROUNDS_EXIT;` (an identifier
     // initializer, not a literal) is what `return exit;` actually reads —
     // the nested `if`-block's own `const exit = 6;` is a DIFFERENT,
@@ -1231,10 +1249,10 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match", () 
       "  return exit;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([]);
+    expect(await findBareLiteralExits(source)).toEqual([]);
   });
 
-  test("reassignment is still NOT tracked — a documented residual, not a regression (let exit = 6; exit = MAX_ROUNDS_EXIT; return exit;)", () => {
+  test("reassignment is still NOT tracked — a documented residual, not a regression (let exit = 6; exit = MAX_ROUNDS_EXIT; return exit;)", async () => {
     // Pinned as a mutation guard: `resolveIdentifierLiteral`
     // resolves the identifier's DECLARATION via the real binder (fixing the
     // block-scope case above), but still only reads that declaration's own
@@ -1248,12 +1266,12 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match", () 
       "  return exit;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 4, value: 6, kind: "return" },
     ]);
   });
 
-  test("the scanned code set is DERIVED from TERMINAL_STATES, not an independent literal list", () => {
+  test("the scanned code set is DERIVED from TERMINAL_STATES, not an independent literal list", async () => {
     // Every value here comes from the real `driverOnlyExitCode` read, never
     // a number typed into this test — if `TERMINAL_STATES` ever renumbers one
     // of these states, this test keeps exercising whatever the CURRENT real
@@ -1268,20 +1286,20 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match", () 
         `  return ${code};`,
         "}",
       ].join("\n");
-      expect(findBareLiteralExits(source)).toEqual([
+      expect(await findBareLiteralExits(source)).toEqual([
         { line: 2, value: code, kind: "return" },
       ]);
     }
   });
 
-  test("a value one past a real driver-only exit code is NOT flagged — the scan is exact, not a range", () => {
+  test("a value one past a real driver-only exit code is NOT flagged — the scan is exact, not a range", async () => {
     const code = driverOnlyExitCode("MAX_ROUNDS") + 1000;
     const source = [
       "async function main(): Promise<number> {",
       `  return ${code};`,
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([]);
+    expect(await findBareLiteralExits(source)).toEqual([]);
   });
 });
 
@@ -1341,11 +1359,11 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
     "",
   ].join("\n");
 
-  const withDriveTsSeams = (
+  const withDriveTsSeams = async (
     modulePath: string,
     sourcePath: string,
-    fn: () => void,
-  ): void => {
+    fn: () => Promise<void> | void,
+  ): Promise<void> => {
     const prevModule =
       process.env.DRIVE_PR_TERMINAL_STATES_TEST_DRIVE_TS_MODULE;
     const prevSource =
@@ -1357,7 +1375,7 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
     console.error = () => {};
     console.log = () => {};
     try {
-      fn();
+      await fn();
     } finally {
       console.error = error;
       console.log = log;
@@ -1372,13 +1390,15 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
     }
   };
 
-  test("a healthy module + source pair passes through the real runCheck() entry point", () => {
+  test("a healthy module + source pair passes through the real runCheck() entry point", async () => {
     const modulePath = fixture("healthy-module.ts", healthyModule);
     const sourcePath = fixture("healthy-source.ts", healthySource);
-    withDriveTsSeams(modulePath, sourcePath, () => expect(runCheck()).toBe(0));
+    await withDriveTsSeams(modulePath, sourcePath, async () =>
+      expect(await runCheck()).toBe(0),
+    );
   });
 
-  test("a mismatched constant fails runCheck(), not just the pure function in isolation", () => {
+  test("a mismatched constant fails runCheck(), not just the pure function in isolation", async () => {
     const modulePath = fixture(
       "mismatched-module.ts",
       healthyModule.replace(
@@ -1387,19 +1407,23 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
       ),
     );
     const sourcePath = fixture("mismatched-source.ts", healthySource);
-    withDriveTsSeams(modulePath, sourcePath, () => expect(runCheck()).toBe(1));
+    await withDriveTsSeams(modulePath, sourcePath, async () =>
+      expect(await runCheck()).toBe(1),
+    );
   });
 
-  test("a bare-literal exit site fails runCheck(), not just the pure function in isolation", () => {
+  test("a bare-literal exit site fails runCheck(), not just the pure function in isolation", async () => {
     const modulePath = fixture("bare-literal-module.ts", healthyModule);
     const sourcePath = fixture(
       "bare-literal-source.ts",
       healthySource.replace("return MAX_ROUNDS_EXIT;", "return 6;"),
     );
-    withDriveTsSeams(modulePath, sourcePath, () => expect(runCheck()).toBe(1));
+    await withDriveTsSeams(modulePath, sourcePath, async () =>
+      expect(await runCheck()).toBe(1),
+    );
   });
 
-  test("a constant DECLARATION reverted to a bare literal that still holds the right VALUE fails runCheck — the case findExitConstantMismatches alone cannot catch", () => {
+  test("a constant DECLARATION reverted to a bare literal that still holds the right VALUE fails runCheck — the case findExitConstantMismatches alone cannot catch", async () => {
     const modulePath = fixture("provenance-module.ts", healthyModule);
     const sourcePath = fixture(
       "provenance-source.ts",
@@ -1408,16 +1432,20 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
         "export const MAX_ROUNDS_EXIT = 6;", // reverted, but 6 is still the right value
       ),
     );
-    withDriveTsSeams(modulePath, sourcePath, () => expect(runCheck()).toBe(1));
+    await withDriveTsSeams(modulePath, sourcePath, async () =>
+      expect(await runCheck()).toBe(1),
+    );
   });
 
-  test("a missing drive.ts source file fails closed", () => {
+  test("a missing drive.ts source file fails closed", async () => {
     const modulePath = fixture("healthy-module-2.ts", healthyModule);
     const missingDir = mkdtempSync(
       join(tmpdir(), "drive-pr-terminal-states-drivets-e2e-missing-"),
     );
-    withDriveTsSeams(modulePath, join(missingDir, "does-not-exist.ts"), () =>
-      expect(runCheck()).toBe(1),
+    await withDriveTsSeams(
+      modulePath,
+      join(missingDir, "does-not-exist.ts"),
+      async () => expect(await runCheck()).toBe(1),
     );
   });
 });
@@ -1459,7 +1487,7 @@ describe("outOfBandExitBindings — requires a real module for live export value
 });
 
 describe("findConstantProvenanceMismatches — generalized helper/specifier params serve lease.ts too", () => {
-  test("a healthy outOfBandExitCode(...) declaration, imported from the real relative path, passes", () => {
+  test("a healthy outOfBandExitCode(...) declaration, imported from the real relative path, passes", async () => {
     const source = [
       "import { outOfBandExitCode } from '../status/terminal-states.ts';",
       "export const SESSION_LEASE_HELD_EXIT = outOfBandExitCode('SESSION_LEASE_HELD');",
@@ -1471,7 +1499,7 @@ describe("findConstantProvenanceMismatches — generalized helper/specifier para
       },
     ];
     expect(
-      findConstantProvenanceMismatches(
+      await findConstantProvenanceMismatches(
         source,
         bindings,
         "lease.ts",
@@ -1481,7 +1509,7 @@ describe("findConstantProvenanceMismatches — generalized helper/specifier para
     ).toEqual([]);
   });
 
-  test("a declaration reverted to a bare literal that still holds the right VALUE is still caught with the generalized params", () => {
+  test("a declaration reverted to a bare literal that still holds the right VALUE is still caught with the generalized params", async () => {
     const source = [
       "import { outOfBandExitCode } from '../status/terminal-states.ts';",
       "export const SESSION_LEASE_HELD_EXIT = 11;", // reverted, but 11 is still the right value
@@ -1492,7 +1520,7 @@ describe("findConstantProvenanceMismatches — generalized helper/specifier para
         stateName: "SESSION_LEASE_HELD",
       },
     ];
-    const mismatches = findConstantProvenanceMismatches(
+    const mismatches = await findConstantProvenanceMismatches(
       source,
       bindings,
       "lease.ts",
@@ -1508,7 +1536,7 @@ describe("findConstantProvenanceMismatches — generalized helper/specifier para
     ]);
   });
 
-  test("a decoy driverOnlyExitCode call — the WRONG helper name for this file — does not satisfy the outOfBandExitCode requirement", () => {
+  test("a decoy driverOnlyExitCode call — the WRONG helper name for this file — does not satisfy the outOfBandExitCode requirement", async () => {
     const source = [
       "import { driverOnlyExitCode } from '../status/terminal-states.ts';",
       "export const SESSION_LEASE_HELD_EXIT = driverOnlyExitCode('SESSION_LEASE_HELD');",
@@ -1519,7 +1547,7 @@ describe("findConstantProvenanceMismatches — generalized helper/specifier para
         stateName: "SESSION_LEASE_HELD",
       },
     ];
-    const mismatches = findConstantProvenanceMismatches(
+    const mismatches = await findConstantProvenanceMismatches(
       source,
       bindings,
       "lease.ts",
@@ -1530,7 +1558,7 @@ describe("findConstantProvenanceMismatches — generalized helper/specifier para
     expect(mismatches[0]?.constantName).toBe("SESSION_LEASE_HELD_EXIT");
   });
 
-  test("the default params are unchanged — existing drive.ts-shaped call sites still pass with no params supplied", () => {
+  test("the default params are unchanged — existing drive.ts-shaped call sites still pass with no params supplied", async () => {
     const source = [
       "import { driverOnlyExitCode } from './lib/status/terminal-states.ts';",
       "export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS');",
@@ -1538,7 +1566,9 @@ describe("findConstantProvenanceMismatches — generalized helper/specifier para
     const bindings = [
       { constantName: "MAX_ROUNDS_EXIT", stateName: "MAX_ROUNDS" },
     ];
-    expect(findConstantProvenanceMismatches(source, bindings)).toEqual([]);
+    expect(await findConstantProvenanceMismatches(source, bindings)).toEqual(
+      [],
+    );
   });
 });
 
@@ -1582,7 +1612,7 @@ describe("outOfBand — report.state and the returned exit code come from ONE lo
 });
 
 describe("findBareLiteralExits — a custom exitCodes param scopes the scan", () => {
-  test("a bare literal outside the supplied exitCodes set is NOT flagged, even though it would be under the default driver-only set", () => {
+  test("a bare literal outside the supplied exitCodes set is NOT flagged, even though it would be under the default driver-only set", async () => {
     // 11 is a real driver-only exit code (SINGLE_INSTANCE_LOCK) under the
     // DEFAULT set, but this scan is scoped to {13} only (as drive-status.ts's
     // own out-of-band scan for DRIVE_HELD_ELSEWHERE_EXIT alone would be) —
@@ -1593,22 +1623,22 @@ describe("findBareLiteralExits — a custom exitCodes param scopes the scan", ()
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([13])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([13])),
     ).toEqual([]);
   });
 
-  test("a bare literal INSIDE the supplied exitCodes set is flagged", () => {
+  test("a bare literal INSIDE the supplied exitCodes set is flagged", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return 13;",
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11, 13])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11, 13])),
     ).toEqual([{ line: 2, value: 13, kind: "return" }]);
   });
 
-  test("the named out-of-band constant form is NOT flagged, matching the named-constant exemption the default set already has", () => {
+  test("the named out-of-band constant form is NOT flagged, matching the named-constant exemption the default set already has", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "async function main(): Promise<number> {",
@@ -1616,22 +1646,22 @@ describe("findBareLiteralExits — a custom exitCodes param scopes the scan", ()
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11, 13])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11, 13])),
     ).toEqual([]);
   });
 
-  test("omitting exitCodes keeps the original default (driver-only) behavior — every existing call site is unaffected", () => {
+  test("omitting exitCodes keeps the original default (driver-only) behavior — every existing call site is unaffected", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return 6;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source)).toEqual([
+    expect(await findBareLiteralExits(source)).toEqual([
       { line: 2, value: 6, kind: "return" },
     ]);
   });
 
-  test("the out-of-band scanned code set is DERIVED from TERMINAL_STATES, not an independent literal list — same discipline as BARE_LITERAL_EXIT_CODES", () => {
+  test("the out-of-band scanned code set is DERIVED from TERMINAL_STATES, not an independent literal list — same discipline as BARE_LITERAL_EXIT_CODES", async () => {
     for (const name of OUT_OF_BAND_STATE_NAMES) {
       const code = outOfBandExitCode(name);
       const source = [
@@ -1640,7 +1670,7 @@ describe("findBareLiteralExits — a custom exitCodes param scopes the scan", ()
         "}",
       ].join("\n");
       expect(
-        findBareLiteralExits(
+        await findBareLiteralExits(
           source,
           "drive-status.ts",
           new Set(OUT_OF_BAND_STATE_NAMES.map(outOfBandExitCode)),
@@ -1649,7 +1679,7 @@ describe("findBareLiteralExits — a custom exitCodes param scopes the scan", ()
     }
   });
 
-  test("a value no longer among the CURRENT out-of-band exit codes is still caught when it is retained in the reserved set — pins the renumber case", () => {
+  test("a value no longer among the CURRENT out-of-band exit codes is still caught when it is retained in the reserved set — pins the renumber case", async () => {
     // Simulates SESSION_LEASE_HELD having moved away from 11 to some other
     // code: the "current" half of the reserved set no longer contains 11 at
     // all, yet a stale `return 11;` left behind by the renumber must still
@@ -1675,9 +1705,9 @@ describe("findBareLiteralExits — a custom exitCodes param scopes the scan", ()
       "  return 11;",
       "}",
     ].join("\n");
-    expect(findBareLiteralExits(source, "drive-status.ts", reserved)).toEqual([
-      { line: 2, value: 11, kind: "return" },
-    ]);
+    expect(
+      await findBareLiteralExits(source, "drive-status.ts", reserved),
+    ).toEqual([{ line: 2, value: 11, kind: "return" }]);
   });
 });
 
@@ -1718,7 +1748,7 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
   // `drive-status.ts`'s real out-of-band dispatch (`bump.code === X`, then
   // `emit(X)`, then `return X`), so all three must be caught independently.
 
-  test('a `.code === <literal>` comparison is caught, with kind "comparison"', () => {
+  test('a `.code === <literal>` comparison is caught, with kind "comparison"', async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (bump.code === 11) {",
@@ -1728,11 +1758,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 2, value: 11, kind: "comparison" }]);
   });
 
-  test("the literal may appear on either side of the comparison", () => {
+  test("the literal may appear on either side of the comparison", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (11 === bump.code) {",
@@ -1742,11 +1772,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 2, value: 11, kind: "comparison" }]);
   });
 
-  test("the named constant form in a comparison is NOT flagged — the clean shape", () => {
+  test("the named constant form in a comparison is NOT flagged — the clean shape", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "async function main(): Promise<number> {",
@@ -1757,11 +1787,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a comparison against a property OTHER than `.code` is not flagged — scoped to the real dispatch shape", () => {
+  test("a comparison against a property OTHER than `.code` is not flagged — scoped to the real dispatch shape", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (bump.value === 11) {",
@@ -1771,11 +1801,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a bare-identifier comparison with no `.code` property access at all is not flagged", () => {
+  test("a bare-identifier comparison with no `.code` property access at all is not flagged", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (code === 11) {",
@@ -1785,11 +1815,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a `bump['code'] === <literal>` element-access comparison is caught too — a behavior-preserving rewrite of the dot-access shape", () => {
+  test("a `bump['code'] === <literal>` element-access comparison is caught too — a behavior-preserving rewrite of the dot-access shape", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (bump['code'] === 11) {",
@@ -1799,11 +1829,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 2, value: 11, kind: "comparison" }]);
   });
 
-  test("a template-literal element access (`bump[`code`]`) is caught the same way", () => {
+  test("a template-literal element access (`bump[`code`]`) is caught the same way", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (bump[`code`] === 11) {",
@@ -1813,11 +1843,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 2, value: 11, kind: "comparison" }]);
   });
 
-  test('an element access for a key OTHER than "code" is not flagged', () => {
+  test('an element access for a key OTHER than "code" is not flagged', async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (bump['value'] === 11) {",
@@ -1827,11 +1857,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a computed element access through an intermediate variable is NOT resolved — a documented residual, not a regression", () => {
+  test("a computed element access through an intermediate variable is NOT resolved — a documented residual, not a regression", async () => {
     // Pinned as a mutation guard: `isCodePropertyAccess`
     // stays name-based, matching a string-literal key directly. A key held
     // in a variable (`const k = 'code'; bump[k]`) is out of scope, same as
@@ -1846,11 +1876,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a local extraction of the `.code` access into its own variable is still caught — a behavior-preserving rewrite of the property-access shape", () => {
+  test("a local extraction of the `.code` access into its own variable is still caught — a behavior-preserving rewrite of the property-access shape", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const code = bump.code;",
@@ -1861,11 +1891,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "comparison" }]);
   });
 
-  test("the local-extraction alias is caught for the element-access spelling too", () => {
+  test("the local-extraction alias is caught for the element-access spelling too", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const code = bump['code'];",
@@ -1876,11 +1906,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "comparison" }]);
   });
 
-  test("an alias of a property OTHER than `.code` is NOT mistaken for one", () => {
+  test("an alias of a property OTHER than `.code` is NOT mistaken for one", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const value = bump.value;",
@@ -1891,11 +1921,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a reassigned `.code` alias is still resolved off its own declaration initializer, not the later write — a documented residual, not a regression", () => {
+  test("a reassigned `.code` alias is still resolved off its own declaration initializer, not the later write — a documented residual, not a regression", async () => {
     // Mirrors the identical stance already pinned for `resolvesToLocalEmit`
     // (the reassigned-emit-alias test below): reads `code`'s own declaration
     // initializer (`bump.code`), not the later write.
@@ -1910,11 +1940,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 4, value: 11, kind: "comparison" }]);
   });
 
-  test("the computed-element-access-through-a-variable residual survives the alias-following fix — still out of scope", () => {
+  test("the computed-element-access-through-a-variable residual survives the alias-following fix — still out of scope", async () => {
     // `const k = 'code'; const code = bump[k];` — the alias now resolves
     // through the local extraction, but `isCodePropertyAccess` itself still
     // never recognizes `bump[k]` for a non-literal key, so this stays
@@ -1930,11 +1960,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test('an `emit(<literal>)` call is caught, with kind "call"', () => {
+  test('an `emit(<literal>)` call is caught, with kind "call"', async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  await emit(11);",
@@ -1942,11 +1972,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 2, value: 11, kind: "call" }]);
   });
 
-  test("the named constant form in an emit() call is NOT flagged — the clean shape", () => {
+  test("the named constant form in an emit() call is NOT flagged — the clean shape", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "async function main(): Promise<number> {",
@@ -1955,11 +1985,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a call to a differently-named, UNDECLARED function is not mistaken for emit() — the textual-fallback rescue only, never reachable on real corpus", () => {
+  test("a call to a differently-named, UNDECLARED function is not mistaken for emit() — the textual-fallback rescue only, never reachable on real corpus", async () => {
     // `emitSomethingElse` is never declared anywhere in this fixture, so the
     // binder cannot resolve it at all and `resolvesToLocalReporter` falls
     // back to the pre-binder textual match (`expr.text === 'emit'`) — the
@@ -1976,11 +2006,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("an alias of `emit` is still caught — a behavior-preserving rename evading identifier-text matching", () => {
+  test("an alias of `emit` is still caught — a behavior-preserving rename evading identifier-text matching", async () => {
     const source = [
       "async function emit(code: number): Promise<void> {}",
       "async function main(): Promise<number> {",
@@ -1990,11 +2020,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 4, value: 11, kind: "call" }]);
   });
 
-  test("an alias of a differently-named but DECLARED local function is now caught the same as an alias of emit — position, not name, identifies the reporter", () => {
+  test("an alias of a differently-named but DECLARED local function is now caught the same as an alias of emit — position, not name, identifies the reporter", async () => {
     // Identifying the reporter by matching the literal spelling `emit` would
     // pin the OPPOSITE claim ("NOT mistaken"), and that name-coupling is
     // broken: a behavior-preserving rename of the REAL reporter defeats it
@@ -2012,11 +2042,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 4, value: 11, kind: "call" }]);
   });
 
-  test("a reassigned emit alias is still resolved off its own declaration's initializer, not the later write — a documented residual, not a regression", () => {
+  test("a reassigned emit alias is still resolved off its own declaration's initializer, not the later write — a documented residual, not a regression", async () => {
     // Pinned as a mutation guard, mirroring the identical
     // stance `resolveIdentifierLiteral` already takes on reassignment: this
     // reads `report`'s own declaration initializer (`emit`), not the later
@@ -2033,11 +2063,11 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 6, value: 11, kind: "call" }]);
   });
 
-  test("all three shapes in one function are each reported independently", () => {
+  test("all three shapes in one function are each reported independently", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (bump.code === 11) {",
@@ -2048,7 +2078,7 @@ describe("findBareLiteralExits — comparison and call sites, not just return", 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([
       { line: 2, value: 11, kind: "comparison" },
       { line: 3, value: 11, kind: "call" },
@@ -2063,7 +2093,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
     "import { outOfBand } from './lib/status/terminal-states.ts';",
   ].join("\n");
 
-  test("a correctly paired call site is not flagged — the clean shape", () => {
+  test("a correctly paired call site is not flagged — the clean shape", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2075,11 +2105,11 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([]);
   });
 
-  test("a call site naming the WRONG sibling state for its enclosing comparison is caught", () => {
+  test("a call site naming the WRONG sibling state for its enclosing comparison is caught", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2091,7 +2121,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([
       {
         line: 5,
@@ -2103,7 +2133,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
     ]);
   });
 
-  test("the mismatch is caught in either direction — the other sibling swapped the other way", () => {
+  test("the mismatch is caught in either direction — the other sibling swapped the other way", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2115,7 +2145,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([
       {
         line: 5,
@@ -2127,7 +2157,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
     ]);
   });
 
-  test("multiple correctly paired sites side by side are all clean", () => {
+  test("multiple correctly paired sites side by side are all clean", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2143,11 +2173,11 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([]);
   });
 
-  test("an outOfBand() call with no enclosing .code comparison is silently out of scope — nothing to anchor the check against", () => {
+  test("an outOfBand() call with no enclosing .code comparison is silently out of scope — nothing to anchor the check against", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2156,11 +2186,11 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([]);
   });
 
-  test("a comparison against a property OTHER than `.code` is not treated as a dispatch — no anchor, no mismatch reported", () => {
+  test("a comparison against a property OTHER than `.code` is not treated as a dispatch — no anchor, no mismatch reported", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2172,11 +2202,11 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([]);
   });
 
-  test("a `!==` comparison is out of scope by design — it dispatches on absence, not presence, of the state", () => {
+  test("a `!==` comparison is out of scope by design — it dispatches on absence, not presence, of the state", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2188,11 +2218,11 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([]);
   });
 
-  test("a same-named outOfBand() decoy imported from elsewhere is not treated as the real helper", () => {
+  test("a same-named outOfBand() decoy imported from elsewhere is not treated as the real helper", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import { outOfBand } from './some-other-module.ts';",
@@ -2205,11 +2235,11 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([]);
   });
 
-  test("a same-named comparison identifier imported from elsewhere is not treated as the real exit constant", () => {
+  test("a same-named comparison identifier imported from elsewhere is not treated as the real exit constant", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './some-other-module.ts';",
       "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -2222,18 +2252,21 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       "}",
     ].join("\n");
     expect(
-      findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
+      await findOutOfBandNamePairingMismatches(source, "drive-status.ts"),
     ).toEqual([]);
   });
 
-  test("the real repo corpus: the shipped drive-status.ts has zero outOfBand() name-pairing mismatches", () => {
+  test("the real repo corpus: the shipped drive-status.ts has zero outOfBand() name-pairing mismatches", async () => {
     const realSource = readFileSync(driveStatusTsSourcePath(), "utf8");
     expect(
-      findOutOfBandNamePairingMismatches(realSource, driveStatusTsSourcePath()),
+      await findOutOfBandNamePairingMismatches(
+        realSource,
+        driveStatusTsSourcePath(),
+      ),
     ).toEqual([]);
   });
 
-  test("the real repo corpus: swapping a real outOfBand() call site to the sibling state, inside an unchanged comparison branch, is caught (the exact mutation this issue exists to catch)", () => {
+  test("the real repo corpus: swapping a real outOfBand() call site to the sibling state, inside an unchanged comparison branch, is caught (the exact mutation this issue exists to catch)", async () => {
     const realSource = readFileSync(driveStatusTsSourcePath(), "utf8");
     const target = [
       "          if (bump.code === SESSION_LEASE_HELD_EXIT) {",
@@ -2249,7 +2282,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       '"DRIVE_HELD_BY_OTHER_WORKTREE",',
     );
     const mutated = realSource.replace(target, mutatedBlock);
-    const found = findOutOfBandNamePairingMismatches(
+    const found = await findOutOfBandNamePairingMismatches(
       mutated,
       driveStatusTsSourcePath(),
     );
@@ -2263,7 +2296,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
     ).toBe(true);
   });
 
-  test("the real repo corpus: the sibling PR-wide admission preflight site is caught the same way", () => {
+  test("the real repo corpus: the sibling PR-wide admission preflight site is caught the same way", async () => {
     // A distinct real call site from the round-gate lease bump
     // above — not redundant with it.
     const realSource = readFileSync(driveStatusTsSourcePath(), "utf8");
@@ -2279,7 +2312,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
       '"SESSION_LEASE_HELD",',
     );
     const mutated = realSource.replace(target, mutatedBlock);
-    const found = findOutOfBandNamePairingMismatches(
+    const found = await findOutOfBandNamePairingMismatches(
       mutated,
       driveStatusTsSourcePath(),
     );
@@ -2300,7 +2333,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     "import { outOfBand } from './lib/status/terminal-states.ts';",
   ].join("\n");
 
-  test("a correctly paired call site anchors — candidateCount equals anchoredCount", () => {
+  test("a correctly paired call site anchors — candidateCount equals anchoredCount", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2311,27 +2344,27 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 1,
       mismatches: [],
     });
   });
 
-  test("no outOfBand() calls at all is vacuously clean — 0 candidates, 0 anchored", () => {
+  test("no outOfBand() calls at all is vacuously clean — 0 candidates, 0 anchored", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a call nested inside a NON-dispatch inner `if`, itself nested inside the real dispatch, still anchors to the outer dispatch — the exact false negative found in review", () => {
+  test("a call nested inside a NON-dispatch inner `if`, itself nested inside the real dispatch, still anchors to the outer dispatch — the exact false negative found in review", async () => {
     // Before the fix, `findEnclosingIfTrueBranch` stopped at the innermost
     // enclosing `if` regardless of whether ITS test was a recognized
     // dispatch, so a call one level deeper than the real dispatch silently
@@ -2350,7 +2383,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    const result = scanOutOfBandNamePairings(source, "drive-status.ts");
+    const result = await scanOutOfBandNamePairings(source, "drive-status.ts");
     expect(result.candidateCount).toBe(1);
     expect(result.anchoredCount).toBe(1);
     expect(result.mismatches).toEqual([
@@ -2364,7 +2397,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("a call moved into the dispatch's own `else` branch does not anchor — candidateCount outruns anchoredCount", () => {
+  test("a call moved into the dispatch's own `else` branch does not anchor — candidateCount outruns anchoredCount", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2376,14 +2409,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  }",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a call behind a `switch (x.code)` dispatch does not anchor — this scan only recognizes `if`", () => {
+  test("a call behind a `switch (x.code)` dispatch does not anchor — this scan only recognizes `if`", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2397,14 +2430,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  }",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a call behind an early-return guard does not anchor — the call sits outside any `if`'s thenStatement at all", () => {
+  test("a call behind an early-return guard does not anchor — the call sits outside any `if`'s thenStatement at all", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2415,14 +2448,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return code;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a nested REAL dispatch anchors to its own innermost comparison, not the outer one it also sits inside of", () => {
+  test("a nested REAL dispatch anchors to its own innermost comparison, not the outer one it also sits inside of", async () => {
     const source = [
       IMPORTS,
       "async function main(): Promise<number> {",
@@ -2436,14 +2469,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 1,
       mismatches: [],
     });
   });
 
-  test("a `outOfBand()` mention inside a COMMENT is not counted as a candidate — this is an AST scan, not a textual one", () => {
+  test("a `outOfBand()` mention inside a COMMENT is not counted as a candidate — this is an AST scan, not a textual one", async () => {
     const source = [
       IMPORTS,
       "// see outOfBand()'s own doc comment for details",
@@ -2460,21 +2493,21 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     // this closes") — a naive textual `outOfBand(` occurrence count would
     // over-count by exactly one there, which is why candidateCount is
     // derived from real call-expression AST nodes, never source text.
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 1,
       mismatches: [],
     });
   });
 
-  test("the real repo corpus: candidateCount equals anchoredCount equals 5, with zero mismatches", () => {
+  test("the real repo corpus: candidateCount equals anchoredCount equals 5, with zero mismatches", async () => {
     const realSource = readFileSync(driveStatusTsSourcePath(), "utf8");
     expect(
-      scanOutOfBandNamePairings(realSource, driveStatusTsSourcePath()),
+      await scanOutOfBandNamePairings(realSource, driveStatusTsSourcePath()),
     ).toEqual({ candidateCount: 5, anchoredCount: 5, mismatches: [] });
   });
 
-  test("the real repo corpus: moving a real call site into its dispatch's own `else` branch drops anchoredCount below candidateCount", () => {
+  test("the real repo corpus: moving a real call site into its dispatch's own `else` branch drops anchoredCount below candidateCount", async () => {
     const realSource = readFileSync(driveStatusTsSourcePath(), "utf8");
     const target = [
       "        if (admit.code === DRIVE_HELD_ELSEWHERE_EXIT) {",
@@ -2504,7 +2537,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "        }",
     ].join("\n");
     const mutated = realSource.replace(target, mutatedBlock);
-    const result = scanOutOfBandNamePairings(
+    const result = await scanOutOfBandNamePairings(
       mutated,
       driveStatusTsSourcePath(),
     );
@@ -2513,7 +2546,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     expect(result.anchoredCount).toBeLessThan(result.candidateCount);
   });
 
-  test("a renaming import alias of the REAL helper is still counted as a candidate and its wrong state name is caught — the local identifier text is irrelevant", () => {
+  test("a renaming import alias of the REAL helper is still counted as a candidate and its wrong state name is caught — the local identifier text is irrelevant", async () => {
     // Before the fix, candidateCount required the call's LOCAL identifier
     // text to literally be `outOfBand`. An aliased import of the real
     // helper — `import { outOfBand as reportOutOfBand } from …` — is called
@@ -2532,7 +2565,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    const result = scanOutOfBandNamePairings(source, "drive-status.ts");
+    const result = await scanOutOfBandNamePairings(source, "drive-status.ts");
     expect(result.candidateCount).toBe(1);
     expect(result.anchoredCount).toBe(1);
     expect(result.mismatches).toEqual([
@@ -2546,7 +2579,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("a local CONST REBIND of the real helper is still counted as a candidate and its wrong state name is caught", () => {
+  test("a local CONST REBIND of the real helper is still counted as a candidate and its wrong state name is caught", async () => {
     // Distinct from the renaming-import-alias test above: `const alias =
     // outOfBand;` is a LOCAL VARIABLE declaration, not an ImportSpecifier —
     // `alias`'s own symbol resolves to that VariableDeclaration, so the
@@ -2564,7 +2597,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    const result = scanOutOfBandNamePairings(source, "drive-status.ts");
+    const result = await scanOutOfBandNamePairings(source, "drive-status.ts");
     expect(result.candidateCount).toBe(1);
     expect(result.anchoredCount).toBe(1);
     expect(result.mismatches).toEqual([
@@ -2578,7 +2611,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("a two-hop CONST REBIND chain is followed the same way resolveIdentifierLiteral follows one for numeric literals", () => {
+  test("a two-hop CONST REBIND chain is followed the same way resolveIdentifierLiteral follows one for numeric literals", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -2592,14 +2625,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 1,
       mismatches: [],
     });
   });
 
-  test("a call wrapped in redundant parens — `(outOfBand)(…)` — still anchors (transparent expression wrappers are normalized)", () => {
+  test("a call wrapped in redundant parens — `(outOfBand)(…)` — still anchors (transparent expression wrappers are normalized)", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -2611,14 +2644,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 1,
       mismatches: [],
     });
   });
 
-  test("a callee wrapped in an `as` type assertion — `(outOfBand as typeof outOfBand)(…)` — still anchors", () => {
+  test("a callee wrapped in an `as` type assertion — `(outOfBand as typeof outOfBand)(…)` — still anchors", async () => {
     // An unwrapTransparentExpression that only strips parens has the same
     // residual a parens-only `unwrapLiteral` would (no as/satisfies/non-null),
     // recurring on a second resolver in the same file; both are closed by the
@@ -2634,14 +2667,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 1,
       mismatches: [],
     });
   });
 
-  test("a mutable (`let`) rebind is NOT trusted as provenance — a later reassignment must not still anchor through the stale initial import — but IS now an AMBIGUOUS candidate rather than silently excluded", () => {
+  test("a mutable (`let`) rebind is NOT trusted as provenance — a later reassignment must not still anchor through the stale initial import — but IS now an AMBIGUOUS candidate rather than silently excluded", async () => {
     // Before this fix, resolveIdentifierImportBinding recursed into ANY
     // VariableDeclaration's initializer regardless of `const`/`let`, so
     // `let alias = outOfBand; alias = decoy; alias(...)` still resolved from
@@ -2675,14 +2708,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a NAMESPACE-QUALIFIED call to the real helper (`terminalStates.outOfBand(…)`) is still counted as a candidate and its wrong state name is caught", () => {
+  test("a NAMESPACE-QUALIFIED call to the real helper (`terminalStates.outOfBand(…)`) is still counted as a candidate and its wrong state name is caught", async () => {
     const source = [
       "import { DRIVE_HELD_ELSEWHERE_EXIT, SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2694,7 +2727,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    const result = scanOutOfBandNamePairings(source, "drive-status.ts");
+    const result = await scanOutOfBandNamePairings(source, "drive-status.ts");
     expect(result.candidateCount).toBe(1);
     expect(result.anchoredCount).toBe(1);
     expect(result.mismatches).toEqual([
@@ -2708,7 +2741,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("an ELEMENT-ACCESS call to the real helper (`terminalStates['outOfBand'](…)`) still anchors and its wrong state name is caught", () => {
+  test("an ELEMENT-ACCESS call to the real helper (`terminalStates['outOfBand'](…)`) still anchors and its wrong state name is caught", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2720,7 +2753,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    const result = scanOutOfBandNamePairings(source, "drive-status.ts");
+    const result = await scanOutOfBandNamePairings(source, "drive-status.ts");
     expect(result.candidateCount).toBe(1);
     expect(result.anchoredCount).toBe(1);
     expect(result.mismatches).toEqual([
@@ -2734,7 +2767,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("an ELEMENT-ACCESS call keyed by a CONST identifier resolving to 'outOfBand' (`const key = 'outOfBand' as const; terminalStates[key](…)`) still anchors and its wrong state name is caught", () => {
+  test("an ELEMENT-ACCESS call keyed by a CONST identifier resolving to 'outOfBand' (`const key = 'outOfBand' as const; terminalStates[key](…)`) still anchors and its wrong state name is caught", async () => {
     // Before this fix, outOfBandMemberExpressionObject's element-access
     // branch required the key ITSELF to be a string literal —
     // `ts.isStringLiteralLike(expr.argumentExpression)` — so a key held in a
@@ -2756,7 +2789,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    const result = scanOutOfBandNamePairings(source, "drive-status.ts");
+    const result = await scanOutOfBandNamePairings(source, "drive-status.ts");
     expect(result.candidateCount).toBe(1);
     expect(result.anchoredCount).toBe(1);
     expect(result.mismatches).toEqual([
@@ -2770,7 +2803,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("an ELEMENT-ACCESS key bound WITHOUT `as const` (`const key = 'outOfBand'; terminalStates[key](…)`) still resolves — the census reads the initializer's syntax, not the checker's widened `string` type", () => {
+  test("an ELEMENT-ACCESS key bound WITHOUT `as const` (`const key = 'outOfBand'; terminalStates[key](…)`) still resolves — the census reads the initializer's syntax, not the checker's widened `string` type", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2783,14 +2816,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 1,
       mismatches: [],
     });
   });
 
-  test('an ELEMENT-ACCESS key naming something OTHER than "outOfBand" through a const chain is not treated as a candidate', () => {
+  test('an ELEMENT-ACCESS key naming something OTHER than "outOfBand" through a const chain is not treated as a candidate', async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2803,14 +2836,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a mutable (`let`) ELEMENT-ACCESS key is NOT trusted as provenance, but is now an AMBIGUOUS candidate rather than silently excluded (a mutable let key can invoke the real helper while both candidate and anchor counts remain zero)", () => {
+  test("a mutable (`let`) ELEMENT-ACCESS key is NOT trusted as provenance, but is now an AMBIGUOUS candidate rather than silently excluded (a mutable let key can invoke the real helper while both candidate and anchor counts remain zero)", async () => {
     // In an earlier version, `resolveIdentifierStringLiteral`'s own const-only
     // requirement made this key unresolvable — correctly not TRUSTED as
     // naming 'outOfBand' — but `isAmbiguousOutOfBandElementAccess` then
@@ -2832,14 +2865,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("an UNRESOLVABLE identifier ELEMENT-ACCESS key — a function parameter, with no initializer to trace at all — is likewise an AMBIGUOUS candidate on the real helper namespace (`function f(key: keyof typeof terminalStates) { terminalStates[key](report, ...) }` can invoke the real helper while both candidate and anchor counts remain zero)", () => {
+  test("an UNRESOLVABLE identifier ELEMENT-ACCESS key — a function parameter, with no initializer to trace at all — is likewise an AMBIGUOUS candidate on the real helper namespace (`function f(key: keyof typeof terminalStates) { terminalStates[key](report, ...) }` can invoke the real helper while both candidate and anchor counts remain zero)", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2851,14 +2884,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a GENUINELY dynamic ELEMENT-ACCESS key (a function call) on the REAL helper namespace is an AMBIGUOUS candidate that never anchors — fails closed instead of vanishing from the census (accepting this shape as a 0/0 residual lets a mutated state-name argument through it pass runCheck() vacuously)", () => {
+  test("a GENUINELY dynamic ELEMENT-ACCESS key (a function call) on the REAL helper namespace is an AMBIGUOUS candidate that never anchors — fails closed instead of vanishing from the census (accepting this shape as a 0/0 residual lets a mutated state-name argument through it pass runCheck() vacuously)", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2877,14 +2910,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     // Mismatches stay empty because this scan deliberately never attempts to
     // compare a state name it cannot trust belongs to this call in the first
     // place.
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a mutated state-name argument through that same dynamic-key shape is STILL not silently accepted — candidateCount stays ahead of anchoredCount regardless of what the call actually names (the exact mutation a 0/0 residual would let pass vacuously)", () => {
+  test("a mutated state-name argument through that same dynamic-key shape is STILL not silently accepted — candidateCount stays ahead of anchoredCount regardless of what the call actually names (the exact mutation a 0/0 residual would let pass vacuously)", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2896,14 +2929,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a GENUINELY dynamic ELEMENT-ACCESS key on a DECOY object (not the real helper namespace) is NOT counted as an ambiguous candidate — the fail-closed check stays scoped to the real import, mirroring the decoy exclusions elsewhere in this suite", () => {
+  test("a GENUINELY dynamic ELEMENT-ACCESS key on a DECOY object (not the real helper namespace) is NOT counted as an ambiguous candidate — the fail-closed check stays scoped to the real import, mirroring the decoy exclusions elsewhere in this suite", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as decoyModule from './some-other-module.ts';",
@@ -2915,14 +2948,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a TEMPLATE LITERAL with interpolation as the ELEMENT-ACCESS key is likewise an ambiguous candidate on the real helper namespace — the fail-closed check is not scoped to call-expression keys alone", () => {
+  test("a TEMPLATE LITERAL with interpolation as the ELEMENT-ACCESS key is likewise an ambiguous candidate on the real helper namespace — the fail-closed check is not scoped to call-expression keys alone", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2934,14 +2967,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a local CONST REBIND of a genuinely dynamic ELEMENT-ACCESS callee (`const alias = terminalStates[computeKey()]; alias(…)`) is likewise an AMBIGUOUS candidate, not invisible to the census (missing it leaves 0/0 counts that let the wrong sibling state pass)", () => {
+  test("a local CONST REBIND of a genuinely dynamic ELEMENT-ACCESS callee (`const alias = terminalStates[computeKey()]; alias(…)`) is likewise an AMBIGUOUS candidate, not invisible to the census (missing it leaves 0/0 counts that let the wrong sibling state pass)", async () => {
     // In an earlier version, isAmbiguousOutOfBandElementAccess was only ever
     // called on the call expression's OWN callee — `alias`, a bare identifier —
     // so its `!ts.isElementAccessExpression` guard excluded this shape
@@ -2962,14 +2995,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a local CONST REBIND of a namespace-qualified callee (`const alias = terminalStates.outOfBand; alias(…)`) still anchors and its wrong state name is caught", () => {
+  test("a local CONST REBIND of a namespace-qualified callee (`const alias = terminalStates.outOfBand; alias(…)`) still anchors and its wrong state name is caught", async () => {
     // Distinct from the bare-identifier CONST rebind test above: `alias`'s
     // own initializer here is a PropertyAccessExpression, not another
     // identifier, so the identifier-to-identifier alias chain alone cannot
@@ -2986,7 +3019,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    const result = scanOutOfBandNamePairings(source, "drive-status.ts");
+    const result = await scanOutOfBandNamePairings(source, "drive-status.ts");
     expect(result.candidateCount).toBe(1);
     expect(result.anchoredCount).toBe(1);
     expect(result.mismatches).toEqual([
@@ -3000,7 +3033,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("a DESTRUCTURED rebind of a namespace-qualified callee (`const { outOfBand: alias } = terminalStates; alias(…)`) still anchors and its wrong state name is caught", () => {
+  test("a DESTRUCTURED rebind of a namespace-qualified callee (`const { outOfBand: alias } = terminalStates; alias(…)`) still anchors and its wrong state name is caught", async () => {
     // A destructured identifier's own declaration is a BindingElement, not
     // the VariableDeclaration the property-access rebind test above already
     // knew how to follow — the exact same shape `resolvesToCodePropertyAccess`
@@ -3020,7 +3053,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    const result = scanOutOfBandNamePairings(source, "drive-status.ts");
+    const result = await scanOutOfBandNamePairings(source, "drive-status.ts");
     expect(result.candidateCount).toBe(1);
     expect(result.anchoredCount).toBe(1);
     expect(result.mismatches).toEqual([
@@ -3034,7 +3067,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("a DESTRUCTURED rebind from an UNRELATED module with its own `outOfBand` property is not treated as the real helper", () => {
+  test("a DESTRUCTURED rebind from an UNRELATED module with its own `outOfBand` property is not treated as the real helper", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as decoyModule from './some-other-module.ts';",
@@ -3047,14 +3080,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a namespace import of an UNRELATED module with its own `.outOfBand` property is not treated as the real helper", () => {
+  test("a namespace import of an UNRELATED module with its own `.outOfBand` property is not treated as the real helper", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as decoyModule from './some-other-module.ts';",
@@ -3066,14 +3099,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a property access naming something OTHER than `outOfBand` is not treated as a candidate, even on the real namespace import", () => {
+  test("a property access naming something OTHER than `outOfBand` is not treated as a candidate, even on the real namespace import", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -3085,14 +3118,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a same-named outOfBand decoy imported from elsewhere is excluded from the coverage census entirely — candidateCount stays 0, not just mismatches staying empty", () => {
+  test("a same-named outOfBand decoy imported from elsewhere is excluded from the coverage census entirely — candidateCount stays 0, not just mismatches staying empty", async () => {
     // Before the fix, candidateCount counted ANY call whose local
     // identifier text was `outOfBand`, so this decoy (real import, but from
     // an unrelated module) was still counted as a candidate that
@@ -3114,14 +3147,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by ASSIGNMENT rather than its own initializer, then called on a genuinely dynamic key (`let alias: typeof terminalStates.outOfBand; alias = terminalStates[computeKey()]; alias(...)`), is an AMBIGUOUS candidate, not invisible to the census (it has no declaration initializer, so an initializer-only census misses it)", () => {
+  test("a `let` alias populated by ASSIGNMENT rather than its own initializer, then called on a genuinely dynamic key (`let alias: typeof terminalStates.outOfBand; alias = terminalStates[computeKey()]; alias(...)`), is an AMBIGUOUS candidate, not invisible to the census (it has no declaration initializer, so an initializer-only census misses it)", async () => {
     // In an earlier version, isAmbiguousOutOfBandCallee's identifier-chase
     // bailed out the moment `declaration.initializer === undefined` — a `let`
     // declared with no initializer at all, populated only by a later plain
@@ -3140,14 +3173,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let`-REASSIGNED namespace alias, then called on a genuinely dynamic key (`let ns = decoyModule; ns = terminalStates; ns[computeKey()](...)`), is an AMBIGUOUS candidate", () => {
+  test("a `let`-REASSIGNED namespace alias, then called on a genuinely dynamic key (`let ns = decoyModule; ns = terminalStates; ns[computeKey()](...)`), is an AMBIGUOUS candidate", async () => {
     // In an earlier version, isAmbiguousOutOfBandElementAccess's object-side
     // check ran through resolveIdentifierImportBinding, which requires a CONST
     // chain — a `let`-declared namespace alias reassigned away from its own
@@ -3167,14 +3200,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias assigned DIRECTLY to the real `outOfBand` import — no member access at all (`let alias; alias = outOfBand; alias(...)`) — is an AMBIGUOUS candidate, not invisible to the census (its declaration is an ImportSpecifier, not a VariableDeclaration)", () => {
+  test("a `let` alias assigned DIRECTLY to the real `outOfBand` import — no member access at all (`let alias; alias = outOfBand; alias(...)`) — is an AMBIGUOUS candidate, not invisible to the census (its declaration is an ImportSpecifier, not a VariableDeclaration)", async () => {
     // In an earlier version, isAmbiguousOutOfBandCallee's identifier-chase
     // recursed into the assigned candidate `outOfBand`, but its own base case
     // only continued the chase past a `ts.VariableDeclaration` — an
@@ -3196,14 +3229,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias assigned to a DEFINITE `.outOfBand` PROPERTY ACCESS on the real namespace (`let alias; alias = terminalStates.outOfBand; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (a property access that is neither an ambiguous dynamic element access nor an identifier)", () => {
+  test("a `let` alias assigned to a DEFINITE `.outOfBand` PROPERTY ACCESS on the real namespace (`let alias; alias = terminalStates.outOfBand; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (a property access that is neither an ambiguous dynamic element access nor an identifier)", async () => {
     // In an earlier version, the recursion into the assigned candidate
     // `terminalStates.outOfBand` first tried isAmbiguousOutOfBandElementAccess
     // (which requires an ElementAccessExpression and so refused a plain
@@ -3225,14 +3258,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias assigned DIRECTLY to a same-named `outOfBand` DECOY import (not the real helper) produces no candidate at all — the direct-import reach stays scoped to the real import, mirroring the decoy exclusions elsewhere in this suite", () => {
+  test("a `let` alias assigned DIRECTLY to a same-named `outOfBand` DECOY import (not the real helper) produces no candidate at all — the direct-import reach stays scoped to the real import, mirroring the decoy exclusions elsewhere in this suite", async () => {
     // Guards the direct-import reach above against over-triggering: reaching
     // SOME import specifier through a reassignable alias must not by itself
     // widen the census — the reached specifier still has to actually be the
@@ -3250,14 +3283,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a COMPOUND LOGICAL ASSIGNMENT to the real `outOfBand` import (`let alias; alias ??= outOfBand; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (an assignment census recording only `identifier = rhs` ignores `alias ??= outOfBand`)", () => {
+  test("a `let` alias populated by a COMPOUND LOGICAL ASSIGNMENT to the real `outOfBand` import (`let alias; alias ??= outOfBand; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (an assignment census recording only `identifier = rhs` ignores `alias ??= outOfBand`)", async () => {
     // In an earlier version, findAssignedValues only matched EqualsToken, so a
     // `??=`/`||=`/`&&=` reassignment of the real helper left `alias` with no
     // recorded reaching value at all — vanishing from the census exactly
@@ -3275,14 +3308,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a COMPOUND LOGICAL ASSIGNMENT to a same-named `outOfBand` DECOY import produces no candidate at all — mirrors the direct-import decoy guard for the compound-operator shape", () => {
+  test("a `let` alias populated by a COMPOUND LOGICAL ASSIGNMENT to a same-named `outOfBand` DECOY import produces no candidate at all — mirrors the direct-import decoy guard for the compound-operator shape", async () => {
     const source = [
       "import { outOfBand } from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3296,14 +3329,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by an OBJECT-DESTRUCTURING ASSIGNMENT off the real helper namespace (`let alias; ({ outOfBand: alias } = terminalStates); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census", () => {
+  test("a `let` alias populated by an OBJECT-DESTRUCTURING ASSIGNMENT off the real helper namespace (`let alias; ({ outOfBand: alias } = terminalStates); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census", async () => {
     // In an earlier version, findAssignedValues required
     // `ts.isIdentifier(node.left)`, so a destructuring-ASSIGNMENT pattern (as
     // opposed to a destructuring DECLARATION, `const { outOfBand: alias } =
@@ -3321,14 +3354,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by an OBJECT-DESTRUCTURING ASSIGNMENT off an UNRELATED decoy module with its own `outOfBand` property produces no candidate at all — mirrors the destructuring-declaration decoy guard for the assignment-pattern shape", () => {
+  test("a `let` alias populated by an OBJECT-DESTRUCTURING ASSIGNMENT off an UNRELATED decoy module with its own `outOfBand` property produces no candidate at all — mirrors the destructuring-declaration decoy guard for the assignment-pattern shape", async () => {
     const source = [
       "import * as decoyModule from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3342,14 +3375,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a SHORTHAND object-destructuring assignment off the real helper namespace (`let outOfBand; ({ outOfBand } = terminalStates); outOfBand(...)`) is an AMBIGUOUS candidate too", () => {
+  test("a SHORTHAND object-destructuring assignment off the real helper namespace (`let outOfBand; ({ outOfBand } = terminalStates); outOfBand(...)`) is an AMBIGUOUS candidate too", async () => {
     const source = [
       "import * as terminalStates from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3363,14 +3396,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias assigned only to an UNRELATED decoy, never to the real helper namespace, produces no candidate at all", () => {
+  test("a `let` alias assigned only to an UNRELATED decoy, never to the real helper namespace, produces no candidate at all", async () => {
     // Guards the fix above against over-triggering: merely being a `let`
     // that is reassigned somewhere must not by itself widen the census — the
     // reassigned value still has to actually reach the real helper's
@@ -3388,14 +3421,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a COMPUTED-KEY object-destructuring assignment off the real helper namespace (`let alias; ({ ['outOfBand']: alias } = terminalStates); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (left unsupported, `candidateCount` and `anchoredCount` would both remain zero)", () => {
+  test("a `let` alias populated by a COMPUTED-KEY object-destructuring assignment off the real helper namespace (`let alias; ({ ['outOfBand']: alias } = terminalStates); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (left unsupported, `candidateCount` and `anchoredCount` would both remain zero)", async () => {
     // In an earlier version, findAssignedValues resolved the destructuring
     // TARGET fine (`alias` was found as the property-assignment's own
     // initializer) but then demanded a STATICALLY named key to synthesize a
@@ -3417,14 +3450,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a COMPUTED-KEY object-destructuring assignment off an UNRELATED decoy module produces no candidate at all — guards against over-triggering", () => {
+  test("a `let` alias populated by a COMPUTED-KEY object-destructuring assignment off an UNRELATED decoy module produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import * as decoyModule from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3438,14 +3471,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by an ARRAY-PATTERN destructuring assignment off the real helper (`let alias; [alias] = [terminalStates.outOfBand]; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census", () => {
+  test("a `let` alias populated by an ARRAY-PATTERN destructuring assignment off the real helper (`let alias; [alias] = [terminalStates.outOfBand]; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census", async () => {
     // In an earlier version, findAssignedValues only recognized an identifier
     // or an OBJECT-literal pattern as the assignment LHS — an ArrayLiteralExpr
     // ession pattern matched neither branch, so the walker fell straight
@@ -3463,14 +3496,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by an ARRAY-PATTERN destructuring assignment off an UNRELATED decoy value produces no candidate at all — guards against over-triggering", () => {
+  test("a `let` alias populated by an ARRAY-PATTERN destructuring assignment off an UNRELATED decoy value produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import * as decoyModule from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3484,14 +3517,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a CONDITIONAL (ternary) expression naming the real helper in one branch (`alias = flag ? outOfBand : decoy; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (the ambiguity walker traces the conditional expression it collected as a value)", () => {
+  test("a `let` alias populated by a CONDITIONAL (ternary) expression naming the real helper in one branch (`alias = flag ? outOfBand : decoy; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (the ambiguity walker traces the conditional expression it collected as a value)", async () => {
     // In an earlier version, findAssignedValues correctly pushed the whole
     // ConditionalExpression as a reassignment candidate, but both consumers
     // only recursed when `ts.isIdentifier(unwrapTransparentExpression(cand
@@ -3513,14 +3546,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a CONDITIONAL expression naming only UNRELATED decoys in both branches produces no candidate at all — guards against over-triggering", () => {
+  test("a `let` alias populated by a CONDITIONAL expression naming only UNRELATED decoys in both branches produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoyA: (report: unknown, name: string, reason: string) => number;",
@@ -3536,14 +3569,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a LOGICAL (`??`) expression naming the real helper in the fallback operand is an AMBIGUOUS candidate too — composingExpressionLeaves covers `||`/`&&`/`??`, not just `?:`", () => {
+  test("a `let` alias populated by a LOGICAL (`??`) expression naming the real helper in the fallback operand is an AMBIGUOUS candidate too — composingExpressionLeaves covers `||`/`&&`/`??`, not just `?:`", async () => {
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3558,14 +3591,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a direct COMMA-EXPRESSION callee naming the real helper as its right operand (`(sideEffect(), outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census (`composingExpressionLeaves()` expands `CommaToken`)', () => {
+  test('a direct COMMA-EXPRESSION callee naming the real helper as its right operand (`(sideEffect(), outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census (`composingExpressionLeaves()` expands `CommaToken`)', async () => {
     // In an earlier version, composingExpressionLeaves only expanded `?:`/`||`/
     // `&&`/`??` — a comma-expression callee fell through to the default
     // `return [unwrapped]`, treating the whole BinaryExpression as one
@@ -3585,14 +3618,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a direct COMMA-EXPRESSION callee naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", () => {
+  test("a direct COMMA-EXPRESSION callee naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function sideEffect(): void;",
@@ -3605,14 +3638,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a direct PLAIN-ASSIGNMENT callee naming the real helper as its right operand (`(alias = outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate (the assignment-expression form one operator over from the comma)', () => {
+  test('a direct PLAIN-ASSIGNMENT callee naming the real helper as its right operand (`(alias = outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate (the assignment-expression form one operator over from the comma)', async () => {
     // In an earlier version, an EqualsToken binary expression fell through to
     // the opaque-leaf default exactly like an unhandled CommaToken did.
     const source = [
@@ -3627,14 +3660,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a direct PLAIN-ASSIGNMENT callee naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", () => {
+  test("a direct PLAIN-ASSIGNMENT callee naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -3647,14 +3680,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a direct callee using each LOGICAL COMPOUND-ASSIGNMENT operator (`??=`, `||=`, `&&=`) naming the real helper as its right operand is an AMBIGUOUS candidate — closing the full closed family alongside the plain-`=` form", () => {
+  test("a direct callee using each LOGICAL COMPOUND-ASSIGNMENT operator (`??=`, `||=`, `&&=`) naming the real helper as its right operand is an AMBIGUOUS candidate — closing the full closed family alongside the plain-`=` form", async () => {
     for (const op of ["??=", "||=", "&&="] as const) {
       const source = [
         "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -3668,7 +3701,9 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
         "  return 0;",
         "}",
       ].join("\n");
-      expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+      expect(
+        await scanOutOfBandNamePairings(source, "drive-status.ts"),
+      ).toEqual({
         candidateCount: 1,
         anchoredCount: 0,
         mismatches: [],
@@ -3676,7 +3711,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     }
   });
 
-  test("a direct callee using a LOGICAL COMPOUND-ASSIGNMENT operator naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", () => {
+  test("a direct callee using a LOGICAL COMPOUND-ASSIGNMENT operator naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -3689,14 +3724,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a direct AWAIT-EXPRESSION callee naming the real helper (`(await outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate (an AwaitExpression is not an opaque leaf)', () => {
+  test('a direct AWAIT-EXPRESSION callee naming the real helper (`(await outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate (an AwaitExpression is not an opaque leaf)', async () => {
     // The family extends past binary operators entirely: an AwaitExpression
     // is a unary, no-operator-token wrapper that forwards its inner
     // expression's value, so neither binary branch above can ever match it —
@@ -3713,14 +3748,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a direct AWAIT-EXPRESSION callee naming an UNRELATED decoy produces no candidate — guards against over-triggering", () => {
+  test("a direct AWAIT-EXPRESSION callee naming an UNRELATED decoy produces no candidate — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -3732,14 +3767,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a direct callee producing its value by RETURNING ONE OF ITS OWN ARGUMENTS (`(await Promise.resolve(outOfBand))(report, "X", reason)`) is an AMBIGUOUS candidate (the call arguments are checked, not only its callee)', () => {
+  test('a direct callee producing its value by RETURNING ONE OF ITS OWN ARGUMENTS (`(await Promise.resolve(outOfBand))(report, "X", reason)`) is an AMBIGUOUS candidate (the call arguments are checked, not only its callee)', async () => {
     // Unwrapping `await` alone is not enough when the
     // awaited value comes from a CALL that forwards one of its own arguments
     // to its return value (`Promise.resolve(x)` returns `x` unchanged) — the
@@ -3758,14 +3793,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a direct callee whose produced value comes from a call passed only an UNRELATED decoy argument produces no candidate — guards against over-triggering", () => {
+  test("a direct callee whose produced value comes from a call passed only an UNRELATED decoy argument produces no candidate — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -3777,14 +3812,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by an OBJECT-LITERAL right-hand side whose OWN property is the real helper (`({ x: alias } = { x: outOfBand }); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (the ambiguity walkers descend into object-literal values)", () => {
+  test("a `let` alias populated by an OBJECT-LITERAL right-hand side whose OWN property is the real helper (`({ x: alias } = { x: outOfBand }); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (the ambiguity walkers descend into object-literal values)", async () => {
     // In an earlier version, findAssignedValues pushed the whole right-hand
     // side `{ x: outOfBand }` as a candidate, but neither consumer descended
     // INTO an ObjectLiteralExpression candidate — composingExpressionLeaves
@@ -3804,14 +3839,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by an OBJECT-LITERAL right-hand side whose own property is an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
+  test("a `let` alias populated by an OBJECT-LITERAL right-hand side whose own property is an UNRELATED decoy produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -3825,14 +3860,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias reached through a NON-LITERAL array container one more `const` away (`const helpers = [outOfBand]; [alias] = helpers; alias(...)`) is an AMBIGUOUS candidate", () => {
+  test("a `let` alias reached through a NON-LITERAL array container one more `const` away (`const helpers = [outOfBand]; [alias] = helpers; alias(...)`) is an AMBIGUOUS candidate", async () => {
     // In an earlier version, findAssignedValues's array-literal special-case
     // only fired when the RIGHT-HAND SIDE of the destructure was ITSELF a
     // literal array — `helpers` is a plain identifier, so the push was just
@@ -3852,14 +3887,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias reached through a non-literal array container of only UNRELATED decoys produces no candidate at all — guards against over-triggering", () => {
+  test("a `let` alias reached through a non-literal array container of only UNRELATED decoys produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -3874,14 +3909,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a destructuring DEFAULT naming the real helper (`({ x: alias = outOfBand } = decoy); alias(...)`) is an AMBIGUOUS candidate regardless of what the source object is (the value never depends on the destructured right-hand side)", () => {
+  test("a `let` alias populated by a destructuring DEFAULT naming the real helper (`({ x: alias = outOfBand } = decoy); alias(...)`) is an AMBIGUOUS candidate regardless of what the source object is (the value never depends on the destructured right-hand side)", async () => {
     // In an earlier version, findAssignedValues pushed only `node.right`
     // (`decoy`) for a destructuring-assignment match — the DEFAULT value
     // embedded in the LHS pattern itself was never collected as a candidate at
@@ -3901,14 +3936,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a destructuring default naming only an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
+  test("a `let` alias populated by a destructuring default naming only an UNRELATED decoy produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoyDefault: (report: unknown, name: string, reason: string) => number;",
@@ -3923,14 +3958,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("an ARRAY-PATTERN destructuring default naming the real helper (`[alias = outOfBand] = decoyArray; alias(...)`) is an AMBIGUOUS candidate too", () => {
+  test("an ARRAY-PATTERN destructuring default naming the real helper (`[alias = outOfBand] = decoyArray; alias(...)`) is an AMBIGUOUS candidate too", async () => {
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3945,14 +3980,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a CALL to a LOCALLY DECLARED function whose body returns the real helper (`function getHelper() { return outOfBand; } let alias; alias = getHelper(); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (otherwise the later call contributes neither a candidate nor an anchor)", () => {
+  test("a `let` alias populated by a CALL to a LOCALLY DECLARED function whose body returns the real helper (`function getHelper() { return outOfBand; } let alias; alias = getHelper(); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (otherwise the later call contributes neither a candidate nor an anchor)", async () => {
     // In an earlier version, findAssignedValues pushed the CallExpression
     // `getHelper()` as a candidate, but containsRealHelperReference's
     // forEachChild walk only reaches the call's own callee identifier and
@@ -3976,14 +4011,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `let` alias populated by a call to a locally declared function returning only an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
+  test("a `let` alias populated by a call to a locally declared function returning only an UNRELATED decoy produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4000,14 +4035,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a further hop of indirection between the call and the function — `const indirect = getHelper; let alias; alias = indirect(); alias(...)` — is still an AMBIGUOUS candidate (a legal alias must not defeat it)", () => {
+  test("a further hop of indirection between the call and the function — `const indirect = getHelper; let alias; alias = indirect(); alias(...)` — is still an AMBIGUOUS candidate (a legal alias must not defeat it)", async () => {
     // In an earlier version, the call-through-local-function check only
     // traced a function's body when
     // an identifier sat DIRECTLY in a CallExpression's own callee position
@@ -4044,14 +4079,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 2,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("the same further-hop chain reaching only an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
+  test("the same further-hop chain reaching only an UNRELATED decoy produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4069,14 +4104,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a STATIC CLASS METHOD returning the real helper (`class Factory { static getHelper() { return outOfBand; } } let alias; alias = Factory.getHelper(); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (a MethodDeclaration body is inspected too)", () => {
+  test("a STATIC CLASS METHOD returning the real helper (`class Factory { static getHelper() { return outOfBand; } } let alias; alias = Factory.getHelper(); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (a MethodDeclaration body is inspected too)", async () => {
     // In an earlier version, functionBodyOfDeclaration recognized only
     // FunctionDeclaration and a VariableDeclaration-held arrow/function
     // expression — never a MethodDeclaration (or any other class member).
@@ -4106,14 +4141,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a static class method returning only an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
+  test("a static class method returning only an UNRELATED decoy produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4132,14 +4167,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("mutual recursion between two locally declared helper functions does not hang the scan (seen-guard)", () => {
+  test("mutual recursion between two locally declared helper functions does not hang the scan (seen-guard)", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4159,14 +4194,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a DIRECT CALL through a locally returned helper — no intervening alias at all (`function getHelper() { return outOfBand; } getHelper()(report, "X", reason)`) — is an AMBIGUOUS candidate, not invisible to the census (the outer callee is itself a CallExpression, which strict provenance rejects)', () => {
+  test('a DIRECT CALL through a locally returned helper — no intervening alias at all (`function getHelper() { return outOfBand; } getHelper()(report, "X", reason)`) — is an AMBIGUOUS candidate, not invisible to the census (the outer callee is itself a CallExpression, which strict provenance rejects)', async () => {
     // In an earlier version, the census's `visit()` failed strict resolution
     // (the outer call's callee `getHelper()` is not an import-bound
     // identifier), then fell to isAmbiguousOutOfBandCallee(callee=getHelper())
@@ -4188,14 +4223,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("one further hop of indirection before the direct double-call (`const indirect = getHelper; indirect()(...)`) is still an AMBIGUOUS candidate — the CallExpression-callee branch composes with the pre-existing arbitrary-alias-depth walk", () => {
+  test("one further hop of indirection before the direct double-call (`const indirect = getHelper; indirect()(...)`) is still an AMBIGUOUS candidate — the CallExpression-callee branch composes with the pre-existing arbitrary-alias-depth walk", async () => {
     // candidateCount is 2, not 1: the INNER call `indirect()` is itself a
     // census candidate too, independent of the CallExpression-leaf branch —
     // `indirect`'s own identifier-tail chase treats a bare
@@ -4221,14 +4256,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 2,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a direct call through a locally returned UNRELATED decoy (`function getHelper() { return decoy; } getHelper()(...)`) produces no candidate at all — guards against over-triggering", () => {
+  test("a direct call through a locally returned UNRELATED decoy (`function getHelper() { return decoy; } getHelper()(...)`) produces no candidate at all — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4243,14 +4278,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a SINGLE, non-doubled call to a locally declared function that merely RETURNS the real helper (`function getHelper() { return outOfBand; } getHelper(report, "X", reason)`) produces no candidate — calling getHelper once executes its own body and returns outOfBand, it does not invoke outOfBand; guards against an over-broad variant (routing every non-member/non-element leaf, not just a CallExpression one, through containsRealHelperReference)', () => {
+  test('a SINGLE, non-doubled call to a locally declared function that merely RETURNS the real helper (`function getHelper() { return outOfBand; } getHelper(report, "X", reason)`) produces no candidate — calling getHelper once executes its own body and returns outOfBand, it does not invoke outOfBand; guards against an over-broad variant (routing every non-member/non-element leaf, not just a CallExpression one, through containsRealHelperReference)', async () => {
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -4265,14 +4300,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a `.outOfBand` MEMBER access through a locally returned real NAMESPACE object (`function getNamespace() { return terminalStates; } getNamespace().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census (the object side is a CallExpression, not an identifier; requiring an identifier lets runCheck() pass vacuously)', () => {
+  test('a `.outOfBand` MEMBER access through a locally returned real NAMESPACE object (`function getNamespace() { return terminalStates; } getNamespace().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census (the object side is a CallExpression, not an identifier; requiring an identifier lets runCheck() pass vacuously)', async () => {
     // In an earlier version, isAmbiguousOutOfBandCallee's member-object branch
     // required `ts.isIdentifier(unwrappedObject)` before chasing it at all —
     // the CallExpression-leaf widening covers the OUTER callee
@@ -4293,14 +4328,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `.outOfBand` member access through a locally returned UNRELATED decoy object (`function getNamespace() { return decoy; } getNamespace().outOfBand(...)`) produces no candidate — guards against over-triggering", () => {
+  test("a `.outOfBand` member access through a locally returned UNRELATED decoy object (`function getNamespace() { return decoy; } getNamespace().outOfBand(...)`) produces no candidate — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: {",
@@ -4317,14 +4352,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a computed ELEMENT access on a locally returned real NAMESPACE object (`function getNamespace() { return terminalStates; } getNamespace()[computeKey()](...)`) is an AMBIGUOUS candidate — the sibling isAmbiguousOutOfBandElementAccess object check needs the same non-identifier handling as isAmbiguousOutOfBandCallee", () => {
+  test("a computed ELEMENT access on a locally returned real NAMESPACE object (`function getNamespace() { return terminalStates; } getNamespace()[computeKey()](...)`) is an AMBIGUOUS candidate — the sibling isAmbiguousOutOfBandElementAccess object check needs the same non-identifier handling as isAmbiguousOutOfBandCallee", async () => {
     const source = [
       "import * as terminalStates from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -4340,14 +4375,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a `.outOfBand` member access on a CLASS INSTANCE whose own property aliases the real helper (`class Holder { outOfBand = outOfBand } new Holder().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census — the object never reaches the real NAMESPACE at all, only the PROPERTY itself does (the walk inspects the PropertyDeclaration initializer rather than stopping at the ClassDeclaration)', () => {
+  test('a `.outOfBand` member access on a CLASS INSTANCE whose own property aliases the real helper (`class Holder { outOfBand = outOfBand } new Holder().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census — the object never reaches the real NAMESPACE at all, only the PROPERTY itself does (the walk inspects the PropertyDeclaration initializer rather than stopping at the ClassDeclaration)', async () => {
     // In an earlier version, isAmbiguousOutOfBandCallee's member-object branch
     // asked only "does the OBJECT reach the real terminal-states namespace"
     // (`couldReachRealHelperNamespace` for an identifier object,
@@ -4371,14 +4406,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `.outOfBand` member access on a class instance whose own property is an UNRELATED decoy (`class Holder { outOfBand = decoy }`) produces no candidate — guards against over-triggering", () => {
+  test("a `.outOfBand` member access on a class instance whose own property is an UNRELATED decoy (`class Holder { outOfBand = decoy }`) produces no candidate — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -4393,14 +4428,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a `.outOfBand` member access on a class instance whose own property is a METHOD that merely RETURNS the real helper (`class Holder { outOfBand(...args) { return outOfBand; } } new Holder().outOfBand(report, "X", reason)`) produces no candidate — calling the method once executes its own body and returns outOfBand, it does not invoke outOfBand; the member equivalent of the single-call guard (at runtime this call invokes only `Holder.outOfBand`, not the returned function)', () => {
+  test('a `.outOfBand` member access on a class instance whose own property is a METHOD that merely RETURNS the real helper (`class Holder { outOfBand(...args) { return outOfBand; } } new Holder().outOfBand(report, "X", reason)`) produces no candidate — calling the method once executes its own body and returns outOfBand, it does not invoke outOfBand; the member equivalent of the single-call guard (at runtime this call invokes only `Holder.outOfBand`, not the returned function)', async () => {
     // In an earlier version, isAmbiguousOutOfBandCallee's member-object branch
     // routed the WHOLE resolved member expression through
     // containsRealHelperReference, whose generic forEachChild
@@ -4426,14 +4461,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test('a `.outOfBand` member access on a class instance whose own property is a GETTER that returns the real helper (`class Holder { get outOfBand(): typeof outOfBand { return outOfBand; } } new Holder().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census — accessing the getter runs its body and produces the real helper before the call syntax is even reached, unlike a plain method (the property symbol resolves to a `GetAccessorDeclaration`)', () => {
+  test('a `.outOfBand` member access on a class instance whose own property is a GETTER that returns the real helper (`class Holder { get outOfBand(): typeof outOfBand { return outOfBand; } } new Holder().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census — accessing the getter runs its body and produces the real helper before the call syntax is even reached, unlike a plain method (the property symbol resolves to a `GetAccessorDeclaration`)', async () => {
     // In an earlier version, couldDirectInvocationReachHelper gated candidacy
     // on `ts.hasOnlyExpressionInitializer(declaration)` alone, which a
     // GetAccessorDeclaration never satisfies (a getter has a body, not an
@@ -4458,14 +4493,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
       mismatches: [],
     });
   });
 
-  test("a `.outOfBand` member access on a class instance whose own property is a GETTER returning an UNRELATED decoy (`class Holder { get outOfBand() { return decoy; } }`) produces no candidate — guards against over-triggering", () => {
+  test("a `.outOfBand` member access on a class instance whose own property is a GETTER returning an UNRELATED decoy (`class Holder { get outOfBand() { return decoy; } }`) produces no candidate — guards against over-triggering", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -4482,7 +4517,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
       "  return 0;",
       "}",
     ].join("\n");
-    expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
+    expect(await scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 0,
       anchoredCount: 0,
       mismatches: [],
@@ -4491,7 +4526,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
 });
 
 describe("runCheck — the outOfBand coverage cross-check catches a real call site losing its anchor", () => {
-  test("an else-branch mutation on the real drive-status.ts source fails runCheck() via the coverage cross-check, not the mismatch check", () => {
+  test("an else-branch mutation on the real drive-status.ts source fails runCheck() via the coverage cross-check, not the mismatch check", async () => {
     const realSource = readFileSync(driveStatusTsSourcePath(), "utf8");
     const target = [
       "        if (admit.code === DRIVE_HELD_ELSEWHERE_EXIT) {",
@@ -4534,7 +4569,7 @@ describe("runCheck — the outOfBand coverage cross-check catches a real call si
     console.error = () => {};
     console.log = () => {};
     try {
-      expect(runCheck()).toBe(1);
+      expect(await runCheck()).toBe(1);
     } finally {
       console.error = error;
       console.log = log;
@@ -4546,7 +4581,7 @@ describe("runCheck — the outOfBand coverage cross-check catches a real call si
     }
   });
 
-  test("a same-named, non-imported outOfBand decoy added alongside the real corpus does NOT fail runCheck — the coverage cross-check false positive this issue exists to close", () => {
+  test("a same-named, non-imported outOfBand decoy added alongside the real corpus does NOT fail runCheck — the coverage cross-check false positive this issue exists to close", async () => {
     // The mirror image of the test above: before the fix, ANY same-named
     // decoy call anywhere in drive-status.ts inflated candidateCount
     // without inflating anchoredCount, so the coverage cross-check failed
@@ -4585,7 +4620,7 @@ describe("runCheck — the outOfBand coverage cross-check catches a real call si
     console.error = () => {};
     console.log = () => {};
     try {
-      expect(runCheck()).toBe(0);
+      expect(await runCheck()).toBe(0);
     } finally {
       console.error = error;
       console.log = log;
@@ -4599,7 +4634,7 @@ describe("runCheck — the outOfBand coverage cross-check catches a real call si
 });
 
 describe("findBareLiteralExits — alias-resolution gaps closed across all three sibling resolvers", () => {
-  test("a two-hop identifier alias chain is followed to its literal — resolveIdentifierLiteral no longer stops at the first hop", () => {
+  test("a two-hop identifier alias chain is followed to its literal — resolveIdentifierLiteral no longer stops at the first hop", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const raw = 11;",
@@ -4608,11 +4643,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 4, value: 11, kind: "return" }]);
   });
 
-  test("an alias chain through a .code comparison is followed the same way", () => {
+  test("an alias chain through a .code comparison is followed the same way", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const raw = bump.code;",
@@ -4624,11 +4659,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 4, value: 11, kind: "comparison" }]);
   });
 
-  test("an alias chain through an emit() call is followed the same way", () => {
+  test("an alias chain through an emit() call is followed the same way", async () => {
     const source = [
       "async function emit(code: number): Promise<void> {}",
       "async function main(): Promise<number> {",
@@ -4639,11 +4674,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 5, value: 11, kind: "call" }]);
   });
 
-  test("an alias chain reaching the real exported named constant is still exempt at every hop — the clean shape", () => {
+  test("an alias chain reaching the real exported named constant is still exempt at every hop — the clean shape", async () => {
     const source = [
       "export const MAX_ROUNDS_EXIT = 6;",
       "async function main(): Promise<number> {",
@@ -4653,11 +4688,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([6])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([6])),
     ).toEqual([]);
   });
 
-  test("a same-named but UNRELATED nested `emit` function is NOT mistaken for the real dispatch emitter — a shadow, not an alias", () => {
+  test("a same-named but UNRELATED nested `emit` function is NOT mistaken for the real dispatch emitter — a shadow, not an alias", async () => {
     // The finding: matching on `expr.text === 'emit'` unconditionally could
     // not tell a genuine call to the file's own dispatch emitter apart from
     // an unrelated, same-named function declared in some other scope. The
@@ -4675,11 +4710,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a nested shadow named differently from the real emit is unaffected either way — sanity check on the fixture shape", () => {
+  test("a nested shadow named differently from the real emit is unaffected either way — sanity check on the fixture shape", async () => {
     const source = [
       "async function emit(code: number): Promise<void> {}",
       "async function main(): Promise<number> {",
@@ -4688,11 +4723,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "call" }]);
   });
 
-  test("a destructured `.code` binding (`const { code } = bump`) is caught — a destructuring is a code-property access too", () => {
+  test("a destructured `.code` binding (`const { code } = bump`) is caught — a destructuring is a code-property access too", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const { code } = bump;",
@@ -4703,11 +4738,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "comparison" }]);
   });
 
-  test("a renamed destructured `.code` binding (`const { code: alias } = bump`) is caught the same way", () => {
+  test("a renamed destructured `.code` binding (`const { code: alias } = bump`) is caught the same way", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const { code: alias } = bump;",
@@ -4718,11 +4753,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "comparison" }]);
   });
 
-  test("a destructured binding for a property OTHER than `code` is not flagged", () => {
+  test("a destructured binding for a property OTHER than `code` is not flagged", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const { value } = bump;",
@@ -4733,11 +4768,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("an array-destructured binding named `code` is NOT mistaken for a `.code` property access — positional, not a property at all", () => {
+  test("an array-destructured binding named `code` is NOT mistaken for a `.code` property access — positional, not a property at all", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const [code] = bump;",
@@ -4748,11 +4783,11 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a chained alias of a destructured `.code` binding is followed through both mechanisms together", () => {
+  test("a chained alias of a destructured `.code` binding is followed through both mechanisms together", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const { code } = bump;",
@@ -4764,7 +4799,7 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 4, value: 11, kind: "comparison" }]);
   });
 });
@@ -4783,7 +4818,7 @@ describe("findBareLiteralExits — the emitter nested inside its own top-level f
   // call site — the scan never looked at drive-status.ts's own `emit(...)`
   // calls at all. This fixture reproduces that exact shape and would have
   // reported `[]` before the fix.
-  test("a bare-literal emit() call is caught when emit is declared inside main(), not beside it", () => {
+  test("a bare-literal emit() call is caught when emit is declared inside main(), not beside it", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  async function emit(code: number): Promise<void> {}",
@@ -4792,11 +4827,11 @@ describe("findBareLiteralExits — the emitter nested inside its own top-level f
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "call" }]);
   });
 
-  test("a nested shadow two levels deep from main is still rejected, even though the real emitter now has no top-level sibling", () => {
+  test("a nested shadow two levels deep from main is still rejected, even though the real emitter now has no top-level sibling", async () => {
     // Guards against widening the search too far: the fix must resolve the
     // canonical `emit` one level into a top-level function's body, not
     // arbitrarily deep. `helper()` here is itself nested inside `main()`, so
@@ -4813,11 +4848,11 @@ describe("findBareLiteralExits — the emitter nested inside its own top-level f
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("the real repo corpus: injecting a bare-literal comparison into the actual drive-status.ts source is caught", () => {
+  test("the real repo corpus: injecting a bare-literal comparison into the actual drive-status.ts source is caught", async () => {
     // The end-to-end guarantee this bug evaded: `runCheck()`'s "the shipped
     // corpus is drift-free" test (below) passing does not by itself prove
     // this scan ever looks at a real out-of-band site — it could pass
@@ -4843,7 +4878,7 @@ describe("findBareLiteralExits — the emitter nested inside its own top-level f
     const target = "if (bump.code === SESSION_LEASE_HELD_EXIT) {";
     expect(realSource).toContain(target);
     const mutated = realSource.replace(target, "if (bump.code === 11) {");
-    const found = findBareLiteralExits(
+    const found = await findBareLiteralExits(
       mutated,
       driveStatusTsSourcePath(),
       new Set([11]),
@@ -4854,7 +4889,7 @@ describe("findBareLiteralExits — the emitter nested inside its own top-level f
     ).toBe(true);
   });
 
-  test("the real repo corpus: injecting a bare-literal comparison for the OTHER out-of-band identifier is caught too", () => {
+  test("the real repo corpus: injecting a bare-literal comparison for the OTHER out-of-band identifier is caught too", async () => {
     // Sibling of the test above, for `DRIVE_HELD_ELSEWHERE_EXIT` at the
     // PR-wide admission preflight site rather than the round-gate
     // lease bump — a distinct real call site, so this is not redundant with
@@ -4863,7 +4898,7 @@ describe("findBareLiteralExits — the emitter nested inside its own top-level f
     const target = "if (admit.code === DRIVE_HELD_ELSEWHERE_EXIT) {";
     expect(realSource).toContain(target);
     const mutated = realSource.replace(target, "if (admit.code === 13) {");
-    const found = findBareLiteralExits(
+    const found = await findBareLiteralExits(
       mutated,
       driveStatusTsSourcePath(),
       new Set([13]),
@@ -4886,7 +4921,7 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
   // position test, so every fixture below renames BOTH the declaration and
   // every call site and still expects the bare literal to be caught.
 
-  test("a bare-literal call is still caught after renaming BOTH the declaration and its call site away from `emit`", () => {
+  test("a bare-literal call is still caught after renaming BOTH the declaration and its call site away from `emit`", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  async function emitReport(code: number): Promise<void> {}",
@@ -4895,11 +4930,11 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "call" }]);
   });
 
-  test("the named-constant form of the renamed reporter is still NOT flagged — the clean shape survives the rename too", () => {
+  test("the named-constant form of the renamed reporter is still NOT flagged — the clean shape survives the rename too", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "async function main(): Promise<number> {",
@@ -4909,11 +4944,11 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("an alias of the renamed reporter is still caught, chained alias-following unaffected by the rename", () => {
+  test("an alias of the renamed reporter is still caught, chained alias-following unaffected by the rename", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  async function emitReport(code: number): Promise<void> {}",
@@ -4923,11 +4958,11 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 4, value: 11, kind: "call" }]);
   });
 
-  test("a shadow two levels deep from main is still rejected even under the renamed spelling — the position bound survives the rename too", () => {
+  test("a shadow two levels deep from main is still rejected even under the renamed spelling — the position bound survives the rename too", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  async function emitReport(code: number): Promise<void> {}",
@@ -4939,11 +4974,11 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("the real repo corpus: renaming the actual drive-status.ts reporter — declaration AND every call site — is still caught", () => {
+  test("the real repo corpus: renaming the actual drive-status.ts reporter — declaration AND every call site — is still caught", async () => {
     // Mirrors the real-corpus injection test above, but exercises a rename,
     // not just a bare-literal argument swap.
     // Every occurrence of the identifier followed by `(` — the declaration
@@ -4977,7 +5012,7 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
     const renamed = realSource
       .replace(block, mutatedBlock)
       .replace(/\bemit\(/g, "emitReport(");
-    const found = findBareLiteralExits(
+    const found = await findBareLiteralExits(
       renamed,
       driveStatusTsSourcePath(),
       new Set([11]),
@@ -4995,7 +5030,7 @@ describe("findBareLiteralExits — the reporter is identified by call contract, 
   // `isEmitterZoneVariableDeclaration` — see their own doc comments above
   // `resolvesToLocalReporter`.
 
-  test("a bare-literal call to an arrow-function-valued reporter is caught — a behavior-preserving rewrite away from a function declaration", () => {
+  test("a bare-literal call to an arrow-function-valued reporter is caught — a behavior-preserving rewrite away from a function declaration", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const emit = async (code: number): Promise<void> => {};",
@@ -5004,11 +5039,11 @@ describe("findBareLiteralExits — the reporter is identified by call contract, 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "call" }]);
   });
 
-  test("the named-constant form survives the arrow-function rewrite too — the clean shape", () => {
+  test("the named-constant form survives the arrow-function rewrite too — the clean shape", async () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "async function main(): Promise<number> {",
@@ -5018,11 +5053,11 @@ describe("findBareLiteralExits — the reporter is identified by call contract, 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 
-  test("a bare-literal call to a function-expression-valued reporter is caught the same way", () => {
+  test("a bare-literal call to a function-expression-valued reporter is caught the same way", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const emit = async function (code: number): Promise<void> {};",
@@ -5031,11 +5066,11 @@ describe("findBareLiteralExits — the reporter is identified by call contract, 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 3, value: 11, kind: "call" }]);
   });
 
-  test("an unrelated sibling function at the exact same structural depth is not mistaken for the reporter, while a real call to the reporter still is", () => {
+  test("an unrelated sibling function at the exact same structural depth is not mistaken for the reporter, while a real call to the reporter still is", async () => {
     // `countOrNull`'s own real signature in drive-status.ts: a single
     // `number | null` parameter, never a bare `number` — so it fails the
     // call-contract test even though it sits at the identical position as
@@ -5052,11 +5087,11 @@ describe("findBareLiteralExits — the reporter is identified by call contract, 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([{ line: 7, value: 11, kind: "call" }]);
   });
 
-  test("a zero-argument sibling at the same structural depth is not mistaken for the reporter either", () => {
+  test("a zero-argument sibling at the same structural depth is not mistaken for the reporter either", async () => {
     const source = [
       "async function main(): Promise<number> {",
       "  async function reflectDue(): Promise<boolean> {",
@@ -5067,7 +5102,7 @@ describe("findBareLiteralExits — the reporter is identified by call contract, 
       "}",
     ].join("\n");
     expect(
-      findBareLiteralExits(source, "drive-status.ts", new Set([11])),
+      await findBareLiteralExits(source, "drive-status.ts", new Set([11])),
     ).toEqual([]);
   });
 });
@@ -5161,7 +5196,10 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     driveStatusTsSource: string;
   }
 
-  const withSeams = (paths: SeamPaths, fn: () => void): void => {
+  const withSeams = async (
+    paths: SeamPaths,
+    fn: () => Promise<void> | void,
+  ): Promise<void> => {
     const prev = Object.fromEntries(
       SEAM_ENV_KEYS.map((k) => [k, process.env[k]]),
     );
@@ -5180,7 +5218,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     console.error = () => {};
     console.log = () => {};
     try {
-      fn();
+      await fn();
     } finally {
       console.error = error;
       console.log = log;
@@ -5202,11 +5240,13 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     ),
   });
 
-  test("a fully healthy fixture set passes through the real runCheck() entry point", () => {
-    withSeams(healthyPaths(), () => expect(runCheck()).toBe(0));
+  test("a fully healthy fixture set passes through the real runCheck() entry point", async () => {
+    await withSeams(healthyPaths(), async () =>
+      expect(await runCheck()).toBe(0),
+    );
   });
 
-  test("a mismatched lease.ts exit constant VALUE fails runCheck(), not just the pure function in isolation", () => {
+  test("a mismatched lease.ts exit constant VALUE fails runCheck(), not just the pure function in isolation", async () => {
     const paths = healthyPaths();
     paths.leaseTsModule = fixture(
       "mismatched-lease-module.ts",
@@ -5215,10 +5255,10 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
         "export const SESSION_LEASE_HELD_EXIT = 99;",
       ),
     );
-    withSeams(paths, () => expect(runCheck()).toBe(1));
+    await withSeams(paths, async () => expect(await runCheck()).toBe(1));
   });
 
-  test("a lease.ts DECLARATION reverted to a bare literal that still holds the right VALUE fails runCheck() — the case findExitConstantMismatches alone cannot catch", () => {
+  test("a lease.ts DECLARATION reverted to a bare literal that still holds the right VALUE fails runCheck() — the case findExitConstantMismatches alone cannot catch", async () => {
     const paths = healthyPaths();
     paths.leaseTsSource = fixture(
       "provenance-lease-source.ts",
@@ -5227,10 +5267,10 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
         "export const SESSION_LEASE_HELD_EXIT = 11;", // reverted, but still the right value
       ),
     );
-    withSeams(paths, () => expect(runCheck()).toBe(1));
+    await withSeams(paths, async () => expect(await runCheck()).toBe(1));
   });
 
-  test("a drive-status.ts bare-literal exit site fails runCheck(), not just the pure function in isolation", () => {
+  test("a drive-status.ts bare-literal exit site fails runCheck(), not just the pure function in isolation", async () => {
     const paths = healthyPaths();
     paths.driveStatusTsSource = fixture(
       "bare-literal-drive-status-source.ts",
@@ -5239,7 +5279,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
         "return 11;",
       ),
     );
-    withSeams(paths, () => expect(runCheck()).toBe(1));
+    await withSeams(paths, async () => expect(await runCheck()).toBe(1));
   });
 
   // The two mutations below are the exact residual of a `return`-only scan:
@@ -5247,7 +5287,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
   // bare literal while the function's own trailing `return` still reads the
   // real constant — `healthyDriveStatusSource` above deliberately carries all
   // three shapes so each mutation below trips ONLY the clause under test.
-  test("a drive-status.ts .code COMPARISON reverted to a bare literal fails runCheck(), even though the return in the same block still uses the named constant", () => {
+  test("a drive-status.ts .code COMPARISON reverted to a bare literal fails runCheck(), even though the return in the same block still uses the named constant", async () => {
     const paths = healthyPaths();
     paths.driveStatusTsSource = fixture(
       "bare-literal-comparison-drive-status-source.ts",
@@ -5256,10 +5296,10 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
         "bump.code === 11",
       ),
     );
-    withSeams(paths, () => expect(runCheck()).toBe(1));
+    await withSeams(paths, async () => expect(await runCheck()).toBe(1));
   });
 
-  test("a drive-status.ts emit() CALL reverted to a bare literal fails runCheck(), even though the return in the same block still uses the named constant", () => {
+  test("a drive-status.ts emit() CALL reverted to a bare literal fails runCheck(), even though the return in the same block still uses the named constant", async () => {
     const paths = healthyPaths();
     paths.driveStatusTsSource = fixture(
       "bare-literal-call-drive-status-source.ts",
@@ -5268,25 +5308,25 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
         "emit(11)",
       ),
     );
-    withSeams(paths, () => expect(runCheck()).toBe(1));
+    await withSeams(paths, async () => expect(await runCheck()).toBe(1));
   });
 
-  test("a missing lease.ts source file fails closed", () => {
+  test("a missing lease.ts source file fails closed", async () => {
     const paths = healthyPaths();
     const missingDir = mkdtempSync(
       join(tmpdir(), "drive-pr-terminal-states-outofband-e2e-missing-"),
     );
     paths.leaseTsSource = join(missingDir, "does-not-exist.ts");
-    withSeams(paths, () => expect(runCheck()).toBe(1));
+    await withSeams(paths, async () => expect(await runCheck()).toBe(1));
   });
 
-  test("a missing drive-status.ts source file fails closed", () => {
+  test("a missing drive-status.ts source file fails closed", async () => {
     const paths = healthyPaths();
     const missingDir = mkdtempSync(
       join(tmpdir(), "drive-pr-terminal-states-outofband-e2e-missing-2-"),
     );
     paths.driveStatusTsSource = join(missingDir, "does-not-exist.ts");
-    withSeams(paths, () => expect(runCheck()).toBe(1));
+    await withSeams(paths, async () => expect(await runCheck()).toBe(1));
   });
 });
 
@@ -5383,7 +5423,10 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
     driveStatusTsSource: string;
   }
 
-  const withSeams = (paths: SeamPaths, fn: () => void): void => {
+  const withSeams = async (
+    paths: SeamPaths,
+    fn: () => Promise<void> | void,
+  ): Promise<void> => {
     const prev = Object.fromEntries(
       SEAM_ENV_KEYS.map((k) => [k, process.env[k]]),
     );
@@ -5402,7 +5445,7 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
     console.error = () => {};
     console.log = () => {};
     try {
-      fn();
+      await fn();
     } finally {
       console.error = error;
       console.log = log;
@@ -5424,11 +5467,13 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
     ),
   });
 
-  test("a fully healthy fixture set — using the real outOfBand() dispatch shape — passes through the real runCheck() entry point", () => {
-    withSeams(healthyPaths(), () => expect(runCheck()).toBe(0));
+  test("a fully healthy fixture set — using the real outOfBand() dispatch shape — passes through the real runCheck() entry point", async () => {
+    await withSeams(healthyPaths(), async () =>
+      expect(await runCheck()).toBe(0),
+    );
   });
 
-  test("an outOfBand() call NAME swapped to the wrong sibling state fails runCheck(), even though its enclosing comparison branch is unchanged", () => {
+  test("an outOfBand() call NAME swapped to the wrong sibling state fails runCheck(), even though its enclosing comparison branch is unchanged", async () => {
     const paths = healthyPaths();
     paths.driveStatusTsSource = fixture(
       "wrong-name-drive-status-source.ts",
@@ -5437,6 +5482,6 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
         "outOfBand(report, 'DRIVE_HELD_BY_OTHER_WORKTREE', 'reason')",
       ),
     );
-    withSeams(paths, () => expect(runCheck()).toBe(1));
+    await withSeams(paths, async () => expect(await runCheck()).toBe(1));
   });
 });

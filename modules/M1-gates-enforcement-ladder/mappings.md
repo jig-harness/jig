@@ -35,6 +35,23 @@ module (`reference/grep-gate/`, `reference/commit-msg-marker/`) run with Bun and
 | Run summary | `$GITHUB_STEP_SUMMARY` | Job log / MR widget (no direct equivalent; a comment bot if needed) |
 | Commit-msg marker re-check | Step iterating `git rev-list` over PR commits (see template) | Same script; diff range `$CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD` |
 
+## Custom lint rules and the ratchet
+
+A project-specific rule (a pattern the repository has decided against) is
+written in the linter's own extension mechanism where it has one, so it runs
+with the linter's other rules and its severity decides whether the ratchet
+holds it. The [ratchet gate](reference/ratchet/README.md) reads Biome's JSON
+report, compiler output and plain-text patterns; a tool outside them is counted through a `grep` counter or a new
+format added to the gate.
+
+| Ecosystem | Custom rule mechanism | Ratchet counter |
+|-----------|-----------------------|-----------------|
+| Biome (Jig's own wiring) | GritQL plugins listed under `plugins` in `biome.json`, each with its own `includes` | `biome-json`: `biome lint --reporter=json`; a plugin's findings are named by the `<scope>/<name>:` prefix of its message |
+| TypeScript compiler | Compiler flags in a separate project file (Jig's `tsconfig.ratchet.json`) | `tsc`: `--pretty false` output, or `bun check --no-pretty` |
+| ESLint | A local plugin of custom rules | Not read directly: a `grep` counter, or a new format for `--format json` |
+| Any language | Structural search rules (ast-grep, Semgrep) | Not read directly: a `grep` counter, or a new format for the tool's JSON output |
+| Suppression comments | — | `grep`: one pattern per suppression marker |
+
 ## Immutable third-party automation and updates
 
 Pinning and updating are one mechanism with two halves:
@@ -58,6 +75,7 @@ update or unexplained version ceiling is hidden maintenance debt.
 | CI gate set | `templates/ci-pr-gates.yml` | `.github/workflows/` or `.gitlab-ci.yml` per the table above |
 | Suppression registry | `templates/suppression-registry.md` | Your docs tree, one page, linked from the instruction file |
 | Commit-msg marker | `reference/commit-msg-marker/` | `scripts/` + the manager's commit-msg hook + a CI re-check |
+| Ratchet gate | `reference/ratchet/` | A wiring file of counters and configuration files (Jig's: `tools/quality/ratchet.jsonc`), run by a package script in the gate set; CI checks out full history so the merge base exists |
 
 ## Non-JavaScript repositories
 

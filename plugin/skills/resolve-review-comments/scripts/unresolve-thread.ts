@@ -15,11 +15,11 @@
  * instead; the reply sequence is the audit trail.
  */
 
-import { isEntryPoint, runMain } from "./lib/cli.ts";
+import { runMain } from "./lib/cli.ts";
 import { ghOrExit } from "./lib/gh.ts";
 import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 
-// Gated behind isEntryPoint like every other script in this family, rather
+// Gated behind `import.meta.main` like every other script in this family, rather
 // than running at import time. This module's side effect is a MUTATION, and
 // the node sweep in the test suite spawns each script here with `--help`,
 // which this one reads as a thread id — that spawn is safe only because the
@@ -52,4 +52,4 @@ mutation($threadId:ID!){
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("unresolve-thread", main);
+if (import.meta.main) runMain("unresolve-thread", main);

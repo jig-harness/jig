@@ -4,24 +4,26 @@
     "@biomejs/biome": "2.5.15",
     "@types/bun": "1.4.2",
     "@types/js-yaml": "4.0.9",
+    "fallow": "3.33.1",
     "happy-dom": "20.11.6",
+    "js-yaml": "4.1.1",
     "playwright-core": "1.62.1",
-    "typescript": "7.0.2",
-    "typescript6": "npm:@typescript/typescript6@6.0.2"
+    "typescript": "7.0.2"
   },
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.3",
   "private": true,
   "scripts": {
     "gates": "bun scripts/gates.ts",
     "test": "bun test --timeout 30000",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun check",
+    "deadcode": "fallow dead-code -q",
+    "audit": "fallow audit -q",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "build": "bun scripts/build.ts"
+    "build": "bun scripts/build.ts",
+    "quality": "bun modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts --config tools/quality/ratchet.jsonc",
+    "quality:report": "bun modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts --config tools/quality/ratchet.jsonc --report"
   },
-  "type": "module",
-  "dependencies": {
-    "js-yaml": "4.1.1"
-  }
+  "type": "module"
 }

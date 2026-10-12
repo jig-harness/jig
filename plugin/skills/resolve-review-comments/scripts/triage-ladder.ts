@@ -77,13 +77,7 @@
  */
 
 import { join } from "node:path";
-import {
-  fail,
-  isDigits,
-  isEntryPoint,
-  isSafeDigits,
-  runMain,
-} from "./lib/cli.ts";
+import { fail, isDigits, isSafeDigits, runMain } from "./lib/cli.ts";
 import {
   CANONICAL_SEVERITIES,
   CATEGORY_UNKNOWN,
@@ -364,6 +358,6 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("triage-ladder", main);
+if (import.meta.main) runMain("triage-ladder", main);
 
 export { interpretRoundResult, main, readRound };

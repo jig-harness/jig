@@ -15,7 +15,6 @@ import {
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { load as parseYaml } from "js-yaml";
 import {
   changedFilesSince,
   changedFilesSinceExcludingMerges,

@@ -50,7 +50,7 @@ import {
   parseClaimText,
   stagingLive,
 } from "./lib/claim.ts";
-import { fail, isEntryPoint, runMain } from "./lib/cli.ts";
+import { fail, runMain } from "./lib/cli.ts";
 import { type RunHandle, type RunResult, run } from "./lib/proc.ts";
 import {
   type ArtifactEntry,
@@ -1803,4 +1803,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("migrate-state-dir", main);
+if (import.meta.main) runMain("migrate-state-dir", main);

@@ -19,12 +19,63 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-12
+
+The plugin's scripts run on Bun only, and Jig's own code now passes a
+ratchet: the findings it already has are tolerated, new ones fail the gates.
+
+### Changed
+
+- **Breaking:** the plugin's scripts run on Bun only. They were also
+  documented to run with `node <script>.ts` on Node 22.18 or later; that is
+  no longer supported or tested. A machine that started a script with `node`
+  starts it with `bun`. Jig tests with Bun 1.4.3. `programmatic-execution`,
+  whose analysis scripts run with whatever runtime a machine has, accepts Bun
+  or Node 24 or later (was Node 22.18).
+- Scripts recognise their own entry point with `import.meta.main`, so a script
+  started through a symlinked path (a symlinked checkout, a skills directory
+  of links) still runs.
+- `review` lists every `Ratchet-Loosen` commit trailer in its summary for a
+  person to confirm.
+- do-item's scripts exit 1 with the error and its stack when an unexpected
+  error escapes them, instead of leaving it to the runtime's unhandled
+  rejection.
+
+### Added
+
+- M1's **ratchet gate**
+  ([`reference/ratchet/`](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md)):
+  counts findings per rule in the working tree and in the merge base, fails
+  when a count grows or a configuration loosens a rule without a
+  `Ratchet-Loosen: <rule>: <reason>` commit trailer, and reports rules ready
+  to become errors. A loosening includes an override or a narrowed file
+  scope, a reordered include list or override, any change to a setting it
+  does not rank in a configuration file it already compares, a counter,
+  configuration file or support path dropped or changed in the ratchet's own
+  wiring, and a support path added there. M1's README places it between advisory and blocking.
+- Jig's gates gain Biome rules (floating promises, misused promises,
+  parameter properties, enums and namespaces as errors; empty blocks
+  ratcheted), GritQL rules in `tools/quality/grit/` with their own
+  fixtures (unchecked `JSON.parse` casts, `catch` blocks that drop the error
+  and return a default, discarded child-process error output, local copies of
+  record guards, `process.exit` where the command-line boundary sets the exit
+  code, ad hoc
+  process signal handlers), fallow (unused files, exports and dependencies;
+  complexity and duplication of the changed files against the merge base),
+  and stricter compiler settings (`erasableSyntaxOnly`, `noImplicitOverride`,
+  `noImplicitReturns`, `noUnusedLocals`, `noUnusedParameters`), with
+  `exactOptionalPropertyTypes` ratcheted.
+
 ### Fixed
 
 - This repository's own `.config/jig.yaml` labels its follow-ups `jig`
   (was `groundwork`, a label the tracker no longer has) and names `sourcebook`
   among the repository labels; the follow-up and epic labels move to
   `issue_tracker.labels`, and agents file issues through the Linear tool.
+- `bun run typecheck` ran TypeScript 6, not the pinned TypeScript 7: a second
+  package's `tsc` shadowed it. Type checking now uses `bun check`, which
+  reports TypeScript 7's errors, and TypeScript 6 is no longer installed; the
+  terminal-states consistency check uses TypeScript 7's compiler API.
 
 ## [0.12.0] - 2026-10-12
 
@@ -250,7 +301,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/docomply/jig/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/docomply/jig/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/docomply/jig/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/docomply/jig/compare/v0.9.1...v0.10.0

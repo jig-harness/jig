@@ -150,7 +150,7 @@
  */
 
 import { verifyOriginIsPrRepo } from "./lib/base-drift.ts";
-import { isEntryPoint, runMain } from "./lib/cli.ts";
+import { runMain } from "./lib/cli.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
   ghCall,
@@ -1095,4 +1095,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("self-inflicted", main);
+if (import.meta.main) runMain("self-inflicted", main);

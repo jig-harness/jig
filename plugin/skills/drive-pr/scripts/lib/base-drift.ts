@@ -57,9 +57,6 @@
  * adds `foo/bar.ts` while the base adds a plain file `foo`, or vice versa)
  * shares no path string with an exact-set intersection, yet git cannot
  * construct that merge tree either — see `pathCollisions` below.
- *
- * Runs under Bun and under Node >= 22.18: only `node:` APIs, no `Bun.*`
- * globals, erasable-syntax-only TypeScript, explicit `.ts` import specifiers.
  */
 
 import { gitCallTimeoutSeconds, readTimeoutEnv } from "./proc.ts";

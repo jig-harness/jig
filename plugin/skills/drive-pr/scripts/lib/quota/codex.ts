@@ -27,8 +27,6 @@
  *      10079/10080 — the server reports a window that has already been
  *      ticking. An equality test on 300 silently classifies a 299 as unknown
  *      and stops a drive that should have slept, so the split is a threshold.
- *
- * Runs under Bun and Node >= 22.18: `node:` APIs only, erasable syntax only.
  */
 
 import { closeSync, fstatSync, openSync, statSync } from "node:fs";

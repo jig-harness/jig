@@ -1,0 +1,12 @@
+// Flags every process.exit, an entry point's own included: the command-line
+// boundary (lib/cli.ts) sets process.exitCode and lets pending output drain,
+// so no call needs process.exit. Exiting directly skips the boundary's
+// exit-code mapping and cuts off buffered output. The call is matched as
+// written; an alias of process.exit is not followed.
+`process.exit($...)` as $exit where {
+  register_diagnostic(
+    span = $exit,
+    message = "jig/no-raw-exit: exit through the command-line boundary instead: throw its exit error or return the exit code.",
+    severity = "warn"
+  )
+}

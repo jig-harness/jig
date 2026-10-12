@@ -72,13 +72,7 @@ import { siblingSkill } from "./lib/consumer.ts";
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  fail,
-  isDigits,
-  isEntryPoint,
-  isSafeDigits,
-  runMain,
-} from "./lib/cli.ts";
+import { fail, isDigits, isSafeDigits, runMain } from "./lib/cli.ts";
 import { git, resolvePr, run } from "./lib/proc.ts";
 
 /** `drive-state.ts rounds` is a pure read — no lock, no lease, no write. */
@@ -226,4 +220,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("current-round", main);
+if (import.meta.main) runMain("current-round", main);

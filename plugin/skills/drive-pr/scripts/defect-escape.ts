@@ -137,7 +137,7 @@
  */
 
 import { teamKeyOrNull } from "../../do-item/scripts/lib/tracker/config.ts";
-import { fail, isEntryPoint, runMain } from "./lib/cli.ts";
+import { fail, runMain } from "./lib/cli.ts";
 import {
   anchorLine,
   declinedAtOf,
@@ -2293,7 +2293,7 @@ async function main(): Promise<number> {
   return 0;
 }
 
-// Gated behind isEntryPoint rather than run at module scope: this module's
+// Gated behind `import.meta.main` rather than run at module scope: this module's
 // side effect is a live GitHub sweep, so importing it unconditionally — the
 // pattern this family's pure helpers otherwise support — would run it for
 // real. The predicate is `lib/cli.ts`'s, no longer inlined here — see
@@ -2303,4 +2303,4 @@ async function main(): Promise<number> {
 // repo without triggering the CLI ("the claimed
 // rename-following coverage only injects a hand-written predicate and never
 // exercises the new Git-backed resolver").
-if (isEntryPoint(import.meta.url)) runMain("defect-escape", main);
+if (import.meta.main) runMain("defect-escape", main);

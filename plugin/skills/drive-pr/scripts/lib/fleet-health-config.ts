@@ -26,9 +26,6 @@
  * config is an error, never a silent fallback to built-in numbers — and an
  * unknown key is an error too, so a retuned knob the sensor does not read
  * cannot look like a retune.
- *
- * Runs under Bun and Node >= 22.18: only `node:` APIs, erasable-syntax
- * TypeScript, explicit `.ts` import specifiers.
  */
 
 import { existsSync, readFileSync } from "node:fs";

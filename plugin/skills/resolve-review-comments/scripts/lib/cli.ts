@@ -7,16 +7,9 @@
  * import of it, deliberately — the same boundary `proc.ts` documents in its
  * header: this skill is distributed on its own (engineering-standards sync),
  * so its scripts must resolve entirely inside the skill directory.
- *
- * Runs under Bun (the repo's tool runtime) and under Node ≥ 22.18 (type
- * stripping): only `node:` APIs, no `Bun.*` globals, erasable-syntax-only
- * TypeScript, explicit `.ts` import specifiers.
  */
 
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
 import { setTimeout as sleepMs } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 
 /** Exit codes travel as exceptions so `main()` can return them in one place. */
 export class ExitError extends Error {
@@ -88,34 +81,6 @@ export function isSafeDigits(s: string): boolean {
 export function envOrDefault(name: string, def: string): string {
   const raw = process.env[name];
   return raw === undefined || raw === "" ? def : raw;
-}
-
-/**
- * Is the module at `moduleUrl` the process's entry script? The gate that lets
- * a script be BOTH an entry point and an importable module (the test suite
- * imports the pure helpers without spawning the CLI).
- *
- * NOT `import.meta.main`: that is a Bun global Node did not gain until v24.2,
- * so on the Node versions this skill documents it reads `undefined`, main()
- * never runs, and the script exits 0 having printed nothing — which a caller
- * reads as an answer, not a failure (the drive-pr copy hit this trap).
- *
- * Both sides are REALPATHS. Both runtimes resolve the entry module's
- * `import.meta.url` through symlinks (measured: bun 1.3, node 24 — direct and
- * symlinked invocation alike), while `process.argv[1]` stays as typed — so a
- * naive `resolve(argv[1])` comparison silently fails for a script invoked
- * through the `.agents/skills/` symlink farm, or from any path with a symlink
- * component (`/var` → `/private/var` on stock macOS). realpath on argv[1]
- * closes both.
- */
-export function isEntryPoint(moduleUrl: string): boolean {
-  const argv1 = process.argv[1];
-  if (argv1 === undefined) return false;
-  try {
-    return realpathSync(resolve(argv1)) === fileURLToPath(moduleUrl);
-  } catch {
-    return false;
-  }
 }
 
 export async function sleep(seconds: number): Promise<void> {

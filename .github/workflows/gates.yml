@@ -30,6 +30,10 @@ jobs:
       JIG_GATES_SKIP_SEPARATE_SUITES: "1"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The ratchet and fallow's audit compare against the merge base
+          # with main, which a shallow checkout does not have.
+          fetch-depth: 0
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: Install locked dependencies
         run: bun install --frozen-lockfile

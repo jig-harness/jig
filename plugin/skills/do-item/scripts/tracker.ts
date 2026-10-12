@@ -15,11 +15,9 @@
  *
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage, 1 the operation
  * failed (the reason on stderr).
- *
- * Runs under Bun and under Node ≥ 22.18 (type stripping).
  */
 
-import { isEntryPoint } from "./lib/cli.ts";
+import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import {
   CANONICAL_STATES,
@@ -110,8 +108,4 @@ export async function main(argv: string[]): Promise<number> {
   }
 }
 
-if (isEntryPoint(import.meta.url)) {
-  main(process.argv.slice(2)).then((code) => {
-    process.exitCode = code;
-  });
-}
+if (import.meta.main) runEntry(() => main(process.argv.slice(2)));

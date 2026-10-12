@@ -28,9 +28,6 @@ import { consumerRoot } from "./consumer.ts";
  * Every inert path is ANNOUNCED (`anomalies`), never silent — the same
  * discipline `current-round.ts` applies to its own fail-open read: the value
  * fails open, the silence does not.
- *
- * Runs under Bun and under Node ≥ 22.18 (type stripping): only `node:` APIs,
- * erasable-syntax-only TypeScript, explicit `.ts` import specifiers.
  */
 
 import { readFileSync } from "node:fs";

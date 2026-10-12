@@ -16,7 +16,6 @@ import {
   overlayPath,
   readOverlay,
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
-import { isEntryPoint } from "./lib/cli.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import {
   DEFAULT_BLOCK,
@@ -118,7 +117,7 @@ async function readStdin(): Promise<string> {
   return s;
 }
 
-if (isEntryPoint(import.meta.url)) {
+if (import.meta.main) {
   readStdin()
     .then((text) => {
       console.log(

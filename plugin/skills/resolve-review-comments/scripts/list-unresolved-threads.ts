@@ -99,7 +99,7 @@
  * posted yet" — a raw count from this script cannot tell those apart.
  */
 
-import { isEntryPoint, runMain } from "./lib/cli.ts";
+import { runMain } from "./lib/cli.ts";
 import { ghOrExit, repoViewOrExit } from "./lib/gh.ts";
 
 interface ThreadCommentNode {
@@ -152,7 +152,7 @@ const gh = (
   opts?: { deadlineFactor?: number },
 ): Promise<string> => ghOrExit("list-unresolved-threads", args, opts);
 
-// Gated behind isEntryPoint rather than run at module scope, like every
+// Gated behind `import.meta.main` rather than run at module scope, like every
 // other script in this family: importing this module used to spawn `gh` and
 // print a PR's threads as a side effect of the import alone (first seen in
 // unresolve-thread.ts, true of all three).
@@ -390,4 +390,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("list-unresolved-threads", main);
+if (import.meta.main) runMain("list-unresolved-threads", main);

@@ -448,8 +448,7 @@ describe("--base validation", () => {
 });
 
 describe("importing base-sync.ts does not run main()", () => {
-  // `main()` runs only behind an `isEntryPoint` guard keyed on
-  // `process.argv[1]` matching this file's own resolved path — exactly so this
+  // `main()` runs only behind an `import.meta.main` guard, exactly so this
   // file can `import { alreadyPushing }` above without triggering real
   // `git`/`gh` I/O against the TEST RUNNER's own argv. Nothing previously
   // asserted that. A synchronous check of `process.exitCode` right after import

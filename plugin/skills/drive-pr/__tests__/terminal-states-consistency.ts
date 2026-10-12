@@ -169,8 +169,14 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
-import ts from "typescript6";
+import { basename, relative, resolve } from "node:path";
+import * as ts from "typescript/unstable/ast";
+import {
+  API,
+  type Symbol as CheckerSymbol,
+  type NodeHandle,
+} from "typescript/unstable/async";
+import { createVirtualFileSystem } from "typescript/unstable/fs";
 import {
   type DriverOnlyStateName,
   driverOnlyExitCode,
@@ -732,9 +738,9 @@ export function findMissingRequired(
  *      `return 16;` somewhere in `drive.ts`, bypassing the named constant
  *      entirely, is invisible to (1): the constant itself would still be
  *      correct, and the check would never even look at the new site. This is
- *      a REAL AST scan (`typescript6` — the repo's pinned `typescript` v7 has
- *      no `createSourceFile`/AST-walk surface), not a regex over the source
- *      text — it looks for a `return`
+ *      a REAL AST scan (the TypeScript compiler's own parse of the file —
+ *      see `createSingleFileProgram`), not a regex over the source text — it
+ *      looks for a `return`
  *      statement whose entire expression is one of the driver-only exit codes
  *      in `BARE_LITERAL_EXIT_CODES`, anywhere in the file. `PASS_DEADLINE_EXIT`
  *      (15) and `QUOTA_PARKED_EXIT`(16) already had named constants before
@@ -837,9 +843,7 @@ const OUT_OF_BAND_EXIT_NAMES: ReadonlyArray<{
 
 /**
  * `require`s `modulePath` for the exit constants named in `names`, bare (a
- * global under Bun), so `runCheck` stays synchronous rather
- * than needing every one of its existing callers (this file's own test
- * suite) converted to `await`. Real code, not text: an export that is missing
+ * global under Bun). Real code, not text: an export that is missing
  * entirely, or is not a `number`, is reported as a mismatch rather than
  * thrown past the caller, so one broken export does not crash the whole
  * check. Shared by `driverOnlyExitBindings` (drive.ts) and
@@ -911,67 +915,244 @@ export function findExitConstantMismatches(
 }
 
 /**
- * Builds a single-file `ts.Program` so the checks below can ask the real
+ * A checker symbol, with its declarations already resolved to nodes of the
+ * scanned file (the program holds no other file, so every declaration is
+ * one). There is exactly one object per symbol, so two references to the
+ * same binding compare equal with `===` and a `Set` of these deduplicates
+ * by binding, never by spelling.
+ */
+interface ResolvedSymbol {
+  readonly declarations: readonly ts.Node[];
+  readonly valueDeclaration: ts.Node | undefined;
+}
+
+/**
+ * The three questions the checks below ask the TypeScript checker, answered
+ * for one source file: which binding an identifier reference denotes, which
+ * binding a shorthand property inside a destructuring assignment writes
+ * (`({ alias } = holder)`), and which declaration the `outOfBand` property of
+ * an element access's object type has. `createSingleFileProgram` asks the
+ * checker every one of them for every node they can be asked about before
+ * any scan starts, so the scans stay plain synchronous tree walks. A
+ * question about a node outside that set throws rather than answering "no
+ * symbol": a scan that silently resolved nothing would pass vacuously.
+ */
+interface FileChecker {
+  getSymbolAtLocation(node: ts.Node): ResolvedSymbol | undefined;
+  getShorthandAssignmentValueSymbol(
+    node: ts.ShorthandPropertyAssignment,
+  ): ResolvedSymbol | undefined;
+  getOutOfBandPropertyOfType(node: ts.Expression): ResolvedSymbol | undefined;
+}
+
+/**
+ * The TypeScript compiler runs as a separate server process that the
+ * checker talks to; starting it costs a few hundred milliseconds, so one
+ * process serves every program this module builds, over a virtual file
+ * system that holds each scanned source and its tsconfig only while that
+ * program is being read. Started on first use; `closeTypeScriptService`
+ * stops it.
+ */
+interface TypeScriptService {
+  readonly api: API;
+  readonly writeFile: (path: string, content: string) => void;
+  readonly removeFile: (path: string) => void;
+}
+
+/** Root of the virtual file system — never a real directory on disk. */
+const VIRTUAL_ROOT = "/terminal-states-consistency";
+
+let service: TypeScriptService | undefined;
+let programCount = 0;
+/** Programs are built one at a time: each one opens and then closes its own
+ * project on the shared server, and an overlapping build would read a
+ * snapshot another build is still changing. */
+let programQueue: Promise<unknown> = Promise.resolve();
+
+function typeScriptService(): TypeScriptService {
+  if (service === undefined) {
+    const files = createVirtualFileSystem({});
+    const { writeFile, removeFile } = files;
+    if (writeFile === undefined || removeFile === undefined) {
+      throw new Error("the virtual file system cannot add or remove files");
+    }
+    service = {
+      api: new API({ cwd: VIRTUAL_ROOT, fs: files }),
+      writeFile,
+      removeFile,
+    };
+  }
+  return service;
+}
+
+/** Stops the TypeScript server process, if one is running. A later program
+ * build starts a new one. */
+export async function closeTypeScriptService(): Promise<void> {
+  await programQueue;
+  const running = service;
+  service = undefined;
+  await running?.api.close();
+}
+
+/**
+ * Builds a one-file TypeScript program so the checks below can ask the real
  * TypeScript binder "what declaration does this identifier reference denote"
  * and "what module was this name imported from", instead of re-implementing
- * name/scope resolution by hand. Mirrors the identical pattern already
- * established for this exact problem class in
- * `scripts/check-no-inline-error-codes.ts`: `noResolve` and a host
- * that serves only this one file mean no module is ever actually loaded —
- * module specifiers stay unresolved, exactly like before — but the binder
- * still creates a real symbol for every local declaration and import
- * specifier, and `checker.getSymbolAtLocation` still walks lexical scope
- * correctly for all of them. That scope-correctness is what
- * `findConstantProvenanceMismatches` and `resolveIdentifierLiteral` below
- * need to stop matching on bare identifier SPELLING — which is what let a
- * same-named decoy declaration elsewhere in the file "rescue" a reverted
- * constant, or let block-scope shadowing "steal" the wrong declaration for a
- * scope-blind name walk.
+ * name/scope resolution by hand. `noResolve` and `noLib` with a virtual file
+ * system that holds only this one file mean no module is ever actually
+ * loaded — module specifiers stay unresolved — but the binder still creates
+ * a real symbol for every local declaration and import specifier, and the
+ * checker still walks lexical scope correctly for all of them. That
+ * scope-correctness is what `findConstantProvenanceMismatches` and
+ * `resolveIdentifierLiteral` below need to stop matching on bare identifier
+ * SPELLING — which is what let a same-named decoy declaration elsewhere in
+ * the file "rescue" a reverted constant, or let block-scope shadowing
+ * "steal" the wrong declaration for a scope-blind name walk.
+ *
+ * The checker answers over a request/response channel, one round trip per
+ * question, so this asks every question the scans can ask in a few batched
+ * requests up front (see `FileChecker`) and resolves each symbol's
+ * declaration handles back to nodes of the returned `sourceFile` — the same
+ * node objects a walk of that tree visits, so a declaration found through a
+ * symbol and the same node reached by walking compare equal with `===`.
  */
 function createSingleFileProgram(
   fileName: string,
   source: string,
-): { checker: ts.TypeChecker; sourceFile: ts.SourceFile } {
-  const sourceFile = ts.createSourceFile(
-    fileName,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
+): Promise<{ checker: FileChecker; sourceFile: ts.SourceFile }> {
+  const build = programQueue.then(() =>
+    buildSingleFileProgram(fileName, source),
   );
-  const host: ts.CompilerHost = {
-    fileExists: (name) => name === fileName,
-    readFile: (name) => (name === fileName ? source : undefined),
-    getSourceFile: (name) => (name === fileName ? sourceFile : undefined),
-    getDefaultLibFileName: () => "lib.d.ts",
-    // The program is only ever asked for symbols, never emit — this host
-    // never actually writes anything.
-    writeFile: () => {
-      /* noop */
-    },
-    getCurrentDirectory: () => "",
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => "\n",
-    getDirectories: () => [],
-  };
-  const program = ts.createProgram(
-    [fileName],
-    {
-      target: ts.ScriptTarget.Latest,
-      module: ts.ModuleKind.ESNext,
-      noResolve: true,
-      noLib: true,
-      types: [],
-    },
-    host,
+  programQueue = build.catch(() => undefined);
+  return build;
+}
+
+async function buildSingleFileProgram(
+  fileName: string,
+  source: string,
+): Promise<{ checker: FileChecker; sourceFile: ts.SourceFile }> {
+  const { api, writeFile, removeFile } = typeScriptService();
+  programCount += 1;
+  const directory = `${VIRTUAL_ROOT}/${programCount}`;
+  const configPath = `${directory}/tsconfig.json`;
+  const sourcePath = `${directory}/${basename(fileName)}`;
+  writeFile(
+    configPath,
+    JSON.stringify({
+      compilerOptions: {
+        target: "esnext",
+        module: "esnext",
+        noResolve: true,
+        noLib: true,
+        types: [],
+      },
+      files: [basename(fileName)],
+    }),
   );
-  // The host serves exactly the one root file, so the program's own copy of
-  // it (not the standalone `sourceFile` above) is the node the checker binds
-  // against.
-  return {
-    checker: program.getTypeChecker(),
-    sourceFile: program.getSourceFile(fileName) as ts.SourceFile,
-  };
+  writeFile(sourcePath, source);
+  const snapshot = await api.updateSnapshot({ openProjects: [configPath] });
+  try {
+    const project = snapshot.getProject(configPath);
+    const sourceFile = await project?.program.getSourceFile(sourcePath);
+    if (project === undefined || sourceFile === undefined) {
+      throw new Error(`TypeScript did not load ${fileName} into a program`);
+    }
+    const { checker } = project;
+
+    const names: ts.Node[] = [];
+    const shorthands: ts.ShorthandPropertyAssignment[] = [];
+    const elementAccessObjects: ts.Expression[] = [];
+    const collect = (node: ts.Node): void => {
+      if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) {
+        names.push(node);
+      } else if (ts.isShorthandPropertyAssignment(node)) {
+        shorthands.push(node);
+      } else if (ts.isElementAccessExpression(node)) {
+        elementAccessObjects.push(node.expression);
+      }
+      node.forEachChild(collect);
+    };
+    collect(sourceFile);
+
+    const nameSymbols = await checker.getSymbolAtLocation(names);
+    const shorthandSymbols = await Promise.all(
+      shorthands.map((node) => checker.getShorthandAssignmentValueSymbol(node)),
+    );
+    const objectTypes = await checker.getTypeAtLocation(elementAccessObjects);
+    const outOfBandProperties = await Promise.all(
+      objectTypes.map((type) =>
+        type === undefined
+          ? undefined
+          : checker.getPropertyOfType(type, "outOfBand"),
+      ),
+    );
+
+    const resolveHandle = async (
+      handle: NodeHandle,
+    ): Promise<ts.Node | undefined> => handle.resolve(project);
+    const resolved = new Map<CheckerSymbol, ResolvedSymbol>();
+    for (const symbol of [
+      ...nameSymbols,
+      ...shorthandSymbols,
+      ...outOfBandProperties,
+    ]) {
+      if (symbol === undefined || resolved.has(symbol)) continue;
+      const declarations = await Promise.all(
+        symbol.declarations.map(resolveHandle),
+      );
+      resolved.set(symbol, {
+        declarations: declarations.filter(
+          (node): node is ts.Node => node !== undefined,
+        ),
+        valueDeclaration:
+          symbol.valueDeclaration === undefined
+            ? undefined
+            : await resolveHandle(symbol.valueDeclaration),
+      });
+    }
+    const table = <K extends ts.Node>(
+      keys: readonly K[],
+      symbols: readonly (CheckerSymbol | undefined)[],
+    ): Map<ts.Node, ResolvedSymbol | undefined> =>
+      new Map(
+        keys.map((key, i) => {
+          const symbol = symbols[i];
+          return [key, symbol === undefined ? undefined : resolved.get(symbol)];
+        }),
+      );
+    const lookup =
+      (answers: Map<ts.Node, ResolvedSymbol | undefined>, question: string) =>
+      (node: ts.Node): ResolvedSymbol | undefined => {
+        if (!answers.has(node)) {
+          throw new Error(
+            `${question} was not resolved for a ${ts.SyntaxKind[node.kind]} node`,
+          );
+        }
+        return answers.get(node);
+      };
+    return {
+      sourceFile,
+      checker: {
+        getSymbolAtLocation: lookup(
+          table(names, nameSymbols),
+          "getSymbolAtLocation",
+        ),
+        getShorthandAssignmentValueSymbol: lookup(
+          table(shorthands, shorthandSymbols),
+          "getShorthandAssignmentValueSymbol",
+        ),
+        getOutOfBandPropertyOfType: lookup(
+          table(elementAccessObjects, outOfBandProperties),
+          "getOutOfBandPropertyOfType",
+        ),
+      },
+    };
+  } finally {
+    await api.updateSnapshot({ closeProjects: [configPath] });
+    await snapshot.dispose();
+    removeFile(sourcePath);
+    removeFile(configPath);
+  }
 }
 
 /**
@@ -999,11 +1180,9 @@ function isExportedTopLevelConstStatement(
   if (!ts.isVariableStatement(node)) return false;
   if (!ts.isSourceFile(node.parent)) return false;
   if ((node.declarationList.flags & ts.NodeFlags.Const) === 0) return false;
-  return ts.canHaveModifiers(node)
-    ? (ts
-        .getModifiers(node)
-        ?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false)
-    : false;
+  return (
+    node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false
+  );
 }
 
 /**
@@ -1014,7 +1193,7 @@ function isExportedTopLevelConstStatement(
  * is exactly the module's top level, so a decoy `function decoy { const
  * MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS'); }` elsewhere in the file
  * is a completely different statement list this scan never descends into, and
- * cannot "rescue" a reverted top-level export (a recursive `ts.forEachChild`
+ * cannot "rescue" a reverted top-level export (a recursive `forEachChild`
  * walk matches a decoy at ANY depth, including inside a nested function,
  * because it never checks which declaration list a match came from).
  */
@@ -1051,7 +1230,7 @@ function findTopLevelExportedDeclaration(
 function isExitCodeHelperCall(
   init: ts.Expression,
   stateName: string,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperName: string,
   helperModuleSpecifier: string,
 ): boolean {
@@ -1109,7 +1288,7 @@ export interface ConstantProvenanceMismatch {
   readonly reason: string;
 }
 
-export function findConstantProvenanceMismatches(
+export async function findConstantProvenanceMismatches(
   sourceText: string,
   bindings: ReadonlyArray<{
     readonly constantName: string;
@@ -1122,8 +1301,11 @@ export function findConstantProvenanceMismatches(
   // '../status/terminal-states.ts' explicitly instead.
   helperName = "driverOnlyExitCode",
   helperModuleSpecifier = "./lib/status/terminal-states.ts",
-): ConstantProvenanceMismatch[] {
-  const { checker, sourceFile } = createSingleFileProgram(fileName, sourceText);
+): Promise<ConstantProvenanceMismatch[]> {
+  const { checker, sourceFile } = await createSingleFileProgram(
+    fileName,
+    sourceText,
+  );
 
   const mismatches: ConstantProvenanceMismatch[] = [];
   for (const { constantName, stateName } of bindings) {
@@ -1392,8 +1574,8 @@ function isTopLevelDeclaration(declaration: ts.VariableDeclaration): boolean {
  */
 function resolveIdentifierLiteral(
   identifier: ts.Identifier,
-  checker: ts.TypeChecker,
-  seen: Set<ts.Symbol> = new Set(),
+  checker: FileChecker,
+  seen: Set<ResolvedSymbol> = new Set(),
 ): ts.NumericLiteral | undefined {
   const symbol = checker.getSymbolAtLocation(identifier);
   if (symbol === undefined || seen.has(symbol)) {
@@ -1613,7 +1795,7 @@ function matchesReporterSignature(
  */
 function resolvesToLocalReporter(
   expr: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   sourceFile: ts.SourceFile,
 ): boolean {
   if (!ts.isIdentifier(expr)) {
@@ -1657,7 +1839,7 @@ function resolvesToLocalReporter(
  */
 function resolveLiteral(
   expr: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
 ): ts.NumericLiteral | undefined {
   return (
     unwrapLiteral(expr) ??
@@ -1688,7 +1870,7 @@ function isCodePropertyAccess(expr: ts.Expression): boolean {
   }
   return (
     ts.isElementAccessExpression(expr) &&
-    ts.isStringLiteralLike(expr.argumentExpression) &&
+    ts.isStringLiteralLikeNode(expr.argumentExpression) &&
     expr.argumentExpression.text === "code"
   );
 }
@@ -1709,11 +1891,13 @@ function bindingElementPropertyName(
 ): string | undefined {
   if (element.propertyName !== undefined) {
     return ts.isIdentifier(element.propertyName) ||
-      ts.isStringLiteralLike(element.propertyName)
+      ts.isStringLiteralLikeNode(element.propertyName)
       ? element.propertyName.text
       : undefined;
   }
-  return ts.isIdentifier(element.name) ? element.name.text : undefined;
+  return element.name !== undefined && ts.isIdentifier(element.name)
+    ? element.name.text
+    : undefined;
 }
 
 /**
@@ -1746,7 +1930,7 @@ function bindingElementPropertyName(
  */
 function resolvesToCodePropertyAccess(
   expr: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
 ): boolean {
   if (isCodePropertyAccess(expr)) {
     return true;
@@ -1797,12 +1981,15 @@ function resolvesToCodePropertyAccess(
  * since neither reduces to the literal itself; the same holds for a
  * comparison or call argument built the same way.
  */
-export function findBareLiteralExits(
+export async function findBareLiteralExits(
   sourceText: string,
   fileName = "drive.ts",
   exitCodes: ReadonlySet<number> = BARE_LITERAL_EXIT_CODES,
-): BareLiteralExit[] {
-  const { checker, sourceFile } = createSingleFileProgram(fileName, sourceText);
+): Promise<BareLiteralExit[]> {
+  const { checker, sourceFile } = await createSingleFileProgram(
+    fileName,
+    sourceText,
+  );
   const found: BareLiteralExit[] = [];
   const record = (
     expr: ts.Expression,
@@ -1854,7 +2041,7 @@ export function findBareLiteralExits(
         }
       }
     }
-    ts.forEachChild(node, visit);
+    node.forEachChild(visit);
   };
   visit(sourceFile);
   return found;
@@ -1898,7 +2085,7 @@ export interface OutOfBandNamePairingMismatch {
  */
 function resolveOutOfBandComparisonStateName(
   expr: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   leaseModuleSpecifier: string,
 ): string | undefined {
   if (!ts.isIdentifier(expr)) {
@@ -1914,7 +2101,7 @@ function resolveOutOfBandComparisonStateName(
   const importDeclaration = importSpecifier.parent.parent.parent;
   if (
     !ts.isImportDeclaration(importDeclaration) ||
-    !ts.isStringLiteralLike(importDeclaration.moduleSpecifier) ||
+    !ts.isStringLiteralLikeNode(importDeclaration.moduleSpecifier) ||
     importDeclaration.moduleSpecifier.text !== leaseModuleSpecifier
   ) {
     return undefined;
@@ -1939,7 +2126,7 @@ function resolveOutOfBandComparisonStateName(
  */
 function resolveOutOfBandComparisonTest(
   test: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   leaseModuleSpecifier: string,
 ): { readonly identifierText: string; readonly stateName: string } | undefined {
   if (
@@ -1986,7 +2173,7 @@ function resolveOutOfBandComparisonTest(
  */
 function findEnclosingOutOfBandDispatch(
   node: ts.Node,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   leaseModuleSpecifier: string,
 ):
   | {
@@ -2066,9 +2253,9 @@ function unwrapTransparentExpression(expr: ts.Expression): ts.Expression {
  */
 function resolveIdentifierStringLiteral(
   identifier: ts.Identifier,
-  checker: ts.TypeChecker,
-  seen: Set<ts.Symbol> = new Set(),
-): ts.StringLiteralLike | undefined {
+  checker: FileChecker,
+  seen: Set<ResolvedSymbol> = new Set(),
+): ts.StringLiteralLikeNode | undefined {
   const symbol = checker.getSymbolAtLocation(identifier);
   if (symbol === undefined || seen.has(symbol)) {
     return undefined;
@@ -2085,7 +2272,7 @@ function resolveIdentifierStringLiteral(
     return undefined;
   }
   const initializer = unwrapTransparentExpression(declaration.initializer);
-  if (ts.isStringLiteralLike(initializer)) {
+  if (ts.isStringLiteralLikeNode(initializer)) {
     return initializer;
   }
   return ts.isIdentifier(initializer)
@@ -2107,14 +2294,14 @@ function resolveIdentifierStringLiteral(
  */
 function outOfBandMemberExpressionObject(
   expr: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
 ): ts.Expression | undefined {
   if (ts.isPropertyAccessExpression(expr) && expr.name.text === "outOfBand") {
     return expr.expression;
   }
   if (ts.isElementAccessExpression(expr)) {
     const key = unwrapTransparentExpression(expr.argumentExpression);
-    const resolvedKey = ts.isStringLiteralLike(key)
+    const resolvedKey = ts.isStringLiteralLikeNode(key)
       ? key
       : ts.isIdentifier(key)
         ? resolveIdentifierStringLiteral(key, checker)
@@ -2130,10 +2317,9 @@ function outOfBandMemberExpressionObject(
  * The closed set of assignment-operator token kinds TypeScript's own grammar
  * defines (`ts.AssignmentOperator`) — plain `=` plus every compound
  * arithmetic/bitwise/logical-or-coalescing assignment (`+=`, `&=`, `??=`,
- * …). `typescript6` re-exports the TYPE alias but not a runtime
- * `isAssignmentOperator` helper, so this enumerates the same closed grammar
- * directly rather than guessing from token-name suffixes (`===`/`!==`/`<=`/
- * `>=` all end in `EqualsToken` too and are comparisons, not assignments).
+ * …) — read from the compiler's own `isAssignmentOperator` rather than
+ * guessed from token-name suffixes (`===`/`!==`/`<=`/`>=` all end in
+ * `EqualsToken` too and are comparisons, not assignments).
  * Used by `findAssignedValues` below in place of a bare `=== EqualsToken`
  * check, so a reassignment written with a compound operator (`alias ??=
  * outOfBand`) is not silently invisible to the census. A compound
@@ -2143,27 +2329,7 @@ function outOfBandMemberExpressionObject(
  * direction this file already always takes.
  */
 function isAssignmentOperatorToken(kind: ts.SyntaxKind): boolean {
-  switch (kind) {
-    case ts.SyntaxKind.EqualsToken:
-    case ts.SyntaxKind.PlusEqualsToken:
-    case ts.SyntaxKind.MinusEqualsToken:
-    case ts.SyntaxKind.AsteriskEqualsToken:
-    case ts.SyntaxKind.AsteriskAsteriskEqualsToken:
-    case ts.SyntaxKind.SlashEqualsToken:
-    case ts.SyntaxKind.PercentEqualsToken:
-    case ts.SyntaxKind.LessThanLessThanEqualsToken:
-    case ts.SyntaxKind.GreaterThanGreaterThanEqualsToken:
-    case ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken:
-    case ts.SyntaxKind.AmpersandEqualsToken:
-    case ts.SyntaxKind.BarEqualsToken:
-    case ts.SyntaxKind.CaretEqualsToken:
-    case ts.SyntaxKind.BarBarEqualsToken:
-    case ts.SyntaxKind.AmpersandAmpersandEqualsToken:
-    case ts.SyntaxKind.QuestionQuestionEqualsToken:
-      return true;
-    default:
-      return false;
-  }
+  return ts.isAssignmentOperator(kind);
 }
 
 /**
@@ -2199,8 +2365,8 @@ function isAssignmentOperatorToken(kind: ts.SyntaxKind): boolean {
  */
 function assignmentPatternBindsSymbol(
   pattern: ts.Expression,
-  symbol: ts.Symbol,
-  checker: ts.TypeChecker,
+  symbol: ResolvedSymbol,
+  checker: FileChecker,
 ): boolean {
   if (ts.isIdentifier(pattern)) {
     return checker.getSymbolAtLocation(pattern) === symbol;
@@ -2362,9 +2528,9 @@ function collectPatternDefaults(
  * always takes.
  */
 function findAssignedValues(
-  symbol: ts.Symbol,
+  symbol: ResolvedSymbol,
   sourceFile: ts.SourceFile,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
 ): readonly ts.Expression[] {
   const values: ts.Expression[] = [];
   const visit = (node: ts.Node): void => {
@@ -2386,7 +2552,7 @@ function findAssignedValues(
         values.push(node.right, ...collectPatternDefaults(node.left));
       }
     }
-    ts.forEachChild(node, visit);
+    node.forEachChild(visit);
   };
   visit(sourceFile);
   return values;
@@ -2504,6 +2670,39 @@ function composingExpressionLeaves(
 }
 
 /**
+ * The declaration kinds that carry a plain expression initializer —
+ * `VariableDeclaration | ParameterDeclaration | BindingElement |
+ * PropertyDeclaration | PropertyAssignment | EnumMember`, the closed union
+ * the TypeScript compiler itself names `HasExpressionInitializer` — never a
+ * hand-grown list of whichever kinds a counterexample has named so far. The
+ * compiler's AST module exports no predicate for it, so this states the same
+ * six kinds directly.
+ */
+type ExpressionInitializerDeclaration =
+  | ts.VariableDeclaration
+  | ts.ParameterDeclaration
+  | ts.BindingElement
+  | ts.PropertyDeclaration
+  | ts.PropertyAssignment
+  | ts.EnumMember;
+
+function hasOnlyExpressionInitializer(
+  node: ts.Node,
+): node is ExpressionInitializerDeclaration {
+  switch (node.kind) {
+    case ts.SyntaxKind.VariableDeclaration:
+    case ts.SyntaxKind.Parameter:
+    case ts.SyntaxKind.BindingElement:
+    case ts.SyntaxKind.PropertyDeclaration:
+    case ts.SyntaxKind.PropertyAssignment:
+    case ts.SyntaxKind.EnumMember:
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
  * The body a `declaration` denotes AS A FUNCTION VALUE — a `FunctionDeclaration`'s
  * own body, or a `VariableDeclaration`'s initializer's body when that
  * initializer is an arrow function or function expression — or `undefined`
@@ -2512,48 +2711,21 @@ function composingExpressionLeaves(
  * identifier resolution, rather than only when that identifier happens to
  * sit in a `CallExpression`'s own callee position (see that function's own
  * header for the gap this closes).
+ *
+ * "Function-like" is the compiler's own `ts.isFunctionLikeDeclaration` — its
+ * `FunctionLikeDeclaration` union (`FunctionDeclaration | MethodDeclaration |
+ * GetAccessorDeclaration | SetAccessorDeclaration | ConstructorDeclaration |
+ * FunctionExpression | ArrowFunction`), a CLOSED, TypeScript-language-defined
+ * enumeration, not an open-ended list of whichever declaration kinds happen
+ * to have been found so far.
  */
-/**
- * `typescript6`'s runtime module carries an `isFunctionLikeDeclaration`
- * export (verified: `typeof (require('typescript6')).isFunctionLikeDeclaration
- * === 'function'`), but its own `.d.ts` does not declare it at all — a
- * genuine TS2551 at scoped type-check, not a typo, since `typescript6`
- * re-exports the real `typescript@6.0.3` package, whose public API type
- * declarations list every individual `is<Kind>Declaration` predicate this
- * function calls below but no combined one. Mirrors that package's OWN
- * `FunctionLikeDeclaration` union type verbatim (`FunctionDeclaration |
- * MethodDeclaration | GetAccessorDeclaration | SetAccessorDeclaration |
- * ConstructorDeclaration | FunctionExpression | ArrowFunction`) — a CLOSED,
- * TypeScript-language-defined enumeration, not an open-ended list of
- * whichever declaration kinds happen to have been found so far; this
- * predicate cannot grow a further case the way a hand-grown list in
- * `functionBodyOfDeclaration` would; only a difference between typescript6's
- * runtime and its type declarations could result in one gap here, not an
- * unenumerated shape.
- */
-function isFunctionLikeDeclarationNode(
-  node: ts.Node,
-): node is ts.FunctionLikeDeclaration {
-  return (
-    ts.isFunctionDeclaration(node) ||
-    ts.isMethodDeclaration(node) ||
-    ts.isGetAccessorDeclaration(node) ||
-    ts.isSetAccessorDeclaration(node) ||
-    ts.isConstructorDeclaration(node) ||
-    ts.isFunctionExpression(node) ||
-    ts.isArrowFunction(node)
-  );
-}
-
-function functionBodyOfDeclaration(
-  declaration: ts.Declaration,
-): ts.Node | undefined {
-  if (isFunctionLikeDeclarationNode(declaration)) {
+function functionBodyOfDeclaration(declaration: ts.Node): ts.Node | undefined {
+  if (ts.isFunctionLikeDeclaration(declaration)) {
     return declaration.body;
   }
-  return ts.hasOnlyExpressionInitializer(declaration) &&
+  return hasOnlyExpressionInitializer(declaration) &&
     declaration.initializer !== undefined &&
-    isFunctionLikeDeclarationNode(declaration.initializer)
+    ts.isFunctionLikeDeclaration(declaration.initializer)
     ? declaration.initializer.body
     : undefined;
 }
@@ -2561,7 +2733,7 @@ function functionBodyOfDeclaration(
 /**
  * The node whose evaluation produces the value obtained by MERELY ACCESSING
  * `declaration` — reading it, no further call syntax required. Two closed
- * cases: every declaration kind `ts.hasOnlyExpressionInitializer` covers (an
+ * cases: every declaration kind `hasOnlyExpressionInitializer` covers (an
  * access reads a value the initializer already computed) and a
  * `GetAccessorDeclaration` (an access RUNS the getter's own body and takes
  * its return value — indistinguishable, to a caller, from reading a plain
@@ -2589,13 +2761,11 @@ function functionBodyOfDeclaration(
  * excluded — which makes the pairing here a closed, language-defined set
  * rather than a special case.
  */
-function valueProducedByMereAccess(
-  declaration: ts.Declaration,
-): ts.Node | undefined {
+function valueProducedByMereAccess(declaration: ts.Node): ts.Node | undefined {
   if (ts.isGetAccessorDeclaration(declaration)) {
     return declaration.body;
   }
-  return ts.hasOnlyExpressionInitializer(declaration) &&
+  return hasOnlyExpressionInitializer(declaration) &&
     declaration.initializer !== undefined
     ? declaration.initializer
     : undefined;
@@ -2617,7 +2787,7 @@ function valueProducedByMereAccess(
  * after another is a loop that never ends — enumerating CONTAINER shapes
  * (object literal, array literal, ternary, logical, the next shape, …) is
  * unbounded. This function does not enumerate containers: it walks every child
- * `ts.forEachChild` reaches, regardless of node kind, and only has to know what
+ * `forEachChild` reaches, regardless of node kind, and only has to know what
  * a REFERENCE to the real helper itself looks like — three closed shapes,
  * checked at every node the walk visits. A future composing form (a spread, a
  * tagged template, a computed property with a constant-foldable key, an arrow
@@ -2644,7 +2814,7 @@ function valueProducedByMereAccess(
  * file. Without that, `function getHelper() { return outOfBand; } let alias;
  * alias = getHelper(); alias(...)` vanishes entirely: `getHelper()` is a
  * candidate `findAssignedValues` collects, but the call expression's own
- * children (`ts.forEachChild`) are only its callee identifier and argument
+ * children (`forEachChild`) are only its callee identifier and argument
  * list — the `FunctionDeclaration` body lives elsewhere in the source tree
  * and is never syntactically reachable from the call site, so the walk finds
  * nothing and a real wrong-name call contributes to NEITHER `candidateCount`
@@ -2690,7 +2860,7 @@ function valueProducedByMereAccess(
  *
  * The declaration-initializer half of identifier resolution
  * (`reaching` below) recognizes every TypeScript declaration shape that can
- * carry an expression initializer — `ts.hasOnlyExpressionInitializer`, the
+ * carry an expression initializer — `hasOnlyExpressionInitializer`, the
  * language's own closed `VariableDeclaration | ParameterDeclaration |
  * BindingElement | PropertyDeclaration | PropertyAssignment | EnumMember`
  * union — not `VariableDeclaration` alone. `class Holder { outOfBand =
@@ -2720,9 +2890,9 @@ function valueProducedByMereAccess(
  */
 function containsRealHelperReference(
   node: ts.Node,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperModuleSpecifier: string,
-  seen: Set<ts.Symbol> = new Set(),
+  seen: Set<ResolvedSymbol> = new Set(),
 ): boolean {
   if (ts.isIdentifier(node)) {
     const symbol = checker.getSymbolAtLocation(node);
@@ -2766,7 +2936,7 @@ function containsRealHelperReference(
     }
     const reaching: readonly ts.Expression[] = [
       ...(declaration !== undefined &&
-      ts.hasOnlyExpressionInitializer(declaration) &&
+      hasOnlyExpressionInitializer(declaration) &&
       declaration.initializer !== undefined
         ? [declaration.initializer]
         : []),
@@ -2797,7 +2967,7 @@ function containsRealHelperReference(
     }
   }
   return (
-    ts.forEachChild(node, (child) =>
+    node.forEachChild((child) =>
       containsRealHelperReference(child, checker, helperModuleSpecifier, seen)
         ? true
         : undefined,
@@ -2819,15 +2989,15 @@ function containsRealHelperReference(
  * rule out" — `let ns = decoyModule; ns = terminalStates;
  * ns[computeKey()](...)` reassigns the real namespace onto a `let` binding
  * with no CONST chain for `resolveIdentifierImportBinding` to ever follow.
- * The declaration checked below is `ts.hasOnlyExpressionInitializer`, not
+ * The declaration checked below is `hasOnlyExpressionInitializer`, not
  * `VariableDeclaration` alone — see `containsRealHelperReference`'s own
  * declaration-initializer note for the class of gap this closes.
  */
 function couldReachRealHelperNamespace(
   identifier: ts.Identifier,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperModuleSpecifier: string,
-  seen: Set<ts.Symbol> = new Set(),
+  seen: Set<ResolvedSymbol> = new Set(),
 ): boolean {
   const symbol = checker.getSymbolAtLocation(identifier);
   if (symbol === undefined || seen.has(symbol)) {
@@ -2844,10 +3014,7 @@ function couldReachRealHelperNamespace(
     return true;
   }
   const declaration = symbol.valueDeclaration;
-  if (
-    declaration === undefined ||
-    !ts.hasOnlyExpressionInitializer(declaration)
-  ) {
+  if (declaration === undefined || !hasOnlyExpressionInitializer(declaration)) {
     return false;
   }
   const candidates: readonly ts.Expression[] = [
@@ -2916,14 +3083,14 @@ function couldReachRealHelperNamespace(
  */
 function isAmbiguousOutOfBandElementAccess(
   expr: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperModuleSpecifier: string,
 ): boolean {
   if (!ts.isElementAccessExpression(expr)) {
     return false;
   }
   const key = unwrapTransparentExpression(expr.argumentExpression);
-  if (ts.isStringLiteralLike(key)) {
+  if (ts.isStringLiteralLikeNode(key)) {
     return false;
   }
   if (
@@ -3110,7 +3277,7 @@ function isAmbiguousOutOfBandElementAccess(
  * `candidateCount` nor `anchoredCount` moves (the walk reaches the `Holder`
  * identifier and stops at its `ClassDeclaration` without inspecting the
  * `PropertyDeclaration` initializer). First, the tail identifier chase below
- * recognizes every declaration shape `ts.hasOnlyExpressionInitializer` covers
+ * recognizes every declaration shape `hasOnlyExpressionInitializer` covers
  * (`VariableDeclaration | ParameterDeclaration | BindingElement |
  * PropertyDeclaration | PropertyAssignment | EnumMember`), not
  * `VariableDeclaration` alone — see `containsRealHelperReference`'s own
@@ -3181,13 +3348,13 @@ function isAmbiguousOutOfBandElementAccess(
  */
 function outOfBandMemberPropertySymbol(
   expr: ts.Expression,
-  checker: ts.TypeChecker,
-): ts.Symbol | undefined {
+  checker: FileChecker,
+): ResolvedSymbol | undefined {
   if (ts.isPropertyAccessExpression(expr)) {
     return checker.getSymbolAtLocation(expr.name);
   }
   if (ts.isElementAccessExpression(expr)) {
-    return checker.getTypeAtLocation(expr.expression).getProperty("outOfBand");
+    return checker.getOutOfBandPropertyOfType(expr.expression);
   }
   return undefined;
 }
@@ -3219,10 +3386,10 @@ function outOfBandMemberPropertySymbol(
  * returns the helper.
  */
 function couldDirectInvocationReachHelper(
-  symbol: ts.Symbol,
-  checker: ts.TypeChecker,
+  symbol: ResolvedSymbol,
+  checker: FileChecker,
   helperModuleSpecifier: string,
-  seen: Set<ts.Symbol>,
+  seen: Set<ResolvedSymbol>,
 ): boolean {
   if (seen.has(symbol)) {
     return false;
@@ -3249,7 +3416,7 @@ function couldDirectInvocationReachHelper(
   const declaration = symbol.valueDeclaration;
   if (
     declaration === undefined ||
-    (!ts.hasOnlyExpressionInitializer(declaration) &&
+    (!hasOnlyExpressionInitializer(declaration) &&
       !ts.isGetAccessorDeclaration(declaration))
   ) {
     return false;
@@ -3280,9 +3447,9 @@ function couldDirectInvocationReachHelper(
 
 function isAmbiguousOutOfBandCallee(
   expr: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperModuleSpecifier: string,
-  seen: Set<ts.Symbol> = new Set(),
+  seen: Set<ResolvedSymbol> = new Set(),
 ): boolean {
   const leaves = composingExpressionLeaves(expr);
   if (leaves.length !== 1) {
@@ -3384,8 +3551,8 @@ function isAmbiguousOutOfBandCallee(
  */
 function resolveIdentifierImportBinding(
   identifier: ts.Identifier,
-  checker: ts.TypeChecker,
-  seen: Set<ts.Symbol> = new Set(),
+  checker: FileChecker,
+  seen: Set<ResolvedSymbol> = new Set(),
 ): ts.ImportSpecifier | ts.NamespaceImport | undefined {
   const symbol = checker.getSymbolAtLocation(identifier);
   if (symbol === undefined || seen.has(symbol)) {
@@ -3426,7 +3593,7 @@ function resolveIdentifierImportBinding(
  */
 function resolvesToRealHelperNamespace(
   objectExpr: ts.Expression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperModuleSpecifier: string,
 ): boolean {
   const unwrapped = unwrapTransparentExpression(objectExpr);
@@ -3462,9 +3629,9 @@ function resolvesToRealHelperNamespace(
  */
 function resolveIdentifierMemberRebind(
   identifier: ts.Identifier,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperModuleSpecifier: string,
-  seen: Set<ts.Symbol> = new Set(),
+  seen: Set<ResolvedSymbol> = new Set(),
 ): boolean {
   const symbol = checker.getSymbolAtLocation(identifier);
   if (symbol === undefined || seen.has(symbol)) {
@@ -3531,7 +3698,7 @@ function isRealOutOfBandImportSpecifier(
   const importDeclaration = specifier.parent.parent.parent;
   return (
     ts.isImportDeclaration(importDeclaration) &&
-    ts.isStringLiteralLike(importDeclaration.moduleSpecifier) &&
+    ts.isStringLiteralLikeNode(importDeclaration.moduleSpecifier) &&
     importDeclaration.moduleSpecifier.text === helperModuleSpecifier
   );
 }
@@ -3546,7 +3713,7 @@ function isRealHelperNamespaceImport(
   const importDeclaration = namespaceImport.parent.parent;
   return (
     ts.isImportDeclaration(importDeclaration) &&
-    ts.isStringLiteralLike(importDeclaration.moduleSpecifier) &&
+    ts.isStringLiteralLikeNode(importDeclaration.moduleSpecifier) &&
     importDeclaration.moduleSpecifier.text === helperModuleSpecifier
   );
 }
@@ -3602,7 +3769,7 @@ function isRealHelperNamespaceImport(
  */
 function resolveOutOfBandImportProvenance(
   call: ts.CallExpression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperModuleSpecifier: string,
 ): boolean {
   const callee = unwrapTransparentExpression(call.expression);
@@ -3651,16 +3818,16 @@ function resolveOutOfBandImportProvenance(
  */
 function resolveOutOfBandCallStateName(
   call: ts.CallExpression,
-  checker: ts.TypeChecker,
+  checker: FileChecker,
   helperModuleSpecifier: string,
 ):
-  | { readonly nameArg: ts.StringLiteralLike; readonly stateName: string }
+  | { readonly nameArg: ts.StringLiteralLikeNode; readonly stateName: string }
   | undefined {
   if (call.arguments.length < 2) {
     return undefined;
   }
   const nameArg = call.arguments[1];
-  if (nameArg === undefined || !ts.isStringLiteralLike(nameArg)) {
+  if (nameArg === undefined || !ts.isStringLiteralLikeNode(nameArg)) {
     return undefined;
   }
   if (!resolveOutOfBandImportProvenance(call, checker, helperModuleSpecifier)) {
@@ -3721,13 +3888,16 @@ export interface OutOfBandNamePairingScan {
  * `then` branch). For every anchored call, verify its `'NAME'` argument names
  * the SAME state `IDENT` does.
  */
-export function scanOutOfBandNamePairings(
+export async function scanOutOfBandNamePairings(
   sourceText: string,
   fileName = "drive-status.ts",
   helperModuleSpecifier = "./lib/status/terminal-states.ts",
   leaseModuleSpecifier = "./lib/state/lease.ts",
-): OutOfBandNamePairingScan {
-  const { checker, sourceFile } = createSingleFileProgram(fileName, sourceText);
+): Promise<OutOfBandNamePairingScan> {
+  const { checker, sourceFile } = await createSingleFileProgram(
+    fileName,
+    sourceText,
+  );
   const mismatches: OutOfBandNamePairingMismatch[] = [];
   let candidateCount = 0;
   let anchoredCount = 0;
@@ -3780,7 +3950,7 @@ export function scanOutOfBandNamePairings(
         candidateCount += 1;
       }
     }
-    ts.forEachChild(node, visit);
+    node.forEachChild(visit);
   };
   visit(sourceFile);
   return { candidateCount, anchoredCount, mismatches };
@@ -3793,18 +3963,19 @@ export function scanOutOfBandNamePairings(
  * directly instead, since it also needs `anchoredCount` for the population
  * floor.
  */
-export function findOutOfBandNamePairingMismatches(
+export async function findOutOfBandNamePairingMismatches(
   sourceText: string,
   fileName = "drive-status.ts",
   helperModuleSpecifier = "./lib/status/terminal-states.ts",
   leaseModuleSpecifier = "./lib/state/lease.ts",
-): readonly OutOfBandNamePairingMismatch[] {
-  return scanOutOfBandNamePairings(
+): Promise<readonly OutOfBandNamePairingMismatch[]> {
+  const scan = await scanOutOfBandNamePairings(
     sourceText,
     fileName,
     helperModuleSpecifier,
     leaseModuleSpecifier,
-  ).mismatches;
+  );
+  return scan.mismatches;
 }
 
 /** Test seams for `runCheck()`'s drive.ts-emitter check — never set in prod.
@@ -3853,7 +4024,7 @@ export function driveStatusTsSourcePath(): string {
   );
 }
 
-export function runCheck(): number {
+export async function runCheck(): Promise<number> {
   const broken: BrokenPair[] = [];
   const silent: string[] = [];
   const missingRequired: MissingRequired[] = [];
@@ -4040,7 +4211,7 @@ export function runCheck(): number {
   }
   const driveTsSource = readFileSync(sourcePath, "utf8");
 
-  const provenanceMismatches = findConstantProvenanceMismatches(
+  const provenanceMismatches = await findConstantProvenanceMismatches(
     driveTsSource,
     DRIVER_ONLY_EXIT_NAMES,
     sourcePath,
@@ -4068,7 +4239,7 @@ export function runCheck(): number {
     return 1;
   }
 
-  const bareLiterals = findBareLiteralExits(driveTsSource, sourcePath);
+  const bareLiterals = await findBareLiteralExits(driveTsSource, sourcePath);
   if (bareLiterals.length > 0) {
     console.error(
       `${relative(SKILL_ROOT, sourcePath)} uses a bare exit-code literal instead of`,
@@ -4132,7 +4303,7 @@ export function runCheck(): number {
   }
   const leaseSource = readFileSync(leaseSourcePath, "utf8");
 
-  const leaseProvenanceMismatches = findConstantProvenanceMismatches(
+  const leaseProvenanceMismatches = await findConstantProvenanceMismatches(
     leaseSource,
     OUT_OF_BAND_EXIT_NAMES,
     leaseSourcePath,
@@ -4174,7 +4345,7 @@ export function runCheck(): number {
     return 1;
   }
   const driveStatusSource = readFileSync(driveStatusSourcePath, "utf8");
-  const driveStatusBareLiterals = findBareLiteralExits(
+  const driveStatusBareLiterals = await findBareLiteralExits(
     driveStatusSource,
     driveStatusSourcePath,
     OUT_OF_BAND_BARE_LITERAL_EXIT_CODES,
@@ -4201,7 +4372,7 @@ export function runCheck(): number {
   // residual an earlier change flagged rather than fixed: a call site can still name
   // the WRONG sibling state for the comparison branch it is actually inside.
   // See scanOutOfBandNamePairings's own header. ────────────────────────────
-  const outOfBandScan = scanOutOfBandNamePairings(
+  const outOfBandScan = await scanOutOfBandNamePairings(
     driveStatusSource,
     driveStatusSourcePath,
   );
@@ -4273,4 +4444,12 @@ export function runCheck(): number {
   return 0;
 }
 
-if (import.meta.main) process.exit(runCheck());
+if (import.meta.main) {
+  let code: number;
+  try {
+    code = await runCheck();
+  } finally {
+    await closeTypeScriptService();
+  }
+  process.exit(code);
+}

@@ -169,7 +169,7 @@ export async function main(
   try {
     mkdirSync(root, { recursive: true });
     accessSync(root, constants.W_OK);
-    if (!lstatSync(root).isDirectory()) throw new Error();
+    if (!lstatSync(root).isDirectory()) throw new Error("not a directory");
   } catch {
     throw new Error(`LOCK_ROOT is not a writable directory: ${root}`);
   }

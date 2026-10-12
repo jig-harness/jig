@@ -104,7 +104,7 @@ import {
   claimLive,
   parseClaimText,
 } from "./lib/claim.ts";
-import { fail, isDigits, isEntryPoint, runMain, sleep } from "./lib/cli.ts";
+import { fail, isDigits, runMain, sleep } from "./lib/cli.ts";
 import {
   classifyDrive,
   type DoctorInput,
@@ -1366,11 +1366,11 @@ async function main(): Promise<number> {
   return 0;
 }
 
-// Gated behind `isEntryPoint`, not run at module scope unconditionally — the
+// Gated behind `import.meta.main`, not run at module scope unconditionally — the
 // established pattern several siblings in this skill already use
 // (`round-plan.ts`, `self-inflicted.ts`, `migrate-state-dir.ts`, …) so a pure
 // helper like `gatherWorktreeLeftovers` can be imported directly by a test
 // without ALSO running this file's own CLI against whatever `process.argv`
 // the importing process happens to carry (an earlier change M7 — this
 // module was the one CLI entrypoint in the skill missing the guard).
-if (isEntryPoint(import.meta.url)) runMain("drives.ts", main);
+if (import.meta.main) runMain("drives.ts", main);

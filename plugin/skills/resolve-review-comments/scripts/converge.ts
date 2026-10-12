@@ -70,7 +70,6 @@ import {
   fail,
   isDigits,
   isSafeDigits,
-  isEntryPoint,
   runMain,
   shellQuote,
 } from "./lib/cli.ts";
@@ -466,4 +465,4 @@ async function main(): Promise<number> {
   return await finish(6);
 }
 
-if (isEntryPoint(import.meta.url)) runMain("converge", main);
+if (import.meta.main) runMain("converge", main);

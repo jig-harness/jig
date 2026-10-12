@@ -145,7 +145,6 @@ import {
   envOrDefault,
   fail,
   isDigits,
-  isEntryPoint,
   isSafeDigits,
   runMain,
   sleep,
@@ -1008,4 +1007,4 @@ async function main(): Promise<number> {
   }
 }
 
-if (isEntryPoint(import.meta.url)) runMain("await-round", main);
+if (import.meta.main) runMain("await-round", main);

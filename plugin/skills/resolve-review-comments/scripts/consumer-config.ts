@@ -11,7 +11,7 @@
  * Exit codes: 0 configuration usable; 2 configuration missing or invalid.
  */
 
-import { fail, isEntryPoint, runMain } from "./lib/cli.ts";
+import { fail, runMain } from "./lib/cli.ts";
 import {
   consumerRoot,
   overlayPath,
@@ -93,4 +93,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("consumer-config", main);
+if (import.meta.main) runMain("consumer-config", main);

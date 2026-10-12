@@ -53,8 +53,6 @@
  * the switcher's OWN state at whatever moment something last asked it, not
  * necessarily the account that minted the token this process happens to hold —
  * see the wrapper comment above for why the two can diverge).
- *
- * Runs under Bun and Node >= 22.18: `node:` APIs only, erasable syntax only.
  */
 
 import { createHash } from "node:crypto";

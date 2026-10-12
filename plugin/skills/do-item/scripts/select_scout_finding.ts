@@ -21,13 +21,9 @@
  * conditional logic, "Step 2" has no callsite to attach a test to, and a
  * field-name mismatch such as `created_at` against `createdAt` is exactly the
  * bug only a test catches.
- *
- * Runs under Bun and under Node ≥ 22.18 (type stripping): only `node:` APIs,
- * erasable-syntax-only TypeScript — the same contract as the drive-pr and
- * resolve-review-comments script families.
  */
 
-import { isEntryPoint, parseArgs } from "./lib/cli.ts";
+import { parseArgs, runEntry } from "./lib/cli.ts";
 
 export interface ScoutFindingsComment {
   body: string;
@@ -282,8 +278,4 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (isEntryPoint(import.meta.url)) {
-  main().then((code) => {
-    process.exitCode = code;
-  });
-}
+if (import.meta.main) runEntry(main);

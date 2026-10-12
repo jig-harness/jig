@@ -56,8 +56,8 @@ Contents: [requirements](#requirements) ·
 - **Claude Code** 2.1.292 or later and/or a **Codex CLI** with plugin support (tested with 0.159). Either
   one is enough; install for each one you use.
 - **Bun** on `PATH`: the skills' scripts are TypeScript run by
-  [Bun](https://bun.sh). Any recent Bun works; Jig tests with the
-  version in [mise.toml](../mise.toml).
+  [Bun](https://bun.sh). Jig tests with the version in
+  [mise.toml](../mise.toml); an older Bun may lack an API a script uses.
 - **git** and the **GitHub CLI** (`gh`), signed in with access to the
   repositories you work on.
 - **macOS or Linux for `drive-pr`.** Its driver supervises agent processes
@@ -538,8 +538,8 @@ of the plugin:
   `resolve-review-comments/scripts/lib/consumer.ts`), fail with a clear message
   when a required value is missing, and accept older files. Never bake a
   repository's values into `SKILL.md`.
-- **Dependencies:** the plugin cache has no `node_modules`. Use Bun and Node
-  built-ins, or vendor a dependency's own single-file build beside the script
+- **Dependencies:** the plugin cache has no `node_modules`. Use Bun's
+  built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
   with its licence and a test that keeps it identical to the pinned package
   (as `resolve-review-comments/scripts/lib/vendor/js-yaml.mjs` is).
 - **Harness frontmatter:** fields only one tool reads (Claude Code's

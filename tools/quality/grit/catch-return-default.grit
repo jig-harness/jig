@@ -1,0 +1,20 @@
+// Flags a catch that never looks at its error (no binding, or a binding the
+// handler does not use) and returns a default value: the failure becomes an
+// ordinary answer and its cause is lost. Any use of the binding counts as
+// keeping the cause, so a handler that only mentions it (`void error`) is
+// not found.
+or {
+  `try { $body } catch { $handler }`,
+  `try { $body } catch ($error) { $handler }` where {
+    not $handler <: contains $error
+  }
+} as $try where {
+  $handler <: contains `return $value` where {
+    $value <: or { `null`, `undefined`, `false`, `true`, `[]`, `{}`, `""`, `0` }
+  },
+  register_diagnostic(
+    span = $try,
+    message = "jig/catch-return-default: the error is dropped and a default returned. Bind it and keep its cause, or let it propagate.",
+    severity = "warn"
+  )
+}

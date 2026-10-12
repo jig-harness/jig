@@ -3,16 +3,10 @@
  * argv validation helpers, and the few pure utilities that would otherwise be
  * copy-pasted per script. Process spawning lives in `proc.ts`; durable-state
  * concerns live under `state/`.
- *
- * Runs under Bun (the repo's tool runtime) and under Node ≥ 22.18 (type
- * stripping): only `node:` APIs, no `Bun.*` globals, erasable-syntax-only
- * TypeScript, explicit `.ts` import specifiers.
  */
 
-import { fstatSync, realpathSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { fstatSync, statSync } from "node:fs";
 import { setTimeout as sleepMs } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 
 /** Exit codes travel as exceptions so `main()` can return them in one place. */
 export class ExitError extends Error {
@@ -67,36 +61,6 @@ export function isDigits(s: string): boolean {
  */
 export function isGitSha(s: string): boolean {
   return /^[0-9a-f]{40}$/.test(s);
-}
-
-/**
- * Is this module the process entry point? Guards `runMain(...)` so a test can
- * import a script's pure helpers without spawning its CLI as a side effect of
- * the import.
- *
- * NOT `import.meta.main`: that is a Bun global Node did not gain until v24.2,
- * so on the Node versions this skill documents it reads `undefined`, `main`
- * never runs, and the script exits 0 having printed nothing — which a caller
- * reads as an answer, not a failure.
- *
- * Both sides are REALPATHS. Both runtimes resolve the entry module's
- * `import.meta.url` through symlinks (measured: bun 1.3, node 24 — direct and
- * symlinked invocation alike), while `process.argv[1]` stays as typed — so a
- * `resolve(argv[1])`-only comparison silently answers false for a script
- * invoked through the `.agents/skills/` symlink farm, or from any path with a
- * symlink component (`/var` → `/private/var` on stock macOS), and the CLI
- * never runs. That weaker form was inlined per-script here while
- * /resolve-review-comments already carried this one; a fix that reached one
- * skill's copy and not the sibling's is the defect.
- */
-export function isEntryPoint(moduleUrl: string): boolean {
-  const argv1 = process.argv[1];
-  if (argv1 === undefined) return false;
-  try {
-    return realpathSync(resolve(argv1)) === fileURLToPath(moduleUrl);
-  } catch {
-    return false;
-  }
 }
 
 /**

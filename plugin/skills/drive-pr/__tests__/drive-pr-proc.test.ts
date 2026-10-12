@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -35,120 +35,6 @@ import {
 } from "./drive-pr-harness.ts";
 
 useDrivePrSuite();
-
-// ── Every outbound `gh` call is bounded ─────────────────────────────────────
-//
-// `references/terminal-states.md` § 13 states this as a universal claim, and a
-// universal claim maintained by hand drifts the moment a new call site is added
-// — which is exactly what happened: the migration wrapped most of
-// `announce-merge-ready`'s calls and left `read_liveness`, the
-// stale-announcement DELETE and `withdraw_posted` on raw `gh`, while the doc
-// went on saying every call was wrapped. Review found the three sites; nothing
-// in the repo would have.
-//
-// So the claim is mechanized rather than restated. An unbounded call is mode 13
-// in that reference: `--timeout` bounds the poll loop and never any one call, so
-// a connection that is accepted and never completes parks an unattended driver
-// past every advertised deadline.
-//
-// In the TypeScript port the chokepoint is `lib/proc.ts`: `ghCall()` is the one
-// sanctioned way to spawn `gh`, and it carries the GH_CALL_TIMEOUT deadline on
-// every call. The sweep therefore asserts that no OTHER file under scripts/
-// spawns the binary directly — an argv literal starting with 'gh', under any
-// of the spawn spellings the runtimes offer. `summary-findings.ts` predates
-// the shared lib was allowlisted for its own `GH_TIMEOUT_MS` + kill timer; it
-// now routes through the chokepoint like everything else and the exemption is
-// gone, so the sweep enforces the whole directory. Anything reaching for `gh`
-// without the wrapper is the regression this sweep exists to catch.
-//
-// It sweeps resolve-review-comments' TypeScript scripts too, because the drive
-// loop SPAWNS them (SKILL.md §§ 2 and 6): an unbounded call there parks an
-// unattended driver exactly as one here would, and both shipped that way —
-// `resolve-thread.ts` and `list-unresolved-threads.ts` each spawned `gh` through
-// a bare `spawnSync` while this sweep, scoped to drive-pr's own directory,
-// stayed green. That skill carries its own
-// chokepoint rather than importing this one (drive-pr already depends on it;
-// importing back would make the two mutually dependent), so the sweep is
-// parameterised by root, each with its own sanctioned files.
-// SKILL.md § Runtime advertises `node <name>.ts` alongside `bun`. That claim was
-// false: `summary-findings.ts` reached for `Bun.argv`, `Bun.spawn` and
-// `Bun.spawnSync`, and drive-status.ts calls it on EVERY evaluation — so a
-// Node-started drive died on `Bun is not defined` before it could report
-// anything. `import.meta.main` was
-// the subtler half: a Bun global that Node did not gain until v24.2, so below
-// that it reads `undefined`, main() never runs, and the script exits 0 having
-// printed nothing — which every caller reads as "no findings" rather than as a
-// failure.
-//
-// Asserted against the runtime running these tests as well as against `node`,
-// so the claim is checked in both directions rather than assumed for one.
-describe("the documented `node` entry point actually runs", () => {
-  const nodeBin = process.execPath.includes("/bun") ? "node" : process.execPath;
-
-  // A pure, offline mode: it prints the trusted-association vocabulary and
-  // exits. Enough to prove the module loaded, argv parsed, and main() ran under
-  // a runtime with no Bun globals at all — without a network call.
-  const OFFLINE_ARGS = ["--trusted-associations"];
-
-  it("summary-findings.ts produces the same answer under node and bun", () => {
-    const script = join(SCRIPTS, "summary-findings.ts");
-    const underBun = execFileSync(process.execPath, [script, ...OFFLINE_ARGS], {
-      encoding: "utf8",
-    });
-    const underNode = execFileSync(nodeBin, [script, ...OFFLINE_ARGS], {
-      encoding: "utf8",
-      // The MODULE_TYPELESS_PACKAGE_JSON notice goes to stderr; only stdout is
-      // the answer.
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    expect(underNode).toBe(underBun);
-    expect(underNode.trim().length).toBeGreaterThan(0);
-  });
-
-  it("every entry script LOADS under node, not just the one that regressed", () => {
-    // The Bun-global sweep below is a proxy; this is the property itself. The
-    // two have come apart before: `verification-fit.ts` used no Bun global at
-    // all and was still Node-unloadable, first through an extensionless import
-    // and then through a `public readonly` parameter property in a module it
-    // imports — the one piece of TypeScript sugar Node's strip-only mode
-    // refuses. Neither would ever have shown up in a source-text sweep.
-    //
-    // `--help` is not a supported flag on most of these; the point is only
-    // whether the module GRAPH loads, so a usage error is a pass and a
-    // module-resolution or syntax error is not.
-    const entries = [...new Bun.Glob("*.ts").scanSync(SCRIPTS)].sort();
-    expect(entries.length).toBeGreaterThan(5);
-    const unloadable = entries.filter((rel) => {
-      const r = spawnSync(nodeBin, [join(SCRIPTS, rel), "--help"], {
-        encoding: "utf8",
-      });
-      return /ERR_MODULE_NOT_FOUND|ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX|ERR_UNKNOWN_FILE_EXTENSION|Bun is not defined/.test(
-        r.stderr ?? "",
-      );
-    });
-    expect(unloadable).toEqual([]);
-  });
-
-  it("no drive-pr script reaches for a Bun global", () => {
-    // The regression that produced the finding was one file's `Bun.*`, but the
-    // claim is about the whole entry surface, so the sweep is too. `import.meta
-    // .main` rides along: same class — a Bun-first API that degrades to silence
-    // rather than to an error on Node.
-    const offenders = [...new Bun.Glob("**/*.ts").scanSync(SCRIPTS)]
-      .sort()
-      .flatMap((rel) =>
-        readFileSync(join(SCRIPTS, rel), "utf8")
-          .split("\n")
-          .map((line, i) => [i + 1, line] as const)
-          .filter(([, line]) => !/^\s*(?:\/\/|\*)/.test(line))
-          .filter(([, line]) =>
-            /\bBun\.|\bimport\.meta\.(main|dir)\b/.test(line),
-          )
-          .map(([n, line]) => `${rel}:${n}: ${line.trim()}`),
-      );
-    expect(offenders).toEqual([]);
-  });
-});
 
 describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
   // `announce-merge-ready.ts` and `reconcile-replied-threads.ts` used to each
@@ -291,6 +177,40 @@ describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
   });
 });
 
+// ── Every outbound `gh` call is bounded ─────────────────────────────────────
+//
+// `references/terminal-states.md` § 13 states this as a universal claim, and a
+// universal claim maintained by hand drifts the moment a new call site is added
+// — which is exactly what happened: the migration wrapped most of
+// `announce-merge-ready`'s calls and left `read_liveness`, the
+// stale-announcement DELETE and `withdraw_posted` on raw `gh`, while the doc
+// went on saying every call was wrapped. Review found the three sites; nothing
+// in the repo would have.
+//
+// So the claim is mechanized rather than restated. An unbounded call is mode 13
+// in that reference: `--timeout` bounds the poll loop and never any one call, so
+// a connection that is accepted and never completes parks an unattended driver
+// past every advertised deadline.
+//
+// In the TypeScript port the chokepoint is `lib/proc.ts`: `ghCall()` is the one
+// sanctioned way to spawn `gh`, and it carries the GH_CALL_TIMEOUT deadline on
+// every call. The sweep therefore asserts that no OTHER file under scripts/
+// spawns the binary directly — an argv literal starting with 'gh', under any
+// of the spawn spellings the runtimes offer. `summary-findings.ts` predates
+// the shared lib was allowlisted for its own `GH_TIMEOUT_MS` + kill timer; it
+// now routes through the chokepoint like everything else and the exemption is
+// gone, so the sweep enforces the whole directory. Anything reaching for `gh`
+// without the wrapper is the regression this sweep exists to catch.
+//
+// It sweeps resolve-review-comments' TypeScript scripts too, because the drive
+// loop SPAWNS them (SKILL.md §§ 2 and 6): an unbounded call there parks an
+// unattended driver exactly as one here would, and both shipped that way —
+// `resolve-thread.ts` and `list-unresolved-threads.ts` each spawned `gh` through
+// a bare `spawnSync` while this sweep, scoped to drive-pr's own directory,
+// stayed green. That skill carries its own
+// chokepoint rather than importing this one (drive-pr already depends on it;
+// importing back would make the two mutually dependent), so the sweep is
+// parameterised by root, each with its own sanctioned files.
 describe("no raw `gh` spawn escapes the deadline wrapper", () => {
   // The bare binary in argv HEAD position — `['gh', …]` under
   // run()/spawn()/Bun.spawn(), or the (cmd, args) form `<anything>('gh', …)`.

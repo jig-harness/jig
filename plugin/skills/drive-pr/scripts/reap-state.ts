@@ -155,8 +155,7 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./lib/proc.ts";
 import {
@@ -1737,47 +1736,8 @@ async function main(): Promise<number> {
   }
 }
 
-// Guarded, the same way drive.ts and summary-findings.ts guard their own entry
-// (and for the identical portability reason documented there —
-// `import.meta.main` is Bun-only on the Node versions this skill supports).
-// Unguarded, merely IMPORTING this module for its exported `anchorOf` /
-// `classify` / `retirementStillSafe` — exactly what the test suite does — ran
-// the whole reaper against the importing process's own argv: on a developer
-// clone with real drive-pr families, that means real `gh pr view` and `git
-// worktree list` calls, and a stray `--delete`-shaped argv would have deleted
-// real state from a test import.
-//
-// `process.argv[1]` wrapped in `realpathSync` — measured (not merely
-// suspected): a symlinked invocation path (a symlinked checkout, common for a
-// cron job's working copy) leaves `process.argv[1]` UNRESOLVED under Node
-// (verbatim as invoked) while `fileURLToPath(import.meta.url)` is already
-// canonical (the module loader resolves it), so the two compared unequal and
-// the guard silently skipped `main()` — the scheduled reaper would do nothing
-// while still exiting 0. Bun itself was measured to already canonicalize
-// `argv[1]`, so this specific gap never fires under the production cron
-// invocation (which always uses bun) — but Node compatibility is this skill's
-// own explicit, tested requirement, so it still needed closing. `existsSync` is
-// checked first: `realpathSync` throws ENOENT on a path that does not exist,
-// and an unreadable/nonexistent argv[1] is exactly the case this guard should
-// fail closed on (treat as "not the entry point"), not crash on. `existsSync`
-// returning true is not enough on its own, though — `realpathSync` can still
-// throw EACCES or ELOOP (a permission-denied directory in the path, or a
-// symlink cycle) even on a path that demonstrably exists, and an uncaught throw
-// here is a MODULE-LEVEL exception: it fails not just `main()` but a PLAIN
-// IMPORT of this module for `anchorOf`/`classify`/ `retirementStillSafe`
-// (exactly what the test suite does), which is a strictly worse failure mode
-// than the "silently skip main()" bug this guard exists to fix. The `try`
-// covers both calls so either one failing closes the same way.
-let isEntryPoint = false;
-if (process.argv[1] !== undefined) {
-  try {
-    isEntryPoint =
-      existsSync(process.argv[1]) &&
-      realpathSync(resolve(process.argv[1])) === fileURLToPath(import.meta.url);
-  } catch {
-    // Unresolvable argv[1] — fail closed, same as the ENOENT case above.
-  }
-}
-if (isEntryPoint) {
+// Run only as a script: the tests import this module for its helpers, and
+// `main()` reads and can delete real drive state.
+if (import.meta.main) {
   runMain("reap-state.ts", main);
 }

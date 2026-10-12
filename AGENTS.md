@@ -112,8 +112,10 @@ Read in this order when starting a session here:
   standalone executable or is pinned through mise. The repository and module
   gates run natively under the pinned Bun runtime.
 - Quality gates (dogfooded M1, tiny by design) — run all with one command:
-  `bun run gates`. The set, in order: format, lint, types, gate self-tests,
-  build, Markdown links resolve, blank line before tables, terms of art
+  `bun run gates`. The set, in order: format, lint (Biome, with Jig's
+  GritQL rules in `tools/quality/grit/`), types (`bun check`), unused code
+  and the changed files' complexity and duplication (fallow), the ratchet,
+  gate self-tests, build, Markdown links resolve, blank line before tables, terms of art
   defined in the glossary (acronym proxy; escape hatch:
   `scripts/glossary-allowlist.txt`), no origin references, and a changelog
   entry for the current plugin version. CI runs the same command on every PR
@@ -125,6 +127,16 @@ Read in this order when starting a session here:
   Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out
   the long drive-pr suite; run its test files for what you changed, and let
   CI's shards run the rest.
+- **The ratchet** (`bun run quality`; M1's
+  [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md))
+  fails a change that adds a finding to a rule at `warn` in `biome.json`, to
+  a flag in `tsconfig.ratchet.json`, or a suppression comment, measured
+  against the merge base. Fix the finding; do not suppress it. It also fails
+  a change that loosens a rule, unless a commit carries
+  `Ratchet-Loosen: <name>: <reason>` in its last paragraph. Never add that trailer on your own
+  initiative: only when a person has asked for that loosening, and say so in
+  the pull request. When the gate reports a rule at zero, promote it to
+  `error` (or move the flag into `tsconfig.json`).
 - **This repository is the `jig` plugin.** Both tools install it from
   `main`; the rules for changing anything under `plugin/` (running from a copy
   outside this repository, the version bump, the release tag) are in

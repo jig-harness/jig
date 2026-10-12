@@ -31,7 +31,7 @@ import { siblingSkill } from "./lib/consumer.ts";
 
 import { existsSync, lstatSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fail, isEntryPoint, readStdinAll, runMain } from "./lib/cli.ts";
+import { fail, readStdinAll, runMain } from "./lib/cli.ts";
 import { ghCall, run } from "./lib/proc.ts";
 import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 
@@ -619,5 +619,5 @@ async function main(): Promise<number> {
 }
 
 // Guarded so the test suite can import validateOutcomeBody without spawning
-// the CLI — see isEntryPoint's header for why this is not `import.meta.main`.
-if (isEntryPoint(import.meta.url)) runMain("reply-to-thread", main);
+// the CLI.
+if (import.meta.main) runMain("reply-to-thread", main);

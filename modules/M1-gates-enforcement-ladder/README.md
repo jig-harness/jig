@@ -27,6 +27,11 @@ ladder from convention to hard gate, without collapsing into bureaucracy.
    ("no direct fetch calls in frontend", "no DML in migrations"), each with a
    paired self-test and fixtures, wired into both pre-push and CI. Simple
    beats clever: a grep with a self-test outlives an unowned AST analyzer.
+   A rule that needs the code's structure rather than its text can be a
+   lint-rule plugin instead (for example a [GritQL](../../GLOSSARY.md) rule
+   run by the linter), on the same terms: the linter is pinned and each rule
+   has its own fixtures and self-test. Each linter's mechanism is in
+   [mappings.md](mappings.md#custom-lint-rules-and-the-ratchet).
 4. **CI as authority** — every hook-enforced check re-runs in CI; local
    bypasses (`--no-verify`) exist for emergencies but change nothing about
    what merges.
@@ -35,7 +40,10 @@ ladder from convention to hard gate, without collapsing into bureaucracy.
    justification. Ad-hoc suppressions are drift.
 6. **Advisory→blocking pipeline** — new gates may start advisory, but each
    advisory gate carries a promotion condition; advisory-forever is a tracked
-   smell.
+   smell. Between the two sits the [ratchet](../../GLOSSARY.md): a rule
+   with existing findings blocks only changes that add to them, measured
+   against the merge base, and is promoted to blocking when its count reaches
+   zero.
 7. **Third-party automation integrity** — external CI actions and included
    automation are pinned to immutable revisions, while an automated dependency
    updater proposes tested pin changes. An immutable pin without an update
@@ -91,15 +99,22 @@ What this module provides:
   with one worked gate (a TODO must cite an issue) and its fixtures.
 - [`reference/commit-msg-marker/`](reference/commit-msg-marker/) — the
   commit-msg hook script for review markers, with its design notes.
+- [`reference/ratchet/`](reference/ratchet/) — the ratchet gate: counts
+  findings per rule in the working tree and the merge base, fails when a
+  count grows or a configuration loosens a rule, and reports rules ready for
+  promotion; with its self-tests.
 - [`mappings.md`](mappings.md) — hook managers (lefthook, husky, pre-commit),
   CI providers (GitHub Actions, GitLab CI) and pin-and-update providers; and
   [`maturity.yaml`](maturity.yaml).
 
-The self-tests for both reference gates are in
-[`scripts/freshness.test.ts`](../../scripts/freshness.test.ts). Jig runs
+The self-tests for the grep gate and the commit-msg marker are in
+[`scripts/freshness.test.ts`](../../scripts/freshness.test.ts); the
+ratchet's are in [`reference/ratchet/`](reference/ratchet/) beside the gate. Jig runs
 this module on itself: `bun run gates` runs the repository's gate set in order,
 CI runs the same command on every pull request, and the order is stated in the
-root [`AGENTS.md`](../../AGENTS.md). The
+root [`AGENTS.md`](../../AGENTS.md). Its ratchet covers Biome's warnings
+(including Jig's GritQL rules in `tools/quality/grit/`), the compiler flags
+being burned down and suppression comments. The
 [`/jig:github-actions`](../../plugin/skills/github-actions/SKILL.md)
 skill checks workflow changes against this module's pin-and-update invariant,
 and [`/jig:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) repairs a red

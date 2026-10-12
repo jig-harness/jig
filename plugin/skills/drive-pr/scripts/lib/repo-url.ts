@@ -16,9 +16,6 @@
  * `lib/base-drift.ts` (is `origin` the PR's base repository?) — the same
  * owner/name extraction, the same reachable failures, on opposite sides of
  * one PR.
- *
- * Runs under Bun and under Node >= 22.18: only `node:` APIs, no `Bun.*`
- * globals, erasable-syntax-only TypeScript, explicit `.ts` import specifiers.
  */
 export function repoOfUrl(url: string): string {
   const stripped = url

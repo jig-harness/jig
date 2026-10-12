@@ -15,10 +15,10 @@
  * answer unusable), 1 unexpected error (no tracker configured).
  *
  * The tracker comes from `issue_tracker` in the consumer overlay
- * (`lib/tracker/`). Runs under Bun and under Node ≥ 22.18 (type stripping).
+ * (`lib/tracker/`).
  */
 
-import { isEntryPoint, parseArgs } from "./lib/cli.ts";
+import { parseArgs, runEntry } from "./lib/cli.ts";
 import { openTracker } from "./lib/tracker/index.ts";
 import {
   CANONICAL_STATES,
@@ -269,8 +269,4 @@ async function main(): Promise<number> {
   }
 }
 
-if (isEntryPoint(import.meta.url)) {
-  main().then((code) => {
-    process.exitCode = code;
-  });
-}
+if (import.meta.main) runEntry(main);

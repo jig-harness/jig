@@ -156,7 +156,7 @@ export async function realHead(): Promise<string> {
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
-export const backlogJson = JSON.stringify([
+const backlogJson = JSON.stringify([
   {
     fingerprint: "b9a7a18089043564",
     path: "AGENTS.md",
@@ -514,7 +514,7 @@ export const DORMANT_ARM: CheckRunFixture = {
   conclusion: "skipped",
   app: "github-actions",
 };
-export const REQUIRED_CI_RUNS: CheckRunFixture[] = [
+const REQUIRED_CI_RUNS: CheckRunFixture[] = [
   "code-quality-and-build",
   "tests",
   "Schema gate",
@@ -558,7 +558,7 @@ export let suiteHome: string;
  * never restored at all, which leaks a VALUE into siblings rather than an
  * unset — the same defect, one degree worse.
  */
-export const SUITE_ENV_OVERRIDES = [
+const SUITE_ENV_OVERRIDES = [
   "GH_CALL_TIMEOUT",
   "DRIVE_PR_HELPER_TIMEOUT",
   "DRIVE_PR_LOCK_RETRY_MS",
@@ -566,7 +566,7 @@ export const SUITE_ENV_OVERRIDES = [
   "DRIVE_PR_CODEX_SESSIONS_DIR",
   "JIG_OVERLAY",
 ] as const;
-export let priorSuiteEnv: Map<string, string | undefined>;
+let priorSuiteEnv: Map<string, string | undefined>;
 /** Scratch repos for the probes that read local HEAD and the working tree. */
 export let scratchClean: { dir: string; head: string };
 export let scratchOther: { dir: string; head: string };
@@ -2053,7 +2053,7 @@ exit 1
   });
 }
 
-export let fixtureSeq = 0;
+let fixtureSeq = 0;
 
 export type FixtureThread = NonNullable<Fixture["threads"]>[number];
 
@@ -2066,7 +2066,7 @@ export type FixtureThread = NonNullable<Fixture["threads"]>[number];
  * from "a different one" (same reason reconcile-replied-threads.test.ts builds
  * its fixtures that way).
  */
-export function threadCommentNodes(
+function threadCommentNodes(
   t: FixtureThread,
   originalCommitOid = HEAD,
 ): Array<Record<string, unknown>> {
@@ -2107,7 +2107,7 @@ export function threadCommentNodes(
  * condition each is named for (a fail-closed conjunction needs each clause to
  * be the sole decider in its own probe).
  */
-export const DEFAULT_STICKY_UPDATED_AT = new Date(
+const DEFAULT_STICKY_UPDATED_AT = new Date(
   Date.now() - STALLED_MIN_AGE_SEC * 2 * 1000,
 ).toISOString();
 

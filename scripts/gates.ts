@@ -70,6 +70,9 @@ async function gates(): Promise<number> {
     ["run", "format:check"],
     ["run", "lint"],
     ["run", "typecheck"],
+    ["run", "deadcode"],
+    ["run", "audit"],
+    ["run", "quality"],
     test,
     ["run", "build"],
   ]) {

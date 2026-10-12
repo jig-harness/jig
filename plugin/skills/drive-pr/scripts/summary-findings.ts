@@ -45,8 +45,6 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
   isReviewerLogin,
@@ -1631,13 +1629,8 @@ interface ReviewComment {
  * measures BETWEEN calls, so an accepted-but-never-completed connection here
  * would hang the unattended driver past every deadline it advertises.
  *
- * This used to carry its OWN deadline over `Bun.spawn`, and was allowlisted out
- * of the raw-gh sweep for it. Both are gone: it goes through `lib/proc.ts` like
- * everything else, so there is one deadline implementation rather than two, and
- * the sweep enforces this file instead of excusing it. The Bun global was also
- * the concrete reason the documented `node` entry point could not work — every
- * status evaluation reaches this script, and under Node it died on
- * `Bun is not defined`.
+ * The call goes through `lib/proc.ts` like every other `gh` call, so there is
+ * one deadline implementation, and the raw-gh sweep covers this file too.
  */
 async function gh(args: string[]): Promise<string> {
   const r = await ghCall(args);
@@ -1999,16 +1992,8 @@ async function main(): Promise<number> {
   return 0;
 }
 
-// `import.meta.main` is a Bun global that Node did not gain until v24.2, so on
-// the Node versions this skill documents it reads `undefined` and main() never
-// runs — the script exits 0 having printed nothing, which every caller reads as
-// "no findings". Comparing the resolved module path to argv[1] is the portable
-// form of the same question, and works under both runtimes and the shebang.
-const isEntryPoint =
-  process.argv[1] !== undefined &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-
-if (isEntryPoint) {
+// Run only as a script: the tests import this module for its helpers.
+if (import.meta.main) {
   try {
     process.exit(await main());
   } catch (e) {

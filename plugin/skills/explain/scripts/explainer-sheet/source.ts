@@ -71,9 +71,11 @@ export interface ExplainerSource {
 }
 
 export class SourceError extends Error {
-  constructor(readonly problems: string[]) {
+  readonly problems: string[];
+  constructor(problems: string[]) {
     super(`invalid explainer source:\n- ${problems.join("\n- ")}`);
     this.name = "SourceError";
+    this.problems = problems;
   }
 }
 

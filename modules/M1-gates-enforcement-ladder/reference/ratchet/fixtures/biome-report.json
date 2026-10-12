@@ -1,0 +1,10 @@
+{
+  "summary": { "errors": 1, "warnings": 4 },
+  "diagnostics": [
+    { "severity": "warning", "category": "lint/suspicious/noEmptyBlockStatements", "message": "Unexpected empty block.", "location": { "path": "a.ts" } },
+    { "severity": "warning", "category": "lint/suspicious/noEmptyBlockStatements", "message": "Unexpected empty block.", "location": { "path": "a.ts" } },
+    { "severity": "warning", "category": "plugin", "message": "jig/json-parse-cast: the cast checks nothing.", "location": { "path": "b.ts" } },
+    { "severity": "error", "category": "lint/nursery/noFloatingPromises", "message": "A floating Promise.", "location": { "path": "c.ts" } },
+    { "severity": "information", "category": "lint/style/useTemplate", "message": "Template literals are preferred.", "location": { "path": "c.ts" } }
+  ]
+}

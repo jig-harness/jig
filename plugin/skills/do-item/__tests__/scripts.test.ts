@@ -238,13 +238,10 @@ describe("determineAgents", () => {
   });
 });
 
-describe("the CLI wrappers load under node as well as bun", () => {
-  const nodeBin = process.execPath.includes("/bun") ? "node" : process.execPath;
-
+describe("the CLI wrappers", () => {
   // A `linear` stub that fails instantly: the probe asks whether the
   // module graph loads (incl. the js-yaml import resolving from the repo
   // root), not whether the CLIs answer.
-  //
   let stubBin: string;
   beforeAll(() => {
     stubBin = mkdtempSync(join(tmpdir(), "do-item-stub-"));
@@ -256,12 +253,8 @@ describe("the CLI wrappers load under node as well as bun", () => {
     rmSync(stubBin, { recursive: true, force: true });
   });
 
-  // `status` and `shape` are the parity contract, measured against the two
-  // runtimes with `linear` stubbed to exit 1 — a wrapper that prints `{}`
-  // or exits with the wrong code must redden this, which an earlier version
-  // (parse stdout, then `toMatchObject({ rel, bin })`) could not: it asserted
-  // neither, because the parsed document was never in the expectation and the
-  // exit code was never read at all.
+  // `status` and `shape` are the contract, with `linear` stubbed to exit 1:
+  // a wrapper that prints `{}` or exits with the wrong code must redden this.
   for (const [rel, args, stdin, status, shape] of [
     ["get_issue.ts", ["ENG-0"], undefined, 2, { found: false }],
     [
@@ -272,31 +265,16 @@ describe("the CLI wrappers load under node as well as bun", () => {
       { primary_agent: "Backend Agent", coordination_needed: false },
     ],
   ] as const) {
-    for (const bin of ["bun", "node"] as const) {
-      it(`${rel} runs under ${bin}`, () => {
-        const r = spawnSync(
-          bin === "bun" ? process.execPath : nodeBin,
-          [join(SCRIPTS, rel), ...args],
-          {
-            encoding: "utf8",
-            input: stdin,
-            env: { ...gitCleanEnv(), PATH: `${stubBin}:${process.env.PATH}` },
-          },
-        );
-        expect({
-          rel,
-          bin,
-          loadFailure:
-            /ERR_MODULE_NOT_FOUND|ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX|ERR_UNKNOWN_FILE_EXTENSION|Bun is not defined/.test(
-              r.stderr ?? "",
-            ),
-        }).toEqual({ rel, bin, loadFailure: false });
-        // Each wrapper prints a JSON document even when its CLI is absent, and
-        // exits with the same code under both runtimes.
-        expect({ rel, bin, status: r.status }).toEqual({ rel, bin, status });
-        expect(JSON.parse(r.stdout)).toMatchObject(shape);
+    it(`${rel} loads and prints its JSON answer`, () => {
+      const r = spawnSync(process.execPath, [join(SCRIPTS, rel), ...args], {
+        encoding: "utf8",
+        input: stdin,
+        env: { ...gitCleanEnv(), PATH: `${stubBin}:${process.env.PATH}` },
       });
-    }
+      // Each wrapper prints a JSON document even when its CLI is absent.
+      expect({ rel, status: r.status }).toEqual({ rel, status });
+      expect(JSON.parse(r.stdout)).toMatchObject(shape);
+    });
   }
 
   // Well-formed JSON of the wrong SHAPE is a usage error (exit 2), not the
@@ -441,9 +419,8 @@ describe("the CLI wrappers load under node as well as bun", () => {
 
 describe("parseArgs matches argparse on `--` and `--opt=value`", () => {
   // Unit tests over the parser itself, not through a spawn: `bun script.ts --
-  // -x` STRIPS the terminator before argv reaches the script while `node` does
-  // not (measured), so a CLI-level probe would be testing the runtime rather
-  // than the parser. The wrapper-level suites above cover the spawn path.
+  // -x` STRIPS the terminator before argv reaches the script (measured), so a
+  // CLI-level probe would be testing the runtime rather than the parser. The wrapper-level suites above cover the spawn path.
   const SPEC = {
     flags: ["verbose"],
     values: ["catalog"],
@@ -900,7 +877,6 @@ describe("get_issue.ts reads the issue through the tracker", () => {
 });
 
 describe("list_comments.ts", () => {
-  const nodeBin = process.execPath.includes("/bun") ? "node" : process.execPath;
   let stubBin: string;
   beforeAll(() => {
     stubBin = mkdtempSync(join(tmpdir(), "do-item-comments-stub-"));
@@ -912,26 +888,17 @@ describe("list_comments.ts", () => {
     rmSync(stubBin, { recursive: true, force: true });
   });
 
-  for (const bin of ["bun", "node"] as const) {
-    it(`loads and reports a tracker failure under ${bin}`, () => {
-      const r = spawnSync(
-        bin === "bun" ? process.execPath : nodeBin,
-        [join(SCRIPTS, "list_comments.ts"), "ENG-1"],
-        {
-          encoding: "utf8",
-          env: { ...gitCleanEnv(), PATH: `${stubBin}:${process.env.PATH}` },
-        },
-      );
-      expect({
-        bin,
-        loadFailure:
-          /ERR_MODULE_NOT_FOUND|ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX|ERR_UNKNOWN_FILE_EXTENSION|Bun is not defined/.test(
-            r.stderr ?? "",
-          ),
-        status: r.status,
-      }).toEqual({ bin, loadFailure: false, status: 1 });
-    });
-  }
+  it("loads and reports a tracker failure", () => {
+    const r = spawnSync(
+      process.execPath,
+      [join(SCRIPTS, "list_comments.ts"), "ENG-1"],
+      {
+        encoding: "utf8",
+        env: { ...gitCleanEnv(), PATH: `${stubBin}:${process.env.PATH}` },
+      },
+    );
+    expect(r.status).toBe(1);
+  });
 
   const dirs: string[] = [];
   afterAll(() => {

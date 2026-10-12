@@ -88,7 +88,7 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, isEntryPoint, runMain, short } from "./lib/cli.ts";
+import { fail, runMain, short } from "./lib/cli.ts";
 import {
   gatesCommand,
   loadGuardCommand,
@@ -617,7 +617,7 @@ async function main(): Promise<number> {
   return 0;
 }
 
-// Gated behind isEntryPoint rather than run at module scope: this
+// Gated behind `import.meta.main` rather than run at module scope: this
 // module's side effect is real git/resolver I/O and a process exit code, so
 // importing it unconditionally — the pattern `loadWarningLine` otherwise
 // supports — would run the whole CLI for real. This is what lets
@@ -626,4 +626,4 @@ async function main(): Promise<number> {
 // form compared `resolve(argv[1])` rather than its REALPATH, so it answered
 // false — and skipped the CLI entirely — for an invocation through the
 // `.agents/skills/` symlink farm or any path with a symlink component.
-if (isEntryPoint(import.meta.url)) runMain("round-plan.ts", main);
+if (import.meta.main) runMain("round-plan.ts", main);

@@ -10,8 +10,9 @@ once.
 - **It runs from a copy.** Everything here must work from the plugin cache, a
   copy outside this repository with no `node_modules`: skill-relative paths
   (`${CLAUDE_SKILL_DIR}/…` in `SKILL.md`, `<skill-dir>/…` in reference files),
-  the consumer repository as the working directory, Bun and Node built-ins or a
-  vendored single-file build only. The details are in
+  the consumer repository as the working directory, Bun's built-ins (its own
+  APIs and the `node:` modules it provides) or a vendored single-file build
+  only. The details are in
   [README.md § Add or change a skill](README.md#add-or-change-a-skill);
   `tools/plugin/plugin.test.ts` checks the skills from a copy.
 - **Consumer values are configuration.** A repository's values (bots, teams,

@@ -25,8 +25,6 @@
  * correct behaviour for a weekly wall arriving in wording we have not seen,
  * and adding its recogniser later is additive. Guessing `short` from an
  * unrecognised phrase is the one mistake that would sleep a drive for days.
- *
- * Runs under Bun and Node >= 22.18: `node:` APIs only, erasable syntax only.
  */
 
 import { randomUUID } from "node:crypto";

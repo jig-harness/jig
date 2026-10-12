@@ -30,7 +30,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import {
   fail,
-  isEntryPoint,
   runMain,
 } from "../../resolve-review-comments/scripts/lib/cli.ts";
 import { unmergedPaths } from "./conflict-map.ts";
@@ -326,4 +325,4 @@ async function main(): Promise<number> {
   return result.exit;
 }
 
-if (isEntryPoint(import.meta.url)) runMain("check-resolution", main);
+if (import.meta.main) runMain("check-resolution", main);
