@@ -88,5 +88,5 @@ projection — the deploy system stays generic:
 
 Only relevant if you keep a fast hand-written CI regex for "did code change?".
 The runnable regex→catalog check ([`reference/regex-mirror/`](reference/regex-mirror/))
-is plain shell and runs in any CI. The catalog→regex direction needs the
-resolver's closure — wire it into the same job that runs `check-catalog`.
+needs only Bun and runs in any CI. The catalog→regex direction needs the
+resolver's closure — wire it into the same job that runs your catalog checker.

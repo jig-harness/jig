@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-// Auditor v1 scoring aid — turn the modules' maturity.yaml criteria into a
-// ready-to-fill scoring checklist, so a "scored maturity assessment" is a
+// Auditor scoring aid — turn the modules' maturity.yaml criteria into a
+// ready-to-fill scoring checklist, so a scored maturity assessment is a
 // mechanical read of the criteria rather than a from-memory exercise.
 //
-// Every module now ships machine-evaluable criteria (modules/README.md §
+// Every module ships machine-evaluable criteria (modules/README.md §
 // "maturity.yaml schema"): each criterion carries an id, the maturity `level`
 // where it first becomes required (lite | standard | strict), the `requires`
 // rung (convention | mechanical), and a one-sentence observable `statement`.
@@ -14,10 +14,11 @@
 // Two modes:
 //   score-modules.ts [modules-dir]      # default: print the fill-in checklist
 //   score-modules.ts --check [modules-dir]
-//       # coverage gate: every M0..M12 has a maturity.yaml with >=1 criterion.
-//       # Dogfoodable — fails loudly if a module port forgot its criteria.
+//       # coverage gate: every M0..M12 has a maturity.yaml with >=1 criterion,
+//       # so a module that loses or never gets its criteria fails loudly.
 //
-// Native Bun/TypeScript. Exit 0 ok, 1 --check failure, 2 usage.
+// Native Bun/TypeScript. Exit 0 ok, 1 --check failure, 2 when the modules
+// directory does not exist.
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 export function main(args = process.argv.slice(2)): number {
@@ -75,7 +76,7 @@ export function main(args = process.argv.slice(2)): number {
     return bad ? 1 : 0;
   }
   console.log(
-    "# Module scoring checklist (auditor v1)\n\nGenerated from each module's `maturity.yaml`. For every criterion, record\nthe observed rung — `absent` / `convention` / `advisory` / `mechanical` —\nwith a file-path evidence note. A module attains a maturity level when every\ncriterion at that level *and below* meets its `requires` rung.\n",
+    "# Module scoring checklist\n\nGenerated from each module's `maturity.yaml`. For every criterion, record\nthe observed rung — `absent` / `convention` / `advisory` / `mechanical` —\nwith a file-path evidence note. A module attains a maturity level when every\ncriterion at that level *and below* meets its `requires` rung.\n",
   );
   for (const file of files) {
     const { module, name, rows } = extract(file);

@@ -103,8 +103,9 @@ root. JSON remains allowed only for machine-generated artifacts.
 - A one-time migration of existing config files.
 
 ## Extraction (decisions-become-checks)
-Mechanically checkable: forbid new `config.ya?ml` config files. See rule
-PM-101 in adr-rules.yaml.
+Not a pattern rule: the decision is about file names, not file contents, so
+adr-rules.yaml cannot check it. A file-name grep gate (M1) can forbid new
+`config.yaml` / `config.yml` files instead.
 
 ## Amendments
 

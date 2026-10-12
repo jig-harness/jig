@@ -124,10 +124,10 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
   });
 
   it("a helper-script child whose OWN child is NOT a helper script → still false (pruned, not a whole-tree walk)", () => {
-    // Inverted from this suite's own earlier assertion (`true`)
-    // review round 2, M3(b). The old behaviour descended into an excluded
-    // helper's children and found this `git push` "not a skill script,
-    // therefore a pass" — but everything a helper spawns is helper work
+    // Inverted from this suite's own earlier assertion (`true`). The old
+    // behaviour descended into an excluded helper's children and found this
+    // `git push` "not a skill script, therefore a pass" — but everything a
+    // helper spawns is helper work
     // (`drive-status.ts`/`ci-hold.ts` each make several real `gh` calls),
     // and the measured consequence was a genuinely wedged drive (an
     // unbounded `sleep(10); continue;` loop with no pass and no progress)
@@ -283,7 +283,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(false);
   });
 
-  it("a REAL, direct pass is still recognized when its own prompt/argument merely MENTIONS a helper script path as data (review finding)", () => {
+  it("a REAL, direct pass is still recognized when its own prompt/argument merely MENTIONS a helper script path as data", () => {
     // The regex used to run unanchored across the whole command line, so a
     // real pass — a direct child of the driver, exactly the shape a genuine
     // pass always has — was misclassified as an excluded helper the moment
@@ -303,7 +303,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(true);
   });
 
-  it("a checkout under a path containing a space is still recognized as a helper invocation (review finding)", () => {
+  it("a checkout under a path containing a space is still recognized as a helper invocation", () => {
     // `ps ... args=` is flattened display text with no preserved argv
     // boundaries. Splitting on "the first two whitespace-delimited tokens"
     // cuts `bun /tmp/My Repo/.claude/skills/drive-pr/scripts/drive-state.ts
@@ -339,7 +339,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(true);
   });
 
-  it("a real pass whose FIRST argument is its OWN absolute script path is still recognized as a pass, even though a later argument mentions a helper path (review finding)", () => {
+  it("a real pass whose FIRST argument is its OWN absolute script path is still recognized as a pass, even though a later argument mentions a helper path", () => {
     // `afterRuntime.startsWith('/')` alone only checks the first character
     // after the runtime token — it does not confirm that the absolute path
     // right there IS the one leading into `OWN_HELPER_SCRIPT`'s own match
@@ -360,7 +360,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(true);
   });
 
-  it("a real pass whose SECOND argument is a bare positional path mentioning a helper is still recognized as a pass, with no flag involved (review finding, round 7)", () => {
+  it("a real pass whose SECOND argument is a bare positional path mentioning a helper is still recognized as a pass, with no flag involved", () => {
     // The sibling of the fixture above, minus the `--prompt` flag: `node
     // /repo/pass.ts /repo/.claude/skills/drive-pr/scripts/drive-state.ts`.
     // The flag guard (`isFlagged`) never fires here because nothing in the
@@ -381,13 +381,13 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(true);
   });
 
-  it("a real pass whose SECOND argument is a bare RELATIVE positional path mentioning a helper is still recognized as a pass (review finding, round 9)", () => {
-    // The sibling of the round-7 fixture above, with a RELATIVE second
-    // argument instead of an absolute one: `node /repo/pass.ts
+  it("a real pass whose SECOND argument is a bare RELATIVE positional path mentioning a helper is still recognized as a pass", () => {
+    // The sibling of the absolute-positional fixture above, with a RELATIVE
+    // second argument instead of an absolute one: `node /repo/pass.ts
     // repo/.claude/skills/drive-pr/scripts/drive-state.ts`. `after` (`
     // /repo/pass.ts repo`) still starts with `/` and has no flag, and the
-    // round-7 fix's own `hasFreshPathRestart` only detected a FRESH
-    // ABSOLUTE restart, so a relative continuation slipped through and
+    // earlier fix's own `hasFreshPathRestart` only detected a FRESH ABSOLUTE
+    // restart, so a relative continuation slipped through and
     // `/repo/pass.ts` — the real pass — was still misread as our own
     // helper. The general fix recognizes that `/repo/pass.ts` (`before`,
     // at the boundary right before `repo`) already ends in `.ts` — a
@@ -405,7 +405,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
   });
 
   it("a real pass invoked with NO runtime interpreter, whose bare positional argument mentions a helper path, is still recognized as a pass", () => {
-    // The same class of bug as the round-7/round-9 fixtures, without a
+    // The same class of bug as the two positional-argument fixtures, without a
     // `node`/`bun` prefix at all: `/repo/pass.ts
     // repo/.claude/skills/drive-pr/scripts/drive-state.ts` directly. Before
     // the general `.ts`-terminated-path signal, `RUNTIME_BASENAME` never
@@ -426,7 +426,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(true);
   });
 
-  it("a checkout directory whose OWN name embeds a period is still recognized as a helper invocation (review finding)", () => {
+  it("a checkout directory whose OWN name embeds a period is still recognized as a helper invocation", () => {
     // A prior fix for the space-containing-checkout-path defect (test above)
     // used "does a `.` followed by word characters appear before the match"
     // to reject a mentioned-not-executed path. That test is satisfied by an
@@ -446,7 +446,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(false);
   });
 
-  it("a runtime installed under a path containing a space is still recognized as a helper invocation (review finding)", () => {
+  it("a runtime installed under a path containing a space is still recognized as a helper invocation", () => {
     // The first-whitespace split lands inside the RUNTIME's own path here
     // ("John Doe"), not at the true runtime/script boundary — `runtimeToken`
     // becomes `/Users/John`, which never matches `RUNTIME_BASENAME`, so the
@@ -464,7 +464,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(false);
   });
 
-  it("a directly executed helper whose checkout root contains a space, with no runtime involved at all, is still recognized (review finding)", () => {
+  it("a directly executed helper whose checkout root contains a space, with no runtime involved at all, is still recognized", () => {
     // No runtime token precedes this shebang execution, so every candidate
     // split in `prefix` ("/tmp/My Repo") fails `RUNTIME_BASENAME` — the old
     // code fell through to `false` (not a helper) the moment `prefix`
@@ -482,7 +482,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
     expect(findPassChild(DRIVER, rows)).toBe(false);
   });
 
-  it("a top-level script belonging to a DIFFERENT skill is not excluded — only drive-pr and resolve-review-comments are (review finding, round 8)", () => {
+  it("a top-level script belonging to a DIFFERENT skill is not excluded — only drive-pr and resolve-review-comments are", () => {
     // `drive.ts` accepts an arbitrary pass argv, so a caller may legitimately
     // run another skill's own top-level script as the pass command. A
     // skill-name wildcard in `OWN_HELPER_SCRIPT` would prune this live
@@ -527,7 +527,7 @@ describe("hasPassChild — the real ps integration", () => {
     // itself for a single simple command: that optimisation is a shell
     // implementation detail, not a POSIX guarantee, and a shell that forks
     // instead leaves a real `sleep` child that this probe correctly reports
-    // as a pass — so the test failed on Linux (the majordomo gates host)
+    // as a pass — so the test failed on Linux (a remote gates host)
     // while passing on macOS, asserting the shell's behaviour rather than
     // this function's.
     const child = Bun.spawn(["sleep", "30"], {

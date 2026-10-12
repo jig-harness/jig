@@ -84,7 +84,7 @@ function reaperCrontabMarker(): string | undefined {
  * holds — `reap-state.ts`'s own `isSweepable` draws the identical line.
  * Matching only the bare `.lock` name (as an earlier version of this check
  * did) let migration run during a live `.recovering` handoff and race the
- * reaper (docomply-review, a reference-implementation pull request).
+ * reaper.
  */
 const LIVE_REAP_STATE_DELETE_LOCK_RE =
   /^\.reap-state-delete\.lock(?:\.recovering)?$/;
@@ -136,8 +136,7 @@ export interface MigrationOptions {
    * directories just fsynced, strictly AFTER both durability fsyncs and
    * strictly BEFORE the journal is removed — the one point in that sequence
    * a test can observe the ordering directly (the journal file is still
-   * readable from here), without needing to mock the fsync syscall itself
-   * (docomply-review, a reference-implementation pull request round 6).
+   * readable from here), without needing to mock the fsync syscall itself.
    */
   readonly beforeRollbackJournalRemoval?: (
     syncedDirs: readonly string[],
@@ -158,8 +157,7 @@ export interface MigrationOptions {
    * `renameSync`/`cpSync` cannot be interrupted once started. On a large
    * artifact population (the reaper's own measurement: 112k+ entries
    * in one state dir) this bounds how long a caller can be blocked without a
-   * cancellation point, which was previously unbounded (docomply-review,
-   * a reference-implementation pull request).
+   * cancellation point, which was previously unbounded.
    */
   readonly signal?: AbortSignal;
 }
@@ -192,7 +190,7 @@ interface DirectoryIdentity {
  * timer queue is serviced. Without this, `.aborted` could stay `false` long
  * past the requested deadline no matter how many times this was called: a
  * 1ms timeout still let a 2,000-artifact same-filesystem migration run to
- * completion in ~169ms (chatgpt-codex-connector, a reference-implementation pull request round 9). Skipped
+ * completion in ~169ms. Skipped
  * entirely when no signal was supplied, so the common (`--timeout` unused)
  * path pays no per-artifact yield cost.
  */
@@ -281,7 +279,7 @@ function lockClaim(
     // be torn or simply stale from an abandoned publish. Falling through to
     // the claims check below would let that unreliable content override a
     // name-based "stale" verdict already reached the same way `drive.ts`
-    // reclaims it (chatgpt-codex-connector, a reference-implementation pull request round 11).
+    // reclaims it.
     return;
   }
   const claims = readdirSync(entry.path).filter((name) =>
@@ -416,7 +414,7 @@ function assertManifestEqual(
  * hash check above can both succeed entirely through the page cache, so
  * without this a power loss right after the publish rename (durable) can
  * still leave the copied file CONTENT missing or truncated even though the
- * directory entry survived (docomply-review, a reference-implementation pull request).
+ * directory entry survived.
  */
 async function fsyncTreeBestEffort(
   root: string,
@@ -469,7 +467,7 @@ interface MigrationJournal {
  * fine and previously reached `journal.artifacts.join(...)` in the refusal
  * message below, throwing an opaque `TypeError` instead of the intended
  * fail-closed diagnostic that tells the operator how to reconcile the
- * migration (docomply-review, a reference-implementation pull request round 11).
+ * migration.
  */
 function isMigrationJournal(value: unknown): value is MigrationJournal {
   if (typeof value !== "object" || value === null) return false;
@@ -490,8 +488,7 @@ function isMigrationJournal(value: unknown): value is MigrationJournal {
  * absolute path rather than just its parent directory — two distinct
  * sources sharing one parent (`/state/a`, `/state/b`) previously collided on
  * the identical `dirname`-only path, so one migration's completion silently
- * deleted the other's still-needed recovery record (docomply-review, PR
- * #4626 round 4).
+ * deleted the other's still-needed recovery record.
  */
 function migrationJournalPath(source: string): string {
   const digest = createHash("sha256").update(source).digest("hex").slice(0, 16);
@@ -507,7 +504,7 @@ function migrationJournalPath(source: string): string {
  * `assertNoStaleMigrationJournal`'s read before either writes — only
  * exclusivity AT THE WRITE closes that race; the loser must fail rather than
  * overwrite the winner's journal and later delete it out from under a
- * still-running migration (chatgpt-codex-connector, a reference-implementation pull request round 4).
+ * still-running migration.
  *
  * A THIN WRAPPER, not a second implementation of `createExclusiveDurable`'s
  * publish/durability discipline: an earlier version of this function
@@ -518,7 +515,7 @@ function migrationJournalPath(source: string): string {
  * then already durably published. The one call site that tracks ownership
  * off this function returning without throwing (`lockState.acquired`) would
  * then leave that published-but-unconfirmed lock untracked, with nothing to
- * ever release it (docomply-review, a reference-implementation pull request round 13). `createExclusiveDurable`
+ * ever release it. `createExclusiveDurable`
  * already distinguishes the two cases via `ExclusiveDurabilityUnconfirmed`
  * (thrown only once `link` has actually succeeded) vs. every earlier failure
  * — reusing it here, instead of re-deriving the same distinction a second
@@ -553,8 +550,7 @@ function writeExclusiveDurable(
  * crash), this is the only record that a migration was in flight — without
  * it, a crash left `source` and `destination` (or `source` and an orphaned
  * quarantine) split with no durable signal of what happened, and a rerun's
- * "destination must be empty" refusal gave no context to recover from
- * (docomply-review a reference-implementation pull request, chatgpt-codex-connector a reference-implementation pull request).
+ * "destination must be empty" refusal gave no context to recover from.
  */
 function writeMigrationJournal(
   op: MigrationJournal["op"],
@@ -585,8 +581,7 @@ function writeMigrationJournal(
  * failure) must not convert an already-completed operation into a reported
  * migration failure — a rerun would then find `source` already drained (or
  * `destination` already populated) and refuse with no working retry, exactly
- * the false failure the fatal/non-fatal fsync split above exists to prevent
- * (docomply-review, a reference-implementation pull request round 4).
+ * the false failure the fatal/non-fatal fsync split above exists to prevent.
  */
 function removeMigrationJournal(source: string): string | null {
   const path = migrationJournalPath(source);
@@ -643,8 +638,7 @@ function assertNoStaleMigrationJournal(source: string): void {
  * targeting the same destination — each artifact-name collision check only
  * ever compares against its own source's own artifact names, so two
  * migrations with disjoint artifact names can both pass it and interleave
- * into one merged destination undetected (chatgpt-codex-connector, a reference-implementation pull request
- * round 7).
+ * into one merged destination undetected.
  */
 function destinationLockPath(destination: string): string {
   const digest = createHash("sha256")
@@ -689,15 +683,14 @@ function assertNoStaleDestinationLock(destination: string): void {
  * there now. If an operator or cleanup process removed it and a different
  * migration acquired the same destination since, unlinking by recomputed
  * pathname alone would delete that migration's live lock and let a further
- * migration into the same destination undetected (docomply-review, PR
- * #4626 round 11). Reading the content and comparing the token narrows,
- * though does not fully close, that race — a full close would need an
- * atomic compare-and-delete `node:fs` does not offer. The remaining window
- * is deliberately resolved toward safety: an unreadable, unparseable, or
- * mismatched lock is left in place rather than removed, exactly like
- * `assertNoStaleDestinationLock`'s own fail-closed default — a stale lock
- * costs one manual cleanup, a wrongly deleted live one lets two migrations
- * interleave.
+ * migration into the same destination undetected. Reading the content and
+ * comparing the token narrows, though does not fully close, that race — a
+ * full close would need an atomic compare-and-delete `node:fs` does not
+ * offer. The remaining window is deliberately resolved toward safety: an
+ * unreadable, unparseable, or mismatched lock is left in place rather than
+ * removed, exactly like `assertNoStaleDestinationLock`'s own fail-closed
+ * default — a stale lock costs one manual cleanup, a wrongly deleted live one
+ * lets two migrations interleave.
  */
 function unlinkOwnedDestinationLock(destination: string, token: string): void {
   const path = destinationLockPath(destination);
@@ -734,7 +727,7 @@ function unlinkOwnedDestinationLock(destination: string, token: string): void {
  * throw, but a rerun would find `source` already drained and refuse with
  * "source contains no drive-pr artifacts" while `destination` sits correctly
  * published, a false failure with no working retry. An earlier version
- * downgraded both phases together (docomply-review, a reference-implementation pull request round 3).
+ * downgraded both phases together.
  */
 async function quarantineSourceArtifacts(
   source: string,
@@ -748,8 +741,7 @@ async function quarantineSourceArtifacts(
   // The journal for this whole cross-filesystem operation (publish through
   // source removal) is written by the caller BEFORE the publish rename, not
   // here — writing it only at this point left a crash between publish and
-  // this call with no recovery record at all (docomply-review, a reference-implementation pull request
-  // round 4).
+  // this call with no recovery record at all.
   const quarantine = mkdtempSync(
     join(dirname(source), ".drive-pr-source-removal-"),
   );
@@ -796,8 +788,7 @@ async function quarantineSourceArtifacts(
     // `source` and the already-published `destination`. The journal is the
     // only durable record of that split state, and removing it here reads as
     // "nothing left to describe" when there is exactly the opposite — a
-    // reconciliation an operator still owes (docomply-review, a reference-implementation pull request
-    // round 5, correcting round 4's own claim to the contrary).
+    // reconciliation an operator still owes.
     throw error;
   }
   // Past this point `source` and `quarantine` are both fixed — nothing below
@@ -828,12 +819,11 @@ async function quarantineSourceArtifacts(
  * starts with that text. A single greedy `[^\r\n:]+` payload accepted the
  * whole of "No crontab for alice - permission denied" as this benign case,
  * so migration proceeded without scheduler state actually being verified.
- * `tools/dev/install-reap-cron-linux.sh`'s `is_empty_crontab_message` faces
- * the identical ambiguity and resolves it the same way: require the entire
- * (trimmed) stderr to be exactly one line of this shape, strip the one
- * documented optional suffix, and require what remains to be nothing but a
- * plausible username — no space, colon, or other character a genuine
- * trailing error message would carry (chatgpt-codex-connector, a reference-implementation pull request).
+ * This resolves that ambiguity: it requires the entire (trimmed) stderr to be
+ * exactly one line of this shape, strips the one documented optional suffix,
+ * and requires what remains to be nothing but a plausible username — no
+ * space, colon, or other character a genuine trailing error message would
+ * carry.
  */
 export function noCrontabDiagnostic(stderr: string): boolean {
   const text = stderr.trim();
@@ -866,7 +856,7 @@ export function crontabHasScheduledReaper(
  * the caller's own `--timeout`, and the very next step after it returns
  * durably creates the destination lock — so a caller with `--timeout 0.1`
  * could still block for ~10s and mutate lock state before cancellation took
- * effect (chatgpt-codex-connector, a reference-implementation pull request round 16).
+ * effect.
  */
 /**
  * Cancellation reaches THIS process as one of these — the same set
@@ -916,7 +906,7 @@ export async function runProbe(
   // would leave the probe running as an orphan (it is a detached child, in
   // its own process group) until its own internal `timeoutSec: 10` deadline
   // — a `setTimeout` that dies with the process it was scheduled in, so it
-  // never fires either (chatgpt-codex-connector, a reference-implementation pull request round 16).
+  // never fires either.
   // Registering our own listener means `lib/proc.ts`'s forwarder sees more
   // than one listener and defers termination to us, so this handler has to
   // actually end the process once its own cleanup is done — the same
@@ -926,8 +916,7 @@ export async function runProbe(
   // THIS process, so a synchronous `process.exit()` right behind a
   // fire-and-forget `void handle?.stop()` tears the timer down before it can
   // fire — a SIGTERM-ignoring probe then survives as an orphan, exactly the
-  // failure this handler exists to prevent (chatgpt-codex-connector, PR
-  // #4626).
+  // failure this handler exists to prevent.
   const signalCleanups: Array<() => void> = [];
   for (const sig of PROCESS_CANCEL_SIGNALS) {
     const onProcessSignal = async (): Promise<void> => {
@@ -1000,7 +989,7 @@ export async function assertScheduledReaperDisabled(
     // Windows-specific mount/rename checks) — none of it was ever
     // reachable outside a test that overrides `assertSchedulerDisabled`
     // directly, since the CLI's `main()` never exposes that override
-    // (chatgpt-codex-connector, a reference-implementation pull request round 10). Absence of the
+    //. Absence of the
     // mechanism this checks for is a real "disabled" on this platform, not
     // an unverifiable unknown.
     return;
@@ -1035,19 +1024,17 @@ export async function migrateStateDir(
   // which is also true while a DIFFERENT, still-in-progress migration owns
   // the lock and simply hasn't moved anything yet. A refused THIRD migration
   // would then delete the second migration's still-live lock and let a
-  // fourth one in, merging state undetected (docomply-review, a reference-implementation pull request
-  // round 8). Only the invocation that actually created the lock may ever
-  // remove it — and `lockState.destination` records the EXACT resolved path
-  // that was locked, rather than re-deriving it from `destinationArg` here.
-  // A symlinked ancestor retargeted between acquisition and this catch could
-  // otherwise make `canonicalDestination(destinationArg)` resolve to a
-  // DIFFERENT directory than the one actually locked, and — if that
-  // directory happened to be empty — unlink an unrelated migration's live
-  // lock (chatgpt-codex-connector, a reference-implementation pull request round 12). `lockState.token`
-  // narrows this further still: even the resolved destination path can be
-  // legitimately reused by a LATER migration once this one's lock is gone,
-  // so the unlink below verifies the lock's own content, not just its path
-  // (docomply-review, a reference-implementation pull request round 11).
+  // fourth one in, merging state undetected. Only the invocation that
+  // actually created the lock may ever remove it — and `lockState.destination`
+  // records the EXACT resolved path that was locked, rather than re-deriving it
+  // from `destinationArg` here. A symlinked ancestor retargeted between
+  // acquisition and this catch could otherwise make
+  // `canonicalDestination(destinationArg)` resolve to a DIFFERENT directory
+  // than the one actually locked, and — if that directory happened to be empty
+  // — unlink an unrelated migration's live lock. `lockState.token` narrows this
+  // further still: even the resolved destination path can be legitimately
+  // reused by a LATER migration once this one's lock is gone, so the unlink
+  // below verifies the lock's own content, not just its path.
   const lockState: DestinationLockState = {
     acquired: false,
     destination: null,
@@ -1121,8 +1108,7 @@ async function migrateStateDirImpl(
   // this file cannot yield partway through without changing that shared
   // module's own signature — out of scope for this fix. Checking
   // immediately on either side at least bounds how many such synchronous
-  // phases can run back-to-back with zero cancellation points between them
-  // (docomply-review, a reference-implementation pull request round 9).
+  // phases can run back-to-back with zero cancellation points between them.
   await checkSignal(options.signal);
   const inventory = enumerateStateArtifacts(source);
   await checkSignal(options.signal);
@@ -1161,7 +1147,7 @@ async function migrateStateDirImpl(
   // The test seam takes no signal (a test already controls its own
   // resolution point); only the real, subprocess-backed default needs one to
   // honor `--timeout` here too rather than blocking for its own fixed
-  // deadline regardless of it (chatgpt-codex-connector, a reference-implementation pull request round 16).
+  // deadline regardless of it.
   if (options.assertSchedulerDisabled) {
     await options.assertSchedulerDisabled();
   } else {
@@ -1215,7 +1201,7 @@ async function migrateStateDirImpl(
     // it despite the throw, so ownership must still be recorded before
     // rethrowing: otherwise the top-level catch's `lockState.acquired` check
     // never fires, and a lock this call actually published is left on disk
-    // with nothing tracking it (docomply-review, a reference-implementation pull request round 13).
+    // with nothing tracking it.
     if (error instanceof ExclusiveDurabilityUnconfirmed) recordAcquired();
     throw error;
   }
@@ -1244,7 +1230,7 @@ async function migrateStateDirImpl(
   // filesystem receives the new directory entry), so a mount-point
   // destination would silently pick a path that then fails deep inside
   // `rename(2)`/`rmdirSync` with an opaque EXDEV/EBUSY. Refuse explicitly
-  // instead (docomply-review, a reference-implementation pull request).
+  // instead.
   if (
     destinationResult.existed &&
     statSync(destination).dev !== statSync(dirname(destination)).dev
@@ -1266,11 +1252,10 @@ async function migrateStateDirImpl(
   // "quarantine"-phase journal and a held destination lock for manual
   // reconciliation. Refuse up front instead, before any of that becomes
   // irrevocable — same posture, and same parent-vs-self device comparison,
-  // as the destination check above (chatgpt-codex-connector, a reference-implementation pull request round
-  // 22). The same-filesystem `rename` path never reaches
-  // `quarantineSourceArtifacts`, so this is scoped to `!sameFilesystem` —
-  // a mount-point source migrating onto the same device it already sits on
-  // is not exposed to the defect this refusal exists to prevent.
+  // as the destination check above. The same-filesystem `rename` path never
+  // reaches `quarantineSourceArtifacts`, so this is scoped to `!sameFilesystem`
+  // — a mount-point source migrating onto the same device it already sits on is
+  // not exposed to the defect this refusal exists to prevent.
   if (
     !sameFilesystem &&
     statSync(source).dev !== statSync(dirname(source)).dev
@@ -1291,8 +1276,7 @@ async function migrateStateDirImpl(
   // number cannot distinguish the two cases (they are equal by
   // construction); an actual throwaway rename across the identical boundary
   // can — performed here, before the copy and before the publish, so a
-  // negative turns into an up-front refusal with nothing yet to reconcile
-  // (docomply-review, a reference-implementation pull request round 23).
+  // negative turns into an up-front refusal with nothing yet to reconcile.
   if (!sameFilesystem) {
     const probeSource = mkdtempSync(join(source, ".drive-pr-mount-probe-"));
     let probeQuarantine: string | null = null;
@@ -1325,8 +1309,7 @@ async function migrateStateDirImpl(
   // POSIX but would fail on Windows for a destination that already existed —
   // reject that case up front rather than fail deep inside the publish with
   // an opaque error, or worse, corrupt state via a two-step rmdir+rename that
-  // reopens the crash window the atomic-rename comment below exists to close
-  // (docomply-review, a reference-implementation pull request).
+  // reopens the crash window the atomic-rename comment below exists to close.
   if (
     !sameFilesystem &&
     (options.platform ?? process.platform) === "win32" &&
@@ -1378,8 +1361,7 @@ async function migrateStateDirImpl(
           // for byte-identical input: a relative link can resolve somewhere
           // different after relocation, and an absolute one leaves the
           // migrated state dependent on content outside the destination
-          // either way (docomply-review, a reference-implementation pull request round 20, chatgpt-codex-
-          // connector). Reused rather than reimplemented — discarding the
+          // either way. Reused rather than reimplemented — discarding the
           // manifest it builds — so the two branches cannot drift on what
           // counts as a supported entry; `assertManifestEqual`'s content
           // hashing is unneeded here (`rename(2)` never touches content),
@@ -1394,8 +1376,7 @@ async function migrateStateDirImpl(
         // of reporting a conflict. This narrows the race rather than closing
         // it outright (Node exposes no `RENAME_NOREPLACE`); it is the same
         // class of best-effort mitigation `assertSameDirectory`/
-        // `assertArtifactIdentity` already apply elsewhere in this loop
-        // (docomply-review, a reference-implementation pull request round 5).
+        // `assertArtifactIdentity` already apply elsewhere in this loop.
         if (existsSync(join(destination, entry.name))) {
           throw new Error(
             `destination already contains an entry named ${entry.name} — ` +
@@ -1410,8 +1391,7 @@ async function migrateStateDirImpl(
           // different underlying filesystem — `sameFilesystem` can pick this
           // path and still hit EXDEV on the first cross-device rename. The
           // rollback below already unwinds safely either way; this only
-          // replaces an opaque EXDEV with a diagnosis (docomply-review, PR
-          // #4626 round 4).
+          // replaces an opaque EXDEV with a diagnosis.
           if ((renameError as NodeJS.ErrnoException)?.code === "EXDEV") {
             throw new Error(
               `same-filesystem move failed with EXDEV (cross-device link) even ` +
@@ -1445,8 +1425,7 @@ async function migrateStateDirImpl(
       // are not otherwise durable, and removing the journal before they are
       // would let a crash retain the journal's deletion while losing some of
       // the rollback's own directory-entry updates — recreating the split
-      // population with no recovery marker left to describe it
-      // (docomply-review, a reference-implementation pull request round 5).
+      // population with no recovery marker left to describe it.
       fsyncDirectoryBestEffort(source);
       fsyncDirectoryBestEffort(destination);
       options.beforeRollbackJournalRemoval?.([source, destination]);
@@ -1460,7 +1439,7 @@ async function migrateStateDirImpl(
     // this function returns could discard that unsynced entry even though
     // the source removals were persisted, losing the migrated population.
     // The cross-filesystem publish path below already fsyncs its parent for
-    // the same reason (docomply-review, a reference-implementation pull request).
+    // the same reason.
     fsyncDirectoryBestEffort(dirname(destination));
     const journalWarning = removeMigrationJournal(source);
     if (journalWarning !== null) warnings.push(journalWarning);
@@ -1495,10 +1474,10 @@ async function migrateStateDirImpl(
       await fsyncTreeBestEffort(stage, options.signal);
       // Checked PER ARTIFACT, matching every other loop over `inventory.
       // artifacts`/`identities` in this function — a cross-filesystem
-      // migration is exactly the large-population case (round 9's 2,000-
-      // artifact measurement) where a signal check only at the loop's end
-      // would leave a fired timeout unnoticed for the loop's entire
-      // duration, right up against the publish below.
+      // migration is exactly the large-population case (a 2,000-artifact
+      // measurement) where a signal check only at the loop's end would leave a
+      // fired timeout unnoticed for the loop's entire duration, right up
+      // against the publish below.
       for (const identity of identities) {
         await checkSignal(options.signal);
         assertArtifactIdentity(source, identity);
@@ -1513,14 +1492,12 @@ async function migrateStateDirImpl(
       // otherwise go unobserved straight through both, publishing a
       // "cancelled" migration anyway and leaving complete source and
       // destination populations plus a recovery journal that needs manual
-      // reconciliation rather than a clean cancellation (chatgpt-codex-
-      // connector, PR #4626 round 13).
+      // reconciliation rather than a clean cancellation.
       await checkSignal(options.signal);
       // Written BEFORE the publish rename, not only before source quarantine
       // — a crash after publish but before this write left the destination
       // populated with no recovery record at all, and a rerun then refused
-      // on "destination must be empty" with nothing to explain why
-      // (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 4).
+      // on "destination must be empty" with nothing to explain why.
       writeMigrationJournal(
         "quarantine",
         source,
@@ -1534,7 +1511,7 @@ async function migrateStateDirImpl(
         // atomic rename either way. An earlier version issued a separate
         // `rmdirSync(destination)` first, opening a window where a crash
         // between the two calls left neither a destination nor any marker
-        // pointing at the orphaned `stage` (docomply-review, a reference-implementation pull request).
+        // pointing at the orphaned `stage`.
         renameSync(stage, destination);
       } catch (publishError) {
         // The publish never happened — `source` and `stage` are both
@@ -1620,14 +1597,12 @@ async function migrateStateDirImpl(
  * (2^31 - 1 ms), and a value such as `0.0001` or `1e300` passes a
  * finite-and-positive check on the seconds value while still producing an
  * out-of-range or non-integer millisecond delay, crashing with an uncaught
- * RangeError instead of this command's own usage error (docomply-review,
- * a reference-implementation pull request round 6).
+ * RangeError instead of this command's own usage error.
  *
  * `Number.parseFloat` accepts a valid numeric PREFIX and silently ignores
  * trailing garbage (`"30seconds"`, `"1x"`, `"1 2"` all parse as `30`, `1`,
  * `1`) — the numeric-grammar check below requires the ENTIRE trimmed
- * argument to match before any conversion happens (docomply-review, PR
- * #4626 round 8).
+ * argument to match before any conversion happens.
  */
 const TIMEOUT_NUMERIC_GRAMMAR = /^[+-]?(\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 
@@ -1722,7 +1697,7 @@ export function planRootMigration(
  * only while `--timeout` is present. With no `--timeout` at all,
  * `timeoutIndex` is `-1` and `timeoutIndex + 1` is `0` — silently dropping
  * argv[0], the source path, on the documented no-timeout invocation
- * (chatgpt-codex-connector, a reference-implementation pull request round 15). Consuming each arg exactly
+ *. Consuming each arg exactly
  * once, left to right, has no `-1` to do arithmetic on in the first place.
  */
 export function parseCliArgs(args: readonly string[]): CliArgs {

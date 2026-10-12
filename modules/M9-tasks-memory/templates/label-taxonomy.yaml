@@ -1,7 +1,8 @@
 # TEMPLATE — copy to your repo (e.g. label-taxonomy.yaml) and prune to the
 # labels YOUR tracker actually uses. This is the single source of truth (SSoT)
-# for issue classification, and it is validated by the label-taxonomy lint
-# (../reference/label-taxonomy-lint/), so keep it in sync with your tracker.
+# for issue classification, and it is validated by Groundwork's label-taxonomy
+# lint (modules/M9-tasks-memory/reference/label-taxonomy-lint/), so keep it in
+# sync with your tracker.
 #
 # The schema is closed — only four top-level keys are allowed:
 #   version     an integer stamp (bump on a breaking change to the vocabulary)

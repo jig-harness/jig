@@ -14,6 +14,10 @@ runtimes. Replace `<placeholders>` with your values.
 | parity report | on a schedule (a weekly parity snapshot) | CI on a cron; its failure reopens a lever + feeds [M7](../M7-pr-lifecycle-review/) promotion |
 | reflection trigger | at the end of a review loop, once it converges | not a gate — a loop step whose exit code says whether to prompt (see § Reflection below) |
 
+The recipes run the gates from a pinned Groundwork checkout: each gate imports
+the shared implementation in `lib/module-gates.ts`, so keep the module and
+`lib/` together and set `M8` to the module's path inside that checkout.
+
 ### GitHub Actions
 
 ```yaml
@@ -27,32 +31,38 @@ jobs:
   corpus:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    env:
+      M8: <groundwork-checkout>/modules/M8-learning-loop
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: bun test reference/corpus-lint/check-corpus.test.ts
-      - run: CORPUS=corpus.yaml bun reference/corpus-lint/check-corpus.ts
+      - run: bun test "$M8"/reference/corpus-lint/check-corpus.test.ts
+      - run: CORPUS=corpus.yaml bun "$M8"/reference/corpus-lint/check-corpus.ts
   parity:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    env:
+      M8: <groundwork-checkout>/modules/M8-learning-loop
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
       - run: ./scripts/parity-snapshot > parity.tsv      # from your telemetry
-      - run: MIN_PRECISION=0.90 bun reference/parity-report/check-parity.ts parity.tsv
+      - run: MIN_PRECISION=0.90 bun "$M8"/reference/parity-report/check-parity.ts parity.tsv
 ```
 
 ### GitLab CI
 
 ```yaml
+variables:
+  M8: <groundwork-checkout>/modules/M8-learning-loop
 corpus-lint:
   rules: [{ changes: ['corpus.yaml', 'miss-taxonomy.yaml'] }]
   script:
-    - bun test reference/corpus-lint/check-corpus.test.ts
-    - CORPUS=corpus.yaml bun reference/corpus-lint/check-corpus.ts
+    - bun test "$M8"/reference/corpus-lint/check-corpus.test.ts
+    - CORPUS=corpus.yaml bun "$M8"/reference/corpus-lint/check-corpus.ts
 parity:
   rules: [{ if: '$CI_PIPELINE_SOURCE == "schedule"' }]
   script:
     - ./scripts/parity-snapshot > parity.tsv
-    - MIN_PRECISION=0.90 bun reference/parity-report/check-parity.ts parity.tsv
+    - MIN_PRECISION=0.90 bun "$M8"/reference/parity-report/check-parity.ts parity.tsv
 ```
 
 ## Issue trackers (durable lever ids)
@@ -70,7 +80,7 @@ at it. It needs a home that outlives a PR.
 
 The corpus is data; *running* a fixture — replay the pinned commit through the
 reviewer and diff its findings against the expected — is a job in your own
-stack, not shipped here (see [README](README.md) § Not ported).
+stack, not shipped here (see the [README](README.md#left-out-by-design)).
 
 | Runtime | Replay shape |
 |---------|--------------|
@@ -99,8 +109,9 @@ The two companion cycles are runtime commands with a human-approval checkpoint.
 
 | Runtime | Reflection | Memory promotion |
 |---------|-----------|------------------|
-| Claude Code | a `/reflect` command appends to a feedback inbox; a `/review-reflection-feedback` command proposes scaffolding changes for human approval | a `/promote-memory` command lifts private memory into git-tracked shared memory |
-| Codex / Cursor / other | an end-of-session hook writing to the inbox; a periodic review step | a scripted promote step over the agent's memory store |
+| Claude Code | a `/reflect` command appends to a feedback inbox; a `/review-reflection-feedback` command proposes scaffolding changes for human approval | Groundwork's [`/groundwork:promote-memory`](../../plugin/skills/promote-memory/SKILL.md) lifts private memory into the git-tracked docs, after checking it still holds |
+| Codex | an end-of-session hook writing to the inbox; a periodic review step | the same [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) skill, from the Groundwork plugin |
+| Cursor / other | an end-of-session hook writing to the inbox; a periodic review step | a scripted promote step over the agent's memory store |
 
 ### Reflection: firing it on the round count
 
@@ -115,7 +126,7 @@ as a condition rather than a bare step:
 ```sh
 # last step of the review loop, after check-round-converged.ts wrote decision.txt
 CHANGE="$PR" INBOX=docs/reflection-inbox.md ARCHIVE=docs/reflection-archive.md \
-  ROUND_THRESHOLD=3 bun reference/reflection-trigger/reflection-trigger.ts decision.txt \
+  ROUND_THRESHOLD=3 bun "$M8"/reference/reflection-trigger/reflection-trigger.ts decision.txt \
   && trigger_rc=0 || trigger_rc=$?
 
 case "$trigger_rc" in

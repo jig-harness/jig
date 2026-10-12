@@ -50,7 +50,7 @@ an earlier one:
    Scope the sweep first, then judge. A sweep that touches more than ~3
    files or crosses a contract is **Involved** and falls through to the
    tier rows. The sweep itself still happens for accepted findings — only
-   the acceptance decision now sees the true size first. A small instance can
+   the acceptance decision sees the true size first. A small instance can
    conceal an involved class-wide change, so acceptance must be priced against
    the complete sweep rather than the original anchored hunk.
 
@@ -102,8 +102,7 @@ that always survive, the priority-tier cap and the self-inflicted clause all
 live in the consumer's `.config/review-triage.yaml`,
 and that file is deliberately the only place any of them appear: retuning the
 ladder is one config edit with no prose to chase. A threshold
-restated here is a second copy that drifts, and the ladder's own test suite
-asserts this section does not grow one.
+restated here is a second copy that drifts.
 
 The ladder is a **filter over findings this rubric has already accepted**. It
 can only turn `accepted` into a decline — never the reverse, never a
@@ -139,7 +138,7 @@ The inputs it cannot compute for itself:
   reports it. Pass `unknown` explicitly when there is none.
 - **tier** — the [Priorities](#priorities) rank the finding sits in. Always
   answerable, since it is this rubric's own first question. It is what a band's
-  tier clause reads, and while the reviewer's categories are still pending that
+  tier clause reads, and for a reviewer that emits no categories that
   clause is most of what keeps gate and production-correctness findings out of
   a decline — so an omitted tier is not a small omission, which is why the
   script refuses without one.
@@ -171,7 +170,7 @@ It prints the highest ordinal any review loop in this clone has counted for
 the PR: `await-round.ts`'s per-head counter in the git dir (the continuous
 `/resolve-review-comments` path), and `drive-pr`'s own durable `rounds` (the
 `/drive-pr` path, which never invokes `await-round.ts`). Reading only the
-first left this rule inert under the primary unattended driver.
+first would leave this rule inert under `/drive-pr`.
 
 It is a **lower bound**, not an exact count: the two counters cover disjoint
 heads, so a PR that ran three continuous rounds, converged, and then switched
@@ -213,12 +212,11 @@ finding and risks several.
 The mandatory sibling sweep (`SKILL.md` § 3) is **not** waived by this — it is
 the one thing that stops a class from costing a round per instance. It is
 scope-priced instead, by the class-priced triviality row above: scope the sweep
-first, and if the true class is Involved, the tier rows decide it as they
-always did.
+first, and if the true class is Involved, the tier rows decide it.
 
 ### Calibrating the ladder
 
-The macro every ladder decline carries is standing, and it is what makes the
+The marker every ladder decline carries is standing, and it is what makes the
 trade measurable rather than merely asserted. `wont-fix` scores as a true
 positive with a materiality signal, distinct from `rejected` — the reviewer
 flywheel is not mistaught (see [Guardrails](#guardrails)) — and the round
@@ -228,7 +226,7 @@ does for all `wont-fix` outcomes.
 Monthly, over the declines the ladder itself made:
 
 ```bash
-bun .claude/skills/drive-pr/scripts/defect-escape.ts \
+bun "<skill-dir>/../drive-pr/scripts/defect-escape.ts" \
   --since <YYYY-MM-DD> --until <YYYY-MM-DD> --ladder-only --json
 ```
 
@@ -417,7 +415,7 @@ adds round cost, so:
   `release-sessionless-lease.ts`. Read the scope exactly, because it is narrow
   in every direction and the staleness window above remains the fallback for
   everything outside it. It fires only from a `converge.ts` run that
-  actually spawned A pass — never from a bare interactive pass, which has no
+  actually spawned a pass — never from a bare interactive pass, which has no
   defined "done" moment, and never from a run that reached a terminal exit
   having started nothing: a `--dry-run`, a forwarded-flag usage error, an
   ordinary invocation against an already-converged PR, a pass command that
@@ -436,7 +434,7 @@ adds round cost, so:
   the PR being released, so a tree that has moved on to a *different* PR keeps
   its protection. Everything else about it is best-effort: a `/drive-pr` that
   the repository does not have, a failed spawn, a contended state mutex —
-  each leaves the record to expire by staleness exactly as before, and none of
+  each leaves the record to expire by staleness, and none of
   them changes `converge.ts`'s own exit code.
 
   Detection, when you need to ask the question directly, is
@@ -513,7 +511,7 @@ adds round cost, so:
 ## The Review Arbiter
 
 For threads the rubric does not decide, spawn the **Review Arbiter** agent
-(the consumer's configured independent review agent) — one invocation can take a batch of
+(`groundwork:review-arbiter`) — one invocation can take a batch of
 contested threads. Give it, per thread: the thread body, `path`/`line`, the
 finding's diff hunk — or an explicit note that it anchors to pre-existing code
 the PR did not touch (the arbiter has no `git`/`gh` access, so this is how it
@@ -532,7 +530,8 @@ evaluation and `minimalDiff` arming. `stance`, `band`
 and `minimalDiff` never depend on `--obligatory` — it only picks which
 template renders into `reply` (`wont-fix` vs `deferred`) — so the two verdicts
 agree on everything else; running both, always, is what lets the arbiter rule
-obligation itself (line 70, above) instead of being handed a `reply` baked to
+obligation itself (the `wont-fix` / `deferred` boundary under
+[Evaluation order](#evaluation-order)) instead of being handed a `reply` baked to
 whichever guess you made before it ruled. Do not special-case the "obligation
 already looks obvious" thread and send only one: the arbiter's ruling is what
 counts, and a single verdict silently forces its reply-draft to agree with
@@ -562,7 +561,7 @@ Arbiter ground rules (enforced by its agent definition):
 - It never rules `fix-now` for a finding that would change a value the PR
   records as a human decision — that always resolves to `escalate`, since only
   a human may approve the new value and the arbiter's own ruling is not that
-  approval (see Guardrails, below;).
+  approval (see [Guardrails](#guardrails), below).
 
 ## Guardrails
 
@@ -570,7 +569,7 @@ Arbiter ground rules (enforced by its agent definition):
   a deferral, with a tracked issue.
 - **An accepted fix never silently changes a recorded human decision.** Where
   the PR frames content as a human decision ("Decided by X on date", an
-  `ops-followups` block, a decisions table), a fix may correct the supporting
+  operations follow-ups block, a decisions table), a fix may correct the supporting
   facts or rationale but not the decided value itself — a finding that needs
   the value changed requires human approval of that value before
   implementation. Route it to the Review Arbiter or park it for the human, but

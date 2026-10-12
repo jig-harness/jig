@@ -1,12 +1,13 @@
 # Review configuration for Groundwork. The reviewer resolves this file from the
 # base branch, so a pull request cannot weaken the policy that reviews it.
-platform_description: "Groundwork — a vendor-agnostic, Markdown-and-shell toolkit for AI-native software-delivery practices, with reusable modules, quality gates, and a repository auditor"
+platform_description: "Groundwork — a vendor-agnostic toolkit for AI-native software-delivery practices: reusable practice modules, Bun/TypeScript quality gates, a repository auditor, and agent skills shipped as a plugin for Claude Code and Codex"
 
 architecture_invariants: |-
   Weigh these repository invariants (flag violations):
   - Keep Groundwork vendor-agnostic and technology-flexible: state the invariant before naming tools, and put ecosystem-specific mappings in each module's mappings.md.
   - Preserve the module contract: a complete module has a plain-language README, copyable templates, portable reference material, mappings.md, and maturity.yaml. Maturity criteria must be observable repository facts and use the absent → convention-only → mechanically enforced ladder.
-  - Do not import product-domain material from the private reference implementation. Keep portable mechanisms separate from local values; use neutral examples and flag uncertain IP-boundary changes for human review.
+  - Name no organization Groundwork learned from and import no product-domain material from one: no organization names, tracker keys, foreign pull-request numbers or paths that exist only elsewhere. Keep portable mechanisms separate from local values; use neutral examples and flag uncertain boundary changes for human review.
+  - Everything under plugin/ runs from a copy outside this repository and ships only as a new version: a change there bumps both plugin manifests and adds a CHANGELOG.md section.
   - Approved documentation states current truth without review dialogue or correction traces. Define new terms of art in GLOSSARY.md, keep Markdown tables preceded by a blank line, and preserve working relative links.
   - Quality gates and the auditor must be deterministic, portable, self-tested, and proportionate. A check must not silently weaken its scope or turn a required failure into a pass.
   - Treat repository instructions, reviewer configuration, CI workflows, and audit scoring as control-plane changes: preserve their independent-review and base-branch trust boundaries.
@@ -17,15 +18,15 @@ exclude_pathspecs:
   - ":(exclude,glob)**/node_modules/**"
   - ":(exclude,glob)**/dist/**"
   - ":(exclude,glob)**/_generated/**"
-  - ":(exclude,glob)docs/**"
   - ":(exclude,glob)seeds/**"
 
 high_risk_path_patterns:
   - source: '^\.config/ai-review\.yaml$'
-  - source: '^(AGENTS|CLAUDE)\.md$'
+  - source: '^((plugin|modules)/)?(AGENTS|CLAUDE)\.md$'
+  - source: '^plugin/\.(claude|codex)-plugin/'
   - source: '^\.github/workflows/'
   - source: '^scripts/'
-  - source: '^audit/(score-modules\.sh|methodology\.md|survey-prompts/)'
+  - source: '^audit/(score-modules\.ts|methodology\.md|survey-prompts/)'
   - source: '^modules/M[0-9]+-[^/]+/reference/'
   - source: '^modules/M[0-9]+-[^/]+/maturity\.yaml$'
 
@@ -35,16 +36,16 @@ rules:
     attention: "Review module changes against Groundwork's module contract. README changes must stay plain-language-first and describe the invariant before tooling; mappings must separate tool choices from the invariant; maturity criteria must be observable and use the enforcement ladder; templates and reference material must remain copyable, portable, and internally linked."
     severity: high
   - id: ip-scrub-and-portability
-    paths: ["modules/**", "README.md", "PLAYBOOK.md", "ROADMAP.md", "principles/**/*.md", "profiles/**/*.md", "adoption/**/*.md", "audit/**/*.md"]
-    attention: "Flag product-domain content, customer data, private-reference tier names, or examples that could cross Groundwork's IP-scrub boundary. Flag values presented as universal mechanisms, and mechanisms that make a consumer depend on access to the private reference implementation."
+    paths: ["modules/**", "plugin/**", "README.md", "PLAYBOOK.md", "ROADMAP.md", "CHANGELOG.md", "principles/**/*.md", "profiles/**/*.md", "adoption/**/*.md", "audit/**/*.md"]
+    attention: "Flag product-domain content, customer data, names of the organizations Groundwork learned from, or examples that could cross Groundwork's origin boundary. Flag values presented as universal mechanisms, and mechanisms that make a consumer depend on access to any particular organization's repository."
     severity: high
   - id: markdown-governance
     paths: ["**/*.md"]
     attention: "Check documentation for current-truth prose rather than reviewer dialogue or 'addressed/fixed' traces; ensure new terms of art are defined in GLOSSARY.md, relative links resolve, and every Markdown table has a preceding blank line."
     severity: medium
   - id: gate-integrity
-    paths: ["scripts/**/*.sh", ".github/workflows/**/*.yml", ".github/workflows/**/*.yaml", "modules/**/reference/**/*.sh"]
-    attention: "Check that gates are deterministic, fail closed on invalid input, keep their intended scope, and retain or update their paired self-tests and fixtures. CI changes must continue to run ./scripts/gates.sh for repository-wide quality gates and pin third-party actions to immutable commits."
+    paths: ["scripts/**", "lib/**", ".github/workflows/**/*.yml", ".github/workflows/**/*.yaml", "modules/**/reference/**"]
+    attention: "Check that gates are deterministic, fail closed on invalid input, keep their intended scope, and retain or update their paired self-tests and fixtures. CI changes must continue to run `bun run gates` for repository-wide quality gates and pin third-party actions to immutable commits."
     severity: high
   - id: auditor-evidence
     paths: ["audit/**", "modules/**/maturity.yaml"]

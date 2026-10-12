@@ -102,24 +102,50 @@ concrete per-tracker, per-runtime wiring lives in [mappings.md](mappings.md).
    and add the [required-phases gate](reference/required-phases/) at close/merge
    so a required phase can't be skipped.
 
-## Port status
+## Status
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| tracker label taxonomy (types/statuses + flag labels that drive process) | [`templates/label-taxonomy.yaml`](templates/label-taxonomy.yaml) + [`reference/label-taxonomy-lint/`](reference/label-taxonomy-lint/) — a **generic** taxonomy (docomply-specific label names IP-scrubbed out) and its invariant gate + self-test |
-| planning templates (epic + issue skeletons with tactical plans) | [`templates/ISSUE-TEMPLATES.md`](templates/ISSUE-TEMPLATES.md) — tool-independent epic/sub-issue skeletons carrying the taxonomy |
-| phase "formulas" encoding required phases for a work class | [`templates/phase-formula.yaml`](templates/phase-formula.yaml) + [`reference/required-phases/`](reference/required-phases/) — the formula schema and a close-time gate + self-test |
-| the what/how/in-session tiering + memory-promotion flow | [`templates/MEMORY-TIERS.md`](templates/MEMORY-TIERS.md) — the tiers and the private→promoted→git-tracked flow, cross-linked with [M8](../M8-learning-loop/) |
+### Runnable form
 
-Also landed: [`mappings.md`](mappings.md) (issue trackers, persistent-memory
-homes, CI) and [`maturity.yaml`](maturity.yaml).
+Two skills in Groundwork's [plugin](../../plugin/README.md) run parts of this
+practice:
 
-**Not ported** (per "don't port the unproven" / IP scrub): the reference
-implementation's actual (domain-specific) label names, its specific trackers and
-memory tools, and its private phase catalogue are product-domain content —
-groundwork ports the *shapes* (a flag fires a process; three memory tiers; a
-formula's required phases gate closure) with neutral generic labels and
-examples, and treats named trackers/memory stores as options in
-[mappings.md](mappings.md), never requirements. The actual promotion/reflection
-*commands* belong with [M8](../M8-learning-loop/); the tracker-to-gate
-automation wiring is per-ecosystem and lives in [mappings.md](mappings.md).
+- [`do-item`](../../plugin/skills/do-item/SKILL.md) picks up a work item
+  through a [tracker adapter](../../GLOSSARY.md) and honours its flag labels:
+  `hitl` stops it before delegating and keeps the merge human, and
+  `manual-ops` surfaces the operator checklist and parks the item until a
+  person completes it. The label names and the tracker's state names are
+  configuration (`issue_tracker.labels`, `issue_tracker.states` in the
+  [configuration reference](../../plugin/CONFIGURATION.md#issue_tracker)).
+- [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) is the
+  promotion step between the memory tiers, shared with
+  [M8](../M8-learning-loop/).
+
+### What the module provides
+
+| Piece | What it is |
+|-------|------------|
+| [`templates/label-taxonomy.yaml`](templates/label-taxonomy.yaml) | A generic label taxonomy: closed types and statuses, and flags that each declare what they fire |
+| [`templates/ISSUE-TEMPLATES.md`](templates/ISSUE-TEMPLATES.md) | Tool-independent epic and sub-issue skeletons carrying the taxonomy and a tactical plan |
+| [`templates/phase-formula.yaml`](templates/phase-formula.yaml) | The formula schema: a work class's phases, with the required ones marked |
+| [`templates/MEMORY-TIERS.md`](templates/MEMORY-TIERS.md) | The what / how / in-session tiers and the private → promoted → git-tracked flow |
+| [`reference/label-taxonomy-lint/`](reference/label-taxonomy-lint/) | The taxonomy's invariants as a gate: closed lists, and no flag that fires nothing |
+| [`reference/required-phases/`](reference/required-phases/) | The close-time gate: an item may not reach a done state with a required phase unrecorded |
+| [`mappings.md`](mappings.md) | Issue trackers, persistent-memory homes, CI providers |
+| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+
+Each reference gate ships with a self-test and fixtures, and delegates to the
+shared implementation in [`lib/module-gates.ts`](../../lib/module-gates.ts);
+keep the module and `lib/` together when you vendor them.
+
+### Left out by design
+
+- **Real label names, trackers and memory tools.** A working repository's
+  label names, its phase catalogue and its choice of tracker and memory store
+  are its own content. The module provides the *shapes* (a flag fires a
+  process; three memory tiers; a formula's required phases gate closure) with
+  neutral labels and examples, and lists named trackers and memory stores in
+  [mappings.md](mappings.md) as options, never requirements.
+- **The promotion and reflection commands.** They belong with
+  [M8](../M8-learning-loop/).
+- **Tracker-to-gate automation.** It is per ecosystem and lives in
+  [mappings.md](mappings.md).

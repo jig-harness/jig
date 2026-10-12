@@ -10,7 +10,7 @@
  * That last quantity is temporal, not causal — it is every commit after the
  * first reviewed head, whatever prompted it, and this header said "because a
  * round demanded it" for three rounds after `metrics.ts` and the baseline had
- * both retired that claim (docomply-review round 9, a reference-implementation pull request). See
+ * both retired that claim. See
  * `lib/metrics.ts` § "What the split does NOT establish", which owns the rule;
  * a second statement of it here is a second copy to drift.
  *
@@ -125,10 +125,9 @@ async function siblingCommitsOf(
  * even after the base absorbs that same sibling tip through some later,
  * unrelated PR — which `origin/<base>`'s moving tip would misread as "the
  * import was actually a base sync", silently re-attributing the sibling's
- * commits to this branch's own authored churn (docomply-review + codex, PR
- * #4104). Open PRs have no merge commit yet, so `origin/<base>`'s current tip
- * is the only available referent — and is not yet wrong, since there is no
- * "as of merge" snapshot to fall short of.
+ * commits to this branch's own authored churn. Open PRs have no merge commit
+ * yet, so `origin/<base>`'s current tip is the only available referent — and is
+ * not yet wrong, since there is no "as of merge" snapshot to fall short of.
  */
 function baseSnapshotOf(sample: PrSample): string {
   if (sample.mergeCommitOid !== "") return `${sample.mergeCommitOid}^1`;
@@ -237,16 +236,16 @@ const defaultDeps: ReportDeps = {
 };
 
 /**
- * Everything `main()` does once it has a resolved PR number and `--json` flag
- * — deliberately its OWN function, injectable, so a test can pin the REAL
+ * Everything `main()` does once it has a resolved PR number and `--json` flag —
+ * deliberately its OWN function, injectable, so a test can pin the REAL
  * sequence `main()` runs (repo → sample → metrics → escape baseline → write)
  * rather than a hand-rebuilt copy that stays green if this wiring changes
- * underneath it (docomply-review, a reference-implementation pull request round 1: `loop-metrics.test.ts`
- * used to pin `renderReport` alone, which does not exercise this sequence at
- * all — a regression reverting the `write` call below to
- * `renderLoopMetrics(metrics)` directly would have left every existing test
- * green). `main()` itself is reduced to argv parsing plus one call in here,
- * so there is no second, untested place this composition could drift to.
+ * underneath it (`loop-metrics.test.ts` used to pin `renderReport` alone, which
+ * does not exercise this sequence at all — a regression reverting the `write`
+ * call below to `renderLoopMetrics(metrics)` directly would have left every
+ * existing test green). `main()` itself is reduced to argv parsing plus one
+ * call in here, so there is no second, untested place this composition could
+ * drift to.
  */
 export async function runReport(
   pr: string,

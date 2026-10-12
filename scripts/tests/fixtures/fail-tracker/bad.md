@@ -1,3 +1,3 @@
 # Notes
 
-This shape exists because of an issue.
+This shape exists because of EXAMPLE-1234.

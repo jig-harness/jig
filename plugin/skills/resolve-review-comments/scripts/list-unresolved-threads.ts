@@ -9,16 +9,15 @@
  *     CONFIRMED human-authored (`__typename === 'User'`). Independent of
  *     `--bots-only`, which only decides INCLUSION in this stream — a
  *     consumer enforcing a policy scoped to human-started threads
- *     (`--leave-open`'s marker exemption, TASK review finding round 22)
- *     needs this per-thread, not the stream-level filter. Deliberately NOT
- *     the inverse of "bot-started": fails CLOSED toward `false` on an
- *     absent comment, a `null` author, or a missing/malformed `__typename`
- *     alike, so an unreadable opening comment is never read as "confirmed
- *     human" (round 24 review finding, high, chatgpt-codex-connector — a
- *     first cut computed this as `__typename !== 'Bot'`, which resolves
- *     every one of those unreadable shapes to `true`). Never redacted, even
- *     under `--include-resolved`'s `historyOnly` mode: it names WHO opened
- *     the thread, not a reply-capable handle.
+ *     (`--leave-open`'s marker exemption) needs this per-thread, not the
+ *     stream-level filter. Deliberately NOT the inverse of "bot-started": fails
+ *     CLOSED toward `false` on an absent comment, a `null` author, or a
+ *     missing/malformed `__typename` alike, so an unreadable opening comment is
+ *     never read as "confirmed human" (a first cut computed this as
+ *     `__typename !== 'Bot'`, which resolves every one of those unreadable
+ *     shapes to `true`). Never redacted, even under `--include-resolved`'s
+ *     `historyOnly` mode: it names WHO opened the thread, not a reply-capable
+ *     handle.
  *   - startLine → the first line of a MULTI-line comment's range, `null` for
  *     a single-line one (GitHub's own convention: populated only when it
  *     differs from `line`). `line` alone names only the range's endpoint.
@@ -27,17 +26,15 @@
  *     thread number the PRE-image (the base side of the hunk), not HEAD — a
  *     consumer that blames those numbers against HEAD regardless (drive-pr's
  *     self-inflicted.ts) would blame unrelated current content and could
- *     confidently mislabel it `true`/`false` instead of `null` (chatgpt-codex-
- *     connector, PR #4441). Distinct from `isOutdated`, which only flags a
- *     hunk invalidated by a LATER push — a same-push LEFT-side anchor is not
- *     outdated at all.
+ *     confidently mislabel it `true`/`false` instead of `null`. Distinct
+ *     from `isOutdated`, which only flags a hunk invalidated by a LATER push —
+ *     a same-push LEFT-side anchor is not outdated at all.
  *   - startDiffSide → the side of `startLine`, which GitHub allows to differ
  *     from `diffSide` (the side of `line`, the range's END) on a multi-line
  *     comment whose range straddles a hunk boundary. `diffSide` alone
  *     describes only the endpoint, so a consumer blaming the full
  *     `startLine..line` span against HEAD on `diffSide === 'RIGHT'` alone
- *     would blame LEFT-numbered lines in that span against the wrong content
- *     (coderabbitai, PR #4441).
+ *     would blame LEFT-numbered lines in that span against the wrong content.
  *   - isResolved → always false in the default stream (unresolved-only); the
  *     field is meaningful only under --include-resolved, below.
  *   - comments[].url → the INDIVIDUAL comment's permalink, distinct from the
@@ -48,7 +45,7 @@
  *     the comment url is the cheap, already-fetched identifier for that,
  *     since GraphQL returns it per comment node regardless.
  *   - threadId → GraphQL node id; the SINGLE key for BOTH reply-to-thread.ts and
- *     resolve-thread.ts (per AGENTS.md § Addressing PR Comments)
+ *     resolve-thread.ts (per `/groundwork:resolve-review-comments` § Human threads)
  *   - comments → the thread's replies (finding + any back-and-forth) for the
  *     address/reject call. Capped at 100 and NOT paginated, so a very long
  *     thread can omit its most recent replies — including an outcome already
@@ -122,8 +119,7 @@ interface ThreadNode {
   // one (GitHub's own convention — `startLine` is populated only when it
   // differs from `line`). Consumers that blame `line` alone to decide who
   // wrote it (drive-pr's self-inflicted.ts) would otherwise judge only the
-  // range's endpoint and miss PR-authored lines earlier in the same comment
-  // (chatgpt-codex-connector, a reference-implementation pull request).
+  // range's endpoint and miss PR-authored lines earlier in the same comment.
   startLine: number | null;
   // `LEFT` | `RIGHT` | `null` (a PR-level comment, or a resolved thread
   // GitHub no longer anchors to a diff side). See the header.
@@ -133,7 +129,7 @@ interface ThreadNode {
   // whose range straddles a hunk boundary, so a LEFT-to-RIGHT range is not
   // fully described by `diffSide` alone — a consumer that blames the whole
   // `startLine..line` span against HEAD using only `diffSide` would blame the
-  // LEFT-numbered lines against the wrong content (coderabbitai, PR #4441).
+  // LEFT-numbered lines against the wrong content.
   startDiffSide: string | null;
   comments: {
     pageInfo: { hasNextPage: boolean };
@@ -158,8 +154,8 @@ const gh = (
 
 // Gated behind isEntryPoint rather than run at module scope, like every
 // other script in this family: importing this module used to spawn `gh` and
-// print a PR's threads as a side effect of the import alone (coderabbitai,
-// PR #4040 — reported against unresolve-thread.ts, true of all three).
+// print a PR's threads as a side effect of the import alone (first seen in
+// unresolve-thread.ts, true of all three).
 async function main(): Promise<number> {
   let pr = "";
   let botsOnly = false;
@@ -186,7 +182,7 @@ async function main(): Promise<number> {
   // opaque pass command, where `codex exec "/resolve-review-comments 999"
   // --label 123` satisfies the delimited-token test for 123 while targeting 999,
   // and `... do not use --bots-only` satisfies the scope test while asking for
-  // the opposite (docomply-review round 1, a reference-implementation pull request). A dedicated non-prompt
+  // the opposite. A dedicated non-prompt
   // channel sidesteps that, exactly as $DRIVE_PR_TARGET does for drive-pr.
   const target = process.env.RRC_TARGET_PR ?? "";
   if (target !== "" && target !== pr) {
@@ -206,7 +202,7 @@ async function main(): Promise<number> {
   // `gh -F` gives a leading `@` file-reference semantics — `-F pr=@some/path`
   // makes gh READ that file and send its contents as the value. `pr` reaches the
   // `-F` below, so it is constrained to what a PR number can be before it gets
-  // there rather than after (coderabbitai, PR #4034 round 2). `resolve-thread.ts`
+  // there rather than after. `resolve-thread.ts`
   // passes its id through `-f`, which is literal, so it needs no counterpart.
   if (!/^[0-9]+$/.test(pr)) {
     console.error(`list-unresolved-threads: PR must be a number (got '${pr}')`);
@@ -280,8 +276,7 @@ async function main(): Promise<number> {
     // open threads". GraphQL answers a bad number — or a good number against a
     // repository `$GH_REPO` / `gh repo set-default` pointed somewhere else —
     // with a valid response carrying `pullRequest: null`, and the optional
-    // chain turned that into an empty thread list and exit 0 (chatgpt-codex-
-    // connector, PR #4034 round 4).
+    // chain turned that into an empty thread list and exit 0.
     //
     // Zero threads is the CONVERGENCE signal for everything downstream — the
     // `--bots-only` stop condition, drive-status's thread count — so silently
@@ -314,11 +309,10 @@ async function main(): Promise<number> {
       // means open, so a malformed node can never inflate the open-work count.
       if (!includeResolved && t.isResolved !== false) continue;
       const startedByBot = t.comments.nodes[0]?.author?.__typename === "Bot";
-      // Deliberately NOT the same expression as `startedByBot` above (round
-      // 24 review finding, high, chatgpt-codex-connector): that boolean is
-      // `=== 'Bot'`, which quietly resolves an ABSENT comment, a `null`
-      // author, or a missing/malformed `__typename` to `false` — read by a
-      // consumer as "confirmed human" when it is actually "cannot tell".
+      // Deliberately NOT the same expression as `startedByBot` above: that
+      // boolean is `=== 'Bot'`, which quietly resolves an ABSENT comment, a
+      // `null` author, or a missing/malformed `__typename` to `false` — read
+      // by a consumer as "confirmed human" when it is actually "cannot tell".
       // `--bots-only`'s own inclusion decision (`historyOnly` below) wants
       // exactly that lenient direction — treat "cannot tell" as possibly
       // human, so an ambiguous thread is excluded from an actionable
@@ -327,10 +321,10 @@ async function main(): Promise<number> {
       // marker exemption, `isThreadTriaged`/`isLeftOpenThread`) needs the
       // opposite direction: fail closed toward NOT granting it, i.e. require
       // explicit confirmation of a `'User'` typename, treating anything else
-      // — bot, absent, malformed — as "not confirmed human"
-      // (`.claude/rules/document-scanning-gates.md` rule 1). One boolean
-      // cannot fail closed for both consumers at once, so this is a second,
-      // independent field, never a rename of the first.
+      // — bot, absent, malformed — as "not confirmed human" (an input that
+      // cannot be read never counts as a pass). One boolean cannot fail closed
+      // for both consumers at once, so this is a second, independent field,
+      // never a rename of the first.
       const confirmedHumanStarted =
         t.comments.nodes[0]?.author?.__typename === "User";
       // `--bots-only` exists so a pass is never handed an ACTIONABLE human
@@ -338,21 +332,20 @@ async function main(): Promise<number> {
       // and dropping it here silently blinded the reversal check to exactly
       // the case it matters most for: a bot finding reversing an accepted
       // HUMAN outcome, under the continuous `--bots-only` flow where
-      // converge.ts exports RRC_BOTS_ONLY=1 (codex, PR #4070 round 7). So a
-      // resolved human thread passes through as read-only history, with every
-      // reply-capable handle REDACTED: the reversal check needs the outcome
-      // text and the construct (path, line, bodies, authorAssociation), never
-      // anything it could post with. That means the GraphQL id AND both `url`
-      // fields — a comment permalink carries the numeric review-comment id in
-      // its `#discussion_r…` fragment, which the REST replies endpoint accepts,
-      // so nulling the id alone left the record actionable (codex, round 9).
-      // Under --include-resolved a human thread is history whatever its
-      // resolved state: a human may deliberately leave an acted-on thread
-      // open (SKILL "Human threads"), and that thread can carry the prior
-      // trusted outcome the reversal check needs — dropping it let a bot
-      // finding reverse a human decision undetected (codex, round 18). It is
-      // safe precisely because `historyOnly` redacts every reply-capable
-      // handle below, so nothing about it is actionable either way.
+      // converge.ts exports RRC_BOTS_ONLY=1. So a resolved human thread passes
+      // through as read-only history, with every reply-capable handle REDACTED:
+      // the reversal check needs the outcome text and the construct (path,
+      // line, bodies, authorAssociation), never anything it could post with.
+      // That means the GraphQL id AND both `url` fields — a comment permalink
+      // carries the numeric review-comment id in its `#discussion_r…` fragment,
+      // which the REST replies endpoint accepts, so nulling the id alone left
+      // the record actionable. Under --include-resolved a human thread is
+      // history whatever its resolved state: a human may deliberately leave an
+      // acted-on thread open (SKILL "Human threads"), and that thread can carry
+      // the prior trusted outcome the reversal check needs — dropping it let a
+      // bot finding reverse a human decision undetected. It is safe precisely
+      // because `historyOnly` redacts every reply-capable handle below, so
+      // nothing about it is actionable either way.
       const historyOnly = botsOnly && !startedByBot;
       if (historyOnly && !includeResolved) continue;
       process.stdout.write(
@@ -364,12 +357,11 @@ async function main(): Promise<number> {
           // a consumer deciding whether a policy scoped to human-started
           // threads (e.g. `--leave-open`'s marker exemption) legitimately
           // applies needs this independent of `--bots-only`'s own filtering,
-          // which only decides stream INCLUSION (TASK review finding,
-          // round 22). Deliberately fail-closed toward `false` — an absent
-          // comment, a `null` author, or a missing/malformed `__typename`
-          // all read as "not confirmed human", never as bot-started's own
-          // lenient inverse (round 24 review finding, high, chatgpt-codex-
-          // connector — see `confirmedHumanStarted`'s own definition above).
+          // which only decides stream INCLUSION. Deliberately fail-closed
+          // toward `false` — an absent comment, a `null` author, or a
+          // missing/malformed `__typename` all read as "not confirmed human",
+          // never as bot-started's own lenient inverse (see
+          // `confirmedHumanStarted`'s own definition above).
           confirmedHumanStarted,
           path: t.path,
           line: t.line,
@@ -386,9 +378,8 @@ async function main(): Promise<number> {
             // A BODY can carry a reply-capable id too: cross-linking a review
             // comment embeds `#discussion_r<id>`, which the REST replies
             // endpoint accepts, so nulling the url fields alone still left a
-            // usable handle in the text (codex, round 25). Scrub the id and
-            // keep the sentence readable — the reversal check reads prose,
-            // never permalinks.
+            // usable handle in the text. Scrub the id and keep the sentence
+            // readable — the reversal check reads prose, never permalinks.
             body: historyOnly ? redactReplyIds(c.body) : (c.body ?? null),
             url: historyOnly ? null : (c.url ?? null),
           })),

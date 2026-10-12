@@ -3,17 +3,17 @@
  *
  * `store.ts`'s per-PR mutex used a destination keyed to the ACTING process's
  * own identity on both halves of its stale-lock protocol: `acquire`'s
- * stale-break renamed to `<lock>.stale.<pid>`, and `release` checked the
- * owner marker's existence and THEN renamed to `<lock>.released.<pid>`. Both
- * are the exact class PR #4031 found and fixed in `drive.ts` — a
- * pid-keyed (or check-then-act, private-destination) scheme fences nothing,
- * because the SOURCE every contender renames is the same live directory:
- * whichever rename runs second (or whichever restore runs last) moves
- * whatever is CURRENTLY there, not the generation it originally observed.
+ * stale-break renamed to `<lock>.stale.<pid>`, and `release` checked the owner
+ * marker's existence and THEN renamed to `<lock>.released.<pid>`. Both are the
+ * exact class already fixed in `drive.ts` — a pid-keyed (or check-then-act,
+ * private-destination) scheme fences nothing, because the SOURCE every
+ * contender renames is the same live directory: whichever rename runs second
+ * (or whichever restore runs last) moves whatever is CURRENTLY there, not the
+ * generation it originally observed.
  *
  * Each test below plants the exact directory state a race would have left
  * behind and asserts the fixed code refuses to clobber it, mirroring the
- * `describe('single-instance lock')` tests PR #4031 added for `drive.ts`.
+ * `describe('single-instance lock')` tests for `drive.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
@@ -236,7 +236,7 @@ describe("lock.ts single-instance mutex", () => {
   it("touch refreshes a held lock's mtime so a contending acquire does not treat it as stale", async () => {
     // Models `guarded-push.ts` holding this same PathLock across a `git push`
     // that can legitimately run far longer than the default 10-minute
-    // staleness window (chatgpt-codex-connector, a reference-implementation pull request): without a
+    // staleness window: without a
     // heartbeat, ANY hold this old is broken outright by `acquire`'s own
     // stale-break dance — see 'a recovery leaves a non-empty tombstone...'
     // above, which ages a lock by the identical amount and asserts the
@@ -267,7 +267,7 @@ describe("lock.ts single-instance mutex", () => {
     holder.release();
   });
 
-  it("touch() does not refresh a SUCCESSOR lock after this holder lost ownership (docomply-review round 13)", async () => {
+  it("touch() does not refresh a SUCCESSOR lock after this holder lost ownership", async () => {
     // `lockHeld` alone is stale evidence: if this process is suspended past
     // the staleness window, a contender's `acquire()` can quarantine this
     // hold's generation and install a fresh one at the canonical path before
@@ -301,14 +301,14 @@ describe("lock.ts single-instance mutex", () => {
   });
 
   it("touch does not let a takeover interleave BETWEEN its ownership check and its mtime write", async () => {
-    // The round-13 fixture above ('does not refresh a SUCCESSOR lock...')
-    // plants the post-takeover state directly — it proves `touch()` reacts
-    // correctly to a takeover that already finished, not that a takeover
-    // cannot land DURING `touch()`'s own existence-check-to-mtime-write gap.
-    // This test forces that exact interleaving with the
-    // `DRIVE_PR_LOCK_TOUCH_TEST_DELAY`/`_TEST_SIGNAL` stall hook, the same
-    // way 'a stale-break race that lands on a fresh replacement...' above
-    // forces one for `acquire()`.
+    // The fixture above ('does not refresh a SUCCESSOR lock...') plants the
+    // post-takeover state directly — it proves `touch()` reacts correctly to a
+    // takeover that already finished, not that a takeover cannot land DURING
+    // `touch()`'s own existence-check-to-mtime-write gap. This test forces that
+    // exact interleaving with the
+    // `DRIVE_PR_LOCK_TOUCH_TEST_DELAY`/`_TEST_SIGNAL` stall hook, the same way
+    // 'a stale-break race that lands on a fresh replacement...' above forces
+    // one for `acquire()`.
     const holder = createLock(file, "test", "999");
     await holder.acquire();
     const ownMarker = readdirSync(lock).find((f) => f.startsWith("owner."));
@@ -523,13 +523,12 @@ describe("lock.ts single-instance mutex", () => {
   });
 
   it("a `.recovering` gate that looks stale but is actually a FRESH replacement is not broken", async () => {
-    // The gate's own path-keyed TOCTOU class, closed the same way `lock`
-    // itself is: an old-mtime observation and the identity-verified removal
-    // are two separate syscalls, and a genuinely fresh, live gate can
-    // replace the stale one in between. The removal must detect that from
-    // the moved copy's OWN identity and refuse to destroy it — the
-    // regression docomply-review round 2 on #4050 found in the very first
-    // draft of this gate.
+    // The gate's own path-keyed TOCTOU class, closed the same way `lock` itself
+    // is: an old-mtime observation and the identity-verified removal are two
+    // separate syscalls, and a genuinely fresh, live gate can replace the stale
+    // one in between. The removal must detect that from the moved copy's OWN
+    // identity and refuse to destroy it — the regression the very first draft
+    // of this gate had.
     //
     // `recoveringIsLive` must stay fully SYNCHRONOUS — it is called from
     // `release()`'s SIGINT/SIGTERM handler, which cannot `await` — so its
@@ -612,25 +611,24 @@ describe("lock.ts single-instance mutex", () => {
   });
 
   it("a malformed `.recovering` entry is cleaned up rather than blocking every later acquisition forever", async () => {
-    // Not every `.recovering` mkdir failure is genuine contention — a
-    // vanished parent directory or EACCES are two real examples. Modelled
-    // here portably (no permission juggling): a plain FILE occupying the
-    // gate's path. `mkdirSync` throws EEXIST against it exactly like it
-    // would against a live directory, but `recoveringIsLive`'s own
-    // `generationOf` — a `readdirSync` — throws ENOTDIR against a file and
-    // used to read that as "already gone" (`holder === null`, i.e.
-    // `false`) WITHOUT ever removing it — so the file sat there forever,
-    // its mtime never touched, permanently re-failing the exact same way
-    // on every later `mkdirSync(recovering)` attempt from ANY process,
-    // including this one's own eventual `release()` (docomply-review
-    // round 3 on #4050). `recoveringIsLive` now removes an entry it
-    // cannot read a generation from, so the SECOND attempt here succeeds.
+    // Not every `.recovering` mkdir failure is genuine contention — a vanished
+    // parent directory or EACCES are two real examples. Modelled here portably
+    // (no permission juggling): a plain FILE occupying the gate's path.
+    // `mkdirSync` throws EEXIST against it exactly like it would against a live
+    // directory, but `recoveringIsLive`'s own `generationOf` — a `readdirSync`
+    // — throws ENOTDIR against a file and used to read that as "already gone"
+    // (`holder === null`, i.e. `false`) WITHOUT ever removing it — so the file
+    // sat there forever, its mtime never touched, permanently re-failing the
+    // exact same way on every later `mkdirSync(recovering)` attempt from ANY
+    // process, including this one's own eventual `release()`.
+    // `recoveringIsLive` now removes an entry it cannot read a generation from,
+    // so the SECOND attempt here succeeds.
     //
     // A second, independent fix bounds the FIRST attempt regardless: the
     // pre-fix loop only checked its deadline INSIDE the
     // `if (recoveringIsLive())` branch, so a `false` here `continue`d
     // straight back to the top with no bound at all — an unconditional
-    // spin (chatgpt-codex-connector, a reference-implementation pull request round 2) that would have
+    // spin that would have
     // starved this test even if nothing ever cleaned the file up.
     const recovering = `${lock}.recovering`;
     writeFileSync(recovering, "");
@@ -656,15 +654,14 @@ describe("lock.ts single-instance mutex", () => {
   });
 
   it("DRIVE_PR_LOCK_TIMEOUT=0 still allows one immediate, uncontended acquisition to succeed", async () => {
-    // `acquireDeadline` at `limit=0` equals this call's own start time, so
-    // ANY elapsed time — even an uncontended success's own marker write —
-    // trivially reads as "already past deadline". A post-success deadline
-    // check with no exemption for the first attempt (added round 6 to fix
-    // a DIFFERENT bug — a contended acquisition silently succeeding late)
-    // rejected even a lock nobody was contending for, breaking the
-    // documented, test-relied-on meaning of a zero timeout: "one immediate
-    // attempt, don't retry", not "fail unless already held"
-    // (docomply-review round 7 on #4050).
+    // `acquireDeadline` at `limit=0` equals this call's own start time, so ANY
+    // elapsed time — even an uncontended success's own marker write — trivially
+    // reads as "already past deadline". A post-success deadline check with no
+    // exemption for the first attempt (added to fix a DIFFERENT bug — a
+    // contended acquisition silently succeeding late) rejected even a lock
+    // nobody was contending for, breaking the documented, test-relied-on
+    // meaning of a zero timeout: "one immediate attempt, don't retry", not
+    // "fail unless already held".
     process.env.DRIVE_PR_LOCK_TIMEOUT = "0";
     const contender = createLock(file, "test", "999");
     await contender.acquire();
@@ -673,14 +670,13 @@ describe("lock.ts single-instance mutex", () => {
     contender.release();
   });
 
-  it("DRIVE_PR_LOCK_TIMEOUT=0 fails fast against real, non-stale contention rather than waiting a full backoff interval (docomply-review round 14)", async () => {
+  it("DRIVE_PR_LOCK_TIMEOUT=0 fails fast against real, non-stale contention rather than waiting a full backoff interval", async () => {
     // A held, NOT-stale lock forces the ordinary contention branch — no
     // staleness or `.recovering` machinery involved at all. That branch's
-    // `sleep(1)` had no remaining-budget guard, unlike its two siblings
-    // (fixed rounds 12/13), so `DRIVE_PR_LOCK_TIMEOUT=0` silently waited
-    // ~1s before reporting failure instead of honoring the documented "one
-    // immediate attempt, don't retry" contract the test above exercises for
-    // the uncontended case.
+    // `sleep(1)` had no remaining-budget guard, unlike its two siblings, so
+    // `DRIVE_PR_LOCK_TIMEOUT=0` silently waited ~1s before reporting failure
+    // instead of honoring the documented "one immediate attempt, don't retry"
+    // contract the test above exercises for the uncontended case.
     mkdirSync(lock, { recursive: true });
     writeFileSync(join(lock, "owner.deadbeef"), "");
 
@@ -816,14 +812,14 @@ describe("sweepLockQuarantine", () => {
     // copy) by the time the staging copy's own deletion could fail
     // (EACCES/EIO) — skipping the fence-restore fallback in that case would
     // leave the canonical path permanently vacant with no error anyone
-    // sees (docomply-review, a reference-implementation pull request round 2).
+    // sees.
     //
     // Modelled portably via `mock.module`, not `chmodSync` — a permission
     // bit is not a reliable way to induce EACCES: running as root (the
     // reviewer's own sandbox, and plenty of CI/dev containers) bypasses
     // directory permission checks entirely, so the deletion would silently
-    // SUCCEED and this test would fail to exercise the failure path at all
-    // (chatgpt-codex-connector, a reference-implementation pull request round 3). Intercepting `rmSync`
+    // SUCCEED and this test would fail to exercise the failure path at all.
+    // Intercepting `rmSync`
     // itself reproduces the same observable failure — a throw out of the
     // staging deletion — independent of the user the suite runs as.
     const actualFs = await import("node:fs");
@@ -881,7 +877,7 @@ describe("sweepLockQuarantine", () => {
     // The leftover is invisible to THIS call's own primary sweep (its name
     // is deliberately excluded from both scanned prefixes), but the next
     // sweep retries and cleans it up rather than leaving it as permanent
-    // debris (docomply-review, a reference-implementation pull request round 3 summary finding).
+    // debris.
     sweepLockQuarantine(file);
     expect(existsSync(join(dir, leftover as string))).toBe(false);
   });
@@ -909,10 +905,10 @@ describe("sweepLockQuarantine", () => {
 
   it("retries only THIS lock’s own `.compacting.*` leftovers — a different PR’s in the same shared state dir is left untouched", () => {
     // The state directory is shared by every PR's lock files side by side
-    // (`lockBase` is how a caller tells them apart), so a bare
-    // `.compacting.` prefix on the retry pass would delete another PR's
-    // active or failed staging copy too — the exact regression
-    // docomply-review caught in round 5 against the round-3 fix above.
+    // (`lockBase` is how a caller tells them apart), so a bare `.compacting.`
+    // prefix on the retry pass would delete another PR's active or failed
+    // staging copy too — the exact regression an earlier version of the retry
+    // pass above had.
     const otherFile = join(dir, "drive-pr-888.json");
     const otherLock = `${otherFile}.lock`;
     const foreignLeftover = join(
@@ -929,14 +925,12 @@ describe("sweepLockQuarantine", () => {
   });
 
   it("restores a fence at the canonical path before deleting a staging leftover from a KILLED claim, rather than destroying the only remaining copy of it", () => {
-    // Models a process killed between `renameSync(path, staging)` and
-    // EITHER of `rmSync`/`writeFileSync` — the canonical path was never
-    // touched again after the claim rename, so it is genuinely vacant, and
-    // `staging` is the ONLY remaining copy of this generation's fence. The
-    // retry-cleanup pass above must not delete it outright: that would
-    // permanently remove the fence with nothing left to restore it
-    // (docomply-review, a reference-implementation pull request round 5 — a fresh finding against the
-    // round-3 retry fix, distinct from the already-covered
+    // Models a process killed between `renameSync(path, staging)` and EITHER of
+    // `rmSync`/`writeFileSync` — the canonical path was never touched again
+    // after the claim rename, so it is genuinely vacant, and `staging` is the
+    // ONLY remaining copy of this generation's fence. The retry-cleanup pass
+    // above must not delete it outright: that would permanently remove the
+    // fence with nothing left to restore it (distinct from the already-covered
     // rmSync-already-ran case above).
     const lockDoomed = `${lock}.stale.owner.${"a".repeat(24)}`;
     const staging = join(
@@ -971,9 +965,9 @@ describe("sweepLockQuarantine", () => {
     // content is not the directory shape this function knows how to claim).
     // The generation is a fully grammatical `owner.<24 hex>` — not a decoy
     // string like `owner.not-a-directory` — so the tightened quarantine-name
-    // match (chatgpt-codex-connector, a reference-implementation pull request round 18) is not what excludes
+    // match is not what excludes
     // it; only the not-a-directory check is exercised, per this rule's own
-    // fail-closed-conjunction requirement (document-scanning-gates.md § 5).
+    // fail-closed-conjunction requirement.
     const decoyFile = `${lock}.stale.owner.${"a".repeat(24)}`;
     writeFileSync(decoyFile, "not a lock quarantine directory");
 
@@ -984,12 +978,12 @@ describe("sweepLockQuarantine", () => {
     );
   });
 
-  it("leaves a foreign `.stale.manual-backup` sibling untouched, contents intact — the reviewer’s own example of a name this protocol never produces", () => {
-    // The exact gap chatgpt-codex-connector found in PR #4197 round 18: a
-    // plain `startsWith(lockStalePrefix)` check matched ANY name sharing the
-    // stale prefix, independent of `generationOf`'s actual grammar, so a
-    // human's manual backup sitting next to a genuine quarantine entry was
-    // compacted (and its contents destroyed) right along with it.
+  it("leaves a foreign `.stale.manual-backup` sibling untouched, contents intact — a name this protocol never produces", () => {
+    // The exact gap this pins: a plain `startsWith(lockStalePrefix)` check
+    // matched ANY name sharing the stale prefix, independent of
+    // `generationOf`'s actual grammar, so a human's manual backup sitting next
+    // to a genuine quarantine entry was compacted (and its contents destroyed)
+    // right along with it.
     const foreign = `${lock}.stale.manual-backup`;
     mkdirSync(foreign, { recursive: true });
     writeFileSync(join(foreign, "notes.txt"), "human debugging notes");

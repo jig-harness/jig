@@ -2,10 +2,10 @@
  * select_scout_finding.test.ts — unit coverage for the Step 2 freshness
  * procedure (SKILL.md "Check for Prior Scout Findings"), extracted into
  * `selectScoutFinding` precisely so these branches have a callsite to test
- * against instead of living only as prose an agent hand-executes each round
- * (docomply-review, a reference-implementation pull request round 4: "no test exercises it... changes that
- * mishandle multiple comments, future/malformed timestamps, the exact-24-hour
- * boundary, or same-hash reuse can remain green").
+ * against instead of living only as prose an agent hand-executes each round:
+ * untested, changes that mishandle multiple comments, future/malformed
+ * timestamps, the exact-24-hour boundary, or same-hash reuse can remain
+ * green.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -177,10 +177,9 @@ describe("selectScoutFinding", () => {
   });
 
   it("does not let an older, validly-timestamped comment win over a newer one with a future timestamp", () => {
-    // Regression for chatgpt-codex-connector, a reference-implementation pull request round 10: sorting by
-    // freshness-ms (which nulls future timestamps to -Infinity) demoted the
-    // actually-newest comment below an older, genuinely fresh one, so the
-    // older comment's stale findings were wrongly reused.
+    // Regression: sorting by freshness-ms (which nulls future timestamps to
+    // -Infinity) demoted the actually-newest comment below an older, genuinely
+    // fresh one, so the older comment's stale findings were wrongly reused.
     const older = finding("1111", {
       created_at: new Date(NOW - 1 * HOUR).toISOString(), // valid, fresh
     });
@@ -194,11 +193,11 @@ describe("selectScoutFinding", () => {
   });
 
   it("re-runs rather than reusing a fresh dated comment when another comment has no parsable timestamp", () => {
-    // Regression for chatgpt-codex-connector, a reference-implementation pull request round 11: a comment
-    // with no orderable timestamp always loses the sort to any dated
-    // candidate, even when it is actually the most recently posted one — so
-    // reusing purely on the dated candidate's own freshness could resurrect
-    // stale findings over a genuinely newer, malformed-timestamp comment.
+    // Regression: a comment with no orderable timestamp always loses the sort
+    // to any dated candidate, even when it is actually the most recently posted
+    // one — so reusing purely on the dated candidate's own freshness could
+    // resurrect stale findings over a genuinely newer, malformed-timestamp
+    // comment.
     const dated = finding("1111", {
       created_at: new Date(NOW - 1 * HOUR).toISOString(), // fresh, but maybe not newest
     });

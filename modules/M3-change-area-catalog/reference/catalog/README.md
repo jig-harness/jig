@@ -3,11 +3,10 @@
 This is the language-neutral specification behind the module
 [invariant](../../README.md): one validated catalog, many generated
 projections. The worked data file is
-[`catalog.example.yaml`](catalog.example.yaml). The reference implementation
-codes the schema, resolver, and emitters in TypeScript; a change-area resolver
-is a structured-data + graph job, so implement it in whatever language your
-repo already uses — this file specifies *what* it must do, not a bash
-transcription of it.
+[`catalog.example.yaml`](catalog.example.yaml). A change-area resolver is a
+structured-data + graph job, so implement the schema, resolver, and emitters
+in whatever language your repo already uses — this file specifies *what* they
+must do.
 
 ## Entry schema
 
@@ -50,8 +49,7 @@ is the graph checker's job.
 
 ## Graph validation
 
-Run these after schema validation (see the graph invariants the reference
-`check-catalog` enforces):
+Run these after schema validation:
 
 1. **Referential integrity** — every `impliedBy` ref names an existing area.
 2. **No self-implication** — `ref != key`.
@@ -485,7 +483,7 @@ implementations can't silently disagree:
 [`../regex-mirror/check-catalog-regex-sync.ts`](../regex-mirror/check-catalog-regex-sync.ts)
 implements `checkFilterSegmentCoverage` as specified above — a
 component-boundary literal-prefix match against parsed `paths:` values, never
-a substring of the catalog file's raw text — as a standalone shell script. It
+a substring of the catalog file's raw text — as a standalone Bun script. It
 assumes the catalog's inline-array `paths:` format and its documented 2-space
 indent (an area's own fields sit at exactly 4 spaces, which is also what lets
 it skip a `notes:` block scalar's prose and a nested reserved block's own
@@ -493,7 +491,7 @@ it skip a `notes:` block scalar's prose and a nested reserved block's own
 `paths:` lists or a different indent width needs a real YAML parser instead.
 See [`../regex-mirror/README.md`](../regex-mirror/README.md), and for
 `checkFilterCoverage`'s catalog → regex direction as a documented recipe (it
-needs the resolver's closure, so it isn't a standalone shell script).
+needs the resolver's closure, so it isn't a standalone script).
 `checkFilterFileCoverage` and `checkFilterCodeAreaCoverage` are per-tracked-file
 refinements of the same regex → catalog direction — same "parse, don't grep
 the substring" lesson, walked per file and per area-class instead of per

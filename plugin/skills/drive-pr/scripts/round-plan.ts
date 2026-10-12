@@ -44,8 +44,8 @@
  * One rule the caller still owns, because it is not derivable from a diff:
  * warm a remote box only when the emitted plan demands one, and as a
  * SINGLE-USE box warmed immediately after the last local build task. A box
- * reused across rounds, or warmed before the latest local run, went stale in
- * the reference implementation three times out of three.
+ * reused across rounds, or warmed before the latest local run, went stale
+ * three times out of three when measured.
  *
  * REMOTE-BOX DECAY. The cumulative scope is right for the CHECKS and wrong for
  * the BOX, and this script says which of the two it is answering. A round-N
@@ -53,7 +53,7 @@
  * cumulative: that argument is about the tree's CURRENT contents. The box is a
  * different question: it re-runs tests and builds that already passed on the
  * last green-verified SHA. So the box is warranted by what changed SINCE that
- * SHA, not by what the PR contains. Measured in the reference implementation:
+ * SHA, not by what the PR contains. Measured:
  * a fixed set of round-1 files held `testbox.required: true` for a dozen
  * rounds that never touched them, while its pre-push hook (which scopes
  * incrementally) skipped its heavy phase on the same commits. This block
@@ -260,18 +260,17 @@ async function main(): Promise<number> {
   if (rootRes.code !== 0) return rootRes.code;
   const root = rootRes.stdout.trim();
 
-  // The refusal AGENTS.md § Change-Proportional Validation's
-  // resolve snippet makes, for the five markers the shared probe
-  // checks (MERGE_HEAD, CHERRY_PICK_HEAD, REVERT_HEAD, rebase-merge,
-  // rebase-apply). The snippet also refuses on `sequencer/todo`;
-  // the probe does not yet, for any of its callers. Mid-merge,
-  // `git diff <base>` compares
-  // against a working tree that still holds the whole incoming operation, so
-  // the plan inflates to it: measured on PR #4176 at 78 files and a Testbox
-  // demand, versus 13 once the merge was committed. `PR_CONFLICTING` makes a
-  // mid-merge invocation the likely case, not an edge one. Both modes, since
-  // a delta base is diffed against that same working tree. An unreadable
-  // probe fails closed — "cannot confirm" is not "confirmed none".
+  // The refusal drive-pr `SKILL.md` § 5's validation plan's resolve snippet
+  // makes, for the five markers the shared probe checks (MERGE_HEAD,
+  // CHERRY_PICK_HEAD, REVERT_HEAD, rebase-merge, rebase-apply). The snippet
+  // also refuses on `sequencer/todo`; the probe does not yet, for any of its
+  // callers. Mid-merge, `git diff <base>` compares against a working tree that
+  // still holds the whole incoming operation, so the plan inflates to it:
+  // measured at 78 files and a Testbox demand, versus 13 once the merge was
+  // committed. `PR_CONFLICTING` makes a mid-merge invocation the likely case,
+  // not an edge one. Both modes, since a delta base is diffed against that same
+  // working tree. An unreadable probe fails closed — "cannot confirm" is not
+  // "confirmed none".
   const op = await unconcludedGitOpMarker(gitCallTimeoutSeconds(), {
     cwd: root,
   });
@@ -306,8 +305,7 @@ async function main(): Promise<number> {
     // recorded) both mean "no usable delta base" for this already-explicit,
     // operator-opted-in flag — fold them the same way this block always
     // has. `roundBase()`'s own callers (below, and `finish-round.ts`) are
-    // where the two are told apart and a read failure fails closed instead
-    //.
+    // where the two are told apart and a read failure fails closed instead.
     const verifiedSha = await readVerifiedSha(pr, driveState);
     since = verifiedSha ?? "";
     if (since === "") {
@@ -430,7 +428,7 @@ async function main(): Promise<number> {
       fail(1, "round-plan: drive.validation_plan_command failed");
     // `malformed` means the resolver exited 0 and its stdout was not a JSON
     // object. Naming validation.testbox.required here sent the operator to
-    // inspect a field that was never reached (coderabbitai, PR #4034 round 2);
+    // inspect a field that was never reached;
     // that message belongs to the later check, which still carries it.
     fail(
       1,
@@ -584,9 +582,9 @@ async function main(): Promise<number> {
       `\nTestbox: REQUIRED for this ${mode} plan. Warm a SINGLE-USE box immediately\n`,
     );
     out("after the last local build task:\n");
-    // Printed rather than left to the operator's memory of the skill: in the
-    // reference implementation a bare warmup took the provider's 30-minute
-    // idle default, and that floor was 49% of every runner-minute a box held.
+    // Printed rather than left to the operator's memory of the skill: a bare
+    // warmup took the provider's 30-minute idle default, and that floor was
+    // measured at 49% of every runner-minute a box held.
     out(`  ${warmupCommand}\n`);
     out(
       "\nthen run (it stops the box itself, except on a retryable code failure;\n",
@@ -627,6 +625,5 @@ async function main(): Promise<number> {
 // CLI. The predicate is `lib/cli.ts`'s, no longer inlined here: the inline
 // form compared `resolve(argv[1])` rather than its REALPATH, so it answered
 // false — and skipped the CLI entirely — for an invocation through the
-// `.agents/skills/` symlink farm or any path with a symlink component
-//.
+// `.agents/skills/` symlink farm or any path with a symlink component.
 if (isEntryPoint(import.meta.url)) runMain("round-plan.ts", main);

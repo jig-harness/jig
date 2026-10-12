@@ -190,12 +190,11 @@ describe("wall-clock reset parsing", () => {
   });
 
   it("does NOT advance a full day for a reset seconds into the SAME minute", () => {
-    // `now` carries 30 seconds past the announced reset minute, but the
-    // reset is announced at second-0 precision — comparing at full instant
-    // precision would reject today's candidate as "already past" by those
-    // 30 seconds and fabricate a ~24-hour delay instead, contradicting this
-    // module's own documented "at or after" contract (docomply-review,
-    // a reference-implementation pull request round 22).
+    // `now` carries 30 seconds past the announced reset minute, but the reset
+    // is announced at second-0 precision — comparing at full instant precision
+    // would reject today's candidate as "already past" by those 30 seconds and
+    // fabricate a ~24-hour delay instead, contradicting this module's own
+    // documented "at or after" contract.
     const now = new Date("2026-08-20T16:40:30Z"); // 18:40:30 Europe/Amsterdam
     expect(
       parseResetClause(
@@ -234,15 +233,14 @@ describe("wall-clock reset parsing", () => {
   });
 
   it("resolves the FIRST fall-back occurrence when `now` is seconds into its SAME minute", () => {
-    // The round-22 minute-floor fix applied only to the OUTER "at or after"
+    // The minute-floor fix once applied only to the OUTER "at or after"
     // decision, not to this INNER check deciding whether to seek the later
     // ambiguous occurrence — so a `now` a few seconds past the first
-    // occurrence's own minute (00:30:30Z here, 30 seconds after the first
-    // 00:30 occurrence) was treated as "already passed" at full instant
-    // precision, and this substituted the SECOND occurrence (01:30Z)
-    // instead of correctly returning the still-valid first one — sleeping
-    // roughly an unnecessary extra hour (docomply-review, a reference-implementation pull request
-    // round 23).
+    // occurrence's own minute (00:30:30Z here, 30 seconds after the first 00:30
+    // occurrence) was treated as "already passed" at full instant precision,
+    // and this substituted the SECOND occurrence (01:30Z) instead of correctly
+    // returning the still-valid first one — sleeping roughly an unnecessary
+    // extra hour.
     const secondsIntoFirstOccurrence = new Date("2026-10-25T00:30:30Z");
     expect(
       parseResetClause(
@@ -270,8 +268,7 @@ describe("wall-clock reset parsing", () => {
     ["resets 11:40pm (EST5EDT)", "2026-08-21T03:40:00.000Z"],
     // Etc/GMT+5 (note the inverted POSIX sign: this is UTC-5, no DST) — a
     // digit-blind class truncates it to the invalid `Etc/GMT+`, which used
-    // to fall through to QUOTA_PARKED instead of resolving and sleeping
-    // (chatgpt-codex-connector, a reference-implementation pull request round 15).
+    // to fall through to QUOTA_PARKED instead of resolving and sleeping.
     ["resets 11:40pm (Etc/GMT+5)", "2026-08-21T04:40:00.000Z"],
   ])("resolves a zone identifier containing digits %p", (text, expected) => {
     expect(parseResetClause(text, now)?.at.toISOString()).toBe(expected);
@@ -284,16 +281,15 @@ describe("wall-clock reset parsing", () => {
     "resets 13pm (Europe/Amsterdam)",
     // An OPEN paren with no CLOSE, ending the string right after the zone —
     // independently-optional `\(?...\)?` groups accepted this too, and once
-    // this pattern is embedded in an ANCHORED, fail-closed matcher (the
-    // Claude adapter's session-limit notice, round 20), accepting it means
-    // classifying a malformed notice as a trusted, sleepable window
-    // (docomply-review, a reference-implementation pull request round 21). The mirror case — a bare zone
-    // with a stray trailing `)` and no matching `(` — is NOT a case for
-    // this function: `parseResetClause` searches for an EMBEDDED clause and
-    // is never anchored to the end of the string, so trailing text after a
-    // validly-recognised bare zone is by design not this function's
-    // problem; the claude-adapter test below covers it where it actually
-    // matters, in the anchored notice matcher.
+    // this pattern is embedded in an ANCHORED, fail-closed matcher (the Claude
+    // adapter's session-limit notice), accepting it means classifying a
+    // malformed notice as a trusted, sleepable window. The mirror case — a bare
+    // zone with a stray trailing `)` and no matching `(` — is NOT a case for
+    // this function: `parseResetClause` searches for an EMBEDDED clause and is
+    // never anchored to the end of the string, so trailing text after a
+    // validly-recognised bare zone is by design not this function's problem;
+    // the claude-adapter test below covers it where it actually matters, in the
+    // anchored notice matcher.
     "resets 6:40pm (Europe/Amsterdam",
   ])("returns null rather than guessing for %p", (text) => {
     expect(parseResetClause(text, now)).toBeNull();
@@ -387,8 +383,8 @@ describe("forEachDirEntry", () => {
     // The property `candidateFiles()`'s scan-count budget depends on: a
     // caller must be able to interrupt the walk mid-directory, not merely
     // between whole directories — proving `readdirSync`'s eager
-    // materialize-then-iterate could not offer this at all
-    // (docomply-review, a reference-implementation pull request round 26). A caller-chosen early stop is
+    // materialize-then-iterate could not offer this at all.
+    // A caller-chosen early stop is
     // not an I/O failure — the caller's own `truncated` bookkeeping (e.g.
     // the budget check) is what records THAT; this return value answers a
     // narrower question, whether the walk itself could still read the
@@ -417,7 +413,7 @@ describe("forEachDirEntry", () => {
     expect(complete).toBe(true);
   });
 
-  it("reports FALSE when the path exists but is not a directory (chatgpt-codex-connector, a reference-implementation pull request round 3)", () => {
+  it("reports FALSE when the path exists but is not a directory", () => {
     // `opendirSync` on a regular file throws ENOTDIR, not ENOENT — a
     // materially different failure from "nothing here": something exists at
     // this path and could not be enumerated, which is exactly the case a
@@ -452,8 +448,7 @@ describe("isConfirmedAbsence", () => {
   // A pure function precisely so this classification is pinned directly,
   // without needing to reproduce a real EACCES/ELOOP failure on disk —
   // exactly the "permission games that behave inconsistently when tests run
-  // as root" trap the `forEachDirEntry` comment above already avoids
-  // (docomply-review, a reference-implementation pull request round 4).
+  // as root" trap the `forEachDirEntry` comment above already avoids.
   it("is true for a confirmed ENOENT", () => {
     expect(
       isConfirmedAbsence(Object.assign(new Error("gone"), { code: "ENOENT" })),
@@ -544,15 +539,14 @@ describe("claude adapter", () => {
   });
 
   it("records only the RECOGNISED wording as evidence, never the raw message text", () => {
-    // A message can bundle ordinary reply content in a SEPARATE block
-    // alongside the vendor's own rate-limit notice block (the session-limit
-    // notice block itself must be an EXACT match — round 20 — so the reply
-    // content lives in its own block here, not prefixed into the notice's
-    // own text as this test originally had it). `evidence` is what
-    // drive.ts logs unattended to a clone-wide log file, so it must carry
-    // only what was actually recognised (the session-limit phrase, the
-    // `resets ...` clause), never whatever else the user's transcript
-    // happened to contain (docomply-review, a reference-implementation pull request round 15).
+    // A message can bundle ordinary reply content in a SEPARATE block alongside
+    // the vendor's own rate-limit notice block (the session-limit notice block
+    // itself must be an EXACT match — so the reply content lives in its own
+    // block here, not prefixed into the notice's own text as this test
+    // originally had it). `evidence` is what drive.ts logs unattended to a
+    // clone-wide log file, so it must carry only what was actually recognised
+    // (the session-limit phrase, the `resets ...` clause), never whatever else
+    // the user's transcript happened to contain.
     const secret = "the pentest finding about the internal admin endpoint";
     writeClaude("s.jsonl", [
       JSON.stringify({
@@ -584,8 +578,7 @@ describe("claude adapter", () => {
     // `error: "rate_limit"` alone is not the documented discriminator set —
     // the measured record also always carries `isApiErrorMessage: true` and
     // `apiErrorStatus: 429`. A record that reuses the bare error string for
-    // some other reason must not become authoritative telemetry
-    // (docomply-review, a reference-implementation pull request round 15).
+    // some other reason must not become authoritative telemetry.
     writeClaude("s.jsonl", [
       claudeWall({
         cwd: CWD,
@@ -638,8 +631,8 @@ describe("claude adapter", () => {
     // the second is a genuinely different, unrecognised wall's own notice,
     // carrying a reset clause but never the phrase "session limit". Scanning
     // the JOIN of the blocks would classify this SHORT and borrow the second
-    // block's reset time — sleeping the drive through the wrong wall entirely
-    // (docomply-review, a reference-implementation pull request round 17). Classification must be decided
+    // block's reset time — sleeping the drive through the wrong wall entirely.
+    // Classification must be decided
     // from a single block, so the phrase-matching block's OWN (absent) reset
     // clause is what counts — never the other block's.
     writeClaude("s.jsonl", [
@@ -673,8 +666,8 @@ describe("claude adapter", () => {
     // the wall is a different (weekly) one the adapter has never actually
     // observed — a false SHORT classification with a genuinely-parseable,
     // and therefore sleepable, reset time from the SAME block (unlike the
-    // cross-block test above, this is a single-block false positive)
-    // (docomply-review, a reference-implementation pull request round 18). Must match the complete
+    // cross-block test above, this is a single-block false positive).
+    // Must match the complete
     // measured wording, not a substring of it.
     writeClaude("s.jsonl", [
       claudeWall({
@@ -689,11 +682,10 @@ describe("claude adapter", () => {
   });
 
   it('does NOT classify a phrase with a qualifier AFTER "session limit" as the known SHORT wording', () => {
-    // The prefix-qualifier fix (round 18) anchored the START of the phrase
-    // but not its END, so a qualifier appended between the phrase and the
-    // reset clause — "session limit for the week · resets …" — still
-    // matched: a different, unrecognised (weekly-like) wall wearing the
-    // recognised phrase (docomply-review, a reference-implementation pull request round 19). The phrase
+    // The prefix-qualifier fix anchored the START of the phrase but not its
+    // END, so a qualifier appended between the phrase and the reset clause —
+    // "session limit for the week · resets …" — still matched: a different,
+    // unrecognised (weekly-like) wall wearing the recognised phrase. The phrase
     // must transition DIRECTLY into "resets" with nothing else between.
     writeClaude("s.jsonl", [
       claudeWall({
@@ -708,12 +700,11 @@ describe("claude adapter", () => {
   });
 
   it("does NOT classify a phrase with a qualifier AFTER the reset clause as the known SHORT wording", () => {
-    // The round-19 fix anchored the phrase through "resets" but not past
-    // the reset clause itself, so trailing text after it — "resets 6:40pm
-    // (Europe/Amsterdam) FOR THE WEEK" — still matched and yielded a
-    // sleepable reset for wording that qualifies the wall as weekly
-    // (docomply-review, a reference-implementation pull request round 20). The whole block must be
-    // EXACTLY the phrase plus the reset clause, nothing more.
+    // An earlier fix anchored the phrase through "resets" but not past the
+    // reset clause itself, so trailing text after it — "resets 6:40pm
+    // (Europe/Amsterdam) FOR THE WEEK" — still matched and yielded a sleepable
+    // reset for wording that qualifies the wall as weekly. The whole block must
+    // be EXACTLY the phrase plus the reset clause, nothing more.
     writeClaude("s.jsonl", [
       claudeWall({
         cwd: CWD,
@@ -727,9 +718,8 @@ describe("claude adapter", () => {
   });
 
   it("recognises the exact measured notice with no leading or trailing whitespace variance", () => {
-    // The positive case for the round-20 full-anchor fix — the exact
-    // measured wording must still classify correctly, not merely reject
-    // everything else.
+    // The positive case for the full-anchor fix — the exact measured wording
+    // must still classify correctly, not merely reject everything else.
     writeClaude("s.jsonl", [
       claudeWall({
         cwd: CWD,
@@ -747,11 +737,10 @@ describe("claude adapter", () => {
     // string, so the outer `$` anchor was satisfied by the OLD independently
     // -optional `\(?...\)?` pattern even though the clause is malformed.
     "You've hit your session limit · resets 6:40pm (Europe/Amsterdam",
-    // Bare zone, no open paren, but a stray trailing `)` — the bare-zone
-    // branch matches "Europe/Amsterdam", and since the OLD pattern's
-    // closing paren was independently optional, the leftover `)` was simply
-    // left over rather than failing the match (docomply-review, a reference-implementation pull request
-    // round 21).
+    // Bare zone, no open paren, but a stray trailing `)` — the bare-zone branch
+    // matches "Europe/Amsterdam", and since the OLD pattern's closing paren was
+    // independently optional, the leftover `)` was simply left over rather than
+    // failing the match.
     "You've hit your session limit · resets 6:40pm Europe/Amsterdam)",
   ])(
     "does NOT classify a notice with MISMATCHED parentheses around the zone as the known SHORT wording: %p",
@@ -769,8 +758,7 @@ describe("claude adapter", () => {
     // The Codex adapter validates its outer envelope (`type: "event_msg"`)
     // for the identical reason: without it, a different transcript record
     // type carrying compatible error/isApiErrorMessage/apiErrorStatus/cwd/
-    // timestamp/text fields becomes authoritative account telemetry too
-    // (docomply-review, a reference-implementation pull request round 19).
+    // timestamp/text fields becomes authoritative account telemetry too.
     writeClaude("s.jsonl", [
       JSON.stringify({
         type: "some_other_record_type",
@@ -1003,13 +991,12 @@ describe("claude adapter", () => {
   });
 
   it("prefers a LATER same-second record in the SAME file over an earlier one", () => {
-    // Claude's whole-second timestamp precision means two genuinely
-    // distinct records — a retry within the same second — can round to the
-    // identical displayed second. A strict `<=` rejected the second one
-    // outright, leaving the first (SHORT, sleepable) record standing over
-    // a later, more restrictive (weekly-like, fail-closed) one recorded
-    // moments afterward in the SAME file (docomply-review, a reference-implementation pull request
-    // round 23). This file's own line order is real chronological evidence
+    // Claude's whole-second timestamp precision means two genuinely distinct
+    // records — a retry within the same second — can round to the identical
+    // displayed second. A strict `<=` rejected the second one outright, leaving
+    // the first (SHORT, sleepable) record standing over a later, more
+    // restrictive (weekly-like, fail-closed) one recorded moments afterward in
+    // the SAME file. This file's own line order is real chronological evidence
     // for the tie.
     writeClaude("s.jsonl", [
       claudeWall({
@@ -1055,10 +1042,10 @@ describe("claude adapter", () => {
   });
 
   it("falls back to $CLAUDE_CONFIG_DIR/projects when no test override is set", () => {
-    // A factory execution plane (ADR-0078) provisions a per-slot config home
-    // via CLAUDE_CONFIG_DIR outside the worktree. Without this fallback the
-    // adapter always looks at ~/.claude/projects and never finds a
-    // transcript written under a provisioned home.
+    // An execution service may provision a per-slot config home via
+    // CLAUDE_CONFIG_DIR outside the worktree. Without this fallback the adapter
+    // always looks at ~/.claude/projects and never finds a transcript written
+    // under a provisioned home.
     delete process.env.DRIVE_PR_CLAUDE_PROJECTS_DIR;
     const configDir = join(root, "provisioned-claude-home");
     process.env.CLAUDE_CONFIG_DIR = configDir;
@@ -1132,10 +1119,10 @@ describe("codex adapter", () => {
   });
 
   it("does NOT let a malformed used_percent masquerade as recovery", () => {
-    // A later record with a non-numeric used_percent (e.g. a string "100")
-    // used to default to 0 in readWindow(), which the round-4 "clear on
-    // healthy" logic would then read as proof the account recovered —
-    // clearing a real, earlier exhausted candidate on malformed telemetry.
+    // A later record with a non-numeric used_percent (e.g. a string "100") used
+    // to default to 0 in readWindow(), which the "clear on healthy" logic would
+    // then read as proof the account recovered — clearing a real, earlier
+    // exhausted candidate on malformed telemetry.
     writeCodex("r.jsonl", CWD, [
       {
         timestamp: "2026-08-20T12:30:00.000Z",
@@ -1206,7 +1193,7 @@ describe("codex adapter", () => {
     // a confident `hit` with a guessed reset — but it IS positive evidence a
     // wall exists, and discarding that to `null` would let the driver treat
     // a real quota wall as a generic pass failure instead of the promised
-    // unknown/QUOTA_PARKED block (docomply-review, a reference-implementation pull request round 14).
+    // unknown/QUOTA_PARKED block.
     writeCodex("r.jsonl", CWD, [
       {
         timestamp: "2026-08-20T12:30:00.000Z",
@@ -1272,7 +1259,7 @@ describe("codex adapter", () => {
     // conclusive event sharing a timestamp with the current newest, so a
     // 100%-used event immediately followed by a healthy retry recorded at
     // the identical timestamp left the exhausted block standing instead of
-    // clearing it (docomply-review, a reference-implementation pull request round 24). This rollout's own
+    // clearing it. This rollout's own
     // append-only line order is real evidence for the tie.
     writeCodex("r.jsonl", CWD, [
       {
@@ -1332,9 +1319,9 @@ describe("codex adapter", () => {
   });
 
   it("does NOT let an out-of-range used_percent masquerade as recovery", () => {
-    // -1 is finite, so the round-6 finite check alone lets it through; it is
-    // never >= 100 (so mostRestrictiveExhausted never selects it) but it also
-    // satisfies the healthy branch, clearing a real exhausted candidate.
+    // -1 is finite, so the finite check alone lets it through; it is never >=
+    // 100 (so mostRestrictiveExhausted never selects it) but it also satisfies
+    // the healthy branch, clearing a real exhausted candidate.
     writeCodex("r.jsonl", CWD, [
       {
         timestamp: "2026-08-20T12:30:00.000Z",
@@ -1758,7 +1745,7 @@ describe("codex adapter", () => {
     // similarly-shaped payload must not become authoritative telemetry
     // either — the inner `payload.type`/`limit_id` checks narrow WHICH
     // payload inside an already-recognised envelope, they do not recognise
-    // the envelope itself (docomply-review, a reference-implementation pull request round 15).
+    // the envelope itself.
     writeCodexRaw("r.jsonl", CWD, [
       {
         timestamp: "2026-08-20T12:30:00.000Z",
@@ -1930,7 +1917,7 @@ describe("codex adapter", () => {
 
   it("falls back to $CODEX_HOME/sessions when no test override is set", () => {
     // Same factory-provisioned-home fallback as the Claude adapter's
-    // CLAUDE_CONFIG_DIR handling (ADR-0078).
+    // CLAUDE_CONFIG_DIR handling.
     delete process.env.DRIVE_PR_CODEX_SESSIONS_DIR;
     const codexHome = join(root, "provisioned-codex-home");
     process.env.CODEX_HOME = codexHome;
@@ -1965,7 +1952,7 @@ describe("codex adapter", () => {
     // used for the BODY no longer contains it once the file exceeds the
     // bound. If the cwd were (mis)derived from that tail instead of a
     // dedicated head-line read, this rollout would silently read as
-    // belonging to no worktree at all (docomply-review, a reference-implementation pull request round 17).
+    // belonging to no worktree at all.
     const junkPayload = {
       type: "user_input",
       // Padding well past the 8 MiB tail-read bound, on an event this
@@ -2032,10 +2019,10 @@ describe("the sleep/stop decision", () => {
     // The window is open RIGHT NOW — there is nothing to wait for, and
     // requiring an operator to re-arm the drive by hand for a wall that has
     // already cleared defeats the point of sleeping through a short window
-    // unattended (docomply-review, a reference-implementation pull request round 26). This is also what
-    // makes `nextWallClock()`'s round-22 minute-granularity fix actually
-    // land: a reset resolved to the CURRENT minute can sit a few seconds
-    // behind `now`, and that must retry immediately, not park.
+    // unattended. This is also what makes `nextWallClock()`'s
+    // minute-granularity fix actually land: a reset resolved to the CURRENT
+    // minute can sit a few seconds behind `now`, and that must retry
+    // immediately, not park.
     const plan = planFor(
       block({ resetAt: new Date("2026-08-20T11:00:00.000Z") }),
       now,
@@ -2054,7 +2041,7 @@ describe("the sleep/stop decision", () => {
     // a 32-bit signed millisecond delay. An override this large would let a
     // legitimately far-future reset pass the cap uncapped, and the timer would
     // then fire immediately instead of after the real wait — the drive waking
-    // mid-wall (docomply-review round 2, a reference-implementation pull request).
+    // mid-wall.
     process.env.DRIVE_PR_QUOTA_MAX_SLEEP_SEC = "999999999";
     expect(maxSleepMs()).toBe(6 * 60 * 60 * 1000);
   });
@@ -2147,7 +2134,7 @@ describe("the registry", () => {
   });
 
   it("degrades only the vendor whose OWN pre-spawn snapshot truncated, not every adapter alike", () => {
-    // The aggregate-flag defect (docomply-review, a reference-implementation pull request round 3): Codex's
+    // The aggregate-flag defect: Codex's
     // candidate has no session-id correlation to fall back on, so it is only
     // trustworthy when Codex's OWN snapshot walk is known complete. Claude's
     // snapshot is the one reported truncated here; a shared boolean used to
@@ -2310,7 +2297,7 @@ describe("binding evidence to the spawned pass", () => {
         // not as if `-p` were the resumed session id. It still confirms the
         // vendor deliberately targets an existing session, though, so it now
         // falls into the no-exact-id correlation below rather than being
-        // left fully alone (docomply-review, a reference-implementation pull request round 4).
+        // left fully alone.
         const prepared = prepareQuotaSpawn(
           ["claude", "--resume", "-p", "go"],
           {},
@@ -2323,7 +2310,7 @@ describe("binding evidence to the spawned pass", () => {
       });
     });
 
-    describe("a caller-supplied --session-id — correlating on it directly (docomply-review, a reference-implementation pull request round 8)", () => {
+    describe("a caller-supplied --session-id — correlating on it directly", () => {
       // A caller that already passed `--session-id` used to be treated as an
       // outright conflict and correlate on nothing, even though the value it
       // supplies is exactly as exact a key as one this adapter would mint
@@ -2358,7 +2345,7 @@ describe("binding evidence to the spawned pass", () => {
       });
     });
 
-    describe("confirmed vendor, no exact id — --continue / a bare --resume (docomply-review, a reference-implementation pull request round 4)", () => {
+    describe("confirmed vendor, no exact id — --continue / a bare --resume", () => {
       // The thread's own point: these commands are UNAMBIGUOUSLY Claude's
       // CLI deliberately continuing/resuming an existing session — unlike
       // the short-flag forms above, there is no value-boundary ambiguity to
@@ -2636,13 +2623,12 @@ describe("binding evidence to the spawned pass", () => {
     });
 
     it("claude: a --resume pass IS detected even though its transcript predates the spawn", () => {
-      // The concrete gap this closes (chatgpt-codex-connector, a reference-implementation pull request
-      // round 2): `--resume <id>` appends to a transcript that legitimately
-      // existed BEFORE the spawn, so it is captured by `preexistingSessions`
-      // like any other pre-existing file. Once `prepareSpawn` correlates on
-      // the resumed id, the wall it appends during THIS pass must still be
-      // detected — the blanket file-level exclusion must not win over an
-      // exact session-id match.
+      // The concrete gap this closes: `--resume <id>` appends to a transcript
+      // that legitimately existed BEFORE the spawn, so it is captured by
+      // `preexistingSessions` like any other pre-existing file. Once
+      // `prepareSpawn` correlates on the resumed id, the wall it appends during
+      // THIS pass must still be detected — the blanket file-level exclusion
+      // must not win over an exact session-id match.
       const older = claudeWall({
         cwd: CWD,
         timestamp: "2026-08-19T09:00:00.000Z",
@@ -2674,16 +2660,15 @@ describe("binding evidence to the spawned pass", () => {
     });
 
     it("claude: a --continue/bare-resume pass (no exact id) stays excluded even though its transcript predates the spawn", () => {
-      // `--continue`/`-c` and a bare/ambiguous `--resume` are deliberately
-      // left unclaimed by `prepareSpawn` (no exact id to mint or read), but
+      // `--continue`/`-c` and a bare/ambiguous `--resume` are deliberately left
+      // unclaimed by `prepareSpawn` (no exact id to mint or read), but
       // `prepareQuotaSpawn` still confirms the vendor and hands `detect()` a
-      // `sessionId: null` correlation. Round 4 let that `null` correlation
-      // bypass the blanket `preexistingSessions` exclusion on its own; round
-      // 5 found the gap that reopened (docomply-review, a reference-implementation pull request round 5 —
-      // see the two-candidate test below) and reverted it. Without an exact
-      // id there is no per-record match to fall back on either, so a
-      // preexisting file must stay excluded regardless of `since` — a
-      // genuine wall from this pass is a missed detection, not a
+      // `sessionId: null` correlation. An earlier version let that `null`
+      // correlation bypass the blanket `preexistingSessions` exclusion on its
+      // own, which reopened a gap (see the two-candidate test below) and was
+      // reverted. Without an exact id there is no per-record match to fall back
+      // on either, so a preexisting file must stay excluded regardless of
+      // `since` — a genuine wall from this pass is a missed detection, not a
       // misattribution risk.
       const older = claudeWall({
         cwd: CWD,
@@ -2715,7 +2700,7 @@ describe("binding evidence to the spawned pass", () => {
     });
 
     it("claude: a --continue/bare-resume pass does NOT pick up an unrelated pre-existing session's wall", () => {
-      // The regression this closes (docomply-review, a reference-implementation pull request round 5): with
+      // The regression this closes: with
       // TWO pre-existing session files in the worktree, a no-id `--continue`
       // correlation cannot tell which one this pass actually resumed. Round
       // 4's fix bypassed the file-level exclusion for the WHOLE
@@ -2990,7 +2975,7 @@ describe("binding evidence to the spawned pass", () => {
       expect(snapshot.truncatedByVendor.get("codex")).toBe(true);
     });
 
-    it("marks only the vendor whose OWN walk truncated, not the other one — the aggregate-flag defect (docomply-review, a reference-implementation pull request round 3)", () => {
+    it("marks only the vendor whose OWN walk truncated, not the other one — the aggregate-flag defect", () => {
       // Claude has real state to walk (and truncates on it); Codex has none
       // at all, so its walk finishes trivially. A flat OR across vendors used
       // to report BOTH as truncated whenever EITHER one was, which then made
@@ -3013,11 +2998,10 @@ describe("binding evidence to the spawned pass", () => {
     it("marks a vendor UNRELIABLE, not falsely clean, when its adapter throws during the snapshot walk", () => {
       // A throw contributes nothing verifiable — the same "unreliable" case a
       // truncated walk signals, not a complete empty scan. The old catch
-      // swallowed the throw and left `truncated` unset for that vendor,
-      // which read as a clean, complete scan everywhere it was consulted —
-      // trusting `preexistingSessions`' absence as proof of newness exactly
-      // like a genuinely finished walk would (docomply-review, a reference-implementation pull request
-      // round 3).
+      // swallowed the throw and left `truncated` unset for that vendor, which
+      // read as a clean, complete scan everywhere it was consulted — trusting
+      // `preexistingSessions`' absence as proof of newness exactly like a
+      // genuinely finished walk would.
       writeCodex("rollout.jsonl", CWD, []);
       const original = claudeAdapter.snapshotSessions;
       claudeAdapter.snapshotSessions = () => {
@@ -3032,7 +3016,7 @@ describe("binding evidence to the spawned pass", () => {
       }
     });
 
-    it("marks a vendor unreliable when its root exists but cannot be enumerated, rather than silently reading it as empty (chatgpt-codex-connector, a reference-implementation pull request round 3)", () => {
+    it("marks a vendor unreliable when its root exists but cannot be enumerated, rather than silently reading it as empty", () => {
       // Before this fix, `forEachDirEntry` treated an `opendirSync` failure
       // (here: the configured root is a plain FILE, so opening it as a
       // directory throws ENOTDIR) identically to a directory that simply
@@ -3052,7 +3036,7 @@ describe("binding evidence to the spawned pass", () => {
   });
 
   describe("preexistingSessionsTruncated — a snapshot that did not finish enumerating the tree", () => {
-    // The defect this class of test pins (docomply-review, a reference-implementation pull request round 2):
+    // The defect this class of test pins:
     // the entry-count cap enumerates the SAME set on every call given a
     // stable directory order, but the wall-clock cap does not — real elapsed
     // time can differ between the pre-spawn snapshot and a later `detect()`
@@ -3132,7 +3116,7 @@ describe("binding evidence to the spawned pass", () => {
   });
 
   describe("the detection-time scan (candidateFiles) truncating, independent of the pre-spawn snapshot", () => {
-    // The defect this class pins (docomply-review, a reference-implementation pull request round 3): this
+    // The defect this class pins: this
     // scan runs a SECOND TIME, at detection, over files touched since the
     // pass started — a separate walk from `snapshotSessions()` above, so it
     // can truncate on its own even when the pre-spawn snapshot finished

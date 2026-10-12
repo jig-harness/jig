@@ -8,9 +8,8 @@ X" into "CI enforces X".
 
 The rules live in data ([`../../templates/adr-rules.yaml`](../../templates/adr-rules.yaml)),
 each citing the ADR it derives from, and [`adr-rules-check.ts`](adr-rules-check.ts)
-is a **generic interpreter** of that catalog. (The reference implementation
-hand-codes each rule in a bespoke script — but a per-rule script is exactly what
-a rules catalog exists to avoid, so groundwork ports the generic mechanism.)
+is a **generic interpreter** of that catalog — never one hand-written script
+per rule, which is exactly what a rules catalog exists to avoid.
 
 ## The two rule shapes
 
@@ -18,7 +17,7 @@ a rules catalog exists to avoid, so groundwork ports the generic mechanism.)
   violation (a forbidden construct: "use the structured logger, not
   `console.log`").
 - **require-nearby** — a `pattern` that must be accompanied by a `follow_check`
-  pattern within a few lines. A `pattern` match *without* the companion is a
+  pattern on the same line or within the next `WINDOW` lines (default 2). A `pattern` match *without* the companion is a
   violation (a required companion is missing: "every `fetch(` passes a
   timeout"). This is the allow/require inversion.
 
@@ -35,6 +34,13 @@ RULES=.adr-rules.yaml bun adr-rules-check.ts $(git diff --cached --name-only --d
 # fail on warnings too
 STRICT=1 RULES=.adr-rules.yaml bun adr-rules-check.ts <files...>
 ```
+
+`RULES` names the catalog (default `.adr-rules.yaml`). With no files given it
+passes. Exit codes: 0 no blocking violation, 1 a `critical` violation (or any
+violation under `STRICT=1`), 2 a missing rules file or an invalid pattern.
+Binary files are skipped for deny-on-match rules. The interpreter reads
+`pattern_rules` line by line rather than through a YAML parser, so keep each
+field on one line in the shape the template shows.
 
 Wire it into pre-commit over the changed code files (fast feedback) and into CI
 as the authority (see [`../../mappings.md`](../../mappings.md)).

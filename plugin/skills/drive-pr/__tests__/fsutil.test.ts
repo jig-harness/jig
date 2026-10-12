@@ -80,9 +80,8 @@ describe("atomicWrite", () => {
       );
       // The target was never created (rename never ran)...
       expect(existsSync(target)).toBe(false);
-      // ...and the temp file the exclusive open created before the
-      // fsync attempt is gone too, not orphaned (docomply-review,
-      // a reference-implementation pull request round 8).
+      // ...and the temp file the exclusive open created before the fsync
+      // attempt is gone too, not orphaned.
       expect(readdirSync(dir)).toEqual([]);
     } finally {
       mock.module("node:fs", () => realFs);
@@ -98,11 +97,11 @@ describe("atomicWrite", () => {
     const realFsyncSync = actualFs.fsyncSync;
     const realFs = { ...actualFs };
 
-    // Fail ONLY the directory's `fsyncSync` call, not its `openSync` (that
-    // one must always succeed genuinely for this to test what it claims —
-    // round 16 moved the allowlist to apply solely to fsync, not open, so
-    // mocking the open here would test the wrong operation). Tracked by fd
-    // rather than path, since `fsyncSync` only receives the fd.
+    // Fail ONLY the directory's `fsyncSync` call, not its `openSync` (that one
+    // must always succeed genuinely for this to test what it claims — the
+    // allowlist applies solely to fsync, not open, so mocking the open here
+    // would test the wrong operation). Tracked by fd rather than path, since
+    // `fsyncSync` only receives the fd.
     let dirFd = -1;
     mock.module("node:fs", () => ({
       ...realFs,
@@ -140,12 +139,12 @@ describe("atomicWrite", () => {
     const realFsyncSync = actualFs.fsyncSync;
     const realFs = { ...actualFs };
 
-    // POSIX also specifies EINVAL for "fsync not possible on this fd",
-    // which some filesystems return for a directory descriptor instead of
-    // ENOTSUP/EOPNOTSUPP — round 12's fix only allow-listed the latter two
-    // and reported a valid write as failed on exactly this code
-    // (docomply-review, a reference-implementation pull request round 13). Targets `fsyncSync` by fd, not
-    // `openSync` by path — see the ENOTSUP test's comment for why.
+    // POSIX also specifies EINVAL for "fsync not possible on this fd", which
+    // some filesystems return for a directory descriptor instead of
+    // ENOTSUP/EOPNOTSUPP — an earlier fix only allow-listed the latter two and
+    // reported a valid write as failed on exactly this code. Targets
+    // `fsyncSync` by fd, not `openSync` by path — see the ENOTSUP test's
+    // comment for why.
     let dirFd = -1;
     mock.module("node:fs", () => ({
       ...realFs,
@@ -183,11 +182,10 @@ describe("atomicWrite", () => {
     const realFsyncSync = actualFs.fsyncSync;
     const realFs = { ...actualFs };
 
-    // EIO is a real durability signal, not an "unsupported operation" —
-    // the pre-round-12 blanket catch swallowed this identically to
-    // ENOTSUP, which meant `atomicWrite` could report success on a
-    // rename whose directory entry was never actually made durable
-    // (docomply-review round 12).
+    // EIO is a real durability signal, not an "unsupported operation" — an
+    // earlier blanket catch swallowed this identically to ENOTSUP, which meant
+    // `atomicWrite` could report success on a rename whose directory entry was
+    // never actually made durable.
     let dirFd = -1;
     mock.module("node:fs", () => ({
       ...realFs,
@@ -233,7 +231,7 @@ describe("atomicWrite", () => {
     // failure carrying one of those same codes is a DIFFERENT problem
     // (fsync was never even attempted) and must not be swallowed by the
     // same allowlist, even though it shares a code with a case that
-    // legitimately is (docomply-review, a reference-implementation pull request round 16).
+    // legitimately is.
     mock.module("node:fs", () => ({
       ...realFs,
       openSync: (path: string, flags: string) => {
@@ -272,7 +270,7 @@ describe("atomicWrite", () => {
     // now-broken fd ALSO fails. Plain `try { ... } finally { closeSync(fd) }`
     // would let the close error overwrite the write error — hiding the
     // actual ENOSPC/EIO/durability failure behind an unrelated close
-    // error (docomply-review, a reference-implementation pull request round 16).
+    // error.
     let tmpFd = -1;
     mock.module("node:fs", () => ({
       ...realFs,
@@ -306,9 +304,9 @@ describe("atomicWrite", () => {
     const realFs = { ...actualFs };
 
     // Simulates ENOSPC mid-write: the exclusive `openSync(tmp, 'wx')` has
-    // already landed a real (empty) file on disk by the time this throws
-    // — the case round 9's fix covers, now exercised against the
-    // round-14 openSync+writeSync implementation.
+    // already landed a real (empty) file on disk by the time this throws — the
+    // case the cleanup region covers, exercised against the openSync+writeSync
+    // implementation.
     mock.module("node:fs", () => ({
       ...realFs,
       writeSync: () => {
@@ -354,12 +352,11 @@ describe("atomicWrite", () => {
 
     try {
       expect(() => atomicWrite(target, "content\n")).toThrow();
-      // This invocation never created `tmp` — round 14's fix (ownership
-      // set the instant `openSync(tmp, 'wx')` itself succeeds, not
-      // inferred from a later error code) means the cleanup path must
-      // NOT unlink it, since doing so would delete the colliding
-      // writer's own live temp file out from under its in-flight
-      // write/fsync/rename (docomply-review, a reference-implementation pull request rounds 13-14).
+      // This invocation never created `tmp` — ownership tracking (set the
+      // instant `openSync(tmp, 'wx')` itself succeeds, not inferred from a
+      // later error code) means the cleanup path must NOT unlink it, since
+      // doing so would delete the colliding writer's own live temp file out
+      // from under its in-flight write/fsync/rename.
       expect(existsSync(collidingPath)).toBe(true);
       expect(readFileSync(collidingPath, "utf8")).toBe(
         "COLLIDING-WRITER-CONTENT",
@@ -378,12 +375,11 @@ describe("atomicWrite", () => {
     const realUnlinkSync = actualFs.unlinkSync;
     const realFs = { ...actualFs };
 
-    // A non-EEXIST failure from the exclusive open (ENOSPC, EDQUOT,
-    // EACCES, EROFS, ...) can occur before ANY directory entry for `tmp`
-    // exists — ownership was never established, so cleanup must not even
-    // attempt an unlink. Round 13's fix inferred ownership from
-    // writeFileSync's error code and got exactly this case wrong
-    // (docomply-review, a reference-implementation pull request round 14).
+    // A non-EEXIST failure from the exclusive open (ENOSPC, EDQUOT, EACCES,
+    // EROFS, ...) can occur before ANY directory entry for `tmp` exists —
+    // ownership was never established, so cleanup must not even attempt an
+    // unlink. An earlier fix inferred ownership from writeFileSync's error code
+    // and got exactly this case wrong.
     let unlinkCalled = false;
     mock.module("node:fs", () => ({
       ...realFs,
@@ -427,7 +423,7 @@ describe("atomicWrite", () => {
     // write everything in one call. Simulated here by forcing the FIRST
     // call to write only 1 byte, then letting subsequent calls proceed
     // normally, so a caller that ignores the return value would silently
-    // truncate to 1 byte (docomply-review, a reference-implementation pull request round 15).
+    // truncate to 1 byte.
     let callCount = 0;
     mock.module("node:fs", () => ({
       ...realFs,
@@ -465,7 +461,7 @@ describe("atomicWrite", () => {
     // A ZERO-byte result is distinct from a short-but-positive one: the
     // short-write loop above trusted every result was positive, so
     // `offset += 0` never advances — an unbounded synchronous spin, not a
-    // corruption (docomply-review, a reference-implementation pull request round 16).
+    // corruption.
     let calls = 0;
     mock.module("node:fs", () => ({
       ...realFs,
@@ -506,7 +502,7 @@ describe("atomicWrite", () => {
     // enough to reach one. Tracked here via a call counter: if the
     // directory-fsync step were attempted at all on win32, this mock
     // would throw and atomicWrite would incorrectly report failure on a
-    // write that already landed (docomply-review, a reference-implementation pull request round 15).
+    // write that already landed.
     let dirOpenAttempted = false;
     mock.module("node:fs", () => ({
       ...realFs,
@@ -634,8 +630,7 @@ describe("createExclusiveDurable", () => {
   it("refuses to overwrite an existing target — the exclusivity a racing minter depends on", () => {
     // This is the property `clone-key.ts`'s `persistedCloneId` race-safety
     // argument rests on entirely: the loser of a concurrent mint must fail,
-    // not silently clobber whichever id actually landed first
-    // (docomply-review, a reference-implementation pull request).
+    // not silently clobber whichever id actually landed first.
     dir = mkdtempSync(join(tmpdir(), "fsutil-exclusive-create-eexist-"));
     const target = join(dir, "id-file");
     createExclusiveDurable(target, "winner\n");
@@ -652,7 +647,7 @@ describe("createExclusiveDurable", () => {
     // `ExclusiveWriteOwnFailure` — see that class's own doc. The publishing
     // `linkSync`'s EEXIST is the one failure that must NOT be wrapped: it
     // means another process's link already landed, so this call created
-    // nothing (docomply-review, a reference-implementation pull request round 3).
+    // nothing.
     dir = mkdtempSync(join(tmpdir(), "fsutil-exclusive-create-eexist-type-"));
     const target = join(dir, "id-file");
     createExclusiveDurable(target, "winner\n");
@@ -674,18 +669,17 @@ describe("createExclusiveDurable", () => {
     const realFsyncSync = actualFs.fsyncSync;
     const realFs = { ...actualFs };
 
-    // Tracked by PATH, not by the fd number `openSync` returns: the temp
-    // file's fd is closed before `fsyncDirectoryBestEffort` ever opens the
-    // directory, so the OS is free to hand back the SAME fd number for both
-    // — a Set of raw fd numbers would then let one directory fsync satisfy
-    // both assertions below even if the temp-file fsync were removed
-    // entirely, leaving that regression undetected (coderabbitai, PR #4618
-    // round 4).
+    // Tracked by PATH, not by the fd number `openSync` returns: the temp file's
+    // fd is closed before `fsyncDirectoryBestEffort` ever opens the directory,
+    // so the OS is free to hand back the SAME fd number for both — a Set of raw
+    // fd numbers would then let one directory fsync satisfy both assertions
+    // below even if the temp-file fsync were removed entirely, leaving that
+    // regression undetected.
     const fdPaths = new Map<number, string>();
     const fsyncedPaths: string[] = [];
     // The content is written to a UNIQUE TEMP path beside the target, never
-    // to the target itself — see `createExclusiveDurable`'s own doc for why
-    // (docomply-review / chatgpt-codex-connector, a reference-implementation pull request round 3): a
+    // to the target itself — see `createExclusiveDurable`'s own doc for why:
+    // a
     // direct `wx` open of the target would create its directory entry
     // before any content lands, exposing an empty-or-partial read to a
     // concurrent loser.
@@ -748,7 +742,7 @@ describe("createExclusiveDurable", () => {
   });
 
   it("reports a post-link directory-fsync failure as ExclusiveDurabilityUnconfirmed, distinct from ExclusiveWriteOwnFailure, and leaves the already-published target in place", async () => {
-    // The gap this closes (docomply-review, a reference-implementation pull request round 4): the publishing
+    // The gap this closes: the publishing
     // `link` can succeed and THEN the trailing `fsyncDirectoryBestEffort`
     // call can fail (EIO/ENOSPC on the directory fd) — a failure shape that
     // is neither "this call's own write never landed" (ExclusiveWriteOwnFailure)

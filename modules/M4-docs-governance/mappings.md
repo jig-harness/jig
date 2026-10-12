@@ -62,7 +62,7 @@ docs-scars:
   script: bun reference/scar-lint/check-descarring-scars.ts $(git diff --name-only --diff-filter=ACM "$CI_MERGE_REQUEST_DIFF_BASE_SHA"...HEAD -- 'docs/**/*.md')
 ```
 
-Any CI that runs a shell script runs all three gates. The only provider
+Any CI that can run Bun runs all three gates. The only provider
 specifics are the base-diff expression (for new-doc detection and diff-scoped
 scanning) and the advisory mechanism (`continue-on-error` / `allow_failure`).
 

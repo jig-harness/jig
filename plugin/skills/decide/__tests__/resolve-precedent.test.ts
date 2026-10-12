@@ -347,8 +347,8 @@ describe("splitSections", () => {
 
   it("recognizes a heading with 1-3 leading spaces (legal CommonMark ATX indentation)", () => {
     // A column-zero-only anchor silently merges or drops a legally-indented
-    // section instead of failing loudly — exactly the class
-    // document-scanning-gates.md § 1 names.
+    // section instead of failing loudly — and an unparseable input must be
+    // an error, never "found nothing".
     const content = [" ## One space", "a", "   ## Three spaces", "b"].join(
       "\n",
     );

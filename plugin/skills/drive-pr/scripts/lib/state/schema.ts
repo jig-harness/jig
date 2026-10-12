@@ -7,7 +7,7 @@
  * case: it is the only record of the parked human decisions, the durable round
  * budget and the verified SHA, and substituting fresh state there silently
  * grants a new round budget and re-arms work a human deliberately parked —
- * precisely the #3933 loop drive-state exists to close, reached by the one
+ * precisely the re-arm loop drive-state exists to close, reached by the one
  * path where the evidence that it is happening has just been discarded.
  * `store.ts` owns that refusal; this module owns the predicate it refuses on.
  *
@@ -23,7 +23,7 @@
  * only that it is an array stops one level short of the thing the array is
  * for: `{"parked":[{}]}` passed, `parked-keys` then emitted `null` for that
  * entry, drive-status matched no thread or fingerprint against it, and the
- * drive re-armed work a human had parked — the #3933 loop the parked set
+ * drive re-armed work a human had parked — the re-arm loop the parked set
  * exists to close, reached through the validator that exists to protect it.
  * Every field a consumer reads is required: `key` (the match token), `kind`,
  * `reason` and `round` (rendered into the handoff table). The predicate is
@@ -105,7 +105,7 @@ export interface HeldItem {
    * has no single GitHub comment to point at. It is what tells "the SAME reply
    * this hold already represents" from "a newer comment that happens to share
    * the outcome word", so a superseding reply cannot inherit an existing
-   * hold's round-currency (docomply-review rounds 8-11, PR #4028).
+   * hold's round-currency.
    */
   commentUrl?: string;
   reason?: string;
@@ -204,11 +204,11 @@ export type CiHoldState =
  * Four of these once carried `?`, with the validator and every consumer reading
  * them through `?? 0` / `?? []`, so a state file written before the field
  * existed and one written after were both accepted by one parser. That is the
- * accepts-both-shapes tolerance the project defers pre-GA (CLAUDE.md §
- * Backward Compatibility), and it was reported as such on the two newest of
- * them (docomply-review, a reference-implementation pull request round 8) — but the shape, not the pair, is
- * the defect: `attempts`, `attemptsHead` and `held` were the identical
- * construct and would have kept the dual-shape path alive on their own.
+ * accepts-both-shapes tolerance this state format deliberately does not carry
+ * before general availability, and it was reported as such on the two newest of
+ * them — but the shape, not the pair, is the defect: `attempts`, `attemptsHead`
+ * and `held` were the identical construct and would have kept the dual-shape
+ * path alive on their own.
  *
  * An older file is now rejected by `isUsableState`, which surfaces as the
  * explicit refusal in `store.read()` — never truncated, never silently
@@ -229,8 +229,8 @@ export interface DriveState {
    *
    * It is NOT push provenance and no longer used as such. It was, and a
    * PR-global pointer cannot be: driver B's `set-verified` moved it, and driver
-   * A's held thread then read it as vouching for A's own unpushed fix
-   *. `HeldItem.verifiedSha` is the per-hold answer; this field
+   * A's held thread then read it as vouching for A's own unpushed fix.
+   * `HeldItem.verifiedSha` is the per-hold answer; this field
    * answers a different question: `stamp-held` writes the per-item value,
    * while final-CI-only `set-verified` writes this PR-global value.
    */
@@ -245,7 +245,7 @@ export interface DriveState {
    * than re-deriving it from `isDraft` — the once-only property matters
    * because: a human who converts the PR back to draft has made a deliberate
    * decision, and a drive that re-derived the answer from the live flag would
-   * undo it on the next round and keep undoing it — the #3933 shape, aimed at a
+   * undo it on the next round and keep undoing it — the re-arm shape, aimed at a
    * human this time. And `gh pr ready` is an outward-facing event: it fires
    * `ready_for_review`, which is what summons the reviewers that skip drafts, so
    * re-firing it re-triggers paid external review of a head that already had it.
@@ -395,12 +395,11 @@ export interface DriveState {
    * predicate reads, so the bound can never change an answer it would
    * otherwise have given FOR AN ACKNOWLEDGED ENTRY.
    *
-   * NOT unconditionally bounded: an entry more recent than
-   * `lastEscalatedRound` survives past the window regardless, so a drive that
-   * never acknowledges a standing escalation can retain more than
-   * `ROUND_PATHS_WINDOW` entries indefinitely — accepted, and bounded in
-   * practice by the reviewer's own round ceiling instead (`pruneRoundPaths`'s
-   * own header; chatgpt-codex-connector, a reference-implementation pull request).
+   * NOT unconditionally bounded: an entry more recent than `lastEscalatedRound`
+   * survives past the window regardless, so a drive that never acknowledges a
+   * standing escalation can retain more than `ROUND_PATHS_WINDOW` entries
+   * indefinitely — accepted, and bounded in practice by the reviewer's own
+   * round ceiling instead (`pruneRoundPaths`'s own header).
    */
   roundPaths: RoundPaths[];
   [extra: string]: unknown;
@@ -464,8 +463,7 @@ export function normalizeRoundPaths(raw: readonly string[]): string[] {
  * rule. `record-paths` uses this to warn when a round's real anchor count
  * exceeds what gets stored: sorting then slicing is silent by construction,
  * so without this comparison a truncated round drops real evidence with
- * nothing in state or the report recording that it happened
- * (docomply-review, a reference-implementation pull request).
+ * nothing in state or the report recording that it happened.
  */
 export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
   const seen = new Set<string>();
@@ -476,8 +474,7 @@ export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
     // whitespace (`a.ts` vs ` a.ts`); storing the trimmed form would alias
     // them to the same recurrence key, arming `structuralEscalationDue` on
     // findings from two different files — the same identity bug
-    // `evaluate.ts`'s `openThreadPaths` had (chatgpt-codex-connector,
-    // a reference-implementation pull request).
+    // `evaluate.ts`'s `openThreadPaths` had.
     if (p.trim() === "" || p.length > ROUND_PATH_MAX_LENGTH) continue;
     if (/[\n\r]/.test(p)) continue;
     seen.add(p);
@@ -503,8 +500,8 @@ export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
  * (`drive-state.ts reset`), where a silently-accepted malformed counter is
  * neither.
  *
- * Applied to the whole CLASS rather than the one field a review found it on
- * (docomply-review rounds 2-3, PR #4057): `rounds`, `attempts`, both reflect
+ * Applied to the whole CLASS rather than the one field a review found it on:
+ * `rounds`, `attempts`, both reflect
  * positions, `readyMarkedRound`, and the `round` on every parked and held
  * item are the same construct with the same invariant.
  */
@@ -619,11 +616,12 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
       return false;
   }
   // Present AND well-typed, on the same terms as every other counter here —
-  // pre-GA BWC is explicitly deferred (CLAUDE.md), so a state file written
-  // before an earlier change is REFUSED by `store.read` rather than silently migrated
-  // to a zeroed baseline. A tolerated-absent `lastEscalatedRound` would read as
-  // "never acknowledged", which re-arms a duty a human already discharged —
-  // the same #3933 shape the rest of this validator exists to refuse.
+  // backward compatibility before general availability is deliberately not
+  // offered, so a state file written before this field existed is REFUSED by
+  // `store.read` rather than silently migrated to a zeroed baseline. A
+  // tolerated-absent `lastEscalatedRound` would read as "never acknowledged",
+  // which re-arms a duty a human already discharged — the same re-arm shape
+  // the rest of this validator exists to refuse.
   //
   // Also bounded by `s.rounds`, the same bound every `roundPaths[].round`
   // below is held to: both acknowledging writers (`set-reflected`,
@@ -632,7 +630,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   // corrupted `{rounds: 2, lastEscalatedRound: 999}` would silence
   // `structuralEscalationArmed` for every pair ending at round 999 or
   // earlier — effectively forever — since its `since` gate is read straight
-  // from this field (docomply-review, a reference-implementation pull request).
+  // from this field.
   if (
     !isCount(s.lastEscalatedRound) ||
     (s.lastEscalatedRound as number) > (s.rounds as number)
@@ -706,17 +704,15 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   // those changes what `structuralEscalationArmed`'s adjacency check is even
   // looking at: duplicate or descending rounds can make two SNAPSHOTS of one
   // round look like consecutive ones, and a future round beyond `s.rounds`
-  // can pre-arm a recurrence nothing has measured yet (docomply-review,
-  // a reference-implementation pull request).
+  // can pre-arm a recurrence nothing has measured yet.
   //
   // The length itself is NOT capped at `ROUND_PATHS_WINDOW` outright:
   // `foldRoundPaths` only evicts an entry outside the window once it is
   // acknowledged (`round <= lastEscalatedRound`) — an unacknowledged entry
-  // beyond the window is exactly what keeps `structuralEscalationArmed`
-  // honest past round `ROUND_PATHS_WINDOW` (chatgpt-codex-connector,
-  // a reference-implementation pull request). So the per-entry check below restates THAT invariant instead:
-  // an entry outside the window is refused only when it could no longer have
-  // a legitimate reason to survive.
+  // beyond the window is exactly what keeps `structuralEscalationArmed` honest
+  // past round `ROUND_PATHS_WINDOW`. So the per-entry check below restates THAT
+  // invariant instead: an entry outside the window is refused only when it
+  // could no longer have a legitimate reason to survive.
   const roundPathsArr = s.roundPaths as unknown[];
   const windowCut = roundPathsArr.length - ROUND_PATHS_WINDOW;
   const lastEscalatedRound = s.lastEscalatedRound as number;
@@ -732,7 +728,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // `bump-round`/`bump-attempt` ever runs) and `record-paths` now refuses
     // to write one — so an entry naming it can only be a hand-edited or
     // pre-guard file, and admitting it would let round 1's real entry look
-    // adjacent to a round that measured nothing (docomply-review, a reference-implementation pull request).
+    // adjacent to a round that measured nothing.
     if (round < 1) return false;
     if (round > (s.rounds as number)) return false;
     if (round <= lastRound) return false;
@@ -761,7 +757,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     if (typeof e.key !== "string" || e.key.length === 0) return false;
     // Same newline ban as `parked` above: `held-keys` is line-delimited, so a
     // key carrying one reads back as two tokens and the phantom second releases
-    // an item nobody held (coderabbitai, PR #4034 round 2).
+    // an item nobody held.
     if (/[\n\r]/.test(e.key)) return false;
     if (e.kind !== "thread" && e.kind !== "finding") return false;
     if (e.outcome !== "accepted" && e.outcome !== "moot") return false;
@@ -779,7 +775,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // file or a writer that skipped the requirement. Either way the
     // supersession comparison it exists to feed cannot be made, so the
     // validator restates the writer's invariant rather than tolerating a
-    // record no consumer can use (docomply-review rounds 9-11, PR #4028).
+    // record no consumer can use.
     if (e.kind === "thread") {
       if (typeof e.commentUrl !== "string" || e.commentUrl.length === 0)
         return false;
@@ -801,8 +797,8 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // like `"x|forged"` both names a DIFFERENT worktree — letting that tree's
     // `stamp-held` wrongly vouch for this hold — and breaks the handoff's
     // backtick-delimited table row, which a bare newline ban never caught).
-    // Pre-GA BWC is explicitly deferred (CLAUDE.md), so a wider stored shape
-    // is refused rather than tolerated (docomply-review round 2, a reference-implementation pull request).
+    // Backward compatibility before general availability is deliberately not
+    // offered, so a wider stored shape is refused rather than tolerated.
     if (typeof e.actor !== "string" || !isActorId(e.actor)) return false;
     // Optional (absent until the holding actor pushes), but when present must
     // be the exact grammar `stamp-held`/`restore-held` write — a full
@@ -857,13 +853,13 @@ export function freshState(pr: number): DriveState {
  * enumerates it) instead of a property every future `store.update` caller
  * has to remember to preserve or deliberately opt out of.
  *
- * `now` is INJECTED, not read (`new Date` inline) — not because ADR-0017
- * binds this file (these are one-shot CLI entrypoints; ADR-0017's own scope
- * note excludes them), but because an injected instant is what lets a test
- * pin the exact stamp and assert `lastProgressAt === now.toISOString`
- * rather than parsing back whatever the wall clock produced — the identical
- * reasoning `lib/quota/index.ts`'s `planFor(block, now)` already gives for
- * its own `now` parameter.
+ * `now` is INJECTED, not read (`new Date` inline) — not because an
+ * injected-clock rule binds this file (these are one-shot CLI entrypoints,
+ * which such a rule would exclude), but because an injected instant is what
+ * lets a test pin the exact stamp and assert `lastProgressAt ===
+ * now.toISOString` rather than parsing back whatever the wall clock produced —
+ * the identical reasoning `lib/quota/index.ts`'s `planFor(block, now)` already
+ * gives for its own `now` parameter.
  *
  * `phase` is set only when non-empty, so a caller that has nothing new to say
  * about the phase (a bare progress stamp) does not blow away whatever the
@@ -926,7 +922,7 @@ export interface EscalationState {
  *
  * Deliberately SHARPER than `reflectDue`'s round-depth trigger, and the
  * sharpness is the point. `reflectDue` fires on depth — "this drive has run
- * long" — which FB-83 measured arriving at round 4 when the signal had been
+ * long" — which was measured arriving at round 4 when the signal had been
  * unambiguous since round 2. This one fires on RECURRENCE, so it arms while
  * there is one narrow fix to reconsider rather than three. The two do not
  * substitute for each other and neither is derived from the other.
@@ -1002,7 +998,7 @@ export function structuralEscalationInvariant(
  * evicted out from under `structuralEscalationArmed` — the qualifying pair
  * simply falls off the stored history, and the ARMED-UNTIL-DISCHARGED duty
  * that function documents goes silent with no `set-escalated` or `/reflect`
- * ever having discharged it (chatgpt-codex-connector, a reference-implementation pull request). An entry at
+ * ever having discharged it. An entry at
  * or before `lastEscalatedRound` carries no such risk — `set-escalated`
  * already silenced every pair ending at or before it — so ONLY those are
  * still safe to prune once the window is full; the acknowledgment is what
@@ -1013,17 +1009,17 @@ export function structuralEscalationInvariant(
  * this could matter in practice.
  *
  * Exported separately from `foldRoundPaths` (not just inlined there) because
- * `drive-state.ts`'s `set-reflected`/`set-escalated` need to re-apply this
- * SAME filter the instant they advance `lastEscalatedRound`, not only on the
- * next `record-paths` call. Advancing the acknowledgment without re-pruning
- * left a state `isUsableState` immediately rejected: a drive retaining more
- * than the window's worth of unacknowledged entries writes
- * `lastEscalatedRound: s.rounds`, and on the very next read `isUsableState`'s
- * own invariant — an entry outside the window with `round <= lastEscalatedRound`
- * is refused — now condemns the entries THIS update just newly acknowledged,
- * because nothing pruned them in the same write (chatgpt-codex-connector,
- * a reference-implementation pull request). Every acknowledging writer must therefore prune in the same
- * update that advances the acknowledgment, not rely on the next fold.
+ * `drive-state.ts`'s `set-reflected`/`set-escalated` need to re-apply this SAME
+ * filter the instant they advance `lastEscalatedRound`, not only on the next
+ * `record-paths` call. Advancing the acknowledgment without re-pruning left a
+ * state `isUsableState` immediately rejected: a drive retaining more than the
+ * window's worth of unacknowledged entries writes `lastEscalatedRound:
+ * s.rounds`, and on the very next read `isUsableState`'s own invariant — an
+ * entry outside the window with `round <= lastEscalatedRound` is refused — now
+ * condemns the entries THIS update just newly acknowledged, because nothing
+ * pruned them in the same write. Every acknowledging writer must therefore
+ * prune in the same update that advances the acknowledgment, not rely on the
+ * next fold.
  */
 export function pruneRoundPaths(
   entries: readonly RoundPaths[],
@@ -1068,18 +1064,17 @@ export function foldRoundPaths(
  * directions, and both were reported — stamping `.rounds` alone re-armed the
  * duty on the very next attempt after a reflect discharged at attempt depth,
  * and stamping the max suppressed it for the next several genuine rounds after
- * a reflect discharged at round depth (chatgpt-codex-connector and
- * docomply-review, a reference-implementation pull request rounds 1-3).
+ * a reflect discharged at round depth.
  *
  * Two baselines, one per counter, and the larger delta wins. Neither counter
  * can mask progress in the other, but that alone was not enough: a stale
  * attempts baseline could still suppress the duty by contributing a delta that
  * is merely SMALLER, leaving the rounds delta — which grows by one per head —
  * as the only live signal, and a reflect recorded at attempt 8 then kept the
- * duty off for the first eleven passes on the next head (docomply-review, PR
- * #4031 round 7). The baseline is therefore rebased to zero whenever
- * `bump-attempt` resets the counter for a new head, so both deltas are always
- * measured on an axis that currently exists.
+ * duty off for the first eleven passes on the next head. The baseline is
+ * therefore rebased to zero whenever `bump-attempt` resets the counter for a
+ * new head, so both deltas are always measured on an axis that currently
+ * exists.
  *
  * The predicate lives HERE rather than in each consumer because `drive.ts`,
  * `drive-status.ts`'s `reflectDue` report field, and this state module all
@@ -1109,7 +1104,7 @@ export function reflectDepthPastLast(s: ReflectCounters): number {
   // A state file that PARSES but carries a non-numeric counter (`{"rounds":"x"}`)
   // yields NaN, and every consumer compares with `depth > threshold`, which NaN
   // makes false — the duty would go silently OFF on the one input that cannot
-  // be trusted, against the stated fail-open (coderabbitai, PR #4031). The
+  // be trusted, against the stated fail-open. The
   // guard belongs here rather than in each consumer, for the same reason the
   // predicate does: three copies of this arithmetic disagreed with each other
   // before.

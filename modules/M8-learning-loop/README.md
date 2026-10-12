@@ -65,7 +65,9 @@ missed. Then:
 - **Memory promotion** — an agent's private, per-session memory is periodically
   promoted (via a `/promote-memory`-style step) into git-tracked, shared team
   memory, so a lesson one agent learned survives the session and reaches the
-  others. Promotion is a review point, not an automatic dump.
+  others. Promotion is a review point, not an automatic dump. Groundwork's
+  plugin runs this step as
+  [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md).
 
 Both cycles are the same shape as the flywheel — *observe → durable record →
 validate → adopt* — applied to process feedback and to memory instead of to
@@ -149,29 +151,47 @@ which lever, or whether the reviewer was the thing that was wrong.
 6. Wire the reflection + memory-promotion steps to your runtime (recipes in
    [mappings.md](mappings.md)), keeping the human-approval checkpoint.
 
-## Port status
+## Status
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| `docs/development/ai-tools/miss-to-lens-flywheel.md` (C5) — the named process doc | [`templates/FLYWHEEL.md`](templates/FLYWHEEL.md) — copyable flywheel + reflection + memory-promotion cycles |
-| shadow-reviewer miss taxonomy (the classification vocabulary) | [`templates/miss-taxonomy.yaml`](templates/miss-taxonomy.yaml) — a **generic** taxonomy (docomply's actual categories are IP-scrubbed out) |
-| eval-harness shape (`tools/ai/eval/`, `corpus.yaml` header) | [`templates/corpus.yaml`](templates/corpus.yaml) + [`reference/corpus-lint/`](reference/corpus-lint/) — the corpus schema and its invariant gate + self-test |
-| parity-tracker shape (`tools/ai/parity/`) + the `missed_blockers` gate metric | [`reference/parity-report/`](reference/parity-report/) — a portable recall/precision + `missed_blockers` gate + self-test |
-| `reflect` / `review-reflection-feedback` / `promote-memory` command patterns | documented as the two companion cycles in [`FLYWHEEL.md`](templates/FLYWHEEL.md), with the human-approval HITL boundary |
-| the reflection prompt's firing rule (a review-round threshold) | [`reference/reflection-trigger/`](reference/reflection-trigger/) + [`templates/reflection-inbox.md`](templates/reflection-inbox.md) — the trigger as a portable step over [M7](../M7-pr-lifecycle-review/)'s convergence line, writing an aggregable record |
+### Runnable form
 
-Also landed: [`mappings.md`](mappings.md) (trackers for lever ids, eval
-runners, telemetry, per-runtime reflect/memory commands) and
-[`maturity.yaml`](maturity.yaml).
+Memory promotion runs as the
+[`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) skill in
+Groundwork's [plugin](../../plugin/README.md): it checks that a private memory
+still holds before lifting it into the team's git-tracked docs. The review
+loop that feeds the reflection trigger runs as
+[`drive-pr`](../../plugin/skills/drive-pr/README.md) (see
+[M7](../M7-pr-lifecycle-review/README.md#status)).
 
-**Not ported** (per "don't port the unproven" / IP scrub): docomply's actual
-miss-taxonomy categories and reviewer-tier names are adjacent to its invention
-disclosure and are replaced with a neutral, generic taxonomy — grow your own
-categories from your own misses. The reference implementation's eval *runner*
-(the code that replays a fixture through an LLM reviewer and diffs findings) is
-an LLM job best written in the target repo's own language, so groundwork
-specifies the corpus contract and lands only the two pieces that are genuinely
-portable gates (corpus invariants; the parity arithmetic). Its actual eval
-fixtures are product-domain and unvalidated-until-run, so none are vendored. The
-specific telemetry wiring (event names, dashboards) belongs with
-[M11](../M11-process-observability/).
+### What the module provides
+
+| Piece | What it is |
+|-------|------------|
+| [`templates/FLYWHEEL.md`](templates/FLYWHEEL.md) | The copyable process doc: the flywheel and its two companion cycles, with the human-approval boundary |
+| [`templates/miss-taxonomy.yaml`](templates/miss-taxonomy.yaml) | A neutral, generic miss taxonomy to prune and grow |
+| [`templates/corpus.yaml`](templates/corpus.yaml) | The eval-corpus schema, with a validated and an unvalidated example |
+| [`templates/reflection-inbox.md`](templates/reflection-inbox.md) | The inbox the reflection trigger appends aggregable records to |
+| [`reference/corpus-lint/`](reference/corpus-lint/) | The corpus invariants as a gate: unique lever ids, known categories, pinned commits, validate-then-gate |
+| [`reference/parity-report/`](reference/parity-report/) | Recall, precision and `missed_blockers` per reviewer, failing on a missed blocker |
+| [`reference/reflection-trigger/`](reference/reflection-trigger/) | Fires reflection from [M7](../M7-pr-lifecycle-review/)'s convergence line when a change took many rounds, and writes the record |
+| [`mappings.md`](mappings.md) | Trackers for lever ids, eval runners, telemetry, per-runtime reflection and memory commands |
+| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+
+Each reference gate ships with a self-test and fixtures, and delegates to the
+shared implementation in [`lib/module-gates.ts`](../../lib/module-gates.ts);
+keep the module and `lib/` together when you vendor them.
+
+### Left out by design
+
+- **A real taxonomy.** Miss categories and reviewer-tier names are one
+  repository's tuned, product-specific content; the module ships a neutral
+  taxonomy instead. Grow your own categories from your own misses.
+- **An eval runner.** The code that replays a fixture through a model-based
+  reviewer and diffs its findings is a model job best written in the target
+  repository's own language, so the module specifies the corpus contract and
+  ships only the pieces that are portable gates: the corpus invariants, the
+  parity arithmetic and the reflection trigger.
+- **Eval fixtures.** Real fixtures are product-specific and unproven until a
+  live run validates them, so none are included.
+- **Telemetry wiring.** Event names and dashboards belong with
+  [M11](../M11-process-observability/).

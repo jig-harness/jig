@@ -128,8 +128,9 @@ bun <skill-dir>/scripts/explainer-sheet/explainer-sheet.ts render .context/expla
 It writes `<id>-explainer.html` and `<id>.md` to `.context/explain/<id>/`, or
 to the directory `--out` names, and prints the freshness result and the
 attachment fields. `--require-fresh` refuses to render, with exit code `3`,
-when a cited file changed since `verifiedAt.commit` or a cited path does not
-exist at that commit. Re-verify each claim that cites a changed file, update
+when a cited file changed since `verifiedAt.commit`, a cited path does not
+exist at that commit, or the guard cannot run (`verifiedAt.commit` is unknown
+to this clone). Re-verify each claim that cites a changed file, update
 `verifiedAt`, and render again.
 
 `extract <sheet.html>` prints the source embedded in a rendered sheet, so a

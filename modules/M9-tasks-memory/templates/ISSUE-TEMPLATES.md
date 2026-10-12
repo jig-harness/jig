@@ -2,7 +2,7 @@
 
 Copyable skeletons for the two units of team-visible work: an **epic** (a
 coordinating parent) and a **sub-issue** (a single deliverable). Both carry the
-mandatory taxonomy from [`label-taxonomy.yaml`](label-taxonomy.yaml) — a `type`,
+mandatory taxonomy from [`label-taxonomy.yaml`](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml) — a `type`,
 a `status`, and zero or more `flags` — and both are tool-independent: paste them
 into whatever tracker you use, or wire them as that tracker's issue template.
 
@@ -92,5 +92,5 @@ default triggers so a template user does not have to reopen the taxonomy.
 | `docs-required` | a docs update that blocks `done` until complete |
 | `hitl` | revokes autonomous execution/merge — a human must act |
 
-Prune or extend this to match your own [`label-taxonomy.yaml`](label-taxonomy.yaml);
+Prune or extend this to match your own [`label-taxonomy.yaml`](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml);
 the taxonomy file is the source of truth, this table is a convenience copy.

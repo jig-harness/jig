@@ -57,14 +57,13 @@ export function isDigits(s: string): boolean {
 
 /**
  * A full, lowercase, 40-character SHA-1 hex string — the exact grammar every
- * documented caller derives via `git rev-parse HEAD` (never `--short`, never
- * an abbreviation). Rejecting anything looser than that at the argument
- * boundary is what closes a whole class of malformed-input, not just CR/LF:
- * a value this permits can never contain a newline (it fails-closed the
- * shared state file on the next read, an earlier change round) or a
- * backtick/pipe (it corrupts the handoff's markdown table, which renders
- * both SHAs and actor ids inside backtick code spans and pipe-delimited
- * rows).
+ * documented caller derives via `git rev-parse HEAD` (never `--short`, never an
+ * abbreviation). Rejecting anything looser than that at the argument boundary
+ * is what closes a whole class of malformed-input, not just CR/LF: a value this
+ * permits can never contain a newline (it fails-closed the shared state file on
+ * the next read) or a backtick/pipe (it corrupts the handoff's markdown table,
+ * which renders both SHAs and actor ids inside backtick code spans and
+ * pipe-delimited rows).
  */
 export function isGitSha(s: string): boolean {
   return /^[0-9a-f]{40}$/.test(s);
@@ -78,8 +77,7 @@ export function isGitSha(s: string): boolean {
  * NOT `import.meta.main`: that is a Bun global Node did not gain until v24.2,
  * so on the Node versions this skill documents it reads `undefined`, `main`
  * never runs, and the script exits 0 having printed nothing — which a caller
- * reads as an answer, not a failure (chatgpt-codex-connector, a reference-implementation pull request
- * round 2).
+ * reads as an answer, not a failure.
  *
  * Both sides are REALPATHS. Both runtimes resolve the entry module's
  * `import.meta.url` through symlinks (measured: bun 1.3, node 24 — direct and

@@ -79,16 +79,15 @@ interface OwnedPattern {
  * `lock.ts`/`lease.ts` cannot silently blind one consumer while the other
  * stays current. This module re-declared its own copy instead of reusing
  * that one, which was exactly the "second, independently maintained copy"
- * drift `state-file-patterns.ts`'s own doc comment warns about
- * (docomply-review, a reference-implementation pull request round 12).
+ * drift `state-file-patterns.ts`'s own doc comment warns about.
  *
  * An earlier revision here paired the imported pattern array to a SEPARATE,
- * independently-ordered `family` array by position, guarded only by a
- * length check — which cannot catch a same-length reorder upstream silently
- * reassigning every family to the wrong pattern (docomply-review, a reference-implementation pull request
- * round 13). `family` now lives on the pattern object itself in
- * `state-file-patterns.ts`, so this is a plain per-element rename
- * (`key` → `ownerKind`) with nothing left to fall out of sync.
+ * independently-ordered `family` array by position, guarded only by a length
+ * check — which cannot catch a same-length reorder upstream silently
+ * reassigning every family to the wrong pattern. `family` now lives on the
+ * pattern object itself in `state-file-patterns.ts`, so this is a plain
+ * per-element rename (`key` → `ownerKind`) with nothing left to fall out of
+ * sync.
  */
 function toOwnedPatterns(
   patterns: readonly {
@@ -153,11 +152,10 @@ export function isReaperArtifact(name: string): boolean {
 /**
  * `legacy-state.ts`'s per-clone migration marker — not this script's own
  * bookkeeping, but permanently present in every migrated default state
- * directory and equally not backlog. Kept apart from `isReaperArtifact`
- * (rather than folded into it): the marker is `legacy-state.ts`'s artifact,
- * not the reaper's, and every consumer that skips one for "not backlog"
- * reasons skips the other for the identical reason (chatgpt-codex-connector,
- * a reference-implementation pull request round 13).
+ * directory and equally not backlog. Kept apart from `isReaperArtifact` (rather
+ * than folded into it): the marker is `legacy-state.ts`'s artifact, not the
+ * reaper's, and every consumer that skips one for "not backlog" reasons skips
+ * the other for the identical reason.
  */
 export function isLegacyMigrationMarker(name: string): boolean {
   return name === MIGRATED_MARKER_FILENAME;
@@ -176,7 +174,7 @@ export function isLegacyMigrationMarker(name: string): boolean {
  * using-drive-pr.md § Relocating the state dir) would otherwise see it, find it matches no
  * known family/lock/reaper shape, and abort the whole migration with
  * "unclassified drive-pr artifacts" over a file this tool was never meant to
- * touch (chatgpt-codex-connector, a reference-implementation pull request round 22).
+ * touch.
  */
 export function isCloneIdentityArtifact(name: string): boolean {
   return name === CLONE_ID_FILE;

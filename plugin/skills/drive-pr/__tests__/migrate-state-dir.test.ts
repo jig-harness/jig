@@ -113,11 +113,9 @@ describe("noCrontabDiagnostic", () => {
   });
 
   it("rejects a same-line error appended after the username — the ambiguity a greedy payload used to swallow", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request: a `[^\r\n:]+`-style greedy payload
-    // accepted the whole of this message as the benign empty-crontab case,
-    // so migration proceeded even though scheduler state was never actually
-    // verified. The fail-closed grammar mirrors
-    // `tools/dev/install-reap-cron-linux.sh`'s `is_empty_crontab_message`.
+    // A `[^\r\n:]+`-style greedy payload accepted the whole of this message
+    // as the benign empty-crontab case, so migration proceeded even though
+    // scheduler state was never actually verified.
     expect(
       noCrontabDiagnostic("No crontab for alice - permission denied"),
     ).toBe(false);
@@ -192,7 +190,7 @@ describe("parseCliArgs", () => {
     // positionals via `index !== timeoutIndex + 1`, which is `index !== 0`
     // whenever `--timeout` is absent (`timeoutIndex` is `-1`) — silently
     // dropping the source argument on exactly this, the CLI's documented
-    // everyday form (chatgpt-codex-connector, a reference-implementation pull request round 15).
+    // everyday form.
     expect(parseCliArgs(["/abs/source", "/abs/destination"])).toEqual({
       roots: false,
       source: "/abs/source",
@@ -323,8 +321,7 @@ describe("assertScheduledReaperDisabled", () => {
   it("treats win32 as disabled — no repository-managed Windows scheduler exists", async () => {
     // Every other test bypasses this function entirely via the
     // `assertSchedulerDisabled` test seam, so its own win32 branch had no
-    // coverage at all — the actual gap this test closes (docomply-review,
-    // a reference-implementation pull request round 10).
+    // coverage at all — the actual gap this test closes.
     const realPlatform = process.platform;
     Object.defineProperty(process, "platform", { value: "win32" });
     try {
@@ -355,9 +352,8 @@ describe("runProbe", () => {
   it("races a slow probe and stops it, rather than waiting out its own deadline", async () => {
     // The regression: the probe's own `timeoutSec: 10` used to run
     // regardless of the caller's signal — a `--timeout 0.1` migration could
-    // still block ~10s on this alone (chatgpt-codex-connector, a reference-implementation pull request
-    // round 16). A 5s child raced against a 150ms signal must reject in low
-    // hundreds of ms, nowhere near either deadline.
+    // still block ~10s on this alone. A 5s child raced against a 150ms
+    // signal must reject in low hundreds of ms, nowhere near either deadline.
     const controller = new AbortController();
     setTimeout(() => controller.abort(new Error("deadline")), 150);
     const started = performance.now();
@@ -368,10 +364,9 @@ describe("runProbe", () => {
   });
 
   it("removes its abort listener once the probe settles normally, rather than leaking one per call", async () => {
-    // docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 16: the
-    // `{ once: true }` listener below is only removed by FIRING — when
-    // `result` wins the race instead of `aborted`, it stayed registered on
-    // the caller's signal for the rest of that signal's lifetime.
+    // The `{ once: true }` listener below is only removed by FIRING — when
+    // `result` wins the race instead of `aborted`, it stayed registered on the
+    // caller's signal for the rest of that signal's lifetime.
     const controller = new AbortController();
     await runProbe(["echo", "hi"], controller.signal);
     expect(getEventListeners(controller.signal, "abort").length).toBe(0);
@@ -381,7 +376,7 @@ describe("runProbe", () => {
     // `assertScheduledReaperDisabled` is called with the same
     // `AbortSignal.timeout(...)` for the whole migration, so a per-call leak
     // here compounds — this is the "repeated probes" half of the same
-    // finding, not just a single-call check.
+    // defect, not just a single-call check.
     const controller = new AbortController();
     for (let i = 0; i < 5; i++) {
       await runProbe(["echo", "hi"], controller.signal);
@@ -390,14 +385,13 @@ describe("runProbe", () => {
   });
 
   it("does not leak SIGINT/SIGTERM/SIGHUP listeners once the probe settles", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 16: `onSpawn` above excludes
-    // this child from `lib/proc.ts`'s own process-wide signal forwarding
-    // (taking a `RunHandle` is that library's signal the caller now owns
-    // this child's cancellation) — so `runProbe` has to register and clean
-    // up its own listeners for the same signal set, or a real SIGINT/SIGTERM
-    // would leave the probe running as an orphan. This checks the listeners
-    // are symmetric (registered, then removed) without actually raising a
-    // signal against the test process itself.
+    // `onSpawn` above excludes this child from `lib/proc.ts`'s own process-wide
+    // signal forwarding (taking a `RunHandle` is that library's signal the
+    // caller now owns this child's cancellation) — so `runProbe` has to
+    // register and clean up its own listeners for the same signal set, or a
+    // real SIGINT/SIGTERM would leave the probe running as an orphan. This
+    // checks the listeners are symmetric (registered, then removed) without
+    // actually raising a signal against the test process itself.
     const before = {
       SIGINT: process.listenerCount("SIGINT"),
       SIGTERM: process.listenerCount("SIGTERM"),
@@ -419,8 +413,7 @@ describe("runProbe", () => {
  * membership at runtime, not merely conformance-checked — a `satisfies {
  * family: ArtifactFamily }[]` cast alone validates each listed entry but
  * never requires an unused union member to appear at all, so a new family
- * added with no matching fixture entry would still compile and pass
- * (docomply-review, a reference-implementation pull request round 15).
+ * added with no matching fixture entry would still compile and pass.
  */
 const ALL_ARTIFACT_FAMILIES: Record<ArtifactFamily, true> = {
   "arm-output": true,
@@ -470,7 +463,7 @@ describe("canonical state artifact inventory", () => {
     // `enumerateStateArtifacts` itself sorts `readdirSync` into — a `Set` of
     // families alone cannot catch two fixtures' tags swapping (e.g. `state`
     // <-> `log`), only that the same bag of labels was produced by SOME
-    // pairing (docomply-review, a reference-implementation pull request round 14). Also includes the
+    // pairing. Also includes the
     // `legacy-state.ts` migration marker, the one `ArtifactFamily` member the
     // prior fixture set never exercised at all.
     expect(
@@ -595,14 +588,13 @@ describe("migrateStateDir", () => {
   });
 
   it("refuses up front, before touching the destination, when source is itself a mount point on the cross-filesystem path", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 22: `quarantineSourceArtifacts`
-    // stages its safety-net quarantine directory in `dirname(source)` and
-    // requires it to share `source`'s own device. A mount-point `source`
-    // fails that check, but only AFTER the destination has already been
-    // durably published and the journal written — leaving both populations
-    // plus a held destination lock for manual reconciliation. This refusal
-    // must fire before any of that, symmetric to the destination-side mount-
-    // point check just above it in the source.
+    // `quarantineSourceArtifacts` stages its safety-net quarantine directory in
+    // `dirname(source)` and requires it to share `source`'s own device. A
+    // mount-point `source` fails that check, but only AFTER the destination has
+    // already been durably published and the journal written — leaving both
+    // populations plus a held destination lock for manual reconciliation. This
+    // refusal must fire before any of that, symmetric to the destination-side
+    // mount-point check just above it in the source.
     //
     // An actual mount is not reproducible in a test sandbox — modelled via
     // `mock.module`, mirroring this file's own "converts a same-filesystem
@@ -648,16 +640,16 @@ describe("migrateStateDir", () => {
   });
 
   it("refuses up front, before touching the destination, when source and its parent share a device number but not a mount", async () => {
-    // docomply-review, a reference-implementation pull request round 23: the device-number check above
-    // catches a mount-point `source` whose device differs from its parent's,
-    // but a Linux bind mount (or a btrfs/bcachefs subvolume) can share the
-    // parent's device number while still refusing `rename(2)` across the
-    // boundary with EXDEV. That check alone cannot see this case — a real,
-    // throwaway rename across the identical boundary can, which is what the
-    // probe below exercises. Modelled via `mock.module` (an actual bind
-    // mount/subvolume boundary is not reproducible in a test sandbox),
-    // mirroring this file's own "converts a same-filesystem EXDEV..." test's
-    // established pattern for exactly this class of device-identity hazard.
+    // The device-number check above catches a mount-point `source` whose device
+    // differs from its parent's, but a Linux bind mount (or a btrfs/bcachefs
+    // subvolume) can share the parent's device number while still refusing
+    // `rename(2)` across the boundary with EXDEV. That check alone cannot see
+    // this case — a real, throwaway rename across the identical boundary can,
+    // which is what the probe below exercises. Modelled via `mock.module` (an
+    // actual bind mount/subvolume boundary is not reproducible in a test
+    // sandbox), mirroring this file's own "converts a same-filesystem EXDEV..."
+    // test's established pattern for exactly this class of device-identity
+    // hazard.
     const root = scratch();
     const source = join(root, "source");
     const destination = join(root, "destination");
@@ -728,14 +720,13 @@ describe("migrateStateDir", () => {
   });
 
   it("does not abort on the persisted clone-identity file, and leaves it behind rather than migrating it", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 22: `clone-key.ts`'s
-    // `drive-pr-clone-id` is minted inside `commonDir` by ANY drive-pr
-    // script run, regardless of migration state — so it is present at the
-    // top level of the legacy `--git-common-dir`, the documented `source`
-    // for this exact relocation flow (using-drive-pr.md § Relocating the state dir).
-    // It used to fall through to `looksDrivePrOwned`'s fallback and classify
-    // as `unknown-drive-pr`, aborting the whole migration on a file this
-    // tool was never meant to touch.
+    // `clone-key.ts`'s `drive-pr-clone-id` is minted inside `commonDir` by ANY
+    // drive-pr script run, regardless of migration state — so it is present at
+    // the top level of the legacy `--git-common-dir`, the documented `source`
+    // for this exact relocation flow (README.md § Relocating the state dir). It
+    // used to fall through to `looksDrivePrOwned`'s fallback and classify as
+    // `unknown-drive-pr`, aborting the whole migration on a file this tool was
+    // never meant to touch.
     const root = scratch();
     const source = join(root, "source");
     const destination = join(root, "destination");
@@ -815,15 +806,14 @@ describe("migrateStateDir", () => {
   });
 
   it("rejects a directory artifact with a NESTED symlink on the same-filesystem path, matching the cross-filesystem rejection", async () => {
-    // docomply-review, a reference-implementation pull request round 20 (chatgpt-codex-connector): the
-    // symlink check above only ever looks at a classified artifact's own
+    // The symlink check above only ever looks at a classified artifact's own
     // top-level entry. `renameSync` (the same-filesystem publish just below)
-    // moves a directory artifact's whole subtree in one syscall — it
-    // repoints the directory entry, never opens or reads what's inside it —
-    // so a symlink nested anywhere under `pr-drive-42.lock` used to pass
-    // through completely unexamined here, even though the cross-filesystem
-    // path's `manifestEntry` walk rejects the identical tree (see "preserves
-    // nested lock contents" above, forced cross-filesystem, and its own
+    // moves a directory artifact's whole subtree in one syscall — it repoints
+    // the directory entry, never opens or reads what's inside it — so a symlink
+    // nested anywhere under `pr-drive-42.lock` used to pass through completely
+    // unexamined here, even though the cross-filesystem path's `manifestEntry`
+    // walk rejects the identical tree (see "preserves nested lock contents"
+    // above, forced cross-filesystem, and its own
     // `unsupported filesystem entry` throw). Named `escape-hatch`, not
     // `claim.*`, so this exercises the NEW check rather than the pre-flight
     // claim-liveness scan a `claim.*`-prefixed name would trip first.
@@ -885,15 +875,14 @@ describe("migrateStateDir", () => {
   });
 
   it("checks cancellation once more before the cross-filesystem journal write and publish", async () => {
-    // Round-13 finding: the identity-verification loop right after the
-    // verified copy was fully synchronous with no signal check anywhere
-    // between it and the journal write / publish rename — a signal that
-    // fired in that window went unobserved straight through both,
-    // completing a "cancelled" migration anyway (chatgpt-codex-connector,
-    // a reference-implementation pull request round 13). `beforeCrossFilesystemPublish` fires at exactly
-    // that boundary, so aborting from inside it (without throwing) proves
-    // the new check downstream of the hook is what catches this — the
-    // pre-fix code had nothing left to catch it with.
+    // The identity-verification loop right after the verified copy was fully
+    // synchronous with no signal check anywhere between it and the journal
+    // write / publish rename — a signal that fired in that window went
+    // unobserved straight through both, completing a "cancelled" migration
+    // anyway. `beforeCrossFilesystemPublish` fires at exactly that boundary, so
+    // aborting from inside it (without throwing) proves the new check
+    // downstream of the hook is what catches this — the pre-fix code had
+    // nothing left to catch it with.
     const root = scratch();
     const source = join(root, "source");
     const destination = join(root, "destination");
@@ -955,8 +944,7 @@ describe("migrateStateDir", () => {
     // The journal must SURVIVE this rollback: `destination` was already
     // durably published before quarantine started, so a fully-restored
     // `source` leaves two complete populations, not a reverted migration —
-    // the journal is the only durable record of that split state
-    // (docomply-review, a reference-implementation pull request round 5).
+    // the journal is the only durable record of that split state.
     expect(existsSync(journalPath(source))).toBe(true);
   });
 
@@ -1246,7 +1234,7 @@ describe("migrateStateDir", () => {
     // `{}` parses fine as JSON but has none of MigrationJournal's fields —
     // previously this reached `journal.artifacts.join(...)` in the refusal
     // message and threw an opaque TypeError instead of the intended
-    // fail-closed diagnostic (docomply-review, a reference-implementation pull request round 11).
+    // fail-closed diagnostic.
     writeFileSync(journalPath(source), JSON.stringify({}));
 
     await expect(
@@ -1348,8 +1336,7 @@ describe("migrateStateDir", () => {
     ).rejects.toThrow("simulated crash between publish and quarantine");
     // Destination is durably published (the publish rename already
     // completed); the journal must still exist to describe that in-flight
-    // state — findings 1/5's exact scenario (docomply-review +
-    // chatgpt-codex-connector, a reference-implementation pull request round 4).
+    // state.
     expect(readFileSync(join(destination, "drive-pr-42.json"), "utf8")).toBe(
       "state",
     );
@@ -1372,9 +1359,8 @@ describe("migrateStateDir", () => {
           if (index === 1) {
             // Destroy index 0's already-quarantined copy so ITS rollback
             // (rename from quarantine back to source) fails — the exact
-            // "crash-adjacent" shape findings 1/5 described: destination is
-            // durably published, source is partway drained, and the journal
-            // is the only surviving record.
+            // "crash-adjacent" shape: destination is durably published, source
+            // is partway drained, and the journal is the only surviving record.
             const quarantineDir = readdirSync(root).find((name) =>
               name.startsWith(".drive-pr-source-removal-"),
             );
@@ -1515,7 +1501,7 @@ describe("migrateStateDir", () => {
     // a long synchronous artifact loop never yields to the event loop.
     // Without an actual macrotask yield in `checkSignal`, a 1ms timeout
     // measurably failed to bound a 2,000-artifact migration in practice
-    // (chatgpt-codex-connector, a reference-implementation pull request round 9) — this reproduces that
+    // — this reproduces that
     // shape at a smaller, CI-friendly scale.
     const root = scratch();
     const source = join(root, "source");
@@ -1551,8 +1537,7 @@ describe("migrateStateDir", () => {
     // sweeps) runs as one uninterrupted synchronous block first. Asserting
     // `destination` was NEVER created proves cancellation landed before
     // `mkdirSync(destination)` — i.e. during that preprocessing phase itself
-    // (docomply-review, a reference-implementation pull request round 9, matching the reviewer's own cited
-    // 2,000-artifact repro size).
+    // (at a 2,000-artifact repro size).
     const root = scratch();
     const source = join(root, "source");
     const destination = join(root, "destination");
@@ -1652,8 +1637,7 @@ describe("migrateStateDir", () => {
     // state-dir.ts` imports separately from `node:fs`, and mocking either
     // module does not retroactively rebind the OTHER module's own
     // already-captured `node:fs` import binding (confirmed by hand —
-    // mocking fsutil.ts's export directly recorded zero intercepted calls,
-    // docomply-review, a reference-implementation pull request round 6).
+    // mocking fsutil.ts's export directly recorded zero intercepted calls).
     const root = scratch();
     const source = join(root, "source");
     const destination = join(root, "destination");
@@ -1749,8 +1733,7 @@ describe("migrateStateDir", () => {
     // The refused invocation never acquired the lock — it must not delete
     // the winner's still-live lock just because `destination` (still empty,
     // since the winner hasn't moved anything yet) LOOKS safe to clean up.
-    // A stale-looking lock is not the same as an unowned one (docomply-
-    // review, PR #4626 round 8).
+    // A stale-looking lock is not the same as an unowned one.
     expect(existsSync(destinationLockPath(destination))).toBe(true);
     expect(
       JSON.parse(readFileSync(destinationLockPath(destination), "utf8")).source,
@@ -1764,8 +1747,7 @@ describe("migrateStateDir", () => {
     // and a later failure, re-deriving the lock path from the raw argument
     // in the cleanup catch would resolve `destinationArg` to a DIFFERENT
     // real directory than the one actually locked — and if that directory
-    // happened to be empty, delete an unrelated migration's live lock
-    // (chatgpt-codex-connector, a reference-implementation pull request round 12).
+    // happened to be empty, delete an unrelated migration's live lock.
     const root = scratch();
     const source = join(root, "source");
     const realParentA = join(root, "real-parent-a");
@@ -1830,7 +1812,7 @@ describe("migrateStateDir", () => {
     ).rejects.toThrow("simulated source removal failure");
     // Destination is already durably published — the destination lock must
     // remain, matching the source journal's own retention in this exact
-    // scenario (round 5).
+    // scenario.
     expect(readdirSync(destination).length).toBeGreaterThan(0);
     expect(existsSync(destinationLockPath(destination))).toBe(true);
   });

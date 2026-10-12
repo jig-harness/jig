@@ -48,6 +48,13 @@ CATALOG=tools/change-areas/catalog.yaml \
   bun check-catalog-regex-sync.ts
 ```
 
+`FILTER_FILE` (default `tools/ci/detect-changes-filter.sh`) is the shell file
+holding the regex, `CATALOG` (default `tools/change-areas/catalog.yaml`) the
+catalog, and `RE_VAR` (default `CODE_PATH_RE`) the name of the variable the
+filter file assigns. Exit codes: 0 when every alternative is declared, 1 on
+drift, 2 on a hard error (an input the gate cannot certify, or a missing
+file).
+
 Inputs come from env vars so the paired self-test
 ([`check-catalog-regex-sync.test.ts`](check-catalog-regex-sync.test.ts)) can point the gate
 at the [`fixtures/`](fixtures/): a `synced/` pair that must pass, and
@@ -177,8 +184,8 @@ credential capabilities to it, well beyond what a quality gate has any
 business touching. Instead, the gate requires the *entire file* to match a
 minimal declarative grammar: any number of blank lines and whole-line
 comments, in any order, plus exactly one line that is a plain,
-single-quoted `$RE_VAR` assignment — nothing else — and reads
-`$CODE_PATH_RE` by grep/sed-extracting that one line's raw source text.
+single-quoted `$RE_VAR` assignment — nothing else — and reads the regex
+from that one line's raw source text.
 This is a whitelist, not a blocklist: rather than individually recognizing
 and rejecting every way shell could set or reference the variable outside
 that one line (an append, a line continuation splitting its name across
@@ -188,16 +195,16 @@ blank, a comment, or the one recognized assignment gets the file rejected
 — structurally, whatever that line contains. A filter script must be
 exactly "comments, blank lines, and one assignment" to be soundly checked
 this way; a script that needs anything more needs some other, genuinely
-sandboxed evaluation, not this reference implementation.
+sandboxed evaluation, not this script.
 
-**Scope this reference implementation does not cover.** The `paths:` parser
+**Scope this script does not cover.** The `paths:` parser
 handles the catalog's actual format — an inline YAML array of double-quoted
 strings, `paths: ["a/**", "b/**"]`, with areas indented two spaces under
 `areas:` and their own fields two more (so an area's field always sits at
 exactly 4 spaces) — by string manipulation and a fixed indent width, not a
 YAML parser. Left unhandled: YAML block-sequence `paths:` lists, single-quoted glob
 strings, and a different indent width. Any of those needs a real YAML parser
-instead of this shell recipe. The literal-head reduction's variable-construct
+instead of this script's line scanner. The literal-head reduction's variable-construct
 vocabulary is likewise bounded: `*`, `[...]`, `?`, and `{...}` — a catalog
 glob using bash/ksh extglob syntax (`@(...)`, `!(...)`, `+(...)`), or a
 leading `!` (gitignore-style/micromatch-style negation, a distinct dialect
@@ -219,7 +226,7 @@ does not implement.
 ## Direction 2 — catalog → regex (recipe)
 
 The reverse check needs the resolver's `impliedBy` closure, so it lives with
-the resolver rather than as a standalone shell script:
+the resolver rather than as a standalone script:
 
 1. For each area, decide if it is **code-bearing** — its forward `impliedBy`
    closure reaches a [code area](../../../../GLOSSARY.md) (the *area class* you
@@ -259,8 +266,7 @@ area's `paths:`, not just code-bearing ones (see that check's Inputs in
 accidentally includes a genuinely docs-only area's prefix (e.g. `^docs/`,
 where `docs/**` belongs to a docs-only area) passes both directions and
 `checkFilterFileCoverage` — the shortcut then runs the heavy build for
-docs-only changes, a correctness gap this reference implementation doesn't
-close. Closing it needs a regex-positive check against the code-area class
+docs-only changes, a correctness gap this script doesn't close. Closing it needs a regex-positive check against the code-area class
 specifically, analogous to `checkFilterCodeAreaCoverage`'s deploy-critical
 check; this module doesn't yet specify one. Neither direction, alone or together,
 proves every *tracked file* the regex calls code-bearing actually belongs to

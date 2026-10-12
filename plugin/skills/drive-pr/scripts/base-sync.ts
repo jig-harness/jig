@@ -40,7 +40,7 @@
  * WHAT IT NEVER DOES is leave the worktree mid-merge. A merge that does not
  * apply cleanly is aborted, the abort is VERIFIED, and the exit says so (9) —
  * an unattended driver resolving conflicts on its own would be doing the
- * intent-tracing work `resolving-merge-conflicts` exists to keep deliberate.
+ * intent-tracing work `/groundwork:resolve-conflicts` exists to keep deliberate.
  * If the abort itself fails, that is exit 3 with the marker named, never a
  * quiet exit 9 over a wedged tree.
  *
@@ -53,7 +53,7 @@
  *                  This mode DOES still run `git fetch`, refreshing the local
  *                  remote-tracking ref `origin/<base>` — a routine, idempotent
  *                  read-refresh with no effect on the PR, the branch, or this
- *                  worktree's tracked content (docomply-review, a reference-implementation pull request). It
+ *                  worktree's tracked content. It
  *                  still refuses on an unreadable INPUT, never a verdict: an
  *                  unconcluded git operation (3), since every diff below
  *                  would compare against a working tree that still holds the
@@ -94,9 +94,9 @@
  *      front and RE-CHECKED immediately before the merge, since the fetch and
  *      the tree-lock wait in between are long enough for the PR to close.
  *   9  The merge does not apply cleanly. The worktree is RESTORED. Hand it to
- *      the `resolving-merge-conflicts` skill: intent-traced hunks,
- *      regenerate-don't-hand-merge for generated artifacts, then this round's
- *      own validation plan (SKILL.md § 5), then push.
+ *      `/groundwork:resolve-conflicts` (the sibling skill): intent-traced
+ *      hunks, regenerate-don't-hand-merge for derived files, a dropped-change
+ *      check, then this round's own validation plan (SKILL.md § 5), then push.
  *  11  This working tree's TREE lease is held by another live
  *      session — the identical guard `guarded-push.ts` takes before its own
  *      mutation, so two writers in one tree cannot cross-ship uncommitted
@@ -156,15 +156,14 @@ interface Report {
 /**
  * The `reason` for a report that decides nothing further — pure, so the
  * precedence is one reviewable place instead of threaded through `main()`'s
- * control flow. An unverified measurement always outranks a positive
- * verdict, `--check` aside: `verdict` is computed from `behind`/`overlapCount`
- * alone, with no notion of whether the fetch that produced them succeeded, so
- * a stale `origin/<base>` that happens to compute `in-sync` or `no-overlap`
- * must not be reported as a confirmed positive — the report contract
- * documents `fetch-failed` as this measurement's own reason, and a caller
- * checking the top-level `reason` rather than `drift.fetched` deserves that
- * label (docomply-review, a reference-implementation pull request round 8: the verdict branches used to
- * return before the `fetched` check ever ran).
+ * control flow. An unverified measurement always outranks a positive verdict,
+ * `--check` aside: `verdict` is computed from `behind`/`overlapCount` alone,
+ * with no notion of whether the fetch that produced them succeeded, so a stale
+ * `origin/<base>` that happens to compute `in-sync` or `no-overlap` must not be
+ * reported as a confirmed positive — the report contract documents
+ * `fetch-failed` as this measurement's own reason, and a caller checking the
+ * top-level `reason` rather than `drift.fetched` deserves that label (the
+ * verdict branches used to return before the `fetched` check ever ran).
  *
  * Returns `null` when nothing here decides the outcome — the caller must
  * still weigh `alreadyPushing()` and attempt the merge.
@@ -203,7 +202,7 @@ export type StillCurrentResult =
  * closed during the wait must not have its base merged into the now-orphaned
  * branch (the exit-5 mutation guard this script otherwise upholds), and a
  * checkout that moved onto a different branch or commit must not be merged
- * into as if it were still this PR's own head (docomply-review, a reference-implementation pull request).
+ * into as if it were still this PR's own head.
  */
 export async function verifyStillCurrent(
   git: GitRunner,
@@ -295,10 +294,10 @@ export type PushingProbe =
  * validate the current (dirty) tree and commit it, THEN re-run this script;
  * never commit merely to unblock the merge without having validated first
  * (a dirty tree from this round's own fixes is exactly the complete change
- * AGENTS.md § Change-Proportional Validation's own resolve command already
+ * drive-pr `SKILL.md` § 5's validation plan's own resolve command already
  * covers — an uncommitted diff is not an excuse to skip it). This predicate
  * only decides whether attempting the merge is worth the try, not whether an
- * uncommitted-only attempt will succeed (docomply-review, a reference-implementation pull request).
+ * uncommitted-only attempt will succeed.
  *
  * The local-commit check compares local `HEAD` against the PR's own `headRefOid` —
  * the SHA GitHub reports for the PR, read alongside `headRefName` in the same
@@ -322,7 +321,7 @@ export type PushingProbe =
  * silently skip the sync on every round of a drive whose local HEAD this
  * clone cannot read. Both guesses hide the same underlying fact — that this
  * read did not work — behind an answer that looks like a normal verdict; a
- * loud refusal surfaces it instead (docomply-review, a reference-implementation pull request).
+ * loud refusal surfaces it instead.
  */
 export async function alreadyPushing(
   git: GitRunner,
@@ -331,13 +330,12 @@ export async function alreadyPushing(
   env?: Record<string, string | undefined>,
 ): Promise<PushingProbe> {
   const timeoutSec = gitCallTimeoutSeconds();
-  // `--untracked-files=normal` and `--ignore-submodules=none` are explicit,
-  // not decorative: a plain `--porcelain` inherits `status.showUntrackedFiles`
-  // from repo/user config and `submodule.<name>.ignore` from `.gitmodules`,
-  // either of which can make a round with real new files or submodule changes
-  // read as `pushing: false` here and skip a sync it owed
-  // (chatgpt-codex-connector, a reference-implementation pull request — the same class `announce-merge-ready.ts`
-  // already hardens against).
+  // `--untracked-files=normal` and `--ignore-submodules=none` are explicit, not
+  // decorative: a plain `--porcelain` inherits `status.showUntrackedFiles` from
+  // repo/user config and `submodule.<name>.ignore` from `.gitmodules`, either
+  // of which can make a round with real new files or submodule changes read as
+  // `pushing: false` here and skip a sync it owed (the same class
+  // `announce-merge-ready.ts` already hardens against).
   const status = await git(
     [
       "-C",
@@ -392,7 +390,7 @@ export async function alreadyPushing(
  * confirming the worktree was fully clean immediately before the merge was
  * attempted (its own dirty-tree refusal, ahead of the `git merge` call), so
  * ANY status output here now is new — proof the worktree was not actually
- * restored, not merely unconfirmed (docomply-review, a reference-implementation pull request).
+ * restored, not merely unconfirmed.
  */
 export async function worktreeClean(
   git: GitRunner,
@@ -472,9 +470,8 @@ async function main(): Promise<number> {
    * convention here was one private copy per script "to keep its dependency on
    * git plumbing self-contained", and the cost of it was measured: four copies
    * existed, two of them missing `GIT_NAMESPACE` AND the Windows case-folding
-   * that PR #4124 rounds 3-4 had already found and fixed on the other two. A
-   * fix that does not reach the siblings of the file it landed on is the
-   * defect.
+   * that had already been found and fixed on the other two. A fix that does not
+   * reach the siblings of the file it landed on is the defect.
    *
    * What the scrub buys HERE specifically, beyond the shared rationale in
    * `lib/proc.ts`: `GIT_DIR` alone — no `GIT_WORK_TREE` — makes git treat the
@@ -484,9 +481,8 @@ async function main(): Promise<number> {
    * branch-name and ancestor-of-`headOid` checks below would pass for the
    * leaked repo's own HEAD, and a `git merge` would write refs into it while
    * touching this worktree's files — the "a matching checkout can be measured
-   * or merged while the intended worktree remains untouched" failure this
-   * file's own reviewer named (docomply-review, a reference-implementation pull request). `-C root` alone was
-   * never sufficient against any of these.
+   * or merged while the intended worktree remains untouched" failure. `-C root`
+   * alone was never sufficient against any of these.
    */
   const identityEnv = gitIdentityEnv();
 
@@ -501,7 +497,7 @@ async function main(): Promise<number> {
   // git's own single-name syntax check — no repository required, and it
   // refuses ':' unconditionally, the same way it already refuses a leading
   // '-' — so validating with it here closes the refspec-injection path
-  // before any fetch runs (docomply-review, a reference-implementation pull request).
+  // before any fetch runs.
   if (baseOverride !== "") {
     const refCheck = await git(["check-ref-format", "--branch", baseOverride], {
       stderr: "ignore",
@@ -520,8 +516,8 @@ async function main(): Promise<number> {
   // Anchored to `DRIVE_PR_WORKTREE` when the driver set one: a pass's shell
   // cwd persists across tool calls, and a `cd` to the main checkout or
   // another worktree would otherwise make `--show-toplevel` resolve THAT
-  // tree's root — silently measuring or merging against the wrong checkout
-  // (docomply-review, a reference-implementation pull request), the same hazard `drive-status.ts`'s own
+  // tree's root — silently measuring or merging against the wrong checkout,
+  // the same hazard `drive-status.ts`'s own
   // local-head read guards against. A round run by hand, with no driver and
   // no `DRIVE_PR_WORKTREE`, falls back to the ambient cwd exactly as before.
   const anchor = process.env.DRIVE_PR_WORKTREE;
@@ -632,17 +628,16 @@ async function main(): Promise<number> {
   // The checkout itself must be the PR's own head branch before this may
   // MEASURE or MERGE against it — the `DRIVE_PR_TARGET` check above only
   // catches a mistargeted *driver*; run by hand from an unrelated branch or a
-  // detached checkout, nothing else stops this from reading whatever happens
-  // to be checked out here and reporting the result — merged or measured —
-  // against a PR it never touched. `--check` never merges or writes to the
-  // tree, but it is NOT exempt: `probeBaseDrift()` below reads this same
-  // checkout's `HEAD` regardless of mode, so a checkout that is not this PR's
-  // own produces a `behind`/`prFiles`/`overlap` report that describes a
-  // hybrid — this worktree's actual HEAD against the requested PR's base —
-  // mislabeled with the requested PR's number (docomply-review +
-  // chatgpt-codex-connector, a reference-implementation pull request). This is an unreadable-input refusal,
-  // the same category as the unconcluded-git-op check below, not a verdict
-  // about drift — so it applies whether or not `--check` was passed.
+  // detached checkout, nothing else stops this from reading whatever happens to
+  // be checked out here and reporting the result — merged or measured — against
+  // a PR it never touched. `--check` never merges or writes to the tree, but it
+  // is NOT exempt: `probeBaseDrift()` below reads this same checkout's `HEAD`
+  // regardless of mode, so a checkout that is not this PR's own produces a
+  // `behind`/`prFiles`/`overlap` report that describes a hybrid — this
+  // worktree's actual HEAD against the requested PR's base — mislabeled with
+  // the requested PR's number. This is an unreadable-input refusal, the same
+  // category as the unconcluded-git-op check below, not a verdict about drift —
+  // so it applies whether or not `--check` was passed.
   const branchRes = await git(
     ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
     { stderr: "ignore", timeoutSec: gitTimeout, env: identityEnv },
@@ -665,8 +660,8 @@ async function main(): Promise<number> {
   // or an unrelated local branch can share a name, and a different HEAD
   // under that name is then read by `alreadyPushing()` as an unpushed local
   // commit, merging the PR's base into unrelated history — or, under
-  // `--check`, measured as that PR's own drift
-  // (docomply-review + chatgpt-codex-connector, a reference-implementation pull request). `--is-ancestor`
+  // `--check`, measured as that PR's own drift.
+  // `--is-ancestor`
   // also accepts equality — a commit is its own ancestor — so this passes
   // both when local HEAD *is* the PR's head and when it carries genuine
   // local commits on top of it, and refuses whenever the relationship
@@ -677,8 +672,7 @@ async function main(): Promise<number> {
   // mode an empty `headOid` is later caught by `alreadyPushing()`, but
   // `--force` skips that call entirely, so a `headOid`-less path here would
   // let an incomplete `gh pr view` response plus a same-named unrelated local
-  // branch merge the PR's base into unrelated history under `--force`
-  // (docomply-review, a reference-implementation pull request).
+  // branch merge the PR's base into unrelated history under `--force`.
   if (headOid === "") {
     fail(
       1,
@@ -726,8 +720,7 @@ async function main(): Promise<number> {
   // that BEFORE the fetch: a fork PR driven from a clone of the fork, or a
   // `gh`/git disagreement (`$GH_REPO`, `gh repo set-default`), would
   // otherwise measure — and potentially merge — drift from a same-named
-  // branch in the wrong repository's history, silently
-  // (chatgpt-codex-connector, a reference-implementation pull request).
+  // branch in the wrong repository's history, silently.
   if (baseRepo === "") {
     fail(
       1,
@@ -780,7 +773,7 @@ async function main(): Promise<number> {
   // miss a real, currently-unmergeable divergence — merging it would report
   // `action: "merged"` while the actual base remains ahead, and can spend a
   // reviewer cycle without achieving the synchronization this exists to
-  // provide (docomply-review + chatgpt-codex-connector, a reference-implementation pull request). `--force`
+  // provide. `--force`
   // drops the overlap and already-pushing preconditions, never this one —
   // same rule as never dropping precondition 1. `resolveReadReason` checks
   // this ahead of every verdict branch, `--check` aside, so a stale fetch
@@ -811,8 +804,8 @@ async function main(): Promise<number> {
   // mutation: another live session in this tree could otherwise
   // change the checkout — dirty it, move HEAD, start its own merge — in the
   // gap between the checks above and `git merge` below, and this script
-  // would merge into, or "restore", the wrong concurrent state
-  // (docomply-review, a reference-implementation pull request). `null` only when no repository is in play
+  // would merge into, or "restore", the wrong concurrent state.
+  // `null` only when no repository is in play
   // at all (`resolveFenceContext`'s own no-op case); `--check` never reaches
   // this point (`readReason` above already returned), so there is no
   // separate check-mode skip to write.
@@ -827,8 +820,7 @@ async function main(): Promise<number> {
     // tree-lock wait just above (documented as potentially five minutes) can
     // leave a real gap behind them. Re-verify both immediately before the one
     // irreversible act below rather than trusting reads that are now stale;
-    // see `verifyStillCurrent`'s own doc comment for why (docomply-review,
-    // a reference-implementation pull request).
+    // see `verifyStillCurrent`'s own doc comment for why.
     const stillCurrent = await verifyStillCurrent(
       (args, opts) =>
         git(args, {
@@ -863,12 +855,12 @@ async function main(): Promise<number> {
     // happens to react to the particular files involved. The recovery is to
     // validate this round's own diff and commit it BEFORE re-running this
     // script, never to commit merely to unblock the merge without having
-    // validated first (docomply-review + chatgpt-codex-connector, a reference-implementation pull request).
+    // validated first.
     // `--untracked-files=normal`/`--ignore-submodules=none` for the same reason
     // `alreadyPushing` above carries them: a plain `--porcelain` can read an
     // untracked file or ignored submodule change as a clean tree depending on
     // repo/user config, letting a merge start over state that is not actually
-    // clean (chatgpt-codex-connector, a reference-implementation pull request).
+    // clean.
     const dirty = await git(
       [
         "-C",
@@ -904,8 +896,7 @@ async function main(): Promise<number> {
     // the absence of a MERGE_HEAD marker alone. That marker is cleared the
     // instant a merge commit lands, so a `post-merge` hook that hangs or fails
     // afterward — e.g. until GIT_CALL_TIMEOUT — makes `git merge` exit nonzero
-    // with HEAD already mutated and no marker left to notice it by
-    // (chatgpt-codex-connector, a reference-implementation pull request).
+    // with HEAD already mutated and no marker left to notice it by.
     const preMergeHeadRes = await git(["-C", root, "rev-parse", "HEAD"], {
       stderr: "ignore",
       timeoutSec: gitTimeout,
@@ -960,8 +951,7 @@ async function main(): Promise<number> {
       // nonzero exit from it blocks the commit while leaving that same marker
       // — indistinguishable from a real conflict by marker alone. Read the
       // index for actual unmerged (stage 1/2/3) paths while it still reflects
-      // the failed attempt, before the abort below discards it
-      // (chatgpt-codex-connector, a reference-implementation pull request).
+      // the failed attempt, before the abort below discards it.
       let hadUnmergedPaths = true;
       if (after.marker !== null) {
         const unmerged = await git(
@@ -989,8 +979,7 @@ async function main(): Promise<number> {
       // an abort (or a merge that never started) to have already left it there.
       // `HEAD` and the marker alone prove the git METADATA is restored; they
       // say nothing about the worktree itself, which is why the final check is
-      // `worktreeClean` rather than returning as soon as `HEAD` matches
-      // (docomply-review, a reference-implementation pull request).
+      // `worktreeClean` rather than returning as soon as `HEAD` matches.
       const atPreMergeHead = async (): Promise<boolean> => {
         const marker = await unconcludedGitOpMarker(gitTimeout, {
           cwd: root,
@@ -1046,15 +1035,14 @@ async function main(): Promise<number> {
       // genuinely 0 — yet the merge above still failed, so a conflict exists
       // outside the measured file-level overlap (content conflicts, directory
       // renames). Reporting "conflicts ... over 0 shared file(s)" would
-      // contradict itself for the operator who has to act on it
-      // (coderabbitai, PR #4279).
+      // contradict itself for the operator who has to act on it.
       fail(
         9,
         drift.overlapCount > 0
           ? `base-sync: ${drift.baseRef} conflicts with this branch over ${drift.overlapCount} shared file(s).`
           : `base-sync: ${drift.baseRef} conflicts with this branch (no file-level overlap was measured).`,
         "The worktree was restored — nothing is half-merged. Resolve it deliberately:",
-        `  git merge ${drift.baseRef}   # then the resolving-merge-conflicts skill`,
+        `  git merge ${drift.baseRef}   # then /groundwork:resolve-conflicts`,
         "Then run this round's validation plan (SKILL.md § 5) and push.",
       );
     }
@@ -1088,8 +1076,7 @@ async function main(): Promise<number> {
 // fileURLToPath(...)` defect-escape.ts, summary-findings.ts and
 // round-plan.ts still use) because a symlinked invocation path leaves
 // `process.argv[1]` unresolved under Node while `fileURLToPath(import.meta.url)`
-// is already canonical — reap-state.ts's own comment has the measurement
-// (chatgpt-codex-connector / coderabbitai, PR #4197 rounds 17-18).
+// is already canonical — reap-state.ts's own comment has the measurement.
 let isEntryPoint = false;
 if (process.argv[1] !== undefined) {
   try {

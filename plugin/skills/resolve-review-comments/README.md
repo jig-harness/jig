@@ -4,14 +4,17 @@ Review feedback should end in a clear decision, with fixes verified before a
 thread closes. Without a shared procedure, agents can reply to the wrong thread,
 close a finding before its fix reaches the pull request, or stop while a reviewer
 is still running. This skill handles those decisions and repeats review rounds
-until the reviewers settle and no actionable finding remains.
+until the reviewers settle and no actionable finding remains. It is the
+runnable form of the [comment-resolution loop](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in
+[M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md).
 
 ## Invariant
 
 Each acted-on thread has an explicit outcome and an attached rationale. Accepted
 fixes and findings made moot by those fixes remain open until checks pass and the
-push reaches the pull request ([PR](https://github.com/docomply/jig/blob/main/GLOSSARY.md)). Human review decisions,
-marking the PR ready, and merging remain human checkpoints. A review loop never
+push reaches the pull request ([PR](https://github.com/docomply/jig/blob/main/GLOSSARY.md)). This skill never marks
+the PR ready or merges it; human review decisions and the merge remain human
+checkpoints. A review loop never
 reports convergence from unreadable check state or an inactive PR. Every thread
 write freshly reads the owning PR and refuses a closed, merged, or unreadable
 state, including in standalone installs. This is a check immediately before a
@@ -46,9 +49,10 @@ tooling can carry more.
 | `review.job_pattern` | Regular expression selecting checks to wait on; requires `review.required_checks`. Absent or `null`: reviewer checks are recognised by name |
 | `review.required_checks` | Distinct exact check names that must each complete; missing or skipped members cannot settle |
 | `review.deferral_team` | Required. Linear team used by the deferral adapter |
-| `review.repo_slug` | GitHub repository (`owner/name`) used to validate finding permalinks |
-| `review.repo_label` | Repository label used on follow-up issues |
-| `review.taxonomy` | Consumer label sets: `types`, `repos`, `sizes`, `categories`, `context_prefixes`, and `ownership_prefixes` |
+| `review.repo_slug` | GitHub repository (`owner/name`) used to validate finding permalinks; a deferral without it needs `--repo-slug` |
+| `review.repo_label` | Repository label used on follow-up issues, one of `review.taxonomy.repos`; a deferral without it needs `--repo-label` |
+| `review.taxonomy` | Consumer label sets used when filing deferred findings: `types`, `repos`, `sizes` (default `xs`, `small`), `categories`, `context_prefixes`, and `ownership_prefixes` (required once `types`, `repos` or `context_prefixes` is set). `provenance_label` and `epic_label` are older spellings of the `followup` and `epic` roles in `issue_tracker.labels`; set either one, or both to the same name |
+| `issue_tracker.labels` | Optional. The repository's label per role; deferral reads `followup` (default `pr-followup`) and `epic` (default `epic`). Checked at step 0 |
 | `issue_tracker.team`, `issue_tracker.file_command` | Optional. Shown to the agent for filing follow-up issues by hand |
 
 A minimal configuration:
@@ -82,14 +86,15 @@ blocks convergence. Each required name must match the selection pattern;
 invalid coverage configuration exits `2`. Check names are exact and case
 sensitive: consumers own names and changes to them. `required_checks` also works
 without a pattern and supports check names outside the default reviewer heuristic.
-Without either field, the existing reviewer-name heuristic remains available
-and does not guarantee coverage of a consumer-defined reviewer set.
+Without either field, checks are recognised by the reviewer-name heuristic,
+which does not guarantee coverage of a consumer-defined reviewer set.
 
 Consumers retain policy stances, change-proportional validation commands,
-optional sibling-claim sweep commands, and independent review-agent definitions
-in their own instructions. Late-round triage bands remain consumer-owned in
-`.config/review-triage.yaml`; absent or unreadable state restores the ordinary
-acceptance rubric and reports the anomaly rather than declining uncertain work.
+optional sibling-claim sweep commands, and any review-agent definition of their
+own (the plugin ships the `review-arbiter` agent) in their own instructions. Late-round triage bands remain consumer-owned in
+`.config/review-triage.yaml` (`GROUNDWORK_REVIEW_TRIAGE_CONFIG` points at
+another file); absent or unreadable state restores the ordinary acceptance
+rubric and reports the anomaly rather than declining uncertain work.
 Do not infer another repository's policy from the examples in this skill.
 
 ## Usage and optional integrations
@@ -103,9 +108,10 @@ thread filter; consumer bot names do not silently widen it to human threads.
 [triage rubric](references/triage-rubric.md) determines materiality and scope;
 the [deferral protocol](references/deferral-protocol.md) requires a tracked
 follow-up before a deferred thread resolves. The executable deferral adapter
-files those follow-ups in Linear directly, through Linear's GraphQL API; it
-does not yet use the tracker interface that `do-item` and `drive-pr` reach
-the tracker through, so another tracker needs its own deferral adapter.
+files those follow-ups in Linear directly, through Linear's GraphQL API, with
+the credential in `LINEAR_API_TOKEN` or `LINEAR_API_KEY`. It does not go
+through the [tracker interface](https://github.com/docomply/jig/blob/main/GLOSSARY.md) that `do-item` and `drive-pr` use, so
+another tracker needs its own deferral adapter.
 
 The skill works independently. A sibling `drive-pr` skill, found in the
 repository's own `.claude/skills/drive-pr` or else beside this skill in the
@@ -123,9 +129,9 @@ The complete standalone suite runs on macOS and Linux. Bash-backed network
 fixtures skip on Windows; pure mechanism tests still run there. The plugin test
 in [tools/plugin](../../../tools/plugin/plugin.test.ts) runs the scripts from a copy
 outside this repository, the way a plugin cache holds them, against a scratch
-consumer repository. The consumer retains tests using its real optional driver.
+consumer repository.
 
-Run the moved tests with:
+Run the tests with:
 
 ```sh
 bun test plugin/skills/resolve-review-comments/__tests__
@@ -133,13 +139,4 @@ bun test plugin/skills/resolve-review-comments/__tests__
 
 The tests exercise pagination, reply validation, mutation failure handling,
 convergence exits, lease integration, bounded cache reuse, triage configuration,
-and deferral batching. Repository validation remains `bun run gates`.
-
-## Provenance
-
-Moved from the operated skill at
-`.claude/skills/resolve-review-comments/` in docomply's `develop`, source commit
-`35495ac78a809342697c1e36f55362378e2b6ff4`. This includes the operated guards and
-their tests, rather than replacing them with a parallel implementation. Local
-copy-divergence history is retained in source control rather than shipped as a
-second procedure.
+and deferral batching. Repository validation is `bun run gates`.

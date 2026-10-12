@@ -1,5 +1,5 @@
 // Scope: tracked/non-ignored Markdown, excluding consumer templates, test
-// fixtures and frozen seeds/docs. Ignored local workspaces are not content.
+// fixtures (`fixtures/` and `fixture/` directories) and the frozen seeds. Ignored local workspaces are not content.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cli } from "../lib/cli.ts";
@@ -9,8 +9,8 @@ export function checkLinks(root = "."): number {
   for (const file of markdownFiles(root, [
     "templates",
     "fixtures",
+    "fixture",
     "seeds",
-    "docs",
   ])) {
     for (const match of readFileSync(file, "utf8").matchAll(/\]\(([^)]*)\)/g)) {
       const target = match[1] ?? "";

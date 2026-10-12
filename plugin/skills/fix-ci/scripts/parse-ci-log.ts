@@ -113,13 +113,13 @@ const PATTERNS: [RegExp, Category][] = [
     /(drift detected|out[- ]of[- ]sync|OpenAPI (spec )?drift|type[- ]surface drift|error[- ]code drift|Eden coverage|regenerate the (schema|spec|types|SDK|Eden|OpenAPI)|run [`']?(?:pnpm|npm run|yarn|bun run) [\p{L}\p{N}_:-]+:(generate|sync))/isu,
     "drift_check",
   ],
-  // Any other failed check that reports an error annotation (a grep gate, a
-  // ratchet, a self-test). Without it such a run would count zero errors and
-  // read as a flaky runner. Kept last so a specific category wins.
   // The runner's own note that a step exited nonzero. It accompanies a failed
   // gate and an infrastructure failure (a timeout, a lost runner) alike, so it
   // gets its own category rather than counting as a gate diagnostic.
   [/^##\[error\]Process completed with exit code \d+\.?$/su, "process_exit"],
+  // Any other failed check that reports an error annotation (a grep gate, a
+  // ratchet, a self-test). Without it such a run would count zero errors and
+  // read as a flaky runner. Kept last so a specific category wins.
   [/^\s*(::error|##\[error\]|❌|✗|(?:error|failed):)/isu, "gate_failure"],
 ];
 

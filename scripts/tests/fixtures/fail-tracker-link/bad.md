@@ -1,3 +1,3 @@
 # Notes
 
-See (tracker link removed) for the reason.
+See https://tracker.example/acme-corp/issue/ABC for the reason.

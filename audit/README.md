@@ -35,22 +35,21 @@ enforcement, and capabilities that need a maintained home outside any one
 application repo. It does not turn organization-specific policy into a
 Groundwork module.
 
-**v1 (scored maturity assessment)**: every module M0–M12 now ships formal
+**Scored maturity assessment**: every module M0–M12 ships formal
 `maturity.yaml` criteria, so an audit scores the *whole* module map against
-observable criteria rather than grading later modules by feel. Run
-[`score-modules.ts`](score-modules.ts) to emit the fill-in checklist (one row
-per criterion, with empty Score/Evidence columns) and paste it under the
-report's "Module scores"; `bun score-modules.ts --check` asserts all 13 modules
-carry criteria, so a future port that forgets its `maturity.yaml` fails loudly.
-Qualitative grading on the enforcement ladder (*absent / convention-only /
-advisory / mechanically enforced*) is now the fallback only where a criterion
-is inapplicable to the target's shape (mark it "expected-absent"), not the
-default for whole modules.
+observable criteria rather than grading modules by feel. Run
+`bun audit/score-modules.ts` to emit the fill-in checklist (one row per
+criterion, with empty Score/Evidence columns) and paste it under the report's
+"Module scores"; `bun audit/score-modules.ts --check` fails when a module has
+no `maturity.yaml` or no criteria in it. Qualitative grading on the
+enforcement ladder (*absent / convention-only / advisory / mechanically
+enforced*) is the fallback only where a criterion is inapplicable to the
+target's shape (mark it "expected-absent"), not the default for whole
+modules.
 
-**Dogfood target**: periodically re-run the auditor against the reference
-implementation (docomply) — it doubles as a practices-drift regression check
-([methodology.md](methodology.md) step 4 diffs a re-audit against the prior
-report). That run needs read access to the private reference repo; a report
-without file-path evidence from the actual target is not a valid audit
-([methodology.md](methodology.md) rule: no finding without evidence), so it is
-run where that checkout is available, not fabricated here.
+**Re-running**: an audit re-run later doubles as a practices-drift regression
+check ([methodology.md](methodology.md) step 4 diffs a re-audit against the
+prior report). A report without file-path evidence from the actual target is
+not a valid audit ([methodology.md](methodology.md) rule: no finding without
+evidence), so the auditor is only ever run where the target's checkout is
+available.

@@ -42,8 +42,8 @@
  * failing open: this authorises no act at all, so the failure direction is
  * simply "the record expires by staleness", which is exactly the older
  * behaviour. The inverse of `assert-post-allowed.ts`, which guards an
- * irreversible POST and must therefore refuse on any unreadable input
- * (`.claude/rules/document-scanning-gates.md` rule 1).
+ * irreversible POST and must therefore fail closed: refuse on any unreadable
+ * input.
  *
  * Exit 0   released something, or there was nothing this may release.
  * Exit 1   the release could not be completed — lock contention, an unreadable

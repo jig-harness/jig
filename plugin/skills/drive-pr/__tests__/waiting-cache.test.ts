@@ -12,8 +12,8 @@ import {
 const HEAD = "a".repeat(40);
 const ctx = {
   pr: "123",
-  owner: "docomply",
-  repo: "docomply",
+  owner: "example-org",
+  repo: "example-repo",
   localHead: HEAD,
   helperTimeoutSec: 10,
 };

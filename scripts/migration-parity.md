@@ -58,8 +58,8 @@ Exit codes and standard output were compared byte for byte.
 
 | Input | Files | Findings compared | Result |
 |-------|-------|-------------------|--------|
-| The reference implementation's decision records, plus the two decision texts its linter tests used | 113 | 11,841 | identical |
-| A sample of the reference implementation's other Markdown (every fourth file) | 361 | 27,802 | identical |
+| A production repository's decision records, plus the two decision texts its linter tests used | 113 | 11,841 | identical |
+| A sample of that repository's other Markdown (every fourth file) | 361 | 27,802 | identical |
 | Generated Markdown mixing rule triggers with Unicode letters, digits and spaces, characters outside the Basic Multilingual Plane, tabs, every Python line separator, tables, nested lists, quotes, fences and front matter | 400 | 8,255 | identical |
 | Command-line cases: standard input, several files, `--baseline`, `--disable`, empty input, a byte-order mark | 20 runs | | identical |
 
@@ -69,7 +69,6 @@ which rounds the exact binary value and breaks a true tie to the even digit;
 114,696 generated rates matched. The selftests keep their checks, with neutral
 example sentences of the same word counts.
 
-The compared corpora are the reference implementation's content and are not
-committed. The skill's tests keep the Python output for each neutral fixture as
+The compared corpora belong to that repository and are not committed. The skill's tests keep the Python output for each neutral fixture as
 a golden file in `plugin/skills/decide/__tests__/fixtures/ste-lint/`, and the
 translation must reproduce each one byte for byte.

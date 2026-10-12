@@ -37,8 +37,8 @@ import {
  *   --interval      poll spacing while checks are pending (default 30s, min 5s).
  *   --once          evaluate a single time and exit; never sleep.
  *   --once-budget-sec  the total wall-clock seconds an OUTER caller allows
- *                   this whole invocation, if any (`tools/dev/herdr-status-
- *                   board.ts` passes its own `CMD_TIMEOUT_MS`/1000). Only
+ *                   this whole invocation, if any (an external status board
+ *                   passes its own command timeout, in seconds). Only
  *                   meaningful with `--once`. Unset by default: the ordinary
  *                   direct `--once` invocation (e.g. `/resolve-review-
  *                   comments`'s own loop) has no such outer deadline and must
@@ -64,7 +64,7 @@ import {
  *   1  the check state could not be read at all — never reported as settled
  *   2  usage error
  *
- * Polling cost (TASK). Every `gh pr view` / `gh pr checks` is a GraphQL
+ * Polling cost. Every `gh pr view` / `gh pr checks` is a GraphQL
  * call, and one token's 5,000-point hourly bucket backs every driver on the
  * machine. So the PR's state and head SHA are read over conditional REST
  * (`lib/gh-conditional.ts`; an unchanged PR answers 304, which is free), and
@@ -92,9 +92,9 @@ import {
  * common way a resolve loop exits early and leaves real findings unaddressed
  * on the PR.
  *
- * Exit 8 (TASK). A finding the reviewer cannot anchor to a diff line is
+ * Exit 8. A finding the reviewer cannot anchor to a diff line is
  * posted only in its summary comment and never becomes a thread, so zero
- * unresolved threads is not zero findings: on PR #4496 that happened twice,
+ * unresolved threads is not zero findings: in practice that happened twice,
  * each time one step from a false "converged". Detecting and answering such
  * findings is `/drive-pr`'s job — its `summary-findings.ts` parses the
  * reviewer's summary and tracks which findings were answered — so this does
@@ -105,10 +105,10 @@ import {
  * answers in an unusable shape fails closed (exit 1). A STANDALONE install —
  * no `/drive-pr` beside it — skips the check: that is a documented residual
  * of that install shape, not a pass. (An earlier cut re-derived the count
- * from the reviewer's check-run and inline reviews; PR #5000 spent three
- * review rounds on its edge cases before it was replaced by this.)
+ * from the reviewer's check-run and inline reviews; its edge cases proved
+ * costly enough that it was replaced by this.)
  *
- * A second, narrower residual (docomply-review, a reference-implementation pull request round 10): this
+ * A second, narrower residual: this
  * check has no cross-pass memory of its own, only what `summary-findings.ts`
  * reads off the reviewer's CURRENT sticky comment. A caller relying solely
  * on this script's own exit codes across separate passes — never
@@ -156,7 +156,7 @@ import { skillsParentIsIntact } from "./reply-to-thread.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const listUnresolved = join(here, "list-unresolved-threads.ts");
-/** `/drive-pr` — an optional sibling install (TASK). */
+/** `/drive-pr` — an optional sibling install. */
 const DRIVE_PR_ROOT = siblingSkill("drive-pr", import.meta.dirname);
 const SUMMARY_FINDINGS = join(DRIVE_PR_ROOT, "scripts", "summary-findings.ts");
 
@@ -168,7 +168,7 @@ const MAX_QUERY_ERRORS = 3;
 // CI. Covers the window after a push where the suite has not been created yet.
 const NO_CHECKS_GRACE = 120;
 // Longest a `pending` checks verdict may be reused on the strength of an
-// unchanged REST signal before `gh pr checks` is asked again (TASK).
+// unchanged REST signal before `gh pr checks` is asked again.
 const DEFAULT_CHECKS_MAX_AGE = 300;
 
 // The flat timeout granted to the summary-findings.ts subprocess call when
@@ -177,20 +177,18 @@ const DEFAULT_CHECKS_MAX_AGE = 300;
 // `--once-budget-sec` below).
 const SUMMARY_DEFAULT_TIMEOUT_SEC = 120;
 
-// `tools/dev/herdr-status-board.ts` runs `--once --no-count` through
-// `realRunner`'s default `CMD_TIMEOUT_MS` (120s, `herdr-workspace.ts`),
-// which kills this WHOLE process from outside if it runs long — losing the
-// distinction between a genuine error and a slow-but-healthy read. This
-// call is the last of several in a `--once` pass (PR state, checks,
-// unresolved-thread count all run first), so it must not assume the full
-// budget is still available to it.
+// An external status board can run `--once --no-count` under its own command
+// timeout (120s, for example), which kills this WHOLE process from outside if
+// it runs long — losing the distinction between a genuine error and a
+// slow-but-healthy read. This call is the last of several in a `--once` pass
+// (PR state, checks, unresolved-thread count all run first), so it must not
+// assume the full budget is still available to it.
 //
 // This only applies when the caller declares its own external budget via
 // `--once-budget-sec` — the board passes its own 120s. A direct, interactive
 // `--once` invocation (this skill's own SKILL.md documents one) has no such
 // deadline and must not be refused as if it did: applying this
-// unconditionally to every `--once` call was itself a review finding
-// (docomply-review, a reference-implementation pull request round 6).
+// unconditionally to every `--once` call was itself a defect.
 //
 // `SUMMARY_ONCE_MARGIN_SEC` is the slack left for the process to exit
 // cleanly after this call returns. `SUMMARY_ONCE_MIN_TIMEOUT_SEC` is a
@@ -198,7 +196,7 @@ const SUMMARY_DEFAULT_TIMEOUT_SEC = 120;
 // timeout when little budget remains (an earlier version of this section
 // did) can still push elapsed-so-far plus the granted call past the
 // caller's declared deadline, which is the exact failure this section
-// exists to prevent (docomply-review, a reference-implementation pull request round 5). Below this
+// exists to prevent. Below this
 // threshold, refuse without spawning the call at all.
 const SUMMARY_ONCE_MARGIN_SEC = 10;
 const SUMMARY_ONCE_MIN_TIMEOUT_SEC = 10;
@@ -215,7 +213,7 @@ type DriveRootProbe =
 /**
  * `lstat` on the `/drive-pr` skill root — the same probe `reply-to-thread.ts`
  * uses. Synchronous and effectively free, so callers may probe it BEFORE
- * paying for anything time-bounded (docomply-review, a reference-implementation pull request round 7): the
+ * paying for anything time-bounded: the
  * documented standalone case needs no subprocess at all, and applying a
  * remaining-budget refusal ahead of this check could refuse a call that was
  * about to return `absent` for free.
@@ -242,7 +240,7 @@ function probeDriveRoot(): DriveRootProbe {
 
 /**
  * Unaddressed summary-only findings, from `/drive-pr`'s own enumerator
- * (TASK, see the header). `absent` only when the `/drive-pr` ROOT entry
+ * (see the header). `absent` only when the `/drive-pr` ROOT entry
  * positively does not exist. Any install that exists at all is attempted, so
  * a root with no `scripts/`, a dangling `scripts` symlink, or a `scripts/`
  * missing the script fails closed instead of reading as a standalone
@@ -383,9 +381,9 @@ async function checkState(
   // let a genuinely unreviewed round report settled the moment that unrelated
   // check appears (which can easily precede the real reviewer check's
   // creation). Requiring "ai"+"review" together for the bare word keeps every
-  // reviewer identity this repo actually uses (AI review, AI review
-  // (majordomo), codex-named checks, CodeRabbit) while excluding that class
-  // of decoy.
+  // common reviewer identity (AI review, AI review with an arm suffix such as
+  // `(shadow)`, codex-named checks, CodeRabbit) while excluding that class of
+  // decoy.
   //
   // Required names are always vetoes, in addition to whichever reviewer set
   // applies: declaring mandatory coverage must not switch off failure
@@ -411,7 +409,7 @@ async function checkState(
   // `fail` is not the only non-success terminal state. A cancelled or
   // timed-out reviewer posted no findings either, so treating those as settled
   // reports a clean round the reviewer never ran. NEUTRAL is deliberately
-  // excluded from that list: some reviewers (e.g. this repo's majordomo shadow
+  // excluded from that list: some reviewers (e.g. a self-hosted shadow
   // check) are configured to always conclude neutral even on a clean run — see
   // the "informational only" check-run summary — so it is a completion state,
   // not a failure to report. Pending is not terminal.
@@ -482,8 +480,7 @@ async function main(): Promise<number> {
   let noCount = false;
   // `null` means the flag was never passed — distinct from an explicitly
   // supplied empty value (`--once-budget-sec ''`), which must still be
-  // validated and refused rather than silently read as "not provided"
-  // (docomply-review, a reference-implementation pull request round 8).
+  // validated and refused rather than silently read as "not provided".
   let onceBudgetRaw: string | null = null;
 
   const argv = process.argv.slice(2);
@@ -554,20 +551,19 @@ async function main(): Promise<number> {
 
   // Unset by default — see SUMMARY_ONCE_MIN_TIMEOUT_SEC's doc comment: only
   // a caller that is genuinely bound by an EXTERNAL wall-clock deadline
-  // (herdr-status-board.ts, via its own CMD_TIMEOUT_MS) declares one here.
-  // Every other `--once` caller — including the direct, interactive
+  // (an external status board, via its own command timeout) declares one
+  // here. Every other `--once` caller — including the direct, interactive
   // invocation this skill's own SKILL.md documents — has no such deadline
-  // and must not be refused as if it did (docomply-review, a reference-implementation pull request
-  // round 6).
+  // and must not be refused as if it did.
   //
   // Presence (`onceBudgetRaw !== null`) is checked separately from content
   // validity: an explicitly supplied empty value (`--once-budget-sec ''`)
-  // must be refused, not silently read as "flag not passed" (docomply-
-  // review, PR #5000 round 8). The value is also bounded the same way
-  // `readTimeoutEnv` bounds every other timeout-shaped flag/env var in this
-  // skill (`lib/proc.ts`): `setTimeout` takes a 32-bit signed millisecond
-  // delay, so a digit-only value whose `* 1000` overflows that range would
-  // otherwise fire immediately instead of after the requested delay.
+  // must be refused, not silently read as "flag not passed". The value is
+  // also bounded the same way `readTimeoutEnv` bounds every other
+  // timeout-shaped flag/env var in this skill (`lib/proc.ts`): `setTimeout`
+  // takes a 32-bit signed millisecond delay, so a digit-only value whose
+  // `* 1000` overflows that range would otherwise fire immediately instead of
+  // after the requested delay.
   let onceBudgetSec: number | null = null;
   if (onceBudgetRaw !== null) {
     const parsed = isDigits(onceBudgetRaw)
@@ -587,11 +583,11 @@ async function main(): Promise<number> {
     onceBudgetSec = parsed;
   }
 
-  // Compiled once, refused up front. The bash version handed the pattern to
-  // jq per poll, where a malformed one surfaced as a query 'error' and was
-  // retried as if the forge had blipped — a config mistake misfiled as
-  // weather. (The dialect is a JS RegExp now, not jq's Oniguruma ERE; the
-  // simple name fragments this flag exists for parse identically in both.)
+  // Compiled once, refused up front. A pattern applied fresh on every poll
+  // would surface a malformed one as a query error and retry it as if the forge
+  // had blipped — a config mistake misfiled as weather. (The dialect is a JS
+  // RegExp; the simple name fragments this flag exists for parse the same in
+  // any common regex dialect.)
   let jobPattern: RegExp | null = null;
   try {
     jobPattern = reviewerSelection(jobPatternRaw, requiredChecks);
@@ -629,7 +625,7 @@ async function main(): Promise<number> {
   // Numeric only. `list-unresolved-threads.ts` has always refused anything
   // else (a URL or branch name reaches `gh -F` there), so a non-numeric PR used
   // to fail two stages in with an unrelated message. State and head are read
-  // over REST by number (TASK), so say so here.
+  // over REST by number, so say so here.
   if (!isDigits(pr)) {
     fail(2, `await-round: PR must be a number (got '${pr}')`);
   }
@@ -682,7 +678,7 @@ async function main(): Promise<number> {
     // cutoff DECLINES trivial findings past round 4. Skipping the bump errs
     // toward a lower ordinal, which delays the cutoff and accepts more — the
     // opposite direction from declining valid findings on a round that never
-    // happened (chatgpt-codex-connector, a reference-implementation pull request).
+    // happened.
     if (head === "") return;
     if (existsSync(roundsHeadFile)) {
       const lastHead = readFileSync(roundsHeadFile, "utf8").trim();
@@ -698,7 +694,7 @@ async function main(): Promise<number> {
     // only ever DELAYS the decline-only cutoff. Count-then-head, the previous
     // order, left a valid counter paired with a stale head, so the next call
     // re-incremented the SAME round and could arm the cutoff a round early
-    // (chatgpt-codex-connector, a reference-implementation pull request). Making it genuinely atomic would
+    //. Making it genuinely atomic would
     // take a single-file format that `current-round.ts` also reads; the
     // ordering buys the safety property without that.
     const n = readCount(roundsFile) + 1;
@@ -747,9 +743,8 @@ async function main(): Promise<number> {
   const unresolvedCount = async (): Promise<number> => {
     const args = botsOnly ? [pr, "--bots-only"] : [pr];
     const r = await run(tsArgv(listUnresolved, args), { stderr: "inherit" });
-    // The bash version ran under `set -o pipefail`, so a failed enumeration
-    // aborted the script rather than reading as a zero count — a zero it did
-    // not measure must never converge the loop.
+    // A failed enumeration aborts the script rather than reading as a zero
+    // count — a zero it did not measure must never converge the loop.
     if (r.code !== 0) {
       fail(
         1,
@@ -944,28 +939,27 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    // Zero threads is not zero findings (TASK, see the header). Probe
+    // Zero threads is not zero findings (see the header). Probe
     // the `/drive-pr` sibling BEFORE computing or enforcing any budget: the
     // documented standalone case (`rootProbe.present === false`) needs no
     // subprocess at all, so charging it against the remaining budget could
-    // refuse a call that was about to return for free (docomply-review,
-    // a reference-implementation pull request round 7).
+    // refuse a call that was about to return for free.
     const rootProbe = probeDriveRoot();
 
     // Only a caller that declared its own external budget via
     // `--once-budget-sec`, AND is actually running in `--once` mode
-    // (herdr-status-board.ts is both — a bare `--once-budget-sec` with no
-    // `--once` has no external deadline to bound, since a polling loop's
-    // elapsed time since process start is meaningless against it —
-    // docomply-review, a reference-implementation pull request round 7), is subject to the remaining-budget
-    // check below. See SUMMARY_DEFAULT_TIMEOUT_SEC's doc comment above for
-    // why an ordinary `--once` caller with no declared budget must not be
-    // refused as if it had one.
+    // (an external status board is both — a bare `--once-budget-sec` with
+    // no `--once` has no external deadline to bound, since a polling loop's
+    // elapsed time since process start is meaningless against it), is
+    // subject to the remaining-budget check below. See
+    // SUMMARY_DEFAULT_TIMEOUT_SEC's doc comment above for why an ordinary
+    // `--once` caller with no declared budget must not be refused as if it had
+    // one.
     //
     // A floor on the timeout (e.g. "never grant less than 10s") would still
     // let the SUM of elapsed-so-far plus the granted call exceed the
     // caller's declared deadline — the exact bug this section exists to
-    // close (docomply-review, a reference-implementation pull request round 5). So when too little of the
+    // close. So when too little of the
     // declared budget remains to attempt the call at all, refuse without
     // spawning it: a call that would be killed by the external deadline
     // anyway is worse than an honest refusal, since the external kill loses
@@ -1002,7 +996,7 @@ async function main(): Promise<number> {
     }
     if (so.kind === "absent") {
       console.error(
-        `note: no drive-pr skill was found for this repository, so summary-only findings on #${pr} were not checked (TASK standalone residual)`,
+        `note: no drive-pr skill was found for this repository, so summary-only findings on #${pr} were not checked (the standalone-install residual)`,
       );
     }
 

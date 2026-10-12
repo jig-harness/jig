@@ -104,7 +104,7 @@ export type PassChildAnswer = true | false | null;
  * produces an ABSOLUTE script path this way, so the substring survives
  * however the containing repository is checked out.
  *
- * The skill segment is DELIBERATELY NOT a wildcard (review finding, round 8):
+ * The skill segment is DELIBERATELY NOT a wildcard:
  * `drive.ts` accepts an arbitrary pass argv — "whatever else a caller puts
  * after --" per the module header — so a caller may legitimately run another
  * skill's own top-level script as the pass command. A wildcard here would
@@ -146,11 +146,11 @@ const RUNTIME_BASENAME = /(?:^|[\\/])(?:bun|node)(?:\.exe)?$/i;
  * entire string, so a real, DIRECT pass whose own prompt or argument merely
  * MENTIONS a helper script path as DATA — not as the thing being executed —
  * was pruned and excluded from the walk exactly like a genuine helper
- * invocation, letting a live pass read as WEDGED (review finding). The fix
+ * invocation, letting a live pass read as WEDGED. The fix
  * for that restricted the test to "the first two whitespace-delimited
  * tokens" — which broke the moment the checkout itself lives under a path
  * containing a space (`ps ... args=` is flattened display text with no
- * preserved argv boundaries — review finding): a script under
+ * preserved argv boundaries): a script under
  * `/tmp/My Repo/.claude/skills/...` naively splits into `bun` and `/tmp/My`,
  * neither of which matches, so a genuine helper invocation misread as a live
  * pass and stale progress classified HEALTHY instead of WEDGED.
@@ -166,7 +166,7 @@ const RUNTIME_BASENAME = /(?:^|[\\/])(?:bun|node)(?:\.exe)?$/i;
  * THE SPLIT POINT BETWEEN "RUNTIME" AND "SCRIPT PATH" IS NOT ALWAYS THE
  * FIRST WHITESPACE — a prior revision assumed it was, which broke the
  * moment the RUNTIME's own install path embeds a space
- * (`/Users/John Doe/.bun/bin/bun /repo/.claude/...`, review finding): the
+ * (`/Users/John Doe/.bun/bin/bun /repo/.claude/...`): the
  * first whitespace lands inside "John Doe", `runtimeToken` becomes
  * `/Users/John`, `RUNTIME_BASENAME` never matches, and a genuine helper
  * invocation misreads as a live pass. Every whitespace run in `prefix` is
@@ -197,7 +197,7 @@ function isOwnHelperInvocation(args: string): boolean {
   // after whitespace) anywhere in a candidate's own remainder is decisive
   // evidence that candidate is a DIFFERENT script's own path followed by
   // further flags/arguments that merely MENTION our helper further along,
-  // not the executable's own continuing path (review finding): `node
+  // not the executable's own continuing path: `node
   // /repo/pass.ts --prompt /repo/.claude/skills/drive-pr/scripts/drive-
   // state.ts` must not pass merely because its remainder starts with `/`.
   //
@@ -216,16 +216,16 @@ function isOwnHelperInvocation(args: string): boolean {
 
   // NEITHER A FLAG NOR A FRESH ABSOLUTE PATH IS THE ONLY SHAPE A "DIFFERENT
   // PROGRAM'S OWN ARGV" CAN TAKE AFTER A RUNTIME-LOOKING TOKEN — a bare
-  // RELATIVE positional path does too (review finding, round 9): `node
+  // RELATIVE positional path does too: `node
   // /repo/pass.ts repo/.claude/skills/drive-pr/scripts/drive-state.ts` has
   // `before` = `node` and `after` = `/repo/pass.ts repo` at the FIRST
   // boundary — `after` starts with `/` and contains no flag, and the
-  // relative continuation (`repo/.claude/...`) satisfied the round-7 fix's
+  // relative continuation (`repo/.claude/...`) satisfied the earlier fix's
   // own `after.startsWith('/')` restart test only for an ABSOLUTE second
   // argument, not this relative one.
   //
   // The general fact underlying all three shapes found so far (flagged,
-  // round 6; absolute-positional, round 7; relative-positional, round 9):
+  // absolute-positional and relative-positional):
   // `before` (here, `/repo/pass.ts`) already ends in `.ts` — the exact
   // extension {@link OWN_HELPER_SCRIPT} itself requires — which means
   // `before` is ALREADY a complete, terminated script path in its own
@@ -398,7 +398,7 @@ export function findPassChild(pid: number, rows: readonly ProcRow[]): boolean {
  * about takes ONE snapshot rather than one per pid. `drives.ts` is exactly
  * that caller: it classifies every drive in the state universe on every
  * invocation — including the plain listing and the `--json` one
- * `tools/dev/herdr-status-board.ts` polls — and `ps -A` on a host running
+ * a status board polls — and `ps -A` on a host running
  * dozens of managed worktrees is the most expensive thing in that sweep. A
  * per-row probe made the sweep's cost linear in the fleet for an answer that
  * is identical across all of them, having been read from one process table
@@ -423,7 +423,7 @@ export async function snapshotProcesses(): Promise<ProcRow[] | null> {
   // successful, non-empty invocation means the output shape did not match
   // what this parser expects (a `ps` variant this skill has not seen) rather
   // than a genuinely process-less host — fail closed rather than read it as
-  // "no descendants" (.claude/rules/document-scanning-gates.md § 1).
+  // "no descendants".
   if (rows.length === 0) return null;
   return rows;
 }

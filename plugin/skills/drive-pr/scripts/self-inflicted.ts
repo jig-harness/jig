@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
  * Label each enumerated review thread with whether its anchor line was written
- * by THIS PR's own earlier commits — the `SELF-INFLICTED` half of an earlier change.
+ * by THIS PR's own earlier commits — the `SELF-INFLICTED` label.
  *
  * By round 3 of a driven PR, a finding against the PR's own prior-round fix is
- * the single most likely case (FB-74 measured the ratio worsening per round:
- * 2/5 → 4/10 → ≥4/8). The label exists because that changes triage posture:
+ * the single most likely case (the ratio was measured worsening per round: 2/5
+ * → 4/10 → ≥4/8). The label exists because that changes triage posture:
  * `resolve-review-comments/SKILL.md` § 3's "Check the fix's own blast radius"
  * and "Two rounds on one root cause → stop patching variants" both turn on
  * exactly this question, and both were left to session memory to ask — which
- * is what FB-75 measured failing on the very PR that added the rule.
+ * was measured failing on the very PR that added the rule.
  *
  * A FILTER, not a second enumerator. It reads
  * `resolve-review-comments/scripts/list-unresolved-threads.ts`'s NDJSON on
@@ -67,9 +67,8 @@
  * `startLine` field names the start when the two differ. Blaming `line` alone
  * would emit `false` for a comment whose selected range covers PR-authored
  * lines but happens to end on an unchanged context line, silently suppressing
- * the exact safeguard this label exists to trigger (chatgpt-codex-connector,
- * a reference-implementation pull request). So every line from `startLine` through `line` is blamed, in
- * order, stopping at the first hit.
+ * the exact safeguard this label exists to trigger. So every line from
+ * `startLine` through `line` is blamed, in order, stopping at the first hit.
  *
  * `null` is a third value rather than a fold into `false`, and the distinction
  * is the whole point of the field. `false` is the positive claim "I checked
@@ -93,7 +92,7 @@
  * line shown on the diff's left) numbers the BASE version of the file, not
  * HEAD's, from the moment it is posted — no later push required. Blaming
  * those numbers against HEAD reads unrelated current content and can
- * confidently mislabel it `true`/`false` (chatgpt-codex-connector, a reference-implementation pull request).
+ * confidently mislabel it `true`/`false`.
  * `list-unresolved-threads.ts` is the source of `diffSide`; see its header.
  *
  * A MULTI-line comment (`startLine` present and distinct from `line`) is
@@ -101,8 +100,7 @@
  * to differ from `diffSide`, so `diffSide === 'RIGHT'` alone describes only
  * the range's endpoint — a LEFT-to-RIGHT range would otherwise have its
  * LEFT-numbered lines blamed against HEAD using RIGHT-side line numbers,
- * reading unrelated current content the same way a whole-LEFT thread does
- * (coderabbitai, PR #4441).
+ * reading unrelated current content the same way a whole-LEFT thread does.
  *
  * ADVISORY. Every failure degrades to `null` and the exit code stays 0 as long
  * as the stream itself was readable: a triage pass must not be blocked because
@@ -115,11 +113,10 @@
  * A finding that exists only in the reviewer's sticky summary has no inline
  * thread, so it never reaches the NDJSON path above and used to carry no
  * `selfInflicted` label at all. Because `.config/review-triage.yaml` lists
- * `self_inflicted` in `fail_open.inert_when_unknown`, the honest `unknown`
- * that was passed in its place held the decline ladder INERT for every
- * summary-only finding in every round — the whole convergence policy disarmed
- * by the one class of finding late rounds produce most (coderabbitai,
- * PR #4501 round 8; a second independent occurrence on PR #4555).
+ * `self_inflicted` in `fail_open.inert_when_unknown`, the honest `unknown` that
+ * was passed in its place held the decline ladder INERT for every summary-only
+ * finding in every round — the whole convergence policy disarmed by the one
+ * class of finding late rounds produce most (observed twice, independently).
  *
  * `--summary-report` reads `summary-findings.ts`'s report JSON on stdin and
  * writes the same report back with `selfInflicted` and
@@ -228,13 +225,12 @@ export interface AnchoredRecord {
 }
 
 /**
- * The finding's own severity, mechanized at enumeration rather than left to
- * the triaging agent to read `severityOf`'s recognized shapes off the raw
- * comment text by hand — a step that silently reads `unknown` for a reviewer
- * whose format `severityOf` doesn't recognize, sending every one of that
- * reviewer's findings through the ladder's `inert_when_unknown` fail-open
- * path (chatgpt-codex-connector, a reference-implementation pull request round 8; see `severityOf`'s own doc
- * comment for the badge-format fallback this closes).
+ * The finding's own severity, mechanized at enumeration rather than left to the
+ * triaging agent to read `severityOf`'s recognized shapes off the raw comment
+ * text by hand — a step that silently reads `unknown` for a reviewer whose
+ * format `severityOf` doesn't recognize, sending every one of that reviewer's
+ * findings through the ladder's `inert_when_unknown` fail-open path (see
+ * `severityOf`'s own doc comment for the badge-format fallback this closes).
  *
  * Read from the THREAD'S FIRST comment — the reviewer's original finding —
  * never a later reply: a human or bot reply in the same thread carries no
@@ -252,7 +248,7 @@ function severityOfRecord(rec: AnchoredRecord): string {
   // `null`) — see its own `comments[].author` doc — so it lines up with
   // `severityOf`'s `CODERABBIT_LOGIN` with no reshaping. Threaded through so
   // the CodeRabbit-shaped path only fires on a comment CodeRabbit actually
-  // posted, not merely one shaped like it (docomply-review, a reference-implementation pull request round 3).
+  // posted, not merely one shaped like it.
   const author = (first as { author?: unknown }).author;
   return severityOf(body, typeof author === "string" ? author : null);
 }
@@ -297,7 +293,7 @@ export interface SelfInflictedLabel {
  * its own `GIT_CALL_TIMEOUT` (default 30s), which bounds any ONE call; what
  * it does not bound is the range as a whole — a comment spanning N lines
  * makes up to N sequential calls, so a range large enough turns "one slow
- * call" into "N times that timeout" (chatgpt-codex-connector, a reference-implementation pull request).
+ * call" into "N times that timeout".
  * Checking between calls closes that multiplication without a call already
  * IN FLIGHT needing to be cancelled — the per-call timeout is still the
  * backstop for that half, and adding cancellation on top of it was judged
@@ -338,16 +334,15 @@ export async function labelRecord(
     return { selfInflicted: null, selfInflictedCommit: undefined };
   // `startLine` names a multi-line comment's start; `line` alone is only the
   // range's end. `undefined`/`null` is a legitimate ABSENCE — the canonical
-  // enumerator's own convention for a single-line comment (list-unresolved-
-  // threads.ts: "populated only when it differs from `line`") — and degrades
-  // to the single-line behavior exactly like a record with no field at all.
-  // A rawStart that is PRESENT but invalid (wrong type, non-integer, < 1, or
-  // past `line`) is a different claim: the record asserts range metadata this
-  // function cannot trust, so silently substituting `line` would produce a
-  // `false` that quietly narrowed its own claim to a single line without
-  // saying so — exactly the confidently-wrong shape the header warns about.
-  // NOT MEASURED, not a guessed single-line answer (chatgpt-codex-connector,
-  // a reference-implementation pull request).
+  // enumerator's own convention for a single-line comment
+  // (list-unresolved-threads.ts: "populated only when it differs from `line`")
+  // — and degrades to the single-line behavior exactly like a record with no
+  // field at all. A rawStart that is PRESENT but invalid (wrong type,
+  // non-integer, < 1, or past `line`) is a different claim: the record asserts
+  // range metadata this function cannot trust, so silently substituting `line`
+  // would produce a `false` that quietly narrowed its own claim to a single
+  // line without saying so — exactly the confidently-wrong shape the header
+  // warns about. NOT MEASURED, not a guessed single-line answer.
   const rawStart = rec.startLine;
   let startLine: number;
   if (rawStart === undefined || rawStart === null) {
@@ -374,7 +369,7 @@ export async function labelRecord(
   // whitespace-only path, and `path` itself already satisfies that check —
   // trimming it here would substitute a different filename for a legitimate
   // path that begins or ends with whitespace, silently blaming (or failing to
-  // find) the wrong file (chatgpt-codex-connector, a reference-implementation pull request).
+  // find) the wrong file.
   let sawFailure = false;
   for (let l = startLine; l <= line; l++) {
     // Checked BEFORE starting the next call, never after: the aggregate
@@ -383,21 +378,17 @@ export async function labelRecord(
     // that runs out of budget partway through is exactly the `sawFailure`
     // case below — some lines went unchecked, so `false` would overclaim.
     //
-    // The bare `Date.now()` here is NOT an ADR-0017 violation, despite the
-    // resemblance: that ADR scopes clock injection to backend services'
-    // business temporal logic (retention, disposal eligibility, SLA
-    // deadlines) — its own "Not required for" list already carves out
-    // operational timestamps, and this is one: a subprocess call budget, the
-    // same unchallenged pattern used throughout this skill (`drive.ts`,
-    // `drive-status.ts`, `lib/proc.ts`, `lib/state/lock.ts`, `lib/state/
-    // claims.ts`, `lib/state/lease.ts`, `lib/status/evaluate.ts`) where
-    // `IClock`/`SystemClock`/`FixedClock` appears nowhere. Already litigated
-    // and settled `rejected`/`wont-fix` twice on this exact file
-    // (chatgpt-codex-connector, a reference-implementation pull request, rounds 5, 7, 11) — this comment
-    // exists so a fourth round does not re-open it. `deadlineAt` is still the
-    // injected, test-controlled seam (see the header): only the internal
-    // "has the deadline passed" read is a bare wall-clock call, same as
-    // every sibling timeout check in this skill.
+    // The bare `Date.now()` here is NOT a lapse in clock injection, despite the
+    // resemblance: clock injection is for business temporal logic (retention,
+    // disposal eligibility, SLA deadlines), not for operational timestamps, and
+    // this is one: a subprocess call budget, the same unchallenged pattern used
+    // throughout this skill (`drive.ts`, `drive-status.ts`, `lib/proc.ts`,
+    // `lib/state/lock.ts`, `lib/state/claims.ts`, `lib/state/lease.ts`,
+    // `lib/status/evaluate.ts`) where `IClock`/`SystemClock`/`FixedClock`
+    // appears nowhere. This comment exists so the question is not re-opened.
+    // `deadlineAt` is still the injected, test-controlled seam (see the
+    // header): only the internal "has the deadline passed" read is a bare
+    // wall-clock call, same as every sibling timeout check in this skill.
     if (Date.now() >= deadlineAt) {
       sawFailure = true;
       break;
@@ -497,8 +488,8 @@ export async function labelSummaryFinding(
  * sharing the tree, or simply a slow multi-line scan racing a concurrent
  * write — `prCommits()`'s memoized set can be built against one revision
  * while a later `blame()` call resolves `head` again and reads a different
- * one, silently comparing a blamed commit against the wrong commit set
- * (chatgpt-codex-connector, a reference-implementation pull request). `resolveHead()` below closes that by
+ * one, silently comparing a blamed commit against the wrong commit set.
+ * `resolveHead()` below closes that by
  * resolving `head` to one immutable SHA on first use and memoizing it — the
  * same one-shot-then-freeze shape as `commitsMemo` — so every call in this
  * `LabelDeps` instance blames and excludes against the identical revision.
@@ -572,18 +563,17 @@ export function gitDeps(repo: string, base: string, head: string): LabelDeps {
       // Three-dot `<base>...<head>` — NOT two-dot, despite `prCommits` using
       // two-dot for `rev-list`. The two commands' dot notation means opposite
       // things: `rev-list base..head` IS exclusion (commits reachable from
-      // head, not from base), but `git diff base..head` has no merge-base
-      // logic at all — it is exactly `git diff base head`, a direct
-      // two-tree comparison. So once the base has advanced past this
-      // branch's fork point, a file the base changed but this branch never
-      // touched still shows up as "different" between the two endpoint
-      // trees, and gets labelled `selfInflicted: true` on a line this PR
-      // never wrote — measured on this exact line (docomply-review, PR
-      // #4588 round 2), reachable any round the fetched base moves. Three-dot
-      // diffs against the merge base instead — the same notation `git log`
-      // and GitHub's own PR view use — which isolates only what THIS branch
-      // changed since it diverged. That holds whether or not the base has
-      // since advanced further, and — the case the old two-dot choice here
+      // head, not from base), but `git diff base..head` has no merge-base logic
+      // at all — it is exactly `git diff base head`, a direct two-tree
+      // comparison. So once the base has advanced past this branch's fork
+      // point, a file the base changed but this branch never touched still
+      // shows up as "different" between the two endpoint trees, and gets
+      // labelled `selfInflicted: true` on a line this PR never wrote — measured
+      // on this exact line, reachable any round the fetched base moves.
+      // Three-dot diffs against the merge base instead — the same notation
+      // `git log` and GitHub's own PR view use — which isolates only what THIS
+      // branch changed since it diverged. That holds whether or not the base
+      // has since advanced further, and — the case the old two-dot choice here
       // was guarding against, incorrectly — whether or not this branch has
       // since MERGED the base in: once merged, the merge-base of `base` and
       // `head` becomes the merged-in base tip itself, so the three-dot diff
@@ -693,8 +683,8 @@ export function gitDeps(repo: string, base: string, head: string): LabelDeps {
  * nothing having fetched recently — leaves a stale local `origin/<base>`, and
  * `rev-list origin/<base>..HEAD` then counts those newer base commits as this
  * PR's own, mislabelling a finding on one of them a confident
- * `selfInflicted: true` that can license skipping the blast-radius reread
- * (chatgpt-codex-connector, a reference-implementation pull request). An EARLIER revision made this
+ * `selfInflicted: true` that can license skipping the blast-radius reread.
+ * An EARLIER revision made this
  * best-effort, on the reasoning that `lib/base-drift.ts`'s own fetch degrades
  * the same way — but that probe's `fetched` flag only ever feeds an advisory
  * "N commits behind" line, while a stale answer HERE feeds a `true`/`false`
@@ -712,8 +702,8 @@ export function gitDeps(repo: string, base: string, head: string): LabelDeps {
  * `origin` itself: it happily writes `refs/remotes/origin/<name>` from
  * whatever `origin` answers with, under the name asked for, so a
  * wrong-repository fetch reads exactly like a right one — dereferencing an
- * attacker-chosen or merely stale host with no signal that anything was wrong
- * (chatgpt-codex-connector, a reference-implementation pull request). `verifyOriginIsPrRepo` — the same check
+ * attacker-chosen or merely stale host with no signal that anything was wrong.
+ * `verifyOriginIsPrRepo` — the same check
  * `base-sync.ts` runs before its own identical fetch — resolves the
  * expected `owner/name` via `gh repo view` and confirms `origin`'s fetch URL
  * actually names it, BEFORE the fetch below ever runs. Unresolvable or
@@ -726,10 +716,10 @@ export function gitDeps(repo: string, base: string, head: string): LabelDeps {
  * cwd override resolves the PR and its base against whatever repository the
  * process happens to be sitting in: an omitted PR becomes unresolvable, and
  * an explicit number that also exists in the ambient repository can resolve
- * against the WRONG base (chatgpt-codex-connector, a reference-implementation pull request). Both also carry
+ * against the WRONG base. Both also carry
  * `env: ghRepoEnv()` for the same reason `resolvePr` itself does: `cwd` alone
  * is not authoritative over `gh`'s repository selection, since an inherited
- * `GH_REPO` outranks it (coderabbitai, PR #4441).
+ * `GH_REPO` outranks it.
  */
 async function resolveBaseRef(pr: string, repo: string): Promise<string> {
   const env = process.env.DRIVE_PR_BASE_REF ?? "";
@@ -910,7 +900,7 @@ async function runSummaryReport(
   // the single JS value `undefined`, at which point a MALFORMED `unaddressed`
   // entry that also carries no usable fingerprint would resolve — silently —
   // to whichever finding wrote there last, instead of failing closed like
-  // every other shape violation here (docomply-review, a reference-implementation pull request).
+  // every other shape violation here.
   const byFingerprint = new Map<string, unknown>();
   for (const f of labelled) {
     const fp = (f as { fingerprint?: unknown }).fingerprint;
@@ -1072,9 +1062,9 @@ async function main(): Promise<number> {
     // every later record's own scan, turning one bad range into a `null`
     // flood for records that had nothing to do with it.
     //
-    // `Date.now()` here is the same settled, not-an-ADR-0017-violation
-    // operational timeout pattern documented at `labelRecord`'s own deadline
-    // check above — see that comment for the precedent.
+    // `Date.now()` here is the same operational timeout pattern, exempt from
+    // clock injection, documented at `labelRecord`'s own deadline check above —
+    // see that comment for the precedent.
     const label = await labelRecord(
       rec as AnchoredRecord,
       prCommits,

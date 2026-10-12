@@ -104,7 +104,7 @@ async function checkWorktreeClean(reviewedHead: string): Promise<number> {
   // `git status` reads EMPTY (nothing uncommitted) and no unconcluded-op
   // marker is present, so every check below would pass over local HEAD
   // having silently moved from the reviewed commit to an unreviewed one that
-  // was never pushed (chatgpt-codex-connector, a reference-implementation pull request review round 4).
+  // was never pushed.
   // Checked first, since a HEAD mismatch makes every check below beside the
   // point regardless of what they would have found.
   const headTimeoutSec = gitCallTimeoutSeconds();
@@ -136,10 +136,9 @@ async function checkWorktreeClean(reviewedHead: string): Promise<number> {
   // A `git status --porcelain` predicate — however hardened — answers "is
   // anything uncommitted", not "is a git operation still open": resolving a
   // conflict back to a tree that matches what was already committed leaves
-  // `MERGE_HEAD` behind while porcelain status reports empty
-  // (chatgpt-codex-connector, a reference-implementation pull request review round 3). Checked next, before
-  // the status call below, because a marker present makes the status answer
-  // beside the point either way.
+  // `MERGE_HEAD` behind while porcelain status reports empty. Checked next,
+  // before the status call below, because a marker present makes the status
+  // answer beside the point either way.
   const opTimeoutSec = gitCallTimeoutSeconds();
   const op = await unconcludedGitOpMarker(opTimeoutSec);
   if (!op.ok) {
@@ -160,18 +159,16 @@ async function checkWorktreeClean(reviewedHead: string): Promise<number> {
     return 1;
   }
 
-  // `--untracked-files=normal` is explicit, not decorative: `--porcelain`
-  // alone inherits `status.showUntrackedFiles` from repo or user config, and
-  // `=no` there makes a plain `git status --porcelain` report an untracked
-  // scratch file as a clean tree — silently certifying a leftover as shipped
-  // (chatgpt-codex-connector, a reference-implementation pull request review round 2). An explicit mode
-  // overrides whatever the config says, the same way `--porcelain`'s own
-  // stable machine format is chosen over the human one regardless of
-  // `status.short`. `--ignore-submodules=none` closes the same class of
-  // bypass one level down: `submodule.<name>.ignore`/`.gitmodules` can set
-  // `ignore = all` on a tracked submodule, which makes a plain `git status`
-  // hide modifications inside it regardless of the untracked-files mode
-  // (docomply-review, a reference-implementation pull request review round 3).
+  // `--untracked-files=normal` is explicit, not decorative: `--porcelain` alone
+  // inherits `status.showUntrackedFiles` from repo or user config, and `=no`
+  // there makes a plain `git status --porcelain` report an untracked scratch
+  // file as a clean tree — silently certifying a leftover as shipped. An
+  // explicit mode overrides whatever the config says, the same way
+  // `--porcelain`'s own stable machine format is chosen over the human one
+  // regardless of `status.short`. `--ignore-submodules=none` closes the same
+  // class of bypass one level down: `submodule.<name>.ignore`/`.gitmodules` can
+  // set `ignore = all` on a tracked submodule, which makes a plain `git status`
+  // hide modifications inside it regardless of the untracked-files mode.
   const dirtyRes = await git(
     [
       "status",
@@ -202,16 +199,15 @@ async function checkWorktreeClean(reviewedHead: string): Promise<number> {
     return 1;
   }
 
-  // Re-read local HEAD once more, immediately before reporting clean. The
-  // check at the top of this function narrows the window a commit can land
-  // in undetected; it cannot close it, because the operation-marker and
-  // status probes above are themselves further elapsed time after that read
-  // — a commit landing in that gap leaves `git status` reporting a clean H2
-  // while this function was about to vouch for reviewed H1
-  // (chatgpt-codex-connector, a reference-implementation pull request review round 5). This is the same
-  // "narrows, does not close, so re-check at the latest possible point"
-  // treatment `retractStale`'s own comment describes for the analogous PR
-  // head race — applied here to the LOCAL head instead.
+  // Re-read local HEAD once more, immediately before reporting clean. The check
+  // at the top of this function narrows the window a commit can land in
+  // undetected; it cannot close it, because the operation-marker and status
+  // probes above are themselves further elapsed time after that read — a commit
+  // landing in that gap leaves `git status` reporting a clean H2 while this
+  // function was about to vouch for reviewed H1. This is the same "narrows,
+  // does not close, so re-check at the latest possible point" treatment
+  // `retractStale`'s own comment describes for the analogous PR head race —
+  // applied here to the LOCAL head instead.
   const finalHeadRes = await git(["rev-parse", "HEAD"], {
     stderr: "ignore",
     timeoutSec: headTimeoutSec,
@@ -495,8 +491,8 @@ async function main(): Promise<number> {
   }
 
   // Extracted here — as soon as `status` is parsed — rather than after the
-  // up-front clean check below, so that check can compare local HEAD against
-  // it too (round 4). Pure extraction from data already in hand; no new I/O.
+  // up-front clean check below, so that check can compare local HEAD against it
+  // too. Pure extraction from data already in hand; no new I/O.
   const head = convergedHead;
   const reviewer = String(
     (status.reviewer as Record<string, unknown>)?.app ?? "",
@@ -522,12 +518,11 @@ async function main(): Promise<number> {
     // `--require-success`: this is the ONLY re-confirmation this script
     // performs at each of its several `confirmFinalCi()` call sites — unlike
     // `drive.ts`, which re-derives green/red independently from
-    // `drive-status.ts` after every `final-ready` call. Without it, a
-    // required check rerun and failed after the single aggregate-status
-    // snapshot taken at the top of this script (`ci !== 'green'`, above)
-    // stays invisible for the rest of the run (chatgpt-codex-connector,
-    // a reference-implementation pull request) — see `finalReady`'s own doc comment in ci-hold.ts for why
-    // this is opt-in rather than the default for every caller.
+    // `drive-status.ts` after every `final-ready` call. Without it, a required
+    // check rerun and failed after the single aggregate-status snapshot taken
+    // at the top of this script (`ci !== 'green'`, above) stays invisible for
+    // the rest of the run — see `finalReady`'s own doc comment in ci-hold.ts
+    // for why this is opt-in rather than the default for every caller.
     const result = await run(
       tsArgv(ciHold, [
         "final-ready",
@@ -631,36 +626,33 @@ async function main(): Promise<number> {
     return rc === 5 ? 5 : rc === 0 ? 0 : 1;
   }
 
-  // CONVERGED is a claim about the posting reviewer (`docomply-review`), which
-  // reviews drafts — it says nothing about CodeRabbit, which refuses one
-  // outright (§ Drafts are driven, SKILL.md). A still-draft PR reaching here
-  // is exactly the false terminal `drive.ts` itself now refuses to report as
-  // exit 0 (docomply-review round 6, a reference-implementation pull request, and the same gap one script
-  // over): announcing "safe to merge" about a PR CodeRabbit has never seen,
-  // and by repo policy never will until a human or a drive marks it Ready, is
-  // the claim this script exists to avoid overstating.
+  // CONVERGED is a claim about the posting reviewer, which reviews drafts — it
+  // says nothing about CodeRabbit, which refuses one outright (§ Drafts are
+  // driven, SKILL.md). A still-draft PR reaching here is exactly the false
+  // terminal `drive.ts` itself now refuses to report as exit 0 (the same gap
+  // one script over): announcing "safe to merge" about a PR CodeRabbit has
+  // never seen, and by repo policy never will until a human or a drive marks it
+  // Ready, is the claim this script exists to avoid overstating.
   //
   // Handled by `checkLiveState()` below, not a bespoke up-front check here —
   // there used to be one, keyed on `status.draft` from the `drive-status.ts`
-  // read at the top of this function. Moving it after `existingIds` (round
-  // 16) fixed the missing withdrawal but not the deeper problem: `status` is
+  // read at the top of this function. Moving it after `existingIds` fixed the
+  // missing withdrawal but not the deeper problem: `status` is
   // captured before the comment sweep and worktree checks that follow it, all
   // real elapsed time, so a human marking the PR Ready in that exact window
   // left `status.draft` stale — true when the announcement it was about to
-  // delete had already become valid again (docomply-review round 18, PR
-  // #4057). `checkLiveState()` is the fresh read this needs, and it already
-  // runs next — folding this case into it rather than keeping a second, worse
-  // copy of the same question.
+  // delete had already become valid again. `checkLiveState()` is the fresh read
+  // this needs, and it already runs next — folding this case into it rather
+  // than keeping a second, worse copy of the same question.
   //
-  // Re-read the head + mergeability now, BEFORE deciding "nothing to do" —
-  // not just before posting. The CONVERGED gate above is a mergeability gate
-  // too (drive-status.ts tests the conflict branch before the convergence
-  // one), but only as of the moment IT ran; the comment sweep above is itself
-  // a real API round-trip, and a base that advances in that window can flip
-  // this PR to CONFLICTING while the head stays put. The idempotence path
-  // used to return "nothing to do" on that stale read, leaving an
-  // already-posted "Safe to merge" live and wrong (chatgpt-codex-connector,
-  // a reference-implementation pull request round 10). Checking here means a stale existing announcement
+  // Re-read the head + mergeability now, BEFORE deciding "nothing to do" — not
+  // just before posting. The CONVERGED gate above is a mergeability gate too
+  // (drive-status.ts tests the conflict branch before the convergence one), but
+  // only as of the moment IT ran; the comment sweep above is itself a real API
+  // round-trip, and a base that advances in that window can flip this PR to
+  // CONFLICTING while the head stays put. The idempotence path used to return
+  // "nothing to do" on that stale read, leaving an already-posted "Safe to
+  // merge" live and wrong. Checking here means a stale existing announcement
   // gets withdrawn instead of left standing.
   let liveConfirmedConflicting = false;
   // Mirrors `liveConfirmedConflicting`: set only on a POSITIVELY parsed
@@ -714,18 +706,17 @@ async function main(): Promise<number> {
     // Checked before mergeability: `headRefOid,mergeable` alone cannot tell a
     // merged/closed PR from an open one — the head can stay put and
     // `mergeable` can still read MERGEABLE after a merge, and both checks
-    // would then pass on a finished PR (docomply-review, a reference-implementation pull request round 12).
+    // would then pass on a finished PR.
     //
-    // Anything other than the literal `OPEN` refuses (docomply-review, PR
-    // #3995 round 13) — but NOT all with the same code. Exit 5 is the shared
-    // PR_NOT_OPEN contract elsewhere in this skill and asserts the PR is
-    // POSITIVELY known finished; reusing it for an empty/malformed `state`
-    // would claim that certainty for a read that only proves itself
-    // unreadable — a weaker claim this script's own withdrawal guard already
-    // treats differently for `mergeable` (docomply-review, a reference-implementation pull request round
-    // 14). Recognized terminal values get 5; anything else — empty, or a
-    // value GitHub hasn't published for this field — is indeterminate and
-    // gets 1, same as the unreadable-response branch just above.
+    // Anything other than the literal `OPEN` refuses — but NOT all with the
+    // same code. Exit 5 is the shared PR_NOT_OPEN contract elsewhere in this
+    // skill and asserts the PR is POSITIVELY known finished; reusing it for an
+    // empty/malformed `state` would claim that certainty for a read that only
+    // proves itself unreadable — a weaker claim this script's own withdrawal
+    // guard already treats differently for `mergeable`. Recognized terminal
+    // values get 5; anything else — empty, or a value GitHub hasn't published
+    // for this field — is indeterminate and gets 1, same as the
+    // unreadable-response branch just above.
     const livePrState = String(parsed.state ?? "");
     if (livePrState !== "OPEN") {
       if (livePrState === "MERGED" || livePrState === "CLOSED") {
@@ -782,23 +773,21 @@ async function main(): Promise<number> {
       );
       return 4;
     }
-    // Draftness is rechecked HERE too, not only in the up-front gate
-    // (docomply-review round 14, a reference-implementation pull request): this function is what the sweep
-    // and both idempotence-path checks call, and none of them previously
-    // re-read `isDraft`. An owner converting the PR back to draft in the
-    // window while the comment sweep or final checks run would otherwise
-    // slip past every guard between the up-front gate and the POST (or the
-    // idempotent "already announced" success), leaving or posting a "Safe to
-    // merge" announcement that overrides the very signal — the PR is no
-    // longer ready — that made it stop being true.
+    // Draftness is rechecked HERE too, not only in the up-front gate: this
+    // function is what the sweep and both idempotence-path checks call, and
+    // none of them previously re-read `isDraft`. An owner converting the PR
+    // back to draft in the window while the comment sweep or final checks run
+    // would otherwise slip past every guard between the up-front gate and the
+    // POST (or the idempotent "already announced" success), leaving or posting
+    // a "Safe to merge" announcement that overrides the very signal — the PR is
+    // no longer ready — that made it stop being true.
     //
-    // TYPE VALIDATED, not merely `=== true` (docomply-review round 15, PR
-    // #4057): this is decision evidence from an external response, the same
-    // discipline `evaluate()` and `mark-ready.ts` already apply to `isDraft`.
-    // An absent, null, or otherwise malformed value must NOT read as "not a
-    // draft" — that is exactly the fail-open direction that would let a
-    // partial/degraded response announce over a PR whose current draftness
-    // this read could not actually confirm.
+    // TYPE VALIDATED, not merely `=== true`: this is decision evidence from an
+    // external response, the same discipline `evaluate()` and `mark-ready.ts`
+    // already apply to `isDraft`. An absent, null, or otherwise malformed value
+    // must NOT read as "not a draft" — that is exactly the fail-open direction
+    // that would let a partial/degraded response announce over a PR whose
+    // current draftness this read could not actually confirm.
     if (typeof parsed.isDraft !== "boolean") {
       console.error(
         `announce-merge-ready: PR #${pr}'s isDraft read as '${parsed.isDraft === undefined ? "<absent>" : String(parsed.isDraft)}'`,
@@ -853,22 +842,20 @@ async function main(): Promise<number> {
   }
 
   // Withdraw only a confirmed case — same head, POSITIVELY parsed CONFLICTING
-  // or POSITIVELY parsed `isDraft === true` — never on an unreadable state
-  // (rc 1, could be transient), a closed PR (rc 5, nothing to correct), a
-  // moved head (rc 4 with a different live head: that old announcement is
-  // still an accurate claim about the head it names), or an
-  // UNKNOWN/malformed mergeable (rc 4 but neither flag set: GitHub still
-  // recomputing, or this specific read was bad — either can read MERGEABLE
-  // again seconds later, and deleting on that evidence would erase a
-  // still-valid announcement, contradicting this exact guard). `--dry-run`
-  // never mutates GitHub regardless of any of the above (docomply-review, PR
-  // #3995 round 12). Shared by every caller of `checkLiveState` that has some
-  // standing announcement to reconsider — `ids` defaults to the pre-POST
-  // `existingIds`, but the race-duplicate path passes the rival's surviving
-  // id instead, since by the time it runs `existingIds` no longer names
-  // what's actually standing — so the confirmed-vs-merely-refused distinction
-  // is judged in one place regardless of whose comment it is (docomply-review
-  // round 15, and the race-path extension in round 17, PR #4057).
+  // or POSITIVELY parsed `isDraft === true` — never on an unreadable state (rc
+  // 1, could be transient), a closed PR (rc 5, nothing to correct), a moved
+  // head (rc 4 with a different live head: that old announcement is still an
+  // accurate claim about the head it names), or an UNKNOWN/malformed mergeable
+  // (rc 4 but neither flag set: GitHub still recomputing, or this specific read
+  // was bad — either can read MERGEABLE again seconds later, and deleting on
+  // that evidence would erase a still-valid announcement, contradicting this
+  // exact guard). `--dry-run` never mutates GitHub regardless of any of the
+  // above. Shared by every caller of `checkLiveState` that has some standing
+  // announcement to reconsider — `ids` defaults to the pre-POST `existingIds`,
+  // but the race-duplicate path passes the rival's surviving id instead, since
+  // by the time it runs `existingIds` no longer names what's actually standing
+  // — so the confirmed-vs-merely-refused distinction is judged in one place
+  // regardless of whose comment it is.
   async function withdrawIfConfirmedStale(
     rc: number,
     ids: number[] = existingIds,
@@ -901,14 +888,13 @@ async function main(): Promise<number> {
 
   if (existingIds.length > 0) {
     // Re-confirm at the LAST moment before reporting success — with
-    // `checkLiveState`, not `readLiveness` (docomply-review round 15, PR
-    // #4057). The liveness read above happened before the retraction and
-    // before this sweep, so the PR can have advanced H1→H2, flipped to
-    // CONFLICTING, or gone back to draft in between — and `readLiveness`
-    // (state+head only) confirms none of the last two, reporting the job
-    // done on the strength of a claim ("mergeable", "Ready") this read never
-    // actually re-checked. `checkLiveState` asks the same broader question
-    // this function already asks everywhere else, and a confirmed
+    // `checkLiveState`, not `readLiveness`. The liveness read above happened
+    // before the retraction and before this sweep, so the PR can have advanced
+    // H1→H2, flipped to CONFLICTING, or gone back to draft in between — and
+    // `readLiveness` (state+head only) confirms none of the last two, reporting
+    // the job done on the strength of a claim ("mergeable", "Ready") this read
+    // never actually re-checked. `checkLiveState` asks the same broader
+    // question this function already asks everywhere else, and a confirmed
     // CONFLICTING or draft here withdraws the stale announcement instead of
     // leaving it standing, exactly like the top-of-function check above.
     const confirm = await checkLiveState();
@@ -983,21 +969,18 @@ ${marker}`;
 
   if (dryRun) {
     // Same re-check once more, this time before the dry-run success return:
-    // `--dry-run` never posts, but it is still a success return, and
-    // everything since the up-front pass (the sweep, the liveness re-reads,
-    // body construction itself) is elapsed time an edit can land in.
-    // Printing "here is what would be announced" over a tree that no longer
-    // matches the up-front check is the same false success as posting it for
-    // real would be (docomply-review, a reference-implementation pull request review round 2, summary
-    // finding).
+    // `--dry-run` never posts, but it is still a success return, and everything
+    // since the up-front pass (the sweep, the liveness re-reads, body
+    // construction itself) is elapsed time an edit can land in. Printing "here
+    // is what would be announced" over a tree that no longer matches the
+    // up-front check is the same false success as posting it for real would be.
     //
     // State before tree, matching every other guard pair in this function —
-    // including `isDraft`, not just mergeability (docomply-review round 15,
-    // a reference-implementation pull request, summary finding): a Ready→draft conversion in the same
-    // window is exactly what the withdrawal guards elsewhere in this
+    // including `isDraft`, not just mergeability: a Ready→draft conversion in
+    // the same window is exactly what the withdrawal guards elsewhere in this
     // function exist for, and `--dry-run` reporting "would announce" on a
-    // now-draft PR is the same stale-eligibility mistake as posting for
-    // real would be.
+    // now-draft PR is the same stale-eligibility mistake as posting for real
+    // would be.
     const preDryRunLiveRc = await checkLiveState();
     if (preDryRunLiveRc !== 0) return preDryRunLiveRc;
     const preDryRunCleanRc = await checkWorktreeClean(head);
@@ -1012,7 +995,7 @@ ${marker}`;
   // `checkLiveState` above already covered the idempotence decision;
   // composing the body and the dry-run branch open a second, smaller window
   // after that, and this is the narrowest point left to close it before a new
-  // comment actually gets written (docomply-review, a reference-implementation pull request round 7).
+  // comment actually gets written.
   // Nothing was posted yet on this path, so a failure here is a plain refusal
   // — there is no announcement to withdraw.
   const prePostRc = await checkLiveState();
@@ -1044,10 +1027,10 @@ ${marker}`;
   // that follows targets comment 0: `withdrawPosted` DELETEs a non-existent
   // comment, so the post-write fail-closed withdrawal silently cannot retract
   // the real one; the duplicate reconciliation compares `lowest !== postedId`,
-  // which is always true, so it deletes 0 and leaves two announcements standing
-  // (coderabbitai, PR #4034 round 2). This script's stated posture — withdraw
-  // THIS PROCESS'S OWN comment if the world moved — is unachievable from here,
-  // so say so and name the artefact rather than proceed through it.
+  // which is always true, so it deletes 0 and leaves two announcements
+  // standing. This script's stated posture — withdraw THIS PROCESS'S OWN
+  // comment if the world moved — is unachievable from here, so say so and name
+  // the artefact rather than proceed through it.
   if (!Number.isInteger(postedId) || postedId <= 0) {
     fail(
       1,
@@ -1103,22 +1086,21 @@ ${marker}`;
   // broader than both: a base branch that advances between the pre-POST check
   // and the POST flips this PR to CONFLICTING while the head stays exactly
   // where it was, so a state+head confirmation passes and leaves a "Safe to
-  // merge" comment standing on a PR that no longer merges
-  // (chatgpt-codex-connector, a reference-implementation pull request round 17). `checkLiveState` reads
-  // mergeability in the same round-trip and is already the pre-POST gate, so
-  // asking the same question on both sides of the write is one function
+  // merge" comment standing on a PR that no longer merges. `checkLiveState`
+  // reads mergeability in the same round-trip and is already the pre-POST gate,
+  // so asking the same question on both sides of the write is one function
   // rather than two divergent copies of the predicate.
   //
   // EVERY non-zero return withdraws here, including the ones the PRE-POST
-  // withdrawal guard deliberately refuses to act on (rc 1 unreadable, rc 4
-  // with mergeable UNKNOWN/malformed). That is not a contradiction of that
-  // guard — it is a different question. Pre-POST, a withdrawal deletes an
-  // announcement some EARLIER run posted and may still be correct, so it
-  // demands positively-parsed CONFLICTING. Here the target is this process's
-  // own comment, written seconds ago; "cannot confirm" and "confirmed
-  // changed" both fail the one claim it makes, and the cost of being wrong is
-  // a re-run rather than a destroyed artefact. That is the same fail-closed
-  // posture the unreadable-state branch has had since round 9.
+  // withdrawal guard deliberately refuses to act on (rc 1 unreadable, rc 4 with
+  // mergeable UNKNOWN/malformed). That is not a contradiction of that guard —
+  // it is a different question. Pre-POST, a withdrawal deletes an announcement
+  // some EARLIER run posted and may still be correct, so it demands
+  // positively-parsed CONFLICTING. Here the target is this process's own
+  // comment, written seconds ago; "cannot confirm" and "confirmed changed" both
+  // fail the one claim it makes, and the cost of being wrong is a re-run rather
+  // than a destroyed artefact. That is the same fail-closed posture the
+  // unreadable-state branch already has.
   //
   // The exit codes are `checkLiveState`'s own, so a merged/closed PR still
   // exits 5 and a moved head still exits 4 — split, because a merge usually
@@ -1136,16 +1118,14 @@ ${marker}`;
     return afterRc;
   }
 
-  // Same question once more, on the tree rather than the PR: the POST is
-  // itself a real round-trip, and an edit can land in the working directory
-  // while it is in flight — the exact loss mode this whole guard exists to
-  // close, now discovered on the far side of a write that already happened
-  // (chatgpt-codex-connector, a reference-implementation pull request review round 1). withdrawPosted() is
-  // the only response available after an unconditional write: this
-  // process's own comment, deleted by its own id, never anyone else's —
-  // between a wrong announcement standing and a brief one that gets
-  // retracted, the retraction is the honest artefact, same as `afterRc`
-  // above.
+  // Same question once more, on the tree rather than the PR: the POST is itself
+  // a real round-trip, and an edit can land in the working directory while it
+  // is in flight — the exact loss mode this whole guard exists to close, now
+  // discovered on the far side of a write that already happened.
+  // withdrawPosted() is the only response available after an unconditional
+  // write: this process's own comment, deleted by its own id, never anyone
+  // else's — between a wrong announcement standing and a brief one that gets
+  // retracted, the retraction is the honest artefact, same as `afterRc` above.
   const afterCleanRc = await checkWorktreeClean(head);
   if (afterCleanRc !== 0) {
     console.error(
@@ -1195,13 +1175,12 @@ ${marker}`;
       // floor" is a claim about the PR's actual state, not just about this
       // process's own artefacts, and the DELETE above was itself a real
       // round-trip an edit could have landed during — so it is re-checked
-      // like every other exit-0 in this function, one last time
-      // (chatgpt-codex-connector, a reference-implementation pull request review round 2).
+      // like every other exit-0 in this function, one last time.
       //
       // State before tree, same as everywhere else — including `isDraft`
-      // (docomply-review round 15, a reference-implementation pull request, summary finding) — and on a
+      // — and on a
       // confirmed answer this now withdraws the RIVAL's surviving comment
-      // too, not merely refuses (docomply-review round 17, a reference-implementation pull request): a
+      // too, not merely refuses: a
       // confirmed draft must not retain a standing announcement, whoever
       // posted it, so `withdrawIfConfirmedStale` runs against `[lowest]` —
       // what's actually standing at this point — rather than the pre-POST
@@ -1238,7 +1217,7 @@ ${marker}`;
   // (`prePostRc`/`prePostCleanRc`, `afterRc`/`afterCleanRc`) — `isDraft`
   // included, not just mergeability, because the reconciliation sweep is a
   // real round-trip an owner's Ready→draft conversion can land in exactly
-  // like any other (docomply-review round 15, a reference-implementation pull request).
+  // like any other.
   const finalLiveRc = await checkLiveState();
   if (finalLiveRc !== 0) {
     console.error(

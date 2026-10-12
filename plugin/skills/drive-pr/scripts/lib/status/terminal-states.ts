@@ -3,31 +3,24 @@
  * vocabulary — which `state` name pairs with which exit code, and what kind
  * of pairing it is.
  *
- * Before this file, that pairing existed nowhere as data: `evaluate.ts` set
- * `report.state` and `return`ed an exit code independently at each of its
- * own sites, and the prose restatements — `drive-status.ts`'s own "Exit
- * codes" doc comment, `SKILL.md` § Terminal states, `references/
- * terminal-states.md` § Exit codes, `docs/development/using-drive-pr.md`'s
- * exit table, and `docs/development/pr-lifecycle.md`'s exit table — each
- * hand-copied the pairing with nothing to keep them in step. A
- * hand-counted tally of both lists drifted before (`AGENTS.md` § Critical
- * Guardrails #10) — this sentence itself used to give `evaluate.ts`'s own
- * site count as an approximate number, which was already wrong (chatgpt-
- * codex-connector); dropped rather than corrected,
- * since a corrected hand-count is the same drift-prone shape. See
- * `scripts/check-drive-pr-terminal-states.ts`'s own `CORPUS_FILES` for the
- * restatements list, and `evaluate.ts` itself for its real site count.
+ * Without this table the pairing exists nowhere as data: `evaluate.ts` would
+ * set `report.state` and return an exit code independently at each of its
+ * sites, and the prose restatements — `drive-status.ts`'s "Exit codes" doc
+ * comment, `SKILL.md` § Terminal states and `references/terminal-states.md`
+ * § Exit codes — would each hand-copy the pairing with nothing keeping them
+ * in step. Hand-counted tallies drift, so this comment gives none: see
+ * `__tests__/terminal-states-consistency.ts`'s `CORPUS_FILES` for the
+ * restatements it checks, and `evaluate.ts` itself for its sites.
  *
  * `evaluate.ts` threads every one of its `report.state`/exit-code sites
- * through `terminal` below, so a wrong pairing there is now a type error or
- * a thrown assertion, never a silent typo. `scripts/check-drive-pr-terminal-
- * states.ts` (repo root) re-derives the emitted set from THIS table and scans
- * the prose restatements for a documented (exit, state) pair this table does
- * not contain — a rung-2 drift check, per an earlier change, that commits nothing.
+ * through `terminal` below, so a wrong pairing there is a type error or a
+ * thrown assertion, never a silent typo. The consistency check re-derives the
+ * emitted set from THIS table and scans the prose restatements for a
+ * documented (exit, state) pair this table does not contain — a drift check
+ * that commits nothing.
  *
- * Categories of entry, per the shape an earlier change measured in the wild
- * (`drive-status.ts`'s own "Exit codes — the driver contract" doc comment
- * mixes all four in one column, unmarked):
+ * Categories of entry (`drive-status.ts`'s "Exit codes — the driver contract"
+ * doc comment mixes all four in one column, unmarked):
  *
  *   'state'        a real `state` value the `--json` report can carry.
  *   'class-label'  a name for a FAMILY of states sharing one exit code,
@@ -39,8 +32,8 @@
  *                  codes `drive.ts` returns directly).
  *
  * `evaluate.ts`'s own 'state' entries are bound in code (the
- * `EvaluateStateName` union below, consumed by `terminal`) — that is the
- * scope an earlier change draws: "evaluate.ts's sites set both through it". Every
+ * `EvaluateStateName` union below, consumed by `terminal`): every site in
+ * `evaluate.ts` sets both through it. Every
  * 'driver-only' entry (`MAX_ROUNDS`, `SINGLE_INSTANCE_LOCK`,
  * `WORKTREE_UNCLEAN`, `STALLED`, `PASS_DEADLINE`, `QUOTA_PARKED`,
  * `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`) is bound
@@ -53,7 +46,7 @@
  * `DriverOnlyStateName`-typed sibling of `terminal`'s own
  * `EvaluateStateName` lookup, and every one of `drive.ts`'s own `return`
  * sites for these driver-only codes uses the constant, never a bare literal
- * — see `scripts/check-drive-pr-terminal-states.ts`'s own
+ * — see `__tests__/terminal-states-consistency.ts`'s own
  * `driverOnlyExitBindings`/`findExitConstantMismatches`/
  * `findConstantProvenanceMismatches`/`findBareLiteralExits` for the checks
  * this makes possible: the constants cannot diverge from this table (they
@@ -81,7 +74,7 @@
  * `DRIVE_HELD_ELSEWHERE_EXIT = outOfBandExitCode('DRIVE_HELD_BY_OTHER_WORKTREE')`
  * and `SESSION_LEASE_HELD_EXIT = outOfBandExitCode('SESSION_LEASE_HELD')`,
  * and `drive-status.ts` imports both rather than hand-writing `11`/`13` at
- * its own `case 0` sites. `scripts/check-drive-pr-terminal-states.ts`
+ * its own `case 0` sites. `__tests__/terminal-states-consistency.ts`
  * extends its driver-only checks
  * (`findExitConstantMismatches`/`findConstantProvenanceMismatches`/
  * `findBareLiteralExits`) to verify this binding against the real files, the
@@ -109,7 +102,7 @@ export interface TerminalStateEntry {
    * not read `using-drive-pr.md`'s and `pr-lifecycle.md`'s documentation of
    * THAT remap as a wrong pairing. Those two files are the ONLY ones the
    * checker treats this way (`CorpusFile.documentsDriveTsRemap` in
-   * `scripts/check-drive-pr-terminal-states.ts`) — everywhere else
+   * `__tests__/terminal-states-consistency.ts`) — everywhere else
    * (`drive-status.ts`'s own header, `SKILL.md`, `references/
    * terminal-states.md`) documents `drive-status.ts`'s own contract and is
    * checked STRICTLY against `exitCode` alone, where `0` is genuinely
@@ -485,10 +478,10 @@ export function outOfBandExitCode(name: OutOfBandStateName): number {
  * set `report.state = 'SESSION_LEASE_HELD'` but emitted/returned
  * `DRIVE_HELD_ELSEWHERE_EXIT` (or vice versa) would recreate the exact
  * pairing drift `terminal-states.ts` exists to prevent, and
- * `findBareLiteralExits` in `scripts/check-drive-pr-terminal-states.ts`
+ * `findBareLiteralExits` in `__tests__/terminal-states-consistency.ts`
  * cannot catch it: that check only rejects a bare numeric literal, and
  * either sibling constant is an equally well-formed named identifier
- * (chatgpt-codex-connector, a reference-implementation pull request /). Deriving both values from
+ *. Deriving both values from
  * one `name` argument closes the gap at the source instead of adding a
  * second AST scan to detect it after the fact.
  */

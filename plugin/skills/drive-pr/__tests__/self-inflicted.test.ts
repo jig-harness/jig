@@ -149,8 +149,7 @@ describe("labelRecord — the three-valued decision", () => {
   });
 
   // A LEFT-side anchor numbers the PRE-image, not HEAD — never outdated, so
-  // this is a distinct case from the one above, not a duplicate of it
-  // (chatgpt-codex-connector, a reference-implementation pull request).
+  // this is a distinct case from the one above, not a duplicate of it.
   it("null for a LEFT-side anchor, even when isOutdated is false and blame WOULD have said true", async () => {
     expect(
       await labelRecord(
@@ -196,8 +195,8 @@ describe("labelRecord — the three-valued decision", () => {
 
 // A multi-line GitHub comment's `line` names only the range's END; `startLine`
 // names its start when the two differ. These probes exercise the range scan
-// `labelRecord` added for it (chatgpt-codex-connector, a reference-implementation pull request round 4 —
-// "I checked all labelRecord tests and found no startLine case").
+// `labelRecord` added for it; without them no labelRecord test had a
+// `startLine` case.
 describe("labelRecord — the multi-line range (`startLine`)", () => {
   /** A blame seam keyed by LINE NUMBER, for a range where lines disagree. */
   const blamingByLine =
@@ -409,7 +408,7 @@ function scrubbedGitEnv(): Record<string, string> {
   // scrubber rather than re-deleting `GIT_LOCATION_VARS` by exact key: on
   // Windows an inherited case variant like `Git_Dir` survives an exact-match
   // delete and still overrides `cwd`, which only `gitIdentityEnv()`'s
-  // case-folding delete closes (chatgpt-codex-connector, a reference-implementation pull request).
+  // case-folding delete closes.
   return gitIdentityEnv() as Record<string, string>;
 }
 
@@ -472,18 +471,17 @@ beforeAll(() => {
   // A dash-leading filename, committed here rather than inside its own test:
   // fixture state (the `feature` branch and its HEAD) is shared across every
   // probe in this suite, so mutating it mid-test would couple later probes to
-  // this one's ordering (coderabbitai, PR #4441).
+  // this one's ordering.
   writeFileSync(join(repo, "-dash.ts"), "decoy\n");
   execGit(["add", "-A"]);
   execGit(["commit", "-q", "-m", "add a dash-leading filename"]);
   decoySha = revParse("HEAD");
   // A NON-ASCII filename, committed on the feature branch. `git diff
-  // --name-only` C-QUOTES this under the default `core.quotePath` while
-  // `git ls-tree -z` emits it raw, so the two path sets stop being
-  // comparable and a file this PR genuinely touched labels `false`. Only a
-  // non-ASCII path exercises that; every other fixture path here is plain
-  // ASCII and passes either way (chatgpt-codex-connector class, found by the
-  // Tier 3 pre-PR review of).
+  // --name-only` C-QUOTES this under the default `core.quotePath` while `git
+  // ls-tree -z` emits it raw, so the two path sets stop being comparable and a
+  // file this PR genuinely touched labels `false`. Only a non-ASCII path
+  // exercises that; every other fixture path here is plain ASCII and passes
+  // either way.
   writeFileSync(join(repo, "src/café.ts"), "non-ascii\n");
   execGit(["add", "-A"]);
   execGit(["commit", "-q", "-m", "add a non-ascii filename"]);
@@ -601,12 +599,11 @@ describe("gitDeps — the real resolver", () => {
     CLI_TIMEOUT_MS,
   );
 
-  // Every probe above passes `'HEAD'` for both `base` and `head`, so a
-  // mutation dropping `head` from the blame argv (git then blaming the
-  // working tree instead of the requested revision) keeps the suite green.
-  // Blaming at `base-branch` for a line that only exists there, while HEAD
-  // is `feature`, is what actually pins the argv slot (coderabbitai, PR
-  // #4441).
+  // Every probe above passes `'HEAD'` for both `base` and `head`, so a mutation
+  // dropping `head` from the blame argv (git then blaming the working tree
+  // instead of the requested revision) keeps the suite green. Blaming at
+  // `base-branch` for a line that only exists there, while HEAD is `feature`,
+  // is what actually pins the argv slot.
   it(
     "blames against the requested --head revision, not the working tree",
     async () => {
@@ -784,8 +781,8 @@ describe("gitDeps — the file-level resolvers", () => {
 // `git diff base head`. So once `base-branch` has moved past the commit
 // `feature` forked from, a file `base-branch` alone changed shows up as
 // "different" between the two endpoint trees purely because the trees
-// disagree there — and `prPaths()` mislabelled it as this PR's own
-// (docomply-review, a reference-implementation pull request round 2). Verified by mutation: reverting
+// disagree there — and `prPaths()` mislabelled it as this PR's own.
+// Verified by mutation: reverting
 // `prPaths`' diff range from `${base}...${resolvedHead}` back to
 // `${base}..${resolvedHead}` turns this probe red.
 describe("gitDeps — prPaths ignores base-only churn on an unmerged, advanced base", () => {
@@ -1118,7 +1115,7 @@ describe("self-inflicted.ts CLI — --summary-report", () => {
       // Two findings that both omit `fingerprint` used to collide under the
       // single JS Map key `undefined` — the second overwriting the first —
       // so a later malformed `unaddressed` entry could silently resolve to
-      // whichever one won that collision (docomply-review, a reference-implementation pull request).
+      // whichever one won that collision.
       const bare = {
         source: "body",
         path: "src/a.ts",
@@ -1228,7 +1225,7 @@ describe("self-inflicted.ts CLI — the stream contract", () => {
             line: 1,
             isOutdated: false,
             comments: [
-              { author: "docomply-review", body: "🟠 **high** · correctness" },
+              { author: "shadow-review", body: "🟠 **high** · correctness" },
             ],
           }),
           JSON.stringify({
@@ -1272,7 +1269,7 @@ describe("self-inflicted.ts CLI — the stream contract", () => {
   );
 
   it(
-    "labels CodeRabbit’s pipe-delimited severity field through the NDJSON stream, gated on CodeRabbit authorship (docomply-review, a reference-implementation pull request round 3)",
+    "labels CodeRabbit’s pipe-delimited severity field through the NDJSON stream, gated on CodeRabbit authorship",
     async () => {
       // `severityOfRecord` (self-inflicted.ts's own extractor) threads
       // `comments[0].author` into `severityOf` with no reshaping — this is
@@ -1326,7 +1323,7 @@ describe("self-inflicted.ts CLI — the stream contract", () => {
             isOutdated: false,
             comments: [
               {
-                author: "docomply-review",
+                author: "shadow-review",
                 body: "🟠 **high** · 🏷️ category: data-integrity · confidence: high",
               },
             ],
@@ -1587,8 +1584,7 @@ describe("self-inflicted.ts CLI — the stream contract", () => {
 // `gh pr view <target>` with `cwd: repo` — the worktree named by `--repo`/
 // `$DRIVE_PR_WORKTREE` — rather than the process's own ambient cwd. Tested
 // directly against the shared `resolvePr`, since a full CLI round-trip would
-// have to fake an entire resolvable base branch to observe the difference
-// (chatgpt-codex-connector, a reference-implementation pull request).
+// have to fake an entire resolvable base branch to observe the difference.
 describe("resolvePr — cwd routes to the named repository, not the ambient one", () => {
   let stubBinDir: string;
   let repoA: string;
@@ -1656,7 +1652,7 @@ exit 1
 // `gh` gives `GH_REPO` precedence over local repository discovery even when
 // `cwd` names a perfectly good checkout, so `cwd` alone is not sufficient to
 // anchor a `resolvePr` call there — an inherited `GH_REPO` could redirect it
-// to a THIRD repository regardless (coderabbitai, PR #4441). Tested with a
+// to a THIRD repository regardless. Tested with a
 // stub that reports what it actually received, not `pwd`: the vulnerability
 // this guards is that `gh` would obey `GH_REPO` over `cwd`, which a `pwd`-
 // keyed stub cannot distinguish from the correct, unaffected behavior.
@@ -1711,7 +1707,7 @@ exit 1
 // Windows environment-variable names are case-insensitive, so an exact-match
 // `delete env.GH_REPO` leaves an inherited `Gh_Repo` in place there, still
 // honored by `gh` — the same trap `gitIdentityEnv()` already guards against
-// for `GIT_DIR` (docomply-review, a reference-implementation pull request round 8). Drives `process.platform`
+// for `GIT_DIR`. Drives `process.platform`
 // directly rather than spawning `gh`, since the hazard is in `ghRepoEnv()`'s
 // own key-matching, not in anything a subprocess stub could observe.
 describe("ghRepoEnv — case-insensitive removal on Windows", () => {
@@ -1739,8 +1735,8 @@ describe("ghRepoEnv — case-insensitive removal on Windows", () => {
 // `resolveBaseRef` (self-inflicted.ts, private) refuses to fetch from an
 // unverified `origin`, and refuses to trust the ref when the fetch itself
 // fails — both UNRESOLVED (the caller's all-`null` stream), never a guess
-// read off whatever `origin/<base>` happens to be on disk
-// (chatgpt-codex-connector, a reference-implementation pull request). Tested through the full CLI, since
+// read off whatever `origin/<base>` happens to be on disk.
+// Tested through the full CLI, since
 // `resolveBaseRef` is not exported and its `gh`/`git` calls are not an
 // injected seam the way `gitDeps` is.
 describe("resolveBaseRef — origin verification and fetch failure are UNRESOLVED, never guessed", () => {

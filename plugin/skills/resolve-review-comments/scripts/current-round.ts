@@ -2,8 +2,8 @@
 import { siblingSkill } from "./lib/consumer.ts";
 /**
  * Print the ordinal of the review round currently being worked on a PR — the
- * mechanical read behind the triage rubric's round-indexed cutoff (TASK,
- * references/triage-rubric.md § The round-4 cutoff).
+ * mechanical read behind the decline ladder's round bands
+ * (references/triage-rubric.md § The decline ladder).
  *
  * Usage: current-round.ts [PR]
  *
@@ -20,7 +20,7 @@ import { siblingSkill } from "./lib/consumer.ts";
  *
  * Reading only the first left the cutoff inert under the primary unattended
  * driver — `/drive-pr` reported 0 at every round while its own state said
- * otherwise (chatgpt-codex-connector, a reference-implementation pull request). `max` rather than a
+ * otherwise. `max` rather than a
  * precedence: both count the same thing (distinct reviewed heads), neither is
  * running when its counter is absent, and an absent counter must not pull the
  * answer down below a loop that did count.
@@ -48,7 +48,7 @@ import { siblingSkill } from "./lib/consumer.ts";
  * own counter at convergence; `drive-pr` keeps `rounds` durably and clears it
  * only on an explicit `drive-state.ts reset`. So a NEW session on a PR that a
  * drive already took to round 6 reads 6 and arms the cutoff immediately
- * (docomply-review, a reference-implementation pull request). That is correct on the merits the rule is
+ *. That is correct on the merits the rule is
  * built from: the cutoff prices a round, and a PR that has had six rounds has
  * had six regardless of which loop counted them or which one has since wound
  * down. The alternative — clearing drive-pr's count at its own convergence —
@@ -98,7 +98,7 @@ const DRIVE_STATE = join(
  * runtime's own ordinary failure (bun exits 1, measured) and is
  * indistinguishable from a script that ran and failed. An exit-code
  * heuristic therefore printed the anomaly line on every read for anyone who
- * installed this skill without its sibling (docomply-review, a reference-implementation pull request).
+ * installed this skill without its sibling.
  *
  * So: no sibling skill, no spawn, no diagnostic. Past that, anything other
  * than a clean numeric answer — a non-zero exit from a script that DID run,
@@ -121,8 +121,8 @@ async function drivePrRounds(pr: string): Promise<[number, string]> {
   // it as digits — and a 400-digit answer parses to Infinity, which `Math.max`
   // propagates and the script prints literally, arming a `round >= 4` consumer
   // off corrupt state. Tightening one source and leaving its sibling on
-  // `isDigits` was the round-3 fix applied to the instance instead of the
-  // class (docomply-review + chatgpt-codex-connector, a reference-implementation pull request).
+  // `isDigits` was an earlier fix applied to the instance instead of the
+  // class.
   const out = r.stdout.trim();
   if (!isRoundOrdinal(out)) {
     if (out === "0") return [0, ""];
@@ -144,7 +144,7 @@ async function drivePrRounds(pr: string): Promise<[number, string]> {
  * not enough: `'9'.repeat(400)` passes it, `parseInt` returns `Infinity`, and
  * the script prints the literal `Infinity` — which is not a number a caller
  * can parse, and which arms a `round >= 4` cutoff off corrupt state, the
- * exact inversion of the fail-open contract (docomply-review, a reference-implementation pull request).
+ * exact inversion of the fail-open contract.
  * `0`, `004` and whitespace-padded forms are refused for the same reason: the
  * producer never writes them, so their presence is evidence of a writer this
  * script cannot vouch for.
@@ -158,9 +158,9 @@ async function drivePrRounds(pr: string): Promise<[number, string]> {
  * Built on the shared `isSafeDigits` (`lib/cli.ts`) rather than its own
  * `Number.isSafeInteger` check, so the safety bound and the canonical-form
  * (no leading zero, no `0` itself) check cannot drift apart the way this
- * file's own two counters once did (PR #4501 round 3), and so a THIRD script
- * accepting a bare ordinal has one shared primitive to reuse instead of
- * reinventing it a third time (`triage-ladder.ts --round`, PR #4501 round 5).
+ * file's own two counters once did, and so a THIRD script accepting a bare
+ * ordinal has one shared primitive to reuse instead of reinventing it a third
+ * time (`triage-ladder.ts --round` was the second).
  */
 export function isRoundOrdinal(raw: string): boolean {
   const n = raw.trim();

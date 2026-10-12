@@ -27,8 +27,8 @@ private*. Anything that clears both bars is a candidate for **promotion** (below
 ### What — the tracker
 
 The team-visible ledger. One epic or sub-issue per unit of work, each carrying
-its taxonomy. This is the tier the [issue templates](ISSUE-TEMPLATES.md) and the
-[label taxonomy](label-taxonomy.yaml) govern. The tactical execution plan lives
+its taxonomy. This is the tier the [issue templates](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/ISSUE-TEMPLATES.md) and the
+[label taxonomy](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml) govern. The tactical execution plan lives
 *on the issue* precisely so it is not trapped in a session.
 
 ### How — persistent, multi-session agent memory
@@ -36,7 +36,7 @@ its taxonomy. This is the tier the [issue templates](ISSUE-TEMPLATES.md) and the
 The working knowledge an agent accumulates while executing: what it tried, what
 it decided, the shape of the code it is touching. Kept in a durable, git-backed
 store (a `memory/` directory, or the agent runtime's memory feature — see
-[`../mappings.md`](../mappings.md)) so it survives a session ending and is there
+[M9's mappings](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/mappings.md)) so it survives a session ending and is there
 when work resumes. This is *how* the work gets done, distinct from *what* the
 work is.
 
@@ -62,18 +62,20 @@ private memory            promoted (proposed)          git-tracked shared memory
 1. **Capture** — an agent records a durable lesson in its private memory during
    work ("this service's client must be closed explicitly", "the staging seed
    omits X").
-2. **Propose** — a promotion step (a `/promote-memory`-style command) surfaces
-   the lesson as a *candidate* for shared memory, rather than editing shared
-   memory silently.
+2. **Propose** — a promotion step (a `/promote-memory`-style command, such as
+   Groundwork's
+   [`promote-memory`](https://github.com/docomply/jig/blob/main/plugin/skills/promote-memory/SKILL.md)
+   skill) surfaces the lesson as a *candidate* for shared memory, rather than
+   editing shared memory silently.
 3. **Review** — a human (or a review point) accepts, edits, or rejects it.
-   Promotion is [HITL](../../../GLOSSARY.md) by construction: it changes the
+   Promotion is [HITL](https://github.com/docomply/jig/blob/main/GLOSSARY.md) by construction: it changes the
    shared record the whole team trusts.
 4. **Land** — the accepted lesson is committed to git-tracked shared memory,
    where it reaches other agents and survives indefinitely — and becomes fodder
    for retrospection.
 
 This is the same **memory-promotion** cycle described in
-[M8 — Learning loop](../../M8-learning-loop/), which pairs it with session
+[M8 — Learning loop](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop), which pairs it with session
 **reflection**. M9 owns the *tiers* (where memory lives); M8 owns the
 *promotion and reflection loop* (how a lesson is proposed, reviewed, and turned
 into durable improvement). Adopt them together: the tiers give reflection a

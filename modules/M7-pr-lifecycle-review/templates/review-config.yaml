@@ -14,7 +14,8 @@
 #   3. Verify-tool + guards — the core must run a verify step and stay within
 #                           containment limits (no runaway comment floods, no
 #                           executing untrusted fork code — see the PR-target
-#                           safety lint in ../reference/pr-target-safety/).
+#                           safety lint, modules/M7-pr-lifecycle-review/
+#                           reference/pr-target-safety/ in Groundwork).
 #   4. Reviewer source    — the PR head cannot change the runtime, prompts, or
 #                           policy used for its own authoritative review.
 
@@ -78,10 +79,10 @@ containment:
 promotion_bar:
   min_true_positive_rate: 0.90    # of this lens's findings, >= 90% must be real
   min_sample: 20                  # measured over at least N fired findings
-  measured_by: M8-parity-report   # ../../M8-learning-loop/reference/parity-report/
+  measured_by: M8-parity-report   # https://github.com/docomply/jig/tree/main/modules/M8-learning-loop/reference/parity-report
   note: >-
     A lens stays `posture: comment` until M8's measurement shows it clears this
-    bar; promotion to `posture: block` is an M7-Strict, HITL decision.
+    bar; promotion to `posture: blocking` is an M7-Strict, HITL decision.
 
 # ---- lenses ---------------------------------------------------------------
 # Numbered, ADDITIVE checks the shadow reviewer applies. A lens is a prompt
@@ -107,4 +108,5 @@ lenses:
       compatibility shim, or is flagged as breaking.
 
 # Higher-tier "semantic" lenses that need full LLM reasoning (not a checklist
-# bullet) are grown locally, not shipped here — see ../README.md § Not ported.
+# bullet) are grown locally, not shipped here — see
+# https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md#left-out-by-design

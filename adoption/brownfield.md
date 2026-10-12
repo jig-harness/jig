@@ -9,8 +9,8 @@ Improving an existing project. The entry point is an **audit**, not a module.
    own toolchain.
 2. **Fix drift first** — stale instruction files and docs that contradict
    reality actively mislead every agent session; fixing them is cheap and
-   pays immediately. (The founding audit's experience: drift fixes were the
-   highest-value quick wins.)
+   pays immediately. Drift fixes are usually an audit's highest-value quick
+   wins.
 3. **Adopt modules in the report's order, one rung at a time** — "adopted"
    means "reached Lite," then climb. The default leverage ordering when the
    report doesn't say otherwise: **M1** (gates — makes everything else

@@ -3,16 +3,15 @@
  * running against — the counterpart to `actor.ts`'s `worktreeKey`,
  * which identifies the TREE.
  *
- * Built from a PERSISTED identifier, not from `commonDir`'s own path: a hash
- * of `realpath(commonDir)` alone makes the identity depend on this clone's
- * current absolute pathname, so moving or renaming the checkout — the
- * directory itself untouched — silently changes the key. The moved clone's
- * `.git` still holds every prior lock/lease/state file, all now addressed
- * under the OLD key, while `ensureMigratedFromLegacy` sees a fresh,
- * unmigrated NEW key with nothing under it, writes the migrated marker, and
- * starts round 0 — abandoning every parked decision and round budget the
- * whole an earlier change guard exists to protect, with no error anywhere
- * (docomply-review, a reference-implementation pull request). A symlink hop resolves to the same physical
+ * Built from a PERSISTED identifier, not from `commonDir`'s own path: a hash of
+ * `realpath(commonDir)` alone makes the identity depend on this clone's current
+ * absolute pathname, so moving or renaming the checkout — the directory itself
+ * untouched — silently changes the key. The moved clone's `.git` still holds
+ * every prior lock/lease/state file, all now addressed under the OLD key, while
+ * `ensureMigratedFromLegacy` sees a fresh, unmigrated NEW key with nothing
+ * under it, writes the migrated marker, and starts round 0 — abandoning every
+ * parked decision and round budget the per-clone state exists to protect,
+ * with no error anywhere. A symlink hop resolves to the same physical
  * path and was never the gap; a genuine relocation changes the path itself,
  * which no amount of `realpathSync` can see past.
  *
@@ -37,11 +36,10 @@ import {
 
 /**
  * Lives inside `commonDir` itself — see the module doc comment. Exported so
- * `artifacts.ts` can recognise this exact name as clone-identity metadata
- * that must stay bound to `commonDir` (chatgpt-codex-connector, a reference-implementation pull request
- * round 22) rather than duplicating the literal — a second copy of this
- * string is exactly the drift this module's own singular-source-of-truth
- * posture exists to avoid.
+ * `artifacts.ts` can recognise this exact name as clone-identity metadata that
+ * must stay bound to `commonDir` rather than duplicating the literal — a second
+ * copy of this string is exactly the drift this module's own
+ * singular-source-of-truth posture exists to avoid.
  */
 export const CLONE_ID_FILE = "drive-pr-clone-id";
 
@@ -52,23 +50,20 @@ export const CLONE_ID_FILE = "drive-pr-clone-id";
  * truncated or otherwise corrupted file is still nonempty, and silently
  * hashing whatever bytes survived would resolve a DIFFERENT, valid-looking
  * state directory, abandoning this clone's parked decisions and round budget
- * under the original key with no error anywhere (docomply-review, a reference-implementation pull request
- * round 6).
+ * under the original key with no error anywhere.
  *
- * Pinned to the version-4 and RFC-4122-variant nibbles specifically
- * (`4` and `[89ab]`), not just the generic 8-4-4-4-12 hex shape: the
- * broader pattern also accepts a syntactically valid but impossible-to-mint
- * UUID (e.g. every nibble `1`) as though it were real, hashing it into a
- * state directory `randomUUID()` could never have produced (docomply-
- * review, PR #4618 round 12).
+ * Pinned to the version-4 and RFC-4122-variant nibbles specifically (`4` and
+ * `[89ab]`), not just the generic 8-4-4-4-12 hex shape: the broader pattern
+ * also accepts a syntactically valid but impossible-to-mint UUID (e.g. every
+ * nibble `1`) as though it were real, hashing it into a state directory
+ * `randomUUID()` could never have produced.
  *
- * Case-sensitive on purpose — no `/i` flag: `randomUUID()` (the sole
- * production writer, confirmed by repository grep) always persists
- * lowercase text, and `hashCloneId` below hashes case-sensitively. Accepting
- * uppercase would let an otherwise-valid but re-cased id hash to a
- * DIFFERENT state-directory key than the one this clone's real identity
- * already resolved to, silently stranding its round state (docomply-review,
- * a reference-implementation pull request round 13).
+ * Case-sensitive on purpose — no `/i` flag: `randomUUID()` (the sole production
+ * writer, confirmed by repository grep) always persists lowercase text, and
+ * `hashCloneId` below hashes case-sensitively. Accepting uppercase would let an
+ * otherwise-valid but re-cased id hash to a DIFFERENT state-directory key than
+ * the one this clone's real identity already resolved to, silently stranding
+ * its round state.
  */
 const CLONE_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -78,14 +73,13 @@ function readCloneId(path: string): string | null {
   try {
     text = readFileSync(path, "utf8").trim();
   } catch (e) {
-    // Only "the file was never minted" (ENOENT) means unminted. Any other
-    // read failure — permission denied, an I/O error, `path` reappearing as
-    // a directory — is not evidence of that, and treating it as though it
-    // were would let `peekCloneKey()` report `null` for a clone that
-    // actually already has an identity: its caller (the standalone fence's
-    // legacy fallback) then inspects the obsolete legacy directory instead
-    // of the real one, missing an active lease there (chatgpt-codex-
-    // connector, PR #4618 round 7).
+    // Only "the file was never minted" (ENOENT) means unminted. Any other read
+    // failure — permission denied, an I/O error, `path` reappearing as a
+    // directory — is not evidence of that, and treating it as though it were
+    // would let `peekCloneKey()` report `null` for a clone that actually
+    // already has an identity: its caller (the standalone fence's legacy
+    // fallback) then inspects the obsolete legacy directory instead of the real
+    // one, missing an active lease there.
     if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return null;
     fail(
       2,
@@ -146,23 +140,21 @@ function readCloneId(path: string): string | null {
  *
  * `createExclusiveDurable` publishes via an exclusive `link(2)` from an
  * already-fully-written, fsynced temp file, never via a direct open of THIS
- * path — see its doc for why an earlier version of this file did that and
- * it was two separate bugs (docomply-review, a reference-implementation pull request round 3;
- * chatgpt-codex-connector, a reference-implementation pull request round 3). One consequence worth stating
- * explicitly: for this call's own temp-write/fsync/close/link failure
- * (`ExclusiveWriteOwnFailure`), and for a genuine `EEXIST` race lost to
- * another process's already-complete publish, this call NEVER created this
- * path itself (a successful `link` is the only thing that can create it,
- * and both of those shapes fail at or before the `link`). So there is
- * nothing of this call's own to clean up on failure, and re-reading is
- * safe: `path` is either still whatever it was before this call started,
- * or another process's complete, valid publish.
+ * path — see its doc for why an earlier version of this file did that and it
+ * was two separate bugs. One consequence worth stating explicitly: for this
+ * call's own temp-write/fsync/close/link failure (`ExclusiveWriteOwnFailure`),
+ * and for a genuine `EEXIST` race lost to another process's already-complete
+ * publish, this call NEVER created this path itself (a successful `link` is the
+ * only thing that can create it, and both of those shapes fail at or before the
+ * `link`). So there is nothing of this call's own to clean up on failure, and
+ * re-reading is safe: `path` is either still whatever it was before this call
+ * started, or another process's complete, valid publish.
  *
  * A THIRD shape breaks that pattern on purpose: `ExclusiveDurabilityUnconfirmed`
  * means the `link` itself already succeeded and only the FOLLOWING directory
  * fsync failed — so this call DID create `path`, and re-reading it afterward
  * would silently treat this call's own unconfirmed publish as though it were
- * a racing winner's committed value (docomply-review, a reference-implementation pull request round 4). The
+ * a racing winner's committed value. The
  * caller below must check for it explicitly, before the generic re-read.
  */
 function persistedCloneId(commonDir: string): string {
@@ -235,7 +227,7 @@ export function cloneKey(commonDir: string): string {
  * no-`--apply` dry run of `migrate-legacy-state.ts` promises to write nothing,
  * but calling `cloneKey` directly on a clone with no persisted id yet mints
  * and durably persists one via `createExclusiveDurable`, contradicting that
- * promise (docomply-review, a reference-implementation pull request round 4). There is no way to preview
+ * promise. There is no way to preview
  * the value `cloneKey` WOULD mint — it is a fresh `randomUUID()`, not a
  * function of `commonDir` — so a caller in this position has only two honest
  * options: mint now (breaking the dry-run promise), or report that the

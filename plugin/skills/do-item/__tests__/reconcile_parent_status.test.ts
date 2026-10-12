@@ -5,8 +5,7 @@
  * the least-advanced-child rule, the `manual-ops` cap, and the
  * extract-and-close eligibility check — have a callsite to test against
  * instead of living only as inline pseudocode an agent hand-executes each
- * round (the same gap `select_scout_finding.ts` closed for Step 2
- * in PR #4535).
+ * round (the same gap `select_scout_finding.ts` closed for Step 2).
  */
 
 import { describe, expect, it } from "bun:test";
@@ -80,12 +79,11 @@ describe("reconcileParentStatus", () => {
   // output — see `reconcileParentStatus`'s own comment above
   // `allIncompleteAreExtractable`), so a still-open child with no readable
   // `labels` is the CLI transport's ordinary case, not a partial fetch. An
-  // earlier round failed the whole listing closed here instead
-  // (docomply-review round 5, a reference-implementation pull request); reverting to that treats every
-  // CLI-transport epic with an open sub-issue as permanently unreadable,
-  // which round 8's review caught. These pin the corrected behavior:
-  // unreadable-or-missing child labels default to "no tail label" exactly
-  // like a confirmed-empty array, never to `listing_failed`.
+  // earlier version failed the whole listing closed here instead; reverting
+  // to that treats every CLI-transport epic with an open sub-issue as
+  // permanently unreadable. These pin the corrected behavior:
+  // unreadable-or-missing child labels default to "no tail label" exactly like
+  // a confirmed-empty array, never to `listing_failed`.
   describe('unreadable child labels default to "no tail", never to listing_failed', () => {
     it("a still-open child with no `labels` key at all keeps the parent in progress", () => {
       // Constructed literally (not via the `child()` helper) to model the
@@ -562,11 +560,10 @@ describe("isReconcileInputShape", () => {
     ).toBe(false);
   });
 
-  // Regression for docomply-review round 18, a reference-implementation pull request: a non-empty `type`
-  // string alone isn't proof of a readable state. `'unknown'` is
-  // get_issue.ts's OWN sentinel for "the type itself was unreadable" — never
-  // a real Linear state type — so a blank name paired with it must still be
-  // rejected, not accepted merely because `type.length > 0`.
+  // Regression: a non-empty `type` string alone isn't proof of a readable
+  // state. `'unknown'` is get_issue.ts's OWN sentinel for "the type itself was
+  // unreadable" — never a real Linear state type — so a blank name paired with
+  // it must still be rejected, not accepted merely because `type.length > 0`.
   it('rejects a child whose state has a blank name and the "unknown" sentinel type', () => {
     expect(
       isReconcileInputShape({
@@ -587,12 +584,11 @@ describe("isReconcileInputShape", () => {
     ).toBe(true);
   });
 
-  // Regression for docomply-review round 19, a reference-implementation pull request: `get_issue.ts` emits
-  // `{ name: 'Unknown', type: 'unknown' }` — a DIFFERENT sentinel than round
-  // 18's blank-name variant — when BOTH state fields are absent. `'Unknown'`
-  // is itself a non-empty string, so the name-non-blank branch alone
-  // wrongly accepted it despite being the exact pair SKILL.md's own
-  // `isUnreadableState` treats as unreadable.
+  // Regression: `get_issue.ts` emits `{ name: 'Unknown', type: 'unknown' }`
+  // — a DIFFERENT sentinel than the blank-name variant above — when BOTH
+  // state fields are absent. `'Unknown'` is itself a non-empty string, so the
+  // name-non-blank branch alone wrongly accepted it despite being the exact
+  // pair SKILL.md's own `isUnreadableState` treats as unreadable.
   it('rejects a child whose state is the full {name: "Unknown", type: "unknown"} sentinel', () => {
     expect(
       isReconcileInputShape({
@@ -754,10 +750,9 @@ describe("reconcile_parent_status.ts (CLI entrypoint)", () => {
     expect(r.stderr).toContain("not a valid ReconcileInput");
   });
 
-  // Bounds added for docomply-review round 9, a reference-implementation pull request: `readStdin` used to
-  // accumulate every chunk with no size cap and await EOF with no deadline —
-  // both env-overridable purely so these two tests don't need a real 10MB
-  // payload or a real 30s wait.
+  // Bounds: `readStdin` used to accumulate every chunk with no size cap and
+  // await EOF with no deadline — both env-overridable purely so these two tests
+  // don't need a real 10MB payload or a real 30s wait.
   it("rejects stdin larger than the configured byte cap", () => {
     const r = spawnSync(
       process.execPath,
@@ -796,11 +791,11 @@ describe("reconcile_parent_status.ts (CLI entrypoint)", () => {
     expect(stderr).toContain("exceeded 50ms");
   });
 
-  // Regression for coderabbitai, PR #5024: `Number('abc')` is `NaN`, and
-  // Node coerces a `NaN` `setTimeout` delay to ~1ms — a typo'd override used
-  // to make every run fail almost instantly, even a normal, non-stalled one.
-  // A well-formed, promptly-closed stdin must still succeed under an invalid
-  // override, proving it fell back to the real 30s default and not to ~1ms.
+  // Regression: `Number('abc')` is `NaN`, and Node coerces a `NaN` `setTimeout`
+  // delay to ~1ms — a typo'd override used to make every run fail almost
+  // instantly, even a normal, non-stalled one. A well-formed, promptly-closed
+  // stdin must still succeed under an invalid override, proving it fell back to
+  // the real 30s default and not to ~1ms.
   it("falls back to the real timeout default on an invalid override, not ~1ms", () => {
     const r = run(
       JSON.stringify({
@@ -833,9 +828,9 @@ describe("positiveIntEnv", () => {
     }
   });
 
-  // Regression for coderabbitai, PR #5024: a non-numeric override must fall
-  // back, not silently become NaN (which disables a `>` bound entirely and
-  // coerces a setTimeout delay to ~1ms).
+  // Regression: a non-numeric override must fall back, not silently become NaN
+  // (which disables a `>` bound entirely and coerces a setTimeout delay to
+  // ~1ms).
   for (const bad of ["abc", "", "12.5", "-3", "0", "NaN", "Infinity"]) {
     it(`falls back to the default on an invalid override (${JSON.stringify(bad)})`, () => {
       process.env.RECONCILE_TEST_ENV_VAR = bad;
@@ -849,23 +844,21 @@ describe("positiveIntEnv", () => {
     });
   }
 
-  // Regression for docomply-review round 19, a reference-implementation pull request: `Number.isInteger`
-  // is `true` for ANY finite whole number regardless of magnitude
-  // (`Number.isInteger(1e100)` is `true`), so a huge-but-integer override
-  // passed the positive-integer check yet effectively disabled whatever
-  // bound it was meant to enforce. Asserted directly on the return value —
-  // not via a subprocess timing race — because a prior round's equivalent
-  // subprocess-based test could pass even with the clamp removed, if the
-  // read happened to finish before the malformed timer fired (docomply-
-  // review round 19, PR #5024).
+  // Regression: `Number.isInteger` is `true` for ANY finite whole number
+  // regardless of magnitude (`Number.isInteger(1e100)` is `true`), so a
+  // huge-but-integer override passed the positive-integer check yet effectively
+  // disabled whatever bound it was meant to enforce. Asserted directly on the
+  // return value — not via a subprocess timing race — because an earlier,
+  // equivalent subprocess-based test could pass even with the clamp removed, if
+  // the read happened to finish before the malformed timer fired.
   //
   // These bounds are protective ceilings against a misconfiguration, not a
-  // "use as much as is allowed" request — round 19's first fix CLAMPED an
-  // over-`max` value to `max` instead of falling back, which for a timeout
-  // meant a clearly-mistaken huge override became Node's ~24.8-day setTimeout
-  // ceiling instead of the intended 30-second default (the opposite of a
-  // safety bound). Round 20 corrected this to fall back to `fallback`, same
-  // as any other invalid override (docomply-review round 20, a reference-implementation pull request).
+  // "use as much as is allowed" request — a first fix CLAMPED an over-`max`
+  // value to `max` instead of falling back, which for a timeout meant a
+  // clearly-mistaken huge override became Node's ~24.8-day setTimeout ceiling
+  // instead of the intended 30-second default (the opposite of a safety bound).
+  // The corrected behavior falls back to `fallback`, same as any other invalid
+  // override.
   it("falls back to fallback (not a clamped max) when the override exceeds max", () => {
     process.env.RECONCILE_TEST_ENV_VAR = "1e100";
     try {

@@ -187,7 +187,7 @@ describe("resolveStateDir", () => {
     // ran `ensureMigratedFromLegacy` BEFORE checking `DRIVE_PR_STATE_DIR`,
     // that marker would make the legacy guard return early on its own —
     // this test would still pass, proving nothing about the override
-    // actually short-circuiting it (coderabbitai, PR #4618 round 6).
+    // actually short-circuiting it.
     const homeOverride = mkdtempSync(
       join(tmpdir(), "store-test-home-override-"),
     );
@@ -263,11 +263,10 @@ describe("resolveStateDir", () => {
 
 describe("peekStateDir", () => {
   it("returns legacyDir, with NO side effects, when no clone identity has ever been minted", () => {
-    // docomply-review, a reference-implementation pull request round 14: `reap-state.ts`'s dry-run mode
-    // must be able to ask "where does state live" without itself minting a
-    // clone identity, creating the new directory, or writing the migration
-    // marker — exactly the three side effects the ordinary
-    // `resolveStateDir()` has on a fresh clone.
+    // `reap-state.ts`'s dry-run mode must be able to ask "where does state
+    // live" without itself minting a clone identity, creating the new
+    // directory, or writing the migration marker — exactly the three side
+    // effects the ordinary `resolveStateDir()` has on a fresh clone.
     const repoF = makeRepo("peek-fresh");
     const homeF = mkdtempSync(join(tmpdir(), "store-test-home-f-"));
     try {
@@ -285,9 +284,9 @@ describe("peekStateDir", () => {
   });
 
   it("resolves the cwd checkout, not the one a leaked GIT_DIR names, when defaulting the state dir", () => {
-    // docomply-review, a reference-implementation pull request round 10: a hook-launched driver inherits
-    // GIT_DIR for ANOTHER checkout, and it outranks the cwd — unscrubbed, the
-    // default state dir (and every lock under it) keyed to that checkout.
+    // A hook-launched driver inherits GIT_DIR for ANOTHER checkout, and it
+    // outranks the cwd — unscrubbed, the default state dir (and every lock
+    // under it) keyed to that checkout.
     const repoOwn = makeRepo("peek-own");
     const repoOther = makeRepo("peek-other");
     const homeH = mkdtempSync(join(tmpdir(), "store-test-home-h-"));

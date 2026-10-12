@@ -18,13 +18,13 @@
  *
  * Callers may pre-set GH_CALL_TIMEOUT; it is honoured, not overwritten — but
  * only when it is a positive whole number of seconds. GNU `timeout 0` disables
- * the timeout outright rather than firing immediately, and the bash lib
- * refused `0` for exactly that reason; the refusal is kept even though a JS
- * timer would technically fire, because a caller writing `0` is asking for an
- * unbounded call whichever implementation they get, and that is the exact
- * failure mode this file exists to prevent (docomply-review, a reference-implementation pull request
- * round 10). A non-numeric or non-positive value is a caller mistake, not a
- * configuration to tolerate, so it is rejected rather than quietly floored.
+ * the timeout outright rather than firing immediately, and the bash lib refused
+ * `0` for exactly that reason; the refusal is kept even though a JS timer would
+ * technically fire, because a caller writing `0` is asking for an unbounded
+ * call whichever implementation they get, and that is the exact failure mode
+ * this file exists to prevent. A non-numeric or non-positive value is a caller
+ * mistake, not a configuration to tolerate, so it is rejected rather than
+ * quietly floored.
  */
 
 import { type SpawnOptions, spawn } from "node:child_process";
@@ -72,7 +72,7 @@ export function ghCallTimeoutSeconds(): number {
  * for local `git` calls — a stalled filesystem or a lock held by another
  * process can hang one exactly as an unresponsive API can hang a `gh` call,
  * and a local subprocess earns no exemption from the deadline discipline this
- * file exists to enforce (docomply-review, a reference-implementation pull request review round 2).
+ * file exists to enforce.
  */
 export function gitCallTimeoutSeconds(): number {
   const read = readTimeoutEnv("GIT_CALL_TIMEOUT", 30);
@@ -99,9 +99,8 @@ export function gitCallTimeoutSeconds(): number {
  * already deadlined per call — this bounds the whole invocation, which the
  * per-call deadline cannot: a wedged runtime never gets as far as its first
  * `gh` call, and a caller waiting on the pipe waits forever for a process that
- * has not started doing anything to time out (docomply-review round 1, PR
- * #4057; the same startup-hang class this skill fixed for
- * `reconcile-replied-threads.ts`'s trusted-associations spawn).
+ * has not started doing anything to time out (the same startup-hang class this
+ * skill fixed for `reconcile-replied-threads.ts`'s trusted-associations spawn).
  *
  * Scripts that validate this variable with a DIFFERENT exit code — an entry
  * script whose own usage contract says 2 — read it through `readTimeoutEnv`
@@ -127,12 +126,11 @@ export function helperTimeoutSeconds(): number {
 
 /**
  * The deadline `drive.ts` gives its OWN spawn of `mark-ready.ts` — larger than
- * `helperTimeoutSeconds()`, deliberately (docomply-review rounds 21-22, PR
- * #4057). That accessor bounds "one spawned helper subprocess" as a single
- * unit, which is the right model for most of `drive.ts`'s spawns — but
- * `mark-ready.ts` is not one network call, it is up to SEVEN sequential ones
- * on the dispatch path that actually fires `gh pr ready`, each individually
- * entitled to its own full budget:
+ * `helperTimeoutSeconds()`, deliberately. That accessor bounds "one spawned
+ * helper subprocess" as a single unit, which is the right model for most of
+ * `drive.ts`'s spawns — but `mark-ready.ts` is not one network call, it is up
+ * to SEVEN sequential ones on the dispatch path that actually fires `gh pr
+ * ready`, each individually entitled to its own full budget:
  *
  *   1. `ready-marked` (helper) — the durable-claim read at the very top
  *   2. the initial `readSnapshot` (gh)
@@ -149,29 +147,28 @@ export function helperTimeoutSeconds(): number {
  * once-only guarantee this whole file exists to protect.
  *
  * The COMPLETE derived bound, not a flat multiplier that happens to clear
- * today's defaults (docomply-review round 22, a reference-implementation pull request — a `4 *
- * helperTimeoutSeconds()` version of this undercounted the real chain: four
- * helper-bound calls AND three `gh`-bound ones, not four of either alone).
- * Summed in each call's own unit rather than approximated in helper-only
- * units, so a caller that configures `GH_CALL_TIMEOUT` far from
+ * today's defaults (a `4 * helperTimeoutSeconds()` version of this undercounted
+ * the real chain: four helper-bound calls AND three `gh`-bound ones, not four
+ * of either alone). Summed in each call's own unit rather than approximated in
+ * helper-only units, so a caller that configures `GH_CALL_TIMEOUT` far from
  * `DRIVE_PR_HELPER_TIMEOUT`'s default ratio still gets a bound that actually
  * covers the chain — plus one full `KILL_ESCALATE_MS` grace per step, since a
  * deadline that fires still spends that grace before the child is actually
  * gone.
  *
  * `helperTimeoutSeconds()` and `ghCallTimeoutSeconds()` each individually
- * refuse a value whose OWN `* 1000` would overflow `setTimeout`'s 32-bit
- * signed millisecond delay — but this function sums up to seven of them, so
- * two individually-valid inputs (e.g. `DRIVE_PR_HELPER_TIMEOUT` near its own
- * ~2147483s ceiling) can still produce a total that overflows here even
- * though neither accessor it called from ever saw an invalid value itself
- * (docomply-review round 22, a reference-implementation pull request). The overflow lands three calls away
- * from this function, inside `run()`'s own `timeoutSec * 1000` — silently
- * firing the deadline immediately rather than refusing loudly — so this is
- * the one place that can still catch it. A caller-supplied env var earns a
- * refusal (readTimeoutEnv); this is a derived internal value with no user
- * to refuse, so it clamps to the same 32-bit ceiling instead — "as generous
- * as representable" rather than an accidental near-zero deadline.
+ * refuse a value whose OWN `* 1000` would overflow `setTimeout`'s 32-bit signed
+ * millisecond delay — but this function sums up to seven of them, so two
+ * individually-valid inputs (e.g. `DRIVE_PR_HELPER_TIMEOUT` near its own
+ * ~2147483s ceiling) can still produce a total that overflows here even though
+ * neither accessor it called from ever saw an invalid value itself. The
+ * overflow lands three calls away from this function, inside `run()`'s own
+ * `timeoutSec * 1000` — silently firing the deadline immediately rather than
+ * refusing loudly — so this is the one place that can still catch it. A
+ * caller-supplied env var earns a refusal (readTimeoutEnv); this is a derived
+ * internal value with no user to refuse, so it clamps to the same 32-bit
+ * ceiling instead — "as generous as representable" rather than an accidental
+ * near-zero deadline.
  */
 export function markReadyTimeoutSeconds(): number {
   const HELPER_BOUND_CALLS = 4; // ready-marked, claim, renew, commit
@@ -223,8 +220,7 @@ export function finalVerifyTimeoutSeconds(): number {
   // 5) = 15. A budget of 7 left the parent free to kill this child after
   // store.update() persisted verifiedSha but before the compensating
   // post-write check could clear it on a stale head/hold/CI — the exact
-  // false-certificate window the post-write check exists to close
-  // (chatgpt-codex-connector, a reference-implementation pull request round 9).
+  // false-certificate window the post-write check exists to close.
   //
   // On top of that chain: the CI policy's own reads (2: the PR's base
   // branch, then its protection and rulesets in parallel), and per proof,
@@ -236,20 +232,19 @@ export function finalVerifyTimeoutSeconds(): number {
   const PROOFS = 3;
   const MAX_STATUS_PUBLISHERS = 4;
   const GH_BOUND_CALLS = 15 + 2 + PROOFS * (1 + MAX_STATUS_PUBLISHERS);
-  // set-verified can take THREE separate lock acquisitions in its worst
-  // case, not two: the PR-wide remote-mutation lock, the state mutex for the
+  // set-verified can take THREE separate lock acquisitions in its worst case,
+  // not two: the PR-wide remote-mutation lock, the state mutex for the
   // certificate write, and — when the post-write `stillFullyCurrent()` check
   // finds stale evidence — a SECOND, independent state-mutex acquisition for
   // the compensating clear at drive-state.ts's postWrite failure branch
-  // (`store.update((s) => s.verifiedSha === a.sha ? { ...s, verifiedSha: ''
-  // } : s)`). A budget covering only the first two left `drive.ts` free to
-  // kill the child while that clear was still waiting on its own lock,
-  // leaving the stale certificate persisted (chatgpt-codex-connector, PR
-  // #4681 round 12). Each acquisition can legitimately wait the full
-  // `LOCK_ACQUIRE_MAX_SEC` (300s, `lib/state/lock.ts` — mirrored as a
-  // literal here for the same reason `ciHoldTimeoutSeconds()` mirrors its
-  // own lock constant just above: importing it would cycle proc.ts back
-  // through lock.ts in the shared timeout layer).
+  // (`store.update((s) => s.verifiedSha === a.sha ? { ...s, verifiedSha: '' } :
+  // s)`). A budget covering only the first two left `drive.ts` free to kill the
+  // child while that clear was still waiting on its own lock, leaving the stale
+  // certificate persisted. Each acquisition can legitimately wait the full
+  // `LOCK_ACQUIRE_MAX_SEC` (300s, `lib/state/lock.ts` — mirrored as a literal
+  // here for the same reason `ciHoldTimeoutSeconds()` mirrors its own lock
+  // constant just above: importing it would cycle proc.ts back through lock.ts
+  // in the shared timeout layer).
   const LOCK_BUDGET_SECONDS = 900;
   const totalSeconds =
     LOCK_BUDGET_SECONDS +
@@ -311,10 +306,9 @@ export interface RunResult {
 /**
  * The old `ghOrExit`'s own explicit `spawnSync` `maxBuffer` (NOT Node's
  * default, which is 1 MiB), kept as this port's default too: a bound of some
- * size is what stands between a runaway `gh`/`git` response and this
- * process's heap — `run()`'s `data` handlers accumulate into JS strings with
- * no bound of their own otherwise (docomply-review / chatgpt-codex-connector,
- * a reference-implementation pull request round 3 — ported from the sibling `/resolve-review-comments` copy,
+ * size is what stands between a runaway `gh`/`git` response and this process's
+ * heap — `run()`'s `data` handlers accumulate into JS strings with no bound of
+ * their own otherwise (ported from the sibling `/resolve-review-comments` copy,
  * which documents the parity-copy maintenance contract this follows).
  */
 export const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
@@ -328,9 +322,7 @@ export const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
  * terminate it: losing the single-instance lock mid-pass (the pass would go on
  * editing and pushing on behalf of a claim another driver now holds), and a
  * SIGINT/SIGTERM that reaches only the driver pid (releasing the locks while
- * the pass lives is the same concurrency by a different route). Both were
- * reported on PR #4031 round 11 by docomply-review and
- * chatgpt-codex-connector.
+ * the pass lives is the same concurrency by a different route).
  */
 export interface RunHandle {
   /**
@@ -340,11 +332,10 @@ export interface RunHandle {
    *
    * Resolves `true` only when the tree's termination has been WITNESSED, and
    * that distinction is the whole point. Delivering a signal is not the same
-   * event as a process ending: a descendant can outlive the SIGKILL briefly,
-   * or indefinitely in uninterruptible sleep, and a caller that treats the
-   * kill as proof releases whatever the tree was holding while it is still
-   * running (docomply-review, a reference-implementation pull request round 13 — reasserted after two
-   * narrower fixes to the same path).
+   * event as a process ending: a descendant can outlive the SIGKILL briefly, or
+   * indefinitely in uninterruptible sleep, and a caller that treats the kill as
+   * proof releases whatever the tree was holding while it is still running (two
+   * narrower fixes to the same path each missed this).
    *
    * `false` means termination could NOT be established: the wait elapsed with
    * the group still present, or the platform offers no way to witness a tree
@@ -411,11 +402,10 @@ export interface RunOptions {
  * Grace between a SIGTERM and its SIGKILL escalation — shared by `stop()` and
  * `run()`'s own `timeoutSec` handling below, and exported so a caller that
  * needs to reason about how long a deadlined call can actually take to settle
- * (docomply-review round 7, a reference-implementation pull request: `renew-ready-mark`'s staleness-window
- * validation has to add this on top of `$GH_CALL_TIMEOUT`, since the call
- * does not settle at the deadline — it settles up to this many ms after it)
- * reads the same constant `run()` actually uses rather than a second
- * hand-copied `2000`.
+ * (`renew-ready-mark`'s staleness-window validation has to add this on top of
+ * `$GH_CALL_TIMEOUT`, since the call does not settle at the deadline — it
+ * settles up to this many ms after it) reads the same constant `run()` actually
+ * uses rather than a second hand-copied `2000`.
  */
 export const KILL_ESCALATE_MS = 2000;
 const STOP_ESCALATE_MS = KILL_ESCALATE_MS;
@@ -650,7 +640,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     // only; anything it spawned — `git push`'s pre-push hook and the build and
     // test suites under it, `gh`'s helpers — survives, and goes on holding
     // resources and running side effects after this script reports the
-    // operation killed (docomply-review, a reference-implementation pull request round 2).
+    // operation killed.
     //
     // ONLY when a deadline is set, or when the caller asked for it explicitly,
     // and that condition is load-bearing rather than incidental. Detaching
@@ -716,7 +706,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     // `Buffer.byteLength(out) + Buffer.byteLength(err)` on every chunk: the
     // latter rescans the WHOLE accumulated string per 'data' event, so
     // capture cost grows with the square of the byte count as the cap is
-    // approached (docomply-review, a reference-implementation pull request round 2).
+    // approached.
     let capturedBytes = 0;
     let killTimer: NodeJS.Timeout | undefined;
     let escalateTimer: NodeJS.Timeout | undefined;
@@ -757,13 +747,12 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     child.stdout?.on("data", (d: string) => {
       // Discarded once EITHER kill path has fired, not just the buffer cap:
       // SIGTERM does not stop the child instantly under the deadline either,
-      // and a child that ignores it (or a descendant that keeps writing
-      // through either escalation's two-second grace) can go on emitting
-      // data right up to the SIGKILL. Gating this on `bufferExceeded` alone
-      // left the DEADLINE's own escalation window uncapped — `timedOut` sets
-      // and `enforceBufferLimit` no-ops forever, but nothing stopped these
-      // handlers from still appending (chatgpt-codex-connector, a reference-implementation pull request
-      // round 4).
+      // and a child that ignores it (or a descendant that keeps writing through
+      // either escalation's two-second grace) can go on emitting data right up
+      // to the SIGKILL. Gating this on `bufferExceeded` alone left the
+      // DEADLINE's own escalation window uncapped — `timedOut` sets and
+      // `enforceBufferLimit` no-ops forever, but nothing stopped these handlers
+      // from still appending.
       const captured = !(bufferExceeded || timedOut);
       if (captured) {
         out += d;
@@ -826,12 +815,12 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
               { stdio: "ignore" },
             );
             // `spawn` reports a failure to START asynchronously, as an 'error'
-            // event — the surrounding try/catch never sees it, and an
-            // unhandled one on a ChildProcess throws. So the fallback has to
-            // be a listener, not a catch block, or a machine without taskkill
-            // loses the kill AND crashes the driver (coderabbitai, PR #4034
-            // round 4). Attached BEFORE unref, which only detaches it from the
-            // event loop and does not remove listeners.
+            // event — the surrounding try/catch never sees it, and an unhandled
+            // one on a ChildProcess throws. So the fallback has to be a
+            // listener, not a catch block, or a machine without taskkill loses
+            // the kill AND crashes the driver. Attached BEFORE unref, which
+            // only detaches it from the event loop and does not remove
+            // listeners.
             killer.on("error", () => {
               try {
                 child.kill(sig);
@@ -865,25 +854,24 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     // ending the `git push` the agent started.
     //
     // `child.pid !== undefined` is the SYNCHRONOUS half of "the spawn
-    // succeeded" (review finding). Node does not throw from `spawn()` for
-    // the common failure case — a nonexistent or non-executable command
-    // reports ENOENT/EACCES ASYNCHRONOUSLY via the child's 'error' event —
-    // but it also never assigns a `pid` for either: confirmed empirically,
-    // `child.pid` is `undefined` immediately after `spawn()` returns for
-    // both a missing executable and a non-executable file, and a real
-    // number immediately for one that actually starts. Calling
-    // `opts.onSpawn` unconditionally here, as this line used to, violates
-    // this option's own documented contract ("Receives the live child's
-    // handle as soon as the spawn succeeds") for exactly the case a caller
-    // most needs it to hold: `drive.ts` moved its `pass-spawned` progress
-    // stamp into this callback specifically so a missing/invalid pass
+    // succeeded". Node does not throw from `spawn()` for the common failure
+    // case — a nonexistent or non-executable command reports ENOENT/EACCES
+    // ASYNCHRONOUSLY via the child's 'error' event — but it also never assigns
+    // a `pid` for either: confirmed empirically, `child.pid` is `undefined`
+    // immediately after `spawn()` returns for both a missing executable and a
+    // non-executable file, and a real number immediately for one that actually
+    // starts. Calling `opts.onSpawn` unconditionally here, as this line used
+    // to, violates this option's own documented contract ("Receives the live
+    // child's handle as soon as the spawn succeeds") for exactly the case a
+    // caller most needs it to hold: `drive.ts` moved its `pass-spawned`
+    // progress stamp into this callback specifically so a missing/invalid pass
     // command would never record an event that did not occur, and an
     // unconditional call here defeated that the moment the failure was
     // asynchronous rather than synchronous. Checking the synchronous `pid`
-    // signal — rather than deferring the whole callback to the 'spawn'
-    // event — keeps `onSpawn` firing in the SAME tick `run()` is called in
-    // for every caller and test that already depends on that timing; only
-    // the (rare, always-failing) undefined-pid case changes behavior.
+    // signal — rather than deferring the whole callback to the 'spawn' event —
+    // keeps `onSpawn` firing in the SAME tick `run()` is called in for every
+    // caller and test that already depends on that timing; only the (rare,
+    // always-failing) undefined-pid case changes behavior.
     if (opts.onSpawn && child.pid !== undefined) {
       // Idempotent by memoising the PROMISE, not by an early `return`: two
       // callers must get the same answer, and the second must not be told
@@ -921,16 +909,14 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
           // `taskkill /T /F` above is spawned fire-and-forget and unref'd —
           // correct for the INTERNAL deadline escalation just below, where
           // awaiting confirmation would reintroduce the unbounded wait that
-          // escalation exists to bound, but wrong here: treating the
-          // leader's own exit as tree-wide evidence let a surviving
-          // descendant, or a `taskkill` that silently failed, still report
-          // `true` — the exact false-witness the round-15 fix introduced
-          // while fixing the opposite problem (never releasing the locks at
-          // all) (docomply-review / chatgpt-codex-connector, a reference-implementation pull request
-          // round 16). `stop()` has no such time-boundedness constraint —
-          // every caller already awaits it end to end — so it can and must
-          // await ITS OWN `taskkill` invocation and treat only that exit
-          // code as the completion signal.
+          // escalation exists to bound, but wrong here: treating the leader's
+          // own exit as tree-wide evidence let a surviving descendant, or a
+          // `taskkill` that silently failed, still report `true` — the exact
+          // false-witness an earlier fix introduced while fixing the opposite
+          // problem (never releasing the locks at all). `stop()` has no such
+          // time-boundedness constraint — every caller already awaits it end to
+          // end — so it can and must await ITS OWN `taskkill` invocation and
+          // treat only that exit code as the completion signal.
           if (pgid === undefined) {
             await exited;
             return false;
@@ -959,7 +945,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
             // already bounds itself the identical way. Best-effort SIGKILL
             // of the hung killer itself on timeout — it may already be
             // unkillable, but leaving it running is no worse than not
-            // trying (docomply-review, a reference-implementation pull request round 17).
+            // trying.
             const witnessTimer = setTimeout(() => {
               try {
                 killer.kill("SIGKILL");
@@ -1053,8 +1039,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
           // for a grandchild. That is the very hang this timer exists to bound,
           // so it must not be reachable through it. Measured, not theorised: a
           // stubbed `git push` whose bash wrapper ran `sleep 10` under a 1s
-          // deadline settled after ten seconds until this line existed
-          // (PR #4034 round 1).
+          // deadline settled after ten seconds until this line existed.
           //
           // The group kill above makes that case rare, not impossible, which is
           // why this stays rather than being replaced by it: a descendant that
@@ -1094,8 +1079,8 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       // `settle` clears `escalateTimer`, so if 'close' fires before the two
       // seconds elapse — which it does whenever the surviving descendants are
       // not holding the captured streams — the group SIGKILL never happens and
-      // the tree leaks anyway, while this wrapper reports 124 (docomply-review,
-      // a reference-implementation pull request round 3). So the kill moves here, where it cannot be raced.
+      // the tree leaks anyway, while this wrapper reports 124. So the kill
+      // moves here, where it cannot be raced.
       //
       // Immediately, rather than by keeping the timer alive: once `settle`
       // resolves, the caller runs and typically ends the process (`fail` exits),
@@ -1106,7 +1091,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       //
       // A `stop()` needs exactly the same treatment, and for exactly the same
       // reason — it was missed when `stop()` was added and reported one round
-      // later (chatgpt-codex-connector, a reference-implementation pull request round 12). The leader can exit
+      // later. The leader can exit
       // on the stop's SIGTERM while a descendant that IGNORES SIGTERM keeps
       // running; 'close' then fires, `settle` clears `stopEscalateTimer`, the
       // scheduled group SIGKILL never happens, and `exited` resolves — telling
@@ -1127,7 +1112,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       // 'error' listener raises that as an UNHANDLED error, which terminates
       // the driver outright instead of resolving the RunResult this function
       // advertises — losing the child's exit code and whatever it actually
-      // did (docomply-review, a reference-implementation pull request round 1).
+      // did.
       //
       // Absorbed rather than reported, because the child's own status is the
       // meaningful answer and `close` still settles the promise with it: a
@@ -1153,10 +1138,9 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
  * default exactly as before.
  *
  * It lives here rather than at the call site because `run(['gh', …])` is a raw
- * spawn, and this skill has a guardrail test asserting that every outbound
- * `gh` call routes through this chokepoint — so clamping by dropping to `run`
- * would satisfy one review finding by regressing the guard another round
- * established (PR #3995 round 17; caught by that test, PR #4067 round 21).
+ * spawn, and this skill has a guardrail test asserting that every outbound `gh`
+ * call routes through this chokepoint — so clamping by dropping to `run` would
+ * trade one fix for a regression of that guard (which the test catches).
  */
 export function ghCall(
   args: string[],
@@ -1184,7 +1168,7 @@ export function ghCall(
  * another remote-facing subcommand (`fetch`, `ls-remote`, `clone`) must do the
  * same: unbounded, they are mode 13 in references/terminal-states.md — a
  * connection accepted and never completed parks an unattended driver past
- * every advertised deadline (docomply-review, a reference-implementation pull request round 1).
+ * every advertised deadline.
  */
 export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
   return run(["git", ...args], opts);
@@ -1195,35 +1179,30 @@ export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
  * sitting in this worktree's git directory? `git status --porcelain` — even
  * with an explicit untracked-files mode and `--ignore-submodules=none` —
  * answers "is anything uncommitted", not "is a git operation still open":
- * resolving a conflict back to a tree that matches what was already
- * committed (`git checkout --ours f && git add f`, say) leaves `MERGE_HEAD`
- * behind while porcelain status reports empty (chatgpt-codex-connector, PR
- * #4046 review round 3; the same three merge/cherry-pick/revert markers
- * `AGENTS.md` § Change-Proportional Validation checks before resolving a
- * diff, for the same reason). An interactive rebase paused at an `edit`
+ * resolving a conflict back to a tree that matches what was already committed
+ * (`git checkout --ours f && git add f`, say) leaves `MERGE_HEAD` behind while
+ * porcelain status reports empty. An interactive rebase paused at an `edit`
  * instruction, or a `git am` mid-apply, can likewise leave a clean
- * index/worktree while `rebase-merge`/`rebase-apply` remain
- * (docomply-review, a reference-implementation pull request review round 4) — both checked here too.
+ * index/worktree while `rebase-merge`/`rebase-apply` remain — both checked here
+ * too.
  *
- * The git-dir resolution runs through `git()` itself (already bounded,
- * already cross-platform — the same `git rev-parse` every other call in this
- * file uses). The marker CHECK is where a synchronous `existsSync()` in THIS
- * process would have no deadline or cancellation of its own — on a stalled
- * filesystem it would hang indefinitely regardless of `GIT_CALL_TIMEOUT`, and
- * the caller's documented fail-closed refusal would never be reached
- * (docomply-review, a reference-implementation pull request review round 4). An earlier version folded the
- * whole probe (git-dir resolution AND marker check) into one `sh -c` script
- * to get both under `run()`'s timeout-and-kill machinery in a single
+ * The git-dir resolution runs through `git()` itself (already bounded, already
+ * cross-platform — the same `git rev-parse` every other call in this file
+ * uses). The marker CHECK is where a synchronous `existsSync()` in THIS process
+ * would have no deadline or cancellation of its own — on a stalled filesystem
+ * it would hang indefinitely regardless of `GIT_CALL_TIMEOUT`, and the caller's
+ * documented fail-closed refusal would never be reached. An earlier version
+ * folded the whole probe (git-dir resolution AND marker check) into one `sh -c`
+ * script to get both under `run()`'s timeout-and-kill machinery in a single
  * subprocess — but that reintroduces exactly the POSIX-shell dependency this
- * file's own header explains this port exists to avoid: on Windows with no
- * `sh` on PATH, every converged `drive.ts` run would exit 12 and every
- * announcement would refuse, even over a clean repository
- * (docomply-review, a reference-implementation pull request review round 5). The marker check instead runs
- * as a SEPARATE bounded subprocess — `process.execPath` (bun under bun, node
- * under node, same convention `tsArgv()` uses) with an inline `-e` script
- * that does nothing but `existsSync()` in a CHILD process, so `run()`'s
- * existing timeout-and-kill can bound it exactly like every other call here,
- * without a shell of any kind.
+ * file's own header explains this port exists to avoid: on Windows with no `sh`
+ * on PATH, every converged `drive.ts` run would exit 12 and every announcement
+ * would refuse, even over a clean repository. The marker check instead runs as
+ * a SEPARATE bounded subprocess — `process.execPath` (bun under bun, node under
+ * node, same convention `tsArgv()` uses) with an inline `-e` script that does
+ * nothing but `existsSync()` in a CHILD process, so `run()`'s existing
+ * timeout-and-kill can bound it exactly like every other call here, without a
+ * shell of any kind.
  *
  * `ok: false` means either probe could not complete (an unresolvable
  * git-dir, a timeout, an unreadable filesystem) — fail-closed, the same
@@ -1322,13 +1301,13 @@ export function tsArgv(scriptPath: string, args: string[] = []): string[] {
  * the branch and remote of whichever repository the process happens to be
  * running in, not `repo` — leaving an omitted PR unresolvable, or worse,
  * resolving one that also exists in the ambient repository against the
- * WRONG base (chatgpt-codex-connector, a reference-implementation pull request).
+ * WRONG base.
  *
  * `cwd` alone is not sufficient to anchor `gh` there: `gh` gives `GH_REPO`
  * precedence over local repository discovery even when `cwd` names a
  * perfectly good checkout, so an inherited `GH_REPO` from the ambient
  * environment can resolve this call against a THIRD repository — neither the
- * process's ambient one nor the one at `cwd` (coderabbitai, PR #4441). A
+ * process's ambient one nor the one at `cwd`. A
  * `cwd`-bound call therefore also runs with `ghRepoEnv()`, mirroring
  * `gitIdentityEnv()`'s reasoning for `git`.
  */
@@ -1387,14 +1366,13 @@ export function pidAlive(pid: number, host: string): boolean {
  * check as the way to decide whether to override, so an instruction the reader
  * cannot execute makes the refusal unrecoverable in practice. These scripts
  * support Windows deliberately (`node:` APIs only, no coreutils), where `ps` is
- * not normally present — so the command is selected rather than hardcoded
- * (docomply-review round 8, a reference-implementation pull request).
+ * not normally present — so the command is selected rather than hardcoded.
  *
  * `host` decides whose machine it runs ON; `platform` decides the syntax. The
  * writer of a lease knows its own platform, so it records it and this reads it
  * back — rather than inferring a REMOTE host's from the local one, which would
  * hand a Windows holder's `ssh <host> ps -p <pid>` to an operator on a machine
- * with no `ps` (docomply-review round 9, a reference-implementation pull request).
+ * with no `ps`.
  *
  * `platform` is optional because not every caller has one to offer, and an
  * unknown platform is answered honestly rather than guessed: for a remote host
@@ -1427,8 +1405,7 @@ export function pidCheckCommand(
  * anchor a caller checks it against — while `rev-parse HEAD` answers for
  * another repository entirely. `cwd` alone was never sufficient against any of
  * these. `GIT_NAMESPACE` is the same hazard through ref resolution
- * (`refs/namespaces/<ns>/…`) without touching which worktree is reported
- * (docomply-review, a reference-implementation pull request round 3).
+ * (`refs/namespaces/<ns>/…`) without touching which worktree is reported.
  *
  * ONE list and ONE scrubber, here, rather than a copy per entrypoint. Three
  * copies existed and had already drifted: only drive-status.ts's carried
@@ -1456,7 +1433,7 @@ export const GIT_LOCATION_VARS = [
  * Windows environment-variable names are case-INSENSITIVE, but a JS object's
  * property deletion is not: an inherited spelling like `Git_Dir` survives an
  * exact-match delete and is still read by git as `GIT_DIR`, reopening the leak
- * this exists to close (chatgpt-codex-connector, a reference-implementation pull request round 4). POSIX
+ * this exists to close. POSIX
  * names ARE case-sensitive, so the exact-match form stays correct and cheaper
  * there.
  */
@@ -1474,20 +1451,19 @@ export function gitIdentityEnv(): Record<string, string | undefined> {
 }
 
 /**
- * `process.env` with `GH_REPO` removed — the `gh` CLI's equivalent of
- * `GIT_DIR` above: `gh` gives `GH_REPO` precedence over the repository it
- * would otherwise detect from the current directory, ahead even of an
- * explicit `cwd`. Pass as `env:` to any `cwd`-anchored `gh` call whose
- * answer must be about the repository AT that `cwd` — an inherited
- * `GH_REPO` from the ambient environment would otherwise silently redirect
- * it to a different repository regardless of `cwd` (coderabbitai, PR
- * #4441). `GH_HOST` is left alone: it selects which host's credentials to
- * use, never which repository, so it carries none of this hazard.
+ * `process.env` with `GH_REPO` removed — the `gh` CLI's equivalent of `GIT_DIR`
+ * above: `gh` gives `GH_REPO` precedence over the repository it would otherwise
+ * detect from the current directory, ahead even of an explicit `cwd`. Pass as
+ * `env:` to any `cwd`-anchored `gh` call whose answer must be about the
+ * repository AT that `cwd` — an inherited `GH_REPO` from the ambient
+ * environment would otherwise silently redirect it to a different repository
+ * regardless of `cwd`. `GH_HOST` is left alone: it selects which host's
+ * credentials to use, never which repository, so it carries none of this
+ * hazard.
  *
  * Windows environment-variable names are case-insensitive (`gitIdentityEnv()`
- * above documents the same trap), so an exact-match delete leaves an
- * inherited `Gh_Repo` in place there, still honored by `gh` (docomply-review,
- * a reference-implementation pull request round 8).
+ * above documents the same trap), so an exact-match delete leaves an inherited
+ * `Gh_Repo` in place there, still honored by `gh`.
  */
 export function ghRepoEnv(): Record<string, string | undefined> {
   const env = { ...process.env };

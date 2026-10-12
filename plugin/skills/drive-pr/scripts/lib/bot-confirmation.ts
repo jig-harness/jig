@@ -9,8 +9,8 @@
  * so refused the round on the very confirmation `resolve-held-thread.ts`'s
  * own exception exists to tolerate — the exception was unreachable in the
  * documented finish-round path whenever CodeRabbit's confirmation landed
- * before the push rather than during the post-push AWAITING_REVIEWER wait
- * (docomply-review, a reference-implementation pull request round 1). A single predicate closes that gap
+ * before the push rather than during the post-push AWAITING_REVIEWER wait.
+ * A single predicate closes that gap
  * by construction — a future change to what counts as a trusted
  * confirmation cannot land in one caller and not the other.
  */
@@ -24,8 +24,8 @@ export const CODERABBIT_LOGIN = "coderabbitai";
 /**
  * The marker CodeRabbit writes into a follow-up it posts only to CONFIRM a
  * reply ("confirmed…", "synchronized as addressed"), and never into one that
- * disputes it. Measured on PR #4618: every CodeRabbit follow-up carrying it
- * was a confirmation.
+ * disputes it. Measured: every CodeRabbit follow-up carrying it was a
+ * confirmation.
  */
 export const CODERABBIT_CONFIRMATION_MARKER =
   "<!-- coderabbit-skip-review-comment-follow-up -->";

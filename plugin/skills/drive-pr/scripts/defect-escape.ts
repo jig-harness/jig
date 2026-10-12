@@ -32,30 +32,30 @@
  *            decline looks like. Fails CLOSED: a config it cannot read or a
  *            marker it cannot resolve is exit 1, never an empty sample — a
  *            silent fallback would report "no escapes" about a filter that
- *            never ran (rule 1, `.claude/rules/document-scanning-gates.md`).
+ *            never ran (a filter that cannot run fails closed).
  *            The count of declines it excluded is reported, so the narrowed
  *            population is never mistaken for the whole one.
  *
- *            SCOPE OF THE VERDICT (rule 6, same file): the marker is
+ *            SCOPE OF THE VERDICT: the marker is
  *            PUBLIC text in a GitHub reply body, so a match proves the reply
  *            ENDS WITH the marker — not that `triage-ladder.ts` generated it.
  *            A hand-written `**wont-fix** — ordinary rubric decline.` closing
  *            with the same line is indistinguishable to any recognizer that
  *            can only see the reply, and moving the marker to some richer
  *            string moves the decoy rather than removing it (the
- *            execution-classification residual of rule 3). What bounds the
+ *            execution-classification residual no recognizer closes). What bounds the
  *            cost is that this narrows a CALIBRATION sample, not a gate —
  *            nothing merges, blocks, or declines on it — and that every run
  *            reports how many admitted declines ALSO carry the macro's own
  *            rendered prose. That ratio is diagnostic evidence, not a bound in
- *            EITHER direction (docomply-review, a reference-implementation pull request): a hand-written
+ *            EITHER direction: a hand-written
  *            decline that copies the clause verbatim counts as macro-shaped
  *            too (overcounting), while a genuine macro reply from a config
  *            version whose wording has since moved on does not match
  *            (undercounting). It is reported and never filtered on, both
  *            because it cannot license a bound and because filtering on the
  *            templates' prose orphans replies posted under an older wording
- *            (`review-triage.yaml` § `reply.marker`, PR #4501 round 9).
+ *            (`review-triage.yaml` § `reply.marker`).
  *            The bias is NOT self-limiting: a copied marker inflates the
  *            escape rate's denominator, making escapes look RARER, and a low
  *            escape rate is what `review-loop-baseline.md` § What this
@@ -109,7 +109,7 @@
  *              `review-loop-baseline.md` and are deliberately NOT restated here:
  *              this script is the instrument, and an instrument carrying its own
  *              stale readings is how the corrected result acquires a second,
- *              contradictory home (round 4, PR #4068).
+ *              contradictory home.
  *   FOLLOW-UP  an issue key of the consumer's team (`issue_tracker.team`)
  *              anywhere in the decline's FULL settling reply — not
  *              just its first line, since the deferral protocol permits the
@@ -223,7 +223,7 @@ function consumerTeamKey(): string | null {
  * Bounded BELOW by the PR's own merge commit, exclusively, rather than by
  * `--since=<mergedAt>`. That window is inclusive by timestamp, so it caught the
  * PR's own landing commit and reported the very change the finding was declined
- * on as evidence that the finding came back (measured on #4052). The `..`
+ * on as evidence that the finding came back (measured). The `..`
  * exclusion is exact where a timestamp comparison cannot be. `--since` remains
  * the fallback for a merge commit this clone does not have.
  *
@@ -254,15 +254,15 @@ async function laterFixCommits(
   // re-run of a `--since`/`--until` window weeks later walks every commit that
   // landed in between and reports a different TOUCHED count for an unchanged
   // window — breaking the reproducibility this script's header promises
-  // (chatgpt-codex-connector, a reference-implementation pull request). Open-ended `--until` keeps the old
+  //. Open-ended `--until` keeps the old
   // behaviour, which is correct for a fresh measurement.
   // An explicit UTC instant, never the bare `YYYY-MM-DD`. Git fills an omitted
   // time with the INVOCATION's current time of day and resolves it in local
   // time, so `--until=2026-08-13` silently drops fix commits later on the
   // terminal day and gives a different answer depending on when and where the
-  // command runs — in a bound whose entire job is reproducibility (three
-  // reviewers, round 11, PR #4068). `T23:59:59Z` also matches the `asOf` cutoff
-  // used for settling replies, so both ends of the window mean the same thing.
+  // command runs — in a bound whose entire job is reproducibility.
+  // `T23:59:59Z` also matches the `asOf` cutoff used for settling replies, so
+  // both ends of the window mean the same thing.
   const upper = until === "" ? [] : [`--until=${until}T23:59:59Z`];
   const r = await git(
     [
@@ -307,21 +307,21 @@ async function laterFixCommits(
  * committed outside the window relevant to a SPECIFIC (decline, candidate)
  * pair can make two paths that were distinct as of that pair's own moment
  * equivalent on a later rerun, changing `refoundIn` and the escape rate for
- * a window the header promises is reproducible (docomply-review, a reference-implementation pull request).
+ * a window the header promises is reproducible.
  * `until` is the CANDIDATE's own PR's `mergedAt` — tighter than the sweep's
  * whole window when the candidate is not the last PR in it — because a
  * rename dated after the candidate's own accepted thread was posted cannot
  * be what connects `path` to THAT thread: the file the thread was raised
  * against was whatever existed at the candidate's own moment, not whatever
- * the same pathname later became (chatgpt-codex-connector round 3, a reference-implementation pull request
- * — "trace each candidate at its own revision"). `since` is the DECLINING
+ * the same pathname later became: each candidate is traced at its own
+ * revision. `since` is the DECLINING
  * PR's own `mergedAt` — a rename dated before the decline cannot be the one
  * that produced the file the decline was raised against either, since the
  * decline observed `path` as an EXISTING file at its own PR's merge time; a
  * rename record older than that belongs to some earlier, already-superseded
- * incarnation of the same pathname (docomply-review round 3, a reference-implementation pull request —
- * "the earlier fix protects against reuse of the candidate pathname, but not
- * reuse of the decline pathname"). Empirically confirmed that `--since`
+ * incarnation of the same pathname (guarding against reuse of the candidate
+ * pathname alone does not guard against reuse of the decline pathname).
+ * Empirically confirmed that `--since`
  * combined with `--follow` filters exactly this way rather than merely
  * hiding matching commits from the printed range while still walking through
  * them for rename-following purposes.
@@ -335,7 +335,7 @@ async function laterFixCommits(
  * `b.ts` deleted, an unrelated file later added fresh at `b.ts` — and
  * `git log --follow --name-status HEAD -- b.ts` still walks past the delete
  * and reports the ORIGINAL `R100 a.ts b.ts`, attributing it to the new,
- * unrelated file (chatgpt-codex-connector round 2, a reference-implementation pull request). The raw
+ * unrelated file. The raw
  * per-commit record sequence for that repro, newest first, is `A b.ts` (the
  * unrelated recreation) / `D b.ts` (the original's deletion) / `R100 a.ts
  * b.ts` (the real rename) / `A a.ts` — so the fix is to walk that sequence
@@ -352,8 +352,7 @@ async function laterFixCommits(
  * per-pair temporal bounds too made almost every pair's key unique, defeating
  * reuse almost entirely — 155 declines × 1,334 accepted threads in the
  * checked-in baseline is on the order of hundreds of thousands of walks at
- * the file's own measured ~27s/100 (chatgpt-codex-connector round 6, PR
- * #4104, on the round-4 fix that first added `since`/`until` to this key).
+ * the file's own measured ~27s/100.
  * The FULL, unbounded `--follow` history is fetched once per `(tip, path)`
  * and the `since`/`until` window is applied afterward, in memory, against
  * that one cached result — see `rawRenameLog` and the filtering loop below.
@@ -440,7 +439,7 @@ function parseNameStatusBlocks(
  * "unusual" byte — `"b-\303\251.ts"` for `b-é.ts` — and a tab-split regex
  * over that output compares the quoted, escaped literal against the plain
  * tracked name, which can never match, silently discarding a genuine rename
- * chain for such a file (chatgpt-codex-connector round 7, a reference-implementation pull request). `-z`
+ * chain for such a file. `-z`
  * NUL-terminates each field with no quoting at all, so parsing is a plain
  * split rather than a decode.
  *
@@ -457,9 +456,9 @@ function parseNameStatusBlocks(
  * invocation. Only a SUCCESSFUL walk (`r.code === 0`) is cached — a failed
  * one is never cached, so a later call against the same key after local git
  * state becomes readable is not stuck with a stale negative for the rest of
- * the process (docomply-review round 3, a reference-implementation pull request, preserved here). Bounded
+ * the process. Bounded
  * to `RENAME_LOG_CACHE_MAX` entries with FIFO eviction for the same reason
- * the prior per-result cache was (docomply-review round 3, a reference-implementation pull request): the
+ * the prior per-result cache was: the
  * keys are driven by a caller-controlled `--limit` with no effective
  * ceiling, and unbounded growth retains a full commit list per entry for the
  * life of the process.
@@ -532,10 +531,9 @@ async function rawRenameLog(
  * candidate thread's `headOid` against every earlier decline it could be a
  * recurrence of, on the order of the SAME decline-count × candidate-count
  * scale `rawRenameLog`'s own cache doc measures for the checked-in baseline
- * (chatgpt-codex-connector, a reference-implementation pull request round 2) — not restated here as its
+ * — not restated here as its
  * own numerals, which would be a second hand-maintained copy of a count
- * that already lives at that one comment and would drift from it silently
- * (CLAUDE.md § No Hand-Maintained Derivable Counts; caught round 3).
+ * that already lives at that one comment and would drift from it silently.
  * Unlike those two caches, reachability has no meaningful "failure"
  * distinct from a stable negative answer — a commit that is not in the
  * object store now will not appear mid-process — so BOTH `true` and
@@ -575,19 +573,19 @@ async function commitReachable(oid: string, cwd?: string): Promise<boolean> {
  * whose own object IS present (`commitReachable` sees it as `true`, since
  * the boundary commit itself is a real, if parentless, object) can still
  * have an EARLIER rename sitting just past that boundary, invisible to the
- * walk rather than reported as an error (chatgpt-codex-connector, a reference-implementation pull request
- * round 3). Determining WHICH commits are past the boundary would need a
- * per-commit check; the whole-repo `--is-shallow-repository` answer is
- * cheaper and sufficient, since `revisionMatch` falling back to `dateMatch`
- * for every pair when the repo is shallow costs only precision on an
- * already-uncommon clone shape, not correctness.
+ * walk rather than reported as an error. Determining WHICH commits are past the
+ * boundary would need a per-commit check; the whole-repo
+ * `--is-shallow-repository` answer is cheaper and sufficient, since
+ * `revisionMatch` falling back to `dateMatch` for every pair when the repo is
+ * shallow costs only precision on an already-uncommon clone shape, not
+ * correctness.
  *
  * Returns `null` — not `false` — when the check itself could not run (a
  * non-zero exit, or output this parser does not recognise): a git version
  * old enough to lack the flag, or any other operational failure, must read
- * as "cannot tell", never as "confirmed NOT shallow" (docomply-review, PR
- * #4138 round 3 — an earlier version collapsed a failed check to `false`,
- * letting `revisionMatch` trust a walk it had no basis to trust). Callers
+ * as "cannot tell", never as "confirmed NOT shallow" (collapsing a failed
+ * check to `false` lets `revisionMatch` trust a walk it has no basis to
+ * trust). Callers
  * treat `null` the same as `true`: anything short of a CONFIRMED `false`
  * withholds the revision path.
  *
@@ -595,8 +593,7 @@ async function commitReachable(oid: string, cwd?: string): Promise<boolean> {
  * module's other two caches — cardinality is normally tiny (one entry per
  * distinct clone a process touches), but a long-lived process exercising
  * many different `cwd`s (this suite's own per-test temp repos, run in one
- * `bun test` process) should not accumulate an unbounded map either
- * (docomply-review, a reference-implementation pull request round 3).
+ * `bun test` process) should not accumulate an unbounded map either.
  */
 const SHALLOW_REPO_CACHE_MAX = RENAME_LOG_CACHE_MAX;
 const shallowRepoCache = new Map<string, Promise<boolean | null>>();
@@ -633,8 +630,8 @@ async function isShallowRepo(cwd?: string): Promise<boolean | null> {
  * AFTER the thread `headOid` anchors was raised — however it backdates its
  * own committer date — can never appear here, and a commit already on
  * `headOid` can never be wrongly excluded by one either: that is the exact
- * false-inclusion/false-exclusion pair the reviewer flagged against
- * `rawRenameLog`'s committer-date filtering.
+ * false-inclusion/false-exclusion pair `rawRenameLog`'s committer-date
+ * filtering is exposed to.
  *
  * Returns `null` — not `[]` — both when `headOid` is unreachable (see
  * `commitReachable`) AND when the `git log` walk itself fails (a non-zero
@@ -642,12 +639,11 @@ async function isShallowRepo(cwd?: string): Promise<boolean | null> {
  * "confirmed, walk ran, found nothing", and folding an operational failure
  * into the same empty array as a genuine empty result let `revisionMatch`
  * treat a git failure as a definitive non-match instead of falling back to
- * `dateMatch` (docomply-review, a reference-implementation pull request round 3 — an earlier version
- * returned `[]` for both cases, contradicting the nullable contract every
- * other lookup in this module already follows). `[]` is reserved for a
- * CONFIRMED empty walk: `git log` exited 0 and reported no commits at all
- * for `path` from `headOid` — a legitimate answer when `path` never existed
- * in that ancestry.
+ * `dateMatch` (returning `[]` for both cases would contradict the nullable
+ * contract every other lookup in this module already follows). `[]` is reserved
+ * for a CONFIRMED empty walk: `git log` exited 0 and reported no commits at all
+ * for `path` from `headOid` — a legitimate answer when `path` never existed in
+ * that ancestry.
  *
  * Same cache discipline as `rawRenameLog`, for the same reasons: keyed by
  * `(cwd, headOid, path)`, the PROMISE itself cached so two callers racing
@@ -747,14 +743,11 @@ const mergeCommitMergedAtCache = new Map<string, Promise<string | null>>();
  * sequentially, so several candidates sharing one hop — or one candidate
  * with several hops resolving to the same sha — hit this key back to back;
  * without this, each one pays a fresh `ghCall` deadline for what is almost
- * always the identical transient failure (docomply-review, a reference-implementation pull request
- * round 3). Short enough that a sweep spanning minutes can still retry after
- * a genuine blip, unlike the unbounded eviction this replaces. FIFO-bounded
- * at `MERGE_COMMIT_MERGED_AT_CACHE_MAX`, same as `mergeCommitMergedAtCache`
- * itself and every other best-effort lookup cache in this module — this was
- * the one exception left ungrown-without-bound when it was introduced,
- * missed because the PR that added it was itself answering a different
- * finding (docomply-review, a reference-implementation pull request round 4). */
+ * always the identical transient failure. Short enough that a sweep spanning
+ * minutes can still retry after a genuine blip, unlike the unbounded eviction
+ * this replaces. FIFO-bounded at `MERGE_COMMIT_MERGED_AT_CACHE_MAX`, same as
+ * `mergeCommitMergedAtCache` itself and every other best-effort lookup cache in
+ * this module. */
 const MERGE_COMMIT_MERGED_AT_FAILURE_TTL_MS = 5_000;
 const mergeCommitMergedAtFailedAt = new Map<string, number>();
 
@@ -765,8 +758,8 @@ const mergeCommitMergedAtFailedAt = new Map<string, number>();
  * without spending a fresh deadline at all — bounding this lookup's total
  * added cost to roughly `MERGE_COMMIT_MERGED_AT_FAILURE_BUDGET` deadlines
  * instead of one per distinct hop during a systemic GitHub outage or rate
- * limit, which the per-key TTL above cannot bound on its own (chatgpt-codex-
- * connector, PR #4513 round 3: "distinct hops necessarily do likewise").
+ * limit, which the per-key TTL above cannot bound on its own (in such an
+ * outage, distinct hops necessarily fail likewise).
  * Safe to give up early: every caller already treats this lookup's `null` as
  * "no tiebreaker available", falling back to the WIDENS default rather than a
  * wrong exclusion (see `revisionMatch`'s own header). The trip itself is not
@@ -782,7 +775,7 @@ const mergeCommitMergedAtFailureCounts = new Map<string, number>();
  * life — which is already this one sweep's entire `--since`/`--until`
  * window, up to `--limit` merged PRs, not merely one hop) every later lookup
  * for that cwd short-circuited to `null` forever, even long after GitHub
- * recovered (docomply-review, a reference-implementation pull request round 5). A success-only reset cannot
+ * recovered. A success-only reset cannot
  * fix this on its own: once
  * tripped, the short-circuit above prevents the very network call a success
  * would need to happen — the trip has to expire on its own. Long enough that
@@ -814,18 +807,17 @@ const mergeCommitMergedAtBudgetTrippedAt = new Map<string, number>();
  * itself, so accepting the match would launder committer-date trust right
  * back in through this endpoint's response.
  *
- * Also filtered by `base.ref === baseRefName` exactly (docomply-review, PR
- * #4513 round 2): the endpoint answers "every PR this commit is associated
- * with", not "every PR that merged it into the decline's own branch" — a
- * commit can be the merge commit of a PR that targeted a release or feature
- * branch, with a `merged_at` that predates the decline even though the
- * rename never reached the decline's actual base ref. Trusting `merged_at`
- * without this check reopens exactly the cross-branch confusion the ancestry
- * checks above exist to rule out, just laundered through this endpoint
- * instead. `baseRefName === ''` (the caller could not resolve one) never
- * matches, deliberately: real branch refs are never the empty string, so an
- * unresolvable caller-side base always falls through to the "no entry
- * verified" `null`, never to an accidental match against a malformed
+ * Also filtered by `base.ref === baseRefName` exactly: the endpoint answers
+ * "every PR this commit is associated with", not "every PR that merged it into
+ * the decline's own branch" — a commit can be the merge commit of a PR that
+ * targeted a release or feature branch, with a `merged_at` that predates the
+ * decline even though the rename never reached the decline's actual base ref.
+ * Trusting `merged_at` without this check reopens exactly the cross-branch
+ * confusion the ancestry checks above exist to rule out, just laundered through
+ * this endpoint instead. `baseRefName === ''` (the caller could not resolve
+ * one) never matches, deliberately: real branch refs are never the empty
+ * string, so an unresolvable caller-side base always falls through to the "no
+ * entry verified" `null`, never to an accidental match against a malformed
  * same-empty `base.ref` in the response.
  *
  * `null` — never guessed either way — covers every case that leaves this
@@ -852,8 +844,7 @@ const mergeCommitMergedAtBudgetTrippedAt = new Map<string, number>();
  * against a sweep-wide failure budget — see those constants' own doc — so a
  * burst of candidates or hops sharing one failing lookup, or a systemic
  * outage spanning many distinct ones, cannot each independently pay a fresh
- * `ghCall` deadline (docomply-review + chatgpt-codex-connector, a reference-implementation pull request
- * round 3).
+ * `ghCall` deadline.
  */
 async function mergeCommitMergedAt(
   sha: string,
@@ -1036,9 +1027,8 @@ export async function renameHistoryOf(
    * `renameHistoryOf` silently read the CALLER's real worktree instead of
    * the fixture — passing every check on its own but failing in a way that
    * looked like flaky contention when run inside the suite that IS that
-   * hook (measured on this very PR, round 4: the exact an earlier change class
-   * `verification-fit.test.ts`'s own header already names, missed here on
-   * the first pass because `cwd` alone looked sufficient). So when `cwd` is
+   * hook (measured: the same class `verification-fit.test.ts`'s own header
+   * names, easy to miss because `cwd` alone looks sufficient). So when `cwd` is
    * given, every `GIT_*` location variable is scrubbed from the child's
    * environment too — the same `GIT_LOCATION_VARS` list that suite scrubs,
    * restated here rather than imported to keep this module's only
@@ -1055,9 +1045,8 @@ export async function renameHistoryOf(
   // newest-first, but NOT a guarantee that committer dates are monotonically
   // decreasing: a rebase, a cherry-pick, or plain clock skew can leave an
   // older-dated commit appearing before a younger-dated one in the output
-  // (chatgpt-codex-connector round 7, a reference-implementation pull request, reproduced against git
-  // 2.43). An earlier version of this loop `break`-ed at the first commit
-  // dated before `since`, trusting that ordering — which could skip a
+  // (reproduced against git 2.43). Breaking out of this loop at the first
+  // commit dated before `since`, trusting that ordering, could skip a
   // legitimate, in-window rename sitting further down the list behind a
   // non-monotonic date. There is no early exit on EITHER bound now: every
   // commit `rawRenameLog` already fetched (and cached) is walked in full,
@@ -1065,7 +1054,7 @@ export async function renameHistoryOf(
   // is ADDED to `names` — never whether a commit is visited at all. This
   // symmetric, no-skip approach is what already lets `until` correctly stop
   // the walk at a delete/recreate boundary regardless of that boundary's own
-  // date (docomply-review round 7, a reference-implementation pull request); the same reasoning applies to
+  // date; the same reasoning applies to
   // `since`.
   //
   // Affordable specifically because `rawRenameLog` is cached per `(cwd, tip,
@@ -1117,8 +1106,7 @@ export interface RenameCandidate {
    * report (see `ThreadSample.reviewedHeadOid`'s own doc) — NOT that the
    * referenced commit is locally unreachable, which is a SEPARATE,
    * downstream concern `commitReachable` checks for itself and does NOT
-   * make this field null (docomply-review, a reference-implementation pull request round 4 — an earlier
-   * version of this comment wrongly grouped the two). A candidate whose
+   * make this field null. A candidate whose
    * `headOid` IS a populated string but locally unreachable still falls
    * back to `renameHistoryOf` — it just does so via `revisionMatch`
    * returning `null`, not via this field being absent.
@@ -1134,15 +1122,14 @@ export interface RenameCandidate {
  * far-fetched for a bot review that posts several inline comments in one
  * batched submission — but carrying DIFFERENT `originalCommit` oids would
  * otherwise collapse onto the same (path, anchor) key and let one
- * candidate's verdict leak onto the other's lookup (docomply-review, PR
- * #4138 round 2).
+ * candidate's verdict leak onto the other's lookup.
  *
  * `JSON.stringify` of the tuple, not a delimiter-joined string: a bare
  * `${path} ${anchor} ${headOid}` join is not collision-safe, since a git
  * path can itself contain a space — `{path: "a", anchor:
  * "2026-01-01T00:00:00Z"}` and `{path: "a 2026-01-01T00:00:00Z", anchor:
  * ""}` would produce the identical joined string despite being two
- * different candidates (docomply-review, a reference-implementation pull request round 3). `JSON.stringify`
+ * different candidates. `JSON.stringify`
  * escapes embedded delimiter characters, so the array boundary is never
  * ambiguous the way a plain join's is. `headOid`'s own `?? ''` keeps the
  * key stable for the common case where it is absent on both sides.
@@ -1166,7 +1153,7 @@ export function renameCandidateKey(c: RenameCandidate): string {
  * Matching that string against any later occurrence of the same name,
  * without checking whether the later occurrence traces back through the SAME
  * commit lineage, reports a false RE-FOUND recurrence between two unrelated
- * files (docomply-review + codex, PR #4104).
+ * files.
  *
  * `candidateHistory` does not have that failure mode on its own: `--follow`,
  * run against the CANDIDATE's own current identity at `tip`, walks its real
@@ -1190,9 +1177,8 @@ export function renameCandidateKey(c: RenameCandidate): string {
  * pathname while being different incarnations of it (reused after a
  * rename), and collapsing to one entry per string applies whichever
  * candidate's own anchor happened to win the collapse to EVERY occurrence
- * of that string, silently misjudging the others (chatgpt-codex-connector
- * round 4, PR #4104). The RETURN value is therefore keyed by
- * `renameCandidateKey` (path+anchor together), not by path alone.
+ * of that string, silently misjudging the others. The RETURN value is therefore
+ * keyed by `renameCandidateKey` (path+anchor together), not by path alone.
  *
  * ── Revision-based match, preferred when available ─────────────
  *
@@ -1228,8 +1214,7 @@ export async function renameEquivalents(
    * NEVER pass this to `revisionMatch`'s squash-merge tiebreaker — that
    * comparison DECIDES rather than merely narrows, and a widened stand-in
    * flowing into it can decisively exclude a genuine recurrence (see
-   * `declineCreatedAtStrict` below, and `revisionMatch`'s own header;
-   * docomply-review, a reference-implementation pull request round 2). */
+   * `declineCreatedAtStrict` below, and `revisionMatch`'s own header). */
   since: string,
   /** The sweep's own `--until` CLI flag — a bare `YYYY-MM-DD`, or `''`. */
   windowUntil: string,
@@ -1240,13 +1225,13 @@ export async function renameEquivalents(
   /** The declining thread's OWN, UNWIDENED `createdAt` — `''` when GitHub
    * reported none, never the containing PR's `mergedAt`. Threaded straight
    * to `revisionMatch`'s squash-merge tiebreaker, which must only decide on
-   * a genuinely-observed timestamp (docomply-review, a reference-implementation pull request round 2). */
+   * a genuinely-observed timestamp. */
   declineCreatedAtStrict: string,
   /** The decline's own PR base ref (bare branch name, e.g. `develop`, or
    * `''` when unresolvable) — threaded to `revisionMatch`'s squash-merge
    * tiebreaker so it can confirm a candidate merge commit's PR actually
    * targeted the decline's own branch, not merely one it also happens to
-   * satisfy `merge_commit_sha` for (docomply-review, a reference-implementation pull request round 2). */
+   * satisfy `merge_commit_sha` for. */
   baseRefName: string,
   /** See `renameHistoryOf`'s own `cwd` — test-only. */
   cwd?: string,
@@ -1261,8 +1246,7 @@ export async function renameEquivalents(
   // Computed ONCE, not inside `revisionMatch` per candidate: `declineHeadOid`,
   // `cwd`, and whether this clone is shallow are all invariant across this
   // whole call, so re-checking any of them per candidate is a redundant git
-  // subprocess per pair (docomply-review, a reference-implementation pull request round 1; shallow check
-  // added round 3 for the same reason).
+  // subprocess per pair.
   const declineReachable =
     declineHeadOid != null && declineHeadOid !== ""
       ? await commitReachable(declineHeadOid, cwd)
@@ -1305,7 +1289,7 @@ export async function renameEquivalents(
  *
  * `declineReachable` is precomputed by the caller (`renameEquivalents`) once
  * per SWEEP-level `declineHeadOid` rather than re-checked here per candidate
- * — see that call site's own comment (docomply-review, a reference-implementation pull request round 1).
+ * — see that call site's own comment.
  * `candidateHeadOid` still varies per call, so its own reachability is
  * checked here.
  *
@@ -1330,10 +1314,9 @@ export async function renameEquivalents(
  *     the rename is a genuine continuation of the SAME finding, or a
  *     completely unrelated, coincidentally-named rename that landed on
  *     `develop` independently after the decline's branch forked and never
- *     touched it (docomply-review, a reference-implementation pull request round 1 — the counterexample
- *     that caught this: decline forks, develop later renames an unrelated,
- *     reused pathname, decline's own thread is raised later still on its
- *     own untouched branch — ancestry alone cannot order these two).
+ *     touched it (the counterexample: decline forks, develop later renames an
+ *     unrelated, reused pathname, decline's own thread is raised later still on
+ *     its own untouched branch — ancestry alone cannot order these two).
  *
  * So only the EXCLUDING direction is asserted from ancestry alone. When
  * ancestry cannot decide (`alreadySuperseded === false`), `declineCreatedAt`
@@ -1352,8 +1335,7 @@ export async function renameEquivalents(
  *
  * Both inputs to this tiebreaker must be genuinely OBSERVED, never a
  * permissive stand-in, because unlike every other check in this function it
- * DECIDES rather than merely narrows (docomply-review, a reference-implementation pull request round 2 —
- * two independent findings on the same round, one per input): `baseRefName`
+ * DECIDES rather than merely narrows: `baseRefName`
  * must be the decline's own PR base ref, never left blank or guessed, since
  * `mergeCommitMergedAt` only trusts a `merged_at` whose PR based against
  * that exact ref — a merge commit's `merged_at` for some OTHER branch this
@@ -1389,9 +1371,8 @@ export async function renameEquivalents(
  * A `null` from either `isAncestor` call is propagated immediately as this
  * function's own `null` — an undeterminable ancestry answer must fall back
  * to `dateMatch` at the `renameEquivalents` level, not be silently folded
- * into "not a match for this hop" (docomply-review, a reference-implementation pull request round 1: an
- * earlier version did exactly that, contradicting this function's own
- * nullable contract). The squash-merge tiebreaker does NOT extend this
+ * into "not a match for this hop", which would contradict this function's
+ * own nullable contract. The squash-merge tiebreaker does NOT extend this
  * `null`-propagation contract: an inconclusive `mergeCommitMergedAt` lookup
  * (network failure, no matching merge commit) is exactly the older
  * "ancestry alone cannot decide" case, so it resolves to the WIDENS `true`
@@ -1401,9 +1382,8 @@ export async function renameEquivalents(
  * `declineReachable`) short-circuits straight to `null` whenever it is
  * anything but a CONFIRMED `false` — see `isShallowRepo`'s own doc for why
  * object-existence alone is not enough to trust a `--follow` walk's
- * completeness in a shallow clone (chatgpt-codex-connector, a reference-implementation pull request
- * round 3), and why an undeterminable shallow-check answer must not be
- * read as "confirmed not shallow" either.
+ * completeness in a shallow clone, and why an undeterminable shallow-check
+ * answer must not be read as "confirmed not shallow" either.
  */
 async function revisionMatch(
   declinePath: string,
@@ -1417,12 +1397,12 @@ async function revisionMatch(
    * `renameEquivalents`'s permissive `since`, which may substitute the
    * containing PR's `mergedAt` for a different purpose. See this function's
    * own header for why the distinction is load-bearing here specifically
-   * (docomply-review, a reference-implementation pull request round 2). */
+   *. */
   declineCreatedAt: string,
   /** The decline's own PR base ref (bare branch name, e.g. `develop`, or
    * `''` when unresolvable) — threaded to `mergeCommitMergedAt` so the
    * squash-merge tiebreaker only trusts a `merged_at` from a PR that
-   * actually targeted THIS branch (docomply-review, a reference-implementation pull request round 2). */
+   * actually targeted THIS branch. */
   baseRefName: string,
   cwd?: string,
 ): Promise<boolean | null> {
@@ -1542,8 +1522,7 @@ export async function mergedPrs(
     const p = (raw ?? {}) as Record<string, unknown>;
     // `typeof` first: `Number("4068")` is a valid integer, and this validator
     // exists precisely to tell a schema-invalid payload from an unreadable PR.
-    // Matches `count()`'s contract, which type-checks before coercing
-    // (docomply-review round 11, a reference-implementation pull request).
+    // Matches `count()`'s contract, which type-checks before coercing.
     const number = typeof p.number === "number" ? p.number : Number.NaN;
     if (!Number.isInteger(number) || number < 1) {
       fail(
@@ -1556,8 +1535,7 @@ export async function mergedPrs(
     // then defines the later-PR population every recurrence is drawn from. An
     // empty string sorts first, so one malformed field silently moves a PR to
     // the head of the window and adds or omits recurrence candidates while the
-    // run still reports a confident baseline (docomply-review round 5, PR
-    // #4068).
+    // run still reports a confident baseline.
     const mergedAt = typeof p.mergedAt === "string" ? p.mergedAt : "";
     if (!/^\d{4}-\d{2}-\d{2}T[0-9:.]+Z?$/.test(mergedAt)) {
       fail(
@@ -1631,7 +1609,7 @@ export interface LadderScope {
    *
    * The distinction is load-bearing. Matching the full rendered template was
    * tried as the FILTER and reverted (`.config/review-triage.yaml` §
-   * `reply.marker`, PR #4501 round 9): rewording `wont_fix`/`deferred` is
+   * `reply.marker`): rewording `wont_fix`/`deferred` is
    * ordinary copy maintenance, and tying the filter to that prose silently
    * orphaned every reply already posted under the old wording. As a REPORTED
    * number the same match costs nothing — a reword makes this count drop
@@ -1640,7 +1618,7 @@ export interface LadderScope {
    *
    * It is also the only per-run evidence against the pollution
    * `ladderDeclinePatterns` cannot rule out by construction — but
-   * it is not a BOUND in either direction (docomply-review, a reference-implementation pull request).
+   * it is not a BOUND in either direction.
    * `MACRO_PROSE` is an unanchored substring match against the CURRENT
    * template wording: a hand-written decline that copies the whole macro
    * clause still counts here, overcounting genuine macro output, while a
@@ -1652,9 +1630,9 @@ export interface LadderScope {
 }
 
 /**
- * The rule-6 scope statement for `--ladder-only`, factored out of `render()`
+ * The scope statement for `--ladder-only`, factored out of `render()`
  * so `--json` carries the identical caveat instead of a silently drifting
- * second copy of the prose (docomply-review, a reference-implementation pull request round 2): `--json` is
+ * second copy of the prose: `--json` is
  * the monthly calibration read's own invocation
  * (`triage-rubric.md` § Calibrating the ladder), not a side channel the
  * disclosure can afford to skip.
@@ -1695,8 +1673,8 @@ export function ladderDisclosureOf(
  * `.config/review-triage.yaml`'s templates. Deliberately loose about the
  * placeholders and about the sentence AROUND this clause: the point is to
  * distinguish "the macro wrote this" from "someone pasted the marker line",
- * not to re-pin the templates' full wording — which is exactly what round 9
- * reverted. A reword of the surrounding sentences leaves this intact; a
+ * not to re-pin the templates' full wording, which would tie the count to
+ * ordinary copy maintenance. A reword of the surrounding sentences leaves this intact; a
  * reword of this clause itself makes the reported count drop, which reads as
  * a prompt to look rather than as a lost decline.
  */
@@ -1725,15 +1703,15 @@ export function render(
     lines.push(
       `    ${ladder.excluded} other declined finding(s) in this window are NOT in the counts below.`,
     );
-    // Rule 6 of `.claude/rules/document-scanning-gates.md`: the scope of the
-    // verdict belongs in the OUTPUT, not only in the source comment — the
-    // reader who over-reads this sample is reading the summary. Printed on
+    // The scope of the verdict belongs in the OUTPUT, not only in the source
+    // comment — the reader who over-reads this sample is reading the
+    // summary. Printed on
     // every `--ladder-only` run, including a clean one, and it names the
     // owner (the monthly calibration read) rather than stopping at the
     // disclaimer.
     //
     // Built from `ladderDisclosureOf` — the single source `--json` reads too
-    // (docomply-review, a reference-implementation pull request round 2) — rather than a hand-maintained
+    // — rather than a hand-maintained
     // second copy of this prose, which is exactly how the two drift.
     const disclosure = ladderDisclosureOf(ladder, declines.length);
     lines.push(`    This narrowing ${disclosure.scopeCaveat}`);
@@ -1759,7 +1737,7 @@ export function render(
   // A thread whose comments could not all be read has its outcome WITHHELD
   // rather than guessed, so a declined one is invisible to the loop above and
   // silently leaves the denominator. Unreported, that turns an incomplete
-  // sample into a confident escape rate (docomply-review round 6, a reference-implementation pull request).
+  // sample into a confident escape rate.
   // Reported rather than fatal: a top-up failure on one thread should not void
   // a whole week's sweep, and the reader needs the magnitude to judge it.
   // Not a footnote: excluding ties is what stops an unestablished order
@@ -1810,14 +1788,14 @@ export function render(
     lines.push(`      by ${d.startedBy ?? "unknown"} — ${clip(d.reason)}`);
     if (d.url !== null) lines.push(`      ${d.url}`);
     // Deduped by PR: one later PR can carry several accepted threads on the
-    // same file, and listing `#4020` five times says nothing the first said.
+    // same file, and listing `#42` five times says nothing the first said.
     // The three buckets partition `refoundIn` exactly, so a candidate is always
     // visible and only the recurrences are counted.
     // `after` is false for two different reasons — genuinely raised earlier, or
     // an ordering that could not be READ because a timestamp was missing — and
     // the concurrent bucket used to assert the first for both. "Raised at or
     // before this decline" is a claim, and it is not one an absent timestamp
-    // supports (coderabbitai, PR #4068). Ordering is only established when both
+    // supports. Ordering is only established when both
     // ends exist; otherwise the candidate is reported as unknown-ordering.
     // Still uncounted either way: only `isRecurrence` counts.
     const ordered = (r: Refind): boolean =>
@@ -1894,9 +1872,8 @@ export function render(
  * The `--json` payload. Factored out of `main()` so a test can call the exact
  * function the CLI's `--json` branch calls, rather than a hand-written
  * re-implementation of it that could pass while the real branch drifts
- * (docomply-review, a reference-implementation pull request round 2: the previous test suite only ever
- * exercised `render()` directly, so nothing could fail if `--json` stopped
- * carrying the ladder's rule-6 disclosure — which is exactly what it did).
+ * (a suite that only exercises `render()` directly cannot fail if `--json`
+ * stops carrying the ladder's scope disclosure).
  */
 export interface JsonPayload {
   since: string;
@@ -1970,8 +1947,7 @@ async function main(): Promise<number> {
       // asks for `limit + 1` (see `main`): accepting the very top of the safe
       // range would hand `gh pr list` precisely the unsafe value this check
       // exists to keep away from it, turning a formally accepted CLI input into
-      // a GitHub-invocation failure instead of a usage error (docomply-review
-      // round 4, PR #4068).
+      // a GitHub-invocation failure instead of a usage error.
       if (
         !/^[0-9]+$/.test(raw) ||
         !Number.isSafeInteger(parsed) ||
@@ -2058,16 +2034,15 @@ async function main(): Promise<number> {
   // Sorted for a DETERMINISTIC iteration order, tie-broken on PR number so a
   // rerun visits the window identically. `mergedAt` has finite precision and
   // `gh pr list` hands us newest-first, so without the tie-break an equal pair
-  // kept its input order (docomply-review round 9, a reference-implementation pull request).
+  // kept its input order.
   //
   // The sort no longer decides WHO IS LATER, and that distinction is the whole
-  // point. Round 9 used `samples.slice(i + 1)`, which made the tie-break define
+  // point. Slicing with `samples.slice(i + 1)` would make the tie-break define
   // the later-PR population — so a same-second PR with a higher number could be
   // counted as a recurrence of the other, on an order the timestamps never
-  // established. The round-9 comment claimed downstream strictness prevented
-  // that; it does not, because thread-level ordering only filters WITHIN the
-  // candidate set while membership was already decided here (coderabbitai
-  // round 11, PR #4068).
+  // established. Downstream strictness does not prevent that, because
+  // thread-level ordering only filters WITHIN the candidate set while
+  // membership was already decided here.
   //
   // `laterThan` therefore requires a STRICTLY greater `mergedAt`, which is the
   // same strict-ordering discipline `isRecurrence` and the CONCURRENT bucket
@@ -2176,20 +2151,20 @@ async function main(): Promise<number> {
       // being different incarnations of it, and collapsing to a single entry
       // per string would apply whichever occurrence's own anchor happened to
       // win the collapse to every OTHER occurrence too, silently misjudging
-      // them (chatgpt-codex-connector round 4, a reference-implementation pull request).
+      // them.
       //
       // THE THREAD's own `createdAt`, not its PR's `mergedAt`: a rename can
       // land LATER in the same PR, after the accepted thread was already
       // raised against whatever the file was at THAT moment — bounding by the
       // whole PR's merge time still let a same-PR, later rename manufacture a
-      // match against a thread that predates it (chatgpt-codex-connector
-      // round 4, PR #4104). Falls back to `''` (the sweep's own open window)
-      // when the thread carries no readable `createdAt`, NOT to the
-      // containing PR's `mergedAt` — `samePath` below re-derives this same
-      // anchor from the bare `ThreadSample` alone (no `PrSample` in scope
-      // there), so both computations must agree exactly for the composite
-      // lookup key to match; a PR-level fallback only available here would
-      // silently diverge from the fallback `samePath` can actually compute.
+      // match against a thread that predates it. Falls back to `''` (the
+      // sweep's own open window) when the thread carries no readable
+      // `createdAt`, NOT to the containing PR's `mergedAt` — `samePath` below
+      // re-derives this same anchor from the bare `ThreadSample` alone (no
+      // `PrSample` in scope there), so both computations must agree exactly for
+      // the composite lookup key to match; a PR-level fallback only available
+      // here would silently diverge from the fallback `samePath` can actually
+      // compute.
       const candidates: RenameCandidate[] = [];
       for (const ls of later) {
         for (const lt of ls.threads) {

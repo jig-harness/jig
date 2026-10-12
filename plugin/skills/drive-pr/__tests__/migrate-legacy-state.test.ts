@@ -107,7 +107,7 @@ function newDirFor(home: string): string {
  * Fixed for every test that needs `newDir` computable BEFORE running the
  * script. UUID-shaped (never a bare label) so it survives `clone-key.ts`'s
  * own validation, which now refuses anything `randomUUID()` would not have
- * minted (docomply-review, a reference-implementation pull request round 6).
+ * minted.
  */
 const FIXED_CLONE_ID = "4c1d2e3f-1a2b-4c3d-8e4f-0123456789ab";
 
@@ -166,10 +166,9 @@ describe("migrate-legacy-state.ts", () => {
   });
 
   it("refuses (ExitError 2) rather than reporting success when the marker path is a DIRECTORY", () => {
-    // docomply-review, a reference-implementation pull request round 18: `existsSync` alone can't tell a
-    // directory apart from a real marker, and `fsyncFileSync` can open a
-    // directory read-only on POSIX — silently reporting "already migrated"
-    // over corruption instead of refusing.
+    // `existsSync` alone can't tell a directory apart from a real marker, and
+    // `fsyncFileSync` can open a directory read-only on POSIX — silently
+    // reporting "already migrated" over corruption instead of refusing.
     const repo = makeRepo("marker-is-dir");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -234,7 +233,7 @@ describe("migrate-legacy-state.ts", () => {
   });
 
   it("a bare dry run does not mint a clone identity — repository metadata stays untouched", () => {
-    // The gap this round closes (docomply-review, a reference-implementation pull request round 4): even a
+    // The gap this round closes: even a
     // BARE (no --apply) invocation used to call `defaultStateDirFor`
     // unconditionally, which mints and durably persists a fresh
     // `drive-pr-clone-id` inside the git common directory the first time
@@ -280,14 +279,13 @@ describe("migrate-legacy-state.ts", () => {
   });
 
   it("copies a plain .log sibling to the new location but retains the legacy original, unlike the content anchor", () => {
-    // docomply-review, a reference-implementation pull request round 19: no re-read immediately before a
-    // delete can ever prove a `.log`/`.orphan-warned` file quiescent, since
-    // no producer of one takes any lock before writing — three rounds (10,
-    // 13, 17) of narrowing that window with one more re-read each still
-    // left a gap between the LAST read and the delete itself. The fix is to
-    // stop deleting these siblings at all: copy durably, leave `src` in
-    // place as the same harmless, self-limiting debris the header already
-    // accepts for lock/quarantine files.
+    // No re-read immediately before a delete can ever prove a
+    // `.log`/`.orphan-warned` file quiescent, since no producer of one takes
+    // any lock before writing — three successive attempts at narrowing that
+    // window with one more re-read each still left a gap between the LAST read
+    // and the delete itself. The fix is to stop deleting these siblings at all:
+    // copy durably, leave `src` in place as the same harmless, self-limiting
+    // debris the header already accepts for lock/quarantine files.
     const repo = makeRepo("plain-sibling-retained");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -316,13 +314,12 @@ describe("migrate-legacy-state.ts", () => {
   });
 
   it("a dry run reports a dangling-symlink content anchor as present, not silently as absent", () => {
-    // coderabbitai, PR #4626 round 16: the migration loop's own gate used
-    // `existsSync`, which FOLLOWS a symlink and reports `false` for one whose
-    // target does not resolve — even though `readdirSync` (what
-    // `classifyEntries` scans) already saw the entry. A dangling
-    // `drive-pr-<n>.json` symlink used to read as entirely absent here, so a
-    // dry run under-reported "would migrate 0 file(s)" for a family that
-    // genuinely has one entry to account for.
+    // The migration loop's own gate used `existsSync`, which FOLLOWS a symlink
+    // and reports `false` for one whose target does not resolve — even though
+    // `readdirSync` (what `classifyEntries` scans) already saw the entry. A
+    // dangling `drive-pr-<n>.json` symlink used to read as entirely absent
+    // here, so a dry run under-reported "would migrate 0 file(s)" for a family
+    // that genuinely has one entry to account for.
     const repo = makeRepo("dangling-symlink-dry-run");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -340,17 +337,16 @@ describe("migrate-legacy-state.ts", () => {
   });
 
   it("apply fails with a clear real-file refusal instead of a misleading reappeared-content refusal on a dangling-symlink content anchor", () => {
-    // Before the round-16 fix, the same `existsSync` gap made `--apply` skip
-    // this anchor too (never calling `copyAndRemove`, so the symlink was
-    // left behind in the legacy directory) — and `publishMigratedMarker`'s
-    // own, already-correct `readdirSync`-based scan then found it still
-    // there and reported `reappeared-content`, an error that reads as
-    // "something else wrote here concurrently" and could never clear on a
-    // re-run, because nothing about the dangling link ever changes between
-    // attempts. `copyAndRemove` now runs against it and refuses with its own
-    // `assertRealFile` message (chatgpt-codex-connector, a reference-implementation pull request) —
-    // stricter and clearer than the raw `ENOENT` a bare `copyFileSync` would
-    // otherwise have thrown here.
+    // Before the fix, the same `existsSync` gap made `--apply` skip this anchor
+    // too (never calling `copyAndRemove`, so the symlink was left behind in the
+    // legacy directory) — and `publishMigratedMarker`'s own, already-correct
+    // `readdirSync`-based scan then found it still there and reported
+    // `reappeared-content`, an error that reads as "something else wrote here
+    // concurrently" and could never clear on a re-run, because nothing about
+    // the dangling link ever changes between attempts. `copyAndRemove` now runs
+    // against it and refuses with its own `assertRealFile` message — stricter
+    // and clearer than the raw `ENOENT` a bare `copyFileSync` would otherwise
+    // have thrown here.
     const repo = makeRepo("dangling-symlink-apply");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -448,7 +444,7 @@ describe("migrate-legacy-state.ts", () => {
     // presence — live or crashed — as blocking forever. Taking the real
     // `createLock` mutex means a lock past the staleness window is broken
     // exactly as it would be for any other contender, and migration
-    // proceeds (docomply-review, a reference-implementation pull request).
+    // proceeds.
     const repo = makeRepo("stale-lock");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -469,17 +465,15 @@ describe("migrate-legacy-state.ts", () => {
   });
 
   it("blocks migration on a LIVE anchor lock with no content file yet — a family whose only trace is its .lock", () => {
-    // The gap chatgpt-codex-connector found (PR #4618 round 2): an old,
-    // older driver taking an anchor's lock for the FIRST write to a
-    // brand-new anchor has no bare content file on disk yet.
-    // `contentNames` used to be derived from file NAMES that already
-    // existed, so this family had nothing in it to even attempt a lock
-    // against — the `.lock` fell straight into harmless-looking debris and
-    // the clone was marked migrated regardless, silently abandoning
-    // whatever that driver was about to write. Iterating `family.anchors`
-    // (every anchor a `.lock` implies, content or not) closes it: the lock
-    // is live, so this now blocks exactly like an anchor that already has
-    // content.
+    // The gap: an old, older driver taking an anchor's lock for the FIRST write
+    // to a brand-new anchor has no bare content file on disk yet.
+    // `contentNames` used to be derived from file NAMES that already existed,
+    // so this family had nothing in it to even attempt a lock against — the
+    // `.lock` fell straight into harmless-looking debris and the clone was
+    // marked migrated regardless, silently abandoning whatever that driver was
+    // about to write. Iterating `family.anchors` (every anchor a `.lock`
+    // implies, content or not) closes it: the lock is live, so this now blocks
+    // exactly like an anchor that already has content.
     const repo = makeRepo("lock-only-live");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -517,7 +511,7 @@ describe("migrate-legacy-state.ts", () => {
   });
 
   it("blocks migration on a LIVE drive-pr-remote-lock-<n> mutex even though it has no content of its own to migrate", () => {
-    // The gap this round closes (docomply-review, a reference-implementation pull request round 4):
+    // The gap this round closes:
     // `lease.ts`'s `claimLease` acquires `drive-pr-remote-lock-<pr>` FIRST,
     // before the per-PR state mutex or any lease lock — so an old,
     // older process can be holding this exact mutex while still on
@@ -560,17 +554,17 @@ describe("migrate-legacy-state.ts", () => {
   });
 
   it("does not migrate a family’s own content anchor when its remote-mutation lock could not be acquired", () => {
-    // docomply-review, a reference-implementation pull request round 6: the remote-lock loop's own
-    // `continue` only advanced ITS `for` loop — after it, execution fell
-    // straight through into the `contentAnchors` loop for the SAME family,
-    // so a content anchor could still be copied-and-removed even though the
-    // remote-mutation lock (which `lease.ts`'s claimant acquires FIRST, per
-    // the comment above this loop) could not be won. A retrying claimant
-    // would then see an absent legacy file, write a fresh one, and orphan
-    // the copy already migrated. This family carries BOTH a live
-    // remote-mutation lock AND its own state file — unlike the
-    // "no content of its own" test above — so a broken fix would still
-    // migrate `drive-pr-4618.json` even while correctly reporting `blocked`.
+    // The remote-lock loop's own `continue` only advanced ITS `for` loop —
+    // after it, execution fell straight through into the `contentAnchors` loop
+    // for the SAME family, so a content anchor could still be
+    // copied-and-removed even though the remote-mutation lock (which
+    // `lease.ts`'s claimant acquires FIRST, per the comment above this loop)
+    // could not be won. A retrying claimant would then see an absent legacy
+    // file, write a fresh one, and orphan the copy already migrated. This
+    // family carries BOTH a live remote-mutation lock AND its own state file —
+    // unlike the "no content of its own" test above — so a broken fix would
+    // still migrate `drive-pr-4618.json` even while correctly reporting
+    // `blocked`.
     const repo = makeRepo("remote-lock-live-with-content");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -596,7 +590,7 @@ describe("migrate-legacy-state.ts", () => {
     // `<name>.released.<pid>` before deleting it, so a crash between the
     // two can leave that renamed copy behind forever. The old CLAIM_RE
     // matched it too, blocking migration permanently over debris that was
-    // never actually in flight (docomply-review, a reference-implementation pull request).
+    // never actually in flight.
     const repo = makeRepo("released-claim");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -654,8 +648,7 @@ describe("migrate-legacy-state.ts", () => {
     // lands between the write and the rename — which can make it the ONLY
     // persisted copy of a content anchor. The classifier already
     // attributes it to its family; the old migration script silently left
-    // it as debris and marked the clone migrated anyway
-    // (docomply-review, a reference-implementation pull request).
+    // it as debris and marked the clone migrated anyway.
     const repo = makeRepo("staging-leftover");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -689,7 +682,7 @@ describe("publishMigratedMarker", () => {
   // the marker write — cannot be reproduced deterministically against a
   // live subprocess without a flaky, timing-dependent test. Testing the
   // function's own decision directly is the reachable, distinguishable
-  // probe instead (docomply-review, a reference-implementation pull request round 2, chatgpt-codex-connector).
+  // probe instead.
   const cleanupDirs: string[] = [];
   afterAll(() => {
     for (const d of cleanupDirs) rmSync(d, { recursive: true, force: true });
@@ -709,26 +702,25 @@ describe("publishMigratedMarker", () => {
   });
 
   it("durably publishes the marker via createExclusiveDurable — fsyncs its containing directory and leaves no temp-file residue", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 15: the migrated content and
-    // legacy-source deletions are both explicitly fsynced, but the marker
-    // itself used to be only written and closed — a crash right after this
-    // function returned could lose it while the migration it certifies
-    // survives, and the retained lock/quarantine debris then makes
-    // legacyFootprint() nonempty on restart, refusing an otherwise
+    // The migrated content and legacy-source deletions are both explicitly
+    // fsynced, but the marker itself used to be only written and closed — a
+    // crash right after this function returned could lose it while the
+    // migration it certifies survives, and the retained lock/quarantine debris
+    // then makes legacyFootprint() nonempty on restart, refusing an otherwise
     // complete migration.
     //
-    // Round 20 replaced the bare `writeFileSync(marker, '')` with
-    // `createExclusiveDurable(marker, '')` (fsutil.ts) — a SEPARATE fix,
-    // for the symlink-follow gap the test below exercises, not for this
-    // one — which happens to change how content durability is achieved:
+    // A later fix replaced the bare `writeFileSync(marker, '')` with
+    // `createExclusiveDurable(marker, '')` (fsutil.ts) — a SEPARATE fix, for
+    // the symlink-follow gap the test below exercises, not for this one — which
+    // happens to change how content durability is achieved:
     // `createExclusiveDurable` fsyncs its content via the temp file's own
     // still-open write descriptor (opened `wx`) rather than a later
-    // `openSync(marker, 'r')` re-open of the published path, so that
-    // specific call no longer occurs at all. What remains directly
-    // observable and still this function's own responsibility is the
-    // CONTAINING DIRECTORY's fsync (`fsyncDirectoryBestEffort`, called by
-    // `createExclusiveDurable` after the publishing `link`) and that a
-    // successful publish leaves no temp-file residue behind.
+    // `openSync(marker, 'r')` re-open of the published path, so that specific
+    // call no longer occurs at all. What remains directly observable and still
+    // this function's own responsibility is the CONTAINING DIRECTORY's fsync
+    // (`fsyncDirectoryBestEffort`, called by `createExclusiveDurable` after the
+    // publishing `link`) and that a successful publish leaves no temp-file
+    // residue behind.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-fsync-legacy-"),
     );
@@ -778,7 +770,7 @@ describe("publishMigratedMarker", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
-  it("refuses to publish when a content anchor has reappeared since this run copied it — the class chatgpt-codex-connector found in round 4", () => {
+  it("refuses to publish when a content anchor has reappeared since this run copied it", () => {
     // A standalone drive-state.ts/lease.ts write never takes drive.ts's own
     // single-instance lock (FOREIGN_LOCKS), so it was invisible to the check
     // above. `main()` never reaches `publishMigratedMarker` with `blocked`
@@ -828,12 +820,11 @@ describe("publishMigratedMarker", () => {
   });
 
   it("refuses to publish when a LIVE in-flight claim has reappeared — invisible to a check scoped to content anchors alone", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 6: a `.ready-claim`/
-    // `.held-claim.` file is a `PLAIN_ENTRIES` match, landing in
-    // `family.names` rather than `family.anchors` — so a check that only
+    // A `.ready-claim`/`.held-claim.` file is a `PLAIN_ENTRIES` match, landing
+    // in `family.names` rather than `family.anchors` — so a check that only
     // ever examined `family.anchors` (filtered to `CONTENT_ANCHOR_PATTERNS`)
-    // never saw it. Distinct from the debris test above: `.released.` marks
-    // a claim as ALREADY retired, this one is not.
+    // never saw it. Distinct from the debris test above: `.released.` marks a
+    // claim as ALREADY retired, this one is not.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-live-claim-legacy-"),
     );
@@ -854,10 +845,10 @@ describe("publishMigratedMarker", () => {
   });
 
   it("refuses to publish when an atomic-write staging leftover has reappeared", () => {
-    // Same gap, the OTHER `PLAIN_ENTRIES` shape named in the round-6
-    // finding: `fsutil.ts`'s `atomicWrite` staging suffix can be the ONLY
-    // persisted copy of a content anchor if a crash lands between the write
-    // and the rename — never safe to treat as harmless debris.
+    // Same gap, the OTHER `PLAIN_ENTRIES` shape: `fsutil.ts`'s `atomicWrite`
+    // staging suffix can be the ONLY persisted copy of a content anchor if a
+    // crash lands between the write and the rename — never safe to treat as
+    // harmless debris.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-staging-legacy-"),
     );
@@ -876,13 +867,12 @@ describe("publishMigratedMarker", () => {
   });
 
   it("refuses to publish when a content anchor has a LIVE write lock but no content file yet", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 7: a legacy standalone writer
-    // takes createLock's own per-anchor mutex (`<anchor>.lock`) BEFORE it
-    // writes the content file itself. If that lock appears after this
-    // anchor was already copied-and-removed but before this final scan, the
-    // bare-content check alone reads it as clear — content genuinely isn't
-    // there yet — and publishes over an in-flight writer. Same liveness
-    // check the remote-lock anchor already gets, applied to a content
+    // A legacy standalone writer takes createLock's own per-anchor mutex
+    // (`<anchor>.lock`) BEFORE it writes the content file itself. If that lock
+    // appears after this anchor was already copied-and-removed but before this
+    // final scan, the bare-content check alone reads it as clear — content
+    // genuinely isn't there yet — and publishes over an in-flight writer. Same
+    // liveness check the remote-lock anchor already gets, applied to a content
     // anchor too.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-content-lock-legacy-"),
@@ -904,12 +894,12 @@ describe("publishMigratedMarker", () => {
   });
 
   it("refuses to publish when a reappeared content anchor is a DANGLING symlink — existsSync would read it as absent", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 15: `existsSync` follows
-    // symlinks and reports false for one whose target does not resolve,
-    // even though the entry itself is real and was already captured by the
-    // readdirSync at the top of this function. A dangling symlink here
-    // would silently publish the marker and leave the symlink behind —
-    // permanently ignoring that legacy state if its target later reappears.
+    // `existsSync` follows symlinks and reports false for one whose target does
+    // not resolve, even though the entry itself is real and was already
+    // captured by the readdirSync at the top of this function. A dangling
+    // symlink here would silently publish the marker and leave the symlink
+    // behind — permanently ignoring that legacy state if its target later
+    // reappears.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-dangling-symlink-legacy-"),
     );
@@ -933,12 +923,12 @@ describe("publishMigratedMarker", () => {
   });
 
   it("refuses to publish when a drive-pr-remote-lock-<n> mutex is LIVE at this final scan, even with no content anchor to compare", () => {
-    // The third round-6 shape: `drive-pr-remote-lock-<n>` is deliberately
-    // excluded from `CONTENT_ANCHOR_PATTERNS` (it has no bare content of
-    // its own), and the old check's `existsSync(anchor)` would therefore
-    // always read false for it regardless of whether the mutex was held —
-    // liveness has to be checked via its `.lock` file instead, the same way
-    // main()'s own dry-run path already does for this anchor kind.
+    // The third shape: `drive-pr-remote-lock-<n>` is deliberately excluded from
+    // `CONTENT_ANCHOR_PATTERNS` (it has no bare content of its own), and the
+    // old check's `existsSync(anchor)` would therefore always read false for it
+    // regardless of whether the mutex was held — liveness has to be checked via
+    // its `.lock` file instead, the same way main()'s own dry-run path already
+    // does for this anchor kind.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-remote-lock-legacy-"),
     );
@@ -959,14 +949,13 @@ describe("publishMigratedMarker", () => {
   });
 
   it("refuses to publish while a drive.ts single-instance lock is still in its staging window — invisible to a bare FOREIGN_LOCKS match", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 22: `drive.ts`'s own
-    // single-instance lock is a DIRECTORY installed by `takeLock`'s
-    // create-then-rename dance — a driver still mid-take has only the
-    // staging sibling on disk (`stagingDirFor`), never the installed
-    // `pr-drive-<n>.lock` name `FOREIGN_LOCKS` matches. Without recognizing
-    // it, this scan would publish while that driver is still on its way to
-    // acquiring the lock, stranding its subsequent write in the
-    // now-abandoned legacy directory.
+    // `drive.ts`'s own single-instance lock is a DIRECTORY installed by
+    // `takeLock`'s create-then-rename dance — a driver still mid-take has only
+    // the staging sibling on disk (`stagingDirFor`), never the installed
+    // `pr-drive-<n>.lock` name `FOREIGN_LOCKS` matches. Without recognizing it,
+    // this scan would publish while that driver is still on its way to
+    // acquiring the lock, stranding its subsequent write in the now-abandoned
+    // legacy directory.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-foreign-staging-live-legacy-"),
     );
@@ -1015,13 +1004,12 @@ describe("publishMigratedMarker", () => {
   });
 
   it("refuses to publish when a content anchor's `.lock.recovering` gate is live, even though `.lock` itself is absent", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 22: `createLock`'s stale-break
-    // and release dances hold `${anchor}.lock.recovering` during a window
-    // where `${anchor}.lock` itself can be momentarily absent (mid-rename to
-    // or from quarantine) — invisible to a bare `${anchor}.lock` presence
-    // check. Modelled directly: only the `.recovering` gate exists, no bare
-    // `.lock` and no content file, so the OLD check alone would have read
-    // this anchor as fully clear.
+    // `createLock`'s stale-break and release dances hold
+    // `${anchor}.lock.recovering` during a window where `${anchor}.lock` itself
+    // can be momentarily absent (mid-rename to or from quarantine) — invisible
+    // to a bare `${anchor}.lock` presence check. Modelled directly: only the
+    // `.recovering` gate exists, no bare `.lock` and no content file, so the
+    // OLD check alone would have read this anchor as fully clear.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-recovering-live-legacy-"),
     );
@@ -1068,13 +1056,13 @@ describe("publishMigratedMarker", () => {
   });
 
   it('blocks on a foreign-lock staging entry whose stat fails with EACCES, rather than reading the failure as "already gone"', async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 22: `isLiveForeignStaging`'s
-    // stat catch used to return `false` (not live) on ANY failure, not just
-    // ENOENT — an EACCES/EIO against a still-live staging directory would
-    // let `publishMigratedMarker` treat it as cleared and publish while a
-    // driver is still mid-`takeLock`. Modelled via `mock.module`, not
-    // `chmodSync` — a permission bit is not a reliable way to induce EACCES
-    // when the suite runs as root (see `lock.test.ts`'s own note on this).
+    // `isLiveForeignStaging`'s stat catch used to return `false` (not live) on
+    // ANY failure, not just ENOENT — an EACCES/EIO against a still-live staging
+    // directory would let `publishMigratedMarker` treat it as cleared and
+    // publish while a driver is still mid-`takeLock`. Modelled via
+    // `mock.module`, not `chmodSync` — a permission bit is not a reliable way
+    // to induce EACCES when the suite runs as root (see `lock.test.ts`'s own
+    // note on this).
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-foreign-staging-eacces-legacy-"),
     );
@@ -1120,8 +1108,7 @@ describe("publishMigratedMarker", () => {
   });
 
   it('blocks on a content anchor\'s `.lock.recovering` gate whose stat fails with EACCES, rather than reading the failure as "already gone"', async () => {
-    // Same defect, same fix, in `isLiveRecoveringGate` (chatgpt-codex-
-    // connector, PR #4626 round 22).
+    // Same defect, same fix, in `isLiveRecoveringGate`.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-recovering-eacces-legacy-"),
     );
@@ -1178,18 +1165,17 @@ describe("publishMigratedMarker", () => {
   });
 
   it("refuses — never following or overwriting — when something already occupies the marker path at publish time, even a symlink", () => {
-    // docomply-review, a reference-implementation pull request round 20: this function's own scans (the
-    // foreign-lock and reappeared-content checks above) are both scoped to
-    // `legacyDir` — `marker` lives under `newDir`, a different directory
-    // entirely, so neither ever looks at `marker`'s own path. The ONLY
-    // guard against something occupying that path at publish time used to
-    // be `main()`'s `lstatSync(marker)` check, moments before a potentially
-    // long migration — a bare `writeFileSync(marker, '')` afterward follows
-    // whatever is there THEN, not what was there at that earlier check.
-    // Modelled directly against this function (not through main()'s
-    // earlier check, which this residual is specifically the gap AFTER):
-    // plant a symlink at `marker` before calling it, standing in for
-    // whatever raced in during the gap.
+    // This function's own scans (the foreign-lock and reappeared-content checks
+    // above) are both scoped to `legacyDir` — `marker` lives under `newDir`, a
+    // different directory entirely, so neither ever looks at `marker`'s own
+    // path. The ONLY guard against something occupying that path at publish
+    // time used to be `main()`'s `lstatSync(marker)` check, moments before a
+    // potentially long migration — a bare `writeFileSync(marker, '')` afterward
+    // follows whatever is there THEN, not what was there at that earlier check.
+    // Modelled directly against this function (not through main()'s earlier
+    // check, which this residual is specifically the gap AFTER): plant a
+    // symlink at `marker` before calling it, standing in for whatever raced in
+    // during the gap.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-symlinked-legacy-"),
     );
@@ -1219,17 +1205,16 @@ describe("publishMigratedMarker", () => {
     expect(readdirSync(newDir)).toEqual([".migrated-from-legacy"]);
   });
 
-  it("refreshes a plain durable sibling from the latest legacy content immediately before publishing — the round-21 gap", () => {
-    // docomply-review, a reference-implementation pull request round 21: `.log`/`.orphan-warned` files are
-    // deliberately excluded from the reappeared-content scan above (they
-    // are EXPECTED to remain in `legacyDir`, per the module header), so
-    // nothing previously re-copied one if an unlocked writer
-    // (`drive.ts`'s log append, `orphans.ts`'s `.orphan-warned` write)
-    // appended to it between `main()`'s per-family loop copying it and this
-    // function's eventual publish. Models that interleaving directly: a
-    // stale copy already sitting in `newDir` (standing in for the
-    // per-family loop's own, earlier copy) and a legacy `src` that has
-    // since grown past it.
+  it("refreshes a plain durable sibling from the latest legacy content immediately before publishing", () => {
+    // `.log`/`.orphan-warned` files are deliberately excluded from the
+    // reappeared-content scan above (they are EXPECTED to remain in
+    // `legacyDir`, per the module header), so nothing previously re-copied one
+    // if an unlocked writer (`drive.ts`'s log append, `orphans.ts`'s
+    // `.orphan-warned` write) appended to it between `main()`'s per-family loop
+    // copying it and this function's eventual publish. Models that interleaving
+    // directly: a stale copy already sitting in `newDir` (standing in for the
+    // per-family loop's own, earlier copy) and a legacy `src` that has since
+    // grown past it.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "publish-marker-plain-refresh-legacy-"),
     );
@@ -1310,9 +1295,9 @@ describe("publishMigratedMarker", () => {
 
 describe("reconfirmMarkerDurably", () => {
   it("fsyncs the marker file and its containing directory", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 18: main()'s "already
-    // migrated, nothing to do" fast path used to trust the marker's mere
-    // existence as proof its original publish was durably confirmed.
+    // main()'s "already migrated, nothing to do" fast path used to trust the
+    // marker's mere existence as proof its original publish was durably
+    // confirmed.
     const newDir = mkdtempSync(join(tmpdir(), "reconfirm-marker-new-"));
     const marker = join(newDir, ".migrated-from-legacy");
     writeFileSync(marker, "");
@@ -1361,12 +1346,11 @@ describe("copyAndRemove", () => {
   });
 
   it("fsyncs legacyDir after removing src, both in the fresh-copy and the resumable path", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 13: `rmSync(src)` alone does
-    // not make the deletion durable — a crash right after it can leave the
-    // unlink uncommitted while `dst` and the eventual migrated marker
-    // survive, resurrecting `src` on the next boot. Modelled by spying on
-    // `openSync` (what `fsyncDirectoryBestEffort` calls first) rather than
-    // asserting on-disk state, since a successful fsync has no observable
+    // `rmSync(src)` alone does not make the deletion durable — a crash right
+    // after it can leave the unlink uncommitted while `dst` and the eventual
+    // migrated marker survive, resurrecting `src` on the next boot. Modelled by
+    // spying on `openSync` (what `fsyncDirectoryBestEffort` calls first) rather
+    // than asserting on-disk state, since a successful fsync has no observable
     // side effect through the public filesystem API.
     const actualFs = await import("node:fs");
     const realFs = { ...actualFs };
@@ -1411,13 +1395,12 @@ describe("copyAndRemove", () => {
   });
 
   it("is resumable when the destination already exists with IDENTICAL content — the retry-after-reappeared-content case", () => {
-    // docomply-review, a reference-implementation pull request round 7: a retry after `publishMigratedMarker`
-    // refused on `reappeared-content` (some OTHER family member, not this
-    // anchor) re-enters `main()`, which calls this function again for an
-    // anchor that already migrated cleanly on the earlier attempt. `dst`
-    // already holding byte-identical content is the resumable case — this
-    // anchor's copy is done, only the reappeared legacy leftover needs
-    // clearing.
+    // A retry after `publishMigratedMarker` refused on `reappeared-content`
+    // (some OTHER family member, not this anchor) re-enters `main()`, which
+    // calls this function again for an anchor that already migrated cleanly on
+    // the earlier attempt. `dst` already holding byte-identical content is the
+    // resumable case — this anchor's copy is done, only the reappeared legacy
+    // leftover needs clearing.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "copy-and-remove-resumable-legacy-"),
     );
@@ -1469,14 +1452,14 @@ describe("copyAndRemove", () => {
   });
 
   it("refuses to delete src on the RESUMABLE path when a concurrent writer appends between the byte-compare and the delete", async () => {
-    // docomply-review, a reference-implementation pull request round 17: an unlocked plain-file caller
-    // (drive.ts's bare appendFileSync for its log, orphans.ts's bare
-    // writeFileSync for .orphan-warned) can write to `src` during the
-    // fsync calls between the byte-compare and `rmSync` — silently losing
-    // the appended bytes. Modelled the same way as the fsync-spy test above:
-    // intercepting `openSync` — what `fsyncDirectoryBestEffort` calls first —
-    // to inject the concurrent write exactly where the real race lands, right
-    // before the re-check this fix adds.
+    // An unlocked plain-file caller (drive.ts's bare appendFileSync for its
+    // log, orphans.ts's bare writeFileSync for .orphan-warned) can write to
+    // `src` during the fsync calls between the byte-compare and `rmSync` —
+    // silently losing the appended bytes. Modelled the same way as the
+    // fsync-spy test above: intercepting `openSync` — what
+    // `fsyncDirectoryBestEffort` calls first — to inject the concurrent write
+    // exactly where the real race lands, right before the re-check this fix
+    // adds.
     const actualFs = await import("node:fs");
     const realFs = { ...actualFs };
     const legacyDir = mkdtempSync(
@@ -1562,11 +1545,10 @@ describe("copyAndRemove", () => {
   });
 
   it("refuses when the legacy source is a symlink rather than a real file", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request: `existsSync`/`readFileSync`/
-    // `copyFileSync`/`fsyncFileSync` all follow a symlink, so without an
-    // `lstatSync`-based check a `src` symlink would copy whatever external
-    // content its target names and then be removed as if it were a
-    // migrated artifact.
+    // `existsSync`/`readFileSync`/`copyFileSync`/`fsyncFileSync` all follow a
+    // symlink, so without an `lstatSync`-based check a `src` symlink would copy
+    // whatever external content its target names and then be removed as if it
+    // were a migrated artifact.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "copy-and-remove-symlink-src-legacy-"),
     );
@@ -1599,11 +1581,11 @@ describe("copyAndRemove", () => {
   });
 
   it("refuses when the migrated destination is a symlink, even one whose target byte-matches src", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request: a pre-existing `dst` symlink whose
-    // target happens to byte-match `src` would otherwise take the resumable
-    // branch — `existsSync`/`readFileSync` both follow it — deleting `src`
-    // and letting the migration proceed as if `newDir` held the canonical
-    // copy, when it actually just holds a symlink pointing elsewhere.
+    // A pre-existing `dst` symlink whose target happens to byte-match `src`
+    // would otherwise take the resumable branch — `existsSync`/`readFileSync`
+    // both follow it — deleting `src` and letting the migration proceed as if
+    // `newDir` held the canonical copy, when it actually just holds a symlink
+    // pointing elsewhere.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "copy-and-remove-symlink-dst-legacy-"),
     );
@@ -1634,13 +1616,12 @@ describe("copyAndRemove", () => {
   });
 
   it("refuses when the migrated destination is a DANGLING symlink, rather than following it into the fresh-copy branch", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request: `existsSync(dst)` reports `false`
-    // for a dangling symlink even though its directory entry is real, so
-    // this case used to fall straight through to the fresh-copy branch
-    // below — where `copyFileSync` follows the link and creates the target
-    // file wherever it points, outside `newDir` entirely, silently
-    // publishing "migrated" content to an unrelated location this script
-    // does not own.
+    // `existsSync(dst)` reports `false` for a dangling symlink even though its
+    // directory entry is real, so this case used to fall straight through to
+    // the fresh-copy branch below — where `copyFileSync` follows the link and
+    // creates the target file wherever it points, outside `newDir` entirely,
+    // silently publishing "migrated" content to an unrelated location this
+    // script does not own.
     const legacyDir = mkdtempSync(
       join(tmpdir(), "copy-and-remove-dangling-dst-legacy-"),
     );
@@ -1724,9 +1705,8 @@ describe("copyAndRemove", () => {
   });
 
   it("never follows a symlink swapped in at dst between the initial entryPresent check and the write, on the FRESH-COPY path", async () => {
-    // docomply-review, a reference-implementation pull request round 20 flagged the identically-shaped gap
-    // in copyPlainSiblingBestEffort below; this branch shares the same root
-    // cause and was not itself flagged, but the fix has to cover it too —
+    // copyPlainSiblingBestEffort below had the identically-shaped gap; this
+    // branch shares the same root cause, so the fix has to cover it too —
     // fixing one call site and leaving its sibling vulnerable is exactly
     // the class this repo's own "fix the class, not the reported instance"
     // discipline exists to catch. `entryPresent(dst)` above decides which
@@ -1813,22 +1793,21 @@ describe("copyPlainSiblingBestEffort", () => {
   });
 
   it("a concurrent append during the copy is never lost, because src is never deleted — even when the torn copy is (correctly) rejected", async () => {
-    // The exact interleaving docomply-review flagged at round 19 of
-    // PR #4626: an unlocked writer (drive.ts's bare appendFileSync, or
-    // orphans.ts's bare writeFileSync for .orphan-warned) appends while a
-    // copy is in flight. `copyAndRemove`'s round-17 fix narrows the window
-    // between the last re-read and a delete, but cannot close it (see the
-    // two "refuses to delete src ... when a concurrent writer appends"
-    // tests above); this function sidesteps the whole class instead, by
-    // never reaching a delete at all. The append still makes the just-taken
-    // copy stale, so verification still (correctly) refuses to publish it —
-    // that part of the behavior is unchanged and appropriate for a
-    // best-effort copy. What changed is the consequence: `src` — the only
-    // place a retry can recover the appended bytes from — is never touched,
-    // where the old copy-then-delete idiom would have destroyed it.
-    // Modelled the same way as the tests above — intercepting `openSync` to
-    // inject the concurrent write exactly where the real race would land,
-    // immediately before this function's own directory fsync.
+    // The exact interleaving: an unlocked writer (drive.ts's bare
+    // appendFileSync, or orphans.ts's bare writeFileSync for .orphan-warned)
+    // appends while a copy is in flight. `copyAndRemove`'s re-read narrows the
+    // window between the last re-read and a delete, but cannot close it (see
+    // the two "refuses to delete src ... when a concurrent writer appends"
+    // tests above); this function sidesteps the whole class instead, by never
+    // reaching a delete at all. The append still makes the just-taken copy
+    // stale, so verification still (correctly) refuses to publish it — that
+    // part of the behavior is unchanged and appropriate for a best-effort copy.
+    // What changed is the consequence: `src` — the only place a retry can
+    // recover the appended bytes from — is never touched, where the old
+    // copy-then-delete idiom would have destroyed it. Modelled the same way as
+    // the tests above — intercepting `openSync` to inject the concurrent write
+    // exactly where the real race would land, immediately before this
+    // function's own directory fsync.
     const actualFs = await import("node:fs");
     const realFs = { ...actualFs };
     const legacyDir = mkdtempSync(
@@ -1905,7 +1884,7 @@ describe("copyPlainSiblingBestEffort", () => {
     expect(existsSync(join(newDir, "drive-pr-4172.log"))).toBe(false);
   });
 
-  it("replaces a pre-existing dst symlink instead of following it — the exact gap docomply-review flagged at round 20", () => {
+  it("replaces a pre-existing dst symlink instead of following it", () => {
     // This function validates only `src` (via `assertRealFile`) before
     // writing to `dst` — unlike `copyAndRemove`, it never checked `dst` at
     // all, so a pre-existing `drive-pr-<pr>.log` or `.orphan-warned`
@@ -1942,11 +1921,10 @@ describe("copyPlainSiblingBestEffort", () => {
 });
 
 describe("publishFailureHeadline", () => {
-  // coderabbitai, PR #4618 round 6: `scan-failed` used to fall through a
-  // two-way ternary into the `foreign-lock` wording — "a drive.ts
-  // single-instance lock appeared" printed over what was actually a
-  // `readdirSync` failure. Pinning all three as pairwise distinct is what a
-  // future two-way regression would violate.
+  // `scan-failed` used to fall through a two-way ternary into the
+  // `foreign-lock` wording — "a drive.ts single-instance lock appeared" printed
+  // over what was actually a `readdirSync` failure. Pinning all three as
+  // pairwise distinct is what a future two-way regression would violate.
   it("gives scan-failed, foreign-lock and reappeared-content three distinct headlines", () => {
     const scanFailed = publishFailureHeadline("scan-failed");
     const foreignLock = publishFailureHeadline("foreign-lock");

@@ -90,7 +90,7 @@ schema-drift:
 
 # ...or skip the container entirely with a GitLab service database: replay
 # migrations into the `postgres` service with psql, dump with pg_dump, then
-# reuse the skeleton's normalize-and-diff tail.
+# compare through the reference script's normalizeSchema step.
 ```
 
 Other providers follow the same shape: any CI that can run a shell script
@@ -143,12 +143,13 @@ repos:
 
 | Stack | Notes |
 |-------|-------|
-| docker + Postgres | The worked skeleton. Pin the image to a digest; two-gate readiness (init sentinel, then `pg_isready`); dump with `pg_dump --schema-only --no-owner --no-privileges --no-tablespaces` |
-| podman + Postgres | Drop-in for the skeleton (`alias docker=podman` or `PODMAN_COMPAT`); rootless mode avoids CI privilege requirements |
-| CI service container | GitHub Actions `services:` / GitLab `services:` start the database for you — replay with a psql client and keep only the skeleton's normalize-and-diff tail |
+| docker + Postgres | The reference script. Pin the image to a digest (`PG_IMAGE`); two-gate readiness (init sentinel, then `pg_isready`); dump with `pg_dump --schema-only --no-owner --no-privileges --no-tablespaces --no-security-labels` |
+| podman + Postgres | The script runs a `docker` executable, so install podman's docker-compatible command (e.g. the `podman-docker` package); a shell alias is not enough. Rootless mode avoids CI privilege requirements |
+| CI service container | GitHub Actions `services:` / GitLab `services:` start the database for you — replay with a psql client and keep only the script's normalize-and-compare step |
 | testcontainers | Same recipe inside a test framework, when the repo already uses one; readiness and teardown come for free |
 | MySQL/MariaDB | Dump with `mysqldump --no-data`; normalize away `AUTO_INCREMENT=` values, `/*!` version comments, and the dump-date footer |
 | SQLite | No container at all: replay migrations into a temp file with `sqlite3`, dump with `.schema`, diff. The cheapest full-chain replay there is |
 
 Whatever the engine, the invariants hold: replay from zero, pin versions and
-ordering, normalize both sides identically, tear down in a trap.
+ordering, normalize both sides identically, and always tear down, even on
+failure or interrupt.

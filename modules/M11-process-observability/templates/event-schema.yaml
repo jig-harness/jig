@@ -1,8 +1,9 @@
 # TEMPLATE — copy to your repo (e.g. event-schema.yaml) and prune to the process
 # events YOUR delivery system actually emits. This is the CLOSED set of process-
 # telemetry event types and the fields each one must carry. It is the contract
-# the event-schema lint (../reference/event-schema-lint/) validates a live event
-# stream against, and the vocabulary the metrics registry
+# Groundwork's event-schema lint
+# (modules/M11-process-observability/reference/event-schema-lint/) validates a
+# live event stream against, and the vocabulary the metrics registry
 # (metrics-registry.yaml) builds its `source:` on.
 #
 # This measures the DELIVERY PROCESS, not the product: review outcomes and their
@@ -40,7 +41,7 @@ event_types:
   - type: deploy_result
     required: [environment, result, duration_ms]
 
-  # A liveness ping proving an emitter is not silently dark. No required payload,
-  # but its ABSENCE is itself a signal (an instrument that stopped emitting).
+  # A liveness ping proving an emitter is not silently dark. It names the
+  # emitter, so its ABSENCE is a signal about that one (it stopped emitting).
   - type: heartbeat
-    required: []
+    required: [emitter]

@@ -60,7 +60,10 @@ on:
 jobs:
   watchdog:
     runs-on: ubuntu-latest
-    env: { MAX_BEHIND: "20", MAX_AGE_SECONDS: "86400" }
+    env:
+      M10: modules/M10-environments-deploy      # where you vendored the module
+      MAX_BEHIND: "20"
+      MAX_AGE_SECONDS: "86400"
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }                    # need history to measure lag
@@ -68,9 +71,10 @@ jobs:
         run: |
           git fetch --force origin "refs/tags/verified:refs/tags/verified" "$GITHUB_REF_NAME"
           BEHIND=$(git rev-list --count verified..origin/${GITHUB_REF_NAME})
-          AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
+          OLDEST=$(git log --reverse --format=%ct verified..origin/${GITHUB_REF_NAME} | head -n 1)
+          NOW=$(date +%s); AGE_SECONDS=$(( NOW - ${OLDEST:-$NOW} ))
           BEHIND="$BEHIND" AGE_SECONDS="$AGE_SECONDS" \
-            bun modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.ts
+            bun "$M10"/reference/verified-pointer/check-verified-fresh.ts
 ```
 
 ### GitLab CI
@@ -96,12 +100,16 @@ promote_safety:
 
 verified_watchdog:
   rules: [{ if: '$CI_PIPELINE_SOURCE == "schedule"' }]
-  variables: { MAX_BEHIND: "20", MAX_AGE_SECONDS: "86400" }
+  variables:
+    M10: modules/M10-environments-deploy        # where you vendored the module
+    MAX_BEHIND: "20"
+    MAX_AGE_SECONDS: "86400"
   script:
     - BEHIND=$(git rev-list --count verified..origin/$CI_DEFAULT_BRANCH)
-    - AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
+    - OLDEST=$(git log --reverse --format=%ct verified..origin/$CI_DEFAULT_BRANCH | head -n 1)
+    - NOW=$(date +%s); AGE_SECONDS=$(( NOW - ${OLDEST:-$NOW} ))
     - BEHIND="$BEHIND" AGE_SECONDS="$AGE_SECONDS"
-        bun modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.ts
+        bun "$M10"/reference/verified-pointer/check-verified-fresh.ts
 ```
 
 ## CI providers — the four stages + the `verified` pointer

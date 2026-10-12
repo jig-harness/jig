@@ -392,11 +392,11 @@ export function checkCatalogRegexSync(env = process.env): number {
   const globs = catalogPaths(readFileSync(catalog, "utf8"));
   if (globs.some((glob) => /[@!+]\(/.test(glob)))
     malformed(
-      `${catalog} has a paths: glob using extglob syntax (@(...), !(...), or +(...)), which this reference implementation's literal-head reduction does not recognize`,
+      `${catalog} has a paths: glob using extglob syntax (@(...), !(...), or +(...)), which this gate's literal-head reduction does not recognize`,
     );
   if (globs.some((glob) => glob.startsWith("!")))
     malformed(
-      `${catalog} has a paths: glob starting with ! (leading negation), which this reference implementation's literal-head reduction does not recognize`,
+      `${catalog} has a paths: glob starting with ! (leading negation), which this gate's literal-head reduction does not recognize`,
     );
   const heads = globs.map(literalHead);
   const missing = re

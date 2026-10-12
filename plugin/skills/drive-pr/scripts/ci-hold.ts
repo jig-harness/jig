@@ -773,8 +773,8 @@ async function release(pr: string, head: string): Promise<number> {
  *   it has no separate green/red re-check at each of those call sites (only
  *   a single aggregate-status snapshot taken once, up front). A required
  *   check rerun and failed after that snapshot but before a later
- *   confirmation was therefore invisible to it (chatgpt-codex-connector,
- *   a reference-implementation pull request) — passing `requireSuccess: true` is what closes that race for
+ *   confirmation was therefore invisible to it — passing
+ *   `requireSuccess: true` is what closes that race for
  *   this caller specifically, without changing what exit 4 means for the
  *   other one.
  */
@@ -783,15 +783,14 @@ async function release(pr: string, head: string): Promise<number> {
  * called for the INITIAL proof in `finalReady` AND, unchanged, for the
  * re-verification `stillCurrentForFinalReady` performs — the identical
  * reasoning `drive-state.ts`'s `proveCiGreen()` already applies for
- * `set-verified`. Two rounds running a SEPARATE, cheaper re-check fell out
- * of sync with the initial proof: round 12 added the aggregate
- * `ciVerdictOf` check but only ever re-verified IT on refresh, never
- * `completedRequiredCi` — so a required check superseded by a
- * fresher SKIPPED run (which `ciVerdictOf`'s own `PASSING_CONCLUSIONS`
- * treats as passing, unlike `completedRequiredCi`) slipped past the
- * re-check even though it would have failed the initial proof
- * (chatgpt-codex-connector, a reference-implementation pull request round 15). Sharing one implementation
- * makes that class of drift impossible rather than merely unlikely.
+ * `set-verified`. A SEPARATE, cheaper re-check fell out of sync with the
+ * initial proof: an earlier version added the aggregate `ciVerdictOf` check but
+ * only ever re-verified IT on refresh, never `completedRequiredCi` — so a
+ * required check superseded by a fresher SKIPPED run (which `ciVerdictOf`'s own
+ * `PASSING_CONCLUSIONS` treats as passing, unlike `completedRequiredCi`)
+ * slipped past the re-check even though it would have failed the initial proof.
+ * Sharing one implementation makes that class of drift impossible rather than
+ * merely unlikely.
  *
  * Always re-fetches check-runs — never reuses a caller's earlier `runs` —
  * so every call is a genuinely fresh read, not a re-evaluation of data that
@@ -866,16 +865,15 @@ async function finalCiProofGreen(
 /**
  * The same aggregate CI verdict `drive-state.ts`'s `proveCiGreen()` already
  * requires — check-runs AND legacy commit statuses, not check-runs alone.
- * `finalReady`'s own `completedRequiredCi` check only ever reads
- * check-runs, so a legacy status context turning pending or failing after
+ * `finalReady`'s own `completedRequiredCi` check only ever reads check-runs, so
+ * a legacy status context turning pending or failing after
  * `announce-merge-ready.ts`'s initial snapshot was invisible to every later
- * `--require-success` confirmation, which could then post or preserve a
- * "Safe to merge" comment over a red aggregate verdict (chatgpt-codex-
- * connector, PR #4681 round 12). Gated behind `requireSuccess`, matching
- * every other strictness check `finalReady` already gates that way — `drive.ts`'s
- * own polling loop never passes it and derives green/red from
- * `drive-status.ts`'s `.ci` field separately, so this must not change what
- * `finalReady`'s return means for that caller.
+ * `--require-success` confirmation, which could then post or preserve a "Safe
+ * to merge" comment over a red aggregate verdict. Gated behind
+ * `requireSuccess`, matching every other strictness check `finalReady` already
+ * gates that way — `drive.ts`'s own polling loop never passes it and derives
+ * green/red from `drive-status.ts`'s `.ci` field separately, so this must not
+ * change what `finalReady`'s return means for that caller.
  */
 async function requiredCiAggregateIsGreen(head: string): Promise<boolean> {
   const [allRuns, statuses] = await Promise.all([
@@ -904,18 +902,15 @@ async function anyCiOnHead(head: string): Promise<boolean> {
  * read in this call spends on the network. A push or label re-add landing
  * in that window is otherwise invisible: this function only ever
  * snapshotted the PR once, at entry, unlike `set-verified` (drive-state.ts),
- * which already re-verifies before its own commit for the identical reason
- * (chatgpt-codex-connector, a reference-implementation pull request round 2).
+ * which already re-verifies before its own commit for the identical reason.
  *
- * The CI proof runs FIRST, the PR/timeline snapshot LAST — the opposite
- * order round 13 used. `finalReady`'s caller cares most about exactly ONE
- * fact staying current at the instant this returns: whether `head` is
- * genuinely still the PR's head, unheld. Checking that LAST, after the CI
- * proof's own remote reads have already happened, shrinks the residual
- * race to that one final read's own round-trip — the same "nothing may
- * follow the last read" reasoning `document-scanning-gates.md`-adjacent
- * fail-closed checks in this codebase already apply (chatgpt-codex-
- * connector, PR #4681 round 15).
+ * The CI proof runs FIRST, the PR/timeline snapshot LAST — the opposite order
+ * an earlier version used. `finalReady`'s caller cares most about exactly ONE
+ * fact staying current at the instant this returns: whether `head` is genuinely
+ * still the PR's head, unheld. Checking that LAST, after the CI proof's own
+ * remote reads have already happened, shrinks the residual race to that one
+ * final read's own round-trip — the same "nothing may follow the last read"
+ * reasoning other fail-closed checks in this codebase already apply.
  *
  * `expectation` selects which timeline shape the caller's branch requires —
  * `emptyTimeline` for "no hold was ever applied", the persisted event id
@@ -933,19 +928,17 @@ async function stillCurrentForFinalReady(
     const proof = await finalCiProofGreen(head, persisted, true);
     if (!proof.ok) return false;
   }
-  // Timeline BEFORE head/state/held — round 15 put the CI proof first and
-  // this snapshot last, but left `snapshot()` (the head check) running
-  // BEFORE `transitions()`, so the head check was still not the temporally
-  // last remote read: a push landing in the window `transitions()` spends
-  // on the network was invisible (chatgpt-codex-connector, a reference-implementation pull request round
-  // 17 — reasserting the same finding after round 15's reorder, since head
-  // identity is exactly the one fact this function exists to keep fresh).
-  // No further reordering closes the gap completely: GitHub's REST API has
-  // no compare-and-swap, so SOME read is always last and a mutation landing
-  // in ITS OWN round-trip stays unobservable — the identical, explicitly
-  // accepted residual `drive-state.ts`'s own `stillFullyCurrent()`/
-  // post-write check documents for the same reason. This ordering puts
-  // that irreducible tail on the one fact worth protecting most.
+  // Timeline BEFORE head/state/held — putting the CI proof first and this
+  // snapshot last is not enough if `snapshot()` (the head check) still runs
+  // BEFORE `transitions()`: the head check is then not the temporally last
+  // remote read, and a push landing in the window `transitions()` spends on the
+  // network is invisible (head identity is exactly the one fact this function
+  // exists to keep fresh). No further reordering closes the gap completely:
+  // GitHub's REST API has no compare-and-swap, so SOME read is always last and
+  // a mutation landing in ITS OWN round-trip stays unobservable — the
+  // identical, explicitly accepted residual `drive-state.ts`'s own
+  // `stillFullyCurrent()`/post-write check documents for the same reason. This
+  // ordering puts that irreducible tail on the one fact worth protecting most.
   if (expectation !== null) {
     const finalTimeline = await transitions(pr);
     if (finalTimeline === null) return false;

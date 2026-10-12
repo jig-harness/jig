@@ -410,8 +410,7 @@ describe("summary finding identity", () => {
     expect(FINDING_FINGERPRINT.test("3b78f436d805f279")).toBe(true);
     // As wide as MARKER_SAFE_FINGERPRINT (summary-findings.ts): a reviewer's
     // reviewer-backlog fingerprint need not be 16-char lowercase hex — a
-    // narrower check here rejected a real one (project-review, PR #4771
-    // round 7).
+    // narrower check here rejected a real one.
     expect(FINDING_FINGERPRINT.test("3B78F436D805F279")).toBe(true);
     expect(FINDING_FINGERPRINT.test("reviewer_key-1")).toBe(true);
     expect(FINDING_FINGERPRINT.test("-leading-dash")).toBe(false);
@@ -470,16 +469,15 @@ describe("SEVERITY_TO_PRIORITY / PRIORITY_TO_SEVERITY", () => {
     }
   });
 
-  // Round-2 finding on TASK-7491 (fp `1a5a5827199c1e57`): the bijection test
-  // above only examines this map's EXISTING entries — it says nothing about
-  // whether that entry set equals the accepted severity vocabulary. A
-  // canonical severity added to `lib/ladder.ts` with no matching entry here
-  // would still pass every assertion above while silently producing
-  // `undefined` from `SEVERITY_TO_PRIORITY[token]` at runtime. The module's
-  // own import-time assertion (this map's declaration site) is what actually
-  // enforces this in production; this test exists so a key-set drift fails
-  // in this suite with a readable assertion diff, not only as an import-time
-  // throw the very first time the module happens to load in CI.
+  // The bijection test above only examines this map's EXISTING entries — it
+  // says nothing about whether that entry set equals the accepted severity
+  // vocabulary. A canonical severity added to `lib/ladder.ts` with no matching
+  // entry here would still pass every assertion above while silently producing
+  // `undefined` from `SEVERITY_TO_PRIORITY[token]` at runtime. The module's own
+  // import-time assertion (this map's declaration site) is what actually
+  // enforces this in production; this test exists so a key-set drift fails in
+  // this suite with a readable assertion diff, not only as an import-time throw
+  // the very first time the module happens to load in CI.
   it("key set exactly equals the canonical severity vocabulary — CANONICAL_SEVERITIES plus SEVERITY_UNKNOWN, no more and no less", () => {
     expect(Object.keys(SEVERITY_TO_PRIORITY).sort()).toEqual(
       [...CANONICAL_SEVERITIES, SEVERITY_UNKNOWN].sort(),
@@ -642,37 +640,33 @@ describe("initialDescription — the no-parent rationale", () => {
 
 describe("noParentRationaleForRepair", () => {
   it("drops the rationale when the batch actually HAS a parent", () => {
-    // TASK-6849 (r3792868466 on PR #4093): an append never changes or reads
-    // a batch's `parentId`, so a wiped-description repair may not describe
-    // a parented batch as parentless just because THIS run passed
-    // `--no-parent` — that corrupts the placement audit trail.
+    // An append never changes or reads a batch's `parentId`, so a
+    // wiped-description repair may not describe a parented batch as parentless
+    // just because THIS run passed `--no-parent` — that corrupts the placement
+    // audit trail.
     expect(noParentRationaleForRepair(true)).toBeUndefined();
   });
 
   it("always falls back to a generic reason when the batch has no parent — never this run's own rationale", () => {
-    // Round 1/2 review findings on TASK-6849/PR #4113 (project-review
-    // `eecfcef93d350e32`/`79f6a196b522f1d9`, chatgpt-codex-connector): a
-    // later append's OWN `--no-parent` rationale describes why THAT append
+    // A later append's OWN `--no-parent` rationale describes why THAT append
     // used the flag, never why the batch's first entry was originally
     // placed parentless — those can differ. There is no invocation
     // rationale parameter to reuse, by construction.
     const fallback = noParentRationaleForRepair(false);
     expect(fallback).toBeDefined();
-    // NOT '' — code-review finding on TASK-6849: `''` is `initialDescription`'s
-    // rendering for a VERIFIED fact ("no epic to inherit"), which this
-    // fallback cannot know (the batch could have rejected a real epic).
-    // `null` is the explicit "unknown" state.
+    // NOT '': `''` is `initialDescription`'s rendering for a VERIFIED fact ("no
+    // epic to inherit"), which this fallback cannot know (the batch could have
+    // rejected a real epic). `null` is the explicit "unknown" state.
     expect(fallback?.rejectedEpic).toBeNull();
     expect(fallback?.reason.length).toBeGreaterThan(0);
   });
 
   it("renders the fallback without asserting a fact this run never verified", () => {
-    // Code-review finding on TASK-6849: reusing `''` here rendered
-    // "...this repair could not recover it (the originating issue has no
-    // epic to inherit)" — a sentence that both admits the reason is lost
-    // AND asserts a specific (possibly false) one in the same breath. The
-    // rendered description must state neither "no epic to inherit" nor name
-    // any epic.
+    // Reusing `''` here rendered "...this repair could not recover it (the
+    // originating issue has no epic to inherit)" — a sentence that both admits
+    // the reason is lost AND asserts a specific (possibly false) one in the
+    // same breath. The rendered description must state neither "no epic to
+    // inherit" nor name any epic.
     const fallback = noParentRationaleForRepair(false);
     const rendered = initialDescription("4068", "TASK-1234", fallback);
     expect(rendered).toContain("**No epic parent**");
@@ -682,21 +676,19 @@ describe("noParentRationaleForRepair", () => {
 });
 
 describe("descriptionForRepair", () => {
-  // Code-review finding on TASK-6849: at the time this comment was first
-  // written, `main()`'s own wiped-description rebuild call site was
-  // reachable by NO test at all — `main()` was neither exported nor
-  // exercised anywhere in this suite, so reverting its rebuild to pass
-  // `noParentRationale` straight through (the exact bug this file fixes)
-  // failed nothing. These tests exercise the shared `descriptionForRepair`
-  // function directly, covering the LOGIC both call sites share — but that
-  // is not the same claim as "both call sites are wired to it", which a
-  // pure-function test can never make (a follow-up review finding on
-  // PR #4113, r3808641914, caught this file overclaiming exactly that).
-  // `main()` was subsequently extracted into `runDeferBatch` for the same
-  // reason `appendWithRetry` already had its own seam — see the
-  // `runDeferBatch` and `appendWithRetry` describe blocks below, which test
-  // each call site's actual WIRING against a mock `LinearClient`, not just
-  // the helper it delegates to.
+  // At the time this comment was first written, `main()`'s own
+  // wiped-description rebuild call site was reachable by NO test at all —
+  // `main()` was neither exported nor exercised anywhere in this suite, so
+  // reverting its rebuild to pass `noParentRationale` straight through (the
+  // exact bug this file fixes) failed nothing. These tests exercise the shared
+  // `descriptionForRepair` function directly, covering the LOGIC both call
+  // sites share — but that is not the same claim as "both call sites are wired
+  // to it", which a pure-function test can never make (this file once
+  // overclaimed exactly that). `main()` was subsequently extracted into
+  // `runDeferBatch` for the same reason `appendWithRetry` already had its own
+  // seam — see the `runDeferBatch` and `appendWithRetry` describe blocks below,
+  // which test each call site's actual WIRING against a mock `LinearClient`,
+  // not just the helper it delegates to.
 
   it("returns the live description unchanged when it is non-empty", () => {
     const live = initialDescription("4068", "TASK-6727");
@@ -889,8 +881,8 @@ describe("ownerDomainMismatches", () => {
   });
 
   it("flags a DIFFERENT agent — the case the protocol sends to its own issue", () => {
-    // deferral-protocol.md lines 105-108: a finding owned by a different
-    // agent/domain than the rest of the batch gets its own issue.
+    // deferral-protocol.md § Batching is the default: a finding owned by a
+    // different agent/domain than the rest of the batch gets its own issue.
     expect(
       ownerDomainMismatches(
         ["agent:meta", "domain:tooling"],
@@ -1167,11 +1159,11 @@ describe("batchContractHolds", () => {
   });
 
   it("catches an erased non-context `--labels` extra — e.g. manual-ops", () => {
-    // Round-6 finding on TASK-6789: without `requiredExtras`, this function
-    // never asks about anything outside the mandatory Type/Size/Repo/Context
-    // groups — so a flag label this run added in an EARLIER attempt that a
-    // LATER concurrent writer erases is invisible to verification entirely,
-    // and the run reports `confirmed` over a batch that silently lost it.
+    // Without `requiredExtras`, this function never asks about anything outside
+    // the mandatory Type/Size/Repo/Context groups — so a flag label this run
+    // added in an EARLIER attempt that a LATER concurrent writer erases is
+    // invisible to verification entirely, and the run reports `confirmed` over
+    // a batch that silently lost it.
     const withManualOps = [...ok, label("manual-ops")];
     expect(
       batchContractHolds(withManualOps, wanted, requiredContext, [
@@ -1312,13 +1304,12 @@ describe("repairableMissingLabels", () => {
   });
 
   it("re-detects an erased context label that PREDATES this run — not in inherited/extras", () => {
-    // Round-2 finding on TASK-6789 (fp not yet assigned at authoring time,
-    // chatgpt-codex-connector): a batch can carry a context label filed by
-    // an EARLIER finding's originating issue, which is not in THIS run's
-    // `inherited` or `--labels`. The caller must pass the batch's FULL
-    // required context set (`requiredContext`), not just `inherited` — a
-    // label outside that set was never repairable no matter how it was
-    // erased, because it was never "wanted" by this function at all.
+    // A batch can carry a context label filed by an EARLIER finding's
+    // originating issue, which is not in THIS run's `inherited` or `--labels`.
+    // The caller must pass the batch's FULL required context set
+    // (`requiredContext`), not just `inherited` — a label outside that set was
+    // never repairable no matter how it was erased, because it was never
+    // "wanted" by this function at all.
     const full = [
       label(PROVENANCE_LABEL),
       label("chore", TYPE_GROUP),
@@ -1336,14 +1327,14 @@ describe("repairableMissingLabels", () => {
   });
 
   it("re-detects an erased NON-CONTEXT `--labels` extra, e.g. manual-ops", () => {
-    // Round-4 finding on TASK-6789 (chatgpt-codex-connector): `requiredContext`
-    // is deliberately prefix-filtered to agent:/domain:/codearea: only
-    // (`contextAfterReconcile` -> `inheritedContextLabels`), so a non-context
-    // flag label passed via `--labels` (`manual-ops`, `dpa-relevant`, ...)
-    // never appears in it. Passing `requiredContext` alone would silently
-    // drop such a label from the append path's repair set entirely — the
-    // create path adds every `args.extraLabels` value unfiltered, and an
-    // append must match that, not report success while never adding it.
+    // `requiredContext` is deliberately prefix-filtered to
+    // agent:/domain:/codearea: only (`contextAfterReconcile` ->
+    // `inheritedContextLabels`), so a non-context flag label passed via
+    // `--labels` (`manual-ops`, `dpa-relevant`, ...) never appears in it.
+    // Passing `requiredContext` alone would silently drop such a label from the
+    // append path's repair set entirely — the create path adds every
+    // `args.extraLabels` value unfiltered, and an append must match that, not
+    // report success while never adding it.
     const full = [
       label(PROVENANCE_LABEL),
       label("chore", TYPE_GROUP),
@@ -1382,12 +1373,12 @@ describe("repairableMissingLabels", () => {
   });
 
   it("does not duplicate the PROVENANCE label smuggled in through --labels", () => {
-    // fp `11747f22a9894dac`: `parseArgs` rejects only Type/Size/Repo names in
-    // `--labels`, so `--labels pr-followup` is legal and reaches
-    // `requiredExtras`. Deduping extras against `requiredContext` ALONE — the
-    // only pairing the old code covered — left `pr-followup` in the repair
-    // set twice: once from the provenance branch, once from the extras. A
-    // repeated name is resolved twice by `fetchLabels` and written twice.
+    // `parseArgs` rejects only Type/Size/Repo names in `--labels`, so
+    // `--labels pr-followup` is legal and reaches `requiredExtras`. Deduping
+    // extras against `requiredContext` ALONE — the only pairing the old code
+    // covered — left `pr-followup` in the repair set twice: once from the
+    // provenance branch, once from the extras. A repeated name is resolved
+    // twice by `fetchLabels` and written twice.
     const erased = [
       label("chore", TYPE_GROUP),
       label("small", SIZE_GROUP),
@@ -1417,17 +1408,16 @@ describe("repairableMissingLabels", () => {
   });
 
   it("does NOT union a second Repo label onto a CONFLICTING value — leaves it unrepaired", () => {
-    // TASK-6849 (r3797221246 on PR #4093): a concurrent writer that REPLACES
-    // the Repo label with a different Repo-group value (`website`) makes
-    // `liveNames.has('project')` false — the same signal as a genuinely
-    // absent Repo group. The old code treated both alike and proposed adding
-    // 'project', which the retry loop then WROTE via `issueAddLabel`,
-    // leaving the live issue holding two Repo labels — an invalid taxonomy
-    // mutation that needed manual cleanup even though `batchContractHolds`
-    // later caught it as `ambiguous` and the run aborted. The fix is to
-    // check `repoVerdict`, not raw membership: 'other-repo' is a conflict,
-    // not an absence, so it is left unrepaired here — same treatment a
-    // differing Type gets via `missingSingleValued`'s `conflicts`.
+    // A concurrent writer that REPLACES the Repo label with a different
+    // Repo-group value (`website`) makes `liveNames.has('project')` false — the
+    // same signal as a genuinely absent Repo group. The old code treated both
+    // alike and proposed adding 'project', which the retry loop then WROTE via
+    // `issueAddLabel`, leaving the live issue holding two Repo labels — an
+    // invalid taxonomy mutation that needed manual cleanup even though
+    // `batchContractHolds` later caught it as `ambiguous` and the run aborted.
+    // The fix is to check `repoVerdict`, not raw membership: 'other-repo' is a
+    // conflict, not an absence, so it is left unrepaired here — same treatment
+    // a differing Type gets via `missingSingleValued`'s `conflicts`.
     const conflicting = [
       label(PROVENANCE_LABEL),
       label("chore", TYPE_GROUP),
@@ -1456,14 +1446,14 @@ describe("repairableMissingLabels", () => {
   });
 
   it("does not let requiredExtras/requiredContext re-add a CONFLICTING Repo label around the dedicated gate", () => {
-    // Code-review finding on TASK-6849: the dedicated `repoIsAbsent` branch
-    // correctly refuses to repair a Repo group holding a DIFFERENT value —
-    // but the generic `requiredContext`/`requiredExtras` filters below it
-    // still tested raw `!liveNames.has(n)`, which is equally true for a
-    // conflicting value. A caller naming the repo label via `--labels`
-    // (legitimate — see "does not duplicate a REPO label that is also
-    // passed as an extra" above) reintroduced exactly the two-Repo-label
-    // mutation the dedicated gate exists to prevent.
+    // The dedicated `repoIsAbsent` branch correctly refuses to repair a Repo
+    // group holding a DIFFERENT value — but the generic
+    // `requiredContext`/`requiredExtras` filters below it still tested raw
+    // `!liveNames.has(n)`, which is equally true for a conflicting value. A
+    // caller naming the repo label via `--labels` (legitimate — see "does not
+    // duplicate a REPO label that is also passed as an extra" above)
+    // reintroduced exactly the two-Repo-label mutation the dedicated gate
+    // exists to prevent.
     const conflicting = [
       label(PROVENANCE_LABEL),
       label("chore", TYPE_GROUP),
@@ -1512,17 +1502,16 @@ describe("retryBackoffMs", () => {
 
 describe("appendWithRetry — the actual retry loop, against a mock LinearClient", () => {
   // Every OTHER test in this file drives the pure helpers directly on
-  // hand-built snapshots. That is precisely the gap the round-1 review found
-  // (fp `310dc4fd7ff37b21`): removing the fix's `missingLabels =
-  // repairableMissingLabels(...)` line from the live retry path would not
-  // fail any of those assertions, because none of them ever RUN the loop.
-  // These tests do — with a stateful fake `LinearClient` that actually
-  // applies writes and reflects them back on the next read, not a mock that
-  // returns canned responses regardless of what was sent (a canned mock
+  // hand-built snapshots. That is precisely the gap: removing the fix's
+  // `missingLabels = repairableMissingLabels(...)` line from the live retry
+  // path would not fail any of those assertions, because none of them ever RUN
+  // the loop. These tests do — with a stateful fake `LinearClient` that
+  // actually applies writes and reflects them back on the next read, not a mock
+  // that returns canned responses regardless of what was sent (a canned mock
   // would be vacuous in exactly the same way: it could "pass" a broken
-  // `addLabels` computation by returning the right answer anyway).
-  // A plain never-aborted signal for every test that is not itself exercising
-  // the deadline — see the dedicated `RUN_DEADLINE_MS` describe block below.
+  // `addLabels` computation by returning the right answer anyway). A plain
+  // never-aborted signal for every test that is not itself exercising the
+  // deadline — see the dedicated `RUN_DEADLINE_MS` describe block below.
   const neverAbort = () => new AbortController().signal;
   const threadUrl =
     "https://github.com/example/project/pull/4068#discussion_r1";
@@ -1578,7 +1567,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   function refuseWholeSetLabelWrite(input: { labelIds?: unknown }): void {
     if (input.labelIds !== undefined) {
       throw new Error(
-        "appendWithRetry sent a whole-set labelIds replacement — that erases a concurrent writer's ownership change and defeats the mid-loop mismatch guard (fp `5cb916652e21fef1`). Labels must be added with issueAddLabel.",
+        "appendWithRetry sent a whole-set labelIds replacement — that erases a concurrent writer's ownership change and defeats the mid-loop mismatch guard. Labels must be added with issueAddLabel.",
       );
     }
   }
@@ -1708,12 +1697,12 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   }
 
   it("restores a label a CONCURRENT writer erased, even with another context label surviving", async () => {
-    // Reproduces the round-1 finding exactly: a batch carrying TWO
-    // pre-existing context labels (`agent:meta`, `domain:tooling`) has had
-    // only `agent:meta` erased by a concurrent whole-set replacement before
-    // this run's own write lands. `domain:tooling` alone would satisfy a
-    // generic "is the Context group non-empty" check — this proves the real
-    // loop, with the real `requiredContext` wiring, catches and repairs it.
+    // Reproduces the original defect exactly: a batch carrying TWO pre-existing
+    // context labels (`agent:meta`, `domain:tooling`) has had only `agent:meta`
+    // erased by a concurrent whole-set replacement before this run's own write
+    // lands. `domain:tooling` alone would satisfy a generic "is the Context
+    // group non-empty" check — this proves the real loop, with the real
+    // `requiredContext` wiring, catches and repairs it.
     //
     // `priming` sees the CORRECT, not-yet-erased state — `fullLabels`, and
     // the bare `'## Entries'` this run's own `seedDescription` was built
@@ -1767,8 +1756,8 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       "addLabel",
       "verify",
     ]);
-    // fp `9f50b412531e72c4`: the one retry paused before re-entering the
-    // burst, and the pause came from `retryBackoffMs`'s clamped range.
+    // The one retry paused before re-entering the burst, and the pause came
+    // from `retryBackoffMs`'s clamped range.
     expect(clock.slept.length).toBe(1);
     expect(clock.slept[0]).toBeGreaterThanOrEqual(RETRY_BASE_MS / 2);
     expect(clock.slept[0]).toBeLessThanOrEqual(RETRY_MAX_MS);
@@ -1809,13 +1798,12 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 
   it("never unions a second Repo label onto a CONFLICTING value, even under real retries", async () => {
-    // TASK-6849 (r3797221246 on PR #4093): a concurrent writer REPLACES the
-    // Repo label with a different Repo-group value (`website`) between this
-    // run's initial read and its verify. The old code read that as an
-    // ordinary erasure (`liveNames.has('project')` false) and proposed —
-    // and the loop then WROTE, via `issueAddLabel` — a second `project`
-    // label onto the live issue, leaving it holding both `website` and
-    // `project` (taxonomy-invalid) before the run eventually gave up. This
+    // A concurrent writer REPLACES the Repo label with a different Repo-group
+    // value (`website`) between this run's initial read and its verify. The old
+    // code read that as an ordinary erasure (`liveNames.has('project')` false)
+    // and proposed — and the loop then WROTE, via `issueAddLabel` — a second
+    // `project` label onto the live issue, leaving it holding both `website`
+    // and `project` (taxonomy-invalid) before the run eventually gave up. This
     // proves the live retry path, not just the pure `repairableMissingLabels`
     // unit test: `issueAddLabel` for 'project' must never be called.
     const website = label("website", REPO_GROUP);
@@ -1977,28 +1965,28 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     expect(clock.slept[0]).toBeLessThanOrEqual(RETRY_BASE_MS);
     expect(clock.slept[1]).toBeGreaterThanOrEqual(RETRY_BASE_MS);
     for (const ms of clock.slept) expect(ms).toBeLessThanOrEqual(RETRY_MAX_MS);
-    // fp `de5e0f6c35b1f049` (round 5): the LAST attempt's failed verify must
-    // not rebuild and re-fetch a repair set nothing will ever use — that is
-    // pure waste, and a lookup failure on this dead path would replace the
-    // useful "concurrent writer keeps overwriting" result with an unrelated
-    // fetch error. One fetchLabels per attempt that gets to retry (2, for
-    // APPEND_ATTEMPTS=3), never a 3rd for the exhausted attempt — PLUS one
-    // more from the pre-attempt-1 priming read (TASK-7529), which shares this
-    // same repair-set computation against the label state it sees.
+    // The LAST attempt's failed verify must not rebuild and re-fetch a repair
+    // set nothing will ever use — that is pure waste, and a lookup failure on
+    // this dead path would replace the useful "concurrent writer keeps
+    // overwriting" result with an unrelated fetch error. One fetchLabels per
+    // attempt that gets to retry (2, for APPEND_ATTEMPTS=3), never a 3rd for
+    // the exhausted attempt — PLUS one more from the pre-attempt-1 priming read
+    // (TASK-7529), which shares this same repair-set computation against the
+    // label state it sees.
     expect(calls.filter((c) => c === "fetchLabels").length).toBe(
       APPEND_ATTEMPTS,
     );
   });
 
   it("reports a label added in an EARLIER attempt even when a LATER attempt only repairs the description", async () => {
-    // fp `dc4400af3be3cd86` (round 2): attempt 1's write successfully adds
-    // `agent:meta`, but a concurrent writer clobbers the DESCRIPTION before
-    // this run's verify reads it back — so attempt 1 fails on `entryOk`, not
-    // on labels. Attempt 2 recomputes `missingLabels` fresh and finds
-    // nothing missing (the label already landed), so `addLabels` resets to
-    // `[]` — the confirmed result must still report `agent:meta`, because
-    // the OLD code returned the current-attempt `missingLabels` (now empty)
-    // rather than everything this run ever actually added.
+    // Attempt 1's write successfully adds `agent:meta`, but a concurrent writer
+    // clobbers the DESCRIPTION before this run's verify reads it back — so
+    // attempt 1 fails on `entryOk`, not on labels. Attempt 2 recomputes
+    // `missingLabels` fresh and finds nothing missing (the label already
+    // landed), so `addLabels` resets to `[]` — the confirmed result must still
+    // report `agent:meta`, because the OLD code returned the current-attempt
+    // `missingLabels` (now empty) rather than everything this run ever actually
+    // added.
     const agentMetaLabel = fullLabels.find((l) => l.name === "agent:meta");
     if (agentMetaLabel === undefined)
       throw new Error("fixture missing agent:meta");
@@ -2073,14 +2061,12 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 
   it("the mid-loop description rebuild uses the lost-reason fallback, never this run's own rationale — batch genuinely has no parent", async () => {
-    // Round 1/2 review findings on TASK-6849/PR #4113: the mid-loop rebuild's
-    // own `initialDescription(args.pr, args.originating,
-    // noParentRationaleForRepair(hasParent))` call must NOT present this
-    // run's `--no-parent` reason as though it explained the batch's
-    // ORIGINAL placement — this run's rationale describes only why THIS
-    // append used the flag, and the batch could have been placed parentless
-    // by an unrelated original entry. `parent: null` on the fake's issue
-    // means the batch genuinely has no parent, so the rebuild must fall
+    // The mid-loop rebuild's own `initialDescription(args.pr, args.originating,
+    // noParentRationaleForRepair(hasParent))` call must NOT present this run's `--no-parent` reason as though it
+    // explained the batch's ORIGINAL placement — this run's rationale describes
+    // only why THIS append used the flag, and the batch could have been placed
+    // parentless by an unrelated original entry. `parent: null` on the fake's
+    // issue means the batch genuinely has no parent, so the rebuild must fall
     // back to the generic lost-reason placeholder rather than reusing
     // `noParentArgs.noParentReason`.
     const rationale: NoParentRationale = {
@@ -2156,16 +2142,15 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 
   it('does NOT claim "No epic parent" rebuilding a wiped description for a batch that IS parented', async () => {
-    // TASK-6849 (r3792868466 on PR #4093): this run passes `--no-parent`
-    // (e.g. it appended to a batch it believes shares no domain with its own
-    // originating epic), but the BATCH itself — read fresh, right here —
-    // still carries a real `parent`, because an append never changes or
-    // reads that field; only the batch's FIRST entry decided it. Rebuilding
-    // a wiped description from THIS run's own `noParentRationale` would
-    // assert `**No epic parent**` and name this run's rejected epic while
-    // the issue's own `parent` field stays set underneath it — a
-    // description that contradicts the issue it describes. The rebuild must
-    // instead read `issue.parent` and skip the no-parent block entirely.
+    // This run passes `--no-parent` (e.g. it appended to a batch it believes
+    // shares no domain with its own originating epic), but the BATCH itself —
+    // read fresh, right here — still carries a real `parent`, because an append
+    // never changes or reads that field; only the batch's FIRST entry decided
+    // it. Rebuilding a wiped description from THIS run's own
+    // `noParentRationale` would assert `**No epic parent**` and name this run's
+    // rejected epic while the issue's own `parent` field stays set underneath
+    // it — a description that contradicts the issue it describes. The rebuild
+    // must instead read `issue.parent` and skip the no-parent block entirely.
     const rationale: NoParentRationale = {
       reason: "compliance-owned finding, different domain than the batch",
       rejectedEpic: "TASK-1111",
@@ -2235,13 +2220,12 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 
   it("treats a response with NO `parent` field the same as an explicit null (genuinely no parent)", async () => {
-    // Sub-threshold note from code review on TASK-6849: `issue.parent !== null`
-    // would read a response missing the field entirely (`undefined`, e.g. a
-    // hand-built test double, or a future query shape mistake) as "has a
-    // parent" — silently DROPPING the no-parent block from a genuinely
-    // parentless batch, the opposite corruption from the one this PR fixes.
-    // `!= null` treats `undefined` and `null` alike. This fake deliberately
-    // omits `parent` from its verify response.
+    // `issue.parent !== null` would read a response missing the field entirely
+    // (`undefined`, e.g. a hand-built test double, or a future query shape
+    // mistake) as "has a parent" — silently DROPPING the no-parent block from a
+    // genuinely parentless batch, the opposite corruption from the one this PR
+    // fixes. `!= null` treats `undefined` and `null` alike. This fake
+    // deliberately omits `parent` from its verify response.
     const rationale: NoParentRationale = {
       reason: "compliance-owned finding, different domain than the batch",
       rejectedEpic: "TASK-1111",
@@ -2311,14 +2295,14 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 
   it("aborts rather than repairing when ownership changed mid-append (concurrent owner swap)", async () => {
-    // coderabbitai finding on TASK-6789: the pre-loop `ownerDomainMismatches`
-    // guard (in `main()`) only checks the INITIAL read. A concurrent writer
-    // that swaps `agent:meta` for `agent:compliance` between that read and
-    // this run's own verify looks, to `repairableMissingLabels`, exactly
-    // like an ordinary erased label — so the loop would otherwise silently
-    // re-add `agent:meta` into a batch a concurrent writer moved to a
-    // different owner. `incomingOwnership` re-checks this on every fresh
-    // read INSIDE the loop, not just once before it starts.
+    // The pre-loop `ownerDomainMismatches` guard (in `main()`) only checks the
+    // INITIAL read. A concurrent writer that swaps `agent:meta` for
+    // `agent:compliance` between that read and this run's own verify looks, to
+    // `repairableMissingLabels`, exactly like an ordinary erased label — so the
+    // loop would otherwise silently re-add `agent:meta` into a batch a
+    // concurrent writer moved to a different owner. `incomingOwnership`
+    // re-checks this on every fresh read INSIDE the loop, not just once before
+    // it starts.
     const agentCompliance = label("agent:compliance");
     const swappedLabels = [...withoutAgentMeta, agentCompliance];
     const calls: string[] = [];
@@ -2382,14 +2366,14 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 
   it("aborts on a mid-append owner swap even when this run HAS labels to add", async () => {
-    // fp `5cb916652e21fef1`: the test above passes `seedAddLabels: []`, so the
-    // old code never emitted `labelIds` at all and the whole-set replacement
-    // path went unexercised. With ANY label to add, the old write sent
+    // The test above passes `seedAddLabels: []`, so the old code never emitted
+    // `labelIds` at all and the whole-set replacement path went unexercised.
+    // With ANY label to add, the old write sent
     // `unionLabelIds(seedLiveLabels, addLabels)` — the STALE snapshot, still
     // carrying `agent:meta` — which restored the owner the concurrent writer
     // had just swapped away. The verify then read back `agent:meta` (its own
-    // write), found no mismatch, and CONFIRMED an append into a batch that
-    // had moved to a different owner.
+    // write), found no mismatch, and CONFIRMED an append into a batch that had
+    // moved to a different owner.
     //
     // The fake server below is stateful precisely so it can catch that: it
     // applies whatever the loop writes and reflects it back, so a whole-set
@@ -2473,12 +2457,12 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 
   it("restores the batch's OWN Size when erased, not this run's args.size", async () => {
-    // chatgpt-codex-connector finding on TASK-6789: a differing Size is
-    // deliberately TOLERATED (both are legitimate batch sizes), so if a
-    // concurrent writer erases the Size label ENTIRELY, repairing it with
-    // `args.size` (this run's own value, `small`) would silently resize a
-    // batch that was legitimately `xs` — and `batchContractHolds` would
-    // accept the drift, since it tolerates either batchable size.
+    // A differing Size is deliberately TOLERATED (both are legitimate batch
+    // sizes), so if a concurrent writer erases the Size label ENTIRELY,
+    // repairing it with `args.size` (this run's own value, `small`) would
+    // silently resize a batch that was legitimately `xs` — and
+    // `batchContractHolds` would accept the drift, since it tolerates either
+    // batchable size.
     const xsLabel = label("xs", SIZE_GROUP);
     const xsLabels = fullLabels.map((l) => (l.name === "small" ? xsLabel : l));
     const withoutSize = xsLabels.filter((l) => l.name !== "xs");
@@ -2774,7 +2758,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     expect(clock.slept.length).toBe(1);
   });
 
-  it("does not downgrade a concurrent escalation that lands between the initial read and the first write (round-1 finding, fp `2d3990e7bbd8d316`)", async () => {
+  it("does not downgrade a concurrent escalation that lands between the initial read and the first write", async () => {
     // `originalPriority` below is a STALE snapshot: None (0), read at the
     // initial candidate lookup. Before this run's first write, a concurrent
     // writer already escalated the live priority to Urgent (1) — computing
@@ -2844,7 +2828,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     expect(calls.filter((c) => c === "write").length).toBe(0);
   });
 
-  it("does not clobber a concurrently appended entry when the write is triggered by a missing label alone, not a description change (round-1 finding, fp `f7f36ea1f430142e`)", async () => {
+  it("does not clobber a concurrently appended entry when the write is triggered by a missing label alone, not a description change", async () => {
     // This run's OWN read, at the initial candidate lookup, saw a
     // description carrying only its own entry — `seedDescription`. Before
     // this run's first write, a DIFFERENT concurrent invocation appended its
@@ -2932,7 +2916,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 });
 
-// ── Placement claim vs a freshly read parent (PR #4113, r3811805571) ───────
+// ── Placement claim vs a freshly read parent ────────────────────────────────
 
 describe("scaffoldPortion", () => {
   it("returns the whole description when there is no ## Entries heading yet", () => {
@@ -2948,10 +2932,9 @@ describe("scaffoldPortion", () => {
   });
 
   it("excludes entry content even when an entry quotes the scaffold marker verbatim", () => {
-    // The exact shape of the review findings on PR #4121 (r3813038419 /
-    // r3813087304): a reviewer's finding or a deferral reason is
-    // external/model-generated text and can legitimately quote
-    // `**No epic parent**` while discussing this very bug.
+    // A reviewer's finding or a deferral reason is external/model-generated
+    // text and can legitimately quote `**No epic parent**` while discussing
+    // this very bug.
     const description =
       "## Entries\n\n### Some entry\n\nFinding: quotes **No epic parent** verbatim.";
     expect(scaffoldPortion(description)).toBe("");
@@ -2991,14 +2974,13 @@ describe("placementMatchesFreshParent", () => {
   });
 
   it("does NOT false-positive when a scaffold-less description has an ENTRY quoting the marker", () => {
-    // Regression for PR #4121 (r3813038419 / r3813087304): the scaffold
-    // itself asserts a parent (no `**No epic parent**` block), but an entry
-    // below `## Entries` quotes that exact marker while discussing this
-    // very bug. An unrestricted `description.includes` would misread this
-    // as the scaffold claiming no parent and fire a false placement
-    // mismatch against a batch that IS parented.
+    // Regression: the scaffold itself asserts a parent (no `**No epic parent**`
+    // block), but an entry below `## Entries` quotes that exact marker while
+    // discussing this very bug. An unrestricted `description.includes` would
+    // misread this as the scaffold claiming no parent and fire a false
+    // placement mismatch against a batch that IS parented.
     const description =
-      "Batch of review deferrals from PR #4121; originating issue TASK-1.\n\n## Entries\n\n### Some entry\n\nFinding: `description.includes('**No epic parent**')` is too broad.";
+      "Batch of review deferrals from PR #4068; originating issue TASK-1.\n\n## Entries\n\n### Some entry\n\nFinding: `description.includes('**No epic parent**')` is too broad.";
     expect(placementMatchesFreshParent(description, true)).toBe(true);
   });
 
@@ -3143,7 +3125,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     }
   });
 
-  it("tells the operator to edit ONLY the scaffold line and preserves every entry — regression for the blank-the-whole-description bug (PR #4121, r3813087307)", async () => {
+  it("tells the operator to edit ONLY the scaffold line and preserves every entry — regression for the blank-the-whole-description bug", async () => {
     // A concurrent writer appended a SECOND entry (a different review
     // thread) after this run's own rebuild — exactly the entry the old
     // "blank the whole description" instruction would have destroyed.
@@ -3360,15 +3342,14 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
   });
 
   it("retries through an ordinary concurrent RE-WIPE instead of aborting, even when everRebuiltScaffold is true", async () => {
-    // Round-review finding on this file's own diff: gating the placement
-    // check AHEAD of `entryOk` made this exact scenario — the mid-loop
-    // rebuild's bread-and-butter case, already covered (with
-    // `seedWasRepaired: false`) by the `appendWithRetry` describe block's
-    // "the mid-loop description rebuild uses the lost-reason fallback..."
-    // test above — abort instead of self-repairing whenever
-    // `seedWasRepaired` happened to be `true`. The correlation is
-    // adversarial, not an edge case: a writer that wipes descriptions is
-    // exactly the writer `everRebuiltScaffold` was already true for.
+    // Gating the placement check AHEAD of `entryOk` made this exact scenario —
+    // the mid-loop rebuild's bread-and-butter case, already covered (with
+    // `seedWasRepaired: false`) by the `appendWithRetry` describe block's "the
+    // mid-loop description rebuild uses the lost-reason fallback..." test above
+    // — abort instead of self-repairing whenever `seedWasRepaired` happened to
+    // be `true`. The correlation is adversarial, not an edge case: a writer
+    // that wipes descriptions is exactly the writer `everRebuiltScaffold` was
+    // already true for.
     let serverDescription = "";
     let verifyCount = 0;
     const linear: LinearClient = async (query, vars) => {
@@ -3426,15 +3407,14 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
   });
 
   it("sets everRebuiltScaffold from a MID-LOOP rebuild, not just the seed — a LATER placement race is still caught", async () => {
-    // Round-review finding: `everRebuiltScaffold`'s mid-loop `||` update
-    // (flips to `true` when THIS run's own retry rebuild fires, not only
-    // from its seed) had no test whose failure depended on it. This run's
-    // OWN seed is NOT a rebuild (`seedWasRepaired: false`, an ordinary
-    // append), but a concurrent writer wipes the description mid-loop,
-    // forcing the ordinary mid-loop rebuild to fire on attempt 1 — which is
-    // what must flip `everRebuiltScaffold` so a SECOND, later race (another
-    // concurrent reparent, on attempt 2) is still caught rather than
-    // silently confirmed.
+    // `everRebuiltScaffold`'s mid-loop `||` update (flips to `true` when THIS
+    // run's own retry rebuild fires, not only from its seed) had no test whose
+    // failure depended on it. This run's OWN seed is NOT a rebuild
+    // (`seedWasRepaired: false`, an ordinary append), but a concurrent writer
+    // wipes the description mid-loop, forcing the ordinary mid-loop rebuild to
+    // fire on attempt 1 — which is what must flip `everRebuiltScaffold` so a
+    // SECOND, later race (another concurrent reparent, on attempt 2) is still
+    // caught rather than silently confirmed.
     const ordinaryDescription = appendEntry(
       "## Entries",
       entry,
@@ -3598,7 +3578,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
   });
 });
 
-// ── The run-wide deadline (RUN_DEADLINE_MS, PR #4113 r3811790789) ──────────
+// ── The run-wide deadline (RUN_DEADLINE_MS) ─────────────────────────────────
 
 describe("appendWithRetry — the run-wide deadline", () => {
   const threadUrl =
@@ -3687,12 +3667,12 @@ describe("appendWithRetry — the run-wide deadline", () => {
       if (query.includes("issueLabels")) {
         // Reachable only if the loop proceeds PAST the deadline check that
         // runs right after the retry pause, into the mid-loop label-repair
-        // lookup — the exact round-trip that check exists to skip. Round-
-        // review finding: without this branch (and the assertion on it
-        // below), the test only proved SOME check eventually caught the
-        // abort — even a version missing the post-sleep `checkDeadline`
-        // call still passed, one wasted `fetchLabels` round-trip later, via
-        // the next attempt's top-of-loop check alone.
+        // lookup — the exact round-trip that check exists to skip. Without
+        // this branch (and the assertion on it below), the test only proved
+        // SOME check eventually caught the abort — even a version missing the
+        // post-sleep `checkDeadline` call still passed, one wasted
+        // `fetchLabels` round-trip later, via the next attempt's top-of-loop
+        // check alone.
         labelFetchCount++;
         return {
           issueLabels: { pageInfo: { hasNextPage: false }, nodes: [] },
@@ -3739,19 +3719,17 @@ describe("appendWithRetry — the run-wide deadline", () => {
   });
 
   it("a signal that aborts DURING the retry pause is caught immediately, not after the full backoff", async () => {
-    // PR #4121 review finding (project-review, fd7673bd328ca7e3 /
-    // 9f3f6da69fb363b0): `realSleep` is a plain `setTimeout` with no signal
-    // awareness, and `checkDeadline` previously ran only BEFORE and AFTER
-    // the retry pause, never DURING it — so a deadline that fired while the
-    // loop was asleep between attempts waited out the full
-    // `retryBackoffMs` pause (up to `RETRY_MAX_MS`, 2s) before being caught,
-    // rather than the moment it actually fired. `neverResolvingSleep` never
-    // resolves on its own; it aborts the controller as a side effect of
-    // being CALLED, before returning its pending promise — so if
-    // `appendWithRetry` raced it against `abortedPromise(signal)` correctly
-    // (see that function's own doc), the race resolves on the
-    // already-aborted signal, not the sleep. If it did not, this promise
-    // would hang until the test framework's own timeout.
+    // `realSleep` is a plain `setTimeout` with no signal awareness, and
+    // `checkDeadline` previously ran only BEFORE and AFTER the retry pause,
+    // never DURING it — so a deadline that fired while the loop was asleep
+    // between attempts waited out the full `retryBackoffMs` pause (up to
+    // `RETRY_MAX_MS`, 2s) before being caught, rather than the moment it
+    // actually fired. `neverResolvingSleep` never resolves on its own; it
+    // aborts the controller as a side effect of being CALLED, before returning
+    // its pending promise — so if `appendWithRetry` raced it against
+    // `abortedPromise(signal)` correctly (see that function's own doc), the
+    // race resolves on the already-aborted signal, not the sleep. If it did
+    // not, this promise would hang until the test framework's own timeout.
     const controller = new AbortController();
     let verifyCount = 0;
     const linear: LinearClient = async (query, vars) => {
@@ -3832,17 +3810,15 @@ describe("appendWithRetry — the run-wide deadline", () => {
   });
 
   it("leaves NO abort listener registered on the signal after an ordinary (non-aborted) retry", async () => {
-    // PR #4121 review findings (project-review, 061599eff47ad0d1 /
-    // f3228d25ca91149f): the call-site race's own `'abort'` listener only
-    // self-removed via `{ once: true }` when the SIGNAL side won — every
-    // ORDINARY retry (the timer winning instead, the common case) left it
-    // registered on the shared, run-lifetime `signal` for the rest of the
-    // run. This drives one real retry — a concurrent writer erased
-    // `agent:meta`, attempt 1 restores it, attempt 2 confirms — entirely
-    // through the timer side; the signal never aborts at all. Deliberately
-    // a label-repair scenario, NOT a description wipe: a wipe would also
-    // exercise the placement-race machinery, which is not what this test
-    // is checking.
+    // The call-site race's own `'abort'` listener only self-removed via
+    // `{ once: true }` when the SIGNAL side won — every ORDINARY retry (the
+    // timer winning instead, the common case) left it registered on the shared,
+    // run-lifetime `signal` for the rest of the run. This drives one real retry
+    // — a concurrent writer erased `agent:meta`, attempt 1 restores it, attempt
+    // 2 confirms — entirely through the timer side; the signal never aborts at
+    // all. Deliberately a label-repair scenario, NOT a description wipe: a wipe
+    // would also exercise the placement-race machinery, which is not what this
+    // test is checking.
     const fullLabels = [
       label(PROVENANCE_LABEL),
       label("chore", TYPE_GROUP),
@@ -3915,18 +3891,17 @@ describe("appendWithRetry — the run-wide deadline", () => {
   });
 });
 
-// ── main()'s wiring, against a mock LinearClient (PR #4113, r3808641914) ───
+// ── main()'s wiring, against a mock LinearClient ────────────────────────────
 
 describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", () => {
-  // Code-review finding on TASK-6849/PR #4113 (r3808641914): `main()`'s own
-  // wiped-description rebuild call site was reachable by NO test at all —
-  // `main()` was neither exported nor exercised anywhere in this suite, so
-  // reverting the call site to `initialDescription(args.pr, args.originating,
-  // noParentRationale)` (this file's own history's bug) would not have
-  // turned any test red. `runDeferBatch` is the extraction that makes this
-  // call site testable directly, mirroring `appendWithRetry`'s own seam —
-  // these tests exercise it, not just the pure `descriptionForRepair` helper
-  // in isolation.
+  // `main()`'s own wiped-description rebuild call site was reachable by NO test
+  // at all — `main()` was neither exported nor exercised anywhere in this
+  // suite, so reverting the call site to
+  // `initialDescription(args.pr, args.originating, noParentRationale)` (this
+  // file's own history's bug) would not have turned any test red.
+  // `runDeferBatch` is the extraction that makes this call site testable
+  // directly, mirroring `appendWithRetry`'s own seam — these tests exercise it,
+  // not just the pure `descriptionForRepair` helper in isolation.
   const pr = "4068";
   const type = "chore";
   const threadUrl = `https://github.com/example/project/pull/${pr}#discussion_r1`;
@@ -4113,17 +4088,16 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   });
 
   it("wires `seedWasRepaired` through to appendWithRetry's placement check — a race is caught, not silently confirmed", async () => {
-    // Round-review finding on this file's own diff: nothing else in this
-    // suite would catch `runDeferBatch` passing a hardcoded `false` for
-    // `appendWithRetry`'s `seedWasRepaired` parameter instead of the
-    // `existingDescription.trim() === ''` it actually computes — the same
-    // untested-call-site class TASK-6866 was filed to fix, reproduced in the
-    // fix itself. This test fails (reports `code === 0` instead of
-    // rejecting) if that wiring is lost: `target` is WIPED and PARENTLESS
-    // at the read `runDeferBatch` seeds from, but the verify's fresh read
-    // shows a real parent — a reparent race between the two. Only a
-    // correctly wired `seedWasRepaired: true` makes `appendWithRetry`
-    // treat this as a placement mismatch and reject.
+    // Nothing else in this suite would catch `runDeferBatch` passing a
+    // hardcoded `false` for `appendWithRetry`'s `seedWasRepaired` parameter
+    // instead of the `existingDescription.trim() === ''` it actually computes —
+    // the same untested-call-site class this extraction was meant to fix,
+    // reproduced in the fix itself. This test fails (reports `code === 0`
+    // instead of rejecting) if that wiring is lost: `target` is WIPED and
+    // PARENTLESS at the read `runDeferBatch` seeds from, but the verify's fresh
+    // read shows a real parent — a reparent race between the two. Only a
+    // correctly wired `seedWasRepaired: true` makes `appendWithRetry` treat
+    // this as a placement mismatch and reject.
     const target = makeWipedTarget(null);
     let writtenDescription = "";
     // `appendWithRetry`'s own pre-attempt-1 priming (TASK-7529) does a FRESH
@@ -4189,22 +4163,20 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   });
 
   it("propagates its OWN `signal` parameter through to every Linear call and appendWithRetry's deadline check", async () => {
-    // CodeRabbit finding on this PR: no test in this describe block injects
-    // a signal, and every mock `LinearClient` above ignores its third
-    // argument — a `runDeferBatch` that built its own
-    // `new AbortController().signal` internally, or that passed a FRESH
-    // signal to `appendWithRetry` instead of forwarding its own parameter,
-    // would still pass every other test here. That is the same
-    // untested-call-site class TASK-6866 was filed to close, reproduced by
-    // its own fix. The signal starts UN-aborted (a pre-aborted one is
-    // covered separately below, by the entry-guard test) and is aborted
-    // mid-run, from inside the FIND_BATCHES mock response — proving
-    // propagation two ways: (1) every `linear(...)` call up to that point,
-    // INCLUDING the ones `runDeferBatch` makes before `appendWithRetry` is
-    // ever reached, receives the EXACT SAME signal instance, and (2) the
-    // run still rejects via `appendWithRetry`'s own deadline check further
-    // downstream, which only fires against the signal it was actually
-    // handed.
+    // No test in this describe block injects a signal, and every mock
+    // `LinearClient` above ignores its third argument — a `runDeferBatch` that
+    // built its own `new AbortController().signal` internally, or that passed a
+    // FRESH signal to `appendWithRetry` instead of forwarding its own
+    // parameter, would still pass every other test here. That is the same
+    // untested-call-site class this extraction was meant to close,
+    // reproduced by its own fix. The signal starts UN-aborted (a pre-aborted
+    // one is covered separately below, by the entry-guard test) and is aborted
+    // mid-run, from inside the FIND_BATCHES mock response — proving propagation
+    // two ways: (1) every `linear(...)` call up to that point, INCLUDING the
+    // ones `runDeferBatch` makes before `appendWithRetry` is ever reached,
+    // receives the EXACT SAME signal instance, and (2) the run still rejects
+    // via `appendWithRetry`'s own deadline check further downstream, which only
+    // fires against the signal it was actually handed.
     const target = makeWipedTarget(null);
     const seenSignals: AbortSignal[] = [];
     const controller = new AbortController();
@@ -4248,8 +4220,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   });
 
   it("rejects immediately, with NO Linear calls, when handed an already-aborted signal", async () => {
-    // PR #4121 review finding (project-review, PRRT_kwDOO7knac6agKcz):
-    // nothing upstream of `appendWithRetry`'s own `checkDeadline` checked
+    // Nothing upstream of `appendWithRetry`'s own `checkDeadline` checked
     // `signal` at all, so a caller handing `runDeferBatch` an ALREADY
     // aborted signal still let the team/FIND_BATCHES lookups dispatch
     // before anything noticed.
@@ -4272,8 +4243,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   });
 
   it("rejects before FIND_BATCHES when the signal aborts between the team lookup and it", async () => {
-    // PR #4121 review finding (project-review, PRRT_kwDOO7knac6ahBf8): a
-    // refinement of the entry-point guard above — that guard alone only
+    // A refinement of the entry-point guard above — that guard alone only
     // catches a signal already aborted before this function STARTS, not
     // one that aborts BETWEEN two of its pre-loop calls. `baseArgs.team`
     // reaches the team-lookup branch (`originating: ''`); the signal is
@@ -4428,7 +4398,7 @@ describe("parseArgs", () => {
     expect(parseArgs([...full, "--fingerprint", "3b78f436d805f279"])).toContain(
       "valid only with --comment-url",
     );
-    // Widened to MARKER_SAFE_FINGERPRINT's shape (round 3, PR #4771): a
+    // Widened to MARKER_SAFE_FINGERPRINT's shape: a
     // 16-hex-only check rejected a legitimate reviewer-backlog fingerprint.
     // 'bad' now means empty, or leading with a non-alphanumeric character.
     for (const bad of [
@@ -4580,7 +4550,7 @@ describe("parseArgs", () => {
     // labels.yaml records a `platform` label "detached from the Repo group —
     // do not use it", so this is not hypothetical: a Repo-GROUP check alone
     // accepts whatever the workspace happens to place there.
-    for (const repo of ["sandbox", "platform", "Docomply"]) {
+    for (const repo of ["sandbox", "platform", "Acme"]) {
       expect(typeof parseArgs([...full, "--repo-label", repo])).toBe("string");
     }
   });
@@ -4779,10 +4749,10 @@ describe("defer-batch.ts CLI refusals", () => {
 // ── The taxonomy pin ────────────────────────────────────────────────────────
 
 describe("BATCH_TYPES is pinned to the declared taxonomy", () => {
-  // `.claude/rules/document-scanning-gates.md` rule 3: pin the artifact
-  // verbatim rather than text-scanning it at runtime — and back the pin with a
-  // check that reads the real file through a real YAML parser, so the constant
-  // cannot silently drift from the workspace's declared Type group.
+  // Pin the artifact verbatim rather than text-scanning it at runtime — and
+  // back the pin with a check that reads the real file through a real YAML
+  // parser, so the constant cannot silently drift from the workspace's declared
+  // Type group.
   const LABELS_YAML = join(import.meta.dir, "fixtures", "labels.yaml");
 
   it("equals groups.type.labels in labels.yaml, as a set", () => {

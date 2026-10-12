@@ -5,17 +5,6 @@ capitalized as commonly written; cross-references are *italicized*.
 
 ## Core ideas
 
-- **Consumer overlay** — a repository's own values for a shared procedure,
-  such as its gate command and reviewer names, kept in
-  `.config/groundwork-overlay.yaml` and read by the procedure when it runs.
-  The procedure stays shared while the values belong to the consumer.
-- **Plugin** — an installable bundle of skills (and possibly other agent
-  extensions) that an agent tool loads in every session. Groundwork ships its
-  skills as one plugin for Claude Code and Codex.
-- **Marketplace** — a catalog an agent tool installs plugins from; usually a
-  Git repository with a manifest listing its plugins. This repository is its
-  own marketplace.
-
 - **AI-native delivery** — building and maintaining software with AI coding
   agents as first-class participants: the repo is organized so agents can find
   the rules, run the checks, and improve the process — not just emit code.
@@ -153,15 +142,39 @@ capitalized as commonly written; cross-references are *italicized*.
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
 - **Draft PR** — a pull request opened in "not ready for review" state so CI
-  and bots can run while a human decides when it's worth reviewers' attention.
+  and the reviewers that read drafts can run before it is marked Ready, which
+  summons the reviewers that wait for Ready. A human marks it Ready, or a
+  *PR drive loop* does at the point the *pull-request policy* names.
+- **Integration branch** — the branch pull requests land on (often `main`),
+  where everyone's changes meet. Groundwork's tools read it from the
+  repository's default branch unless configuration names another.
+- **Forge** — the service that hosts a repository and its pull requests,
+  reviews and checks (GitHub, GitLab, …).
 - **Stacked pull request** — a pull request based on another open pull
-  request's branch instead of the integration branch, so dependent work can
+  request's branch instead of the *integration branch*, so dependent work can
   be reviewed before what it builds on merges. A *native* stack records the
-  final target in the forge's own stack metadata; a plain *branch chain*
+  final target in the *forge*'s own stack metadata; a plain *branch chain*
   records it nowhere, and tools have to walk the chain of bases to find it.
 - **Pull-request policy** — a repository's declared rules for how pull
-  requests are shaped: whether they may stack, how branches are named, how a
-  pull request links its issue, and how large it may be.
+  requests are shaped: whether they may stack, how branches are named,
+  whether they open as drafts and when they are marked Ready, how a pull
+  request links its issue, and how large it may be.
+- **Merge base** — the most recent commit two branches share. A merge
+  compares each branch with it to see what each side changed; a pull
+  request's own changes are its diff against the merge base with its base
+  branch.
+- **Conflict marker** — the `<<<<<<<`, `=======` and `>>>>>>>` lines git
+  writes into a file where it could not combine two sides' changes. A file
+  that still holds one is not resolved.
+- **Integration side** — in a merge, rebase or cherry-pick that stopped on
+  conflicts, the side that carries the *integration branch*'s changes, as
+  opposed to the side carrying the work being brought in. Git's own names,
+  "ours" and "theirs", swap meaning between a merge and a rebase, so
+  Groundwork's conflict tooling names each side by this role instead.
+- **Changelog** — a file listing each release's notable changes, newest
+  first. Groundwork's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
+  one heading per plugin version, and an **Unreleased** heading for changes
+  that no release carries yet.
 - **HITL (human-in-the-loop)** — a decision class that must be made by a
   human, never autonomously by an agent (merges, releases, destructive
   operations, scope expansions). Kept in an explicit registry.
@@ -179,8 +192,27 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Keep test** — the de-scarring question for each sentence: would a reader
   who never saw the old state decide wrongly without it? If yes, the sentence
   stays, rewritten as a present-tense constraint.
+- **Closure invariant** — the rule that a finished row may leave a plan,
+  checklist or backlog only when its *closure anchor* is verified: the issue it
+  names is closed and opening it confirms the gap is truly resolved, or the
+  thing it delivered is present in the source of truth. No anchor, the row
+  stays and the missing anchor is reported. Part of *de-scarring*
+  ([scar classes](plugin/skills/descar/references/scar-classes.md)).
+- **Completeness register** — a maintained statement of current coverage, such
+  as a list of every requirement a contract must address with a `covered` mark
+  on each. Its rows are live claims people rely on, not finished-task residue,
+  so *de-scarring* corrects a stale row in place and never deletes it
+  ([scar classes](plugin/skills/descar/references/scar-classes.md)).
 - **Design brief bundle** — the numbered set of Markdown files and images
   handed to an external design session as its only input.
+- **Claude Design** — the external design session a *design brief bundle* is
+  handed to. The design work happens there, not in the repository; Groundwork's
+  `design-brief-builder` skill prepares the inputs and audits them
+  ([design-brief-builder](plugin/skills/design-brief-builder/SKILL.md)).
+- **Tweaks** — the list of states (at least three meaningful ones, such as
+  empty, typical and error) that a design brief asks the prototype to let a
+  reviewer switch between, so one prototype shows how the design behaves across
+  cases ([bundle templates](plugin/skills/design-brief-builder/references/bundle-templates.md)).
 - **Reality grounding** — comparing a design's assumptions with the actual
   schema and code, citing file and line, to find where they agree and where
   they differ.
@@ -197,15 +229,34 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Sheet kit** — the shared reading system both sheets are built on: layout,
   citations in the margin, escaping, and a freshness guard that compares the
   citations against the commit the facts were checked at.
+- **Archify** — an open-source tool that draws architecture diagrams from typed
+  JSON sources. An *explainer sheet* embeds its static drawing as a figure, and
+  the sheet's freshness guard checks the figure against its diagram source
+  ([explainer sheet](plugin/skills/explain/references/explainer-sheet.md#figures)).
 - **Precedent pass** — the mechanical search of a repository's ADRs, policy
   files, rules and glossary that runs before an agent rules on a dilemma, so a
   question already decided is answered from the record, not re-decided.
+- **Architect mandate** — the standing brief of the agent that rules in the
+  decision skill's third phase: verify every load-bearing claim against the
+  code before endorsing it, stress-test the risky parts, and trust nothing
+  another agent asserts without evidence
+  ([decide](plugin/skills/decide/SKILL.md#the-architect-mandate)).
 - **Simplified Technical English** — a controlled form of English
   (ASD-STE100), first written for aircraft maintenance manuals: one meaning per
   word, short sentences, active verbs. A prose linter can check text against
   its structural rules, for example text that asks a human to decide.
 - **Flag label** — an issue-tracker label that *drives process* rather than
   just categorizing (e.g., "has-migration" → a mandatory review gate fires).
+- **Sensitivity flag** — a *flag label* marking a change that carries extra
+  obligations: `has-migration` (a database migration), `api-change` (a
+  published contract), `dpa-relevant` (personal data) or `manual-ops` (a manual
+  operational step). A fired flag sends a call to a human instead of an agent
+  ([decide](plugin/skills/decide/SKILL.md)) and widens the review a change gets.
+- **Epic** — an issue whose sub-issues are worked one at a time, each as its
+  own pull request, while the epic itself tracks the whole. Groundwork's
+  `do-item` skill picks up the next sub-issue and records the epic's order in
+  a machine-readable execution plan
+  ([do-item](plugin/skills/do-item/SKILL.md)).
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine.
@@ -249,23 +300,37 @@ capitalized as commonly written; cross-references are *italicized*.
   containment guards that keep it from flooding a PR or running untrusted code)
   and a repo-specific **config** (which reviewers, which lenses, which posture).
 - **Comment-resolution loop** — the discipline that every PR review thread
-  reaches a terminal state before merge — **addressed** (fixed here),
-  **rejected** (with a reason), **deferred** (with a filed follow-up), or *moot*
-  — each leaving an audit trail. Scope expansion and overruling a human thread
-  stay *HITL*.
+  reaches a terminal state before merge — **accepted** (fixed here; some
+  teams write *addressed*), **rejected** (the reviewer was wrong, with a
+  reason), **won't fix** (right, but deliberately declined, with a reason),
+  **deferred** (with a filed follow-up), or *moot* — each leaving an audit
+  trail. Scope expansion and overruling a human thread stay *HITL*.
+  Groundwork ships it as the `resolve-review-comments` skill.
 - **PR drive loop** — the procedure that wraps the *comment-resolution loop*
   for unattended work on one pull request. The comment-resolution loop already
-  repeats *review rounds* until the reviewers settle; the drive loop adds a
-  lease that fences the working tree so two agent sessions never reply to the
-  same thread, labels for findings the pull request's own earlier commits
-  caused, checks for findings that appear only in a reviewer's summary, and
-  round state that survives between invocations. Groundwork ships it as the
-  `drive-pr` skill, and the `do-item` skill starts it when it opens a pull
-  request.
+  repeats *review rounds* until the reviewers settle; the drive loop runs each
+  round as a fresh agent process and adds a *lease* that fences the working
+  tree so two agent sessions never reply to the same thread, labels for
+  *self-inflicted findings*, checks for findings that appear only in a
+  reviewer's summary, repair rounds for red CI and conflicts with the base,
+  and round state that survives between invocations. It stops in exactly one
+  *terminal state* and never merges. Groundwork ships it as the `drive-pr`
+  skill, and the `do-item` skill starts it when it opens a pull request.
+- **Self-inflicted finding** — a review finding on a line one of the pull
+  request's own commits last changed, usually a fix from an earlier round. The
+  drive labels every finding this way: by the later rounds most findings are
+  self-inflicted, and the answer to one is to check the earlier fix's whole
+  effect, not just the flagged line.
+- **Decline ladder** — the filter that, from a configured *review round*
+  onward, makes a finding the triage rubric would accept clear a higher bar
+  (severity, category, priority tier) before it earns another fix. It can turn
+  an acceptance into a decline, never the reverse, and the bar lives only in the
+  repository's `.config/review-triage.yaml`
+  ([triage rubric](plugin/skills/resolve-review-comments/references/triage-rubric.md#the-decline-ladder)).
 - **Terminal state** — one of the named end states a *PR drive loop* stops
-  in (converged, waiting on a human, conflicting, pull request closed, …),
-  each with its own exit code, so a script or a person can tell from the
-  exit alone what to do next.
+  in (converged, pull request merged or closed, round limit reached, waiting
+  on a human, …), each reported with a documented exit code, so a script or a
+  person can tell from the exit alone what to do next.
 - **CI hold** — an opt-in label a *PR drive loop* puts on a pull request
   between review rounds so the repository's continuous-integration workflows
   skip their expensive jobs on intermediate pushes; removing it runs them in
@@ -273,7 +338,8 @@ capitalized as commonly written; cross-references are *italicized*.
   written to honour the label.
 - **Required checks** — the continuous-integration checks a repository's
   branch protection requires to pass before a pull request may merge. A drive
-  derives them from the protection settings unless the repository lists them.
+  derives them from the protection settings unless the repository lists them
+  (`ci.required_checks`).
 - **Lease** — a short-lived, renewable claim recorded on disk that says which
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died
@@ -304,6 +370,21 @@ capitalized as commonly written; cross-references are *italicized*.
   resolves, the push re-triggers the reviewers. Because resolving *causes* the
   next round, "no open threads" is not the loop's stop condition; a round that is
   settled — every expected reviewer has reported — with nothing left is.
+- **Convergence (review loop)** — the point where a review loop may stop: the
+  reviewer completed on the exact head commit, its recorded reviewed commit
+  equals that head, and no unresolved thread or *summary-only finding* remains.
+  Checked mechanically, not judged by feel ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
+- **Sticky comment (reviewer summary)** — the single summary comment an
+  automated reviewer keeps and updates on a pull request, found by a marker
+  string (`review.sticky_marker`). It carries the reviewer's overall verdict
+  and any findings it could not attach to a line
+  ([configuration](plugin/CONFIGURATION.md)).
+- **Summary-only finding** — a review finding that appears only in the
+  reviewer's *sticky comment* because it could not be anchored to a diff line,
+  so it creates no thread. A loop that counted only threads would report
+  *convergence* with a real finding unanswered; the drive enumerates these and
+  answers each with a top-level comment
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Precision bar** — the pre-committed threshold of measured precision an
   automated reviewer (or *lens*) must clear before it may be promoted from
   comment-only to blocking. Recorded up front so "advisory forever" is visible.
@@ -329,11 +410,27 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Auditor** — groundwork's runnable assessment: parallel surveys of a target
   repo, stack detection, per-module maturity scoring, and a prioritized
   recommendations report. See [audit/](audit/).
-- **Backflow** — the standing rule that lessons from a live implementation
-  flow back into this template (and vice versa), keeping both honest.
+- **Backflow** — the standing rule that lessons learned in the repositories
+  that use Groundwork flow back into it (and Groundwork's improvements flow
+  out to them), keeping both honest.
+- **SOLID** — five object-oriented design principles: single responsibility,
+  open–closed, Liskov substitution, interface segregation and dependency
+  inversion. A review can check code against them.
 
 ## Runnable tooling
 
+- **Plugin** — an installable bundle of skills and other agent extensions
+  that an agent tool loads in every session. Groundwork ships its skills and
+  its review agent as one plugin for Claude Code and Codex, installed once
+  per machine ([plugin/README.md](plugin/README.md)).
+- **Marketplace** — a catalog an agent tool installs plugins from; usually a
+  Git repository with a manifest listing its plugins. This repository is its
+  own marketplace.
+- **Consumer overlay** — a repository's own values for a shared procedure,
+  such as its gate command and reviewer names, kept in
+  `.config/groundwork-overlay.yaml` and read by the procedure when it runs.
+  The procedure stays shared while the values belong to the consumer. Every
+  field is in [plugin/CONFIGURATION.md](plugin/CONFIGURATION.md).
 - **Toolchain** — the runtime, compiler and checks used to build and test tools.
 - **Bun** — the runtime that executes Groundwork's TypeScript commands and tests,
   installs their dependencies and bundles the tools.
@@ -347,12 +444,32 @@ capitalized as commonly written; cross-references are *italicized*.
   A plugin can ship subagents beside its skills; Claude Code loads them,
   Codex reads them only from its own agent folders.
 - **Tracker interface and adapter** — the small set of issue-tracker
-  operations a skill is allowed to use (read an issue, list its children,
-  change its state, comment), and one implementation of that set for a
-  particular tracker. The skills call only the interface, so supporting a new
+  operations a skill is allowed to use (read an issue with its comments and
+  children, move it to a workflow state, comment, and the reads the delivery
+  metrics need), and one implementation of that set for a particular tracker
+  (Linear today). The skills call only the interface, so supporting a new
   tracker means writing an adapter, not editing the skills.
 - **Test shard** — one slice of a test suite's files, run as its own CI job
   so a long suite finishes in a fraction of the time on parallel machines.
+- **Validation plan** — the checks a change must pass, worked out from the files
+  it touches: local checks, verification checks, whether a *remote test box* is
+  needed, and which review skills to run. A repository supplies it as a command
+  that reads changed files on stdin and prints JSON
+  (`drive.validation_plan_command`); without one the plan is the gate command
+  alone ([drive-pr](plugin/skills/drive-pr/README.md)).
+- **Remote test box (Testbox)** — a disposable machine, warmed for one run, that
+  re-runs a repository's heavy test and build checks away from the laptop. A
+  *validation plan* says when one is required; Groundwork's drive uses each box
+  once, because a reused box can sync stale state
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
+- **Lockfile** — the file a package manager writes to pin the exact version of
+  every dependency. When a merge conflicts in one, Groundwork's conflict tooling
+  regenerates it from the manifests instead of merging it by hand, and the CI
+  fixer reinstalls from it ([resolve-conflicts](plugin/skills/resolve-conflicts/SKILL.md)).
+- **Intent chain** — the short statement of why a piece of work exists: the
+  epic's intent, the issue's scope and its acceptance criteria. `do-item`
+  writes it to a snapshot file and *Refocus* puts it back in front of an agent
+  ([do-item](plugin/skills/do-item/SKILL.md)).
 - **Refocus** — putting a piece of work's *intent chain* (why it exists: the
   epic's intent, the issue's scope and acceptance criteria) back in front of an
   agent after its context is compacted, and at the start of each review round,
@@ -364,12 +481,19 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Fractal metrics** — the delivery process's scoreboard across many pull
   requests: review rounds, follow-up issues and escaped defects, each compared
   with a recorded baseline.
-
 - **REST (Representational State Transfer)** — a convention for reading and
   changing service resources through ordinary web requests.
+- **GraphQL** — a query language for web APIs in which the caller names exactly
+  the fields it wants. GitHub exposes review threads and merge state through it,
+  and its quota is a separate, easily exhausted budget from *REST*.
+- **ETag** — a version tag a web service returns with a resource. Sending it back
+  on the next request lets the service answer "not modified" at no quota cost,
+  which is how Groundwork's polling loops watch an idle pull request cheaply
+  ([conditional reads](plugin/skills/drive-pr/scripts/lib/gh-conditional.ts)).
 - **NDJSON (newline-delimited JSON)** — structured JSON records written one per
   line, so a command can consume them as a stream.
 - **ASCII (American Standard Code for Information Interchange)** — the basic
   character set containing English letters, digits and common punctuation.
 - **SHA (Secure Hash Algorithm)** — a family of content fingerprints; Git uses
-  one to identify a commit, while release verification uses SHA-256 digests.
+  one to identify a commit, and Groundwork's tools use SHA-256 to record
+  exactly which source a generated file was built from.

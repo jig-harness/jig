@@ -31,7 +31,7 @@ describe("hasLeaveOpenMarker", () => {
     ).toBe(true);
   });
 
-  it("does NOT match an INDENTED example of the marker — an exact match only, no leading whitespace (chatgpt-codex-connector, a reference-implementation pull request round 23)", () => {
+  it("does NOT match an INDENTED example of the marker — an exact match only, no leading whitespace", () => {
     expect(
       hasLeaveOpenMarker(
         `**wont-fix** — the marker looks like this:\n\n    ${LEAVE_OPEN_MARKER}`,
@@ -53,7 +53,7 @@ describe("hasLeaveOpenMarker", () => {
     ).toBe(true);
   });
 
-  it("does NOT match the marker text quoted mid-body — a trusted author explaining the mechanism must not accidentally trigger it (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 13)", () => {
+  it("does NOT match the marker text quoted mid-body — a trusted author explaining the mechanism must not accidentally trigger it", () => {
     expect(
       hasLeaveOpenMarker(
         `**wont-fix** — the reviewer flagged that ${LEAVE_OPEN_MARKER} exists, but that is not what this reply means.\n\nDeclining per the triage rubric.`,
@@ -85,7 +85,7 @@ describe("hasNoOutcomeMarker", () => {
     ).toBe(true);
   });
 
-  it("does NOT match a body with no marker at all — a trusted author’s plain GitHub reply (chatgpt-codex-connector, a reference-implementation pull request round 2)", () => {
+  it("does NOT match a body with no marker at all — a trusted author’s plain GitHub reply", () => {
     expect(hasNoOutcomeMarker("I agree; please fix this.")).toBe(false);
   });
 

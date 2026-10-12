@@ -107,22 +107,21 @@ export function qualifyingOutcome(body: string): QualifyingReply | null {
 }
 
 /**
- * Marks a merit-outcome reply posted with `triage-thread.ts --leave-open` —
- * a deliberate choice not to resolve, usually a human thread per AGENTS.md §
- * Addressing PR Comments — so ANY later reader of this reply's durable text
- * can recover that choice instead of needing it supplied again. Readers
- * exist today in `triage-thread.ts`'s own inline reconciliation, and in
- * `reconcile-replied-threads.ts`'s standalone sweep — its own header
- * describes itself as "the standalone-sweep COUNTERPART" to the former, free
- * to process the identical unresolved thread later (a scheduled `--all-open`
- * run, or a human-attended one-shot outside `--bots-only`'s scope). Before
- * this constant moved here, only the first reader knew about it: the second
- * resolved a marked thread on its very next sweep, silently reversing the
- * leave-open choice the first reader had just honoured (docomply-review, PR
- * #4129 round 10). One constant, one predicate — shared for the identical
- * reason `qualifyingOutcome` itself lives here rather than duplicated: two
- * readers of the same durable text must not be able to disagree about what
- * it means.
+ * Marks a merit-outcome reply posted with `triage-thread.ts --leave-open` — a
+ * deliberate choice not to resolve, usually a human thread (see
+ * `/groundwork:resolve-review-comments` § Human threads) — so ANY later reader of this reply's durable text can
+ * recover that choice instead of needing it supplied again. Readers exist today
+ * in `triage-thread.ts`'s own inline reconciliation, and in
+ * `reconcile-replied-threads.ts`'s standalone sweep — its own header describes
+ * itself as "the standalone-sweep COUNTERPART" to the former, free to process
+ * the identical unresolved thread later (a scheduled `--all-open` run, or a
+ * human-attended one-shot outside `--bots-only`'s scope). Before this constant
+ * moved here, only the first reader knew about it: the second resolved a marked
+ * thread on its very next sweep, silently reversing the leave-open choice the
+ * first reader had just honoured. One constant, one predicate — shared for the
+ * identical reason `qualifyingOutcome` itself lives here rather than
+ * duplicated: two readers of the same durable text must not be able to disagree
+ * about what it means.
  *
  * On the body's own trailing line, appended after posting — never parsed by
  * `qualifyingOutcome` (scoped to the first line only), so it cannot affect
@@ -144,22 +143,19 @@ export function qualifyingOutcome(body: string): QualifyingReply | null {
  * not survive a fresh clone or another worktree picking up the drive — the
  * exact durability this in-body marker was chosen for.
  *
- * So this is an ACCIDENT risk, not a forgery risk, and it is bounded:
- * {@link hasLeaveOpenMarker} requires the marker to be the body's last
- * NON-BLANK line (quoting or discussing it never trips it);
- * `triage-thread.ts`'s fresh-post branch REFUSES a body that already ends
- * with it without `--leave-open`; and `reply-to-thread.ts` refuses it
- * outright without {@link LEAVE_OPEN_MARKER_PRODUCER_ENV}, which only
- * `triage-thread.ts` sets. What remains is a trusted author deliberately
- * hand-writing the marker's exact trailing-line form into a direct post — and
- * `TRUSTED_ASSOCIATIONS` already grants that author unrestricted authority
- * over every disposition on this PR, so it is the same class as the
- * concurrent-post window arbitrated `wont-fix` at `triage-thread.ts`'s
- * fresh-post call site. Accepted, not fixed (Architect Agent review,
- * 2026-08-21, closing PRRT_kwDOO7knac6a05qK/07oD/a_Yyr and finding
- * 04a4eb90c63c0512 on PR #4129). Do not re-litigate this without a NEW
- * privilege boundary between the two posting paths; without one there is
- * nothing to authenticate against.
+ * So this is an ACCIDENT risk, not a forgery risk, and it is bounded: {@link
+ * hasLeaveOpenMarker} requires the marker to be the body's last NON-BLANK line
+ * (quoting or discussing it never trips it); `triage-thread.ts`'s fresh-post
+ * branch REFUSES a body that already ends with it without `--leave-open`; and
+ * `reply-to-thread.ts` refuses it outright without {@link
+ * LEAVE_OPEN_MARKER_PRODUCER_ENV}, which only `triage-thread.ts` sets. What
+ * remains is a trusted author deliberately hand-writing the marker's exact
+ * trailing-line form into a direct post — and `TRUSTED_ASSOCIATIONS` already
+ * grants that author unrestricted authority over every disposition on this PR,
+ * so it is the same class as the concurrent-post window arbitrated `wont-fix`
+ * at `triage-thread.ts`'s fresh-post call site. Accepted, not fixed. Do not
+ * re-litigate this without a NEW privilege boundary between the two posting
+ * paths; without one there is nothing to authenticate against.
  */
 export const LEAVE_OPEN_MARKER = "<!-- triage-thread:leave-open -->";
 
@@ -181,26 +177,24 @@ export const LEAVE_OPEN_MARKER_PRODUCER_ENV =
 
 /**
  * Does this reply body carry {@link LEAVE_OPEN_MARKER} as its own dedicated
- * TRAILING line — never a plain substring search. The producer contract
- * (this constant's own header) is specific: the marker is the body's last
- * line, appended after a blank line. A substring check accepts it ANYWHERE,
- * including inside a trusted author's own prose that happens to quote or
- * discuss the marker text — a real risk on a PR whose own diff and commit
- * messages contain this exact string, and the deliberate-supersession path
- * explicitly posts arbitrary trusted-author text this predicate then reads
- * (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 13, both
- * independently on the same gap). Scoped to the last NON-BLANK line — never
- * the literal last line — because the producer's own `postBody` always
- * leaves a blank line before the marker, and `\r` is stripped as a line
- * terminator, mirroring `qualifyingOutcome`'s identical CRLF handling.
+ * TRAILING line — never a plain substring search. The producer contract (this
+ * constant's own header) is specific: the marker is the body's last line,
+ * appended after a blank line. A substring check accepts it ANYWHERE, including
+ * inside a trusted author's own prose that happens to quote or discuss the
+ * marker text — a real risk on a PR whose own diff and commit messages contain
+ * this exact string, and the deliberate-supersession path explicitly posts
+ * arbitrary trusted-author text this predicate then reads. Scoped to the last
+ * NON-BLANK line — never the literal last line — because the producer's own
+ * `postBody` always leaves a blank line before the marker, and `\r` is stripped
+ * as a line terminator, mirroring `qualifyingOutcome`'s identical CRLF
+ * handling.
  *
  * The candidate line's `\r` is stripped and NOTHING ELSE — never `.trim()`.
  * `postBody` appends the marker with no leading or trailing whitespace, so an
  * exact match is the producer contract; `.trim()` also matches an INDENTED or
  * padded line, which admits an illustrative example (a markdown blockquote, a
  * doc snippet showing the marker's own syntax — this PR's own SKILL.md has
- * several) as though it were the durable marker itself (chatgpt-codex-
- * connector, PR #4129 round 23).
+ * several) as though it were the durable marker itself.
  */
 export function hasLeaveOpenMarker(body: string): boolean {
   const lines = body.split("\n");
@@ -225,7 +219,7 @@ export function hasLeaveOpenMarker(body: string): boolean {
  * COLLABORATOR posting arbitrary prose straight on GitHub ("I agree, please
  * fix this"), which never goes through `reply-to-thread.ts` at all. That
  * false positive silently dropped a live finding recurrence from the
- * advisory signal (chatgpt-codex-connector, a reference-implementation pull request). Requiring this marker
+ * advisory signal. Requiring this marker
  * instead ties the classification to the one path that can actually produce
  * it — `reply-to-thread.ts` appends it itself whenever `--no-outcome` is
  * passed (see that script) — so a direct GitHub reply, having no way to

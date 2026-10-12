@@ -2,9 +2,10 @@
 
 Enforces the [de-scarring rule](../../templates/WIKI-SCHEMA.md): an
 **approved** doc is a clean statement of current truth, carrying no trace of the
-review that produced it. This is the mechanical half of what the reference
-implementation codified as rule C4 (see the founding charter): the practice was
-culturally strong but unwritten, so it got written down *and* given a gate.
+review that produced it. This lint is the rule's mechanical half: a practice
+that is only cultural erodes, so the rule is written down *and* given a gate.
+The judgment half — scars a pattern cannot recognize — is the
+[`/groundwork:descar`](../../../../plugin/skills/descar/SKILL.md) skill.
 
 ## What counts as a scar
 
@@ -13,10 +14,11 @@ there):
 
 - **Strikethrough** — `~~corrected text~~` showing what was changed;
 - **Resolution phrasing** in a list/quote item — "addressed", "fixed as
-  suggested", "good catch", "as per review", "resolved per review";
-- **Reviewer dialogue / attribution** in a list/quote item — a line naming a
-  reviewer or review bot (`Reviewer:`, CodeRabbit, Codex, Copilot, shadow
-  reviewer).
+  suggested", "done as suggested", "good catch", "as per review", "as
+  requested", "resolved per review";
+- **Reviewer dialogue / attribution** in a list/quote item — a reviewer or
+  review bot named and followed by a colon (`Reviewer:`, `CodeRabbit:`,
+  `Codex:`, `Copilot:`, `shadow reviewer:`).
 
 Where the finding belongs instead: the review thread, the tracking issue,
 git/PR history, or a light `## Version history` section recording *what
@@ -47,6 +49,9 @@ ALLOWLIST="docs/WIKI-SCHEMA.md docs/review/" bun check-descarring-scars.ts docs/
 # no args: scan approved docs in the tree
 DOCS_DIR=docs bun check-descarring-scars.ts
 ```
+
+`ALLOWLIST` is a space-separated list; a file is skipped when its path
+contains any entry (so `docs/review/` covers that directory). Exit codes: 0 no scars, 1 scars found, 2 an unreadable file.
 
 ## Enforcement posture
 

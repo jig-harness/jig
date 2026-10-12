@@ -3,34 +3,35 @@
  * `drive.ts`, first at arm time and again on the heartbeat timer whenever no
  * pass is actively running, for the rest of the drive's life.
  *
- * WHY THIS EXISTS. `drive.ts` spawns the pass by argv directly — never
- * through a shell (see `drive.ts`'s own top-of-file comment) — so the Hearth
- * shell wrapper (`claude { CLAUDE_CODE_OAUTH_TOKEN="$(hearth token)"
- * command claude "$@"; }`) never runs for a driver: the pass inherits
- * whatever `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` (or `~/.claude.json`
- * `oauthAccount`, or `CLAUDE_CONFIG_DIR` / `CODEX_HOME`) THIS PROCESS's environment held the
- * moment it was spawned. Resolving from `drives.ts` or the status board
- * instead would read a DIFFERENT process's environment — this driver's own,
- * not the pass's — so the read has to happen here and be carried in the
- * claim's diagnostics for every later reader (an earlier change's precedent: PR,
- * worktree, log and start time all work the same way).
+ * WHY THIS EXISTS. `drive.ts` spawns the pass by argv directly — never through
+ * a shell (see `drive.ts`'s own top-of-file comment) — so an account-switching
+ * shell wrapper that injects `CLAUDE_CODE_OAUTH_TOKEN` (for example `claude() {
+ * CLAUDE_CODE_OAUTH_TOKEN="$(account-switcher token)" command claude "$@"; }`)
+ * never runs for a driver: the pass inherits whatever `CLAUDE_CODE_OAUTH_TOKEN`
+ * / `ANTHROPIC_API_KEY` (or `~/.claude.json` `oauthAccount`, or
+ * `CLAUDE_CONFIG_DIR` / `CODEX_HOME`) THIS PROCESS's environment held the
+ * moment it was spawned. Resolving from `drives.ts` or the status board instead
+ * would read a DIFFERENT process's environment — this driver's own, not the
+ * pass's — so the read has to happen here and be carried in the claim's
+ * diagnostics for every later reader (the claim's PR, worktree, log and start
+ * time all work the same way).
  *
  * ONE READ IS NOT ENOUGH FOR EVERY BRANCH, THOUGH. `CLAUDE_CODE_OAUTH_TOKEN`
  * is this process's own environment and therefore genuinely fixed for the
  * drive's whole life — resolving it once at arm time is correct. But the
  * file-backed path (`oauthAccount` / `CODEX_HOME` auth, i.e. no token set)
  * is LIVE FILE CONTENT the pass re-reads on every fresh spawn: an operator's
- * `/login`, or Hearth's own login-swap, mid-drive changes which account the
+ * `/login`, or the wrapper's own login swap, mid-drive changes which account the
  * NEXT pass actually bills against, while a value resolved only once at arm
  * time would keep reporting the OLD one for the rest of the drive's life —
  * defeating the whole point of this module in exactly the scenario its own
- * "Hearth wrapper" example opens with (docomply-review, a reference-implementation pull request). `drive.ts`
+ * account-switching wrapper example opens with. `drive.ts`
  * closes that gap by re-calling `resolveAccountIdentity` on its existing
  * heartbeat timer and rewriting the claim when the answer changes
  * (`refreshAccountIdentity`, `drive.ts`) — but only while no pass is
  * actively running, so an already-spawned pass's displayed identity holds
  * steady for its whole life instead of being overwritten mid-pass with the
- * account the NEXT pass would use (docomply-review, a reference-implementation pull request round 3) —
+ * account the NEXT pass would use —
  * this module itself stays a pure, stateless resolver and knows nothing
  * about when it gets called again.
  *
@@ -47,11 +48,11 @@
  *
  * NEVER A GUESS. Every resolver here either reads a real, on-disk identity
  * record or returns `null` with a stated reason — there is no fallback that
- * invents an account from an unrelated signal (Hearth's `activeClaudeAccountID`
- * included: it names whichever account was active in Hearth's OWN state at
- * whatever moment something last asked it, not necessarily the account that
- * minted the token this process happens to hold — see the Hearth wrapper
- * comment above for why the two can diverge).
+ * invents an account from an unrelated signal (the account switcher's own
+ * "active account" record included: it names whichever account was active in
+ * the switcher's OWN state at whatever moment something last asked it, not
+ * necessarily the account that minted the token this process happens to hold —
+ * see the wrapper comment above for why the two can diverge).
  *
  * Runs under Bun and Node >= 22.18: `node:` APIs only, erasable syntax only.
  */
@@ -152,24 +153,22 @@ function tokenFingerprint(token: string): string {
  * Resolve the Claude identity from the effective `.claude.json` — OR, when
  * `CLAUDE_CODE_OAUTH_TOKEN` is set, from the token itself.
  *
- * These are genuinely two different reads, not one read with two labels.
- * `docs/development/ai-tools/claude-in-chrome-connectivity.md` §2 documents
- * that the token, when set, "is the account actually in effect" and that
- * `~/.claude.json`'s `oauthAccount` can go STALE relative to it — exactly the
- * Hearth scenario this module's header comment opens with: the wrapper mints
- * a fresh token from whichever account is active in Hearth's OWN state, and
- * `~/.claude.json` reflects the LAST account a real `/login` (or Hearth's
- * login-swap) wrote, which can be a different one. There is no mechanical way
- * to decode an opaque bearer token back into an account without a network
- * round-trip this arm-time read must not make — so this reports a
- * FINGERPRINT of the token as `account` (distinguishes two drivers on two
- * different tokens, which is the whole point — an earlier change's Problem section is
- * "the operator cannot tell which drivers are about to stop") and folds
- * `oauthAccount`'s read into `provenance` as a labelled, explicitly-hedged
- * hint rather than the reported identity. Reporting `oauthAccount` itself as
- * the token's account (an earlier revision of this function did) would
- * silently misattribute billing the moment the two diverge — the exact
- * failure an earlier change exists to make visible, not reproduce (docomply-review).
+ * These are genuinely two different reads, not one read with two labels. The
+ * token, when set, is the account actually in effect, and `~/.claude.json`'s
+ * `oauthAccount` can go STALE relative to it — exactly the account-switching
+ * wrapper scenario this module's header comment opens with: the wrapper mints a
+ * fresh token from whichever account is active in the switcher's OWN state, and
+ * `~/.claude.json` reflects the LAST account a real `/login` (or the switcher's
+ * own login swap) wrote, which can be a different one. There is no mechanical
+ * way to decode an opaque bearer token back into an account without a network
+ * round-trip this arm-time read must not make — so this reports a FINGERPRINT
+ * of the token as `account` (distinguishes two drivers on two different tokens,
+ * which is the whole point: the operator must be able to tell which drivers are
+ * about to stop) and folds `oauthAccount`'s read into `provenance` as a
+ * labelled, explicitly-hedged hint rather than the reported identity. Reporting
+ * `oauthAccount` itself as the token's account (an earlier revision of this
+ * function did) would silently misattribute billing the moment the two diverge
+ * — the exact failure this module exists to make visible, not reproduce.
  */
 function resolveClaudeIdentity(): AccountIdentity {
   const token = process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "";
@@ -185,17 +184,16 @@ function resolveClaudeIdentity(): AccountIdentity {
       `CLAUDE_CODE_OAUTH_TOKEN${hint}`,
     );
   }
-  // Claude Code's other alternative-auth env var: API-KEY billing, a
-  // COMPLETELY DIFFERENT mode from a Claude subscription — pay-per-token
-  // against whichever Anthropic Console account owns the key, tracked by
-  // Anthropic entirely separately from a `.claude.json` OAuth session.
-  // Falling through to `oauthAccount` here would attribute API-billed work
-  // to an unrelated subscription (chatgpt-codex-connector and coderabbitai,
-  // PR #4678 round 9, independently). Same fingerprint treatment as the
-  // OAuth token above, for the same reason: there is no mechanical way to
-  // turn an opaque secret into an account without a network round-trip this
-  // arm-time read must not make, and a fingerprint still discriminates
-  // concurrent drivers on different keys without exposing the key itself.
+  // Claude Code's other alternative-auth env var: API-KEY billing, a COMPLETELY
+  // DIFFERENT mode from a Claude subscription — pay-per-token against whichever
+  // Anthropic Console account owns the key, tracked by Anthropic entirely
+  // separately from a `.claude.json` OAuth session. Falling through to
+  // `oauthAccount` here would attribute API-billed work to an unrelated
+  // subscription. Same fingerprint treatment as the OAuth token above, for the
+  // same reason: there is no mechanical way to turn an opaque secret into an
+  // account without a network round-trip this arm-time read must not make, and
+  // a fingerprint still discriminates concurrent drivers on different keys
+  // without exposing the key itself.
   const apiKey = process.env.ANTHROPIC_API_KEY ?? "";
   if (apiKey !== "") {
     return resolved(
@@ -218,7 +216,7 @@ function resolveClaudeIdentity(): AccountIdentity {
 
 /**
  * `$CODEX_HOME/auth.json`, or `~/.codex/auth.json` when unset — the same
- * override `lib/quota/codex.ts`'s `sessionsRoot()` reads (ADR-0078 §2).
+ * override `lib/quota/codex.ts`'s `sessionsRoot()` reads.
  */
 function effectiveCodexAuthPath(): string {
   const codexHome = process.env.CODEX_HOME;
@@ -266,7 +264,7 @@ function jwtEmailClaim(token: string): string | null {
  * pass bills against the Console account that owns the key, never against
  * whatever `auth.json` happens to hold — reading `auth.json` regardless
  * would attribute API-billed work to an unrelated leftover ChatGPT identity,
- * or report `unknown` (chatgpt-codex-connector, a reference-implementation pull request round 5). Or, when
+ * or report `unknown`. Or, when
  * no env var is set but the CLI's own supported `codex login --with-api-key`
  * flow persisted the key instead, from THAT — verified against a real login
  * run into an isolated `$CODEX_HOME`: that flow writes
@@ -274,7 +272,7 @@ function jwtEmailClaim(token: string): string | null {
  * `tokens` at all, and never touches the environment, so without this branch
  * such a pass fell through to the `tokens`-based reads below — which this
  * `auth_mode` never populates — and reported `unknown` even though it was
- * billing an API account (chatgpt-codex-connector, a reference-implementation pull request round 8).
+ * billing an API account.
  */
 function resolveCodexIdentity(): AccountIdentity {
   const apiKey = process.env.OPENAI_API_KEY ?? "";
@@ -369,7 +367,7 @@ export function resolveAccountIdentity(
   // -p ...`), and this reason string is persisted into the claim file on
   // disk and echoed by every `drives.ts` listing and exit-11 refusal for the
   // life of the drive — embedding the whole argv would leak whatever that
-  // wrapper's own arguments carried (docomply-review).
+  // wrapper's own arguments carried.
   const label =
     passArgv[0] !== undefined && passArgv[0] !== ""
       ? basename(passArgv[0])

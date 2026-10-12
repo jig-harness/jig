@@ -1,12 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Reaper for drive-pr's own artifacts in `resolveStateDir`'s clone-wide
- * state directory — the default is `~/.local/state/groundwork/drive-pr/
- * <cloneKey>/`, not the legacy `--git-common-dir` this reaper
- * originally targeted; see the module docs below for why that relocation
- * happened and what it does and does not change here. Second category of
- * `tools/dev/reap-conductor-worktrees-cron.sh`'s weekly sweep, alongside
- * an earlier change's worktree reaper.
+ * Reaper for drive-pr's own artifacts in `resolveStateDir`'s clone-wide state
+ * directory — the default is `~/.local/state/groundwork/drive-pr/ <cloneKey>/`,
+ * not the legacy `--git-common-dir` this reaper originally targeted; see the
+ * module docs below for why that relocation happened and what it does and does
+ * not change here. Meant to run from a scheduled (weekly) sweep, alongside a
+ * worktree reaper.
  *
  * ## What accumulates, and why nothing was removing it
  *
@@ -263,14 +262,13 @@ const ENTRY_COUNT_WARN_THRESHOLD = 50_000;
 
 /**
  * Whether `stateDir` is a genuine `$DRIVE_PR_STATE_DIR` relocation — never
- * derived from the env var's mere presence (docomply-review,
- * chatgpt-codex-connector, a reference-implementation pull request round 2). Two ways that presence lies:
- * `drive.ts` unconditionally re-exports its OWN resolved `stateDir` under
- * this name, including when `resolveStateDir` picked the ordinary
- * an earlier change default — so every drive-spawned child sees the variable "set"
- * whether or not an operator ever configured a real override. And a
- * genuinely-set override can still point AT the legacy `--git-common-dir`
- * location `store.ts` already recognizes, which is not a relocation at all.
+ * derived from the env var's mere presence. Two ways that presence lies:
+ * `drive.ts` unconditionally re-exports its OWN resolved `stateDir` under this
+ * name, including when `resolveStateDir` picked the ordinary an earlier change
+ * default — so every drive-spawned child sees the variable "set" whether or not
+ * an operator ever configured a real override. And a genuinely-set override can
+ * still point AT the legacy `--git-common-dir` location `store.ts` already
+ * recognizes, which is not a relocation at all.
  *
  * Comparing the RESOLVED `stateDir` against both non-relocated locations
  * sidesteps the env var entirely: it reads the same whether an override is
@@ -282,19 +280,16 @@ const ENTRY_COUNT_WARN_THRESHOLD = 50_000;
  * fallback), which the first comparison already excludes — so `!==` against
  * `null` is exactly the right answer, not a case needing its own branch.
  *
- * Equality with `legacyDir` alone is not enough: an override placed BENEATH
- * it — `/repo/.git/drive-pr-state`, say — is neither equal to `legacyDir`
- * nor to `computedDefault`, so a bare `!==` reads it as a genuine relocation
- * even though the growing entry population is still inside `.git`, the
- * exact IDE/backup/git-metadata blast radius an earlier change exists to escape
- * (chatgpt-codex-connector, a reference-implementation pull request round 8). `isDescendantOf` checks
- * ancestry, not just identity — and the SAME hazard applies to
- * `computedDefault`: an override nested beneath the ordinary an earlier change
- * default (`~/.local/state/groundwork/drive-pr/<clone>/custom`) still sits under the tree
- * an IDE or backup tool watching `~/.local/state/groundwork` already pays the recursive-
- * enumeration cost for, so it is not a genuine relocation either
- * (chatgpt-codex-connector, a reference-implementation pull request round 8, a fresh finding on the same
- * push).
+ * Equality with `legacyDir` alone is not enough: an override placed BENEATH it
+ * — `/repo/.git/drive-pr-state`, say — is neither equal to `legacyDir` nor to
+ * `computedDefault`, so a bare `!==` reads it as a genuine relocation even
+ * though the growing entry population is still inside `.git`, the exact
+ * IDE/backup/git-metadata blast radius the relocation exists to escape.
+ * `isDescendantOf` checks ancestry, not just identity — and the SAME hazard
+ * applies to `computedDefault`: an override nested beneath the ordinary default
+ * (`~/.local/state/groundwork/drive-pr/<clone>/custom`) still sits under the
+ * tree an IDE or backup tool watching `~/.local/state/groundwork` already pays
+ * the recursive-enumeration cost for, so it is not a genuine relocation either.
  */
 export function computeAlreadyRelocated(
   stateDir: string,
@@ -363,7 +358,7 @@ export function resolveRealPathBestEffort(p: string): string {
  * the legacy `--git-common-dir` or the ordinary an earlier change default is still
  * the SAME physical directory, and a bare string comparison would read it as
  * a genuine relocation, suppressing the remedy for an operator who never
- * actually escaped either location (docomply-review, a reference-implementation pull request round 5). The
+ * actually escaped either location. The
  * pure `computeAlreadyRelocated` itself stays lexical and synchronous —
  * exactly what makes it unit-testable with synthetic, non-existent paths —
  * so the filesystem-identity resolution belongs at this impure boundary,
@@ -375,7 +370,7 @@ export function resolveRealPathBestEffort(p: string): string {
  * collapses EVERY nonzero `git rev-parse --git-common-dir` result into the
  * identical generic failure, including `run`'s own deadline-kill (its
  * `code: 124`) on a transient stall — a case that proves nothing about
- * `stateDir`'s origin (chatgpt-codex-connector, a reference-implementation pull request round 8).
+ * `stateDir`'s origin.
  * `mightBeMissingGitRepo` below runs its OWN independent, bounded git call
  * and reads `RunResult.timedOut` and `stderr` directly, so a deadline-kill
  * and a genuine "fatal: not a git repository" are never conflated — only
@@ -475,7 +470,7 @@ const DELETE_LOCK_ANCHOR = ".reap-state-delete";
  * permanently present in every migrated default state directory and equally
  * not backlog. Without this, `classify` reported it as `unrecognised` on
  * every single healthy migrated clone, weakening the anomaly signal the
- * reaper exists to expose (chatgpt-codex-connector, a reference-implementation pull request round 13).
+ * reaper exists to expose.
  */
 function isReapOwnArtifact(name: string): boolean {
   return isReaperArtifact(name) || isLegacyMigrationMarker(name);
@@ -485,16 +480,15 @@ function isReapOwnArtifact(name: string): boolean {
  * Every live worktree's actor key — `sha256(toplevel).slice(0, 16)`, the exact
  * derivation `lib/state/actor.ts`'s `worktreeKey` uses.
  *
- * A tree lease whose key is absent from this set is the PRIMARY signal that
- * its directory is gone — but not an exact one on its own: `git worktree
- * list`'s registration can be pruned or lost by a git operation elsewhere
- * while the checkout, and a process still holding the lease, remain
- * (docomply-review, a reference-implementation pull request). `judgeActorFamily`'s `liveTreeLeaseFor` veto is
- * what closes that gap; this set alone is a strong but not exact predicate.
- * Re-derived here rather than imported because `worktreeKey` deliberately
- * answers only for the CURRENT process's tree and accepts no override — the
- * identity it exists to protect must not be settable (see its own doc
- * comment) — while this needs the key of every OTHER tree.
+ * A tree lease whose key is absent from this set is the PRIMARY signal that its
+ * directory is gone — but not an exact one on its own: `git worktree list`'s
+ * registration can be pruned or lost by a git operation elsewhere while the
+ * checkout, and a process still holding the lease, remain. `judgeActorFamily`'s
+ * `liveTreeLeaseFor` veto is what closes that gap; this set alone is a strong
+ * but not exact predicate. Re-derived here rather than imported because
+ * `worktreeKey` deliberately answers only for the CURRENT process's tree and
+ * accepts no override — the identity it exists to protect must not be settable
+ * (see its own doc comment) — while this needs the key of every OTHER tree.
  *
  * Returns `null` when git could not be asked, which fails the whole per-actor
  * predicate closed: an empty set would read as "no tree exists" and retire
@@ -505,9 +499,8 @@ async function liveWorktreeKeys(): Promise<Set<string> | null> {
   // default newline-terminated form: a worktree path containing an embedded
   // newline — legal on POSIX filesystems — would otherwise split across two
   // lines here, hashing only a FRAGMENT of the path and never matching
-  // `worktreeKey()`'s hash of the whole thing, misjudging a still-live
-  // worktree as absent and its tree lease as retirable (chatgpt-codex-
-  // connector, PR #4197 round 12).
+  // `worktreeKey()`'s hash of the whole thing, misjudging a still-live worktree
+  // as absent and its tree lease as retirable.
   const r = await git(["worktree", "list", "--porcelain", "-z"], {
     stderr: "ignore",
     timeoutSec: gitCallTimeoutSeconds(),
@@ -519,13 +512,12 @@ async function liveWorktreeKeys(): Promise<Set<string> | null> {
     // Trimmed to match `worktreeRoot()`'s OWN derivation (`lib/state/actor.ts`
     // — `r.stdout.trim()` on `git rev-parse --show-toplevel`), which is the
     // canonical definition `worktreeKey()` hashes against. Whatever that
-    // derivation does is what THIS one has to replicate exactly — not what
-    // is separately "more correct" for an isolated path string — or the two
-    // hashes diverge for a path ending in whitespace (a trailing newline in
-    // particular) and a still-live worktree's tree lease reads as belonging
-    // to a deleted one (chatgpt-codex-connector, a reference-implementation pull request round 14; round
-    // 12's own NUL-delimiting fix dropped this trim without checking that it
-    // was needed for parity, not just for its own sake).
+    // derivation does is what THIS one has to replicate exactly — not what is
+    // separately "more correct" for an isolated path string — or the two hashes
+    // diverge for a path ending in whitespace (a trailing newline in
+    // particular) and a still-live worktree's tree lease reads as belonging to
+    // a deleted one (the NUL-delimiting change once dropped this trim without
+    // checking that it was needed for parity, not just for its own sake).
     const path = line.slice("worktree ".length).trim();
     if (path === "") continue;
     keys.add(
@@ -551,13 +543,13 @@ type PrLifecycle = "open" | "retired" | "closed" | "unknown";
  * a drive against a PR that existed, so a number GitHub no longer knows about
  * cannot come back.
  *
- * `CLOSED` is deliberately its OWN answer, not folded into `retired`
- * (docomply-review, a reference-implementation pull request): GitHub permits reopening a closed PR
- * indefinitely, with no time limit, and `drive-status.ts` explicitly accounts
- * for that ("a closed PR may be REOPENED"). `retired`'s whole safety argument
- * — "no future observer can ever reference that PR's lock generations again"
- * — does not hold for it, unlike `MERGED`, which GitHub never lets
- * come back. `judgePrFamily` treats it as keep-forever, not retire-when-idle.
+ * `CLOSED` is deliberately its OWN answer, not folded into `retired`: GitHub
+ * permits reopening a closed PR indefinitely, with no time limit, and
+ * `drive-status.ts` explicitly accounts for that ("a closed PR may be
+ * REOPENED"). `retired`'s whole safety argument — "no future observer can ever
+ * reference that PR's lock generations again" — does not hold for it, unlike
+ * `MERGED`, which GitHub never lets come back. `judgePrFamily` treats it as
+ * keep-forever, not retire-when-idle.
  */
 async function prLifecycle(pr: string): Promise<PrLifecycle> {
   const r = await ghCall(["pr", "view", pr, "--json", "state"], {
@@ -693,39 +685,36 @@ function anchorsWithUncompactedWork(
  * Re-verifies, right after `sweepLockQuarantine` runs, that `anchor`'s
  * quarantine entries actually compacted.
  *
- * `sweepLockQuarantine` (and `compactQuarantineEntry` beneath it) is `void`
- * by design, and every internal write failure inside it is swallowed — a
- * read-only state dir, EACCES, or ENOSPC all fall through to a best-effort
- * fence-restore fallback with no signal back to the caller (`lock.ts`'s own
- * doc comment on that fallback). Without this, a compaction that genuinely
- * did nothing on such a filesystem still leaves `compacted` incremented and
- * `failures` empty, so the scheduled reaper exits 0 and logs `RESULT: OK`
- * while the backlog it was supposed to shrink stays exactly as large
- * (docomply-review, a reference-implementation pull request round 9). Reruns the SAME per-name check
- * `anchorsWithUncompactedWork` uses, scoped to just this one anchor's
- * entries rather than a full re-scan of the state dir.
+ * `sweepLockQuarantine` (and `compactQuarantineEntry` beneath it) is `void` by
+ * design, and every internal write failure inside it is swallowed — a read-only
+ * state dir, EACCES, or ENOSPC all fall through to a best-effort fence-restore
+ * fallback with no signal back to the caller (`lock.ts`'s own doc comment on
+ * that fallback). Without this, a compaction that genuinely did nothing on such
+ * a filesystem still leaves `compacted` incremented and `failures` empty, so
+ * the scheduled reaper exits 0 and logs `RESULT: OK` while the backlog it was
+ * supposed to shrink stays exactly as large. Reruns the SAME per-name check
+ * `anchorsWithUncompactedWork` uses, scoped to just this one anchor's entries
+ * rather than a full re-scan of the state dir.
  *
  * A `.compacting.*` staging leftover is the ONE `isSweepable` shape this
  * inverts the polarity for. Every other shape is compacted IN PLACE
- * (`compactQuarantineEntry` turns the SAME name from a directory into a
- * single empty file), so "still a directory" means "still needs work". A
- * `.compacting.*` name is different: `sweepLockQuarantine`'s own handling of
- * it (`lib/state/lock.ts`) restores/confirms a fence at the CANONICAL path
- * it names, then deletes the staging copy itself outright — so a
- * successful sweep makes the staging name DISAPPEAR, and checking for its
- * continued existence the same way as every other shape reads that success
- * as a failure (round-9's own fix reported "compaction did not complete"
- * after a genuinely successful recovery — docomply-review, a reference-implementation pull request
- * round 10).
+ * (`compactQuarantineEntry` turns the SAME name from a directory into a single
+ * empty file), so "still a directory" means "still needs work". A
+ * `.compacting.*` name is different: `sweepLockQuarantine`'s own handling of it
+ * (`lib/state/lock.ts`) restores/confirms a fence at the CANONICAL path it
+ * names, then deletes the staging copy itself outright — so a successful sweep
+ * makes the staging name DISAPPEAR, and checking for its continued existence
+ * the same way as every other shape reads that success as a failure (an earlier
+ * version reported "compaction did not complete" after a genuinely successful
+ * recovery).
  *
  * But the staging name disappearing is not the WHOLE story either: when the
- * canonical path didn't already exist, that same successful sweep CREATES
- * one — a tombstoned directory, restoring a fence rather than compacting
- * anything — and that path was never in `family.names` (it did not exist
- * when `classify()` ran, so nothing could have captured it). Checking only
- * the vanished staging name therefore reports success for a generation that
- * is still, in fact, an uncompacted multi-inode directory
- * (docomply-review, a reference-implementation pull request round 11). Resolved via the SAME
+ * canonical path didn't already exist, that same successful sweep CREATES one —
+ * a tombstoned directory, restoring a fence rather than compacting anything —
+ * and that path was never in `family.names` (it did not exist when `classify()`
+ * ran, so nothing could have captured it). Checking only the vanished staging
+ * name therefore reports success for a generation that is still, in fact, an
+ * uncompacted multi-inode directory. Resolved via the SAME
  * `COMPACTING_STAGING_RE` capture `sweepLockQuarantine` uses to find that
  * canonical path, and checked directly.
  */
@@ -772,15 +761,13 @@ interface Verdict {
  *
  * Every verdict for the WHOLE batch is computed up front, in one pass, before
  * any deletion starts (`main`'s `verdicts = [...families.values].map(...)`),
- * and compaction alone measures 9.8s per 40 anchors — minutes, on the
- * 113k-entry backlog an earlier change was filed against. A driver that starts and
- * claims/renews a lease in that window is invisible to the verdict computed
- * before it existed, so deleting on that stale verdict can destroy state a
- * now-live process just wrote (docomply-review + chatgpt-codex-connector, PR
- * #4197 round 3). This does not need full lock coordination with the
- * lease/lock claim protocol to close the practical gap — round 3's own
- * finding frames an immediate revalidation as a sufficient alternative — it
- * only needs the window narrowed from "the rest of this run's processing
+ * and compaction alone measures 9.8s per 40 anchors — minutes, on the measured
+ * 113k-entry backlog. A driver that starts and claims/renews a lease in that
+ * window is invisible to the verdict computed before it existed, so deleting on
+ * that stale verdict can destroy state a now-live process just wrote. This does
+ * not need full lock coordination with the lease/lock claim protocol to close
+ * the practical gap — an immediate revalidation is a sufficient alternative —
+ * it only needs the window narrowed from "the rest of this run's processing
  * time" down to "the gap between this call and the `rmSync` right after it",
  * which is what calling this immediately before that loop does.
  *
@@ -814,13 +801,13 @@ interface Verdict {
  * multi-minute batch as a lease is, and leaving them frozen at batch-start
  * left a MINUTES-wide hole (a family member touched mid-batch, or a worktree
  * re-registered while the sweep ran) next to the lease check's sub-syscall
- * one (docomply-review, a reference-implementation pull request round 4). `liveKeys` is the caller's own
+ * one. `liveKeys` is the caller's own
  * census — but resolving it ONCE for the whole deletion loop, ahead of time,
  * reopened the identical staleness gap one level up: this loop interleaves
  * retire AND compact actions, compacting an earlier family can itself take
  * minutes, and a census resolved before that started is exactly as stale as
  * the original verdict by the time a LATER actor retirement reaches this
- * call (docomply-review, a reference-implementation pull request round 7). The caller now resolves it FRESH
+ * call. The caller now resolves it FRESH
  * immediately before each actor-family call specifically, at the cost of one
  * `git worktree list` per actor retirement rather than one for the whole
  * batch — bounded by how many actor families are actually being retired,
@@ -967,8 +954,7 @@ function judgeActorFamily(
   // wrote something, and `liveTreeLeaseFor` alone cannot distinguish that from
   // "no lease at all" — both read `null` off `readTreeLease`. Within the
   // staleness window it blocks, matching `judgePrFamily`'s
-  // `unreadableLeaseFilesFor` check for the same reason (docomply-review, PR
-  // #4197 round 2).
+  // `unreadableLeaseFilesFor` check for the same reason.
   if (treeLeaseUnreadableAndFreshFor(stateDir, f.subject)) {
     return {
       family: f,
@@ -1020,9 +1006,9 @@ export function parseArgs(argv: readonly string[]): Args {
       // `isDigits` alone does not bound magnitude: a long-enough digit string
       // (e.g. 400 nines) still passes it, but overflows `Number.parseInt` to
       // `Infinity`, which then clears `< 1` too — making `minAgeMs` infinite
-      // and the idle guard never fire again, silently (docomply-review, PR
-      // #4197 round 3). `Number.isSafeInteger` plus the same upper bound the
-      // cron wrapper enforces on `REAP_CRON_MIN_AGE_DAYS` closes both ends.
+      // and the idle guard never fire again, silently. `Number.isSafeInteger`
+      // plus the same upper bound the cron wrapper enforces on
+      // `REAP_CRON_MIN_AGE_DAYS` closes both ends.
       const parsed = isDigits(v) ? Number.parseInt(v, 10) : Number.NaN;
       if (
         !Number.isSafeInteger(parsed) ||
@@ -1090,15 +1076,14 @@ function readSnapshot(stateDir: string): Snapshot | null {
  * so the call site can fold it into `failures` the same way every OTHER
  * mutating filesystem operation in this script already does (compaction,
  * retirement — see their own `failures.push` call sites), instead of this
- * one write being the sole silent exception to that convention
- * (docomply-review, a reference-implementation pull request round 4).
+ * one write being the sole silent exception to that convention.
  *
  * Goes through `fsutil.ts`'s `atomicWrite` (write-fsync-rename via a unique
  * temp file) rather than a plain `writeFileSync`, which truncates the target
  * before writing its replacement: a crash or short write (ENOSPC/EDQUOT)
  * mid-write would otherwise destroy the prior valid snapshot and leave
  * `readSnapshot` reading malformed JSON as `null`, silently losing the
- * measurement interval (docomply-review, a reference-implementation pull request round 2) — the exact
+ * measurement interval — the exact
  * failure mode this state module's every other durable write already
  * guards against.
  */
@@ -1131,7 +1116,7 @@ function writeSnapshot(stateDir: string, entries: number): string | null {
  * silently overwriting a newer, correct snapshot with a stale one and
  * corrupting every future `growthPerDay` delta with no error anywhere. That
  * is why this must be held from the very first read on, not acquired later
- * around only the mutation (coderabbitai, PR #4516 round 6).
+ * around only the mutation.
  *
  * Previously a bespoke `mkdirSync` + pid-file pair, deliberately not
  * `lib/state/lock.ts`'s `createLock` — on the argument that this lock guards
@@ -1147,7 +1132,7 @@ function writeSnapshot(stateDir: string, entries: number): string | null {
  * unconditionally `rmSync`'d the directory with no re-check that it still
  * held the SAME generation it had just observed — a fresh holder that
  * acquired in between was removed just the same, letting two processes
- * believe they each hold the lock (docomply-review, a reference-implementation pull request round 6).
+ * believe they each hold the lock.
  * `createLock` closes both: it never treats a directory as owned until an
  * identity marker is published under its own short-lived `.recovering` gate,
  * and every stale-break moves the directory through a generation-keyed
@@ -1197,16 +1182,15 @@ function deleteLock(stateDir: string): PathLock {
 /**
  * Keeps `deleteLock` alive across a run long enough to outlast its own
  * staleness window — this file documents an expected first-run duration of
- * about 12 minutes, longer than `createLock`'s default 10-minute stale
- * window, so a run that never refreshes its hold can have that hold broken
- * by a contending `--delete` invocation while it is still very much alive,
- * letting the two overlap and corrupt `growthPerDay` (`coderabbitai`/
- * `chatgpt-codex-connector`, PR #4516). A background `setInterval` alone
+ * about 12 minutes, longer than `createLock`'s default 10-minute stale window,
+ * so a run that never refreshes its hold can have that hold broken by a
+ * contending `--delete` invocation while it is still very much alive, letting
+ * the two overlap and corrupt `growthPerDay`. A background `setInterval` alone
  * does not cover it: this function's caller spends most of its time inside
  * synchronous `rmSync`/`sweepLockQuarantine` work with no `await` between
  * calls, and a JS timer cannot fire until the current synchronous stretch
- * returns control to the event loop — so `main()`'s own loops call the
- * returned function directly at points a timer can never reach.
+ * returns control to the event loop — so `main()`'s own loops call the returned
+ * function directly at points a timer can never reach.
  *
  * Returns a no-op when `lock` is `null` (dry run, nothing held) so every
  * call site can invoke it unconditionally rather than null-checking `lock`
@@ -1232,10 +1216,10 @@ function makeSyncHeartbeat(lock: PathLock | null): () => void {
  * `resolveStateDir()`, except on a bare (no `--delete`) run — there,
  * `resolveStateDir()`'s own `defaultStateDirFor()`/`ensureMigratedFromLegacy()`
  * mint a clone identity, create the new state directory, and may write the
- * migration marker, merely to answer "where does state live", violating
- * this reaper's own "DRY RUN — nothing changed" contract (docomply-review,
- * a reference-implementation pull request round 14). Delegates to `store.ts`'s `peekResolvedStateDir()`,
- * which already handles the `$DRIVE_PR_STATE_DIR` override identically.
+ * migration marker, merely to answer "where does state live", violating this
+ * reaper's own "DRY RUN — nothing changed" contract. Delegates to `store.ts`'s
+ * `peekResolvedStateDir()`, which already handles the `$DRIVE_PR_STATE_DIR`
+ * override identically.
  */
 async function resolveStateDirForReport(dryRun: boolean): Promise<string> {
   return dryRun ? peekResolvedStateDir() : resolveStateDir();
@@ -1247,16 +1231,15 @@ async function main(): Promise<number> {
 
   // `resolveStateDir()` deliberately leaves a `$DRIVE_PR_STATE_DIR` override
   // unmaterialised — see `store.ts`'s own doc comment on that branch — so an
-  // override pointed at a location nothing has written to yet is absent, not
-  // an error. Handled HERE, before `deleteLock(stateDir)`: `createLock`'s
+  // override pointed at a location nothing has written to yet is absent, not an
+  // error. Handled HERE, before `deleteLock(stateDir)`: `createLock`'s
   // `acquire()` treats every `mkdirSync` failure alike (a bare `try`/`catch`
   // around it — see `lock.ts`), so mkdir-ing a lock directory under a
   // NONEXISTENT parent fails with ENOENT on every retry, is indistinguishable
   // there from live contention, and after `DELETE_LOCK_MAX_WAIT_SEC` reports a
-  // misleading lock-timeout error instead of the true "nothing to reap yet"
-  // (coderabbitai, PR #4618 round 6). Bounded either way — this is not an
-  // indefinite hang — but the message a reader gets back should name what
-  // actually happened.
+  // misleading lock-timeout error instead of the true "nothing to reap yet".
+  // Bounded either way — this is not an indefinite hang — but the message a
+  // reader gets back should name what actually happened.
   if (!existsSync(stateDir)) {
     if (args.json) {
       console.log(
@@ -1317,7 +1300,7 @@ async function main(): Promise<number> {
     // Captured once and reused for both the guard and the arithmetic below —
     // two separate `Date.now()` calls let a clock adjustment between them pass
     // the guard with the first read and then produce a zero or negative
-    // denominator with the second (docomply-review, a reference-implementation pull request).
+    // denominator with the second.
     const nowForGrowthMs = Date.now();
     const growthPerDay =
       previousSnapshot !== null && nowForGrowthMs > previousSnapshot.timestampMs
@@ -1378,11 +1361,10 @@ async function main(): Promise<number> {
         // whole loop: this loop interleaves retire AND compact actions, and
         // compaction of an EARLIER family can itself take minutes, so a census
         // resolved before the loop started is exactly as stale as the verdict
-        // itself by the time a LATER actor retirement reaches this line
-        // (docomply-review, a reference-implementation pull request round 7 — a second instance of the same
-        // batch-vs-per-family staleness class round 4's finding was about,
-        // this time in the fix for it). `null` for a PR-kind family, which
-        // never reads this argument, to avoid a wasted `git worktree list`.
+        // itself by the time a LATER actor retirement reaches this line (the
+        // same batch-vs-per-family staleness class the revalidation itself
+        // exists for). `null` for a PR-kind family, which never reads this
+        // argument, to avoid a wasted `git worktree list`.
         const liveKeysNow =
           v.family.kind === "actor" ? await liveWorktreeKeys() : null;
         const skipReason = retirementStillSafe(
@@ -1408,17 +1390,15 @@ async function main(): Promise<number> {
           // `continue` here left every newly-active family — the ones this
           // predicate exists to protect — permanently uncompacted, exactly
           // the population most likely to keep minting fresh quarantine
-          // entries, contradicting the unconditional-compaction promise
-          // (docomply-review, a reference-implementation pull request round 19).
+          // entries, contradicting the unconditional-compaction promise.
         } else {
           // Tracked per-family, not just globally in `failures` — a family with
           // even one failed removal is NOT cleanly retired, and reporting it as
           // `RETIRED` (console) or including it in `retire[]` (JSON) alongside
-          // families that truly are is the exact ambiguity round 5's
-          // `skippedReason` design fixed for vetoed families, recurring here for
-          // failed ones instead: a reader has no signal that "retained state"
-          // sits behind a family this report calls fully retired
-          // (coderabbitai, PR #4197 round 25).
+          // families that truly are is the exact ambiguity vetoed families once
+          // had, recurring here for failed ones instead: a reader has no signal
+          // that "retained state" sits behind a family this report calls fully
+          // retired.
           let familyFailed = 0;
           for (const n of v.family.names) {
             touchLock(); // throttled — see `makeSyncHeartbeat`
@@ -1427,7 +1407,7 @@ async function main(): Promise<number> {
               // `force: true` makes `rmSync` a silent no-op on an already-absent
               // path rather than throwing — which means a bare unconditional
               // count credits `removed` for an entry this call never actually
-              // found, let alone removed (docomply-review, a reference-implementation pull request round 5).
+              // found, let alone removed.
               // Checked immediately before the call, so this narrows rather than
               // reopens the window: a path vanishing in the gap between the
               // `existsSync` and the `rmSync` right after it still counts as
@@ -1476,7 +1456,7 @@ async function main(): Promise<number> {
         // credited only on confirmed success, mirroring `removed`'s own
         // per-entry accounting on the retire path — crediting it unconditionally
         // here reported success for an anchor `anchorStillNeedsCompaction` had
-        // just proven still needed work (docomply-review, a reference-implementation pull request round 15).
+        // just proven still needed work.
         if (anchorStillNeedsCompaction(stateDir, v.family, anchor)) {
           failures.push(`${anchor}: compaction did not complete`);
         } else {
@@ -1494,7 +1474,7 @@ async function main(): Promise<number> {
     // never actually revalidates. Omitting these from `keep`/`kept N` produced
     // exactly the contradiction `SKIPPED (revalidation)` immediately followed
     // by `kept 0 families` even though that same family was compacted in the
-    // same run (docomply-review, a reference-implementation pull request round 24).
+    // same run.
     const revalidationSkippedIds = new Set(
       revalidationSkipped.map((s) => s.id),
     );
@@ -1507,7 +1487,7 @@ async function main(): Promise<number> {
     // The final entry-count WARNING must reflect what THIS run leaves behind,
     // not the census taken near the start of `main` before its own deletions
     // — a run that retires enough families to drop below the threshold must
-    // not still warn on the pre-cleanup count (docomply-review, a reference-implementation pull request).
+    // not still warn on the pre-cleanup count.
     // Re-enumerated fresh rather than reconstructed as `reportedEntries -
     // removed`, for the same reason the snapshot's own post-cleanup count
     // below is: a concurrent driver adding or removing entries during this
@@ -1519,7 +1499,7 @@ async function main(): Promise<number> {
     // silently assumes no concurrent driver added or removed entries during
     // this run's own window and can therefore both warn on a stale wrong
     // number and persist that same wrong number as next run's growth-rate
-    // baseline (coderabbitai, PR #4612 round 12).
+    // baseline.
     let postCleanupEntries: number | null = reportedEntries;
     if (args.del) {
       try {
@@ -1567,17 +1547,17 @@ async function main(): Promise<number> {
       families: families.size,
       // `retire` and `keep` are disjoint outcome sets — a family vetoed by
       // `retirementStillSafe` is excluded here and appears in `keep` instead
-      // (round 24's `isKept`), carrying the veto's own reason there. Round 5's
-      // original design instead kept a vetoed family IN `retire` with a
-      // per-entry `skippedReason` flag, on the argument that a `retire` array
-      // with no signal that some members were vetoed reads as "these were
-      // retired" even when they were not — but round 24 made `keep` the place
-      // that signal actually lives now, so leaving the SAME family in both
-      // arrays just relocated the ambiguity: a consumer treating `retire` and
-      // `keep` as disjoint (a reasonable assumption neither name disclaims)
-      // saw one family in both, one of them lying about what happened to it
-      // (docomply-review, a reference-implementation pull request round 25). `revalidationSkipped` remains
-      // the definitive per-family audit trail of what was vetoed and why.
+      // (`isKept`), carrying the veto's own reason there. An earlier design
+      // instead kept a vetoed family IN `retire` with a per-entry
+      // `skippedReason` flag, on the argument that a `retire` array with no
+      // signal that some members were vetoed reads as "these were retired" even
+      // when they were not — but `keep` is the place that signal actually lives
+      // now, so leaving the SAME family in both arrays just relocated the
+      // ambiguity: a consumer treating `retire` and `keep` as disjoint (a
+      // reasonable assumption neither name disclaims) saw one family in both,
+      // one of them lying about what happened to it. `revalidationSkipped`
+      // remains the definitive per-family audit trail of what was vetoed and
+      // why.
       retire: verdicts
         .filter(
           (v) =>
@@ -1615,7 +1595,7 @@ async function main(): Promise<number> {
       // `anchorStillNeedsCompaction` confirmed actually shrank — crediting the
       // candidate count unconditionally reported success for anchors a
       // read-only filesystem (or any other swallowed write failure) left
-      // untouched (docomply-review, a reference-implementation pull request round 15).
+      // untouched.
       anchorsCompactable: compactable,
       anchorsCompacted: args.del ? compacted : 0,
       failures,
@@ -1623,15 +1603,14 @@ async function main(): Promise<number> {
       // found a mutable input (a lease, the idle guard, or the worktree census)
       // had changed since the verdict was computed. Not a failure — the next
       // weekly run re-judges these fresh. These families are excluded from
-      // `retire` above and appear in `keep` instead (round 25).
+      // `retire` above and appear in `keep` instead.
       revalidationSkipped,
       // At least one entry's `rmSync` failed — this family is neither cleanly
       // retired (some of its state survives) nor kept (most of it is gone), a
       // THIRD outcome distinct from both `retire` and `keep`, so it is excluded
       // from both rather than misreported as either. `failedEntries` is a
-      // subset of `entries`; the specific failures are in `failures` above.
-      // The next weekly run retries whatever remains (coderabbitai, PR #4197
-      // round 25).
+      // subset of `entries`; the specific failures are in `failures` above. The
+      // next weekly run retries whatever remains.
       incompleteRetirements,
     };
 
@@ -1640,16 +1619,15 @@ async function main(): Promise<number> {
     // (below, and the whole `dry run` test suite), and a snapshot write is a
     // filesystem mutation like any other. Persists `postCleanupEntries`
     // (computed above, fresh off disk rather than reconstructed as
-    // `reportedEntries - removed`: `reportedEntries` is a census taken near
-    // the START of `main`, and this loop can run for minutes, so a concurrent
+    // `reportedEntries - removed`: `reportedEntries` is a census taken near the
+    // START of `main`, and this loop can run for minutes, so a concurrent
     // driver adding or removing entries during that window would otherwise be
-    // permanently absent from every future growth-rate delta — docomply-review,
-    // a reference-implementation pull request), so the snapshot and the warning above agree on what this run
-    // actually left behind.
+    // permanently absent from every future growth-rate delta), so the snapshot
+    // and the warning above agree on what this run actually left behind.
     // Skipped when `postCleanupEntries` is `null` — the failed enumeration
-    // above already recorded a failure, and persisting a growth-rate
-    // baseline computed from no real count would poison every future delta
-    // against a number this run never actually measured.
+    // above already recorded a failure, and persisting a growth-rate baseline
+    // computed from no real count would poison every future delta against a
+    // number this run never actually measured.
     if (args.del && postCleanupEntries !== null) {
       const snapshotError = writeSnapshot(stateDir, postCleanupEntries);
       if (snapshotError !== null) {
@@ -1668,11 +1646,11 @@ async function main(): Promise<number> {
       if (growthPerDay !== null) {
         const sign = growthPerDay >= 0 ? "+" : "";
         // `toFixed(0)` used to round anything under 0.5/day to `+0`, hiding
-        // real positive growth between sweeps spaced further apart than a
-        // day — three new entries between weekly runs is +0.43/day, which a
-        // human skimming this line would read as "no growth" (chatgpt-codex-
-        // connector, PR #4516). One fractional digit is enough to keep that
-        // visible without cluttering the common case of a larger delta.
+        // real positive growth between sweeps spaced further apart than a day —
+        // three new entries between weekly runs is +0.43/day, which a human
+        // skimming this line would read as "no growth". One fractional digit is
+        // enough to keep that visible without cluttering the common case of a
+        // larger delta.
         console.log(
           `  growth since last run: ${sign}${growthPerDay.toFixed(1)} entries/day (was ${previousSnapshot?.entries} entries at ${new Date(previousSnapshot?.timestampMs ?? 0).toISOString()})`,
         );
@@ -1759,41 +1737,37 @@ async function main(): Promise<number> {
   }
 }
 
-// Guarded, the same way drive.ts and summary-findings.ts guard their own
-// entry (and for the identical portability reason documented there —
+// Guarded, the same way drive.ts and summary-findings.ts guard their own entry
+// (and for the identical portability reason documented there —
 // `import.meta.main` is Bun-only on the Node versions this skill supports).
 // Unguarded, merely IMPORTING this module for its exported `anchorOf` /
-// `classify` / `retirementStillSafe` — exactly what the test suite does —
-// ran the whole reaper against the importing process's own argv: on a
-// developer clone with real drive-pr families, that means real `gh pr view`
-// and `git worktree list` calls, and a stray `--delete`-shaped argv would
-// have deleted real state from a test import (chatgpt-codex-connector, PR
-// #4197 round 5).
+// `classify` / `retirementStillSafe` — exactly what the test suite does — ran
+// the whole reaper against the importing process's own argv: on a developer
+// clone with real drive-pr families, that means real `gh pr view` and `git
+// worktree list` calls, and a stray `--delete`-shaped argv would have deleted
+// real state from a test import.
 //
 // `process.argv[1]` wrapped in `realpathSync` — measured (not merely
-// suspected): a symlinked invocation path (a symlinked checkout, common for
-// a cron job's working copy) leaves `process.argv[1]` UNRESOLVED under Node
+// suspected): a symlinked invocation path (a symlinked checkout, common for a
+// cron job's working copy) leaves `process.argv[1]` UNRESOLVED under Node
 // (verbatim as invoked) while `fileURLToPath(import.meta.url)` is already
 // canonical (the module loader resolves it), so the two compared unequal and
-// the guard silently skipped `main()` — the scheduled reaper would do
-// nothing while still exiting 0 (coderabbitai, PR #4197 round 17). Bun
-// itself was measured to already canonicalize `argv[1]`, so this specific
-// gap never fires under the production cron invocation (which always uses
-// bun) — but Node compatibility is this skill's own explicit, tested
-// requirement, so it still needed closing. `existsSync` is checked first:
-// `realpathSync` throws ENOENT on a path that does not exist, and an
-// unreadable/nonexistent argv[1] is exactly the case this guard should fail
-// closed on (treat as "not the entry point"), not crash on. `existsSync`
+// the guard silently skipped `main()` — the scheduled reaper would do nothing
+// while still exiting 0. Bun itself was measured to already canonicalize
+// `argv[1]`, so this specific gap never fires under the production cron
+// invocation (which always uses bun) — but Node compatibility is this skill's
+// own explicit, tested requirement, so it still needed closing. `existsSync` is
+// checked first: `realpathSync` throws ENOENT on a path that does not exist,
+// and an unreadable/nonexistent argv[1] is exactly the case this guard should
+// fail closed on (treat as "not the entry point"), not crash on. `existsSync`
 // returning true is not enough on its own, though — `realpathSync` can still
 // throw EACCES or ELOOP (a permission-denied directory in the path, or a
-// symlink cycle) even on a path that demonstrably exists, and an uncaught
-// throw here is a MODULE-LEVEL exception: it fails not just `main()` but a
-// PLAIN IMPORT of this module for `anchorOf`/`classify`/
-// `retirementStillSafe` (exactly what the test suite does), which is a
-// strictly worse failure mode than the "silently skip main()" bug this
-// guard exists to fix (chatgpt-codex-connector and coderabbitai, PR #4197
-// round 18). The `try` covers both calls so either one failing closes the
-// same way.
+// symlink cycle) even on a path that demonstrably exists, and an uncaught throw
+// here is a MODULE-LEVEL exception: it fails not just `main()` but a PLAIN
+// IMPORT of this module for `anchorOf`/`classify`/ `retirementStillSafe`
+// (exactly what the test suite does), which is a strictly worse failure mode
+// than the "silently skip main()" bug this guard exists to fix. The `try`
+// covers both calls so either one failing closes the same way.
 let isEntryPoint = false;
 if (process.argv[1] !== undefined) {
   try {

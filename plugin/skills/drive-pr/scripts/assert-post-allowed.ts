@@ -2,11 +2,11 @@
 /**
  * May this session still post to GitHub on this drive's behalf?
  *
- * The read-only fence in front of an IRREVERSIBLE external mutation
- *. an earlier change fenced every DRIVE-STATE mutation behind the session
- * lease, so a revoked pass can no longer overwrite another session's holds.
- * The one thing it did not cover is the act that cannot be taken back: posting
- * a comment. `reply-to-thread.ts` and `answer-summary-finding.ts` used to meet
+ * The read-only fence in front of an IRREVERSIBLE external mutation.
+ * Every DRIVE-STATE mutation is fenced behind the session lease, so a revoked
+ * pass cannot overwrite another session's holds. The one thing that fence does
+ * not cover is the act that cannot be taken back: posting a comment.
+ * `reply-to-thread.ts` and `answer-summary-finding.ts` used to meet
  * the lease only AFTERWARDS, at the `drive-state.ts hold` that records what
  * they already posted — by which time the duplicate `**accepted**` reply is on
  * the thread and unwithdrawable.
@@ -26,7 +26,7 @@
  *          or a foreign lease whose owner is gone or has stopped driving.
  * Exit 11  REFUSED — another live session in this tree holds the drive lease.
  * Exit 1   indeterminate — the fence could not read what it needs, which is
- *          also a refusal (`.claude/rules/document-scanning-gates.md` rule 1).
+ *          also a refusal (a check that cannot read its input fails closed).
  * Exit 2   usage, or a `$DRIVE_PR_SESSION` that names a dead or malformed pid
  *          (`lease.ts`'s ladder refuses that outright — a lease taken under a
  *          dead pid excludes nobody, and the pass carrying it has outlived the
@@ -113,14 +113,13 @@ async function main(): Promise<number> {
     remoteLock.release();
     remoteLock.dispose();
   }
-  // The TREE-WIDE half, alongside the per-PR one above: this
-  // script only ever checked whether the CALLER'S OWN per-PR lease had been
-  // taken over, never whether this working TREE had — so an orphaned pass
-  // for PR A, still carrying a per-PR lease that nothing has revoked, kept
-  // passing this fence even after a replacement session took the tree for
-  // PR B (docomply-review round 10, a reference-implementation pull request: guarded-push.ts was wired to
-  // the tree fence, this script was not, and it guards the identical class
-  // of irreversible act — a POST).
+  // The TREE-WIDE half, alongside the per-PR one above: this script only ever
+  // checked whether the CALLER'S OWN per-PR lease had been taken over, never
+  // whether this working TREE had — so an orphaned pass for PR A, still
+  // carrying a per-PR lease that nothing has revoked, kept passing this fence
+  // even after a replacement session took the tree for PR B (guarded-push.ts
+  // was wired to the tree fence, this script was not, and it guards the
+  // identical class of irreversible act — a POST).
   //
   // A CHECK only, not a held lock: this script's own job ends the instant it
   // returns, and the POST it is clearing the way for happens in the CALLING

@@ -193,7 +193,7 @@ describe("drive-state.ts progress", () => {
     }
   });
 
-  it("rejects a --phase outside the closed set with exit 2, and does not stamp (review finding)", async () => {
+  it("rejects a --phase outside the closed set with exit 2, and does not stamp", async () => {
     const dir = freshStateDir();
     try {
       seedState(dir);
@@ -442,7 +442,7 @@ describe("lastProgressAt is written ONLY by genuine progress events", () => {
     }
   });
 
-  it("release-held --all on an ALREADY-EMPTY batch is a genuine no-op — no progress stamp (review finding)", async () => {
+  it("release-held --all on an ALREADY-EMPTY batch is a genuine no-op — no progress stamp", async () => {
     const dir = freshStateDir();
     try {
       seedState(dir); // no `held` override — starts empty
@@ -484,11 +484,11 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
   // keeps a driver's LOCK claim fresh. This is a structural property of
   // `touchLock`/`startHeartbeat`'s own function bodies, not something an
   // end-to-end test could observe directly (the timer's whole job is to run
-  // independently of any round), so it is pinned by reading the source: per
-  // document-scanning-gates § 3 ("parse or pin"), a text scan over a KNOWN,
-  // small function body — bounded by its own opening/closing brace count
-  // reaching zero, not by an arbitrary line window — is the pin, not a guess
-  // at where the function happens to end today.
+  // independently of any round), so it is pinned by reading the source: under
+  // "parse or pin" (parse a structured format, or pin its exact text), a text
+  // scan over a KNOWN, small function body — bounded by its own opening/closing
+  // brace count reaching zero, not by an arbitrary line window — is the pin,
+  // not a guess at where the function happens to end today.
   const source = readFileSync(DRIVE, "utf8");
 
   function extractFunctionBody(name: string): string {
@@ -513,10 +513,10 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
     throw new Error(`extractFunctionBody: unbalanced braces for ${name}`);
   }
 
-  // an earlier change minor finding: the `openStore`/`store.` checks
-  // alone would still PASS a heartbeat that shelled out to `drive-state.ts
-  // progress` directly (`run(tsArgv(driveState, ['progress', ...]))`)
-  // instead of touching the store in-process — that call mentions neither.
+  // The `openStore`/`store.` checks alone would still PASS a heartbeat that
+  // shelled out to `drive-state.ts progress` directly (`run(tsArgv(driveState,
+  // ['progress', ...]))`) instead of touching the store in-process — that call
+  // mentions neither.
   // Closing the gap needs the ACTUAL infrastructure such a call would need:
   // the `driveState` script-path variable, the `tsArgv` argv-builder, and
   // the quoted verb name itself. A bare `.not.toContain('progress')` was
@@ -539,21 +539,21 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
     assertNoProgressStampInfrastructure(extractFunctionBody("startHeartbeat"));
   });
 
-  // The denylist above is a readable diagnostic, not the actual gate — per
-  // document-scanning-gates.md § 3 ("parse or pin"), a fixed substring list
-  // is defeated indefinitely: a one-line call to a DIFFERENTLY-NAMED helper
-  // (e.g. a `stampHeartbeatProgress()` defined elsewhere in this file that
-  // itself calls `store.update` or shells out to `drive-state.ts progress`)
-  // would contain none of the five forbidden substrings and pass while the
-  // invariant this whole `describe` block exists to protect is broken
-  // (review finding). An AST/call-graph-aware assertion would have to
-  // resolve an unbounded chain of intermediate helper calls to close this
-  // for good, so the tractable alternative the same rule sanctions is a
-  // VERBATIM pin: these two bodies, captured byte-for-byte below, so ANY new
-  // statement — under any name — shows up as a diff against a known-good
-  // snapshot rather than a silent pass. A change to either function (even an
-  // unrelated comment edit) now requires deliberately updating the pin,
-  // which is the point: it forces a human to look.
+  // The denylist above is a readable diagnostic, not the actual gate — under
+  // "parse or pin" (parse a structured format, or pin its exact text), a fixed
+  // substring list is defeated indefinitely: a one-line call to a
+  // DIFFERENTLY-NAMED helper (e.g. a `stampHeartbeatProgress()` defined
+  // elsewhere in this file that itself calls `store.update` or shells out to
+  // `drive-state.ts progress`) would contain none of the five forbidden
+  // substrings and pass while the invariant this whole `describe` block exists
+  // to protect is broken. An AST/call-graph-aware assertion would have to
+  // resolve an unbounded chain of intermediate helper calls to close this for
+  // good, so the tractable alternative the same rule sanctions is a VERBATIM
+  // pin: these two bodies, captured byte-for-byte below, so ANY new statement —
+  // under any name — shows up as a diff against a known-good snapshot rather
+  // than a silent pass. A change to either function (even an unrelated comment
+  // edit) now requires deliberately updating the pin, which is the point: it
+  // forces a human to look.
   const TOUCH_LOCK_GOLDEN = `{
   if (lock.nonce === undefined) return; // never taken
   const claim = join(lock.dir, claimName(lock.nonce));
@@ -570,12 +570,12 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
   // \`release\` will not touch the successor's lock, because the only name it
   // removes is ours.
   //
-  // Recording it is not enough on its own, and that was the round-11 finding:
-  // the loop only reads \`compromised\` at a round boundary, and a pass already
-  // running does not pause at one. So the pass is stopped HERE, the moment
-  // ownership is lost — the fire-and-forget is deliberate, since a timer
-  // callback cannot block and \`stop()\` is synchronous up to the SIGTERM; the
-  // loop below awaits the same handle before it decides anything.
+  // Recording it is not enough on its own: the loop only reads \`compromised\`
+  // at a round boundary, and a pass already running does not pause at one. So
+  // the pass is stopped HERE, the moment ownership is lost — the
+  // fire-and-forget is deliberate, since a timer callback cannot block and
+  // \`stop()\` is synchronous up to the SIGTERM; the loop below awaits the same
+  // handle before it decides anything.
   if (compromised !== "") return;
   compromised = lock.what;
   void stopActivePass(\`the \${lock.what} lock was recovered by another driver\`);
@@ -597,16 +597,16 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
   timer.unref?.();
 }`;
 
-  it("touchLock body is byte-for-byte the reviewed snapshot — closes the differently-named-helper gap the denylist above cannot (review finding)", () => {
+  it("touchLock body is byte-for-byte the reviewed snapshot — closes the differently-named-helper gap the denylist above cannot", () => {
     expect(extractFunctionBody("touchLock")).toBe(TOUCH_LOCK_GOLDEN);
   });
 
-  it("startHeartbeat body is byte-for-byte the reviewed snapshot — closes the differently-named-helper gap the denylist above cannot (review finding)", () => {
+  it("startHeartbeat body is byte-for-byte the reviewed snapshot — closes the differently-named-helper gap the denylist above cannot", () => {
     expect(extractFunctionBody("startHeartbeat")).toBe(START_HEARTBEAT_GOLDEN);
   });
 
   it("sanity: extractFunctionBody actually finds a non-trivial body (guards against a silently-passing empty match)", () => {
-    // document-scanning-gates § 1: a parser that "found nothing" must not
+    // Fail closed: a parser that "found nothing" must not
     // read as a clean result — assert the extracted body has real content,
     // so a rename of `touchLock`/`startHeartbeat` reddens this test instead
     // of leaving the two checks above vacuously true forever.

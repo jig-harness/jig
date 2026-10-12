@@ -8,14 +8,14 @@
  * test IS the `git rev-parse --show-toplevel` call itself, and the property
  * being pinned is which directory that call runs FROM.
  *
- * Pins the fix for the gap the reviewer named (chatgpt-codex-connector, PR
- * #4279): a driven pass's shell cwd persists across tool calls, so a `cd` to
- * an unrelated tree between calls used to make this resolve THAT tree's root
- * instead of the one the driver is actually driving — protecting the wrong
- * tree's fence while the mutation lands in the real one, or falsely refusing
- * on an unrelated lease. `base-sync.ts` and `drive-status.ts` already anchor
- * their own root/HEAD reads to `$DRIVE_PR_WORKTREE`; this is the same anchor
- * applied at the one shared choke point every lease/hold caller goes through.
+ * Pins the fix for this gap: a driven pass's shell cwd persists across tool
+ * calls, so a `cd` to an unrelated tree between calls used to make this resolve
+ * THAT tree's root instead of the one the driver is actually driving —
+ * protecting the wrong tree's fence while the mutation lands in the real one,
+ * or falsely refusing on an unrelated lease. `base-sync.ts` and
+ * `drive-status.ts` already anchor their own root/HEAD reads to
+ * `$DRIVE_PR_WORKTREE`; this is the same anchor applied at the one shared choke
+ * point every lease/hold caller goes through.
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
@@ -132,7 +132,7 @@ describe("worktreeRoot", () => {
     // A hook-launched driver inherits these for ANOTHER checkout, and they
     // outrank the cwd: unscrubbed, `--show-toplevel` would name repoB while
     // the driver sits in repoA, so the worktree lock would key on the wrong
-    // tree (docomply-review, a reference-implementation pull request round 9).
+    // tree.
     const r = probeWorktreeRoot(repoA, {
       GIT_DIR: join(repoB, ".git"),
       GIT_WORK_TREE: repoB,

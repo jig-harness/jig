@@ -71,24 +71,58 @@ Knowledge moves up three layers, each promoting into the next:
   wiki-lint cadence runs on a schedule and posts to the log; raw → compiled
   promotion (retrospection backlog) is tracked.
 
-## Port status
+## Adoption steps
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| `docs/WIKI-SCHEMA.md` (governance model, authority hierarchy, lint table) | [`templates/WIKI-SCHEMA.md`](templates/WIKI-SCHEMA.md) — copyable governance-model skeleton, IP-scrubbed |
-| `docs/.frontmatter-schema.yaml` (types/statuses/lifecycle/owners/tags + suggestions) | [`templates/frontmatter-schema.yaml`](templates/frontmatter-schema.yaml) — generic schema with neutral enums |
-| `.claude/scripts/frontmatter-check.sh` (schema validator) | [`reference/frontmatter-check/`](reference/frontmatter-check/) — portable checker + self-test + fixtures |
-| `scripts/check-descarring-scars.sh` (+ its self-test) — the C4 de-scarring rule | [`reference/scar-lint/`](reference/scar-lint/) — portable scar detector with code-masking + self-test + fixtures |
-| `tools/docs/generate-index.sh` (index generator + freshness gate) | [`reference/index/`](reference/index/) — portable frontmatter-aware generator (orphan reporting documented as a not-yet-ported extension); freshness-gate wiring reuses M2's triad |
+1. Copy [`templates/WIKI-SCHEMA.md`](templates/WIKI-SCHEMA.md) into your docs
+   tree, adapt the domain folders and the authority order, and link it from
+   the instruction file; start new docs from a template with valid
+   frontmatter. This is **Lite**.
+2. Copy [`templates/frontmatter-schema.yaml`](templates/frontmatter-schema.yaml),
+   run [`reference/frontmatter-check/`](reference/frontmatter-check/) in CI on
+   changed docs, generate the index with [`reference/index/`](reference/index/)
+   and gate its freshness, and run [`reference/scar-lint/`](reference/scar-lint/)
+   as at least an advisory check. This is **Standard**.
+3. Make the scar lint block promotion to `approved`, add a check that
+   `last_updated` advances when a doc's body changes, schedule the wiki-lint
+   table, and track the backlog of raw notes awaiting promotion. This is
+   **Strict**.
 
-Also landed: [`mappings.md`](mappings.md) (CI providers, hook managers, schema
-formats) and [`maturity.yaml`](maturity.yaml).
+## Status
 
-**Not ported** (per "don't port the unproven" / IP scrub): the tag-merge
-normalizer and the full ~50-tag canonical taxonomy (domain-specific values —
-the *mechanism* of a canonical list + merge map is documented in the schema
-template, seeded with neutral tags); the connections/ page schema and the
-scheduled wiki-lint workflow (documented as future in the lint table — the
-manual cadence is the proven part); the reference index generator is TypeScript
-upstream and is represented here as a portable script that covers the same
-walk-and-emit contract, not a transcription.
+What this module provides:
+
+- [`templates/WIKI-SCHEMA.md`](templates/WIKI-SCHEMA.md) — the written
+  governance model: the three layers, frontmatter, de-scarring, the authority
+  hierarchy, the wiki-lint table and naming conventions.
+- [`templates/frontmatter-schema.yaml`](templates/frontmatter-schema.yaml) —
+  the closed vocabularies (types, statuses, lifecycle horizons, owners), a
+  neutral canonical tag list, the "did you mean" suggestions and a tag merge
+  map.
+- [`reference/frontmatter-check/`](reference/frontmatter-check/) — validates
+  every doc's frontmatter against that schema, read at run time.
+- [`reference/index/`](reference/index/) — generates `INDEX.md` from
+  frontmatter, with a `--check` freshness gate.
+- [`reference/scar-lint/`](reference/scar-lint/) — finds scars in approved
+  docs, with code masked first.
+- [`reference/docs.ts`](reference/docs.ts) — the small frontmatter reader the
+  three scripts share.
+- [`mappings.md`](mappings.md) (CI providers, hook managers, schema formats)
+  and [`maturity.yaml`](maturity.yaml).
+
+Each reference script has a paired self-test beside it. The
+[`/groundwork:descar`](../../plugin/skills/descar/SKILL.md) skill is the
+operating procedure for the de-scarring rule: it handles the part a lint
+cannot do. [`/groundwork:promote-memory`](../../plugin/skills/promote-memory/SKILL.md)
+promotes a lesson from an agent's private memory into this docs tree.
+
+Deliberately left out: a tag-merge normalizer and a full canonical tag
+taxonomy, because a tag list is a repository's domain values; the schema
+template shows the mechanism (a canonical list plus a merge map) with neutral
+tags.
+
+Future: orphan reporting in the index generator (its design is in
+[`reference/index/README.md`](reference/index/README.md#orphan-reporting-extension)),
+the diff-aware stale-`last_updated` gate (sketched in
+[`reference/frontmatter-check/README.md`](reference/frontmatter-check/README.md#the-stale-last_updated-gate-futurestrict)),
+a schema for `connections/` pages, and a scheduled wiki-lint workflow; the
+lint table runs as a manual cadence until then.

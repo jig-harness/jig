@@ -64,7 +64,7 @@ export async function worktreeRoot(): Promise<string> {
   // the first — and it is not free: `claimLease` resolves the actor on every
   // mutating command, and `reset` used to spawn it while HOLDING the state
   // mutex, serialising a subprocess behind the lock every other command waits
-  // on (coderabbitai, PR #4069). Caching the promise rather than the value also
+  // on. Caching the promise rather than the value also
   // collapses concurrent callers — `claim-held` fans out one per key — onto a
   // single spawn.
   //
@@ -74,7 +74,7 @@ export async function worktreeRoot(): Promise<string> {
   // `ExitError`, it does not exit, so a rejection stayed in the memo and every
   // later caller in that process got the same rejection replayed. Terminal
   // today, and wrong the moment the failure path becomes recoverable, which is
-  // exactly the invariant the comment was there to protect (coderabbitai).
+  // exactly the invariant the comment was there to protect.
   if (cachedRoot !== null) return cachedRoot;
   const pending = resolveWorktreeRoot().catch((e: unknown) => {
     // Only clear a memo that is still OURS: a concurrent caller may already
@@ -121,14 +121,13 @@ async function resolveWorktreeRoot(): Promise<string> {
   // here mis-scopes the fence to the pass's wandering cwd rather than the
   // tree the merge/push actually mutates — able to race a second session in
   // the real tree, or falsely refuse on an unrelated lease in the wrong one
-  // (docomply-review, a reference-implementation pull request). Empty/unset falls back to the ambient cwd
+  //. Empty/unset falls back to the ambient cwd
   // exactly as before, matching every other `DRIVE_PR_WORKTREE` consumer.
   const anchor = process.env.DRIVE_PR_WORKTREE;
   // Deadlined: this runs on the SessionStart `--here` path (via
   // `worktreeLockName`), where a hung git on a stalled filesystem would
   // otherwise outlive the outer hook's timeout and turn "could not check"
-  // into silence — the one thing the banner's contract forbids
-  // (chatgpt-codex-connector, a reference-implementation pull request round 8).
+  // into silence — the one thing the banner's contract forbids.
   // The env is scrubbed of GIT_DIR / GIT_WORK_TREE: a hook-launched driver
   // inherits them for another checkout and they outrank the cwd, so an
   // unscrubbed read would key the worktree lock (and every hold's actor) on

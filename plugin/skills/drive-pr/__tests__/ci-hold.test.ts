@@ -396,12 +396,11 @@ describe("ci:hold evidence", () => {
     ).toBeNull();
   });
 
-  it("fails closed on a timeline entry that is not a proper object, rather than skipping it (PR #4681 round 4)", () => {
+  it("fails closed on a timeline entry that is not a proper object, rather than skipping it", () => {
     // A null/primitive/array timeline element could be obscuring a genuine
     // ci:hold transition this function has no way to inspect — skipping it
     // and continuing risks exposing an older event as "latest" and letting
-    // release() remove a label that now belongs to another actor
-    // (chatgpt-codex-connector, a reference-implementation pull request round 4).
+    // release() remove a label that now belongs to another actor.
     for (const malformed of [null, "not-an-object", 42, [], [1, 2]]) {
       expect(
         ciHoldTransitions(
@@ -483,11 +482,11 @@ describe("ci:hold evidence", () => {
   });
 
   it("does not accept a skipped Schema gate as the final witness, even over an older success", () => {
-    // The newest run (id 2, skipped) is selected first and validated on its
-    // own terms — it does not qualify, and completedRequiredCi does NOT fall
-    // back to the older, completed-success run behind it, with or without
-    // an unlabel floor. Falling back to superseded evidence is exactly the
-    // class of bug PR #4681 round 2 closed.
+    // The newest run (id 2, skipped) is selected first and validated on its own
+    // terms — it does not qualify, and completedRequiredCi does NOT fall back
+    // to the older, completed-success run behind it, with or without an unlabel
+    // floor. Falling back to superseded evidence is exactly the class of bug
+    // this guards against.
     const runs = parseCheckRuns({
       check_runs: [
         {
@@ -701,16 +700,15 @@ describe("ci:hold evidence", () => {
     );
   });
 
-  it("waits for a newer queued rerun rather than falling back to an older success (PR #4681 round 2, supersedes round 1)", () => {
-    // Round 1 fixed a masking bug by filtering to qualifying (completed,
-    // non-skipped, fresh) runs BEFORE picking the highest id — but that same
-    // filter can silently prefer an older, already-successful run over a
-    // newer, genuine RERUN of the identical check that is still queued or
-    // in-progress and could yet fail. The newest run is the only evidence
+  it("waits for a newer queued rerun rather than falling back to an older success", () => {
+    // An earlier fix closed a masking bug by filtering to qualifying
+    // (completed, non-skipped, fresh) runs BEFORE picking the highest id — but
+    // that same filter can silently prefer an older, already-successful run
+    // over a newer, genuine RERUN of the identical check that is still queued
+    // or in-progress and could yet fail. The newest run is the only evidence
     // that can still change, so completedRequiredCi must select it FIRST,
-    // unconditionally, and validate freshness/completion/success on THAT
-    // run alone — never falling back to an older one it superseded
-    // (chatgpt-codex-connector, a reference-implementation pull request round 2).
+    // unconditionally, and validate freshness/completion/success on THAT run
+    // alone — never falling back to an older one it superseded.
     const runs = parseCheckRuns({
       check_runs: [
         {
@@ -897,7 +895,7 @@ esac
           GROUNDWORK_OVERLAY: HOLD_OVERLAY,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
-          // set-ci-hold is test-only fixture seeding (PR #4681 round 4) —
+          // set-ci-hold is test-only fixture seeding —
           // harmless to set unconditionally here since no other command
           // reads this variable.
           DRIVE_PR_ALLOW_TEST_CI_HOLD_SEED: "1",
@@ -958,7 +956,7 @@ esac
     // DIFFERENT head from the third call onward — modeling a push landing in
     // the window between the last remote read and store.update() writing
     // verifiedSha. Neither read sees it; only the post-write compensating
-    // check does (chatgpt-codex-connector, a reference-implementation pull request round 2).
+    // check does.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-write-"));
     const bin = join(root, "bin");
     const stateDir = join(root, "state");
@@ -1006,7 +1004,7 @@ esac
     expect(new TextDecoder().decode(read.stdout).trim()).toBe("");
   });
 
-  it("clears the certificate when the label timeline changes immediately after the verification commit (PR #4681 round 3)", () => {
+  it("clears the certificate when the label timeline changes immediately after the verification commit", () => {
     // Same class as the head-race test above, but for the OTHER half of
     // "still current": the pre-write and post-write checks used to ask
     // different questions — state/head/held only after the write, state/
@@ -1062,19 +1060,17 @@ esac
     expect(new TextDecoder().decode(read.stdout).trim()).toBe("");
   });
 
-  it("refuses when a required check is rerun and fails after the initial CI-evidence snapshot (PR #4681 round 6)", () => {
+  it("refuses when a required check is rerun and fails after the initial CI-evidence snapshot", () => {
     // The ORIGINAL `verdict` (ciVerdictOf over the first-fetched allRuns/
-    // statuses) is exactly as stale as the head/timeline reads it sits
-    // beside once real time elapses — a required check rerun and failed
-    // after that snapshot but before the pre-write confirmation left
-    // `verifiedSha` recorded from evidence that was no longer current,
-    // because `stillFullyCurrent()` re-checked state/head/held/timeline but
-    // never re-fetched CI evidence itself (chatgpt-codex-connector, PR
-    // #4681 round 6, on top of round 3's fix to this same function). `pr
-    // view` and the timeline stay constant; only the check-runs endpoint
-    // answers differently, green for the first two calls (the witness/
-    // requiredFresh read, then the initial ciVerdictOf snapshot) and
-    // failing from the third call onward (stillFullyCurrent's own
+    // statuses) is exactly as stale as the head/timeline reads it sits beside
+    // once real time elapses — a required check rerun and failed after that
+    // snapshot but before the pre-write confirmation left `verifiedSha`
+    // recorded from evidence that was no longer current, because
+    // `stillFullyCurrent()` re-checked state/head/held/timeline but never
+    // re-fetched CI evidence itself. `pr view` and the timeline stay constant;
+    // only the check-runs endpoint answers differently, green for the first two
+    // calls (the witness/requiredFresh read, then the initial ciVerdictOf
+    // snapshot) and failing from the third call onward (stillFullyCurrent's own
     // re-checks).
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-ci-"));
     const bin = join(root, "bin");
@@ -1128,17 +1124,16 @@ esac
     expect(new TextDecoder().decode(read.stdout).trim()).toBe("");
   });
 
-  it("refuses when a required check is superseded by a newer SKIPPED run, even though the aggregate verdict alone would pass (PR #4681 round 7)", () => {
-    // Round 6's re-check verified only the aggregate `ciVerdictOf(...) ===
-    // 'green'`, which treats `skipped` as non-failing — so a newer SKIPPED
-    // run for a required check could supersede the successful post-unlabel
-    // run without the aggregate re-check ever noticing, even though
+  it("refuses when a required check is superseded by a newer SKIPPED run, even though the aggregate verdict alone would pass", () => {
+    // An earlier re-check verified only the aggregate `ciVerdictOf(...) ===
+    // 'green'`, which treats `skipped` as non-failing — so a newer SKIPPED run
+    // for a required check could supersede the successful post-unlabel run
+    // without the aggregate re-check ever noticing, even though
     // `completedRequiredCi`'s own freshness predicate (which explicitly
-    // excludes `skipped` from what counts as "completed") would reject it
-    // (chatgpt-codex-connector, a reference-implementation pull request round 7). `stillFullyCurrent()` now
-    // delegates to the SAME `proveCiGreen()` the initial proof uses, so the
-    // stricter witness/freshness check runs on every re-check too, not just
-    // the aggregate one.
+    // excludes `skipped` from what counts as "completed") would reject it.
+    // `stillFullyCurrent()` now delegates to the SAME `proveCiGreen()` the
+    // initial proof uses, so the stricter witness/freshness check runs on every
+    // re-check too, not just the aggregate one.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-skip-"));
     const bin = join(root, "bin");
     const stateDir = join(root, "state");
@@ -1284,14 +1279,14 @@ esac
     ).not.toBeNull();
   });
 
-  it("refuses to reset state holding a RELEASED ci:hold transition (PR #4681 round 3)", () => {
+  it("refuses to reset state holding a RELEASED ci:hold transition", () => {
     // GitHub's label timeline is immutable and cumulative: once ANY ci:hold
     // transition has happened for this PR, the remote timeline can never go
     // back to empty. Erasing the local `released` record would make
     // ci-hold.ts final-ready's no-persisted-hold branch reject every future
     // head forever (it only accepts a null ciHold when the timeline IS
     // empty) — the same root cause the now-removed `clear-ci-hold` command
-    // had (chatgpt-codex-connector, a reference-implementation pull request round 3).
+    // had.
     const { bin, stateDir } = fakeGh(HEAD, "[]");
     const released = invoke(bin, stateDir, [
       "set-ci-hold",
@@ -1319,7 +1314,7 @@ esac
     ).not.toBeNull();
   });
 
-  it("clear-ci-hold is removed: the command no longer exists (PR #4681 round 3)", () => {
+  it("clear-ci-hold is removed: the command no longer exists", () => {
     // Unconditionally nulling ciHold created the identical permanent-4
     // deadlock as resetting over a released transition, and this command had
     // no callers anywhere in the skill — removed rather than fixed, per the
@@ -1329,13 +1324,13 @@ esac
     expect(result.exitCode).not.toBe(0);
   });
 
-  it("refuses to reset an UNREADABLE state file that still NAMES a ciHold record (PR #4681 round 6)", () => {
+  it("refuses to reset an UNREADABLE state file that still NAMES a ciHold record", () => {
     // A file that fails to PARSE is not evidence it held no ci:hold
     // transition — it is evidence this code cannot tell either way. Reset
     // exists to clear genuine corruption, but silently treating "unreadable"
     // the same as "absent" let a real held/released transition's only event
-    // id be deleted right alongside whatever actually corrupted the file
-    // (chatgpt-codex-connector, a reference-implementation pull request round 6). Scoped to files that
+    // id be deleted right alongside whatever actually corrupted the file.
+    // Scoped to files that
     // still visibly mention the `ciHold` key even though they don't fully
     // parse — see the sibling test just below for the case this must NOT
     // block (corruption with no ciHold evidence in it at all).
@@ -1355,7 +1350,7 @@ esac
     expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
   });
 
-  it("still allows reset over unreadable state that names no ciHold evidence at all (PR #4681 round 6)", () => {
+  it("still allows reset over unreadable state that names no ciHold evidence at all", () => {
     // The other half of the same fix: an unparseable file whose corruption
     // has nothing to do with ci:hold must stay recoverable through reset —
     // that is reset's own documented purpose (see `drive-pr.test.ts`'s
@@ -1368,13 +1363,12 @@ esac
     expect(reset.exitCode).toBe(0);
   });
 
-  it("refuses to reset unreadable state whose ciHold key is JSON-escaped, not literal bytes (PR #4681 round 7)", () => {
-    // A raw byte-substring check for `"ciHold"` is defeated the moment the
-    // key is escaped: `ciHold` decodes to the identical property name
-    // `ciHold` but never contains the literal bytes `"ciHold"` anywhere in
-    // the file. Round 6's fix used exactly that substring check; this pins
-    // the escape-aware string-literal scanner that replaced it
-    // (chatgpt-codex-connector, a reference-implementation pull request round 7).
+  it("refuses to reset unreadable state whose ciHold key is JSON-escaped, not literal bytes", () => {
+    // A raw byte-substring check for `"ciHold"` is defeated the moment the key
+    // is escaped: `ciHold` decodes to the identical property name `ciHold` but
+    // never contains the literal bytes `"ciHold"` anywhere in the file. An
+    // earlier fix used exactly that substring check; this pins the escape-aware
+    // string-literal scanner that replaced it.
     const { bin, stateDir } = fakeGh(HEAD, "[]");
     writeFileSync(
       join(stateDir, "drive-pr-999.json"),
@@ -1385,14 +1379,13 @@ esac
     expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
   });
 
-  it('still allows reset when "ciHold" appears only as a VALUE, not a property key (PR #4681 round 9)', () => {
+  it('still allows reset when "ciHold" appears only as a VALUE, not a property key', () => {
     // A literal decoding to `ciHold` in VALUE position — `{"reason":
-    // "ciHold","broken":` — is not evidence of a `ciHold` property at all;
-    // round 7's scanner credited any matching literal regardless of
-    // position, over-blocking reset for corruption that never actually
-    // named the key. Only a literal immediately followed by (optional
-    // whitespace, then) `:` counts as a key (chatgpt-codex-connector, PR
-    // #4681 round 9).
+    // "ciHold","broken":` — is not evidence of a `ciHold` property at all; an
+    // earlier scanner credited any matching literal regardless of position,
+    // over-blocking reset for corruption that never actually named the key.
+    // Only a literal immediately followed by (optional whitespace, then) `:`
+    // counts as a key.
     const { bin, stateDir } = fakeGh(HEAD, "[]");
     writeFileSync(
       join(stateDir, "drive-pr-999.json"),
@@ -1402,15 +1395,14 @@ esac
     expect(reset.exitCode).toBe(0);
   });
 
-  it("refuses to reset a PERFECTLY PARSEABLE state file whose `ciHold` key is simply missing, when GitHub still shows a live transition (PR #4681 round 11)", () => {
-    // Rounds 6/7/9 each closed this only for the UNPARSEABLE-text path — but
-    // a state file with no `ciHold` key at all still parses cleanly as valid
+  it("refuses to reset a PERFECTLY PARSEABLE state file whose `ciHold` key is simply missing, when GitHub still shows a live transition", () => {
+    // Earlier fixes each closed this only for the UNPARSEABLE-text path — but a
+    // state file with no `ciHold` key at all still parses cleanly as valid
     // JSON, takes the `try` branch, and previously produced neither
     // `ownsCiHold` nor `hasCiHoldEvidence` — reset proceeded without ever
     // consulting the live timeline. Structurally identical risk to the
     // truncated-text case: local bytes cannot distinguish "never held" from
-    // "the field was lost/never written" (chatgpt-codex-connector, a reference-implementation pull request
-    // round 11).
+    // "the field was lost/never written".
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-reset-nokey-"));
     const bin = join(root, "bin");
     const stateDir = join(root, "state");
@@ -1440,7 +1432,7 @@ esac
     expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
   });
 
-  it("refuses to reset when `ciHold` parses but is a malformed shape (not null, not a recognized phase object), when GitHub still shows a live transition (PR #4681 round 11)", () => {
+  it("refuses to reset when `ciHold` parses but is a malformed shape (not null, not a recognized phase object), when GitHub still shows a live transition", () => {
     const root = mkdtempSync(
       join(tmpdir(), "drive-pr-ci-hold-reset-badshape-"),
     );
@@ -1475,7 +1467,7 @@ esac
     expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
   });
 
-  it("still allows reset over an EXPLICIT `ciHold: null` without any live check needed (PR #4681 round 11)", () => {
+  it("still allows reset over an EXPLICIT `ciHold: null` without any live check needed", () => {
     // `freshState()`'s own trustworthy "never held" marker — the ordinary,
     // expected case for the vast majority of resets. Uses a `gh` stub that
     // errors on any timeline call, pinning that this path never reaches it.
@@ -1499,13 +1491,12 @@ esac
     expect(reset.exitCode).toBe(0);
   });
 
-  it("refuses to reset unreadable state truncated BEFORE the ciHold key was ever serialized, when GitHub still shows a live transition (PR #4681 round 9)", () => {
-    // `freshState()` emits `ciHold` after several other fields, so a
-    // realistic truncated write can cut off before the key appears at all —
-    // the local file then contains zero raw-byte evidence, even though a
-    // ci:hold transition is genuinely live on GitHub. Raw-text scanning
-    // alone (rounds 6/7/9's own fix) cannot see past that: only checking the
-    // actual timeline closes it.
+  it("refuses to reset unreadable state truncated BEFORE the ciHold key was ever serialized, when GitHub still shows a live transition", () => {
+    // `freshState()` emits `ciHold` after several other fields, so a realistic
+    // truncated write can cut off before the key appears at all — the local
+    // file then contains zero raw-byte evidence, even though a ci:hold
+    // transition is genuinely live on GitHub. Raw-text scanning alone cannot
+    // see past that: only checking the actual timeline closes it.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-reset-live-"));
     const bin = join(root, "bin");
     const stateDir = join(root, "state");
@@ -1537,7 +1528,7 @@ esac
     expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
   });
 
-  it("refuses to reset unreadable state when the live timeline itself cannot be read (PR #4681 round 9)", () => {
+  it("refuses to reset unreadable state when the live timeline itself cannot be read", () => {
     // Neither the raw bytes nor GitHub confirm there is nothing to preserve
     // — an inconclusive live read is refused for the same reason an
     // inconclusive parse already is, rather than silently treated as "no
@@ -1692,7 +1683,7 @@ esac
     // default `requireSuccess` (false) merely checks the run is completed
     // and non-skipped, which a failed run also satisfies. `--require-success`
     // is the dedicated opt-in this caller passes to close that race
-    // (chatgpt-codex-connector, a reference-implementation pull request) — see announce-merge-ready.ts's own
+    // — see announce-merge-ready.ts's own
     // finalCiProof() for why it, and not drive.ts, needs this.
     const { bin, stateDir } = fakeGh(runsWith("failure", "success"));
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
@@ -1707,7 +1698,7 @@ esac
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
   });
 
-  it("--require-success refuses when a legacy commit STATUS is failing, even with every check-run green (chatgpt-codex-connector, a reference-implementation pull request round 12)", () => {
+  it("--require-success refuses when a legacy commit STATUS is failing, even with every check-run green", () => {
     // finalReady's witness/completedRequiredCi checks only ever read
     // check-runs — a legacy status context turning failing after
     // announce-merge-ready.ts's initial snapshot was invisible to every
@@ -1744,7 +1735,7 @@ esac
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
   });
 
-  it("--require-success refuses when a commit status turns failing between the initial aggregate check and stillCurrentForFinalReady's re-snapshot (chatgpt-codex-connector, a reference-implementation pull request round 13)", () => {
+  it("--require-success refuses when a commit status turns failing between the initial aggregate check and stillCurrentForFinalReady's re-snapshot", () => {
     // requiredCiAggregateIsGreen() runs once for the initial proof, then
     // stillCurrentForFinalReady() re-snapshots PR state/head/held/timeline
     // right before commit — but that re-snapshot used to check nothing
@@ -1786,15 +1777,15 @@ esac
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
   });
 
-  it("--require-success refuses when a required check is superseded by a NEWER skipped run only at the re-check (chatgpt-codex-connector, a reference-implementation pull request round 15)", () => {
-    // Round 12 added the aggregate ciVerdictOf check but the re-verification
-    // only ever re-ran IT, never completedRequiredCi/the witness — and
-    // ciVerdictOf's own PASSING_CONCLUSIONS treats `skipped` as passing,
-    // unlike completedRequiredCi. So a required check superseded by a
+  it("--require-success refuses when a required check is superseded by a NEWER skipped run only at the re-check", () => {
+    // An earlier version added the aggregate ciVerdictOf check but the
+    // re-verification only ever re-ran IT, never completedRequiredCi/the
+    // witness — and ciVerdictOf's own PASSING_CONCLUSIONS treats `skipped` as
+    // passing, unlike completedRequiredCi. So a required check superseded by a
     // fresher SKIPPED run between the initial proof and the re-check was
-    // invisible to the re-check even though it would have failed the
-    // INITIAL proof outright. finalCiProofGreen is now the one shared
-    // predicate for both, so the re-check catches this identically.
+    // invisible to the re-check even though it would have failed the INITIAL
+    // proof outright. finalCiProofGreen is now the one shared predicate for
+    // both, so the re-check catches this identically.
     //
     // The check-runs endpoint answers with a clean, all-success set for its
     // first two hits (the initial finalCiProofGreen call: its own
@@ -1878,13 +1869,13 @@ esac
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
   });
 
-  it("catches a head change landing in the window stillCurrentForFinalReady's OWN timeline call spends on the network (chatgpt-codex-connector, a reference-implementation pull request round 17)", () => {
-    // Round 15 reordered the CI proof to run before the PR/timeline
+  it("catches a head change landing in the window stillCurrentForFinalReady's OWN timeline call spends on the network", () => {
+    // An earlier version reordered the CI proof to run before the PR/timeline
     // snapshot, but left snapshot() (the head check) running BEFORE
     // transitions() WITHIN that snapshot step — so a push landing while
-    // transitions()'s own network round-trip was in flight was still
-    // invisible: the head check had already passed on stale evidence by
-    // the time it happened.
+    // transitions()'s own network round-trip was in flight was still invisible:
+    // the head check had already passed on stale evidence by the time it
+    // happened.
     //
     // Modeled with a shared counter keyed on the SECOND timeline call, not
     // total call count (fragile to unrelated call-count drift elsewhere in
@@ -1943,7 +1934,7 @@ esac
     // `pr view` answers HEAD on its first call (the entry snapshot) and
     // secondHead on every later call (the final re-check) — modeling a push
     // that lands in the window finalReady spends reading check-runs and the
-    // label timeline (chatgpt-codex-connector, a reference-implementation pull request round 2).
+    // label timeline.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-"));
     const bin = join(root, "bin");
     const stateDir = join(root, "state");

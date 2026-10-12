@@ -13,8 +13,8 @@ explains. With it, the runs queue and each gets a clean machine.
 
 The lock is a **symlink whose target is the holder's process id**. Creating a
 symlink is **atomic** on [POSIX](../../../../GLOSSARY.md) and fails if the name
-already exists: if two processes race, exactly one atomic symlink creation succeeds. Crucially,
-because the target *is* the pid, the lock and its owner-identity are recorded in
+already exists: if two processes race, exactly one atomic symlink creation
+succeeds. Crucially, because the target *is* the pid, the lock and its owner-identity are recorded in
 the **same atomic step** — there is no "won the lock but hasn't written its owner
 yet" window. (A `mkdir` directory plus a separate pid file *does* have that
 window: a holder paused between the two leaves an ownerless lock another process
@@ -23,12 +23,12 @@ reads the symlink target, sees that pid is gone from the process table, and
 reclaims the lock instead of waiting forever.
 
 On Windows, the wrapper writes the process id into a unique temporary file,
-then creates a **[hard link](../../../../GLOSSARY.md)** (a second filesystem name for that same file) at
-the lock path. Creating that name is atomic and fails if another holder owns
-it. The process id is already present when ownership becomes visible, so
-there is no create-then-write gap and no symbolic-link permission requirement.
-The lock root must support hard links, as a native local Windows filesystem does. The
-POSIX symlink protocol remains compatible with the previous Bash wrapper.
+then creates a **[hard link](../../../../GLOSSARY.md)** (a second filesystem
+name for that same file) at the lock path. Creating that name is atomic and
+fails if another holder owns it. The process id is already present when
+ownership becomes visible, so there is no create-then-write gap and no
+symbolic-link permission requirement. The lock root must support hard links,
+as a native local Windows filesystem does.
 
 ## What it does
 
@@ -47,8 +47,9 @@ bun with-resource-lock.ts --lock e2e -- ./run-e2e.sh
 
 Behaviour: acquire the lock (waiting up to `LOCK_TIMEOUT`), run the command,
 release the lock on exit; interrupt and termination signals are forwarded to
-the child, and a crashed holder is reclaimed on the next acquisition. Exit codes: the **command's own** exit code on success; `2` on a usage
-error; `3` if the lock couldn't be acquired in time.
+the child, and a crashed holder is reclaimed on the next acquisition. Exit
+codes: the **command's own** exit code on success; `2` on a usage error; `3` if
+the lock couldn't be acquired in time.
 
 ## CI bypass
 
@@ -78,8 +79,9 @@ reclaimer, so a crash can never wedge recovery.
   owner, sees that pid is gone from the process table, and reclaims. Because
   owner-identity is atomic with acquisition, an existing lock *always* names a
   real (once-live) holder — there is no ownerless state to mis-handle.
-- **Foreign leftover** — a directory, or a file that does not carry a live Windows owner, left at the lock path by a
-  different or older tool would otherwise wedge the lock; it is cleared before
+- **Foreign leftover** — a directory, or a file that does not carry a live
+  Windows owner, left at the lock path by a different or older tool would
+  otherwise wedge the lock; it is cleared before
   acquisition (and the acquire step verifies it really holds the symlink, so a
   stray `ln` into a leftover directory can't be mistaken for a win). A foreign
   entry has no recorded owner to compare, so a tool that is still alive and
@@ -97,6 +99,6 @@ tears down a lock a live holder still owns.
 | `with-resource-lock.ts` | the mutex wrapper; lock via `LOCK_NAME`/`--lock`, waits + bypass via env |
 | `with-resource-lock.test.ts` | paired self-test (mutual exclusion, bypass, stale reclaim, exit codes) |
 
-Run the self-test with `bun test ./with-resource-lock.test.ts`. It scrubs `CI` from its
-own environment first, so the locking assertions still lock when the test itself
+Run the self-test with `bun test ./with-resource-lock.test.ts`. It scrubs `CI`
+from its own environment first, so the locking assertions still lock when the test itself
 runs in CI.

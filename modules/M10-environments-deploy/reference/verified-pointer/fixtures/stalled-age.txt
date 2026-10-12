@@ -1,4 +1,4 @@
-# Only a couple commits behind, but the pointer has not advanced in days —
-# verification is frozen. Must FAIL (page/heal).
+# Only a couple commits behind, but the oldest unverified commit has waited
+# for days — verification is frozen. Must FAIL (page/heal).
 BEHIND 2
 AGE_SECONDS 200000

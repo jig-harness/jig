@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
- * an earlier change (prose corpus) / an earlier change (drive.ts itself) / an earlier change
- * (drive-status.ts's own out-of-band sites, and lib/state/lease.ts) —
- * drive-pr terminal-state ↔ exit-code drift check.
+ * drive-pr terminal-state ↔ exit-code drift check, across the prose corpus,
+ * `drive.ts` itself, `drive-status.ts`'s own out-of-band sites and
+ * `lib/state/lease.ts`.
  *
  * `<skill-dir>/scripts/lib/status/terminal-states.ts`'s
  * `TERMINAL_STATES` const is now the single source of truth for which
@@ -11,29 +11,28 @@
  * not restated here). The prose restatements are not, and were never going
  * to be: `drive-status.ts`'s own "Exit codes"
  * doc comment, `SKILL.md` § Terminal states, `references/terminal-states.md`
- * § Exit codes, `docs/development/using-drive-pr.md`'s exit table, and
- * `docs/development/pr-lifecycle.md`'s exit table each restate a subset of
+ * § Exit codes and `README.md`'s exit table each restate a subset of
  * the same pairing by hand, with nothing to keep any of them in step with
  * the code or with each other.
  *
- * This is a RUNG-2 check (an earlier change ladder: drop / derive-at-render · CI check
+ * This is a RUNG-2 check (freshness ladder: drop / derive-at-render · CI check
  * that commits nothing · commit a generated artifact) — it re-derives the
  * canonical (exitCode, stateName) set from `TERMINAL_STATES` and scans each
  * prose file for a row that states a DIFFERENT pairing than the table
  * carries. Nothing is written to disk; a materialised `_generated/` table
  * would still manufacture merge conflicts on the repo's highest-churn
- * subsystem (`AGENTS.md` § Critical Guardrails #10), which is exactly the
+ * subsystem, which is exactly the
  * class of churn this check exists to police without adding to.
  *
- * WHAT THIS DOES NOT DO, stated per `document-scanning-gates.md` rule 6: it
+ * WHAT THIS DOES NOT DO (a scanning gate states its own scope): it
  * derives a STRUCTURAL fact (does a documented pair exist in the code's own
  * table), never whether the surrounding PROSE is accurate. A row can state a
  * real, correct pair and still be a stale or misleading sentence; this check
  * has nothing to say about that.
  *
- * EXTRACTION STRATEGY (`document-scanning-gates.md` rule 3: parse or pin —
- * a hand-rolled recognizer over independently-styled prose tables is exactly
- * the "one reviewer decoy per round" trap that rule warns against).
+ * EXTRACTION STRATEGY (parse or pin: a hand-rolled recognizer over
+ * independently-styled prose tables is defeated by each new decoy shape in
+ * turn).
  * There is no shared machine-readable format to parse here — four Markdown
  * pipe tables, each styled differently by whoever wrote it, plus one doc
  * comment that isn't a table at all — so each is PINNED to its own known
@@ -44,14 +43,14 @@
  * cells on ` / `, and keep only tokens that are the WHOLE (trimmed) cell
  * content, matching `^[A-Z][A-Z0-9_]*$`; (2) independently, pull out every
  * `` `IDENT` `` backtick span embedded ANYWHERE in the cell, matching the
- * same pattern — this is what lets a human-prose row (`using-drive-pr.md`'s
+ * same pattern — this is what lets a human-prose row (`README.md`'s
  * own style) still be checked once it names its canonical state inline, e.g.
  * "**PR not open** (`PR_NOT_OPEN`)". A cell with NEITHER a whole-cell
  * identifier nor an embedded backtick span — "PR not open" alone, or
  * "**Stalled**" alone — is prose describing the row with nothing to check,
  * and is silently skipped rather than guessed at — the same "prefer omission
- * over hand-maintained approximation" instinct as `document-scanning-gates.md`
- * itself, applied to extraction rather than to counts. Driver-only states
+ * over hand-maintained approximation" instinct the repository applies to
+ * counts, applied here to extraction. Driver-only states
  * (`MAX_ROUNDS`, `STALLED`, `WORKTREE_UNCLEAN`, `SINGLE_INSTANCE_LOCK`) and
  * the `RETIRED` tombstone are deliberately left un-annotated in the
  * human-facing docs today, matching the convention `references/
@@ -63,11 +62,8 @@
  * against `terminal-states.ts`: its category is `state`, not `driver-only`;
  * it IS a real value `report.state` carries, set outside `evaluate` at
  * `drive-status.ts`'s own round-gate lease bump, and it CAN appear in the
- * `--json` report (chatgpt-codex-connector, an earlier change — this
- * comment previously lumped it in with the driver-only set above, which is
- * wrong on all three counts). It stays un-annotated in the human-facing prose
- * docs for that same reason today, even though an earlier change below closes the
- * CODE-binding gap an earlier change deliberately left open for it.
+ * `--json` report. It stays un-annotated in the human-facing prose docs
+ * today, even though the code-level checks below do bind it in code.
  *
  * Below the prose-corpus check are TWO code-level checks, over real files
  * rather than prose about them:
@@ -105,7 +101,7 @@
  *   than silently folded in here.
  *
  *   The residual an earlier change explicitly flagged as worth a follow-up
- *   rather than widening that PR (Tier 3, Pre-PR Code Review Gate): an earlier change
+ *   rather than widening that PR: an earlier change
  *   closed the pairing-drift bug where `report.state` and the emitted/
  *   returned exit code for an out-of-band state could independently disagree
  *   by routing both through ONE `outOfBand(report, name, reason)` lookup, so
@@ -194,10 +190,11 @@ export interface CorpusFile {
   readonly path: string;
   readonly role: CorpusRole;
   /**
-   * Population floor for THIS file (`document-scanning-gates.md` rule 1).
+   * Population floor for THIS file (a scan that finds too few pairs fails
+   * rather than passing vacuously).
    * Defaults to `DEFAULT_MIN_PAIRS` for a file whose table is built out of
-   * bare state identifiers; `using-drive-pr.md`'s table is deliberately
-   * human-prose ("what you do now" — see its own frontmatter `description`)
+   * bare state identifiers; `README.md`'s table is deliberately
+   * human-prose ("what you do now" — see its own section heading)
    * and only NAMES its canonical state inline (see EXTRACTION STRATEGY
    * above) for the rows that document a real, `evaluate.ts`-bound state or
    * class label — the driver-only rows stay unannotated, matching
@@ -211,11 +208,10 @@ export interface CorpusFile {
    * total row count stays at or above this number: on the real corpus
    * today every file's true population is `requiredIdentifiers.length`,
    * which is `>=` this floor for every real entry below, so there is slack
-   * to lose a row into and still clear it (chatgpt-codex-connector,
-   * Measured 2 rows' worth of slack on the header,
-   * 1 on `references/terminal-states.md`). `requiredIdentifiers` below is
-   * what actually closes that gap; this field stays as the cheap belt-and-
-   * suspenders check `document-scanning-gates.md` rule 1 asks for, and as
+   * to lose a row into and still clear it (measured: 2 rows' worth of slack
+   * on the header, 1 on `references/terminal-states.md`).
+   * `requiredIdentifiers` below is what actually closes that gap; this field
+   * stays as the cheap belt-and-suspenders population floor, and as
    * the ONLY completeness check a `DRIVE_PR_TERMINAL_STATES_TEST_FILES`
    * fixture gets unless it also sets the companion
    * `DRIVE_PR_TERMINAL_STATES_TEST_REQUIRED` env var (see
@@ -229,13 +225,13 @@ export interface CorpusFile {
    * leaves open (see its own doc comment): a row that silently vanishes
    * while the file's total count stays above the floor is invisible to a
    * count-only check but not to a set-membership one. Pinned verbatim
-   * (`document-scanning-gates.md` rule 3) against each file's own current,
+   * against each file's own current,
    * known-good content — computed once by running the real extractor over
    * the real file and reading back its output, not re-derived from
    * `TERMINAL_STATES` by a formula, because which subset of the vocabulary
    * each file chooses to document is a per-file editorial decision (e.g.
    * `SKILL.md` names `PASS_DEADLINE`/`QUOTA_PARKED` despite them being
-   * `driver-only`, while `using-drive-pr.md` does not) that no formula can
+   * `driver-only`, while `README.md` does not) that no formula can
    * safely re-derive without guessing at intent. `undefined` on every real
    * `CORPUS_FILES` entry means "skip this check for this file" — never true
    * for a real entry today, since every one below sets it. A
@@ -251,12 +247,10 @@ export interface CorpusFile {
    * Bound a pipe-table extraction to the SECTION starting at this exact
    * (trimmed) heading line, up to the next level-2 (`## `) heading or EOF.
    * Without a bound, `extractPipeTable` scans every pipe-table row in the
-   * whole file — harmless today, but `pr-lifecycle.md` already has an
-   * unrelated stage-flow table whose first cells are bare `0`–`9` (§ The
-   * loop at a glance); a future row there pairing a small number with an
-   * ALL-CAPS token would be silently absorbed as a false pair (chatgpt-
-   * codex-connector, INFO). Unused by
-   * `drive-status-header`, whose own regex already only matches the doc
+   * whole file — an unrelated table elsewhere in the same file whose first
+   * cells are bare small numbers could gain a row pairing a number with an
+   * ALL-CAPS token, which would be silently absorbed as a false pair. Unused
+   * by `drive-status-header`, whose own regex already only matches the doc
    * comment's tightly-aligned rows and needs no section bound.
    */
   readonly heading?: string;
@@ -265,9 +259,8 @@ export interface CorpusFile {
    * state `drive.ts` remaps (today only `CONVERGED`, which `drive-status.ts`
    * itself exits `3` for but `drive.ts` remaps to `0` — see
    * `TERMINAL_STATES.CONVERGED.additionalExitCodes`'s own doc comment).
-   * `docs/development/using-drive-pr.md` and `docs/development/
-   * pr-lifecycle.md` are operator-facing docs that show ONLY the remapped
-   * code for such a state, never `drive-status.ts`'s raw one — so for them
+   * `README.md` is an operator-facing doc that shows ONLY the remapped
+   * code for such a state, never `drive-status.ts`'s raw one — so for it
    * `runCheck` validates against `additionalExitCodes` (falling back to
    * `exitCode` for every state that has none). Every OTHER file
    * (`drive-status.ts`'s own header, `SKILL.md`, `references/
@@ -280,7 +273,7 @@ export interface CorpusFile {
    * this false (the default) is what catches a corrupted `CONVERGED` row
    * whose primary cell was accidentally replaced by the bare remapped value
    * with the annotation dropped — the exact defect this field exists to
-   * catch (chatgpt-codex-connector).
+   * catch.
    */
   readonly documentsDriveTsRemap?: boolean;
 }
@@ -321,20 +314,12 @@ function sectionText(text: string, heading: string | undefined): Section {
 }
 
 /**
- * The prose restatements an earlier change names, minus the mermaid diagram in
- * `pr-lifecycle.md` (it names states, never exit-code-to-state pairs as
- * table rows — see that file's `stateDiagram-v2` block; its transitions are
- * annotated with a bare `(N)` beside a state name in free text, not a cell
- * this extractor can pin without guessing at diagram syntax generally).
- * Three distinct row shapes cover the corpus below: `drive-status.ts` uses
- * its own doc-comment format; `SKILL.md` uses a `| State | Exit | … |` table
- * (state column first); the other three use `| Exit | State | … |` (exit
- * column first). The file count is `CORPUS_FILES.length` below, not restated
- * here — a hand-copied tally of this array drifted twice already: this
- * comment itself said "six … remaining five files" against an array of five,
- * and the test corpus describe block below independently said "six-file
- * corpus" against the same five (`AGENTS.md` § Critical Guardrails #10,
- * chatgpt-codex-connector).
+ * The prose restatements of the exit-code pairing. Three distinct row shapes
+ * cover the corpus below: `drive-status.ts` uses its own doc-comment format;
+ * `SKILL.md` uses a `| State | Exit | … |` table (state column first); the
+ * others use `| Exit | State | … |` (exit column first). The file count is
+ * `CORPUS_FILES.length` below, not restated here: a hand-copied tally of this
+ * array drifts as soon as the array changes.
  *
  * `requiredIdentifiers` on each entry is the exact, pinned set `CorpusFile`'s
  * own doc comment explains — computed by running this file's extractor
@@ -527,14 +512,14 @@ function splitRow(line: string): string[] {
  * own `CONVERGED` row reads `3 (\`drive.ts\`: 0)` — the primary code (`3`)
  * followed by an annotation of `drive.ts`'s remap, not a second pairing. A
  * whole-cell anchor made that row invisible to this extractor entirely
- * (chatgpt-codex-connector) — the single row this
+ * — the single row this
  * whole check exists to police went unchecked. It IS anchored on the END
  * (`$`), to exactly the digit(s) or the digit(s) plus that one annotation —
  * an unanchored tail let any non-digit suffix through unexamined (`5oops`,
  * `5.5`, `` `5`garbage ``  all still captured `5`, satisfying the
  * required-identifier and population checks over a cell that no longer
  * spells a clean exit code at all) and matched the extractor's own tightened
- * intent nowhere but in its doc comment (docomply-review).
+ * intent nowhere but in its doc comment.
  */
 const EXIT_CELL = /^`?(\d{1,2})`?(?:\s+\(`drive\.ts`: \d{1,2}\))?$/;
 
@@ -726,9 +711,7 @@ export function findMissingRequired(
  * prose. Everything above this point re-derives the canonical (exit, state)
  * set from `TERMINAL_STATES` and checks the PROSE restatements (`CORPUS_FILES`
  * below) against it; none of it ever opens `drive.ts` itself, which is
- * exactly the gap the review findings on an earlier change's own PR named (see
- * `terminal-states.ts`'s own
- * header for the citations). `drive.ts` now exports a named constant for
+ * exactly the gap this half closes. `drive.ts` now exports a named constant for
  * each of its driver-only exits, each one READ OUT OF `TERMINAL_STATES`
  * via `terminal-states.ts`'s own `driverOnlyExitCode('<NAME>')` rather than
  * an independent literal (`export const MAX_ROUNDS_EXIT =
@@ -750,10 +733,8 @@ export function findMissingRequired(
  *      entirely, is invisible to (1): the constant itself would still be
  *      correct, and the check would never even look at the new site. This is
  *      a REAL AST scan (`typescript6` — the repo's pinned `typescript` v7 has
- *      no `createSourceFile`/AST-walk surface; see
- *      `docs/development/ai-tools/model-routing-policy.md` sibling precedent
- *      `tools/api-review/scan.ts`), not a regex over the source text
- *      (`document-scanning-gates.md` rule 3) — it looks for a `return`
+ *      no `createSourceFile`/AST-walk surface), not a regex over the source
+ *      text — it looks for a `return`
  *      statement whose entire expression is one of the driver-only exit codes
  *      in `BARE_LITERAL_EXIT_CODES`, anywhere in the file. `PASS_DEADLINE_EXIT`
  *      (15) and `QUOTA_PARKED_EXIT`(16) already had named constants before
@@ -762,7 +743,7 @@ export function findMissingRequired(
  *      via the named constant, never a bare literal — covers them exactly as
  *      much as the ones an earlier change introduced; excluding them left the same
  *      class of bypass open for `PASS_DEADLINE_EXIT` and `QUOTA_PARKED_EXIT`
- *      too (docomply-review). Scope note: this is
+ *      too. Scope note: this is
  *      deliberately NOT bounded
  *      to `main`/`runRepairPass` by function name — a name-bounded scan would
  *      silently stop catching a future edit that renames or extracts either
@@ -780,8 +761,8 @@ export function findMissingRequired(
  *      unscoped scan has no known false positive to state a residual for —
  *      but a future helper function that legitimately returns one of these
  *      numbers for an unrelated reason (a count, an index) would trip this
- *      check; document-scanning-gates.md rule 3's own completeness-boundary
- *      guidance applies if that day comes.
+ *      check; that would be a completeness boundary to state, not a reason
+ *      to narrow the scan by hand.
  *   3. `findConstantProvenanceMismatches` — a
  *      future edit that reverts one of the driver-only DECLARATIONS
  *      themselves back to an independent literal (`export const
@@ -856,8 +837,7 @@ const OUT_OF_BAND_EXIT_NAMES: ReadonlyArray<{
 
 /**
  * `require`s `modulePath` for the exit constants named in `names`, bare (a
- * global under Bun — `tools/data-sync/validate-template-catalog.ts` already
- * relies on the same global inline), so `runCheck` stays synchronous rather
+ * global under Bun), so `runCheck` stays synchronous rather
  * than needing every one of its existing callers (this file's own test
  * suite) converted to `await`. Real code, not text: an export that is missing
  * entirely, or is not a `number`, is reported as a mismatch rather than
@@ -1009,10 +989,9 @@ function createSingleFileProgram(
  * without failing this gate). The single definition both
  * `findTopLevelExportedDeclaration` and `isTopLevelDeclaration` below build
  * on, so they cannot drift apart on what "canonical" means the way
- * they did before this fix (docomply-review: the
- * const check was missing from the former and the export check from the
- * latter — two independent gaps in what was meant to be the same
- * invariant).
+ * two separate checks would (the const check missing from one and the
+ * export check from the other — two independent gaps in what is meant to
+ * be the same invariant).
  */
 function isExportedTopLevelConstStatement(
   node: ts.Node,
@@ -1030,16 +1009,14 @@ function isExportedTopLevelConstStatement(
 /**
  * The real top-level `export const <name> = ...` statement — never a
  * same-named declaration anywhere else in the file. Deliberately a plain
- * statement-list scan rather than a recursive tree walk
- * (`document-scanning-gates.md` rule 3's "parse, don't pattern-match"
- * applied to SCOPE, not just syntax): `sourceFile.statements` is exactly the
- * module's top level, so a decoy `function decoy { const MAX_ROUNDS_EXIT =
- * driverOnlyExitCode('MAX_ROUNDS'); }` elsewhere in the file is a completely
- * different statement list this scan never descends into, and cannot
- * "rescue" a reverted top-level export (docomply-review
- * round 2 — the recursive `ts.forEachChild` walk this replaces matched a
- * decoy at ANY depth, including inside a nested function, because it never
- * checked which declaration list a match came from).
+ * statement-list scan rather than a recursive tree walk ("parse, don't
+ * pattern-match" applied to SCOPE, not just syntax): `sourceFile.statements`
+ * is exactly the module's top level, so a decoy `function decoy { const
+ * MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS'); }` elsewhere in the file
+ * is a completely different statement list this scan never descends into, and
+ * cannot "rescue" a reverted top-level export (a recursive `ts.forEachChild`
+ * walk matches a decoy at ANY depth, including inside a nested function,
+ * because it never checks which declaration list a match came from).
  */
 function findTopLevelExportedDeclaration(
   sourceFile: ts.SourceFile,
@@ -1064,14 +1041,12 @@ function findTopLevelExportedDeclaration(
  * specifier — with `stateName` as its sole string-literal argument?
  * Symbol-resolved via `checker`, not name text: an identifier spelled like
  * the helper that resolves to an import from some OTHER module (a decoy
- * shadowing the real helper) does not match (docomply-review
- * review round 2 — the earlier version matched on
- * `init.expression.text === 'driverOnlyExitCode'` alone and never looked at
+ * shadowing the real helper) does not match (matching on
+ * `init.expression.text === 'driverOnlyExitCode'` alone never looks at
  * where that name actually came from). The module-specifier check itself is
  * an exact match, not a substring test: `.includes('terminal-states')`
  * accepted any decoy specifier merely containing that text, such as
- * `./fake-terminal-states.ts`, as the real helper (docomply-review
- * review round 3).
+ * `./fake-terminal-states.ts`, as the real helper.
  */
 function isExitCodeHelperCall(
   init: ts.Expression,
@@ -1107,7 +1082,7 @@ function isExitCodeHelperCall(
 }
 
 /**
- * an earlier change (docomply-review): `findExitConstantMismatches`
+ * an earlier change: `findExitConstantMismatches`
  * above proves each driver-only exit constant presently holds the VALUE
  * `TERMINAL_STATES` says it should. It cannot, by construction, prove the
  * constant is bound to that value BY the `driverOnlyExitCode(...)` read
@@ -1117,8 +1092,8 @@ function isExitCodeHelperCall(
  * VALUE layer as long as both currently equal 6, so a revert to the bare
  * literal (the exact regression an earlier change exists to prevent) silently passes
  * `findExitConstantMismatches` as long as `TERMINAL_STATES` hasn't also
- * drifted. This is a REAL AST scan of the DECLARATION itself
- * (`document-scanning-gates.md` rule 3), not the runtime value: for each
+ * drifted. This is a REAL AST scan of the DECLARATION itself, not the
+ * runtime value: for each
  * binding, the matching declaration must be the REAL top-level exported
  * `export const <constantName> = ...` (`findTopLevelExportedDeclaration`,
  * above — never a same-named declaration anywhere else in the file), and its
@@ -1191,7 +1166,7 @@ export function findConstantProvenanceMismatches(
  * ever held, retained here forever once superseded by a renumber — the
  * append-only complement to deriving {@link BARE_LITERAL_EXIT_CODES} and
  * {@link OUT_OF_BAND_BARE_LITERAL_EXIT_CODES} from CURRENT values alone
- * (docomply-review). Deriving those two sets purely
+ *. Deriving those two sets purely
  * from `TERMINAL_STATES`'s current values fixes only ONE direction of the
  * problem the file header above describes: it stops a value that is no
  * longer reserved from being mis-flagged, but it also means a renumber makes
@@ -1231,7 +1206,7 @@ const RETIRED_RESERVED_EXIT_CODES: ReadonlySet<number> = new Set<number>([]);
  * `new Set(currentValues)` regardless of whether the union with the retired
  * set is even present in this function body, so a test pinned to the
  * zero-argument call cannot tell a correct union from a deleted one
- * (docomply-review). Injecting the retired set
+ *. Injecting the retired set
  * directly makes the union itself the thing under test, independent of
  * whether production has retired anything yet.
  */
@@ -1249,26 +1224,23 @@ export function buildReservedExitCodes(
  * driver-only exit is always returned via its named constant") applies to
  * every one of them identically, and a future bare `return` of any of these
  * values bypasses its named constant exactly as silently as a bare `6`
- * bypasses `MAX_ROUNDS_EXIT` (docomply-review).
+ * bypasses `MAX_ROUNDS_EXIT`.
  * Verified (2026-09): zero existing bare occurrences of any of these values
  * in `drive.ts` today (see this section's header for the residual this
  * still leaves open on any of them).
  *
  * DERIVED from `TERMINAL_STATES` via `DRIVER_ONLY_EXIT_NAMES` above and the
  * same `driverOnlyExitCode` read `drive.ts`'s own constants use — never an
- * independent literal set for the CURRENT values. An earlier version
- * hard-coded the whole set directly: an add/remove of a driver-only exit
- * still needed a matching edit here (as with any array), but a *renumber* in
- * `TERMINAL_STATES` — the exported constant following automatically via
- * `driverOnlyExitCode` — left this set holding the stale value, so a new
- * bare `return` of the NEW code bypassed its constant undetected while a
- * bare return of the OLD, now-unused code could be misreported (chatgpt-
- * codex-connector). Deriving the CURRENT half from
- * `TERMINAL_STATES` closes that false-positive direction; it does not, by
- * itself, close the opposite one — a renumber's own OLD value needs
- * {@link RETIRED_RESERVED_EXIT_CODES} above to stay caught (docomply-review,
- * This comment previously overclaimed "closes that
- * outright"). */
+ * independent literal set for the CURRENT values. A hard-coded set still
+ * needs a matching edit for an add/remove of a driver-only exit (as with any
+ * array), but a *renumber* in `TERMINAL_STATES` — the exported constant
+ * following automatically via `driverOnlyExitCode` — leaves it holding the
+ * stale value, so a new bare `return` of the NEW code bypasses its constant
+ * undetected while a bare return of the OLD, now-unused code can be
+ * misreported. Deriving the CURRENT half from `TERMINAL_STATES` closes that
+ * false-positive direction; it does not, by itself, close the opposite one —
+ * a renumber's own OLD value needs {@link RETIRED_RESERVED_EXIT_CODES} above
+ * to stay caught. */
 const BARE_LITERAL_EXIT_CODES = buildReservedExitCodes(
   DRIVER_ONLY_EXIT_NAMES.map(({ stateName }) => driverOnlyExitCode(stateName)),
 );
@@ -1288,9 +1260,8 @@ const OUT_OF_BAND_BARE_LITERAL_EXIT_CODES = buildReservedExitCodes(
 export interface BareLiteralExit {
   readonly line: number;
   readonly value: number;
-  /** Which of the three code-bound shapes this occurrence is (docomply-review,
-   *): `return` for a bare-literal return (the
-   * original an earlier change scan), `comparison` for a bare literal compared against
+  /** Which of the three code-bound shapes this occurrence is: `return` for a
+   * bare-literal return, `comparison` for a bare literal compared against
    * a `.code` property (`bump.code === 11`), `call` for a bare literal passed
    * to `emit(...)`. All three bypass the named constant identically — a
    * scan that only caught `return` would miss a comparison or `emit` call
@@ -1319,14 +1290,13 @@ function describeBareLiteralExit({ value, kind }: BareLiteralExit): string {
  * are all recognized as the literal `6` they evaluate to. A `return (6);`
  * bypasses the named constant exactly like a bare `return 6;` does, and
  * stopping at `ts.isNumericLiteral(expr)` alone misses every one of these
- * forms. Parens/unary-plus were the original an earlier change finding;
- * `as`/`satisfies`/non-null were added in review round 2 after `return 6 as
- * number;` was found to still bypass the round-1 version (docomply-review) —
- * loops rather than a fixed nesting order so a combination like `+(6 as
- * number)` unwraps too. Deliberately narrow in one direction only: unary
- * MINUS is never unwrapped — a driver-only exit code is never legitimately
- * negative, so `-6` is not this class of bypass and unwrapping it would
- * misreport an unrelated negative-value return as a literal `6`.
+ * forms (`return 6 as number;` bypasses a scan that unwraps only
+ * parens/unary-plus). It loops rather than following a fixed nesting order
+ * so a combination like `+(6 as number)` unwraps too. Deliberately narrow in
+ * one direction only: unary MINUS is never unwrapped — a driver-only exit code
+ * is never legitimately negative, so `-6` is not this class of bypass and
+ * unwrapping it would misreport an unrelated negative-value return as a literal
+ * `6`.
  */
 function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
   let current: ts.Expression = expr;
@@ -1357,28 +1327,25 @@ function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
  * its declaration's literal initializer — that bypasses the named constant
  * exactly like `return 6;` does, and neither `ts.isNumericLiteral` nor
  * `unwrapLiteral` above can see it, since the return expression is an
- * identifier, not a literal (docomply-review).
+ * identifier, not a literal.
  * Resolved via `checker.getSymbolAtLocation` — the real TypeScript binder —
- * rather than a hand-rolled document-order name walk: an earlier change round
- * 1's original version walked the identifier's enclosing FUNCTION in document
- * order and matched the FIRST same-named declaration it found, which is both
+ * rather than a hand-rolled document-order name walk: walking the
+ * identifier's enclosing FUNCTION in document order and matching the FIRST
+ * same-named declaration found is both
  * too narrow (a decoy in an unrelated function never rescued it, but only
  * because it happened to be out of the function boundary the walk enforced
  * by hand) and, more seriously, WRONG about scope: it does not distinguish a
  * BLOCK-scoped shadow from the binding the return statement actually reads,
  * so `const exit = MAX_ROUNDS_EXIT; if (cond) { const exit = 6; } return
- * exit;` was misreported as a bare-literal bypass even though the `return`
- * correctly reads the outer, canonical binding (docomply-review
- * review round 2). The real binder resolves lexical scope, shadowing and
- * function boundaries correctly by construction, closing that class outright
- * rather than adding a narrower hand-rolled scope rule. It does not follow
- * REASSIGNMENT, and that residual is unchanged by this fix — it reads the
- * resolved declaration's own initializer, not a later write
- * (`let exit = 6; exit = MAX_ROUNDS_EXIT; return exit;` still resolves to the
- * `let exit = 6` declaration) — a full data-flow resolver is a materially
- * larger undertaking than this drift check warrants;
- * document-scanning-gates.md rule 3's completeness-boundary guidance applies
- * to this residual.
+ * exit;` is misreported as a bare-literal bypass even though the `return`
+ * correctly reads the outer, canonical binding. The real binder resolves
+ * lexical scope, shadowing and function boundaries correctly by construction,
+ * closing that class outright rather than adding a narrower hand-rolled scope
+ * rule. It does not follow REASSIGNMENT — it reads the resolved declaration's
+ * own initializer, not a later write (`let exit = 6; exit = MAX_ROUNDS_EXIT;
+ * return exit;` still resolves to the `let exit = 6` declaration) — a full
+ * data-flow resolver is a materially larger undertaking than this drift check
+ * warrants, so this residual is a stated completeness boundary.
  *
  * Deliberately excludes a TOP-LEVEL EXPORTED CONST declaration once resolved
  * (`isTopLevelDeclaration` below, built on the same
@@ -1396,8 +1363,8 @@ function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
  * exactly that shape — export AND const — never to "any top-level variable
  * declaration": a non-exported top-level `const exit = 6;` is not a
  * reference to a driver-only-exit constant at all, and must still be caught
- * the same as any other local alias (docomply-review, an earlier change round
- * 4 — the former structural-only check exempted it regardless).
+ * the same as any other local alias (a structural-only check would exempt
+ * it regardless).
  */
 function isTopLevelDeclaration(declaration: ts.VariableDeclaration): boolean {
   return (
@@ -1414,7 +1381,7 @@ function isTopLevelDeclaration(declaration: ts.VariableDeclaration): boolean {
  * hop reduced to an identifier the caller never re-resolved — the identical
  * gap `resolvesToLocalReporter` and `resolvesToCodePropertyAccess` below close by
  * recursing on their OWN initializer already; this was the one of the three
- * sibling resolvers that did not (docomply-review, a reference-implementation pull request round 4). `seen`
+ * sibling resolvers that did not. `seen`
  * accumulates the symbols already visited in this call chain so a cyclic
  * alias — not reachable through ordinary `const` (a self-reference is a TDZ
  * error), but not ruled out for a pathological `let`-based chain either —
@@ -1462,26 +1429,24 @@ function resolveIdentifierLiteral(
  * once the real nested function and its calls were renamed away from `emit`,
  * that lookup returned `undefined`, so the caller rejected the perfectly
  * resolvable renamed declaration and let `await emitReport(11)` through the
- * gate uncaught (docomply-review, a reference-implementation pull request round 6 — "identify the reporting
- * function structurally... rather than requiring this name").
+ * gate uncaught: the reporting function is identified structurally rather
+ * than by requiring its name.
  *
- * The depth bound itself is unchanged from the round-5 fix this replaces:
+ * The depth bound:
  * `drive-status.ts`'s real emitter is nested directly inside its own
  * top-level `async function main()`, so that shape must resolve — but a
  * function nested two levels deep (a shadow declared inside some OTHER
  * helper that is itself nested inside a top-level function) must not, so a
  * same-named-or-not decoy two levels down still cannot stand in for the real
- * reporter (docomply-review, a reference-implementation pull request round 4's shadow fixture, and round
- * 5's two-levels-deep sibling of it — both still pinned below, and both
- * still pass under this position-only test, since neither ever depended on
- * matching a name to begin with).
+ * reporter (the shadow fixture and its two-levels-deep sibling are both
+ * pinned below, and both pass under this position-only test, since neither
+ * depends on matching a name).
  *
  * Takes a STATEMENT rather than a `FunctionDeclaration` specifically —
  * shared by both declaration shapes this scan recognizes: a
  * `FunctionDeclaration` is itself a statement, and a function-valued
  * `VariableDeclaration`'s own enclosing `VariableStatement` is positioned the
- * same way (`isEmitterZoneVariableDeclaration` below, docomply-review, PR
- * #4906 round 7).
+ * same way (`isEmitterZoneVariableDeclaration` below).
  */
 function isEmitterZoneStatement(
   statement: ts.Statement,
@@ -1518,7 +1483,7 @@ function isEmitterZoneFunctionDeclaration(
  * to a `VariableDeclaration` whose initializer is neither an identifier
  * (the alias case already handled) nor a `FunctionDeclaration`, so it fell
  * through to `return false` and let `await emit(11)` through the gate
- * uncaught (docomply-review, a reference-implementation pull request round 7).
+ * uncaught.
  */
 function isEmitterZoneVariableDeclaration(
   declaration: ts.VariableDeclaration,
@@ -1540,18 +1505,17 @@ function isEmitterZoneVariableDeclaration(
  * function children alongside the real `emit` (`countOrNull(n: number |
  * null)`, `reflectDue()`, `structuralEscalationStatus()`,
  * `recordRoundPaths()`, `baseDrift()`, `degrade(reason: string)`), none
- * sharing its signature, so an unrelated call such as `countOrNull(11)` was
- * classified as an emit call purely on structural depth (docomply-review, PR
- * #4906 round 7: "identify the reporting function through a semantic feature
- * unique to its implementation/call contract rather than declaration depth
- * alone"). The reporter always takes the exit code as its sole argument, so
+ * sharing its signature, so on position alone an unrelated call such as
+ * `countOrNull(11)` would be classified as an emit call purely on structural
+ * depth. The reporting function is therefore identified through a feature
+ * unique to its call contract rather than declaration depth alone. The
+ * reporter always takes the exit code as its sole argument, so
  * its declared arity and (where annotated) parameter type are real evidence
  * position alone is not. An UNANNOTATED parameter is not rejected — this scan
  * has no full program to infer its type from, so the absence of an
  * annotation is "not disproven", not a positive match.
  *
- * STATED BOUNDARY (`document-scanning-gates.md` rule 3, execution-
- * classification residual — docomply-review, a reference-implementation pull request round 8): this is a
+ * STATED BOUNDARY (an execution-classification residual): this is a
  * fail-CLOSED heuristic, not a proof of reporter identity. "Is this function
  * THE canonical reporter" is a semantic property no structural or type-level
  * predicate can decide without full call-graph/whole-program analysis, so a
@@ -1564,7 +1528,7 @@ function isEmitterZoneVariableDeclaration(
  * `main()`'s other direct children listed above match. If a real
  * collision is ever introduced, it fails LOUDLY (the gate rejects a
  * legitimate bare-literal call) rather than silently passing a real
- * violation through — the gate's preferred failure direction (rule 1) — and
+ * violation through — the gate's preferred failure direction — and
  * that concrete instance is the trigger to revisit this boundary, not
  * another round of narrowing the heuristic in the abstract.
  */
@@ -1592,14 +1556,14 @@ function matchesReporterSignature(
  * `checker.getSymbolAtLocation` and tested by POSITION and SIGNATURE — never
  * by matching the identifier's text — so this is immune to every direction of
  * the arms race at once: a behavior-preserving RENAME of
- * the real reporter (round 6 — `emit` → `emitReport`, declaration and call
- * sites together) still resolves, because nothing here reads a name; an
- * UNRELATED same-named shadow declared outside the recognized zone (round 4)
+ * the real reporter (`emit` → `emitReport`, declaration and call sites
+ * together) still resolves, because nothing here reads a name; an
+ * UNRELATED same-named shadow declared outside the recognized zone
  * is still rejected, because it fails the position test regardless of
  * sharing the spelling `emit`; a REWRITE to a function-valued variable
- * declaration (round 7) still resolves, because the zone test now covers
+ * declaration still resolves, because the zone test covers
  * that shape too; and an UNRELATED sibling declared at the exact same
- * structural depth (round 7) is still rejected, because it fails the
+ * structural depth is still rejected, because it fails the
  * call-contract test even though it shares the reporter's position. This
  * does not follow an alias defined in a different file (an import) — the
  * reporter is declared locally in every dispatch shape this check targets
@@ -1620,10 +1584,9 @@ function matchesReporterSignature(
  * brevity keep working. It carries none of the real security property; that
  * property is carried entirely by the position and signature tests above,
  * which is why a resolvable declaration that fails either no longer falls
- * back to this — it fails closed instead, unchanged from the round-4 fix.
+ * back to this — it fails closed instead.
  *
- * STATED BOUNDARY (`document-scanning-gates.md` rule 3 — docomply-review, PR
- * #4906 round 8): the MODELED callee set is a bare identifier plus a
+ * STATED BOUNDARY: the MODELED callee set is a bare identifier plus a
  * same-scope `const` alias chain (the `if (!ts.isIdentifier(expr))` guard
  * above), and nothing else. A non-identifier callee — property access
  * (`reporter.emit(11)`), element access, a call expression returning a
@@ -1634,8 +1597,8 @@ function matchesReporterSignature(
  * forbids after two rounds on one root cause. This is safe to leave stated
  * rather than closed because the actual gate-level consequence does not
  * silently reproduce: the real corpus's own reporter declaration and its
- * call sites are pinned VERBATIM by the test suite (`document-scanning-
- * gates.md` rule 3's "pin it verbatim" branch, paired with this parser) —
+ * call sites are pinned VERBATIM by the test suite (the "pin it verbatim"
+ * alternative to parsing, paired with this parser) —
  * see "the real repo corpus: injecting a bare-literal emit call into the
  * actual drive-status.ts source is caught" and "the real repo corpus:
  * renaming the actual drive-status.ts reporter — declaration AND every call
@@ -1714,7 +1677,7 @@ function resolveLiteral(
  * Covers both dot access (`bump.code`) and a string-literal element access
  * (`bump['code']`, `` bump[`code`] ``) — a behavior-preserving rewrite between
  * the two spellings must not silently exit this check's population
- * (docomply-review). Stated residual: a computed
+ *. Stated residual: a computed
  * element access through an intermediate variable (`const k = 'code';
  * bump[k]`) is not resolved — matching this function's own name-based scope,
  * not a symbol-resolved one.
@@ -1760,13 +1723,12 @@ function bindingElementPropertyName(
  * (`const { code } = bump; ... code === 11`, including its renamed spelling
  * `const { code: alias } = bump`) — the way `resolvesToLocalReporter` above
  * already follows an alias of the reporter callee? A behavior-preserving local
- * extraction of the `.code` access into its own variable evaded the
- * comparison check entirely, since `isCodePropertyAccess` only recognized the
- * property access written directly at the comparison site (docomply-review,
- *) — and destructuring evaded it again after that
- * fix, since a destructured identifier's own declaration is a
- * `BindingElement`, not the `VariableDeclaration` the alias branch below
- * already knew how to follow (docomply-review, a reference-implementation pull request round 4). Resolved
+ * extraction of the `.code` access into its own variable would evade the
+ * comparison check entirely, since `isCodePropertyAccess` only recognizes the
+ * property access written directly at the comparison site — and
+ * destructuring would evade an alias-only fix, since a destructured
+ * identifier's own declaration is a `BindingElement`, not the
+ * `VariableDeclaration` the alias branch below follows. Resolved
  * via `checker.getSymbolAtLocation` — the real binder — for the identical
  * reason `resolveIdentifierLiteral` and `resolvesToLocalReporter` are:
  * reassignment is a stated residual here too (`let code = bump.code; code =
@@ -1810,7 +1772,7 @@ function resolvesToCodePropertyAccess(
 }
 
 /**
- * A REAL AST scan (`document-scanning-gates.md` rule 3) for the shapes
+ * A REAL AST scan (parsed, not pattern-matched) for the shapes
  * that bypass a named exit constant with a bare numeric literal in
  * `exitCodes` (`BARE_LITERAL_EXIT_CODES` by default, for `drive.ts`; an earlier change
  * passes `OUT_OF_BAND_BARE_LITERAL_EXIT_CODES` for `drive-status.ts`
@@ -1824,7 +1786,7 @@ function resolvesToCodePropertyAccess(
  *     before ever reaching a `return`, and a comparison reverted to a bare
  *     literal silently changes which branch fires while the function's own
  *     trailing `return` may still read the real constant, undetected by the
- *     `return`-only scan alone (docomply-review).
+ *     `return`-only scan alone.
  *   - `emit(<expr>)` (`kind: 'call'`) — the out-of-band exit is reported via
  *     `emit(...)` before the matching `return`; the same bypass applies.
  *
@@ -1971,8 +1933,8 @@ function resolveOutOfBandComparisonStateName(
  * sites all use `===` today (verified 2026-09), so that is the
  * shape this check anchors against; a future `!==`-guarded early-return
  * dispatch (`if (x.code !== EXIT) return; ...`) is a real presence dispatch
- * too and is NOT covered by this restriction — a stated scope boundary
- * (`document-scanning-gates.md` rule 3), not a claim that every non-`===`
+ * too and is NOT covered by this restriction — a stated scope boundary,
+ * not a claim that every non-`===`
  * shape is semantically an absence check.
  */
 function resolveOutOfBandComparisonTest(
@@ -2013,15 +1975,14 @@ function resolveOutOfBandComparisonTest(
  * OTHER, unrelated `if` (`if (someCondition) { outOfBand(...) }`) that is
  * itself inside the real dispatch block must still anchor to the dispatch,
  * not silently find no anchor at the first, irrelevant `if` and stop there —
- * an earlier version did exactly that and went silent on a call nested one
- * level deeper than the dispatch itself (docomply-review
- * review). Ascends past every NON-resolving enclosing `if`, returning the
- * first one that DOES resolve — so a genuinely nested dispatch (an
+ * stopping there would go silent on a call nested one level deeper than the
+ * dispatch itself. Ascends past every NON-resolving enclosing `if`, returning
+ * the first one that DOES resolve — so a genuinely nested dispatch (an
  * `outOfBand` call inside an inner `if (y.code === IDENT2)` itself nested
- * inside an outer `if (x.code === IDENT1)`) still anchors to its own,
- * innermost dispatch, not the outer one it also happens to be lexically
- * inside of. No real call site nests at all today, let alone this deeply,
- * but nothing here assumes otherwise.
+ * inside an outer `if (x.code === IDENT1)`) still anchors to its own, innermost
+ * dispatch, not the outer one it also happens to be lexically inside of. No
+ * real call site nests at all today, let alone this deeply, but nothing here
+ * assumes otherwise.
  */
 function findEnclosingOutOfBandDispatch(
   node: ts.Node,
@@ -2060,10 +2021,10 @@ function findEnclosingOutOfBandDispatch(
  * parens, `as`, `satisfies`, and non-null (`!`) — so recognizing the real
  * helper does not depend on incidental wrapper syntax: `(outOfBand)(…)`,
  * `(outOfBand as typeof outOfBand)(…)`, `outOfBand!(…)`. Mirrors
- * `unwrapLiteral` above (docomply-review, a reference-implementation pull request, high, round 4 — "sibling
- * resolvers in this same file already handle AsExpression,
- * SatisfiesExpression, NonNullExpression" — this now does too, via the same
- * established loop rather than a novel mechanism); deliberately omits that
+ * `unwrapLiteral` above (sibling resolvers in this same file handle
+ * AsExpression, SatisfiesExpression and NonNullExpression; this does too,
+ * via the same established loop rather than a novel mechanism); deliberately
+ * omits that
  * function's own unary-plus branch, which is specific to unwrapping a
  * *numeric literal* and has no callee-expression analogue.
  */
@@ -2089,10 +2050,10 @@ function unwrapTransparentExpression(expr: ts.Expression): ts.Expression {
  * same-scope CONST alias chain (`const key = 'outOfBand' as const;
  * ns[key]`) — the identical discipline `resolveIdentifierImportBinding`
  * above applies to import bindings and `resolveIdentifierLiteral` applies to
- * numeric literals, applied here to a string literal instead
- * (docomply-review, a reference-implementation pull request, high, round 5: "the non-literal element access
- * is rejected before `candidateCount` increments... `const key = 'outOfBand'
- * as const; terminalStates[key](report, ...)` is a real helper call"). The
+ * numeric literals, applied here to a string literal instead (`const key =
+ * 'outOfBand' as const; terminalStates[key](report, ...)` is a real helper
+ * call, and rejecting the non-literal element access before `candidateCount`
+ * increments would miss it). The
  * initializer is unwrapped of transparent parens/`as`/`satisfies`/non-null
  * (`unwrapTransparentExpression`) before the literal check, so `'outOfBand'
  * as const` resolves identically to a bare `'outOfBand'`. As with both
@@ -2137,13 +2098,12 @@ function resolveIdentifierStringLiteral(
  * element access keyed by the string literal `ns['outOfBand']`, or an
  * element access keyed by an identifier that itself resolves, through a
  * same-scope CONST chain, to that string literal (`ns[key]` where `const key
- * = 'outOfBand' as const`, docomply-review, a reference-implementation pull request, high, round 5 —
- * `resolveIdentifierStringLiteral` above) — returns the OBJECT side (`ns`);
- * else `undefined`. A GENUINELY dynamic element access — a function call, a
- * template literal with interpolation, a `let` rebind — has no literal to
- * resolve to and remains a stated residual, the same posture
- * `resolveOutOfBandCallStateName`'s own header already takes for a computed
- * `name` argument.
+ * = 'outOfBand' as const`, via `resolveIdentifierStringLiteral` above) —
+ * returns the OBJECT side (`ns`); else `undefined`. A GENUINELY dynamic element
+ * access — a function call, a template literal with interpolation, a `let`
+ * rebind — has no literal to resolve to and remains a stated residual, the same
+ * posture `resolveOutOfBandCallStateName`'s own header already takes for a
+ * computed `name` argument.
  */
 function outOfBandMemberExpressionObject(
   expr: ts.Expression,
@@ -2176,9 +2136,7 @@ function outOfBandMemberExpressionObject(
  * `>=` all end in `EqualsToken` too and are comparisons, not assignments).
  * Used by `findAssignedValues` below in place of a bare `=== EqualsToken`
  * check, so a reassignment written with a compound operator (`alias ??=
- * outOfBand`, docomply-review, a reference-implementation pull request, high, round 10: "the new assignment
- * census only records `identifier = rhs`... ignores... `alias ??=
- * outOfBand`") is not silently invisible to the census. A compound
+ * outOfBand`) is not silently invisible to the census. A compound
  * ARITHMETIC operator (`+=`) could never legitimately carry a function
  * reference past type-checking, but admitting it here costs nothing: a
  * false-positive match only WIDENS the ambiguous census, the fail-closed
@@ -2214,17 +2172,15 @@ function isAssignmentOperatorToken(kind: ts.SyntaxKind): boolean {
  * shape — object or array, a literal or COMPUTED property key, a default
  * value, a rest/spread element, an elided array hole, a nested pattern?
  *
- * Round 11 found the previous, precise version of this check (matching only
+ * A precise version of this check (matching only
  * `PropertyAssignment`/`ShorthandPropertyAssignment` with a statically named
- * key) narrow in more than one shape at once: a computed key (`({ ['outOfBand']: alias }
- * = terminalStates)`) and an array pattern (`[alias] = [terminalStates.out
- * OfBand]`) each left `alias` with no recorded reaching value at all —
- * the identical silent-exclusion shape rounds 6 through 10 each closed one
- * narrower instance of (docomply-review, a reference-implementation pull request, high: "explicitly left
- * unsupported here... yet `candidateCount` and `anchoredCount` both remain
- * zero"). Per `document-scanning-gates.md` rule 3 ("parse or pin — a
- * hand-rolled resolution model stays one counterexample behind"), the fix
- * this time is not a further per-shape carve-out: destructuring-target
+ * key) is narrow in more than one shape at once: a computed key
+ * (`({ ['outOfBand']: alias } = terminalStates)`) and an array pattern
+ * (`[alias] = [terminalStates.outOfBand]`) each leave `alias` with no
+ * recorded reaching value at all, so `candidateCount` and `anchoredCount`
+ * both remain zero — a silent exclusion. Parse or pin: a hand-rolled
+ * resolution model stays one counterexample behind, so this is not a
+ * per-shape carve-out: destructuring-target
  * syntax is not an enumerable set the way a fixed corpus of documents is,
  * so this WALKS the pattern generically instead of matching a closed list of
  * node kinds, closing computed keys, array patterns, nesting and rest
@@ -2304,11 +2260,10 @@ function assignmentPatternBindsSymbol(
  * default fires exactly when the source has NO property at that key, so its
  * value never depends on the destructured right-hand side at all —
  * `({ x: alias = outOfBand } = decoy)` reaches the real helper through
- * `outOfBand` alone, regardless of what `decoy` is (docomply-review,
- * a reference-implementation pull request, high, round 12). Collected pattern-wide rather than scoped to
- * the one target matching a given symbol, for the same reason
- * `assignmentPatternBindsSymbol` answers only yes/no: over-inclusion here
- * only widens the ambiguous census.
+ * `outOfBand` alone, regardless of what `decoy` is. Collected pattern-wide
+ * rather than scoped to the one target matching a given symbol, for the same
+ * reason `assignmentPatternBindsSymbol` answers only yes/no: over-inclusion
+ * here only widens the ambiguous census.
  */
 function collectPatternDefaults(
   pattern: ts.Expression,
@@ -2370,15 +2325,15 @@ function collectPatternDefaults(
  * alias(...)`, or `let ns = decoyModule; ns = terminalStates;
  * ns[computeKey()](...)`) leaves `declaration.initializer` either absent or
  * stale, so a chain that only ever follows that one field never reaches the
- * value the call site actually observes (docomply-review, a reference-implementation pull request, high,
- * round 8). A COMPOUND operator (`isAssignmentOperatorToken` above, `alias
- * ??= outOfBand`) reaching the identifier directly is covered too (round 10).
+ * value the call site actually observes. A COMPOUND operator
+ * (`isAssignmentOperatorToken` above, `alias ??= outOfBand`) reaching the
+ * identifier directly is covered too.
  *
  * A destructuring-ASSIGNMENT pattern (object or array, any shape
  * `assignmentPatternBindsSymbol` above recognizes) cannot push the specific
  * property's real VALUE — there is no such node when the key is dynamic, and
  * even a statically named key would need one synthetic node per shape, which
- * is exactly the enumeration this function stopped doing (round 11; see
+ * is exactly the enumeration this function avoids (see
  * `assignmentPatternBindsSymbol`'s own comment). It pushes the WHOLE
  * right-hand side instead — an over-approximation ("`alias` might now hold
  * anything this expression could produce", rather than "the one property it
@@ -2386,19 +2341,18 @@ function collectPatternDefaults(
  * (`collectPatternDefaults` above), which the right-hand side alone can
  * never account for.
  *
- * As of round 12, the whole-right-hand-side push no longer needs its own
- * CONTAINER special-casing (an earlier revision separately pushed an
- * array-literal right-hand side's own elements): `containsRealHelperReference`
+ * The whole-right-hand-side push needs no CONTAINER special-casing (such as
+ * separately pushing an array-literal right-hand side's own elements):
+ * `containsRealHelperReference`
  * below is the consumer both callers use to check a candidate, and it walks
  * every node a candidate's subtree contains regardless of container shape —
  * an object literal's property values, an array literal's elements, a
  * further identifier's own reassignments — so pushing the container ONCE is
- * enough; the container's insides are the consumer's problem now, not this
- * function's (docomply-review, a reference-implementation pull request, high, round 12: an object-literal
- * right-hand side, `{ x: alias } = { x: outOfBand }`, and a right-hand side
- * reached through one more `const` indirection, `const helpers = [outOfBand];
- * [alias] = helpers`, both still vanished under the round-11 shape-by-shape
- * fix).
+ * enough; the container's insides are the consumer's problem, not this
+ * function's (an object-literal right-hand side, `{ x: alias } = { x:
+ * outOfBand }`, and a right-hand side reached through one more `const`
+ * indirection, `const helpers = [outOfBand]; [alias] = helpers`, both vanish
+ * under shape-by-shape handling).
  *
  * Deliberately walks the WHOLE source file rather than a scope-bounded
  * search — `checker.getSymbolAtLocation` resolves each assignment's own LHS
@@ -2488,39 +2442,27 @@ function findAssignedValues(
  * further to expand.
  *
  * Shared by every candidate-value walk below so a composing form only has
- * to be taught here once. Before this, `alias = flag ? outOfBand : decoy;
- * alias(...)` was collected as a reassignment candidate but neither walk
- * could trace past the `ConditionalExpression` node itself — `unwrapTranspa
+ * to be taught here once. Without it, `alias = flag ? outOfBand : decoy;
+ * alias(...)` is collected as a reassignment candidate but neither walk can
+ * trace past the `ConditionalExpression` node itself — `unwrapTranspa
  * rentExpression` does not unwrap a ternary's branches, and the callers
- * only ever recursed on a bare identifier (docomply-review, a reference-implementation pull request, high,
- * round 11: "collected as a value but the ambiguity walker cannot trace the
- * conditional expression"). Round 21 found the comma operator missing from
- * the same enumeration: `(sideEffect(), outOfBand)(report, name, reason)`
- * fell through to the `return [unwrapped]` default, treating the whole
- * comma expression as one opaque leaf that resolves to neither a call, a
- * member access, nor an identifier — contributing to neither
- * `candidateCount` nor `anchoredCount` (docomply-review, a reference-implementation pull request, high,
- * round 21: "`composingExpressionLeaves()` does not expand `CommaToken`").
- * Round 22 found the immediately adjacent gap the round-21 fix's own doc
- * comment had named but deliberately deferred: `(alias = outOfBand)(report,
- * name, reason)` is the identical shape one operator over (docomply-review,
- * a reference-implementation pull request, high, round 22: "the immediately adjacent assignment-expression
- * form as a known detector bypass"). Rather than close only the reported
- * `EqualsToken` and leave its own logical siblings (`||=`/`&&=`/`??=`) as a
- * predictable round 23, that fix drew the line at the closed binary
- * invariant above. Round 23 found the family extends past binary operators
- * entirely: `(await Promise.resolve(outOfBand))(report, name, reason)`
- * forwards a value through a UNARY wrapper node with no operator token at
- * all, so neither binary branch above could ever match it (docomply-review,
- * a reference-implementation pull request, high, round 23: "`composingExpressionLeaves()` returns the
- * `AwaitExpression` as an opaque leaf... sweep the sibling `yield` form
- * where applicable"). This fix adds the one other value-forwarding unary
- * node TypeScript's grammar has (`await`), and states explicitly why its
- * syntactic sibling (`yield`) is excluded rather than silently absent, per
- * `document-scanning-gates.md` §3 — `structuralEscalationDue` has now armed
- * on this exact function three rounds running, so the doc comment states the
- * completeness argument (why each family is closed) rather than leaving a
- * fourth round to re-derive it from a diff.
+ * only ever recurse on a bare identifier. The comma operator belongs to the
+ * same enumeration: without it, `(sideEffect(), outOfBand)(report, name,
+ * reason)` falls through to the `return [unwrapped]` default, treating the
+ * whole comma expression as one opaque leaf that resolves to neither a call,
+ * a member access, nor an identifier — contributing to neither
+ * `candidateCount` nor `anchoredCount`. `(alias = outOfBand)(report, name,
+ * reason)` is the identical shape one operator over, and so are its logical
+ * siblings (`||=`/`&&=`/`??=`), which is why the line is drawn at the closed
+ * binary invariant above rather than at `EqualsToken` alone. The family also
+ * extends past binary operators: `(await Promise.resolve(outOfBand))(report,
+ * name, reason)` forwards a value through a UNARY wrapper node with no
+ * operator token at all, so neither binary branch above could match it.
+ * This expands the one value-forwarding unary node TypeScript's grammar has
+ * (`await`), and states explicitly why its syntactic sibling (`yield`) is
+ * excluded rather than silently absent: the doc comment carries the
+ * completeness argument (why each family is closed) so no reader has to
+ * re-derive it from a diff.
  */
 function composingExpressionLeaves(
   expr: ts.Expression,
@@ -2569,7 +2511,7 @@ function composingExpressionLeaves(
  * below so a function reference's body is inspected uniformly at ordinary
  * identifier resolution, rather than only when that identifier happens to
  * sit in a `CallExpression`'s own callee position (see that function's own
- * header for the round-14 gap this closes).
+ * header for the gap this closes).
  */
 /**
  * `typescript6`'s runtime module carries an `isFunctionLikeDeclaration`
@@ -2582,11 +2524,10 @@ function composingExpressionLeaves(
  * `FunctionLikeDeclaration` union type verbatim (`FunctionDeclaration |
  * MethodDeclaration | GetAccessorDeclaration | SetAccessorDeclaration |
  * ConstructorDeclaration | FunctionExpression | ArrowFunction`) — a CLOSED,
- * TypeScript-language-defined enumeration, not the open-ended
- * "whichever declaration kind this review round happened to find" pattern
- * `document-scanning-gates.md` rule 3 warns against; this predicate cannot
- * grow a further case next round the way the file's PRIOR versions of
- * `functionBodyOfDeclaration` did; only a difference between typescript6's
+ * TypeScript-language-defined enumeration, not an open-ended list of
+ * whichever declaration kinds happen to have been found so far; this
+ * predicate cannot grow a further case the way a hand-grown list in
+ * `functionBodyOfDeclaration` would; only a difference between typescript6's
  * runtime and its type declarations could result in one gap here, not an
  * unenumerated shape.
  */
@@ -2634,20 +2575,19 @@ function functionBodyOfDeclaration(
  * That distinction is `couldDirectInvocationReachHelper`'s whole reason for
  * deliberately excluding `functionBodyOfDeclaration` (see its own header):
  * invoking `x.outOfBand(...)` where `outOfBand` is a METHOD runs that
- * method's own body, not whatever it returns. Round 20 found the one
- * function-like kind that exclusion does not actually cover: `class Holder {
- * get outOfBand() { return outOfBand; } } new Holder().outOfBand(...)` runs
- * the GETTER's body — producing the real helper as a value — before the call
- * syntax is ever reached, so excluding it via the same guard as a method
- * silently dropped the one declaration kind where mere access already
- * executes code (docomply-review, a reference-implementation pull request, high, round 20: "the property
- * symbol resolves to a `GetAccessorDeclaration`, this guard returns false").
- * This is not one more declaration kind added to an open-ended list
- * (`document-scanning-gates.md` rule 3): TypeScript's function-like union has
+ * method's own body, not whatever it returns. There is one function-like
+ * kind that exclusion does not cover: `class Holder { get outOfBand() {
+ * return outOfBand; } } new Holder().outOfBand(...)` runs the GETTER's body —
+ * producing the real helper as a value — before the call syntax is ever
+ * reached, so excluding it via the same guard as a method would silently drop
+ * the one declaration kind where mere access already executes code (the
+ * property symbol resolves to a `GetAccessorDeclaration`). This is not one
+ * more declaration kind added to an open-ended list: TypeScript's
+ * function-like union has
  * exactly one member that runs on ACCESS rather than on a further explicit
  * call — a set accessor runs on ASSIGNMENT, not access or call, so it stays
  * excluded — which makes the pairing here a closed, language-defined set
- * rather than a per-round special case.
+ * rather than a special case.
  */
 function valueProducedByMereAccess(
   declaration: ts.Declaration,
@@ -2669,31 +2609,27 @@ function valueProducedByMereAccess(
  * identifier) anywhere among what THAT identifier could reach through its
  * own declaration initializer or reassignments (`findAssignedValues`)?
  *
- * Round 12 found the round-11 fix (`composingExpressionLeaves`, immediately
- * above) itself narrow: it named three operators (`?:`, `||`/`&&`/`??`)
- * explicitly, so an object-literal property value (`{ x: alias } = { x:
- * outOfBand }`) and a non-literal array container reached through one more
- * `const` (`const helpers = [outOfBand]; [alias] = helpers`) both still
- * vanished (docomply-review, a reference-implementation pull request, high, round 12: "neither ambiguity
- * walker descends into object-literal values... coverage exists only for a
- * namespace RHS and a direct array-literal RHS"). One narrower fix after
- * another is exactly the loop `document-scanning-gates.md` rule 3 warns
- * against — enumerating CONTAINER shapes (object literal, array literal,
- * ternary, logical, next round's shape, …) is unbounded. This function stops
- * enumerating containers: it walks every child `ts.forEachChild` reaches,
- * regardless of node kind, and only has to know what a REFERENCE to the real
- * helper itself looks like — three closed shapes, checked at every node the
- * walk visits. A future composing form (a spread, a tagged template, a
- * computed property with a constant-foldable key, an arrow function's
- * expression body) needs no new branch here, because the walk never
+ * Enumerating composing operators (`composingExpressionLeaves`, immediately
+ * above) is itself narrow: an object-literal property value (`{ x: alias } =
+ * { x: outOfBand }`) and a non-literal array container reached through one
+ * more `const` (`const helpers = [outOfBand]; [alias] = helpers`) both
+ * vanish, because neither is one of the named operators. One narrower fix
+ * after another is a loop that never ends — enumerating CONTAINER shapes
+ * (object literal, array literal, ternary, logical, the next shape, …) is
+ * unbounded. This function does not enumerate containers: it walks every child
+ * `ts.forEachChild` reaches, regardless of node kind, and only has to know what
+ * a REFERENCE to the real helper itself looks like — three closed shapes,
+ * checked at every node the walk visits. A future composing form (a spread, a
+ * tagged template, a computed property with a constant-foldable key, an arrow
+ * function's expression body) needs no new branch here, because the walk never
  * discriminates on the container at all — which also makes
- * `composingExpressionLeaves` above redundant for every caller that switches
- * to this function, though it stays in place for the one caller that has
- * not (`isAmbiguousOutOfBandCallee`'s own composed-CALLEE entry point). As of
- * round 16, that caller also reaches this function one hop further in: when
- * its own leaf is itself a `CallExpression` (`getHelper()(...)`), it calls
- * this function on THAT call's own callee, rather than re-deriving a
- * narrower chase — see that function's own header for why.
+ * `composingExpressionLeaves` above redundant for every caller that switches to
+ * this function, though it stays in place for the one caller that has not
+ * (`isAmbiguousOutOfBandCallee`'s own composed-CALLEE entry point). That caller
+ * also reaches this function one hop further in: when its own leaf is itself a
+ * `CallExpression` (`getHelper()(...)`), it calls this function on THAT call's
+ * own callee, rather than re-deriving a narrower chase — see that function's
+ * own header for why.
  *
  * Deliberately does not stop at a function boundary — an arrow function's
  * expression body, or a traditional function's block body, is reached by
@@ -2703,19 +2639,17 @@ function valueProducedByMereAccess(
  * one and flagging ambiguity anyway is the fail-closed direction this file
  * already always takes.
  *
- * As of round 13, a CALL EXPRESSION also resolves ONE HOP through its own
- * callee's body when the callee is a bare identifier naming a function
- * declared in THIS same file — `function getHelper() { return outOfBand; }
- * let alias; alias = getHelper(); alias(...)` used to vanish entirely:
- * `getHelper()` is a candidate `findAssignedValues` collects, but the call
- * expression's own children (`ts.forEachChild`) are only its callee
- * identifier and argument list — the `FunctionDeclaration` body lives
- * elsewhere in the source tree and is never syntactically reachable from the
- * call site, so the walk found nothing and the call contributed to NEITHER
- * `candidateCount` NOR `anchoredCount`, the one shape this file's other
- * ambiguous-alias fixes never produce (docomply-review, a reference-implementation pull request, high,
- * round 13: "a real wrong-name call can still produce candidateCount ===
- * anchoredCount === 0 and pass the mandatory gate"). The single-file program
+ * A CALL EXPRESSION also resolves ONE HOP through its own callee's body when
+ * the callee is a bare identifier naming a function declared in THIS same
+ * file. Without that, `function getHelper() { return outOfBand; } let alias;
+ * alias = getHelper(); alias(...)` vanishes entirely: `getHelper()` is a
+ * candidate `findAssignedValues` collects, but the call expression's own
+ * children (`ts.forEachChild`) are only its callee identifier and argument
+ * list — the `FunctionDeclaration` body lives elsewhere in the source tree
+ * and is never syntactically reachable from the call site, so the walk finds
+ * nothing and a real wrong-name call contributes to NEITHER `candidateCount`
+ * NOR `anchoredCount` (`candidateCount === anchoredCount === 0` passes the
+ * mandatory gate). The single-file program
  * (`createSingleFileProgram`) makes this bounded rather than a step toward
  * general interprocedural analysis: `noResolve` means an IMPORTED callee's
  * symbol never carries a `valueDeclaration` the binder can hand back, so a
@@ -2733,33 +2667,28 @@ function valueProducedByMereAccess(
  * candidates below — the two are mutually recursive by design) so a cycle
  * reachable through either direction is caught once rather than looping.
  *
- * As of round 14, an identifier's own function BODY (when its declaration
+ * An identifier's own function BODY (when its declaration
  * is a `FunctionDeclaration`, or a `VariableDeclaration` whose initializer
  * is an arrow/function expression) is folded into what that identifier
  * "reaches" — checked at every identifier the walk visits, not only when
  * one happens to sit in the immediate callee position of a `CallExpression`.
- * The round-13 fix added exactly that narrower, position-bound special case
- * (`function getHelper() { return outOfBand; } let alias; alias =
- * getHelper(); alias(...)`), and round 14 defeated it with one more hop of
- * indirection between the call and the function: `const indirect =
- * getHelper; let alias; alias = indirect(); alias(...)` resolves `indirect`
- * to `getHelper` through the ordinary alias-chain logic below, but
- * `indirect`'s OWN declaration is a plain identifier initializer, not
- * itself a function — so the position-bound special case never fired for
- * it, and `getHelper`'s body was never inspected at all (docomply-review,
- * a reference-implementation pull request, high, round 14: "a legal alias defeats it"). Folding
+ * A position-bound special case for that (`function getHelper() { return
+ * outOfBand; } let alias; alias = getHelper(); alias(...)`) is defeated by
+ * one more hop of indirection between the call and the function: `const
+ * indirect = getHelper; let alias; alias = indirect(); alias(...)` resolves
+ * `indirect` to `getHelper` through the ordinary alias-chain logic below,
+ * but `indirect`'s OWN declaration is a plain identifier initializer, not
+ * itself a function — so the position-bound special case never fires for
+ * it, and `getHelper`'s body is never inspected at all. Folding
  * function-body lookup into ordinary identifier resolution — rather than a
  * second, call-site-shaped special case — means an ARBITRARY chain of
  * rebinds before reaching a function reference is covered by the same
  * recursion that already handles an arbitrary chain of rebinds before
- * reaching an import specifier, with no additional branch: this is the
- * "stop enumerating shapes, walk uniformly" fix round 12's own header
- * describes, applied to this file's other remaining position-bound special
- * case. The former `ts.isCallExpression(node)` branch this replaces checked
- * the identical shapes at the identical single hop and is now fully
- * subsumed — removed rather than kept alongside its own generalization.
+ * reaching an import specifier, with no additional branch: the same "stop
+ * enumerating shapes, walk uniformly" approach described above, applied to
+ * position-bound special cases.
  *
- * As of round 18, the declaration-initializer half of identifier resolution
+ * The declaration-initializer half of identifier resolution
  * (`reaching` below) recognizes every TypeScript declaration shape that can
  * carry an expression initializer — `ts.hasOnlyExpressionInitializer`, the
  * language's own closed `VariableDeclaration | ParameterDeclaration |
@@ -2767,17 +2696,16 @@ function valueProducedByMereAccess(
  * union — not `VariableDeclaration` alone. `class Holder { outOfBand =
  * outOfBand } new Holder().outOfBand(report, 'DRIVE_HELD_BY_OTHER_WORKTREE',
  * reason)` invokes the real helper through a class-instance property, but the
- * property name's own symbol resolves to a `PropertyDeclaration`, which the
- * narrower guard silently excluded — neither `candidateCount` nor
- * `anchoredCount` moved (docomply-review, a reference-implementation pull request, high, round 18: "reaches
- * the `Holder` identifier and stops at its `ClassDeclaration` without
- * inspecting the `PropertyDeclaration` initializer"). Per
- * `document-scanning-gates.md` rule 3, this is not one more per-shape
- * carve-out for class fields specifically: `hasOnlyExpressionInitializer` is
+ * property name's own symbol resolves to a `PropertyDeclaration`, which a
+ * `VariableDeclaration`-only guard silently excludes — the walk reaches the
+ * `Holder` identifier and stops at its `ClassDeclaration` without inspecting
+ * the `PropertyDeclaration` initializer, so neither `candidateCount` nor
+ * `anchoredCount` moves. This is not one more per-shape carve-out for class
+ * fields specifically: `hasOnlyExpressionInitializer` is
  * the TypeScript compiler's own enumeration of every declaration kind an
  * initializer can attach to, so the same swap closes a default parameter
  * value, a destructuring default, and an object-literal property value at
- * the identical hop, not only the reported class-field shape. Applied
+ * the identical hop, not only the class-field shape. Applied
  * identically to every sibling in this file that walks a declaration's own
  * initializer looking for a REACHABLE value rather than a durable, `const`-
  * only provenance claim — `functionBodyOfDeclaration` above,
@@ -2890,11 +2818,10 @@ function containsRealHelperReference(
  * only a durable binding, but an AMBIGUOUS one only needs to say "cannot
  * rule out" — `let ns = decoyModule; ns = terminalStates;
  * ns[computeKey()](...)` reassigns the real namespace onto a `let` binding
- * with no CONST chain for `resolveIdentifierImportBinding` to ever follow
- * (docomply-review, a reference-implementation pull request, high, round 8). As of round 18, the declaration
- * checked below is `ts.hasOnlyExpressionInitializer`, not
+ * with no CONST chain for `resolveIdentifierImportBinding` to ever follow.
+ * The declaration checked below is `ts.hasOnlyExpressionInitializer`, not
  * `VariableDeclaration` alone — see `containsRealHelperReference`'s own
- * round-18 note for the class of gap this closes.
+ * declaration-initializer note for the class of gap this closes.
  */
 function couldReachRealHelperNamespace(
   identifier: ts.Identifier,
@@ -2947,24 +2874,20 @@ function couldReachRealHelperNamespace(
  * namespace import?
  *
  * This is the fail-closed counterpart to `outOfBandMemberExpressionObject`,
- * not one more entry in its resolvable-forms enumeration
- * (`document-scanning-gates.md` §3: "a hand-rolled resolution model stays
- * one counterexample behind... fail closed"). Round 6 closed the residual for
- * a key with NO LITERAL anywhere in its syntax (a function call, a template
- * literal with interpolation); round 7 found the identical vacuous-pass shape
- * one case narrower — an IDENTIFIER key this scan could not resolve to any
- * literal at all (a function parameter, a destructured value, a `let`-bound
- * key) was excluded unconditionally alongside the keys that DO resolve,
- * rather than only when resolution actually succeeds (docomply-review,
- * a reference-implementation pull request, high, round 7: "the new fail-closed recognizer explicitly
- * returns false for every identifier key, even when
- * `resolveIdentifierStringLiteral()` cannot resolve it"). Round 8 found the
- * OBJECT side had the same shape one hop later: it resolved through
- * `resolveIdentifierImportBinding`, which requires a CONST chain, so a
+ * not one more entry in its resolvable-forms enumeration (a hand-rolled
+ * resolution model stays one counterexample behind, so it fails closed).
+ * The residual covers a key with NO LITERAL anywhere in its syntax (a
+ * function call, a template literal with interpolation), and equally an
+ * IDENTIFIER key this scan cannot resolve to any literal at all (a function
+ * parameter, a destructured value, a `let`-bound key): excluding every
+ * identifier key unconditionally, rather than only when resolution actually
+ * succeeds, would reproduce the same vacuous pass one case narrower. The
+ * OBJECT side has the same shape one hop later: resolving it through
+ * `resolveIdentifierImportBinding`, which requires a CONST chain, makes a
  * `let`-declared namespace alias populated by a later assignment rather than
- * its own initializer resolved to nothing and vanished from the census —
+ * its own initializer resolve to nothing and vanish from the census —
  * `couldReachRealHelperNamespace` closes that by following assignments too.
- * Both residuals collapse to the same rule now: ANY key this scan cannot
+ * Both residuals collapse to the same rule: ANY key this scan cannot
  * positively resolve to `'outOfBand'` — whichever syntax it is written in —
  * on an object that COULD REACH the real helper's namespace, is treated by
  * the caller as a candidate that can never anchor — reusing the existing
@@ -2980,19 +2903,16 @@ function couldReachRealHelperNamespace(
  * to trace" or "the trace target is a mutable/unresolvable declaration" stays
  * ambiguous — `resolveIdentifierStringLiteral` itself withholds resolution
  * for a `let`-bound key rather than trusting a value that can change out from
- * under it, which is exactly why that shape now reads as ambiguous here
+ * under it, which is exactly why that shape reads as ambiguous here
  * instead of vanishing silently excluded.
  *
- * The OBJECT side used to require a plain identifier
- * (`ts.isIdentifier(unwrappedObject)`) before chasing it at all, the same
- * gate `isAmbiguousOutOfBandCallee`'s own member-object branch carried
- * (docomply-review, a reference-implementation pull request, high, round 17, found on that sibling
- * function: "this branch requires that object to be an identifier and
- * returns false... a real helper invocation contributes neither a candidate
- * nor an anchor and `runCheck()` passes vacuously"). A non-identifier object
- * — `getNamespace()[computeKey()]` — falls back to `containsRealHelperReference`,
- * the same generic reachability walk that already covers this shape for the
- * sibling function.
+ * The OBJECT side does not require a plain identifier
+ * (`ts.isIdentifier(unwrappedObject)`) before chasing it: with that gate, a
+ * real helper invocation on a non-identifier object contributes neither a
+ * candidate nor an anchor and `runCheck()` passes vacuously. A
+ * non-identifier object — `getNamespace()[computeKey()]` — falls back to
+ * `containsRealHelperReference`, the same generic reachability walk that
+ * already covers this shape for the sibling function.
  */
 function isAmbiguousOutOfBandElementAccess(
   expr: ts.Expression,
@@ -3035,7 +2955,7 @@ function isAmbiguousOutOfBandElementAccess(
  * resolver recognizes is checked here too, minus its `const` requirement, so
  * an ambiguous (non-`const`, or order-dependent) chain to ANY of them is
  * caught — rather than one more narrow branch for whichever shape the latest
- * round's counterexample happened to name.
+ * counterexample happened to name.
  *
  * The terminal shapes, checked in this order:
  *
@@ -3050,7 +2970,7 @@ function isAmbiguousOutOfBandElementAccess(
  *   3. A bare identifier reaching the real `outOfBand` IMPORT SPECIFIER
  *      directly — no member access at all (`let alias; alias = outOfBand;
  *      alias(…)`) — is ambiguous the instant any reaching value names it.
- *   4. As of round 16, a `CallExpression` LEAF — the callee position itself
+ *   4. A `CallExpression` LEAF — the callee position itself
  *      holds a call, not a reference (`getHelper()(...)`) — is ambiguous
  *      when INVOKING it might reach the helper: check the call's own
  *      callee, unwrapped, through `containsRealHelperReference` (above),
@@ -3065,31 +2985,28 @@ function isAmbiguousOutOfBandElementAccess(
  *      already does, as part of producing the value that the OUTER call
  *      then invokes — reaches it. Conflating the two, by routing `resolved`
  *      itself (rather than its callee) through `containsRealHelperReference`
- *      for every non-member/non-element shape, was tried and reverted: it
- *      flagged a `getHelper()` call as ambiguous merely for locally
- *      declaring a function whose body references the helper, never
- *      actually reaching it through that one call alone (guarded by the
- *      round-13/15 over-triggering tests: "a static class method returning
- *      only an UNRELATED decoy produces no candidate", and by the round-13
- *      test's own single-candidate count for the FIRST of its two calls).
+ *      for every non-member/non-element shape, flags a `getHelper()` call as
+ *      ambiguous merely for locally declaring a function whose body
+ *      references the helper, never actually reaching it through that one
+ *      call alone (guarded by the over-triggering tests: "a static class
+ *      method returning only an UNRELATED decoy produces no candidate", and
+ *      the single-candidate count for the FIRST of the two calls in
+ *      `alias = getHelper(); alias(...)`).
  *
- * Earlier rounds added shape 2 (round 7: `const alias =
- * terminalStates[computeKey()]; alias(...)` reaches an ordinary
- * bare-identifier callee that a direct `isAmbiguousOutOfBandElementAccess`
- * call alone could not see) and widened the reach from declaration
- * initializers alone to every later assignment too (round 8: `let alias:
- * typeof terminalStates.outOfBand; alias = terminalStates[computeKey()];
- * alias(...)` has no declaration initializer at all). Round 9 found TWO more
- * terminal shapes missing rather than one — "the assignment chase still
- * misses ordinary static assignments of the real helper... `alias =
- * outOfBand`... `alias = terminalStates.outOfBand` likewise reaches a
- * property access that is neither an ambiguous dynamic element access nor an
- * identifier" (docomply-review, a reference-implementation pull request, high) — which is shapes 1 and 3
- * here. Rather than bolting those on as two more independent branches, this
- * checks every terminal shape the strict resolver checks, so the next round's
- * counterexample would have to be a shape `resolveOutOfBandImportProvenance`
- * itself does not yet recognize either — at which point both resolvers need
- * the identical new shape together, not just this one.
+ * Shape 2 covers `const alias = terminalStates[computeKey()]; alias(...)`,
+ * an ordinary bare-identifier callee that a direct
+ * `isAmbiguousOutOfBandElementAccess` call alone cannot see, and the reach
+ * extends from declaration initializers to every later assignment too
+ * (`let alias: typeof terminalStates.outOfBand; alias =
+ * terminalStates[computeKey()]; alias(...)` has no declaration initializer
+ * at all). Shapes 1 and 3 cover ordinary static assignments of the real
+ * helper: `alias = outOfBand`, and `alias = terminalStates.outOfBand`, which
+ * reaches a property access that is neither an ambiguous dynamic element
+ * access nor an identifier. Rather than independent branches, this checks
+ * every terminal shape the strict resolver checks, so a new counterexample
+ * would have to be a shape `resolveOutOfBandImportProvenance` itself does
+ * not recognize either — at which point both resolvers need the identical
+ * new shape together, not just this one.
  *
  * Deliberately does NOT require any rebind to be `const`, unlike every
  * strict sibling resolver in this file: a RESOLVED verdict asserts "this call
@@ -3099,100 +3016,86 @@ function isAmbiguousOutOfBandElementAccess(
  * assertion any less true. `seen` guards the same cyclic-alias case every
  * sibling resolver here guards.
  *
- * More terminal shapes as of round 11. `composingExpressionLeaves` at
+ * More terminal shapes: `composingExpressionLeaves` at
  * entry expands a `?:`/`||`/`&&`/`??` callee — directly, or reached through
  * a reassignment `findAssignedValues` collected — into every branch/operand
  * it could evaluate to, so `alias = flag ? outOfBand : decoy; alias(...)`
  * checks BOTH `outOfBand` and `decoy` rather than stopping at the
  * `ConditionalExpression` node itself. And a candidate that resolves to the
  * real helper's own NAMESPACE IMPORT (not a member access on it — the raw
- * namespace, as `findAssignedValues` now pushes whenever a destructuring
+ * namespace, as `findAssignedValues` pushes whenever a destructuring
  * pattern it cannot precisely map, such as a computed key, might have
  * extracted `.outOfBand` from it) is itself treated as ambiguous: `alias`
  * might now hold any property of that namespace, `outOfBand` included, and
  * this scan cannot rule that out any more than the direct member-access
  * branch above can.
  *
- * As of round 16, a leaf that is itself a `CallExpression` — the callee
- * position holds a CALL, not a reference (`function getHelper() { return
- * outOfBand; } getHelper()(report, 'DRIVE_HELD_BY_OTHER_WORKTREE', reason)` —
- * the outer call's own callee is `getHelper()`) — used to fall straight to
+ * A leaf that is itself a `CallExpression` — the callee position holds a
+ * CALL, not a reference (`function getHelper() { return outOfBand; }
+ * getHelper()(report, 'DRIVE_HELD_BY_OTHER_WORKTREE', reason)` — the outer
+ * call's own callee is `getHelper()`) — would otherwise fall straight to
  * `!ts.isIdentifier(resolved) → return false`, contributing to NEITHER
- * `candidateCount` NOR `anchoredCount` (docomply-review, a reference-implementation pull request, high,
- * round 16: "the outer call's callee is itself a CallExpression; strict
- * provenance rejects that shape... isAmbiguousOutOfBandCallee() expands only
- * conditional/logical expressions and then returns false for any
- * non-identifier/non-member expression"). This is a fourth shape in the
- * exact loop round 12's own header names, and per this file's recurring
- * pattern on that loop (round 12's `containsRealHelperReference` itself,
- * round 13's call-through-local-callee, round 14's arbitrary-alias-depth
- * generalization) a THIRD round finding one more variant of "the callee is
- * not a plain reference" is the signal not to add a fourth position-bound
- * special case but to route THIS one through the same general machine too:
+ * `candidateCount` NOR `anchoredCount`: strict provenance rejects that
+ * shape, and expanding only conditional/logical expressions returns false
+ * for any non-identifier/non-member expression. Rather than one more
+ * position-bound special case, this routes through the same general machine:
  * a `CallExpression` leaf delegates to `containsRealHelperReference` on its
- * own callee (unwrapped) rather than a fifth hand-rolled branch — the
- * identical "does this reachable value's function body return the helper"
- * question that function already answers for every value-position caller,
- * applied here to the one call this leaf itself makes on the way to
- * producing whatever the OUTER call then invokes.
+ * own callee (unwrapped) rather than a hand-rolled branch — the identical
+ * "does this reachable value's function body return the helper" question
+ * that function already answers for every value-position caller, applied
+ * here to the one call this leaf itself makes on the way to producing
+ * whatever the OUTER call then invokes.
  *
- * As of round 24, the same `CallExpression` leaf ALSO checks its own
- * ARGUMENTS, not only its callee: `(await Promise.resolve(outOfBand))(report,
- * name, reason)` produces its value by returning one of `Promise.resolve`'s
- * own ARGUMENTS unchanged, not by invoking `Promise.resolve` itself or
- * anything `Promise.resolve`'s own body references (docomply-review, PR
- * #4918, high, round 24: "isAmbiguousOutOfBandCallee() then calls
- * containsRealHelperReference() only on that call's callee... not on its
- * arguments"). This scanner has no way to know, in general, WHICH functions
- * forward one of their arguments into their return value and which compute
- * something unrelated — that is exactly the "no interprocedural model"
+ * The same `CallExpression` leaf ALSO checks its own ARGUMENTS, not only its
+ * callee: `(await Promise.resolve(outOfBand))(report, name, reason)` produces
+ * its value by returning one of `Promise.resolve`'s own ARGUMENTS unchanged,
+ * not by invoking `Promise.resolve` itself or anything `Promise.resolve`'s
+ * own body references. This scanner has no way to know, in general, WHICH
+ * functions forward one of their arguments into their return value and which
+ * compute something unrelated — that is exactly the "no interprocedural model"
  * residual this file states elsewhere. But per this file's own stated
- * philosophy (`assignmentPatternBindsSymbol`'s header: "over-matching...
- * only WIDENS the ambiguous census — the fail-closed direction this file
- * already always takes"), NOT knowing which functions forward an argument is
- * not a reason to skip every argument — it is a reason to conservatively
- * treat EVERY argument of EVERY call-producing-a-value leaf as a candidate,
- * exactly as the callee already is. This over-approximates (a call passing
- * the helper as an argument to a function that never returns it becomes an
- * unanchored candidate, not a false negative) rather than under-approximates
- * (silently missing a real invocation) — the safe direction this whole file
- * has always taken, so it needs no new special case for `Promise.resolve`
- * specifically, or for any other single function.
+ * philosophy (`assignmentPatternBindsSymbol`'s header: "over-matching... only
+ * WIDENS the ambiguous census — the fail-closed direction this file already
+ * always takes"), NOT knowing which functions forward an argument is not a
+ * reason to skip every argument — it is a reason to conservatively treat EVERY
+ * argument of EVERY call-producing-a-value leaf as a candidate, exactly as the
+ * callee already is. This over-approximates (a call passing the helper as an
+ * argument to a function that never returns it becomes an unanchored candidate,
+ * not a false negative) rather than under-approximates (silently missing a real
+ * invocation) — the safe direction this whole file has always taken, so it
+ * needs no new special case for `Promise.resolve` specifically, or for any
+ * other single function.
  *
  * This is deliberately NARROWER than routing every non-member/non-element
- * shape (in particular, a bare identifier) through `containsRealHelperReference`
- * — that was tried first and reverted (docomply-review, a reference-implementation pull request, round 16
- * self-review): a bare identifier naming a LOCAL function directly
- * (`getHelper(...)`, no intervening alias, no second call) is invoking THAT
- * function, executing its OWN body — which does not itself invoke the helper
- * merely because it references or returns one — so routing it through the
- * value-position "does this identifier's own function body reach the helper"
- * check flagged the identifier's OWN single, otherwise-innocuous call as a
- * second, spurious candidate. Caught by two already-standing guards written
- * for exactly this failure mode: the round-13 test's own candidateCount of 1
- * (not 2) for `alias = getHelper(); alias(...)`, and the round-15
- * over-triggering guard ("returning only an UNRELATED decoy produces no
- * candidate at all"). The `CallExpression` case above avoids that trap
+ * shape (in particular, a bare identifier) through
+ * `containsRealHelperReference`: a bare identifier naming a LOCAL function
+ * directly (`getHelper(...)`, no intervening alias, no second call) is
+ * invoking THAT function, executing its OWN body — which does not itself
+ * invoke the helper merely because it references or returns one — so routing
+ * it through the value-position "does this identifier's own function body
+ * reach the helper" check would flag the identifier's OWN single,
+ * otherwise-innocuous call as a second, spurious candidate. Two standing
+ * guards cover exactly this failure mode: the candidateCount of 1 (not 2)
+ * for `alias = getHelper(); alias(...)`, and the over-triggering guard
+ * ("returning only an UNRELATED decoy produces no candidate at all"). The
+ * `CallExpression` case above avoids that trap
  * because it checks the CALL's own callee (`getHelper`), not `resolved`
  * (`getHelper()`) itself — the callee's function body is genuinely what
  * executes when `resolved` is invoked, which is exactly the question this
  * leaf needs answered; a bare identifier `resolved` used directly as the
- * OUTER callee has no such second hop, and keeps the original, narrower
+ * OUTER callee has no such second hop, and keeps the narrower
  * identifier chase (import specifier / namespace import / reaching values —
  * never the identifier's own function body) below.
  *
  * The member-object branch immediately below has an unrelated dimension the
  * paragraphs above do not reach: it does not ask what the OUTER callee
  * invokes, but what the `.outOfBand` access's own OBJECT evaluates to
- * (`ns` in `ns.outOfBand(...)`). Before round 17 that object was required to
- * be a plain identifier, so `getNamespace().outOfBand(report, 'WRONG_STATE',
- * reason)` — object side is the CallExpression `getNamespace()` — fell
+ * (`ns` in `ns.outOfBand(...)`). Requiring that object to be a plain
+ * identifier would make `getNamespace().outOfBand(report, 'WRONG_STATE',
+ * reason)` — object side is the CallExpression `getNamespace()` — fall
  * straight to `false`, contributing to NEITHER `candidateCount` NOR
- * `anchoredCount` (docomply-review, a reference-implementation pull request, high, round 17: "the round-16
- * widening does not compose with member access... this branch requires that
- * object to be an identifier and returns false... a real helper invocation
- * contributes neither a candidate nor an anchor and `runCheck()` passes
- * vacuously"). Unlike the OUTER-callee identifier case two paragraphs above,
+ * `anchoredCount`, so a real helper invocation passes `runCheck()`
+ * vacuously. Unlike the OUTER-callee identifier case two paragraphs above,
  * there is no "invoking this directly runs its own body" trap to avoid here:
  * a non-identifier object is never itself invoked, only read and then
  * property-accessed, so routing it through `containsRealHelperReference`
@@ -3202,50 +3105,26 @@ function isAmbiguousOutOfBandElementAccess(
  * with no shape-specific branch needed: that function's own fallback already
  * recurses into whatever it is given.
  *
- * As of round 18, two more fixes close a repro `class Holder { outOfBand =
- * outOfBand } new Holder().outOfBand(report, 'DRIVE_HELD_BY_OTHER_WORKTREE',
- * reason)` still defeated: neither `candidateCount` nor `anchoredCount` moved
- * (docomply-review, a reference-implementation pull request, high, round 18: "reaches the `Holder`
+ * `class Holder { outOfBand = outOfBand } new Holder().outOfBand(report,
+ * 'DRIVE_HELD_BY_OTHER_WORKTREE', reason)` needs two more pieces, or neither
+ * `candidateCount` nor `anchoredCount` moves (the walk reaches the `Holder`
  * identifier and stops at its `ClassDeclaration` without inspecting the
- * `PropertyDeclaration` initializer"). First, the tail identifier chase below
+ * `PropertyDeclaration` initializer). First, the tail identifier chase below
  * recognizes every declaration shape `ts.hasOnlyExpressionInitializer` covers
  * (`VariableDeclaration | ParameterDeclaration | BindingElement |
  * PropertyDeclaration | PropertyAssignment | EnumMember`), not
  * `VariableDeclaration` alone — see `containsRealHelperReference`'s own
- * round-18 note for the full rationale, shared verbatim by every sibling
- * walk in this file. Second, and the piece that actually reaches this
- * specific repro: the member-object branch immediately below no longer
- * special-cases "object is a plain identifier" versus "object is anything
- * else" at all — both arms collapsed into ONE unconditional
- * `containsRealHelperReference(resolved, ...)` call on the WHOLE resolved
- * member-access expression, not merely its object half. The former
- * `ts.isIdentifier(unwrappedObject) ? couldReachRealHelperNamespace(...) :
- * containsRealHelperReference(unwrappedObject, ...)` ternary asked only "does
- * the OBJECT reach the real terminal-states NAMESPACE" either way — the right
- * question for `ns.outOfBand` where `ns` is-or-reaches the namespace, but not
- * for `new Holder().outOfBand` at all: `new Holder()` never reaches the
- * namespace, because the alias lives one hop deeper, on the PROPERTY itself
- * (`outOfBand = outOfBand` in the class body), and neither ternary arm ever
- * asked the checker what that property's OWN declaration resolves to.
- * `containsRealHelperReference` on the whole node already asks the identical
- * "does the object reach the namespace" question first, in its own
- * PropertyAccessExpression branch (so this is a strict superset, not a
- * behavior change, for every case the ternary already caught — including the
- * round-17 `getNamespace().outOfBand(...)` fixture, where the object side is
- * still reached as one of the two children its `forEachChild` fallback
- * visits) — and its SAME fallback also visits the `.outOfBand` property-name
- * child, resolving it, via the checker, to the class's own
- * `PropertyDeclaration`, whose initializer the round-18 declaration-shape fix
- * above now follows. One general call answers both questions ("does the
- * object carry the namespace" and "does the accessed property itself alias
- * the helper") instead of two hand-rolled special cases that each answered
- * only the first — the same "stop enumerating shapes, route through the
- * general machine" move rounds 12/14/16/17 each made for their own narrower
- * special case. The STRICT resolvers below stay narrower on purpose — see
- * `containsRealHelperReference`'s own round-18 note for why.
+ * declaration-initializer note for the full rationale, shared verbatim by
+ * every sibling walk in this file. Second, the accessed PROPERTY must be
+ * asked about, not only the object: asking only "does the OBJECT reach the
+ * real terminal-states NAMESPACE" is the right question for `ns.outOfBand`
+ * where `ns` is-or-reaches the namespace, but not for `new
+ * Holder().outOfBand` at all: `new Holder()` never reaches the namespace,
+ * because the alias lives one hop deeper, on the PROPERTY itself
+ * (`outOfBand = outOfBand` in the class body).
  *
- * Round 18's "one general call" went a hop too far, though: routing the
- * WHOLE resolved member expression through `containsRealHelperReference`
+ * The property question is not the object's value question, though. Routing
+ * the WHOLE resolved member expression through `containsRealHelperReference`
  * means its generic `forEachChild` fallback also visits the `.name` child,
  * and for an identifier — which a property name always is —
  * `containsRealHelperReference` unconditionally walks the referenced
@@ -3258,29 +3137,23 @@ function isAmbiguousOutOfBandElementAccess(
  * { return outOfBand; } } new Holder().outOfBand(report, name, reason)`
  * invokes only `Holder.prototype.outOfBand`, executing that METHOD's own
  * body — it does not invoke whatever the method merely references or
- * returns (docomply-review, a reference-implementation pull request, medium, round 19: "at runtime this
- * call invokes only `Holder.outOfBand` and does not invoke the returned
- * function"). This is the member-access shape of the identical invariant
- * round 16 already stated and guarded for a bare identifier in direct
- * callee position (two paragraphs up: "invoking THAT function, executing
- * its OWN body — which does not itself invoke the helper merely because it
- * references or returns one") — not a new rule, a gap in applying the
- * existing one to a sibling shape.
+ * returns. This is the member-access shape of the identical invariant
+ * stated for a bare identifier in direct callee position (two paragraphs
+ * up: "invoking THAT function, executing its OWN body — which does not
+ * itself invoke the helper merely because it references or returns one").
  *
- * As of round 19, the member-object branch below asks the OBJECT and
- * PROPERTY questions separately instead of routing the whole expression
- * through one call: `containsRealHelperReference` on the object alone
- * (still the right, value-question tool — covers `ns.outOfBand` and the
- * round-17 `getNamespace().outOfBand` fixture identically to before), and
- * `couldDirectInvocationReachHelper` — the DIRECT-INVOCATION counterpart,
- * factored out of this function's own former identifier tail below, now
- * shared by both — on the accessed property's symbol
+ * So the member-object branch below asks the OBJECT and PROPERTY questions
+ * separately instead of routing the whole expression through one call:
+ * `containsRealHelperReference` on the object alone (the right,
+ * value-question tool — covers `ns.outOfBand` and
+ * `getNamespace().outOfBand`), and `couldDirectInvocationReachHelper` — the
+ * DIRECT-INVOCATION counterpart, shared with this function's own identifier
+ * tail below — on the accessed property's symbol
  * (`outOfBandMemberPropertySymbol`, covering both the `.outOfBand` and
  * computed-literal-key forms). That shared resolver gates on
- * `valueProducedByMereAccess` — a data declaration's initializer, or (as of
- * round 20) a get accessor's own body — exactly as the former tail did for
- * `hasOnlyExpressionInitializer` alone, which is what makes the round-18
- * target case, the round-19 regression, and the round-20 target case all
+ * `valueProducedByMereAccess` — a data declaration's initializer, or a get
+ * accessor's own body — which is what makes the class-field case, the
+ * method case and the getter case all
  * fall out of the SAME check rather than needing a method-vs-field-vs-getter
  * special case: a `PropertyDeclaration` (`outOfBand = outOfBand`) or a get
  * accessor (`get outOfBand() { return outOfBand; }`) both produce a value on
@@ -3289,8 +3162,8 @@ function isAmbiguousOutOfBandElementAccess(
  * value itself, not whatever its body references or returns — so it is
  * excluded from candidacy without ever inspecting its body. The same "stop
  * enumerating shapes, route through the general machine" move, applied to
- * the one general machine (the direct-invocation resolver) that already drew
- * this exact line correctly for the bare-identifier case.
+ * the one general machine (the direct-invocation resolver) that draws
+ * this exact line for the bare-identifier case.
  */
 /**
  * The symbol denoted by the PROPERTY a definite `.outOfBand` access reads —
@@ -3328,26 +3201,22 @@ function outOfBandMemberPropertySymbol(
  * helper/namespace"): chases `valueProducedByMereAccess` rather than
  * `functionBodyOfDeclaration`, because invoking a function-like declaration
  * directly runs THAT declaration's own body — it does not itself invoke
- * whatever the body merely references or returns (round 16's rationale for
- * the former bare-identifier tail this function is factored out of; round 19
- * found the identical gap one layer deeper, in the sibling member-access
- * shape; round 20 found the one function-like kind that rationale does NOT
- * cover — see `valueProducedByMereAccess`'s own header for why a get
- * accessor is a closed exception rather than a widening of the exclusion).
- * Checks import specifier and namespace import (meaningful only for a
- * genuine identifier's symbol — never matches a class/object property, but
- * harmless to check unconditionally, matching the pre-round-19 tail this
- * replaces), then every value `valueProducedByMereAccess` names (a data
- * declaration's initializer, or a get accessor's own body) plus every later
- * assignment, each chased through the GENERAL `containsRealHelperReference`
- * — a VALUE question about what that access evaluates to, not a further
- * direct-invocation question. A `MethodDeclaration` (or any other
- * function-like declaration besides a get accessor) is excluded from
- * candidacy here without a dedicated method-vs-field branch: the same check
- * that recognizes the round-18 target case (a `PropertyDeclaration` field
- * alias) and the round-20 target case (a get-accessor field) naturally
- * excludes the round-19 regression (a `MethodDeclaration` that merely
- * returns the helper).
+ * whatever the body merely references or returns (the same holds for the
+ * sibling member-access shape; see `valueProducedByMereAccess`'s own header
+ * for the one function-like kind that rationale does NOT cover, and why a
+ * get accessor is a closed exception rather than a widening of the
+ * exclusion). Checks import specifier and namespace import (meaningful only
+ * for a genuine identifier's symbol — never matches a class/object property,
+ * but harmless to check unconditionally), then every value
+ * `valueProducedByMereAccess` names (a data declaration's initializer, or a get
+ * accessor's own body) plus every later assignment, each chased through the
+ * GENERAL `containsRealHelperReference` — a VALUE question about what that
+ * access evaluates to, not a further direct-invocation question. A
+ * `MethodDeclaration` (or any other function-like declaration besides a get
+ * accessor) is excluded from candidacy here without a dedicated method-vs-field
+ * branch: the same check that recognizes a `PropertyDeclaration` field alias
+ * and a get-accessor field naturally excludes a `MethodDeclaration` that merely
+ * returns the helper.
  */
 function couldDirectInvocationReachHelper(
   symbol: ts.Symbol,
@@ -3390,10 +3259,10 @@ function couldDirectInvocationReachHelper(
   // `valueProducedByMereAccess` below ("what value does THIS declaration
   // produce right now"): `let alias;` with no initializer still satisfies
   // `hasOnlyExpressionInitializer` by kind, and must still fall through to
-  // `findAssignedValues` for a LATER `alias = getHelper();` (round 13/14's
-  // own fixtures). Returning early whenever `valueProducedByMereAccess`
-  // itself is `undefined` would silently skip that later-assignment case —
-  // do not fold the two questions back into one.
+  // `findAssignedValues` for a LATER `alias = getHelper();` (the
+  // call-through-local-callee fixtures). Returning early whenever
+  // `valueProducedByMereAccess` itself is `undefined` would silently skip that
+  // later-assignment case — do not fold the two questions back into one.
   const accessedValue = valueProducedByMereAccess(declaration);
   const candidates: readonly ts.Node[] = [
     ...(accessedValue !== undefined ? [accessedValue] : []),
@@ -3500,18 +3369,18 @@ function isAmbiguousOutOfBandCallee(
  * literals, applied to import bindings instead of numeric ones — because a
  * LOCAL rebind is a different shape from a renaming import: `reportOutOfBand`
  * here is `reportOutOfBand`'s OWN `VariableDeclaration`, not an
- * `ImportSpecifier`, so the direct check alone cannot see through it
- * (docomply-review, high). `seen` guards the
- * same cyclic-alias case `resolveIdentifierLiteral` guards.
+ * `ImportSpecifier`, so the direct check alone cannot see through it.
+ * `seen` guards the same cyclic-alias case `resolveIdentifierLiteral`
+ * guards.
  *
  * The rebind's declaration list must actually carry the `Const` flag — a
  * `let`-declared alias is reassignable, so its declared initializer is not a
  * durable provenance claim: `let alias = outOfBand; alias = decoy;
  * alias(…)` would otherwise still resolve from the stale initializer to the
- * real import even though the call now reaches `decoy` (docomply-review, PR
- * #4918, medium — the doc comment above already claimed "CONST alias chain";
- * this enforces it). The initializer is also unwrapped of transparent parens
- * before the identifier check, for the same reason as the callee itself.
+ * real import even though the call now reaches `decoy` (this is what makes
+ * the "CONST alias chain" above true). The initializer is also unwrapped of
+ * transparent parens before the identifier check, for the same reason as the
+ * callee itself.
  */
 function resolveIdentifierImportBinding(
   identifier: ts.Identifier,
@@ -3575,10 +3444,9 @@ function resolvesToRealHelperNamespace(
 /**
  * Does bare identifier `identifier` — through a same-scope CONST alias chain,
  * exactly like `resolveIdentifierImportBinding` above — ultimately rebind a
- * `ns.outOfBand` / `ns['outOfBand']` member access naming the real helper
- * (docomply-review, a reference-implementation pull request, high), OR ultimately destructure it
- * (`const { outOfBand: alias } = terminalStates; alias(…)`, docomply-review,
- * a reference-implementation pull request, high, round 4 — mirroring `bindingElementPropertyName` /
+ * `ns.outOfBand` / `ns['outOfBand']` member access naming the real helper,
+ * OR ultimately destructure it (`const { outOfBand: alias } =
+ * terminalStates; alias(…)`, mirroring `bindingElementPropertyName` /
  * `resolvesToCodePropertyAccess`'s own established destructuring-alias
  * pattern for `.code`, applied to `outOfBand` instead)? Both are a distinct
  * terminal shape from `resolveIdentifierImportBinding`'s own chain: neither
@@ -3695,10 +3563,10 @@ function isRealHelperNamespaceImport(
  * silently narrow the census the moment either check tightens.
  *
  * The callee is first unwrapped of transparent parens
- * (`unwrapTransparentExpression`, docomply-review a reference-implementation pull request high — so
- * `(outOfBand)(…)` anchors identically to `outOfBand(…)`), then dispatched
- * on shape, both resolved through `resolveIdentifierImportBinding` above
- * rather than duplicating its alias-chain logic:
+ * (`unwrapTransparentExpression`, so `(outOfBand)(…)` anchors identically to
+ * `outOfBand(…)`), then dispatched on shape, both resolved through
+ * `resolveIdentifierImportBinding` above rather than duplicating its
+ * alias-chain logic:
  *
  *   - A bare identifier (`outOfBand(…)`, an aliased import
  *     (`reportOutOfBand(…)` from `import { outOfBand as reportOutOfBand }`),
@@ -3706,32 +3574,30 @@ function isRealHelperNamespaceImport(
  *     alias(…)`) — must resolve to a real `ImportSpecifier` naming
  *     `outOfBand` from `helperModuleSpecifier`. Failing that, it may still be
  *     a local CONST rebind of the member-access shape below
- *     (`resolveIdentifierMemberRebind`, docomply-review a reference-implementation pull request high —
- *     `const alias = terminalStates.outOfBand; alias(…)`).
+ *     (`resolveIdentifierMemberRebind`: `const alias =
+ *     terminalStates.outOfBand; alias(…)`).
  *   - A member access naming `outOfBand` — a property access
  *     (`terminalStates.outOfBand(…)`), an element access keyed by the string
  *     literal `terminalStates['outOfBand'](…)`, or an element access keyed
  *     by a CONST identifier that itself resolves to that string literal
- *     (`terminalStates[key](…)` where `const key = 'outOfBand' as const`,
- *     docomply-review, a reference-implementation pull request, high, round 5; `outOfBandMemberExpressionObject`
- *     above) — the OBJECT side must resolve to a `NamespaceImport` of
- *     `helperModuleSpecifier`. A non-identifier object expression
- *     (`getModule.outOfBand(…)`, `this.outOfBand(…)`) is a stated
- *     residual, the same posture `resolvesToLocalReporter` already takes for
- *     its own non-identifier-callee residual above.
+ *     (`terminalStates[key](…)` where `const key = 'outOfBand' as const`;
+ *     `outOfBandMemberExpressionObject` above) — the OBJECT side must resolve
+ *     to a `NamespaceImport` of `helperModuleSpecifier`. A non-identifier
+ *     object expression (`getModule.outOfBand(…)`, `this.outOfBand(…)`) is a
+ *     stated residual, the same posture `resolvesToLocalReporter` already takes
+ *     for its own non-identifier-callee residual above.
  *
- * Getting this axis right cuts multiple ways, each found independently
- * across two review rounds (docomply-review).
+ * Getting this axis right cuts multiple ways.
  * Resolving by import IDENTITY rather than local text is what lets an
  * ALIASED or REBOUND real call still be recognized at all — pure text
- * matching missed every one of these, so a real, mis-anchored call written
- * through any of them produced a false "all clear" (nothing to see, because
- * nothing was ever counted). Requiring import identity in the first place is
+ * matching misses every one of these, so a real, mis-anchored call written
+ * through any of them produces a false "all clear" (nothing to see, because
+ * nothing is ever counted). Requiring import identity in the first place is
  * what EXCLUDES a same-named decoy imported from an unrelated module — text
- * matching counted it as a real candidate that the strict check then
- * (rightly) refused to anchor, so a harmless decoy alone failed the
- * mandatory gate's coverage cross-check. Both new shapes preserve that:
- * neither widens acceptance beyond "resolves, by import identity, to the
+ * matching counts it as a real candidate that the strict check then
+ * (rightly) refuses to anchor, so a harmless decoy alone fails the
+ * mandatory gate's coverage cross-check. Both member-access shapes preserve
+ * that: neither widens acceptance beyond "resolves, by import identity, to the
  * real helper" — they only widen which SYNTAX can reach that resolution.
  */
 function resolveOutOfBandImportProvenance(
@@ -3781,8 +3647,7 @@ function resolveOutOfBandImportProvenance(
  * `isCodePropertyAccess` already carries) all resolve to `undefined`.
  * Checks `< 2` (enough arguments to carry a `name`), not `!== 3`: a future
  * optional 4th parameter on `outOfBand` itself must not silently blind
- * this scan at every real call site at once (docomply-review
- * Tier 3 review, INFO).
+ * this scan at every real call site at once.
  */
 function resolveOutOfBandCallStateName(
   call: ts.CallExpression,
@@ -3807,15 +3672,16 @@ function resolveOutOfBandCallStateName(
 /**
  * The full scan result: every call resolving, by IMPORT PROVENANCE, to the
  * real `outOfBand` helper (`candidateCount` — a BROADER recognizer than the
- * strict scan below, per `document-scanning-gates.md` rule 2: it shares only
- * the import-provenance axis, never the arity/literal-name/dispatch axes the
- * strict scan additionally requires), how many of those actually anchored to
- * a recognized `if (X.code === IDENT)` dispatch (`anchoredCount`), and which
- * of those anchored calls named the WRONG sibling state (`mismatches`).
+ * strict scan below, so the census does not depend on the check it audits: it
+ * shares only the import-provenance axis, never the arity/literal-name/dispatch
+ * axes the strict scan additionally requires), how many of those actually
+ * anchored to a recognized `if (X.code === IDENT)` dispatch (`anchoredCount`),
+ * and which of those anchored calls named the WRONG sibling state
+ * (`mismatches`).
  *
  * `candidateCount`/`anchoredCount` exist so `runCheck` can assert that
- * EVERY real `outOfBand` call was actually verified
- * (`document-scanning-gates.md` rule 1) — `mismatches` alone cannot tell
+ * EVERY real `outOfBand` call was actually verified (a gate that verified
+ * nothing must fail, not pass) — `mismatches` alone cannot tell
  * "every real call site is correctly paired" apart from "this scan silently
  * failed to anchor some of them", and several plausible refactors shrink
  * `anchoredCount` below `candidateCount` without touching a single state
@@ -3823,7 +3689,7 @@ function resolveOutOfBandCallStateName(
  * `switch (x.code)` instead of an `if`, behind an early-return guard
  * (`if (x.code !== EXIT) return; ...; outOfBand(...)`) — each still contains
  * the call `candidateCount` counts, but `anchoredCount` can no longer verify
- * it (docomply-review, WARNING). Every one of those
+ * it. Every one of those
  * produces an EMPTY `mismatches` array that reads identically to "all
  * clear" without `candidateCount`/`anchoredCount` alongside it to say
  * whether anything was actually checked. Deliberately a COUNT COMPARISON,
@@ -3848,12 +3714,12 @@ export interface OutOfBandNamePairingScan {
  * which carries exactly this shape at `terminal-states.ts`'s own header —
  * and it is resolved by import IDENTITY rather than local identifier text,
  * so it neither misses a renaming import alias of the real helper nor
- * over-counts a same-named decoy imported from elsewhere, docomply-review
- *), check whether it anchors to an enclosing
- * `if (X.code === IDENT)` dispatch (`findEnclosingOutOfBandDispatch` above —
- * which itself resolves `IDENT` to a known out-of-band exit constant, and
- * only counts a call in the dispatch's `then` branch). For every anchored
- * call, verify its `'NAME'` argument names the SAME state `IDENT` does.
+ * over-counts a same-named decoy imported from elsewhere), check whether it
+ * anchors to an enclosing `if (X.code === IDENT)` dispatch
+ * (`findEnclosingOutOfBandDispatch` above — which itself resolves `IDENT` to a
+ * known out-of-band exit constant, and only counts a call in the dispatch's
+ * `then` branch). For every anchored call, verify its `'NAME'` argument names
+ * the SAME state `IDENT` does.
  */
 export function scanOutOfBandNamePairings(
   sourceText: string,
@@ -3907,7 +3773,7 @@ export function scanOutOfBandNamePairings(
       ) {
         // A genuinely dynamic key on the real helper's own namespace object
         // — reached either directly at the call site or through a rebind
-        // chain (docomply-review, a reference-implementation pull request, high, round 7): this MIGHT be a
+        // chain: this MIGHT be a
         // real outOfBand() call this scan cannot verify. Count it as a
         // candidate that can never anchor, so the coverage cross-check below
         // fails closed instead of silently excluding it from the census.
@@ -3979,7 +3845,7 @@ function leaseTsSourcePath(): string {
  * declares them, so its own check needs only a source seam — no
  * module-require half like `drive.ts`'s/`lease.ts`'s own checks have.
  * Exported so the test suite can scan the REAL, checked-in source directly
- * (docomply-review, a reference-implementation pull request round 5) rather than only synthetic fixtures. */
+ * rather than only synthetic fixtures. */
 export function driveStatusTsSourcePath(): string {
   return (
     process.env.DRIVE_PR_TERMINAL_STATES_TEST_DRIVE_STATUS_TS_SOURCE ??
@@ -4011,8 +3877,7 @@ export function runCheck(): number {
     // Runs BEFORE the population-floor `continue` below, and independently
     // of it: the floor alone cannot see a required identifier that vanished
     // while OTHER rows kept the total count at or above it — see
-    // `requiredIdentifiers`'s own doc comment on `CorpusFile` (chatgpt-codex-
-    // connector).
+    // `requiredIdentifiers`'s own doc comment on `CorpusFile`.
     if (unit.requiredIdentifiers !== undefined) {
       const missing = findMissingRequired(pairs, unit.requiredIdentifiers);
       if (missing.length > 0) {
@@ -4032,14 +3897,12 @@ export function runCheck(): number {
       // `0`) — real ONLY in a file that documents `drive.ts`'s own
       // operator-facing exit, never `drive-status.ts`'s (see
       // `documentsDriveTsRemap`'s own doc comment on `CorpusFile`). Applying
-      // it unconditionally to every non-header file let a genuinely wrong
-      // `CONVERGED` → `0` row pass in `SKILL.md`'s own combined
+      // it unconditionally to every non-header file would let a genuinely
+      // wrong `CONVERGED` → `0` row pass in `SKILL.md`'s own combined
       // primary+annotation cell AND in `references/terminal-states.md`'s own
       // table — both document `drive-status.ts`'s contract, same as the
-      // header, and neither is the "the header" special case this used to
-      // check for (chatgpt-codex-connector,
-      // mutation-proven; the SKILL.md/terminal-states.md gap found and
-      // fixed independently in round 2). Conversely, a file that DOES
+      // header, so "is this the header" is the wrong special case to check
+      // for (mutation-proven). Conversely, a file that DOES
       // document the remap (`documentsDriveTsRemap: true`) shows ONLY the
       // remapped code for that state, never `drive-status.ts`'s raw one —
       // so there the raw `exitCode` is not itself valid either, and
@@ -4342,7 +4205,7 @@ export function runCheck(): number {
     driveStatusSource,
     driveStatusSourcePath,
   );
-  // Coverage cross-check (document-scanning-gates.md rules 1 + 2) — checked
+  // Coverage cross-check (fail closed, with an independent census) — checked
   // BEFORE the mismatches themselves: an empty `mismatches` array means
   // "verified clean" only when every real outOfBand() call was actually
   // anchored and checked. `candidateCount` is the broader, AST-based-but-

@@ -149,15 +149,15 @@ export interface DetectOpts {
    * `maxCandidateScanMs()`) before it finished enumerating the vendor's whole
    * state tree. This flat field is whatever the caller passes; a direct
    * `adapter.detect(opts)` call reads it as-is. `detectQuotaBlock()` in
-   * `index.ts` does NOT pass through a blanket union across adapters here —
-   * it overrides this field PER adapter from `QuotaSnapshot.truncatedByVendor`
-   * before calling each one, so an adapter only ever sees whether ITS OWN
-   * walk truncated. An aggregate flag let one vendor's truncated walk degrade
-   * a DIFFERENT, fully-completed vendor's detection too (docomply-review, PR
-   * #4718 round 3) — see `QuotaSnapshot.truncatedByVendor`'s own doc comment.
+   * `index.ts` does NOT pass through a blanket union across adapters here — it
+   * overrides this field PER adapter from `QuotaSnapshot.truncatedByVendor`
+   * before calling each one, so an adapter only ever sees whether ITS OWN walk
+   * truncated. An aggregate flag let one vendor's truncated walk degrade a
+   * DIFFERENT, fully-completed vendor's detection too — see
+   * `QuotaSnapshot.truncatedByVendor`'s own doc comment.
    *
    * This is what tells "this file doesn't exist yet" apart from "the snapshot
-   * walk never got far enough to find out" (docomply-review, a reference-implementation pull request): a
+   * walk never got far enough to find out": a
    * count-based cap enumerates the SAME set on every call given a stable
    * directory order, but the wall-clock cap does not — it stops wherever real
    * elapsed time happened to land, which can differ between the snapshot call
@@ -201,24 +201,22 @@ export interface SpawnCorrelation {
   /** The adapter that minted this — matches `QuotaAdapter.vendor`. */
   vendor: string;
   /**
-   * The vendor's own session identifier, as passed to its CLI — or `null`
-   * when `prepareSpawn` confirmed the command is THIS vendor's CLI
-   * deliberately targeting an existing session (Claude's long-form
-   * `--continue`, or a long-form `--resume` it could not read a value from)
-   * but could not determine which one. `null` here is still a positive
-   * claim, distinct from no `SpawnCorrelation` at all — it tells the caller
-   * (the argv-injection decision in `prepareSpawn`, and `drive.ts`'s own log
-   * line) that this pass legitimately writes into a PRE-EXISTING transcript.
-   * It does NOT, on its own, let `detect()`'s blanket `preexistingSessions`
-   * exclusion through: without an exact id there is no way to tell the
-   * actually-resumed file apart from an unrelated preexisting file in the
-   * same worktree, so a `null` correlation still hits that exclusion and a
-   * genuine wall there is a missed detection rather than a misattribution
-   * risk (docomply-review, a reference-implementation pull request round 4 bypassed the exclusion for this
-   * case; round 5 found the two-candidate gap that reopened and reverted
-   * it). Deliberately NOT extended to a short `-c`/`-r` form: an adapter
-   * cannot tell an actual short flag from a value character that merely
-   * happens to match one.
+   * The vendor's own session identifier, as passed to its CLI — or `null` when
+   * `prepareSpawn` confirmed the command is THIS vendor's CLI deliberately
+   * targeting an existing session (Claude's long-form `--continue`, or a
+   * long-form `--resume` it could not read a value from) but could not
+   * determine which one. `null` here is still a positive claim, distinct from
+   * no `SpawnCorrelation` at all — it tells the caller (the argv-injection
+   * decision in `prepareSpawn`, and `drive.ts`'s own log line) that this pass
+   * legitimately writes into a PRE-EXISTING transcript. It does NOT, on its
+   * own, let `detect()`'s blanket `preexistingSessions` exclusion through:
+   * without an exact id there is no way to tell the actually-resumed file apart
+   * from an unrelated preexisting file in the same worktree, so a `null`
+   * correlation still hits that exclusion and a genuine wall there is a missed
+   * detection rather than a misattribution risk (bypassing the exclusion for
+   * this case reopens the two-candidate gap). Deliberately NOT extended to a
+   * short `-c`/`-r` form: an adapter cannot tell an actual short flag from a
+   * value character that merely happens to match one.
    */
   sessionId: string | null;
 }
@@ -262,14 +260,13 @@ export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
  * `/w/alpha-v2`.
  *
  * Both sides are normalized to forward slashes before comparing, not just
- * checked against `/` and `\\` independently: trying each separator as if
- * the WHOLE path used it consistently still fails when the two sides mix
+ * checked against `/` and `\\` independently: trying each separator as if the
+ * WHOLE path used it consistently still fails when the two sides mix
  * conventions with EACH OTHER — worktree `C:\repo\alpha` and record cwd
  * `C:/repo/alpha/apps/backend` matches neither a `\`-joined nor a `/`-joined
  * prefix, even though nothing here ever promised the two sides agree on a
- * convention (chatgpt-codex-connector, a reference-implementation pull request rounds 4, 8 and 9).
- * Case-folded too, but ONLY on Windows: NTFS (and virtually every real
- * Windows config) is case-insensitive, while POSIX is not — folding case
+ * convention. Case-folded too, but ONLY on Windows: NTFS (and virtually every
+ * real Windows config) is case-insensitive, while POSIX is not — folding case
  * unconditionally would treat `/Users/Alpha` and `/users/alpha` as the same
  * worktree on macOS/Linux, which they are not.
  */
@@ -296,7 +293,7 @@ export function belongsToWorktree(
  * transcript reaching hundreds of megabytes made `readFileSync(path, 'utf8')`
  * a synchronous, unbounded read on the event loop, able to delay this
  * drive's own lock-renewal heartbeat or exhaust its memory — precisely while
- * it is diagnosing a failed pass (docomply-review, a reference-implementation pull request round 17).
+ * it is diagnosing a failed pass.
  */
 export const MAX_TRANSCRIPT_READ_BYTES = 8 * 1024 * 1024;
 
@@ -308,8 +305,7 @@ export const MAX_TRANSCRIPT_READ_BYTES = 8 * 1024 * 1024;
  * survive; discovering them at all means a synchronous `readdirSync`/
  * `statSync` over every entry first, with no bound on how many that tree
  * can accumulate over a machine's lifetime — hundreds of Conductor
- * worktrees' worth of project directories, or years of daily rollouts
- * (docomply-review, a reference-implementation pull request round 24).
+ * worktrees' worth of project directories, or years of daily rollouts.
  *
  * A circuit breaker, not a recency-aware cutoff: neither vendor's file
  * names are chronologically sortable (Claude's are UUIDs; nothing here
@@ -322,14 +318,14 @@ export const MAX_TRANSCRIPT_READ_BYTES = 8 * 1024 * 1024;
  * before reaching it, which is a materially better failure mode than the
  * previously fully-unbounded scan.
  *
- * A SECOND residual appears once `snapshotSessions` shares this walk
- *: the snapshot and the later detection scan are two separate
+ * A SECOND residual appears once `snapshotSessions` shares this walk:
+ * the snapshot and the later detection scan are two separate
  * walks, separated by a whole pass that itself creates files, and directory
  * iteration order is not a contract. They can therefore truncate at different
  * points — NOT only above this count cap, once `maxCandidateScanMs` is also
  * in play: a wall-clock cutoff depends on real elapsed time, which the two
  * calls do not share, so it can diverge the two walks even while both stay
- * under this entry count (docomply-review, a reference-implementation pull request). Below both caps the two
+ * under this entry count. Below both caps the two
  * walks enumerate the same set and the divergence cannot occur at all; the
  * measured tree on the machine this was written for scans ~7,400 entries,
  * well under the count cap. Once either walk truncates, `CandidateScan.truncated`
@@ -362,7 +358,7 @@ const MAX_CANDIDATE_SCAN_MS_DEFAULT = 5_000;
  * than this circuit breaker, in the same spirit as `prepareSpawn`'s own
  * `CODEX_HOME`-isolation deferral: deferred until a real hang is measured
  * rather than merely possible. Tracked as an earlier change rather than merely noted
- * here (docomply-review, a reference-implementation pull request round 2).
+ * here.
  *
  * Overridable via `DRIVE_PR_QUOTA_MAX_SCAN_MS` so a test can pin the
  * deadline to a value it controls, rather than asserting behaviour that
@@ -398,20 +394,19 @@ export function scanBudgetExceeded(
 
 /**
  * Whether a caught filesystem error is a CONFIRMED disappearance — `ENOENT`,
- * the file or directory legitimately does not exist right now — as opposed
- * to any OTHER failure (`EACCES`, `ELOOP`, a stalled or degraded mount, ...)
- * that says nothing about whether the target exists. The two must never be
+ * the file or directory legitimately does not exist right now — as opposed to
+ * any OTHER failure (`EACCES`, `ELOOP`, a stalled or degraded mount, ...) that
+ * says nothing about whether the target exists. The two must never be
  * conflated: a confirmed absence is not evidence and not truncation, but any
  * other failure is NOT confirmed absence, and treating it as one lets a walk
- * silently miss a file that a LATER walk over the same tree (once the
- * transient failure has cleared) would find — exactly the divergence between
- * the pre-spawn snapshot and `detect()`'s own separate scan that
- * `MAX_CANDIDATE_FILES_SCANNED`'s own doc comment describes, reachable
- * through a different door than either circuit breaker (docomply-review, PR
- * #4718 round 4). A pure function so both adapters' `candidateFiles()` share
- * one classification rather than each hand-copying the same `.code` check —
- * `forEachDirEntry` below already needed exactly this distinction for its own
- * `opendirSync` failure.
+ * silently miss a file that a LATER walk over the same tree (once the transient
+ * failure has cleared) would find — exactly the divergence between the
+ * pre-spawn snapshot and `detect()`'s own separate scan that
+ * `MAX_CANDIDATE_FILES_SCANNED`'s own doc comment describes, reachable through
+ * a different door than either circuit breaker. A pure function so both
+ * adapters' `candidateFiles()` share one classification rather than each
+ * hand-copying the same `.code` check — `forEachDirEntry` below already needed
+ * exactly this distinction for its own `opendirSync` failure.
  */
 export function isConfirmedAbsence(err: unknown): boolean {
   return (err as NodeJS.ErrnoException)?.code === "ENOENT";
@@ -424,8 +419,8 @@ export function isConfirmedAbsence(err: unknown): boolean {
  * root containing many empty ones) large enough to matter for
  * `MAX_CANDIDATE_FILES_SCANNED` is exactly the case that cap exists to
  * bound, and a single eager `readdirSync` call pays that entire cost
- * upfront regardless of how quickly the caller's `onEntry` decides to stop
- * (docomply-review, a reference-implementation pull request round 26). `onEntry` returns `false` to stop
+ * upfront regardless of how quickly the caller's `onEntry` decides to stop.
+ * `onEntry` returns `false` to stop
  * the walk early — checked BETWEEN every single entry, not merely between
  * whole directories.
  *
@@ -439,7 +434,7 @@ export function isConfirmedAbsence(err: unknown): boolean {
  * scan — so it alone returns `true` with zero entries visited. Every caller
  * OR's a `false` here into its own `truncated` signal: a walk this function
  * could not finish is indistinguishable, to the caller, from one the
- * caller's own budget cut short (chatgpt-codex-connector, a reference-implementation pull request round 3).
+ * caller's own budget cut short.
  */
 export function forEachDirEntry(
   dir: string,
@@ -505,20 +500,18 @@ export interface CandidateScan {
  * than the exact byte bound.
  */
 /**
- * `readSync` fills as much of `buf` as the underlying `read(2)` call
- * returns in ONE invocation, which is not guaranteed to be the whole
- * requested length even for a regular file — a short read is legal, and
- * every file this module reads is explicitly an ACTIVELY-APPENDED one,
- * which is exactly the condition (a concurrent write racing the read)
- * most likely to produce one. Ignoring the returned byte count and
- * decoding the whole zero-initialized buffer regardless would turn a
- * short read into trailing NUL bytes decoded as if they were file
- * content (docomply-review, a reference-implementation pull request round 25 for `readBoundedTail`
- * below; round 27 for Codex's own small header-line read, which used a
- * bare single `readSync` call instead of this shared loop). Exported so
- * every bounded-read call site loops until the buffer is full or EOF
- * (`bytesRead === 0`) the SAME way, rather than each hand-rolling its
- * own copy that the next one forgets.
+ * `readSync` fills as much of `buf` as the underlying `read(2)` call returns in
+ * ONE invocation, which is not guaranteed to be the whole requested length even
+ * for a regular file — a short read is legal, and every file this module reads
+ * is explicitly an ACTIVELY-APPENDED one, which is exactly the condition (a
+ * concurrent write racing the read) most likely to produce one. Ignoring the
+ * returned byte count and decoding the whole zero-initialized buffer regardless
+ * would turn a short read into trailing NUL bytes decoded as if they were file
+ * content (as happened in `readBoundedTail` below, and in Codex's own small
+ * header-line read, which used a bare single `readSync` call instead of this
+ * shared loop). Exported so every bounded-read call site loops until the buffer
+ * is full or EOF (`bytesRead === 0`) the SAME way, rather than each
+ * hand-rolling its own copy that the next one forgets.
  */
 export function readFullySync(
   fd: number,
@@ -619,7 +612,7 @@ export interface QuotaAdapter {
    * reads an EXISTING id straight off an unambiguous `--resume <value>` —
    * `argv`/`env` pass through unchanged in that case, since injecting
    * `--session-id` alongside `--resume` would hand the CLI two conflicting
-   * selectors (docomply-review/chatgpt-codex-connector, a reference-implementation pull request round 2).
+   * selectors.
    * "Leave a resumed session alone" below is about the AMBIGUOUS forms this
    * still cannot safely read a value from, not about resumption in general.
    *

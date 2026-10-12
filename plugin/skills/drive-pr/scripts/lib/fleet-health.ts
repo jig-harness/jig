@@ -807,13 +807,12 @@ function markerKindOf(body: string): string | null {
 
 /**
  * Comments that BEGIN with the word "diagnosis" but that the parser above does
- * not read. Broader than the recognizer on purpose (`document-scanning-gates.md`
- * rule 2): an answer that cannot be parsed is reported, not silently dropped,
- * because to the owner who wrote it the signal is answered and to the sensor it
- * is still waiting. Only a line that STARTS with the word counts — a reply that
- * merely mentions one ("thanks, diagnosis after standup") is conversation, and
- * flagging it would leave a report needing a person to edit a comment before it
- * could ever be complete.
+ * not read. Broader than the recognizer on purpose: an answer that cannot be
+ * parsed is reported, not silently dropped, because to the owner who wrote it
+ * the signal is answered and to the sensor it is still waiting. Only a line
+ * that STARTS with the word counts — a reply that merely mentions one ("thanks,
+ * diagnosis after standup") is conversation, and flagging it would leave a
+ * report needing a person to edit a comment before it could ever be complete.
  */
 export function unparsedDiagnoses(
   comments: ReadonlyArray<CommentFact>,

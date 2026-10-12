@@ -1,5 +1,5 @@
 /**
- * Cheap reads for polling loops — TASK.
+ * Cheap reads for polling loops.
  *
  * GitHub's GraphQL bucket is 5,000 points/hour per token, and every `gh pr
  * view` / `gh pr checks` / `gh repo view` spends from it. A polling loop pays
@@ -299,7 +299,7 @@ export function ghConditionalProbe(
  * probe answers "did it change since THIS caller last looked?", and a caller's
  * baseline is the verdict it read itself: through the shared disk cache another
  * process's ETag write would turn this caller's next 304 into a false "still
- * the verdict I hold" (docomply-review, a reference-implementation pull request round 3). Keyed like the disk
+ * the verdict I hold". Keyed like the disk
  * entries, so caching off / an unresolvable scope still means "no baseline".
  */
 const probeBaselines = new Map<string, string>();

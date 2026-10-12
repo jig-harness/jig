@@ -4,7 +4,7 @@
  * Two halves:
  *
  *   - Unit tests over `summary-findings.ts`'s pure parsing. Every fixture body
- *     is a real shape emitted by the majordomo reviewer on this repository.
+ *     is a real shape the self-hosted reviewer has emitted.
  *   - Scripted probes that run `drive-status.ts` against a STUBBED `gh` and
  *     assert the state it reaches. One probe per false-convergence mode listed
  *     in references/terminal-states.md, each pinned to the PR where it was
@@ -243,7 +243,7 @@ describe("summary-findings parsing", () => {
       // reads a round when an `@` precedes it) — this stays excluded from
       // MARKER_SAFE_FINGERPRINT anyway, not because of a live round-trip
       // ambiguity but because no producer emits one. See the docstring above
-      // MARKER_SAFE_FINGERPRINT (docomply-review round 3, a reference-implementation pull request).
+      // MARKER_SAFE_FINGERPRINT.
       "a fingerprint containing #, which is excluded from the marker fingerprint vocabulary",
       '[{"fingerprint":"abc#7","path":"b","comment":"c"}]',
     ],
@@ -294,9 +294,9 @@ describe("summary-findings parsing", () => {
     expect(severityOf("![P9 Badge](...) not a real priority")).toBe("unknown");
   });
 
-  it("confines the badge matcher to line 0 too, not just the bold-token matcher (chatgpt-codex-connector, a reference-implementation pull request)", () => {
+  it("confines the badge matcher to line 0 too, not just the bold-token matcher", () => {
     // The badge matcher's own leading whitespace used to be `\s*`, which
-    // matches `\n` — exactly the hole round 19 closed for SEVERITY_FIELD's
+    // matches `\n` — exactly the hole already closed for SEVERITY_FIELD's
     // prefix above, reopened here because the two matchers only shared the
     // INTENT in prose, not the whitespace class that actually enforces it. A
     // header whose real line 0 carries no severity at all must not arm the
@@ -315,13 +315,12 @@ describe("summary-findings parsing", () => {
     ).toBe("high");
   });
 
-  it("enumerates the severity-field prefix — a backtick or digit before the token is not a severity (PR #4501 round 18)", () => {
+  it("enumerates the severity-field prefix — a backtick or digit before the token is not a severity", () => {
     // `[^\p{L}\n]*` ("any non-letter run") was far wider than the shape it
-    // claimed to match. Two reviewers produced decoys independently in one
-    // round; both are severity-LESS findings, so classifying them inverts the
-    // fail-open contract at its load-bearing input — `severityOf` feeds
-    // `fail_open.inert_when_unknown`, and a finding that should read `unknown`
-    // (ladder inert) instead armed the ladder.
+    // claimed to match. Two decoys show it; both are severity-LESS findings,
+    // so classifying them inverts the fail-open contract at its load-bearing
+    // input — `severityOf` feeds `fail_open.inert_when_unknown`, and a finding
+    // that should read `unknown` (ladder inert) instead armed the ladder.
     expect(
       severityOf(
         "`**low**` is a supported token, not this finding’s severity.",
@@ -335,19 +334,19 @@ describe("summary-findings parsing", () => {
     expect(severityOf("**high** \u00b7 no emoji at all")).toBe("high");
   });
 
-  it("narrows the prefix to the coloured circles and to line 0 — a warning sign, or a decoration-only first line, is not a severity (PR #4501 round 19)", () => {
-    // Round 18's enumeration was still two steps too wide, and each step had
+  it("narrows the prefix to the coloured circles and to line 0 — a warning sign, or a decoration-only first line, is not a severity", () => {
+    // The first enumeration was still two steps too wide, and each step had
     // its own decoy. `\p{Extended_Pictographic}` admits every emoji rather
     // than the coloured circles the contract names, so a title merely OPENING
-    // with a warning sign classified `blocker` (docomply-review, round 19)…
+    // with a warning sign classified `blocker`…
     expect(severityOf("\u26a0\ufe0f **blocker** behavior is unsupported")).toBe(
       "unknown",
     );
-    // …and `\s` matches `\n`, so dropping the `m` flag in round 17 never
-    // confined the match to line 0 at all — the PREFIX walked to line 1 by
-    // itself (chatgpt-codex-connector, round 19). Note this decoy defeats the
-    // circle fix alone: swap the warning sign for a real circle and the
-    // whitespace branch is the only thing still holding the line.
+    // …and `\s` matches `\n`, so dropping the `m` flag never confined the
+    // match to line 0 at all — the PREFIX walked to line 1 by itself. Note
+    // this decoy defeats the circle fix alone: swap the warning sign for a
+    // real circle and the whitespace branch is the only thing still holding
+    // the line.
     expect(severityOf("\u26a0\ufe0f\n**low** is only an example token")).toBe(
       "unknown",
     );
@@ -384,8 +383,8 @@ describe("summary-findings parsing", () => {
     );
   });
 
-  it("requires VS16 to follow a circle rather than standing alone; ZWJ is not decoration at all (chatgpt-codex-connector, a reference-implementation pull request)", () => {
-    // The first cut of the round-19 fix still listed VS16 and ZWJ as their
+  it("requires VS16 to follow a circle rather than standing alone; ZWJ is not decoration at all", () => {
+    // The first cut of the circle-only fix still listed VS16 and ZWJ as their
     // own top-level branches under `*`, so each was independently reachable
     // with no circle anywhere before it. A stray invisible code point sitting
     // directly in front of a quoted bold token — plausible copy-paste
@@ -409,15 +408,16 @@ describe("summary-findings parsing", () => {
     ).toBe("high");
   });
 
-  it("anchors the bold severity token to line 0 of the header — no `m` flag (PR #4501 round 17)", () => {
-    // Round 15 anchored the bold matcher to line 0 of the header but carried
-    // the `m` flag, so `^` restarted on EVERY header line and the anchor it
-    // claimed to add was defeated by any header whose second line BEGINS with
-    // a quoted token (only non-letters may precede it, which a leading
-    // backtick satisfies) — ordinary prose in a finding about severity parsing.
+  it("anchors the bold severity token to line 0 of the header — no `m` flag", () => {
+    // An earlier fix anchored the bold matcher to line 0 of the header but
+    // carried the `m` flag, so `^` restarted on EVERY header line and the
+    // anchor it claimed to add was defeated by any header whose second line
+    // BEGINS with a quoted token (only non-letters may precede it, which a
+    // leading backtick satisfies) — ordinary prose in a finding about severity
+    // parsing.
     // A severity-less finding was classified `low`, bypassing
-    // fail_open.inert_when_unknown (coderabbitai + chatgpt-codex-connector,
-    // a reference-implementation pull request round 17). Mutation-checked: re-adding `m` reddens this.
+    // fail_open.inert_when_unknown. Mutation-checked: re-adding `m` reddens
+    // this.
     expect(
       severityOf(
         "Anchor severity parsing to the header\n`**low**` is a supported token, and this line begins with it.",
@@ -435,7 +435,7 @@ describe("summary-findings parsing", () => {
   it("does not pick up a badge quoted later in the body as an example", () => {
     // A low-severity finding whose explanation quotes a higher-severity badge
     // as an example must not be misread as that higher severity — the badge
-    // is only a signal in the leading header position (PR #4501 round 9).
+    // is only a signal in the leading header position.
     expect(
       severityOf(
         "Explanation text with no leading badge that later quotes ![P0 Badge](...) as an example of the wrong shape.",
@@ -448,8 +448,8 @@ describe("summary-findings parsing", () => {
     // higher-severity BOLD token as an example of a malformed shape must not
     // be misread as that higher severity — the badge-format header carries no
     // bold canonical token of its own, so an unscoped search falls through to
-    // the body and finds the decoy instead (PR #4501 round 11; the bold-token
-    // counterpart of the badge case above).
+    // the body and finds the decoy instead (the bold-token counterpart of the
+    // badge case above).
     expect(
       severityOf(
         "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Some title**\n\n" +
@@ -463,8 +463,8 @@ describe("summary-findings parsing", () => {
     // token as a decoy must still classify by the leading badge, not the
     // decoy — the badge matcher is anchored to the structurally leading
     // position and runs before the unanchored bold-token search, so a decoy
-    // anywhere later in the header can no longer win (PR #4501 round 14; the
-    // title-level counterpart of the body-level case above).
+    // anywhere later in the header can no longer win (the title-level
+    // counterpart of the body-level case above).
     expect(
       severityOf(
         "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub> Handle the **blocker** token**",
@@ -472,7 +472,7 @@ describe("summary-findings parsing", () => {
     ).toBe("medium");
   });
 
-  it("does not pick up a bold token quoted in a severity-less, badge-less title (chatgpt-codex-connector, a reference-implementation pull request round 15)", () => {
+  it("does not pick up a bold token quoted in a severity-less, badge-less title", () => {
     // No badge and no leading severity field at all — just a title that
     // happens to quote a canonical word in bold. Every earlier round narrowed
     // WHERE the bold search ran (leading paragraph, past HTML comments,
@@ -485,10 +485,10 @@ describe("summary-findings parsing", () => {
   });
 
   it("scopes past leading ai-review HTML-comment markers to find the header", () => {
-    // docomply-review's real inline-comment shape leads with several
+    // The AI reviewer's real inline-comment shape leads with several
     // `<!-- ai-review-* -->` marker lines before the severity bullet — the
     // header/body split must skip those rather than treating the first
-    // marker line as the whole header (PR #4501 round 11).
+    // marker line as the whole header.
     expect(
       severityOf(
         "<!-- ai-review-inline -->\n<!-- ai-review-fp: abc123 -->\n<!-- ai-review-round: 11 -->\n" +
@@ -503,8 +503,7 @@ describe("summary-findings parsing", () => {
     // computed. An unrelated leading HTML comment must be left in place, so
     // it stays part of the (marker-only) first paragraph rather than
     // exposing whatever body prose follows it as the header — otherwise a
-    // bold token quoted there as an example is misread as the real severity
-    // (PR #4501 round 13).
+    // bold token quoted there as an example is misread as the real severity.
     expect(
       severityOf(
         "<!-- some unrelated editor comment -->\n\n" +
@@ -513,20 +512,19 @@ describe("summary-findings parsing", () => {
     ).toBe("unknown");
   });
 
-  // The reviewer's `🏷️ category:` tag (
-  // docomply/ai-review PR #112), parsed the same way and with the same
+  // The reviewer's `🏷️ category:` tag, parsed the same way and with the same
   // fallback contract as severity.
   it("extracts category from the header tag", () => {
     expect(
       categoryOf("🟠 **high** · 🏷️ category: data-integrity · confidence: high"),
     ).toBe("data-integrity");
-    // The illustrative PR #112 example renders the FULL bullet line
+    // The reviewer contract's illustrative example renders the FULL bullet line
     // (`` - `path:line` — <text> ``), but `categoryOf` never sees that raw
     // line in production: `parseBodyFindings` strips the loc/dash prefix
     // first and passes only the text after it — exactly what's fed here.
     // The leading `` - `service/db.ts:42` — `` prefix, if handed to
     // `categoryOf` directly, is exactly the class of decoy
-    // `CATEGORY_LEAD_FIELD` now correctly rejects (review round 2): it isn't
+    // `CATEGORY_LEAD_FIELD` now correctly rejects: it isn't
     // permitted-decoration-only before the severity token, so severityOf
     // itself would call it `unknown` too.
     expect(
@@ -564,10 +562,10 @@ describe("summary-findings parsing", () => {
   });
 
   it("restricts the category search to the header’s OWN line 0, rejecting a decoy on a later header line before any blank line", () => {
-    // The exact multi-line decoy class that took severityOf three rounds to
-    // close (PR #4501 rounds 13/15/17): a SECOND line of the same header
-    // block — no blank line before it — quoting the tag as an example. A
-    // whole-header (unanchored) search finds it; scoping to line 0 does not.
+    // The exact multi-line decoy class that took severityOf three fixes to
+    // close: a SECOND line of the same header block — no blank line before
+    // it — quoting the tag as an example. A whole-header (unanchored) search
+    // finds it; scoping to line 0 does not.
     expect(
       categoryOf(
         "Some title line with no category tag on it.\n" +
@@ -584,9 +582,9 @@ describe("summary-findings parsing", () => {
     ).toBe("docs");
   });
 
-  it("rejects a decoy quoted ON line 0 itself, with no real field present (chatgpt-codex-connector, a reference-implementation pull request)", () => {
+  it("rejects a decoy quoted ON line 0 itself, with no real field present", () => {
     // The finding's own title quotes the syntax as a backtick-fenced
-    // example — unlike the round-1 decoy above, this sits on line 0, so
+    // example — unlike the multi-line decoy above, this sits on line 0, so
     // the line-0 restriction alone does not reject it. Nothing precedes
     // `🏷️` here but a backtick, never the `·` separator every real field
     // is joined by, so this must still read `unknown`.
@@ -608,7 +606,7 @@ describe("summary-findings parsing", () => {
     ).toBe("docs");
   });
 
-  it("rejects a malformed token instead of truncating it to a valid-looking prefix (coderabbitai, PR #4527)", () => {
+  it("rejects a malformed token instead of truncating it to a valid-looking prefix", () => {
     // An unbounded token class (`[a-z][a-z-]*`) read `security_critical` as
     // `security` — accepting the field's syntax while silently discarding
     // the part that made it invalid, rather than falling through to
@@ -633,7 +631,7 @@ describe("summary-findings parsing", () => {
     ).toBe("data-integrity");
   });
 
-  it("rejects a category-shaped field with no genuine severity field leading it (docomply-review round 3, a reference-implementation pull request)", () => {
+  it("rejects a category-shaped field with no genuine severity field leading it", () => {
     // Neither decoy has a `·` immediately preceding `🏷️` that actually
     // separates it from a real severity field — the first has nothing
     // before it at all, the second has only prose ending in "of". The old
@@ -642,7 +640,7 @@ describe("summary-findings parsing", () => {
     expect(categoryOf("Fix parsing of · 🏷️ category: security")).toBe("unknown");
   });
 
-  it("restricts the category match to the field right after severity, not any later field (chatgpt-codex-connector, a reference-implementation pull request)", () => {
+  it("restricts the category match to the field right after severity, not any later field", () => {
     // A genuine severity field followed by an unrelated field, followed by a
     // quoted-looking category tag two fields later — nothing here is a real
     // category, since an earlier change always renders the tag immediately after
@@ -655,7 +653,7 @@ describe("summary-findings parsing", () => {
     ).toBe("unknown");
   });
 
-  it("rejects trailing prose left dangling after the token, with a genuine leading severity field (docomply-review round 4, a reference-implementation pull request)", () => {
+  it("rejects trailing prose left dangling after the token, with a genuine leading severity field", () => {
     // The decoy above omits the leading severity field, so it is rejected by
     // CATEGORY_LEAD_FIELD before CATEGORY_FIELD's own right boundary is ever
     // exercised — `fields.length < 2` short-circuits it. With a real `**medium**`
@@ -667,7 +665,7 @@ describe("summary-findings parsing", () => {
     ).toBe("unknown");
   });
 
-  it("rejects a lead field that merely ENDS with a bold severity token, matching severityOf’s own leading-content requirement (chatgpt-codex-connector, a reference-implementation pull request review round 2)", () => {
+  it("rejects a lead field that merely ENDS with a bold severity token, matching severityOf’s own leading-content requirement", () => {
     // `Fix the **medium**` ends with `**medium**` but is not a genuine
     // severity field — `severityOf` requires nothing but permitted decoration
     // (whitespace/emoji/VS16/ZWJ) before the token, and prose like "Fix the "
@@ -731,13 +729,13 @@ describe("summary-findings parsing", () => {
   // italic, pipe-delimited fields (category | severity | effort) — matched
   // neither the bold-token matcher nor the badge matcher, so 100% of its
   // findings read `unknown` and the decline ladder was inert for all of them
-  // across three independent PRs (#4596, #4644, #4836). Every fixture below is
+  // across three independent PRs. Every fixture below is
   // a real header verbatim from one of those PRs.
   it("reads CodeRabbit’s pipe-delimited severity field, from CodeRabbit", () => {
     // Every fixture also carries `'coderabbitai'` as the second argument —
-    // since PR #4852 round 3, the shape alone no longer classifies; see
-    // `severityOf`'s own doc for why an author-blind version of this exact
-    // test would be a false positive on the class it exists to catch.
+    // the shape alone no longer classifies; see `severityOf`'s own doc for
+    // why an author-blind version of this exact test would be a false
+    // positive on the class it exists to catch.
     expect(
       severityOf(
         "_🩺 Stability & Availability_ | _🔴 Critical_ | _⚡ Quick win_",
@@ -762,11 +760,11 @@ describe("summary-findings parsing", () => {
     ).toBe("blocker");
   });
 
-  // PR #5207: CodeRabbit added a fourth tier, `🔵 Trivial`, below `Minor`.
+  // CodeRabbit added a fourth tier, `🔵 Trivial`, below `Minor`.
   // The matcher knew only Critical/Major/Minor, so every Trivial finding read
   // `unknown` and the decline ladder was inert for it. Both headers below are
-  // verbatim CodeRabbit inline-finding headers (the first from PR #5207).
-  it("reads CodeRabbit’s `Trivial` tier as the weakest canonical severity (PR #5207)", () => {
+  // verbatim CodeRabbit inline-finding headers.
+  it("reads CodeRabbit’s `Trivial` tier as the weakest canonical severity", () => {
     expect(
       severityOf(
         "_📐 Maintainability & Code Quality_ | _🔵 Trivial_ | _⚡ Quick win_",
@@ -789,10 +787,10 @@ describe("summary-findings parsing", () => {
   });
 
   // CodeRabbit moved its three header fields from `_italic_` to
-  // `**bold**` (2026-10-09). Every real header below is verbatim from PR #5342;
+  // `**bold**` (2026-10-09). Every real header below is verbatim from one PR;
   // the `Critical` row has no real instance there (none was raised), so it is
   // the earlier italic header re-emphasized with the same marker.
-  it("reads CodeRabbit’s **bold** header across all four tiers (PR #5342)", () => {
+  it("reads CodeRabbit’s **bold** header across all four tiers", () => {
     const cases: Array<[string, string]> = [
       [
         "**🩺 Stability & Availability** | **🔴 Critical** | **⚡ Quick win**",
@@ -819,7 +817,7 @@ describe("summary-findings parsing", () => {
     for (const [header, expected] of cases) {
       expect(severityOf(header, "coderabbitai")).toBe(expected);
       // The author gate binds the bold form exactly as it binds the italic one.
-      expect(severityOf(header, "docomply-review")).toBe("unknown");
+      expect(severityOf(header, "shadow-review")).toBe("unknown");
       expect(severityOf(header)).toBe("unknown");
     }
     // The emoji is optional in the bold form too.
@@ -858,7 +856,7 @@ describe("summary-findings parsing", () => {
     const decoy = "**Expected** | **Critical** | **Actual**";
     expect(severityOf(decoy)).toBe("unknown");
     expect(severityOf(decoy, "chatgpt-codex-connector")).toBe("unknown");
-    expect(severityOf(decoy, "docomply-review")).toBe("unknown");
+    expect(severityOf(decoy, "shadow-review")).toBe("unknown");
     // Authorship still gates the path rather than disabling it.
     expect(severityOf(decoy, "coderabbitai")).toBe("blocker");
     // Two fields, four fields.
@@ -919,10 +917,10 @@ describe("summary-findings parsing", () => {
     expect(severityOf("**🔴 Critical**", "coderabbitai")).toBe("unknown");
   });
 
-  it("requires the raising comment be authored by CodeRabbit, not merely shaped like its header (PR #4852 round 3)", () => {
+  it("requires the raising comment be authored by CodeRabbit, not merely shaped like its header", () => {
     // Exactly CodeRabbit's three-field shape, with a real severity token in
     // the middle — but this is a bug report's own before/after fields, not a
-    // CodeRabbit finding. Round 2's arity+shape fix alone still misread this
+    // CodeRabbit finding. The arity+shape fix alone still misread this
     // as `blocker`; only gating on authorship closes it.
     const decoy = "_Expected_ | _Critical_ | _Actual_";
     expect(severityOf(decoy)).toBe("unknown");
@@ -937,7 +935,7 @@ describe("summary-findings parsing", () => {
   it("does not misread an unrelated pipe character in another reviewer’s prose as CodeRabbit’s header", () => {
     // Author is `'coderabbitai'` throughout this test so each case actually
     // exercises `coderabbitSeverityOf`'s own shape rejection rather than
-    // returning `unknown` on the author gate alone — see PR #4852 round 3.
+    // returning `unknown` on the author gate alone.
     //
     // No genuine lead field (not wrapped `_..._`) — a decoy pipe in ordinary
     // prose must not be mistaken for CodeRabbit's category|severity split.
@@ -988,7 +986,7 @@ describe("summary-findings parsing", () => {
     ).toBe("unknown");
   });
 
-  it("requires exactly three CodeRabbit fields, rejecting a truncated or padded header (PR #4852)", () => {
+  it("requires exactly three CodeRabbit fields, rejecting a truncated or padded header", () => {
     // Two fields (category | severity, no effort) — must not be accepted on
     // the strength of the first two fields alone.
     expect(severityOf("_🩺 Stability_ | _🔴 Critical_", "coderabbitai")).toBe(
@@ -1027,11 +1025,11 @@ describe("summary-findings parsing", () => {
     ).toBe("unknown");
   });
 
-  it("threads the raising comment’s real author through threadFrom into severityOf — not merely severityOf called directly (docomply-review, a reference-implementation pull request round 3)", () => {
+  it("threads the raising comment’s real author through threadFrom into severityOf — not merely severityOf called directly", () => {
     // Every fixture above calls `severityOf` with a hand-supplied login,
     // which proves the function's own authorship gate but nothing about
     // whether `threadFrom` (the actual GraphQL-to-ThreadSample consumer)
-    // extracts and forwards `firstAuthor?.login` correctly. Round 2's fix
+    // extracts and forwards `firstAuthor?.login` correctly. An earlier fix
     // wired that up in `lib/sample.ts`; this exercises it end to end.
     const node = {
       id: "T-coderabbit",
@@ -1140,8 +1138,7 @@ describe("summary-findings parsing", () => {
     ],
     // A round suffix is only ever stamped alongside `@sha` — no producer emits
     // a bare `<fingerprint>#<round>`. Stripping it anyway would silently
-    // mis-key a durable marker whose fingerprint genuinely ends in `#7`
-    // (docomply-review round 1, a reference-implementation pull request).
+    // mis-key a durable marker whose fingerprint genuinely ends in `#7`.
     [
       "a durable marker with an all-digit # suffix but no @sha",
       "abc123#7",
@@ -1151,9 +1148,9 @@ describe("summary-findings parsing", () => {
     // Stripping #7 as a round here would leave `abc@`, which the fingerprint/
     // sha split reads back as sha `''` — the exact shape collectAddressed
     // treats as a bare, DURABLE marker, silently coercing a malformed
-    // fix-dependent attempt into a permanent answer for `abc` (docomply-review
-    // round 3, PR #4047). Not stripped, so it falls through to the ordinary
-    // split: a nonempty sha `#7` that matches no real head.
+    // fix-dependent attempt into a permanent answer for `abc`. Not stripped,
+    // so it falls through to the ordinary split: a nonempty sha `#7` that
+    // matches no real head.
     [
       "an @ with an EMPTY sha before an all-digit # suffix",
       "abc@#7",
@@ -1260,9 +1257,9 @@ describe("summary-findings parsing", () => {
     // orders push → set-verified → status → answer, so a fix-dependent marker
     // is always posted at a head the reviewer has already reviewed — position
     // `at`, every time — and expiring there made the marker inert on arrival.
-    // Measured on PRs #4015, #4013, #4006, #3974 and #4032: up to six
-    // re-answers of one verified-fixed finding, and #4013 terminated
-    // HITL_PARKED instead of CONVERGED purely because of it.
+    // Measured across five drives: up to six re-answers of one verified-fixed
+    // finding, and one drive terminated HITL_PARKED instead of CONVERGED
+    // purely because of it.
     //
     // A backlog entry is carried forward by its original firstRound rather than
     // re-derived from the current diff, so its presence at the fix's head is
@@ -1335,7 +1332,7 @@ describe("summary-findings parsing", () => {
     expect(at(7 + WINDDOWN_EXEMPTION_ROUNDS + 1)).toEqual([]);
   });
 
-  it("withholds the exemption from a FUTURE or unsafe round instead of computing a negative gap (docomply-review round 1, a reference-implementation pull request)", () => {
+  it("withholds the exemption from a FUTURE or unsafe round instead of computing a negative gap", () => {
     // No producer ever stamps a round ahead of `currentRound` — but the round
     // rides in on hand-writable marker text, and `currentRound - round`
     // going negative is `<= WINDDOWN_EXEMPTION_ROUNDS` for ANY negative value.
@@ -1641,7 +1638,7 @@ describe("summary-findings parsing", () => {
     // answer — but a BODY bullet at this head is a fresh judgment, which does.
     // The fingerprint is one global key and `classify` dedups the pair into a
     // single finding, so honouring the marker for "the backlog copy" would
-    // clear the freshly-judged one with it (docomply-review round 10, a reference-implementation pull request).
+    // clear the freshly-judged one with it.
     //
     // The colliding fingerprint is DERIVED from the bullet via `fingerprintOf`
     // — the same call `classify` makes — rather than pasted in, so the probe
@@ -1703,7 +1700,7 @@ describe("summary-findings parsing", () => {
     // — but `reviewerPosition` used to fold "the marker names no commit this
     // repository has" into `past` alongside it, so a hand-written marker rode
     // the exemption for its entire round budget. `unknown` separates the two,
-    // and only the position half is ignored (docomply-review round 10, #4049).
+    // and only the position half is ignored.
     //
     // The marker carries a `#round` INSIDE the budget, and that is what makes
     // the probe bind: `exemptFromExpiry` fails closed on a roundless marker all
@@ -1809,8 +1806,7 @@ describe("summary-findings parsing", () => {
     // marker names nothing datable at all, which the winddown exemption has to
     // refuse even though it ignores position by design; an unresolvable
     // REVIEWED sha is an ordinary non-answer about the reviewer, which `past`
-    // already covers and which must not gain the stricter treatment
-    // (docomply-review round 10, a reference-implementation pull request).
+    // already covers and which must not gain the stricter treatment.
     expect(reviewerPosition("0".repeat(40), real)).toBe("unknown");
     expect(reviewerPosition(real, "0".repeat(40))).toBe("past");
     // And no reviewed SHA at all is the same unknown-about-the-reviewer.
@@ -1915,12 +1911,12 @@ describe("summary-findings parsing", () => {
   describe("findExactMarkers", () => {
     // Deliberately NOT `collectAddressed` + `reviewerPosition`: routing the
     // duplicate-post reconciliation through the reviewer-catch-up expiry
-    // reintroduced the exact bug it was meant to close (docomply-review round
-    // 2, PR #4022) — once the reviewer has read a fix-dependent marker's SHA,
-    // `collectAddressed` expires it, so a driver reconciling moments
-    // after its OWN successful post would see it as unaddressed and post a
-    // second one. `findExactMarkers` asks a narrower, expiry-free question:
-    // does a marker with this exact fingerprint AND this exact suffix exist.
+    // reintroduced the exact bug it was meant to close — once the reviewer
+    // has read a fix-dependent marker's SHA, `collectAddressed` expires it,
+    // so a driver reconciling moments after its OWN successful post would
+    // see it as unaddressed and post a second one. `findExactMarkers` asks a
+    // narrower, expiry-free question: does a marker with this exact
+    // fingerprint AND this exact suffix exist.
 
     it("finds a fix-dependent marker ONLY when the sha matches exactly", () => {
       const sources = [
@@ -1957,7 +1953,7 @@ describe("summary-findings parsing", () => {
       ]);
     });
 
-    it("is NOT expired by the reviewer having reviewed past the marker SHA — the round-2 fix", () => {
+    it("is NOT expired by the reviewer having reviewed past the marker SHA", () => {
       // The whole point: no reviewerPosition/reviewedSha input exists here at all.
       // A marker for a SHA the reviewer has long since reviewed still counts
       // as "this exact answer already exists" when asked about that SAME sha.
@@ -2008,7 +2004,7 @@ describe("summary-findings parsing", () => {
       );
     });
 
-    it("lets a STALE winddown-deferred marker be reposted at the same SHA with a fresh round (docomply-review round 2, a reference-implementation pull request)", () => {
+    it("lets a STALE winddown-deferred marker be reposted at the same SHA with a fresh round", () => {
       // The reviewer forwards a winddown-deferred backlog entry WITHOUT a new
       // commit, so a legitimate re-answer after `collectAddressed` expires the
       // old marker reuses the exact same `pushedSha`. Treating that stale
@@ -2047,7 +2043,7 @@ describe("summary-findings parsing", () => {
       ]).toEqual(["fp1"]);
     });
 
-    it("keeps the ordinary unconditional match for a winddown fingerprint when the sticky carries NO round (docomply-review round 5, a reference-implementation pull request)", () => {
+    it("keeps the ordinary unconditional match for a winddown fingerprint when the sticky carries NO round", () => {
       // With no `opts.currentRound`, `exemptFromExpiry` fails closed to "not
       // exempt" unconditionally — if that alone triggered the stale-refresh
       // path, EVERY same-SHA winddown marker would read as stale, including
@@ -2308,9 +2304,9 @@ describe("fixture head tokens", () => {
     // the opaque-string case the probes using it assume — and differently
     // between checkouts, since whether a given object is present depends on
     // which branches were fetched. That is not hypothetical: `HEAD` WAS such a
-    // literal until PR #4049 round 3, and two probes silently depended on an
-    // idle feature branch still existing on origin. A probe that genuinely
-    // needs git to answer calls `realHead()`.
+    // literal once, and two probes silently depended on an idle feature branch
+    // still existing on origin. A probe that genuinely needs git to answer
+    // calls `realHead()`.
     //
     // Abbreviations too, not just the full 40: `drive-status.ts` resolves
     // 7-to-40-hex markers, so a token whose PREFIX resolves would re-arm the
@@ -2341,12 +2337,12 @@ describe("fixture head tokens", () => {
     }).stdout.toString();
     // `<input> missing` for an object that is not here, `<input> ambiguous` for
     // a prefix matching several. BOTH are the invariant holding — neither
-    // resolves to an object — and only equality with `missing` was asserted
-    // until docomply-review round 10, which would fail on a state the
-    // invariant permits: as objects accumulate, an 8-character prefix can
-    // become ambiguous without ever resolving. Normalized to one token so the
-    // comparison stays a whole-list one and a failure still NAMES the rev
-    // (`<rev> <sha> commit 123` against `<rev> unresolved`).
+    // resolves to an object — and only equality with `missing` was asserted at
+    // first, which would fail on a state the invariant permits: as objects
+    // accumulate, an 8-character prefix can become ambiguous without ever
+    // resolving. Normalized to one token so the comparison stays a whole-list
+    // one and a failure still NAMES the rev (`<rev> <sha> commit 123` against
+    // `<rev> unresolved`).
     const answers = out
       .trim()
       .split("\n")

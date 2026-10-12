@@ -410,7 +410,7 @@ describe("handoff intent-chain section", () => {
     // A pass has a persistent shell cwd; one that `cd`s into another checkout
     // before calling a state command must still read the driven tree's
     // `pr.<N>.md` and write its handoff there — never the other checkout's,
-    // which may carry a same-numbered pin (docomply-review, a reference-implementation pull request).
+    // which may carry a same-numbered pin.
     const driven = mkdtempSync(join(tmpdir(), "handoff-anchor-driven-"));
     const other = mkdtempSync(join(tmpdir(), "handoff-anchor-other-"));
     try {
@@ -468,7 +468,7 @@ describe("handoff intent-chain section", () => {
     // content file is gone (pruned) or was never written. `.current` can then
     // only name a DIFFERENT item's chain, and putting that in front of this
     // PR's triage is the substitution an earlier change exists to prevent — so the
-    // section reports a missing snapshot instead (docomply-review, a reference-implementation pull request).
+    // section reports a missing snapshot instead.
     // A branch that names NO item is the `.current` case, covered below.
     const repo = mkdtempSync(join(tmpdir(), "handoff-branch-closed-"));
     try {
@@ -638,7 +638,7 @@ describe("handoff intent-chain section", () => {
 
   // Retention follows USE: the writer prunes a snapshot untouched for 14 days,
   // and a drive round only reads it, so a PR open longer than that would lose
-  // the chain it is still being driven by (docomply-review, a reference-implementation pull request).
+  // the chain it is still being driven by.
   it("marks the snapshot it reads as in use, so the writer’s 14-day prune spares it", async () => {
     writeChain("on", "In use.");
     const file = join(chainDir(), "ENG-1.md");
@@ -659,7 +659,7 @@ describe("handoff intent-chain section", () => {
     );
   });
 
-  it("refuses a symlinked snapshot instead of following it (docomply-review, a reference-implementation pull request)", async () => {
+  it("refuses a symlinked snapshot instead of following it", async () => {
     mkdirSync(chainDir(), { recursive: true });
     const outside = join(dir, "outside-secret.txt");
     writeFileSync(

@@ -26,10 +26,10 @@ it), so:
    Choose when no consumer needs the file in the repo.
 2. **CI-check without committing** — for *derivable facts stated in prose*
    (counts, rosters, path references in instruction files): a CI job recomputes
-   the fact and fails on mismatch, but no generated file is committed. This
-   was a hard-won correction in the reference implementation: committed
-   generated includes caused merge-conflict thrash across parallel worktrees
-   and were replaced by commit-nothing checks.
+   the fact and fails on mismatch, but no generated file is committed.
+   Committed generated includes are the tempting alternative, and they fail:
+   every parallel branch that touches their inputs regenerates them, so every
+   merge conflicts on the generated file.
 3. **Commit + triad** — when consumers genuinely need the artifact at rest
    (published specs, generated types consumed by builds): regenerate script +
    drift gate in CI + auto-stage twin in the pre-commit hook, so local commits
@@ -50,18 +50,49 @@ just file timestamps.
   schema-like artifacts use ephemeral replay; the artifact inventory itself is
   generated and gated.
 
-## Port status
+## Adoption steps
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| Generate → check → auto-stage triad instances (docs index, schema, error codes) | [`reference/triad/`](reference/triad/) — one runnable generic example: generator + drift check + fixture, with hook and CI wiring |
-| Ephemeral-replay drift check (`tools/db/check-*` + ephemeral-postgres lib) | [`reference/ephemeral-replay/`](reference/ephemeral-replay/) — genericized recipe + commented docker/pg_dump skeleton |
-| Derivable-fact CI check + referenced-path-exists check (commit-nothing design) | [`reference/prose-facts/`](reference/prose-facts/) — two runnable checks + fixture |
+1. List every derived file in the repository with the command that
+   regenerates it, in one place, and state that derived files are never edited
+   by hand; give each derived file a generated-file header naming its
+   regenerate command. This is **Lite**.
+2. For each derived file, walk the ladder: drop it if no consumer needs it at
+   rest; otherwise give it the full triad
+   ([`reference/triad/`](reference/triad/)). Check the paths that instruction
+   files reference with
+   [`reference/prose-facts/check-referenced-paths.ts`](reference/prose-facts/check-referenced-paths.ts).
+   This is **Standard**.
+3. Check stated counts with
+   [`reference/prose-facts/check-stated-counts.ts`](reference/prose-facts/check-stated-counts.ts),
+   replay schema-like artifacts from scratch
+   ([`reference/ephemeral-replay/`](reference/ephemeral-replay/)), and
+   generate the derived-file inventory itself with a freshness gate. This is
+   **Strict**.
 
-[`mappings.md`](mappings.md) (CI providers, hook managers, container/database
-variants) and [`maturity.yaml`](maturity.yaml) are in place. Not ported (per
-"don't port the unproven" / IP scrub): the checker self-test harnesses, the
-error-code and seed-freshness triad instances (domain-specific values only —
-the pattern is fully represented by the worked example), and the generated
-artifact-inventory tooling (Strict criterion stated in `maturity.yaml`; no
-generic reference implementation yet).
+## Status
+
+What this module provides:
+
+- [`reference/triad/`](reference/triad/) — a worked freshness triad: a
+  deterministic index generator, its drift check and a fixture, with the hook
+  and CI wiring.
+- [`reference/prose-facts/`](reference/prose-facts/) — the two commit-nothing
+  checks (stated counts, referenced paths) and a fixture.
+- [`reference/ephemeral-replay/`](reference/ephemeral-replay/) — a schema
+  drift check that replays migrations into a throwaway Postgres container
+  with docker, plus the normalization and operational lessons.
+- [`mappings.md`](mappings.md) (CI providers, hook managers, container and
+  database variants) and [`maturity.yaml`](maturity.yaml).
+
+The self-tests for all three references are in
+[`scripts/freshness.test.ts`](../../scripts/freshness.test.ts). The
+[`/groundwork:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) skill uses this
+module's vocabulary when a drift check fails: it finds the regenerate command
+beside the check and runs it.
+
+Deliberately left out: further triad instances (error-code catalogs, seed
+data), because they would add domain values without adding mechanism — the
+worked index example carries the whole pattern.
+
+Future: a generic generator for the derived-file inventory. The Strict
+criterion that requires one is stated in [`maturity.yaml`](maturity.yaml).

@@ -39,7 +39,7 @@ export interface CommitSample {
    * authored; for a MERGE commit it is the entire delta of whatever was merged
    * in, and counting that as work this branch authored inflates the churn
    * beyond recognition. Measured: one `Merge remote-tracking branch
-   * 'origin/develop'` commit on PR #4023 reports +52,015/-11,463 on a PR whose
+   * 'origin/develop'` commit on one PR reports +52,015/-11,463 on a PR whose
    * whole net diff is 222 additions.
    */
   additions: number;
@@ -80,10 +80,9 @@ export interface ReviewSample {
    * GitHub records a thread reply as a review, so a bot acknowledging a fix
    * looks identical to a bot reviewing a head. A non-trivial share of the
    * baseline week's bot reviews are reply-only, and they made heads read as
-   * "reviewed" when nothing had reviewed them (chatgpt-codex-connector round 5,
-   * a reference-implementation pull request). The proportions are a published baseline RESULT and live in
-   * `review-loop-baseline.md` — restating them here is a second home that goes
-   * stale silently.
+   * "reviewed" when nothing had reviewed them. The proportions are a published
+   * baseline RESULT and live in `review-loop-baseline.md` — restating them here
+   * is a second home that goes stale silently.
    *
    * True when the review carries a body of its own, or at least one comment
    * that is not a reply — which is what "this review raised something" means.
@@ -91,7 +90,7 @@ export interface ReviewSample {
    * The body is TRIMMED before it counts: a review whose body is `' '` or bare
    * line breaks said nothing, and treating it as initiating inflates
    * `reviewedHeads` and can move `firstReviewedHead` — the commit boundary the
-   * whole attribution split hangs off (docomply-review round 6, a reference-implementation pull request).
+   * whole attribution split hangs off.
    *
    * Reply-only is proven over ALL the review's comments, never a prefix — see
    * `allReviewCommentsOf`. An unreadable top-up fails to `true`: keeping a head
@@ -119,11 +118,10 @@ export interface ThreadSample {
    * BECAUSE somebody changed the code it pointed at, so the threads most likely
    * to represent a real fix are exactly the ones that lose `line`. Matching on
    * `line` alone is therefore blind in a SKEWED direction rather than a random
-   * one, and could only understate re-finds (docomply-review round 2,
-   * a reference-implementation pull request). How much of the population that is, and how reliably
-   * `originalLine` survives, are sampling results owned by
-   * `review-loop-baseline.md` — restated here they go stale silently, which
-   * one such copy already did (coderabbitai round 11).
+   * one, and could only understate re-finds. How much of the population that
+   * is, and how reliably `originalLine` survives, are sampling results owned by
+   * `review-loop-baseline.md` — restated here they go stale silently, which one
+   * such copy already did.
    */
   originalLine: number | null;
   /**
@@ -159,7 +157,7 @@ export interface ThreadSample {
    * shipped), because the thread has no readable first comment, or
    * because the raising comment was edited after a caller-supplied `asOf` and
    * its body as of that cutoff is unrecoverable from GitHub's always-current
-   * payload (chatgpt-codex-connector, a reference-implementation pull request) — the same withholding
+   * payload — the same withholding
    * `settleFrom` applies to a settling reply, applied here to the finding's
    * own comment.
    */
@@ -174,11 +172,11 @@ export interface ThreadSample {
    * downstream: `.config/review-triage.yaml` lists `severity` in
    * `fail_open.inert_when_unknown`, so a reviewer whose format `severityOf`
    * stops recognizing takes the decline ladder inert for ALL of its findings,
-   * in EVERY round, with nothing reporting it (the round-8 failure
-   * mode that cost three rounds on PR #4501 to find the first time). Sampling
-   * it here is what lets `computeLoopMetrics` publish the `unknown` share per
-   * reviewer, which is the observable that separates "this reviewer sometimes
-   * omits a severity" from "we stopped understanding this reviewer entirely".
+   * in EVERY round, with nothing reporting it (a failure mode that once took
+   * three rounds to find). Sampling it here is what lets `computeLoopMetrics`
+   * publish the `unknown` share per reviewer, which is the observable that
+   * separates "this reviewer sometimes omits a severity" from "we stopped
+   * understanding this reviewer entirely".
    */
   severity: string;
   /**
@@ -190,8 +188,7 @@ export interface ThreadSample {
    * accepts a multiline body and only constrains the first one. Searching
    * `reason` alone reported 10 of this window's 84 deferrals as naming no issue
    * when 2 of them linked one further down, inflating the one result on this
-   * page that criticises the loop's own discipline
-   * (chatgpt-codex-connector round 5, a reference-implementation pull request).
+   * page that criticises the loop's own discipline.
    */
   settledBody: string | null;
   /**
@@ -204,7 +201,7 @@ export interface ThreadSample {
    * ever posted and still merge after it, and ordering the sample by `mergedAt`
    * alone then reports that earlier finding as a recurrence of the later
    * decline. Only a creation timestamp separates "raised again" from "raised
-   * concurrently" (docomply-review round 1, a reference-implementation pull request).
+   * concurrently".
    */
   createdAt: string | null;
   /**
@@ -223,15 +220,14 @@ export interface ThreadSample {
    * A thread over the 100-per-thread page size is topped up by a second,
    * per-thread paginating query (`allCommentsOf`), so this now flags only the
    * residue: an API error on that top-up, or a malformed page. Measured across
-   * the five heaviest PRs of the first baseline week (#3974 at 218 threads,
-   * #4005 at 152, #4031, #4043, #4052), no thread hit the cap at all.
+   * the five heaviest PRs of the first baseline week (the heaviest at 218
+   * threads, the next at 152), no thread hit the cap at all.
    *
    * When it IS set, `outcome` is withheld rather than guessed. A warning was
    * enough when the outcome only moved an accepted-share percentage; it stopped
    * being enough once `supersededInOwnPr` began DROPPING declines from the
    * escape denominator on the strength of one, since every consumer reads
-   * `outcome` as settled and none of them can see this flag
-   * (chatgpt-codex-connector round 3, a reference-implementation pull request).
+   * `outcome` as settled and none of them can see this flag.
    */
   commentsTruncated: boolean;
   /**
@@ -251,10 +247,8 @@ export interface ThreadSample {
    * within days). That is a SEPARATE, common case `defect-escape.ts` checks
    * for itself (`commitReachable`, measured 7/7 on recently-merged PRs in
    * this repo) before trusting this field for its revision-based rename
-   * walk, falling back to its own committer-date heuristic when it cannot
-   * (doc corrected PR #4138 round 3 — an earlier version of this
-   * comment wrongly folded local unreachability into this field's own
-   * null case).
+   * walk, falling back to its own committer-date heuristic when it cannot.
+   * Local unreachability is not part of this field's own null case.
    */
   reviewedHeadOid: string | null;
 }
@@ -400,8 +394,7 @@ function pullRequestOf(page: unknown, pr: number): Record<string, unknown> {
  * produced a clean-looking, wrong baseline instead of an error. The damage is
  * not uniform either — a missing `parents.totalCount` read as `0`, and `0 < 2`,
  * so a commit of unknown shape was counted as AUTHORED churn, which is exactly
- * the +52,015-line mistake `sizeOf` was written to avoid (docomply-review
- * round 3, PR #4068).
+ * the +52,015-line mistake `sizeOf` was written to avoid.
  *
  * Zero itself is legitimate and stays legitimate — a root commit really does
  * have no parents, and a PR really can have no changed files. The test is
@@ -490,7 +483,7 @@ query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
  * exactly one cursor — so a thread whose comments exceed the page size returns a
  * prefix, and the outcome read off that prefix can be superseded by a reply
  * nobody read. Warning about it does not stop the measurement using it, so this
- * reads the rest instead (docomply-review round 1, a reference-implementation pull request).
+ * reads the rest instead.
  */
 const THREAD_COMMENTS_QUERY = `
 query($threadId:ID!,$endCursor:String){
@@ -512,8 +505,7 @@ query($threadId:ID!,$endCursor:String){
  * review with more than 100 comments returns a prefix. `initiating` is read off
  * that prefix, and a review whose only non-reply comment sits past it reads as
  * reply-only — dropping a genuinely reviewed head, and moving
- * `firstReviewedHead` when the dropped one was the earliest
- * (docomply-review round 6, a reference-implementation pull request).
+ * `firstReviewedHead` when the dropped one was the earliest.
  *
  * Only `replyTo` is selected: the sole question asked of these nodes is whether
  * any comment is not a reply.
@@ -684,8 +676,8 @@ function settledFrom(
  * VALIDATED, not merely non-empty. Every consumer compares these
  * lexicographically — which is exact for ISO-8601 UTC and meaningless for
  * anything else — so a parseable-but-malformed payload like `"zzz"` sorts
- * after every real timestamp and can manufacture a recurrence out of nothing
- * (docomply-review round 11, a reference-implementation pull request). An unrecognised shape is `null`, which
+ * after every real timestamp and can manufacture a recurrence out of nothing.
+ * An unrecognised shape is `null`, which
  * every caller already treats as "ordering unreadable" and refuses to count.
  */
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
@@ -703,8 +695,8 @@ function stamp(v: unknown): string | null {
  * `ISO_INSTANT` permits an arbitrary-length fractional-second suffix, so two
  * valid instants at different precisions (`...00Z` vs `...00.5Z`) do not
  * compare correctly as strings — lexicographic order agrees with chronological
- * order only when every compared value shares the same fractional width
- * (coderabbitai, PR #4527). Parsing to epoch numbers removes the precision
+ * order only when every compared value shares the same fractional width.
+ * Parsing to epoch numbers removes the precision
  * dependency entirely.
  */
 function epochOf(iso: string): number | null {
@@ -733,15 +725,14 @@ function recoverableAsOf(n: { lastEditedAt?: unknown }, asOf: string): boolean {
 
 /**
  * Whether a comment's CURRENT body is usable as a stand-in for its body `asOf`
- * a cutoff at ALL — both halves: it must have existed by then
- * (`createdAt <= asOf`, on a readable timestamp) and, per `recoverableAsOf`,
- * not have been edited afterward. `recoverableAsOf` alone answers only the
- * second half; a comment created AFTER `asOf` — nothing requires a thread's
- * first comment to predate an arbitrary later cutoff — with a null
- * `lastEditedAt` (never edited) passes `recoverableAsOf` vacuously, which is
- * exactly the gap the category guard below had on its own (chatgpt-codex-
- * connector, PR #4527): it checked `recoverableAsOf` but not `createdAt`, so a
- * raising comment posted after the cutoff still contributed its current
+ * a cutoff at ALL — both halves: it must have existed by then (`createdAt <=
+ * asOf`, on a readable timestamp) and, per `recoverableAsOf`, not have been
+ * edited afterward. `recoverableAsOf` alone answers only the second half; a
+ * comment created AFTER `asOf` — nothing requires a thread's first comment to
+ * predate an arbitrary later cutoff — with a null `lastEditedAt` (never edited)
+ * passes `recoverableAsOf` vacuously, which is exactly the gap the category
+ * guard below had on its own: it checked `recoverableAsOf` but not `createdAt`,
+ * so a raising comment posted after the cutoff still contributed its current
  * category to a supposedly `asOf`-frozen sample.
  */
 function usableAsOf(
@@ -790,9 +781,8 @@ export function threadFrom(
           // original creation time when a comment is EDITED and returns the
           // current body, so a qualifying reply written before the cutoff and
           // reworded after it would smuggle the post-window outcome into a
-          // supposedly reproducible denominator (three reviewers, round 11,
-          // PR #4068 — I disclosed this limitation rather than closing it, and
-          // they were right that disclosure is not enough).
+          // supposedly reproducible denominator; disclosing that limitation is
+          // not enough, it has to be closed.
           //
           // An edit after the cutoff makes the body unusable AS OF the cutoff:
           // the text that stood then is not recoverable from this payload, so
@@ -844,8 +834,8 @@ export function threadFrom(
     // `firstAuthor?.login` is threaded through so `severityOf`'s CodeRabbit
     // path only ever fires on a comment CodeRabbit actually posted — a
     // shape-only match is defeated by any reviewer's prose that happens to
-    // land on the same three-field pipe-delimited form (docomply-review, PR
-    // #4852 round 3; see `severityOf`'s own doc).
+    // land on the same three-field pipe-delimited form (see `severityOf`'s
+    // own doc).
     severity:
       asOf !== undefined &&
       first !== undefined &&
@@ -886,8 +876,7 @@ export interface SampleOptions {
    * without this it does not: a trusted participant who adds or edits an
    * outcome reply after a PR merged silently rewrites that PR's outcome mix,
    * declined denominator and escape rate on every later run — the same moving
-   * -target defect `laterFixCommits` had with its upper bound
-   * (chatgpt-codex-connector, a reference-implementation pull request).
+   * -target defect `laterFixCommits` had with its upper bound.
    *
    * Bounds SETTLEMENT only. The thread's own `createdAt` and authorship are
    * left alone: they describe when the finding was raised, which no later

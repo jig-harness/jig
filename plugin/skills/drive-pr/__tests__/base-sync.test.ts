@@ -6,7 +6,7 @@
  * worth pinning is the fail-CLOSED contract: a genuine read failure —
  * `git status` or `git rev-parse HEAD` erroring, or no `headRefOid` to
  * compare against — must come back as `ok: false`, never silently coerced
- * into `pushing: true` or `pushing: false` (docomply-review, a reference-implementation pull request).
+ * into `pushing: true` or `pushing: false`.
  * Widening either guess back in is exactly the merge-condition regression
  * this test exists to catch.
  */
@@ -28,7 +28,7 @@ const BASE_SYNC = join(import.meta.dir, "..", "scripts", "base-sync.ts");
 
 // Prefix-scrubbed rather than enumerated — the convention
 // verification-fit.test.ts, triage-thread.test.ts and
-// reconcile-replied-threads.test.ts already use (coderabbitai, PR #4279): a
+// reconcile-replied-threads.test.ts already use: a
 // leaked `GIT_DIR`/`GIT_WORK_TREE` pair (a lefthook hook exports both) would
 // otherwise reach these subprocesses regardless of what `base-sync.ts` itself
 // happens to scrub internally, which is not a fact either spawn below should
@@ -113,8 +113,7 @@ describe("alreadyPushing", () => {
 
   // Same hardening, same reason as worktreeClean's own pin below: a plain
   // `git status --porcelain` can read real uncommitted state as clean
-  // depending on ambient `status.showUntrackedFiles`/submodule config
-  // (chatgpt-codex-connector, a reference-implementation pull request).
+  // depending on ambient `status.showUntrackedFiles`/submodule config.
   it("always passes --untracked-files=normal and --ignore-submodules=none", async () => {
     const calls: string[][] = [];
     const git: GitRunner = (args) => {
@@ -133,12 +132,11 @@ describe("alreadyPushing", () => {
 });
 
 describe("worktreeClean", () => {
-  // Pins the fix for the gap the reviewer named (docomply-review, a reference-implementation pull request):
-  // `HEAD` matching its pre-merge value is not proof the WORKTREE is
-  // restored — a hook-created or merge-driver-produced untracked file
-  // survives both `git merge --abort` and `git reset --hard`. This is the
-  // check `atPreMergeHead()` runs after confirming `HEAD`, so it must fail
-  // closed on both a dirty status and an unreadable one.
+  // Pins the fix for this gap: `HEAD` matching its pre-merge value is not proof
+  // the WORKTREE is restored — a hook-created or merge-driver-produced
+  // untracked file survives both `git merge --abort` and `git reset --hard`.
+  // This is the check `atPreMergeHead()` runs after confirming `HEAD`, so it
+  // must fail closed on both a dirty status and an unreadable one.
   it("is true when git status --porcelain reports nothing", async () => {
     const git = fakeGit({ status: { code: 0, stdout: "" } });
     expect(await worktreeClean(git, "/repo")).toBe(true);
@@ -159,8 +157,7 @@ describe("worktreeClean", () => {
   // `submodule.<name>.ignore` setting can make a plain `git status
   // --porcelain` read real state as clean depending on ambient config this
   // test cannot see — `--untracked-files=normal`/`--ignore-submodules=none`
-  // must be passed on every call so the read is config-independent
-  // (chatgpt-codex-connector, a reference-implementation pull request).
+  // must be passed on every call so the read is config-independent.
   it("always passes --untracked-files=normal and --ignore-submodules=none", async () => {
     const calls: string[][] = [];
     const git: GitRunner = (args) => {
@@ -179,11 +176,10 @@ describe("worktreeClean", () => {
 });
 
 describe("resolveReadReason", () => {
-  // An unfetched measurement must outrank a positive verdict regardless of
-  // WHAT the (unreliable) verdict happened to compute — a stale
-  // `origin/<base>` can look `in-sync` or `no-overlap` and still be wrong
-  // (docomply-review, a reference-implementation pull request round 8: the old `main()` control flow
-  // returned `in-sync`/`no-overlap` before ever checking `fetched`).
+  // An unfetched measurement must outrank a positive verdict regardless of WHAT
+  // the (unreliable) verdict happened to compute — a stale `origin/<base>` can
+  // look `in-sync` or `no-overlap` and still be wrong (the old `main()` control
+  // flow returned `in-sync`/`no-overlap` before ever checking `fetched`).
   it("reports fetch-failed over an in-sync verdict", () => {
     expect(resolveReadReason(false, "in-sync", false, false)).toBe(
       "fetch-failed",
@@ -227,13 +223,12 @@ describe("resolveReadReason", () => {
 });
 
 describe("verifyStillCurrent", () => {
-  // Pins the fix for the TOCTOU gap the reviewer named (docomply-review +
-  // chatgpt-codex-connector, a reference-implementation pull request): liveness and checkout identity are
-  // read once, well before the fetch and the tree-lock wait (documented as
-  // potentially five minutes) — this is the re-check `main()` runs
-  // immediately before `git merge`, and it must fail closed on every one of
-  // liveness, branch identity and ancestry independently, without ever
-  // guessing "still current" on an unreadable answer.
+  // Pins the fix for this TOCTOU gap: liveness and checkout identity are read
+  // once, well before the fetch and the tree-lock wait (documented as
+  // potentially five minutes) — this is the re-check `main()` runs immediately
+  // before `git merge`, and it must fail closed on every one of liveness,
+  // branch identity and ancestry independently, without ever guessing "still
+  // current" on an unreadable answer.
 
   interface StillCurrentAnswers {
     prView?: { code: number; stdout: string };
@@ -417,8 +412,8 @@ describe("--base validation", () => {
     };
   }
 
-  // The refspec-injection payload from the reviewer finding this closes
-  // (docomply-review, a reference-implementation pull request): a colon turns `--base`'s value from a
+  // The refspec-injection payload from the reviewer finding this closes:
+  // a colon turns `--base`'s value from a
   // branch name into a `git fetch` refspec, which would WRITE
   // `refs/heads/other` locally as a side effect of the fetch this test must
   // never reach.
@@ -427,7 +422,7 @@ describe("--base validation", () => {
   // extensionless `#!/bin/sh` script made executable via a POSIX mode bit,
   // and PATH lookup relying on that bit is not how Windows resolves an
   // executable — so this test would fail there for a reason having nothing
-  // to do with the behavior under test (docomply-review, a reference-implementation pull request round 8).
+  // to do with the behavior under test.
   // Skipped rather than reimplemented on a `.cmd`/`.ps1` stub: every other
   // test in this file already spawns the real script cross-platform through
   // `proc.ts`'s own seam, and only this stubbed-`gh`-on-PATH shape is
@@ -454,25 +449,23 @@ describe("--base validation", () => {
 
 describe("importing base-sync.ts does not run main()", () => {
   // `main()` runs only behind an `isEntryPoint` guard keyed on
-  // `process.argv[1]` matching this file's own resolved path — exactly so
-  // this file can `import { alreadyPushing }` above without triggering real
+  // `process.argv[1]` matching this file's own resolved path — exactly so this
+  // file can `import { alreadyPushing }` above without triggering real
   // `git`/`gh` I/O against the TEST RUNNER's own argv. Nothing previously
-  // asserted that (coderabbitai, PR #4279). A synchronous check of
-  // `process.exitCode` right after import is NOT a reliable probe here:
-  // `runMain` awaits `main()` and never calls `process.exit()`, so a broken
-  // guard's side effects land on a later microtask, well after the importing
-  // test file's own synchronous checks would have already run — verified by
-  // mutation: forcing the guard true left `bun test` on this file reporting
-  // 7/7 pass regardless, proving that shape of probe vacuous. A spawned
-  // subprocess is required because `spawnSync` blocks until every pending
-  // promise the child created (main()'s included, since it is never unref'd)
-  // has settled — the same "spawns no gh" pattern
-  // resolve-review-comments/__tests__/scripts.test.ts uses for its own
-  // script family.
+  // asserted that. A synchronous check of `process.exitCode` right after import
+  // is NOT a reliable probe here: `runMain` awaits `main()` and never calls
+  // `process.exit()`, so a broken guard's side effects land on a later
+  // microtask, well after the importing test file's own synchronous checks
+  // would have already run — verified by mutation: forcing the guard true left
+  // `bun test` on this file reporting 7/7 pass regardless, proving that shape
+  // of probe vacuous. A spawned subprocess is required because `spawnSync`
+  // blocks until every pending promise the child created (main()'s included,
+  // since it is never unref'd) has settled — the same "spawns no gh" pattern
+  // resolve-review-comments/__tests__/scripts.test.ts uses for its own script
+  // family.
   // POSIX-only, the same reason as the `--base validation` tests above: an
-  // extensionless `#!/bin/sh` `gh` stub made executable via a POSIX mode bit
-  // is not how Windows PATH resolution works (docomply-review, a reference-implementation pull request
-  // round 8).
+  // extensionless `#!/bin/sh` `gh` stub made executable via a POSIX mode bit is
+  // not how Windows PATH resolution works.
   (process.platform === "win32" ? it.skip : it)(
     "spawns no gh and prints nothing to stderr",
     () => {
@@ -503,7 +496,7 @@ describe("importing base-sync.ts does not run main()", () => {
 });
 
 describe("unmerged-path detection distinguishes a hook block from a real conflict", () => {
-  // The fix this pins (chatgpt-codex-connector, a reference-implementation pull request): `MERGE_HEAD`'s
+  // The fix this pins: `MERGE_HEAD`'s
   // mere presence after a failed `git merge` does not by itself prove a
   // content conflict — `githooks(5)`'s `pre-merge-commit` runs after git has
   // already resolved the merge into the index/worktree, and a nonzero exit

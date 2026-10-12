@@ -3,14 +3,15 @@
 A tiny check that fails when two ADRs claim the same number. It exists because
 next-number selection is inherently racy: an author reads the current highest
 `ADR-NNNN` and adds one, so two agents on parallel branches pick the same
-number, and the merge silently produces a duplicate. In the reference
-implementation this happened for real and forced a renumbering — the gate is
-the fix.
+number, and the merge silently produces a duplicate that someone must later
+renumber, breaking every link to it. The gate catches the collision before it
+merges.
 
 ## Mechanism
 
 List `ADR-*.md`, reduce each filename to its `ADR-NNNN` prefix, and report any
-number that appears more than once (`sort | uniq -d`). Slugs are ignored —
+number that appears more than once, with the files that claim it. Slugs are
+ignored —
 `ADR-0007-a.md` and `ADR-0007-b.md` collide. Gaps are fine (a withdrawn ADR
 leaves a hole).
 
@@ -23,6 +24,9 @@ automation that bypassed local hooks (see [M1](../../../M1-gates-enforcement-lad
 ```sh
 ADR_DIR=docs/adr bun check-adr-numbers.ts
 ```
+
+`ADR_DIR` defaults to `docs/adr`; a missing directory passes (no ADRs yet).
+Exit codes: 0 numbers unique, 1 a collision, 2 an unreadable directory.
 
 ## Files
 

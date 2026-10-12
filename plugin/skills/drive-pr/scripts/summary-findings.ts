@@ -6,7 +6,7 @@
  *
  * This closes false-convergence mode 1. `list-unresolved-threads.ts` counts
  * review THREADS; a finding the reviewer could not anchor to a diff line never
- * becomes one. On PR #3855 that produced a thread count of zero while a real
+ * becomes one. Measured: that produced a thread count of zero while a real
  * medium finding sat live in the summary, and the loop reported converged.
  * There is also no `threadId`, so `reply-to-thread.ts` / `resolve-thread.ts`
  * cannot be used at all — the answer has to be a top-level comment, which is
@@ -146,12 +146,12 @@ export const ADDRESSED_MARKER = "drive-pr-addressed";
  * marker is trusted for a known number of rounds and then re-asked.
  *
  * 3 is chosen against the two measured costs it sits between. Every-round
- * re-asking is the PR #4019 loop the exemption was introduced to stop (rounds
- * 4–6 each re-answered the same verified-fixed finding); never re-asking is
- * this issue. At 3 a still-valid fix costs one re-answer per four rounds — on a
- * reviewer that stops after ~14 rounds, three re-answers across a whole PR —
- * while a reverted fix resurfaces within four rounds of the answer that
- * suppressed it.
+ * re-asking is the loop the exemption was introduced to stop (three
+ * consecutive rounds each re-answered the same verified-fixed finding);
+ * never re-asking suppresses a reverted fix forever. At 3 a still-valid fix
+ * costs one re-answer per four rounds — on a reviewer that stops after ~14
+ * rounds, three re-answers across a whole PR — while a reverted fix
+ * resurfaces within four rounds of the answer that suppressed it.
  */
 export const WINDDOWN_EXEMPTION_ROUNDS = 3;
 
@@ -186,8 +186,7 @@ export interface MarkerPayload {
  * anywhere before it is not a round either, for the same reason a non-digit
  * one isn't: nothing produces that shape, and treating it as one would strip
  * a real trailing `#7` off a durable marker's fingerprint before the SHA check
- * ever sees it, silently mis-keying the marker (docomply-review round 1,
- * a reference-implementation pull request).
+ * ever sees it, silently mis-keying the marker.
  *
  * That `@` must also have a NONEMPTY sha after it, not merely be present
  * somewhere earlier in the payload: `abc@#7` has an `@`, but nothing between
@@ -196,7 +195,7 @@ export interface MarkerPayload {
  * exact shape `collectAddressed` treats as a bare, DURABLE marker. That
  * silently coerces a malformed fix-dependent attempt into a permanent answer
  * for `abc`, the same mis-keying this round-suffix guard exists to prevent
- * (docomply-review round 3, a reference-implementation pull request). Requiring the last `@` before the `#`
+ *. Requiring the last `@` before the `#`
  * to be followed by at least one character closes this the same way: the
  * round is not stripped, so `abc@#7` falls through to the ordinary fingerprint
  * fingerprint/sha split — a NONEMPTY sha `'#7'` that matches no real head,
@@ -402,7 +401,7 @@ function bodyFingerprintsOf(stickyBody: string): Set<string> {
  * agrees with itself. Narrowing `backlogFingerprintsOf` back to the winddown
  * subset passed the entire suite while the test re-implemented it inline, which
  * is exactly the regression that reproduces the measured non-convergence for a
- * plain "Beyond this PR" carry-forward (PRs #4032, #4013).
+ * plain "Beyond this PR" carry-forward.
  *
  * BOTH subtract `bodyFingerprintsOf`, and that is what makes them agree with
  * the rule they exist to implement rather than merely with the reviewer's
@@ -412,10 +411,10 @@ function bodyFingerprintsOf(stickyBody: string): Set<string> {
  * being re-verified at all. A fingerprint the sticky ALSO emits as a body
  * bullet has that premise fail — the reviewer did judge it, on this head — so
  * honouring a fix-dependent marker for it would clear a live finding on the
- * strength of an exemption whose reason does not apply (docomply-review round
- * 10, PR #4049). The fingerprint is a single global key, so there is no
- * "clear the backlog copy but keep the body one" to fall back to; the only
- * honest answer is to expire the marker and re-ask, which costs one round.
+ * strength of an exemption whose reason does not apply. The fingerprint is a
+ * single global key, so there is no "clear the backlog copy but keep the body
+ * one" to fall back to; the only honest answer is to expire the marker and
+ * re-ask, which costs one round.
  *
  * Subtracting rather than refusing the sticky outright: dual emission is
  * anomalous reviewer output, but unlike a duplicate fingerprint WITHIN the
@@ -481,7 +480,7 @@ export function parseBodyFindings(body: string): BodyFinding[] {
 }
 
 /**
- * Some inline reviewers (chatgpt-codex-connector) emit a shields.io priority
+ * Some inline reviewers emit a shields.io priority
  * badge instead of a bold canonical token — `![P1 Badge](https://img.shields
  * .io/badge/P1-orange?...)`. Mapped onto the same canonical tokens this
  * function produces elsewhere, never a vocabulary of its own:
@@ -503,16 +502,14 @@ const BADGE_SEVERITY: Record<string, string> = {
  * else.
  *
  * The prefix used to be `[^\p{L}\n]*` — "any run of non-letters" — which is
- * far wider than the shape it was documented to describe, and two reviewers
- * independently produced decoys for the gap in one round: a title beginning
- * `` `**low**` is a supported token `` (a backtick is not a letter) and
- * `3 **low**-level branches are skipped` (a digit is not a letter) were both
- * classified `low`. Both are severity-LESS findings, so the consequence is
- * the fail-open contract inverted at its load-bearing input: `severityOf`
- * feeds `fail_open.inert_when_unknown`, and a finding that should have read
- * `unknown` — leaving the ladder inert — instead armed it and could decline
- * work that was supposed to fail open (docomply-review +
- * chatgpt-codex-connector, a reference-implementation pull request round 18).
+ * far wider than the shape it was documented to describe, and two decoys
+ * show the gap: a title beginning `` `**low**` is a supported token `` (a
+ * backtick is not a letter) and `3 **low**-level branches are skipped` (a
+ * digit is not a letter) were both classified `low`. Both are severity-LESS
+ * findings, so the consequence is the fail-open contract inverted at its
+ * load-bearing input: `severityOf` feeds `fail_open.inert_when_unknown`, and
+ * a finding that should have read `unknown` — leaving the ladder inert —
+ * instead armed it and could decline work that was supposed to fail open.
  *
  * So the prefix ENUMERATES what actually appears there rather than
  * subtracting what must not: a space or tab, and one of the COLOURED CIRCLES
@@ -533,44 +530,42 @@ const BADGE_SEVERITY: Record<string, string> = {
  * A ZWJ branch used to sit alongside VS16 here and is now gone entirely — see
  * the last decoy below for why re-binding it was not the fix.
  *
- * Round 18's first attempt at that enumeration was still two steps too wide,
- * and round 19 produced a decoy for each:
+ * The first attempt at that enumeration was still two steps too wide, and a
+ * decoy defeated each step:
  *
  * - `\p{Extended_Pictographic}` admits EVERY emoji, not the circles the
  *   sentence above claims, so `⚠️ **blocker** behavior is unsupported` — a
  *   severity-less title that merely opens with a warning sign — classified
- *   `blocker` (docomply-review, round 19). The branch is now the coloured
+ *   `blocker`. The branch is now the coloured
  *   circle block itself (U+1F534/U+1F535, U+1F7E0–U+1F7E4, U+26AA/U+26AB): a
  *   closed set that cannot grow under it, unlike a Unicode property whose
  *   membership is Unicode's to widen.
- * - `\s` matches `\n`, so dropping the `m` flag in round 17 never actually
- *   confined the match to line 0 — the PREFIX walked to line 1 on its own and
- *   `⚠️\n**low** is only an example token` classified `low`
- *   (chatgpt-codex-connector, round 19). The whitespace branch is now `[ \t]`,
- *   which cannot leave the line it starts on, so the line-0 guarantee below is
- *   true of the whole pattern rather than of `^` alone.
+ * - `\s` matches `\n`, so dropping the `m` flag never actually confined the
+ *   match to line 0 — the PREFIX walked to line 1 on its own and `⚠️\n**low**
+ *   is only an example token` classified `low`. The whitespace branch is now
+ *   `[ \t]`, which cannot leave the line it starts on, so the line-0 guarantee
+ *   below is true of the whole pattern rather than of `^` alone.
  * - A later cut still listed VS16 and ZWJ as their own top-level branches
  *   under `*`, so each was reachable standalone — with no circle anywhere
  *   before it — and a title opening with a bare ZWJ or VS16 right before the
- *   bold token classified as a real severity (chatgpt-codex-connector, PR
- *   #4560). Binding each modifier to a circle in the same alternative closed
- *   that: the loop can still skip a RUN of decoration across several
- *   circles, but never a modifier with nothing behind it.
+ *   bold token classified as a real severity. Binding each modifier to a
+ *   circle in the same alternative closed that: the loop can still skip a
+ *   RUN of decoration across several circles, but never a modifier with
+ *   nothing behind it.
  * - Binding closed the standalone case but not the shape a ZWJ actually has:
  *   a ZWJ joins its base to WHATEVER FOLLOWS it, so a circle immediately
  *   followed by a ZWJ and then `**` — nothing after the ZWJ to join with —
  *   is an incomplete, dangling sequence, and it still classified as a real
- *   severity (`severityOf('🟡<ZWJ>**high** hidden ZWJ')` returned `high`,
- *   chatgpt-codex-connector, a reference-implementation pull request). Closing that properly means
- *   requiring a second emoji after the ZWJ, which none of these circles has
- *   ever needed — none participates in a real ZWJ sequence today, so the
- *   branch was speculative from the start. Removed rather than patched a
- *   third time: a modifier admitted for a future emitter that does not exist
- *   has now cost two rounds of bypasses and bought no coverage of anything
- *   real.
+ *   severity (`severityOf('🟡<ZWJ>**high** hidden ZWJ')` returned `high`).
+ *   Closing that properly means requiring a second emoji after the ZWJ,
+ *   which none of these circles has ever needed — none participates in a
+ *   real ZWJ sequence today, so the branch was speculative from the start.
+ *   Removed rather than patched a third time: a modifier admitted for a
+ *   future emitter that does not exist has now cost two bypasses and bought
+ *   no coverage of anything real.
  *
  * Every decoy above is a severity-LESS finding, so each had the same
- * consequence as round 18's: `unknown` (ladder inert) read as a real
+ * consequence as the first: `unknown` (ladder inert) read as a real
  * severity, arming a ladder that should have failed open.
  *
  * Enumerating rather than subtracting also fixes the bias direction: an
@@ -588,9 +583,9 @@ const BADGE_SEVERITY: Record<string, string> = {
  * themselves — they are all base characters.)
  *
  * Deliberately no `m` flag: `^` must mean start-of-header, not start-of-line.
- * Round 15 added a line-0 anchor and carried `m`, which defeated it for any
- * header whose SECOND line began with a quoted token; round 17 removed the
- * flag. Do not add it back — and do not widen the whitespace branch back to
+ * A line-0 anchor was once added with `m` carried along, which defeated it
+ * for any header whose SECOND line began with a quoted token, so the flag was
+ * removed. Do not add it back — and do not widen the whitespace branch back to
  * `\s` either, which reopens the same hole from the other end.
  */
 const SEVERITY_FIELD =
@@ -604,23 +599,23 @@ const SEVERITY_FIELD =
  * reads `unknown`, and because `severity` is listed in
  * `fail_open.inert_when_unknown` (`review-triage.yaml`), the decline ladder is
  * inert for ALL of that reviewer's findings — every round, not just the
- * unrecognized ones (chatgpt-codex-connector, a reference-implementation pull request round 8).
+ * unrecognized ones.
  *
  * Both the bold-token and badge matchers are scoped to the leading HEADER
  * paragraph, never the finding's prose body — leading `<!-- ai-review-* -->`
- * HTML comments (docomply-review's own format) are stripped first, then the
- * header is everything up to the first blank line. A badge-format finding
- * (chatgpt-codex-connector) carries no bold canonical token in its header, so
- * an unscoped search falls through to the body and misreads any bold token
+ * HTML comments (the configured reviewer app's own format) are stripped
+ * first, then the header is everything up to the first blank line. A
+ * badge-format finding carries no bold canonical token in its header, so an
+ * unscoped search falls through to the body and misreads any bold token
  * quoted there as an example — e.g. a low-severity finding's own explanation
- * quoting `**blocker**` — as the real severity (PR #4501 round 11; the same
- * class the badge fallback was already scoped against in round 9).
+ * quoting `**blocker**` — as the real severity (the same class the badge
+ * fallback was already scoped against).
  *
  * The stripped comments are scoped to the `ai-review-*` marker shape and no
  * other — a leading HTML comment from an unrelated source, if stripped
  * unconditionally, would expose whatever paragraph follows it as the header,
  * even when that paragraph is body prose quoting a bold token as an example
- * rather than a real severity bullet (PR #4501 round 13).
+ * rather than a real severity bullet.
  *
  * The badge matcher runs BEFORE the bold-token matcher, and is anchored to the
  * structurally leading position — line 0 of the header, not merely its start —
@@ -628,38 +623,36 @@ const SEVERITY_FIELD =
  * title can itself quote a bold canonical token as a decoy (e.g.
  * `![P2 Badge](...) Handle the **blocker** token`) — an unanchored bold-token
  * search run first would match that decoy before the badge matcher ever runs,
- * misreading the badge's `medium` as `blocker` (PR #4501 round 14).
+ * misreading the badge's `medium` as `blocker`.
  *
  * The leading (and every internal) whitespace run in the badge pattern is
  * `[ \t]`, never `\s` — `\s` matches `\n`, so `^\s*` would let the prefix walk
- * past line 0 exactly the way `SEVERITY_FIELD`'s own prefix did before round 19
- * closed it: `severityOf('\n![P1 Badge](...)')` matched the
- * badge on line 1 and armed the ladder from a header whose real line 0 carries
- * no severity at all (chatgpt-codex-connector, a reference-implementation pull request). The two matchers
- * share the same line-0 contract; they must share the same whitespace class
- * that makes it true, not merely the same intent stated in prose.
+ * past line 0 exactly the way `SEVERITY_FIELD`'s own prefix once did:
+ * `severityOf('\n![P1 Badge](...)')` matched the badge on line 1 and armed the
+ * ladder from a header whose real line 0 carries no severity at all. The two
+ * matchers share the same line-0 contract; they must share the same whitespace
+ * class that makes it true, not merely the same intent stated in prose.
  *
  * The bold-token matcher is anchored the same way, on the same line 0-of-header
  * position — not merely "somewhere in the (narrower) header blob", which every
- * earlier round narrowed without ever anchoring the token search itself. A
+ * earlier fix narrowed without ever anchoring the token search itself. A
  * severity-less finding whose own TITLE quotes a canonical word in bold (e.g.
  * `Handle the **blocker** token safely`) has no letters before that token, so
  * requiring the run of characters before `**` to contain no letters — only
  * emoji, punctuation or whitespace, the shape every real leading severity
  * field actually has — rejects it; a real field like `🟡 **medium** · …`
- * still matches (PR #4501 round 15).
+ * still matches.
  *
- * That anchor is only real WITHOUT the `m` flag, and round 15's fix carried
- * one — so `^` restarted at every line inside the header and the anchor it
- * claimed to add was defeated by any header whose SECOND line began with a
- * quoted token (`` `**low**` is a supported token ``), which is ordinary
- * prose in a finding that is itself about severity parsing. A severity-less
- * late-round finding was then classified `low` instead of `unknown`,
- * bypassing `fail_open.inert_when_unknown` entirely (coderabbitai +
- * chatgpt-codex-connector, a reference-implementation pull request round 17 — the third consecutive round on
- * this one root cause, and the reason the flag is now called out here rather
- * than left as a detail of the literal). Do not add `m`: the header is a
- * single logical field, and line 0 of it is the whole claim.
+ * That anchor is only real WITHOUT the `m` flag, and the fix that added it
+ * once carried one — so `^` restarted at every line inside the header and
+ * the anchor it claimed to add was defeated by any header whose SECOND line
+ * began with a quoted token (`` `**low**` is a supported token ``), which is
+ * ordinary prose in a finding that is itself about severity parsing. A
+ * severity-less late-round finding was then classified `low` instead of
+ * `unknown`, bypassing `fail_open.inert_when_unknown` entirely (the third
+ * failure from this one root cause, and the reason the flag is now called
+ * out here rather than left as a detail of the literal). Do not add `m`: the
+ * header is a single logical field, and line 0 of it is the whole claim.
  */
 /**
  * Leading `ai-review-*` HTML comments stripped, then everything up to the
@@ -667,8 +660,8 @@ const SEVERITY_FIELD =
  * field out of. Shared rather than copied so a future fix to this scoping
  * (the comment-strip pattern, the blank-line split) cannot silently apply to
  * one and not the other — which is exactly how `categoryOf` first shipped
- * without the line-0 restriction `severityOf` had already paid three rounds
- * to earn (PR #4501 rounds 13/15/17).
+ * without the line-0 restriction `severityOf` had already paid three fixes
+ * to earn.
  */
 function headerOf(text: string): string {
   const withoutLeadingComments = text.replace(
@@ -684,15 +677,15 @@ function headerOf(text: string): string {
  * `**🔒 Security & Privacy** | **🟠 Major** | **⚡ Quick win**` (current) or
  * `_🩺 Stability & Availability_ | _🔴 Critical_ | _⚡ Quick win_`
  * (until 2026-10-09). Verified against 12/12 lifetime CodeRabbit inline
- * findings across three independent PRs (#4596, #4644, #4836) in its italic
- * form, and all 7 inline threads on PR #5342 in its bold form, each with an
- * identical 100% unreadable rate under the matchers above — this is
- * CodeRabbit's whole format, not a one-off variant.
+ * findings across three independent PRs in its italic form, and all 7 inline
+ * threads on one PR in its bold form, each with an identical 100% unreadable
+ * rate under the matchers above — this is CodeRabbit's whole format, not a
+ * one-off variant.
  *
  * Neither existing matcher recognizes it, on two independent axes (a third,
  * the emphasis marker, is covered below):
  *   - vocabulary: CodeRabbit's tokens are `Critical`/`Major`/`Minor`/`Trivial`
- *     (`Trivial` first observed 2026-10, PR #5207, where its absence left the
+ *     (`Trivial` first observed 2026-10, where its absence left the
  *     ladder inert for that finding), none of which is a member of
  *     `blocker|high|medium|low` — a vocabulary mapping is required, not just
  *     a case fold.
@@ -700,9 +693,9 @@ function headerOf(text: string): string {
  *     category field (`**🩺 Stability & Availability** | `) that
  *     `SEVERITY_FIELD`'s leading-decoration prefix does not admit. Widening
  *     that prefix to walk past an entire leading field would reopen exactly
- *     the decoy class its enumeration above was hardened against over four
- *     rounds, so this is parsed structurally instead — split line 0 on `|`,
- *     then match field 1 — the same field-position discipline
+ *     the decoy class its enumeration above was hardened against, so this is
+ *     parsed structurally instead — split line 0 on `|`, then match field 1
+ *     — the same field-position discipline
  *     `categoryOf`/`CATEGORY_LEAD_FIELD` already uses against the identical
  *     class of positional decoy.
  *
@@ -742,17 +735,16 @@ function coderabbitFieldContent(field: string | undefined): string | null {
 
 /**
  * CodeRabbit's GraphQL `author.login` — verified live against 12+ inline
- * findings across PRs #4596, #4644, #4836 and #4852: plain `coderabbitai`,
- * no `[bot]` suffix (that suffix is a REST-API convention some other call
- * sites use for the same account; GraphQL's `author{ login }` never carries
- * it). Any shape-based CodeRabbit matcher, however many fields it requires,
- * stays defeatable by a decoy an ordinary reviewer comment can produce by
- * coincidence — `_Expected_ | _Critical_ | _Actual_` is exactly three
- * italic pipe-delimited fields with a real severity token in the middle,
- * and reads nothing like a bug unless you already know CodeRabbit did not
- * write it (docomply-review, a reference-implementation pull request round 3 — the third round on this one
- * function). Identity is the only signal that closes the class rather than
- * narrowing it one counterexample at a time.
+ * findings across four PRs: plain `coderabbitai`, no `[bot]` suffix (that
+ * suffix is a REST-API convention some other call sites use for the same
+ * account; GraphQL's `author{ login }` never carries it). Any shape-based
+ * CodeRabbit matcher, however many fields it requires, stays defeatable by a
+ * decoy an ordinary reviewer comment can produce by coincidence —
+ * `_Expected_ | _Critical_ | _Actual_` is exactly three italic
+ * pipe-delimited fields with a real severity token in the middle, and reads
+ * nothing like a bug unless you already know CodeRabbit did not write it
+ * (the third decoy on this one function). Identity is the only signal that
+ * closes the class rather than narrowing it one counterexample at a time.
  */
 const CODERABBIT_LOGIN = "coderabbitai";
 
@@ -786,14 +778,14 @@ const CODERABBIT_SEVERITY: Record<string, string> = {
  * is held to) — otherwise the whole thing is more likely a decoy that merely
  * happens to contain two pipe-delimited emphasized-looking segments than a real CodeRabbit
  * header, and an unrecognized severity leaving the decline ladder inert is
- * the safe failure mode, not this one (docomply-review, a reference-implementation pull request).
+ * the safe failure mode, not this one.
  *
  * Shape alone is NOT the whole guard — see `severityOf`, which gates every
  * call to this function on the raising comment's own author. A three-field
  * shape check narrows the decoy surface; it cannot close it, because English
  * prose can produce the exact shape by coincidence (`**Expected** | **Critical**
  * | **Actual**` — a bug report's own before/after fields — misread as
- * `blocker` under this function alone; docomply-review, a reference-implementation pull request round 3).
+ * `blocker` under this function alone).
  */
 function coderabbitSeverityOf(header: string): string | null {
   const line0 = header.split("\n", 1)[0] ?? "";
@@ -818,7 +810,7 @@ function coderabbitSeverityOf(header: string): string | null {
  * CodeRabbit-shaped path there is already correct without one). Gating
  * `coderabbitSeverityOf` on `CODERABBIT_LOGIN` — rather than trusting its
  * shape check alone — is what actually closes the decoy class three
- * consecutive rounds on this function kept narrowing instead of closing; see
+ * consecutive fixes to this function kept narrowing instead of closing; see
  * that function's own doc for the counterexample that forced this.
  */
 export function severityOf(text: string, authorLogin?: string | null): string {
@@ -837,40 +829,40 @@ export function severityOf(text: string, authorLogin?: string | null): string {
 }
 
 /**
- * The `🏷️ category: <token>` field an earlier change renders next to severity on both
- * an inline finding's tag line and a backlog/body bullet's header — see
- * `docomply/ai-review` PR #112: "A consumer reads it with `/🏷️ category:
+ * The `🏷️ category: <token>` field the reviewer renders next to severity on
+ * both an inline finding's tag line and a backlog/body bullet's header — per
+ * the reviewer's own contract, "A consumer reads it with `/🏷️ category:
  * ([a-z-]+)/` — as simple as severity's."
  *
  * Scoped to `headerOf`'s block, same as `severityOf`, for the same reason: an
  * unscoped search would misread the token if a finding's own body prose ever
  * quoted the tag as an example, the exact decoy class documented on
- * `severityOf` (PR #4501 rounds 11/13). But `headerOf`'s block can itself span
- * SEVERAL lines before the first blank line — a title line, then the real tag
- * line — and `severityOf` closed that exact gap only after three rounds
- * (PR #4501 rounds 13/15/17) by anchoring `SEVERITY_FIELD` to line 0 with `^`
- * and deliberately no `m` flag. `CATEGORY_FIELD` cannot reuse that trick
- * verbatim — the tag sits AFTER the severity token on its line, never at
- * column 0 — so the match target here is narrowed to the header's OWN line 0
- * instead: a decoy on a later header line (before the first blank line) is
- * therefore invisible to this search, matching `severityOf`'s guarantee by a
- * different mechanism aimed at the same property.
+ * `severityOf`. But `headerOf`'s block can itself span SEVERAL lines before
+ * the first blank line — a title line, then the real tag line — and
+ * `severityOf` closed that exact gap only after three fixes by anchoring
+ * `SEVERITY_FIELD` to line 0 with `^` and deliberately no `m` flag.
+ * `CATEGORY_FIELD` cannot reuse that trick verbatim — the tag sits AFTER the
+ * severity token on its line, never at column 0 — so the match target here is
+ * narrowed to the header's OWN line 0 instead: a decoy on a later header line
+ * (before the first blank line) is therefore invisible to this search,
+ * matching `severityOf`'s guarantee by a different mechanism aimed at the
+ * same property.
  *
  * No taxonomy check here: `.config/review-triage.yaml`'s `categories:` list is
  * the vocabulary, and it is loaded dynamically (may gain entries; a value is
- * "added but never renamed" per). Validating against it is
+ * "added but never renamed"). Validating against it is
  * `triage-ladder.ts`'s job at the point a value is actually acted on — this
  * function only extracts what the reviewer wrote, matching the upstream
  * contract's own stated simplicity.
  *
  * Line-0 scoping alone still leaves the token unanchored WITHIN line 0, and
- * two more decoy rounds on this exact function (both chatgpt-codex-connector
- * and coderabbitai, PR #4527) each defeated a punctuation-proximity patch:
- * requiring "some `·` (or line start) precedes the tag" accepted `Fix parsing
- * of · 🏷️ category: security` (a coincidental `·` in prose, not a field
- * separator) and `🏷️ category: security is valid syntax` (nothing genuine
- * precedes it at all) equally as a real field — because neither decoy was
- * ever checked against what the OTHER side of that separator actually is.
+ * two more decoys on this exact function each defeated a
+ * punctuation-proximity patch: requiring "some `·` (or line start) precedes
+ * the tag" accepted `Fix parsing of · 🏷️ category: security` (a coincidental
+ * `·` in prose, not a field separator) and `🏷️ category: security is valid
+ * syntax` (nothing genuine precedes it at all) equally as a real field —
+ * because neither decoy was ever checked against what the OTHER side of that
+ * separator actually is.
  * The permissive token class `[a-z][a-z-]*` had the same shape of bug on the
  * right: `security_critical` and `security-` both truncated to a
  * plausible-looking `security` instead of failing to parse.
@@ -887,30 +879,28 @@ export function severityOf(text: string, authorLogin?: string | null): string {
  * `compliance (correctness · beyond-pr)` nesting above) puts it there, so a
  * match is only ever legitimate at that position. Scanning every later field
  * instead let a prose field between severity and the real tag — or a
- * fabricated tag quoted further along the line — be read as the category
- * (chatgpt-codex-connector, a reference-implementation pull request, one round after the decoys below: `🟡
+ * fabricated tag quoted further along the line — be read as the category (`🟡
  * **medium** · confidence: high — Explain separator · 🏷️ category: security`
- * has no genuine category at all, yet the old loop reached field 2 and
- * accepted it). A standalone `🏷️ category: X` has no leading field at all and
- * fails immediately; `Fix parsing of · 🏷️ category: X` has a field 0 of `Fix
- * parsing of`, which does not end in a severity token, so it fails the same
- * way — the coincidental `·` bought it nothing. The token itself is bounded
- * with `(?=\s|$)` rather than left open on the right, so `security_critical`
- * fails to match at all (falling through to `unknown`) instead of matching a
+ * has no genuine category at all, yet the old loop reached field 2 and accepted
+ * it). A standalone `🏷️ category: X` has no leading field at all and fails
+ * immediately; `Fix parsing of · 🏷️ category: X` has a field 0 of `Fix parsing
+ * of`, which does not end in a severity token, so it fails the same way — the
+ * coincidental `·` bought it nothing. The token itself is bounded with
+ * `(?=\s|$)` rather than left open on the right, so `security_critical` fails
+ * to match at all (falling through to `unknown`) instead of matching a
  * truncated prefix.
  *
- * The right boundary itself needs the same anchoring, one round later
- * (docomply-review, a reference-implementation pull request): `(?=\s|$)` only checked the character
- * immediately after the token, not that nothing else followed it on this
- * (already `·`-split) field — so `🏷️ category: security is valid syntax`
- * matched `security` and stopped there, silently discarding `is valid
- * syntax` as if that trailing prose were a separate field. `(?=\s*(?:$|·|\)`
- * requires the token be followed only by the true end of the field, a
- * (mid-parenthetical) `·`, or an opening paren — the shape the accepted
- * `category: compliance (correctness · beyond-pr)` case above actually
- * needs, since the nested `·` inside that annotation splits the field
- * again and leaves `(correctness` dangling after `compliance`. A bare `$`
- * anchor (available only because the call site already trims each field)
+ * The right boundary itself needs the same anchoring: `(?=\s|$)` only
+ * checked the character immediately after the token, not that nothing else
+ * followed it on this (already `·`-split) field — so `🏷️ category: security
+ * is valid syntax` matched `security` and stopped there, silently discarding
+ * `is valid syntax` as if that trailing prose were a separate field.
+ * `(?=\s*(?:$|·|\)` requires the token be followed only by the true end of
+ * the field, a (mid-parenthetical) `·`, or an opening paren — the shape the
+ * accepted `category: compliance (correctness · beyond-pr)` case above
+ * actually needs, since the nested `·` inside that annotation splits the
+ * field again and leaves `(correctness` dangling after `compliance`. A bare
+ * `$` anchor (available only because the call site already trims each field)
  * would have closed the decoy but broken that accepted case.
  */
 /**
@@ -921,8 +911,7 @@ export function severityOf(text: string, authorLogin?: string | null): string {
  * emoji, VS16, ZWJ) before the token, and `Fix the ` fails that. Reading this
  * lead field more loosely than `severityOf` itself fabricated a category on a
  * header `severityOf` classifies `unknown`, contaminating category metrics and
- * able to wrongly admit a finding through a late-round `categories` clause
- * (chatgpt-codex-connector, a reference-implementation pull request review round 2).
+ * able to wrongly admit a finding through a late-round `categories` clause.
  *
  * Derived from `SEVERITY_FIELD` itself (its source plus an end anchor) rather
  * than a hand-written duplicate, so a future change to what counts as
@@ -1328,7 +1317,7 @@ export interface AddressedOptions {
  * exempt until `currentRound` catches up past `round + WINDDOWN_EXEMPTION_ROUNDS`,
  * and a long enough digit run parses past `Number.MAX_SAFE_INTEGER`, making
  * that gap effectively permanent — restoring the unbounded-suppression failure
- * an earlier change exists to close (docomply-review round 1, a reference-implementation pull request).
+ * an earlier change exists to close.
  */
 function exemptFromExpiry(
   fingerprint: string,
@@ -1354,8 +1343,8 @@ function exemptFromExpiry(
  * there FALSIFIES it. An incomplete fix, a revert, or a regression from a later
  * round's own edit all reproduce the finding verbatim, so its content
  * fingerprint is unchanged and a durable marker would suppress the live
- * occurrence forever — false convergence by the same mechanism as PR #3855, one
- * layer down.
+ * occurrence forever — false convergence by the same mechanism as the
+ * zero-thread case in this file's header, one layer down.
  *
  * "Caught up" is a POSITION, not a boolean (`reviewerPosition`), because that
  * falsification premise holds for one of the two ways a review can be caught up
@@ -1383,30 +1372,27 @@ function exemptFromExpiry(
  * round budget. It has to be settled at the set rather than here: a fingerprint
  * is one global key, `collectAddressed` returns keys, and `classify`'s own
  * dedup reports the pair as a single finding — so honouring the marker for
- * "the backlog copy" clears the freshly-judged one with it (docomply-review
- * round 10, PR #4049).
+ * "the backlog copy" clears the freshly-judged one with it.
  *
  * Without that grace a fix-dependent marker was inert on arrival. SKILL.md § 6
  * mandates push → `stamp-held` → `drive-status.ts --no-count` → answer, so by
  * the time the marker is posted the reviewer has already reviewed that exact
- * head: the position is `at` at answer time, every time. Measured on PRs #4015,
- * #4013, #4006, #3974 and #4032 — up to six re-answers of one verified-fixed
- * finding, with PR #4013 terminating `HITL_PARKED` instead of `CONVERGED`
- * solely because of it.
+ * head: the position is `at` at answer time, every time. Measured across five
+ * drives — up to six re-answers of one verified-fixed finding, with one drive
+ * terminating `HITL_PARKED` instead of `CONVERGED` solely because of it.
  *
  * The grace is exactly ONE HEAD wide, and that bound is what makes it safe. Any
  * later push — a revert, a regression, a rebase — moves the reviewed SHA off the
  * marked one, the position becomes `past`, and the finding is re-asked.
  *
  * Past that one head, a THIRD clause keeps a narrower set alive, and it is not
- * a variant of the same question. an earlier change (the position rule above) was
- * authored while an earlier change was still in flight, and read as though a single
- * bounded rule replaced the older `reason: "winddown-deferred"` exemption
- * outright. Landing both showed it does not, because the two are bounded along
- * DIFFERENT axes: the position rule expires at the first later PUSH, which is
- * precisely the carry-forward loop that survives one — measured on PR #4019,
- * rounds 4-6 each re-answering the same verified-fixed finding, and on PR
- * #3974's carry-forward. So the winddown clause below stands alongside it,
+ * a variant of the same question. The position rule above once read as though
+ * a single bounded rule replaced the older `reason: "winddown-deferred"`
+ * exemption outright. It does not, because the two are bounded along DIFFERENT
+ * axes: the position rule expires at the first later PUSH, which is precisely
+ * the carry-forward loop that survives one — measured: three consecutive
+ * rounds each re-answering the same verified-fixed finding, and a second
+ * drive's carry-forward. So the winddown clause below stands alongside it,
  * bounded in ROUNDS rather than heads.
  *
  * That clause covers `winddown-deferred` backlog entries, where the
@@ -1414,9 +1400,8 @@ function exemptFromExpiry(
  * UNCONDITIONALLY by their original firstRound — it does not re-verify them
  * against the current diff — so re-emission at the fix's head says nothing
  * about the fix, and expiring the marker turns a correctly-fixed,
- * correctly-answered finding into a loop the driver cannot win: measured on
- * PR #4019 (rounds 4–6 each re-answered the same verified-fixed finding) and
- * on PR #3974's carry-forward. A fix-dependent marker whose fingerprint is in
+ * correctly-answered finding into a loop the driver cannot win (measured, as
+ * above). A fix-dependent marker whose fingerprint is in
  * `opts.winddownDeferred` therefore survives a `past` position — but NOT an
  * `unknown` one. The SHA is still required, and "required" means datable, not
  * merely present: `past` and `unknown` are both non-answers about the reviewer,
@@ -1425,7 +1410,7 @@ function exemptFromExpiry(
  * ignoring that. Folding the two together let a hand-written `@deadbeef…`
  * marker ride the exemption for its whole round budget, contradicting the
  * "never exempt from the dating requirement" contract one field up
- * (docomply-review round 10, a reference-implementation pull request). Every non-winddown finding keeps the
+ *. Every non-winddown finding keeps the
  * full expiry — the reviewer DOES re-verify those, so there re-emission still
  * falsifies.
  *
@@ -1437,7 +1422,7 @@ function exemptFromExpiry(
  * could reach CONVERGED over a live finding. The distinction is erased at the
  * SOURCE: the reviewer's carry-forward does not record whether an entry was
  * re-detected on this head or merely forwarded, and the reviewer is a
- * majordomo-side app, not this repository, so nothing here can recover what was
+ * self-hosted app, not this repository, so nothing here can recover what was
  * never emitted. What IS available is elapsed rounds. The marker carries the
  * round it was posted in (`<fingerprint>@<sha>#<round>`), and the exemption
  * holds for `WINDDOWN_EXEMPTION_ROUNDS` further rounds; past that the finding is
@@ -1521,14 +1506,14 @@ export function collectAddressed(
       //                   (`unknown`). That clause ignores POSITION by design;
       //                   it was never meant to excuse a marker naming nothing
       //                   datable, which is the one thing `past` used to hide
-      //                   from it (docomply-review round 10, a reference-implementation pull request).
+      //                   from it.
       //
-      // an earlier change landed while an earlier change was still in flight and its rationale
-      // read as though the one-head rule replaced the winddown exemption
-      // outright. It does not: the position rule expires at the FIRST later
-      // push, which is exactly the carry-forward loop PR #4019 measured
-      // (rounds 4-6 re-answering one verified-fixed finding). Dropping either
-      // clause here restores a measured failure, so both stay.
+      // The one-head rule's rationale once read as though it replaced the
+      // winddown exemption outright. It does not: the position rule expires
+      // at the FIRST later push, which is exactly the measured carry-forward
+      // loop (three consecutive rounds re-answering one verified-fixed
+      // finding). Dropping either clause here restores a measured failure,
+      // so both stay.
       const where = position(sha);
       const honour =
         where === "behind" ||
@@ -1551,7 +1536,7 @@ export function collectAddressed(
  * reviewer has read"), which expires a marker once the reviewer's review has
  * caught up to its SHA. Reusing it here — as an earlier version of the
  * `--check-addressed` CLI mode did — reintroduced the exact duplicate-post
- * bug this function exists to close (docomply-review round 2, a reference-implementation pull request): a
+ * bug this function exists to close: a
  * driver reconciling moments after its OWN successful post, once the
  * reviewer has simply caught up to that same SHA, would see its own marker
  * as expired and post a second one. Whether the reviewer has read a marker
@@ -1573,7 +1558,7 @@ export function collectAddressed(
  * needs to repost at the SAME `sha` with a FRESH `#<round>` to renew it — and
  * if this function still reported the stale marker as an exact match, that
  * repost would be silently skipped as "already posted", leaving the finding
- * `unaddressed` forever (docomply-review round 2, a reference-implementation pull request). So for a
+ * `unaddressed` forever. So for a
  * winddown fingerprint, an existing same-SHA marker only counts as a match
  * while it is still within its own exemption window; once elapsed, it is
  * stale rather than a duplicate, and a fresh post is allowed through. A
@@ -1588,10 +1573,9 @@ export function collectAddressed(
  * on a roundless sticky (`roundSuffix` is empty), so the "fresh" repost would
  * be textually identical to the marker just posted, and the next
  * reconciliation would see it as stale too — an infinite loop of duplicate
- * comments instead of the intended one-time refresh (docomply-review round 5,
- * a reference-implementation pull request). With no round to measure by, retain the ordinary unconditional
- * same-SHA match instead — the crash-recovery guarantee — until a later
- * sticky supplies one.
+ * comments instead of the intended one-time refresh. With no round to measure
+ * by, retain the ordinary unconditional same-SHA match instead — the
+ * crash-recovery guarantee — until a later sticky supplies one.
  */
 export function findExactMarkers(
   sources: AddressedSource[],
@@ -1653,7 +1637,7 @@ interface ReviewComment {
  * the sweep enforces this file instead of excusing it. The Bun global was also
  * the concrete reason the documented `node` entry point could not work — every
  * status evaluation reaches this script, and under Node it died on
- * `Bun is not defined` (chatgpt-codex-connector, a reference-implementation pull request round 2).
+ * `Bun is not defined`.
  */
 async function gh(args: string[]): Promise<string> {
   const r = await ghCall(args);
@@ -1685,9 +1669,9 @@ async function gh(args: string[]): Promise<string> {
  * it says the MARKER's own SHA resolves to no commit here, so there is nothing
  * to be behind or at. It is separate from `past` only because the winddown
  * exemption ignores position by design, and had to be stopped from ignoring an
- * undated marker with it (`collectAddressed`; docomply-review round 10, PR
- * #4049). Everywhere else the two behave identically — neither is `behind` or
- * `at`, so neither honours a marker on its own.
+ * undated marker with it (`collectAddressed`). Everywhere else the two behave
+ * identically — neither is `behind` or `at`, so neither honours a marker on its
+ * own.
  *
  * The question is NOT "is `sha` an ancestor of the reviewed head". Asking it
  * that way has only one safe answer and three unsafe ones, because a PR branch
@@ -1753,7 +1737,7 @@ export function reviewerPosition(
     // that is its whole point — so folding this case into `past` handed it an
     // undated marker to honour, contradicting the "never exempt from the
     // dating requirement" contract in `AddressedOptions.winddownDeferred`
-    // (docomply-review round 10, a reference-implementation pull request). Distinct value, checked there.
+    //. Distinct value, checked there.
     if (!to) return "unknown";
     const from = commitId(reviewedSha);
     if (!from) return "past";
@@ -1796,7 +1780,7 @@ async function main(): Promise<number> {
   // the reviewer read relative to this fix, so should the finding stay
   // suppressed" — a question scoped to the CURRENT sticky's reviewed SHA.
   // Routing this reconciliation through it reintroduced the exact bug it exists
-  // to fix (docomply-review round 2, a reference-implementation pull request): once the reviewer has read the
+  // to fix: once the reviewer has read the
   // SHA a fix-dependent marker names — reaching it, for a finding outside the
   // backlog blob, or moving past it for any finding — `collectAddressed` treats
   // that marker as EXPIRED, so a driver reconciling right after a legitimate
@@ -1964,10 +1948,11 @@ async function main(): Promise<number> {
   // bullet, so admitting every inline comment the reviewer ever posted lets a
   // long-resolved comment at the same `path:line` consume a current bullet, and
   // the live finding disappears from `unaddressed` while thread count reads
-  // zero — the #3855 false convergence, reached through the one input nobody
-  // controls. Fail closed instead: with no round to scope by, nothing anchors,
-  // so every bullet stays open work. That costs an answer on a finding that may
-  // already have a thread; the other direction costs a live finding, silently.
+  // zero — the header's zero-thread false convergence, reached through the one
+  // input nobody controls. Fail closed instead: with no round to scope by,
+  // nothing anchors, so every bullet stays open work. That costs an answer on a
+  // finding that may already have a thread; the other direction costs a live
+  // finding, silently.
   // (`stickyRound` itself is read above, where the `--check-addressed` mode also
   // needs it.)
   //

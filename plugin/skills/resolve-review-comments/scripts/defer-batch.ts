@@ -6,9 +6,9 @@
  * references/deferral-protocol.md § Batching is the default.
  *
  * Batching is the protocol's default because filing a fresh issue per finding
- * was the path of least resistance mid-round: 248 `pr-followup` issues landed
- * in 18 days with under 2% batched. This script makes the batch cheaper than
- * a fresh issue — one command, no Linear UI, an idempotent append.
+ * is the path of least resistance mid-round, and left to that path almost
+ * nothing gets batched. This script makes the batch cheaper than a fresh issue
+ * — one command, no Linear UI, an idempotent append.
  *
  * Usage:
  *   defer-batch.ts [--batch] <PR#> <type> \
@@ -20,10 +20,10 @@
  *     [--labels a,b] [--no-parent --no-parent-reason <text>] \
  *     [--repo-slug owner/name] [--dry-run]   < finding.txt
  *
- *   `--severity` is REQUIRED, matching `--reason`/`--originating` — the
- *   measured bug this closes (63% of open `pr-followup` issues carry
- *   no Linear priority) is severity being silently dropped, so an optional
- *   flag would just reproduce the same failure with an escape hatch. It sets
+ *   `--severity` is REQUIRED, matching `--reason`/`--originating` — the bug
+ *   this closes (follow-up issues filed with no Linear priority) is severity
+ *   being silently dropped, so an optional flag would just reproduce the same
+ *   failure with an escape hatch. It sets
  *   the batch's Linear `priority` field (see `SEVERITY_TO_PRIORITY`) on both
  *   the CREATE and APPEND paths, escalating an existing batch's priority but
  *   never downgrading it. Same vocabulary and flag name as
@@ -236,22 +236,21 @@ const LINEAR_TIMEOUT_MS = 30_000;
  * How long the WHOLE run may spend on Linear calls before it is aborted
  * outright, rather than left to the retry loop's attempt count alone.
  *
- * Round-review finding on PR #4113 (r3811790789): `APPEND_ATTEMPTS` bounds
- * the number of attempts, not the duration of any one awaited `linear(...)`
- * call — a stalled request could otherwise pin the unattended drive loop
- * forever. `LINEAR_TIMEOUT_MS` already caps a single `fetch`, but that cap
- * lived only inside `makeClient`, one implementation of the `LinearClient`
- * port; nothing in the PORT's own type required it, so a test double (or a
- * future client) had no obligation to honor any bound at all, and no caller
- * could bound the loop AS A WHOLE rather than call-by-call. Threading a
- * caller-supplied deadline through the port makes the guarantee part of the
- * CONTRACT every implementation must honor — `makeClient` combines it with
- * its own per-call timeout via `AbortSignal.any`, and `appendWithRetry`
+ * `APPEND_ATTEMPTS` bounds the number of attempts, not the duration of any one
+ * awaited `linear(...)` call — a stalled request could otherwise pin the
+ * unattended drive loop forever. `LINEAR_TIMEOUT_MS` already caps a single
+ * `fetch`, but that cap lived only inside `makeClient`, one implementation of
+ * the `LinearClient` port; nothing in the PORT's own type required it, so a
+ * test double (or a future client) had no obligation to honor any bound at all,
+ * and no caller could bound the loop AS A WHOLE rather than call-by-call.
+ * Threading a caller-supplied deadline through the port makes the guarantee
+ * part of the CONTRACT every implementation must honor — `makeClient` combines
+ * it with its own per-call timeout via `AbortSignal.any`, and `appendWithRetry`
  * checks it directly so a stalled or endlessly-retried run aborts instead of
  * blocking past this ceiling. Generous relative to `LINEAR_TIMEOUT_MS` *
  * `APPEND_ATTEMPTS` (30s × 3 = 90s of pure call time) to leave room for the
- * `RETRY_MAX_MS`-bounded backoff between attempts and the label/relation
- * calls outside the retry loop.
+ * `RETRY_MAX_MS`-bounded backoff between attempts and the label/relation calls
+ * outside the retry loop.
  */
 export const RUN_DEADLINE_MS = 5 * 60_000;
 
@@ -301,10 +300,10 @@ export function isBatchableSize(name: string): boolean {
 }
 
 /**
- * Linear's `priority` field for each severity token — the priority-preservation rule: 63%
- * of open `pr-followup` issues (measured 2026-09-01) carried no priority at
- * all because severity was accepted by the deferral tooling and then silently
- * dropped on the floor rather than written anywhere.
+ * Linear's `priority` field for each severity token — the priority-preservation
+ * rule: without it, follow-up issues carry no priority at all, because severity
+ * is accepted by the deferral tooling and then silently dropped on the floor
+ * rather than written anywhere.
  *
  * Linear defines urgent=1, high=2, medium=3, low=4, none=0. A blocker maps
  * to urgent because ranking it below high would understate the one severity
@@ -462,11 +461,10 @@ export const RETRY_MAX_MS = 2_000;
  * verification into the same instant as the concurrent writer this loop
  * exists to outlast — maximising the chance all `APPEND_ATTEMPTS` collide
  * with one another and burning Linear API quota on writes that were always
- * going to lose (fp `9f50b412531e72c4`). Exponential so a persistent writer
- * gets progressively more room, CLAMPED at `RETRY_MAX_MS` so a bounded retry
- * count stays a bounded wall-clock, and JITTERED across the lower half so two
- * runs that collided once do not re-collide in lockstep on every later
- * attempt.
+ * going to lose. Exponential so a persistent writer gets progressively more
+ * room, CLAMPED at `RETRY_MAX_MS` so a bounded retry count stays a bounded
+ * wall-clock, and JITTERED across the lower half so two runs that collided once
+ * do not re-collide in lockstep on every later attempt.
  */
 export function retryBackoffMs(
   attempt: number,
@@ -488,21 +486,19 @@ export function retryBackoffMs(
 export type Sleeper = (ms: number, signal?: AbortSignal) => Promise<void>;
 
 /**
- * PR #4121 review finding (reviewer, PRRT_kwDOO7knac6agNIV): a plain
- * `setTimeout` left uncleared when the abort side of the caller's race won
- * instead kept a live timer on the event loop — and `runMain` deliberately
+ * A plain `setTimeout` left uncleared when the abort side of the caller's race
+ * won instead kept a live timer on the event loop — and `runMain` deliberately
  * sets `process.exitCode` rather than calling `process.exit()` (so pending
  * stdout writes flush), so the CLI process did not actually exit until that
- * leaked timer fired, up to `RETRY_MAX_MS` after the run had already
- * aborted. Checking `aborted` synchronously first (a signal already aborted
- * before this call would never fire a LATER `'abort'` event), and removing
- * its own listener on the timer's NORMAL completion too — round-review
- * findings 00903c31824df16d / 5f5e29c2d2be116e / 061599eff47ad0d1 /
- * f3228d25ca91149f: `{ once: true }` alone only self-removes a listener when
- * the event actually FIRES, so on every ORDINARY retry (the timer winning,
- * not the signal aborting — the common case) the listener from an earlier
- * attempt stayed registered on the shared, run-lifetime `signal` for the
- * rest of the run. Bounded by `APPEND_ATTEMPTS`, not unbounded, but real.
+ * leaked timer fired, up to `RETRY_MAX_MS` after the run had already aborted.
+ * Checking `aborted` synchronously first (a signal already aborted before this
+ * call would never fire a LATER `'abort'` event), and removing its own listener
+ * on the timer's NORMAL completion too: `{ once: true }` alone only
+ * self-removes a listener when the event actually FIRES, so on every ORDINARY
+ * retry (the timer winning, not the signal aborting — the common case) the
+ * listener from an earlier attempt stayed registered on the shared,
+ * run-lifetime `signal` for the rest of the run. Bounded by `APPEND_ATTEMPTS`,
+ * not unbounded, but real.
  */
 const realSleep: Sleeper = (ms, signal) => {
   if (signal?.aborted) return Promise.resolve();
@@ -524,24 +520,22 @@ const realSleep: Sleeper = (ms, signal) => {
  * either way — the call site's half of the same listener-leak class
  * `realSleep` closes for its own half (see that function's own doc).
  *
- * PR #4121 review findings (reviewer, 061599eff47ad0d1 /
- * f3228d25ca91149f): a bare `Promise.race([sleeper(ms), abortedPromise])`
- * left THIS side's `{ once: true }` `'abort'` listener registered on
- * `signal` for the rest of the run every time `sleeper` won instead (the
- * ordinary, non-aborted retry) — self-removal via `{ once: true }` only
- * fires when the event actually does. Registering exactly one listener and
- * removing it in a `finally` once the race settles, regardless of which
- * side won, closes that gap independently of which `Sleeper` is injected
- * (a test double that ignores `signal` gets the same cleanup here).
+ * A bare `Promise.race([sleeper(ms), abortedPromise])` left THIS side's
+ * `{ once: true }` `'abort'` listener registered on `signal` for the rest of
+ * the run every time `sleeper` won instead (the ordinary, non-aborted retry) —
+ * self-removal via `{ once: true }` only fires when the event actually does.
+ * Registering exactly one listener and removing it in a `finally` once the race
+ * settles, regardless of which side won, closes that gap independently of which
+ * `Sleeper` is injected (a test double that ignores `signal` gets the same
+ * cleanup here).
  *
- * PR #4113 review finding (fd7673bd328ca7e3 / 9f3f6da69fb363b0), still the
- * reason this races at all rather than a bare `await sleeper(ms, signal)`:
- * `appendWithRetry`'s `checkDeadline` only runs BEFORE and AFTER the retry
- * pause, not during it, so a deadline firing WHILE asleep between attempts
- * must wake this wait immediately — not wait out the full pause — for the
- * very next `checkDeadline` call to catch it promptly, and that guarantee
- * must hold even against a `Sleeper` double that does not itself look at
- * `signal` at all.
+ * Still the reason this races at all rather than a bare
+ * `await sleeper(ms, signal)`: `appendWithRetry`'s `checkDeadline` only runs
+ * BEFORE and AFTER the retry pause, not during it, so a deadline firing WHILE
+ * asleep between attempts must wake this wait immediately — not wait out the
+ * full pause — for the very next `checkDeadline` call to catch it promptly, and
+ * that guarantee must hold even against a `Sleeper` double that does not itself
+ * look at `signal` at all.
  */
 async function sleepUnlessAborted(
   ms: number,
@@ -671,7 +665,7 @@ export function commentUrlPattern(repoSlug: string, pr: string): RegExp {
  * body finding. A reviewer-supplied `ai-review-backlog` fingerprint is
  * validated there against the wider shape and can legitimately be something
  * like `reviewer_key-1`; narrowing this validator to hex-only rejected a
- * real backlog fingerprint outright (reviewer, PR #4771 round 7).
+ * real backlog fingerprint outright.
  *
  * Duplicated rather than imported: each skill ships self-contained (see
  * `resolve-review-comments/__tests__/scripts.test.ts`), and a sibling such as
@@ -708,7 +702,7 @@ export function summaryEntryKey(
 /**
  * The exact idempotency key an entry heading names, or null if the line is not one.
  *
- * MEASURED (issue, this PR's own first real batch): Linear rewrites a bare
+ * MEASURED: Linear rewrites a bare
  * URL into a markdown link when it stores a description, so the heading this
  * script WRITES is not the heading it reads back —
  * `### https://…#discussion_r1` returns as
@@ -727,9 +721,8 @@ export function headingEntryKey(line: string): string | null {
   // as a heading. FOUR or more makes it an indented CODE BLOCK, so a Markdown
   // example inside a description would otherwise be read as a real entry and
   // make the helper skip the append — resolving the thread with nothing
-  // tracking it (.claude/rules/document-scanning-gates.md rule 1's
-  // legal-but-unexpected-indentation case). A bare `trim()` erased that
-  // distinction.
+  // tracking it (a legal-but-unexpected indentation must never read as a
+  // real entry). A bare `trim()` erased that distinction.
   const heading = /^ {0,3}### (.*)$/.exec(line.trimEnd());
   if (heading === null) return null;
   const rest = (heading[1] ?? "").trim();
@@ -920,12 +913,11 @@ export function noParentRationaleForRepair(
  * this function directly (below, in the test suite) covers the LOGIC both
  * call sites share, but NOT whether either call site is actually wired to
  * it — that overclaim is what the pre-loop site's rebuild being reachable by
- * no test at all let slip through once (review finding on PR #4113,
- * r3808641914: `main()` was neither exported nor exercised by this file's
- * suite, so a regression at that call site failed nothing). `main()` was
- * extracted into `runDeferBatch` for exactly this reason, mirroring
- * `appendWithRetry`'s own seam, and each call site's wiring is now tested
- * separately against a mock `LinearClient`.
+ * no test at all let slip through once (`main()` was neither exported nor
+ * exercised by this file's suite, so a regression at that call site failed
+ * nothing). `main()` was extracted into `runDeferBatch` for exactly this
+ * reason, mirroring `appendWithRetry`'s own seam, and each call site's wiring
+ * is now tested separately against a mock `LinearClient`.
  */
 export function descriptionForRepair(
   liveDescription: string,
@@ -948,9 +940,9 @@ export function descriptionForRepair(
  * description: an entry's finding/reason/fix-sketch is external,
  * model-generated text, so an unrestricted `description.includes('**No epic
  * parent**')` mistakes an entry that happens to quote that exact marker for
- * the scaffold's own claim (review findings on PR #4121, r3813038419 /
- * r3813087304 — both against `placementMatchesFreshParent`, which is why the
- * split lives here once rather than being duplicated at each call site).
+ * the scaffold's own claim (both in `placementMatchesFreshParent`, which is
+ * why the split lives here once rather than being duplicated at each call
+ * site).
  */
 export function scaffoldPortion(description: string): string {
   return description.split("## Entries", 1)[0] ?? description;
@@ -960,13 +952,12 @@ export function scaffoldPortion(description: string): string {
  * Does a description's own placement claim (its `**No epic parent**` block,
  * present or absent) agree with the issue's FRESHLY read `hasParent`?
  *
- * Review finding on PR #4113 (r3811805571): a blank-description repair can
- * race a reparent/unparent between the initial candidate lookup and this
- * run's first write, so the REBUILT scaffold is built from a `hasParent`
- * that was already stale the moment it was written — `appendWithRetry`'s
- * verify step re-reads `parent` fresh on every attempt, but until this
- * function existed nothing compared that fresh value against what the
- * description it had just confirmed actually CLAIMS. Only meaningful for a
+ * A blank-description repair can race a reparent/unparent between the initial
+ * candidate lookup and this run's first write, so the REBUILT scaffold is built
+ * from a `hasParent` that was already stale the moment it was written —
+ * `appendWithRetry`'s verify step re-reads `parent` fresh on every attempt, but
+ * until this function existed nothing compared that fresh value against what
+ * the description it had just confirmed actually CLAIMS. Only meaningful for a
  * description THIS run rebuilt (see `appendWithRetry`'s `everRebuiltScaffold`
  * tracking) — an ordinary batch's placement claim predates this run, and
  * RECONCILE deliberately never touches it (`descriptionForRepair`'s own doc:
@@ -1051,8 +1042,8 @@ interface Candidate {
 /**
  * Did a Linear connection return its whole population? `undefined` counts as
  * incomplete: the query asked for `pageInfo`, so its absence means the answer
- * cannot be judged, and a scan that cannot read its input has verified nothing
- * (.claude/rules/document-scanning-gates.md rule 1).
+ * cannot be judged, and a scan that cannot read its input has verified
+ * nothing.
  */
 export function isComplete(pageInfo: PageInfo | undefined): boolean {
   return pageInfo?.hasNextPage === false;
@@ -1093,7 +1084,7 @@ export type RepoVerdict =
  * that matter most. An earlier revision treated a missing label as this
  * repo's — a repairable gap — reasoning that skipping it would mint a
  * duplicate under the key. That is the wrong trade: an unlabelled
- * `PR #4068 chore review follow-ups` filed for another repo would be claimed,
+ * `PR #42 chore review follow-ups` filed for another repo would be claimed,
  * appended to, and then STAMPED `project` by the reconciliation path.
  * Claiming it is destructive and silent; a duplicate is tracker noise a human
  * merges. So `unlabelled` and `ambiguous` both fail closed and the caller asks
@@ -1256,8 +1247,8 @@ export function inheritedContextLabels(labels: string[]): string[] {
  * Empty means the mandatory Context group stays empty, which BOTH paths refuse
  * on. The predicate is the prefix filter, deliberately: an earlier revision
  * asked whether there were any labels to apply at all, which `--labels
- * manual-ops` satisfies while supplying no context label whatsoever
- * (review round 3, a regression from round 2's own fix).
+ * manual-ops` satisfies while supplying no context label whatsoever (a
+ * regression from an earlier fix).
  */
 export function contextAfterReconcile(
   present: string[],
@@ -1331,7 +1322,7 @@ export function contextLabelsToAdd(
  * in both `requiredExtras` and the provenance branch, and a context label can
  * repeat through `requiredExtras` too. A repeated name is resolved twice by
  * `fetchLabels` and written twice, so dedupe the SET rather than one pairing
- * of it (fp `11747f22a9894dac`).
+ * of it.
  *
  * The Repo repair is gated on `repoVerdict`, not on `liveNames.has(...)`
  * membership: a concurrent writer that REPLACES the Repo label with a
@@ -1393,14 +1384,15 @@ export interface OwnerDomainMismatch {
  * finding's inherited context labels are COMPLETELY DISJOINT on — sharing no
  * label at all for that prefix.
  *
- * The protocol requires a finding owned by a different agent/domain than the
- * rest of the batch to get its OWN issue (deferral-protocol.md lines
- * 105-108) — that triage call is made before this script is invoked, and
+ * The protocol requires a finding owned by a different owner or domain than the
+ * rest of the batch to get its OWN issue (deferral-protocol.md § Batching is
+ * the default) — that triage call is made before this script is invoked, and
  * this check is the safety net for when it wasn't. "Different" is read as
- * DISJOINT rather than exact-set-equal: both groups are declared `pick:
- * "1-3"` in labels.yaml (multi-valued), so a batch legitimately carries more
- * than one `agent:`/`domain:` label — ordinary human triage in Linear can
- * add a second one to an already-filed batch. Requiring the incoming set to
+ * DISJOINT rather than exact-set-equal: an ownership group (a
+ * `review.taxonomy.ownership_prefixes` prefix such as `agent:` or `domain:`)
+ * may be multi-valued, so a batch legitimately carries more than one label
+ * under the same prefix — ordinary human triage in Linear can add a second one
+ * to an already-filed batch. Requiring the incoming set to
  * match EXACTLY would abort every later append to that batch even though the
  * finding shares real ownership with it; ANY overlap is evidence of shared
  * ownership, so only a set with NO shared label counts as "different".
@@ -1543,7 +1535,6 @@ function assertMutationOk(payload: unknown, what: string): void {
  * `appendWithRetry`'s own `checkDeadline` (which guards its retry loop) to
  * every OTHER `LinearClient` dispatch this file makes.
  *
- * PR #4121 review findings (reviewer, PRRT_kwDOO7knac6agKcz / ahBf8):
  * `runDeferBatch`'s own entry-point guard (see its doc) only catches a
  * signal already aborted before that function STARTS — a deadline firing
  * BETWEEN two of its own pre-loop calls (the originating-issue lookup, the
@@ -1846,7 +1837,7 @@ export function parseArgs(argv: string[]): Args | string {
       return `${flag} must be a single line — a line break in it can forge the '${entryHeading("<url>")}' marker that keys the idempotent append`;
     }
   }
-  // REQUIRED, like --reason/--originating — the measured bug  is
+  // REQUIRED, like --reason/--originating — the bug this closes is
   // severity being silently dropped, so an optional flag would just
   // reproduce the same failure mode with an escape hatch. Same vocabulary as
   // triage-ladder.ts's --severity, imported rather than re-pinned.
@@ -2033,10 +2024,10 @@ async function rebuildDescriptionAndLabels(
  * concurrent writer has already moved to a different owner, by the time
  * priming's own fresh read lands, must abort on THAT read rather than
  * paying a wasted label lookup for a repair this run is about to refuse to
- * make anyway (round-review finding on this fix's own diff — folding label
- * repair into the shared priming read, per the shared-read design, without also
- * moving this ownership guard ahead of it, made priming itself the thing
- * that fired the wasted lookup the mid-loop guard existed to prevent).
+ * make anyway (folding label repair into the shared priming read, per the
+ * shared-read design, without also moving this ownership guard ahead of it,
+ * made priming itself the thing that fired the wasted lookup the mid-loop
+ * guard existed to prevent).
  */
 function abortOnOwnershipMismatch(
   liveLabelNames: string[],
@@ -2073,7 +2064,7 @@ function abortOnOwnershipMismatch(
  * which no test exercised while this loop stayed inline: every prior test
  * called those two pure functions directly on hand-built snapshots, never
  * this loop, so deleting either fix from the live path would not have failed
- * anything (round-1 review concurrent-write regression, fp `310dc4fd7ff37b21`).
+ * anything (a concurrent-write regression).
  *
  * This loop NEVER sends `labelIds`. That field is a whole-set replacement, so
  * every write of it re-asserts the label set this run last read — and a
@@ -2082,13 +2073,12 @@ function abortOnOwnershipMismatch(
  * a writer swapping `agent:meta` for `agent:compliance` between this run's
  * initial read and its first write had the swap reverted BY that write, so
  * the verify read back the stale owner, found no mismatch, and confirmed an
- * append into a batch that had moved to a different owner (fp
- * `5cb916652e21fef1`). Labels are therefore added one at a time with
- * `issueAddLabel`, which is purely additive: nothing this run writes can
- * erase a concurrent change, so the verify below always sees the real live
- * owner. Restoring an erased label is left entirely to the explicit,
- * ownership-validated repair set (`repairableMissingLabels`) rather than to
- * a blind snapshot re-assert.
+ * append into a batch that had moved to a different owner. Labels are
+ * therefore added one at a time with `issueAddLabel`, which is purely additive:
+ * nothing this run writes can erase a concurrent change, so the verify below
+ * always sees the real live owner. Restoring an erased label is left entirely
+ * to the explicit, ownership-validated repair set (`repairableMissingLabels`)
+ * rather than to a blind snapshot re-assert.
  */
 export async function appendWithRetry(
   linear: LinearClient,
@@ -2131,11 +2121,10 @@ export async function appendWithRetry(
    * since the verify below checks only that THIS run's own entry survived —
    * never that anyone else's did. An omitted argument used to fall back to
    * `needsInitialWrite`, reintroducing exactly that hazard for any caller
-   * that forgot to pass it (concurrent-write regression
-   * / `8efa07a3d304b017`, on the original default that mirrored
-   * `needsInitialWrite` — round-1 finding fp `f7f36ea1f430142e`). Kept
-   * distinct from `needsInitialWrite`, which also fires for a priority-only
-   * or labels-only reason that carries no description change at all.
+   * that forgot to pass it (a concurrent-write regression, on the original
+   * default that mirrored `needsInitialWrite`). Kept distinct from
+   * `needsInitialWrite`, which also fires for a priority-only or labels-only
+   * reason that carries no description change at all.
    */
   needsInitialDescriptionWrite: boolean,
 ): Promise<AppendRetryResult> {
@@ -2183,8 +2172,7 @@ export async function appendWithRetry(
   // which a later attempt can reset to `[]` once the label lands while a
   // DIFFERENT part of the contract (e.g. the description) still needs
   // repair — returning that shrunk set as `labelsAdded` would under-report a
-  // label this run genuinely added in an earlier attempt (round-2 finding on
-  // issue, fp `dc4400af3be3cd86`).
+  // label this run genuinely added in an earlier attempt.
   const labelsEverAdded = new Set<string>();
   // Checked before any call an attempt would make, not only relied on to
   // cancel an in-flight `fetch` — see `RUN_DEADLINE_MS`'s own doc. A test
@@ -2213,15 +2201,14 @@ export async function appendWithRetry(
   // escalates to 1 (Urgent), this run computes 2 (High) from the STALE 0 and
   // writes it — silently downgrading the live Urgent — and the verify below
   // only checks that priority now reflects THIS run's own severity, never
-  // that it didn't just erase a stronger concurrent one (round-1 finding on
-  // issue, fp `2d3990e7bbd8d316`). Only worth the extra round-trip when a
-  // write is actually going to happen AND the stale snapshot itself looks
-  // like it needs a bump — a batch already at/above `args.severity` per
-  // `originalPriority` cannot be under-escalated by staying stale, since
-  // this loop never lowers a priority it reads. One fresh read here, taken
-  // as close to the first write as this function gets, shrinks that window
-  // down to the same network-round-trip-sized gap every later attempt's own
-  // verify-then-retry already accepts.
+  // that it didn't just erase a stronger concurrent one. Only worth the
+  // extra round-trip when a write is actually going to happen AND the stale
+  // snapshot itself looks like it needs a bump — a batch already at/above
+  // `args.severity` per `originalPriority` cannot be under-escalated by staying
+  // stale, since this loop never lowers a priority it reads. One fresh read
+  // here, taken as close to the first write as this function gets, shrinks that
+  // window down to the same network-round-trip-sized gap every later attempt's
+  // own verify-then-retry already accepts.
   //
   // That narrowing is NOT closure — see this function's own doc comment
   // above (`Closing it needs compare-and-swap or a lock, and Linear's API
@@ -2260,9 +2247,8 @@ export async function appendWithRetry(
   // only the OTHER writer's own verify-then-retry can restore it, and only
   // when that verify reads after this run's write — the A-write → A-verify
   // → B-write(stale) → B-verify interleaving in this file's own doc comment
-  // passes on both sides. That is the documented, accepted residual,
-  // re-raised against this priming on PR #4580 (fp `ca4bc9db079c0a48`) and
-  // answered `wont-fix` for the same reason as `2775e904fdab58cb` above.
+  // passes on both sides. That is the documented, accepted residual, and it
+  // applies to this priming for the same reason.
   if (
     needsWrite &&
     (needsInitialDescriptionWrite ||
@@ -2345,9 +2331,9 @@ export async function appendWithRetry(
       // that variable's doc. A write triggered solely by a missing label or a
       // priority bump has no description change to make, and resending the
       // snapshot anyway is exactly the stale whole-field overwrite that can
-      // erase a concurrent writer's own entry (concurrent-write regression,
-      // fp `f7f36ea1f430142e`). When neither field applies, skip the mutation
-      // entirely — the label loop below is what this attempt is actually for.
+      // erase a concurrent writer's own entry (a concurrent-write regression).
+      // When neither field applies, skip the mutation entirely — the label loop
+      // below is what this attempt is actually for.
       if (needsDescriptionWrite || priorityChanged) {
         const updateData = await linear(
           `mutation($id: String!, $input: IssueUpdateInput!) {
@@ -2454,40 +2440,37 @@ export async function appendWithRetry(
       // mistaken for a placement mismatch and aborted — `''` never
       // contains `**No epic parent**`, so checking placement against it
       // unconditionally reads as "claims a parent" and blames a reparent
-      // that never happened (round-review finding on this file's own
-      // history: gating ahead of `entryOk` made the identical wipe-and-
-      // reconcile scenario this function's retry loop exists to handle
+      // that never happened (gating ahead of `entryOk` once made the identical
+      // wipe-and-reconcile scenario this function's retry loop exists to handle
       // abort instead of repairing itself). Scoping the check to the
-      // confirmed-otherwise state means it fires ONLY on the genuine race
-      // this exists for: entry and labels landed fine, but the persisted
-      // description's placement claim disagrees with the freshly read
-      // parent — see `everRebuiltScaffold`'s own doc for when this run is
-      // responsible for that claim at all.
+      // confirmed-otherwise state means it fires ONLY on the genuine race this
+      // exists for: entry and labels landed fine, but the persisted
+      // description's placement claim disagrees with the freshly read parent —
+      // see `everRebuiltScaffold`'s own doc for when this run is responsible
+      // for that claim at all.
       //
-      // Review finding on PR #4113 (r3811805571): a blank-description
-      // repair can race a reparent/unparent between the initial candidate
-      // lookup and this run's first write, so the scaffold this run wrote
-      // was built from a `hasParent` that was already stale. Aborting
-      // rather than rebuilding in place, deliberately: an AUTOMATED
-      // text-surgery patch of just the placement block risks corrupting
-      // entries a concurrent writer has appended since this run's own
-      // write, and this function's only SAFE full rebuild path is the
-      // wipe branch above — which does not apply here, because the
-      // description is not wiped, only wrongly placed. The write already
-      // landed by this point, so a bare "re-run" would NOT self-heal it: a
-      // later run's own `seedWasRepaired` reads `false` against this
-      // now-non-empty description, so `descriptionForRepair` returns it
-      // unchanged and nothing ever revisits the placement claim again.
+      // A blank-description repair can race a reparent/unparent between the
+      // initial candidate lookup and this run's first write, so the scaffold
+      // this run wrote was built from a `hasParent` that was already stale.
+      // Aborting rather than rebuilding in place, deliberately: an AUTOMATED
+      // text-surgery patch of just the placement block risks corrupting entries
+      // a concurrent writer has appended since this run's own write, and this
+      // function's only SAFE full rebuild path is the wipe branch above — which
+      // does not apply here, because the description is not wiped, only wrongly
+      // placed. The write already landed by this point, so a bare "re-run"
+      // would NOT self-heal it: a later run's own `seedWasRepaired` reads
+      // `false` against this now-non-empty description, so
+      // `descriptionForRepair` returns it unchanged and nothing ever revisits
+      // the placement claim again.
       //
       // The message below sends a HUMAN to do the surgery an automated
       // repair here may not: edit ONLY the scaffold's placement line,
       // above `## Entries`, and leave every entry below it untouched.
-      // Review finding on PR #4121 (r3813087307): the earlier wording told
-      // the operator to blank the WHOLE description, which is exactly the
-      // corruption this function itself declines to risk automating — a
-      // concurrent writer's entry, appended after this run's own write,
-      // lives only in that live description, and blanking it destroys that
-      // entry (including its review-source URL) with no record left
+      // The earlier wording told the operator to blank the WHOLE description,
+      // which is exactly the corruption this function itself declines to risk
+      // automating — a concurrent writer's entry, appended after this run's own
+      // write, lives only in that live description, and blanking it destroys
+      // that entry (including its review-source URL) with no record left
       // anywhere to rebuild it from.
       if (
         everRebuiltScaffold &&
@@ -2534,8 +2517,8 @@ export async function appendWithRetry(
     // as something to repair. Repairing it blindly would re-fold this run's
     // finding into a batch a concurrent writer has moved to a different
     // owner — silently violating the same different-owner-gets-its-own-issue
-    // rule the pre-loop guard exists to enforce (deferral-protocol.md lines
-    // 105-108; coderabbitai concurrent-write regression). Abort rather than repair.
+    // rule the pre-loop guard exists to enforce (deferral-protocol.md §
+    // Batching is the default). Abort rather than repair.
     abortOnOwnershipMismatch(
       [...liveNames],
       incomingOwnership,
@@ -2666,10 +2649,9 @@ async function main(): Promise<number> {
  * wiped-description rebuild call site (the `descriptionForRepair` call
  * below) was reachable by NO test at all: reverting it to
  * `initialDescription(args.pr, args.originating, noParentRationale)` — the
- * exact bug this file's history fixes — would not have turned any test red
- * (code-review concurrent-write regression/PR #4113, r3808641914). `descriptionForRepair`
- * being independently pure-tested proved the HELPER was correct; it proved
- * nothing about whether this call site actually calls it.
+ * exact bug this file's history fixes — would not have turned any test red.
+ * `descriptionForRepair` being independently pure-tested proved the HELPER was
+ * correct; it proved nothing about whether this call site actually calls it.
  *
  * `signal` defaults to a fresh `RUN_DEADLINE_MS` deadline — see that
  * constant's doc — and is a parameter (not hardcoded) so a test can inject a
@@ -2689,7 +2671,7 @@ export async function runDeferBatch(
   // dispatching a call whose result this run has already decided not to
   // trust is still worse than failing fast, so every pre-loop dispatch
   // below (this one included) is guarded by `assertNotAborted` — see its
-  // own doc (PR #4121 review findings PRRT_kwDOO7knac6agKcz / ahBf8).
+  // own doc.
   assertNotAborted(signal, "this run's first call");
   // A deferred `blocker` is a contradiction: it should have been fixed or
   // escalated, not deferred (references/deferral-protocol.md § When to
@@ -2750,8 +2732,9 @@ export async function runDeferBatch(
     // gloss, and child-bearing is far weaker evidence than it looks — most
     // issues with children are mid-tree groupings that have a genuine epic
     // parent of their own, and misreading one as an epic files its batch
-    // PARENTLESS, discarding the real parent the table asks for. labels.yaml
-    // declares `epic` for exactly this question, so ask it.
+    // PARENTLESS, discarding the real parent the table asks for. The epic label
+    // (`issue_tracker.labels.epic`) exists for exactly this question, so ask
+    // it.
     const originatingIsEpic = issue.labels.nodes.some(
       (n) => n.name === EPIC_LABEL,
     );
@@ -2954,9 +2937,9 @@ export async function runDeferBatch(
     // value even when the batch was legitimately sized differently (e.g. an
     // `xs` batch appended to by a `small`-default invocation) —
     // `batchContractHolds` would then accept the drift, since it tolerates
-    // either batchable size (chatgpt-codex-connector concurrent-write regression).
-    // Falls back to `args.size` only when the batch genuinely has no Size
-    // label at read time — nothing to preserve, same as the create path.
+    // either batchable size (a concurrent-write regression). Falls back to
+    // `args.size` only when the batch genuinely has no Size label at read time
+    // — nothing to preserve, same as the create path.
     const originalSize =
       target.labels.nodes.find((l) => groupOf(l) === SIZE_GROUP)?.name ??
       args.size;
@@ -3050,10 +3033,10 @@ export async function runDeferBatch(
       );
 
     // Read-only, and BEFORE the dry-run return — the create path's sibling of
-    // this same check. Round 7 fixed the create path only, so `--dry-run
-    // --labels nonexistent-label` still previewed "would add" for a label the
-    // real run cannot resolve, contradicting this file's own claim that a dry
-    // run validates every label.
+    // this same check. An earlier fix covered the create path only, so
+    // `--dry-run --labels nonexistent-label` still previewed "would add" for a
+    // label the real run cannot resolve, contradicting this file's own claim
+    // that a dry run validates every label.
     let addLabels: LabelNode[] = [];
     if (missingLabels.length > 0) {
       addLabels = await fetchLabels(linear, missingLabels, signal);
@@ -3141,7 +3124,7 @@ export async function runDeferBatch(
     // The predicate is the PREFIX filter, not "are there any labels to apply":
     // `--labels manual-ops` supplies a label without supplying a CONTEXT one,
     // so counting the extras satisfied this guard while leaving the group
-    // empty (review round 3, its own regression from round 2).
+    // empty (a regression from an earlier fix).
     const context = contextAfterReconcile([], inherited, args.extraLabels);
     if (context.length === 0) {
       fail(

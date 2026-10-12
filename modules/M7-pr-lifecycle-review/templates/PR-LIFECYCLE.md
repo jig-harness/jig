@@ -5,14 +5,12 @@
 > contract for how a change moves from branch to merged; the executable steps
 > (skills, gates, bots) are referenced, not restated.
 >
-> **On copying, repoint every link.** The links below are written relative to this
-> file's home in the groundwork module (`../reference/...`, `../../M8-...`) so they
-> resolve while you are reading it here. At the destination above they would
-> resolve to `docs/reference/...`, which does not exist. Point each one at wherever
-> you vendored the module — the same path you set `M7` to in your CI wiring — or at
-> your own copy of the gate, or delete it if you did not adopt that piece. A dead
-> link in the contract everyone is told to read is how a gate quietly stops being
-> the thing people follow.
+> **On copying, repoint the links you adopted.** The links below point at
+> Groundwork's own copy of each gate, template and module. Point each one at
+> wherever you vendored that piece — the same path you set `M7` to in your CI
+> wiring — or at your own copy of the gate, or delete it if you did not adopt
+> that piece. A link to a gate you do not run, in the contract everyone is told
+> to read, is how a gate quietly stops being the thing people follow.
 >
 > Invariant it encodes:
 > **PRs open as drafts (or Ready, where the repository declares so because
@@ -50,7 +48,7 @@ loop already past [Ready happens inside the loop](#ready-happens-inside-the-loop
 **Exit:** a draft PR exists (or a Ready one, where declared); its description
 names the change and the verification done.
 **Executable:** your forge's draft-PR command — `gh pr create --draft`, or a
-GitLab `Draft:` title prefix (per-forge in [`mappings.md`](../mappings.md)).
+GitLab `Draft:` title prefix (per-forge in [`mappings.md`](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md)).
 
 ### 2. Self-review
 
@@ -59,8 +57,8 @@ leave inline notes where a reviewer will otherwise ask. Run the local gate set.
 
 **Exit:** the author has reviewed the full diff; local gates pass.
 **Executable:** run the local gate set — the M7 gates
-([`check-pr-target-safety.ts`](../reference/pr-target-safety/),
-[`check-threads-resolved.ts`](../reference/comment-resolution/)) plus your
+([`check-pr-target-safety.ts`](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/pr-target-safety),
+[`check-threads-resolved.ts`](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution)) plus your
 repo's own gates — and your agent runtime's self-review (e.g. `/review`).
 
 ### 3. Automated + human review (concurrent, layered)
@@ -81,8 +79,8 @@ migration reviewer, an API change the API reviewer). Do not rely on memory.
 every reviewer that reviews drafts has responded. The rest respond only once
 the PR is Ready, which happens inside step 4.
 **Executable:** the reviewers registered in
-[`review-config.yaml`](review-config.yaml); which humans are mandatory comes
-from [M3](../../M3-change-area-catalog/)'s review-gate projection.
+[`review-config.yaml`](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/review-config.yaml); which humans are mandatory comes
+from [M3](https://github.com/docomply/jig/tree/main/modules/M3-change-area-catalog)'s review-gate projection.
 
 ### 4. The resolve-comments loop
 
@@ -99,7 +97,7 @@ than passing), and each leaves an audit trail:
 
 **Moot is not a polite Rejected.** Rejected asserts the reviewer was *wrong*;
 moot asserts it may have been *right about code that no longer exists*. Collapsing
-them tells a learning loop ([M8](../../M8-learning-loop/)) that the reviewer
+them tells a learning loop ([M8](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop)) that the reviewer
 produced a false positive when it did not, which trains away findings it got
 right. Three of the four states claim that some change exists — "fixed here",
 "tracked there", "superseded by that" — so for those, prose is not a trail: name
@@ -154,10 +152,13 @@ are silent — no error is raised either way:
 Addressed / Rejected / Deferred / Moot with its trail, every reviewer in both
 sets has reported, and the PR is still open.
 **Executable:** the unresolved-threads merge gate
-[`check-threads-resolved.ts`](../reference/comment-resolution/) — fed by the
+[`check-threads-resolved.ts`](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution) — fed by the
 verdict export adapter, not by raw reply text — and the per-round
-[convergence check](../reference/review-convergence/), whose exit code drives the
-loop. Both are wired in [`mappings.md`](../mappings.md).
+[convergence check](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/review-convergence), whose exit code drives the
+loop. Both are wired in [`mappings.md`](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md).
+With Groundwork's plugin, `/groundwork:resolve-review-comments` runs one pass of
+this loop and `/groundwork:drive-pr` runs its rounds unattended
+([plugin](https://github.com/docomply/jig/blob/main/plugin/README.md)).
 
 ### 5. Gates green, then merge
 
@@ -168,7 +169,7 @@ if the merge changed the diff.
 
 **Exit:** required checks green, zero open threads, human merge.
 **Executable:** the merge is a human-only forge action, enforced by branch
-protection requiring a human actor — see the [HITL registry](HITL-REGISTRY.md).
+protection requiring a human actor — see the [HITL registry](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md).
 
 ### 6. Update the tracker
 
@@ -178,16 +179,16 @@ next agent needs (a follow-up filed in step 4, a decision worth an ADR).
 A change that took **many rounds** to converge is itself a signal: usually the
 scaffolding under-served it, not that the reviewer was noisy. Feed the round count
 to the learning loop rather than letting it evaporate with the session — see
-[M8](../../M8-learning-loop/)'s
-[reflection trigger](../../M8-learning-loop/reference/reflection-trigger/).
+[M8](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop)'s
+[reflection trigger](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop/reference/reflection-trigger).
 
 **Executable:** your tracker's transition command / task update (see
-[M9](../../M9-tasks-memory/)).
+[M9](https://github.com/docomply/jig/tree/main/modules/M9-tasks-memory)).
 
 ## Human-in-the-loop boundaries
 
 These decisions are **human-only** on every PR — never taken autonomously by an
-agent. See the [HITL registry](HITL-REGISTRY.md) for the full list and the
+agent. See the [HITL registry](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md) for the full list and the
 rationale:
 
 - Marking a PR **Ready** for review — unless the repository delegates it to an
@@ -201,5 +202,5 @@ rationale:
 An item carrying the `hitl` label revokes autonomous merge for that PR
 entirely. Enforcement is the forge's branch-protection rule that requires a
 human actor to merge (no bot/self-merge) — the same rule the [HITL
-registry](HITL-REGISTRY.md) names — so the label's effect is mechanical, not
+registry](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md) names — so the label's effect is mechanical, not
 just convention.

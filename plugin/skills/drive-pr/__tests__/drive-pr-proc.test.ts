@@ -43,9 +43,8 @@ useDrivePrSuite();
 // — which is exactly what happened: the migration wrapped most of
 // `announce-merge-ready`'s calls and left `read_liveness`, the
 // stale-announcement DELETE and `withdraw_posted` on raw `gh`, while the doc
-// went on saying every call was wrapped (docomply-review +
-// chatgpt-codex-connector, a reference-implementation pull request round 17). Reviewers found the three
-// sites; nothing in the repo would have.
+// went on saying every call was wrapped. Review found the three sites; nothing
+// in the repo would have.
 //
 // So the claim is mechanized rather than restated. An unbounded call is mode 13
 // in that reference: `--timeout` bounds the poll loop and never any one call, so
@@ -67,7 +66,7 @@ useDrivePrSuite();
 // unattended driver exactly as one here would, and both shipped that way —
 // `resolve-thread.ts` and `list-unresolved-threads.ts` each spawned `gh` through
 // a bare `spawnSync` while this sweep, scoped to drive-pr's own directory,
-// stayed green (docomply-review, a reference-implementation pull request round 1). That skill carries its own
+// stayed green. That skill carries its own
 // chokepoint rather than importing this one (drive-pr already depends on it;
 // importing back would make the two mutually dependent), so the sweep is
 // parameterised by root, each with its own sanctioned files.
@@ -75,7 +74,7 @@ useDrivePrSuite();
 // false: `summary-findings.ts` reached for `Bun.argv`, `Bun.spawn` and
 // `Bun.spawnSync`, and drive-status.ts calls it on EVERY evaluation — so a
 // Node-started drive died on `Bun is not defined` before it could report
-// anything (chatgpt-codex-connector, a reference-implementation pull request round 2). `import.meta.main` was
+// anything. `import.meta.main` was
 // the subtler half: a Bun global that Node did not gain until v24.2, so below
 // that it reads `undefined`, main() never runs, and the script exits 0 having
 // printed nothing — which every caller reads as "no findings" rather than as a
@@ -83,7 +82,7 @@ useDrivePrSuite();
 //
 // Asserted against the runtime running these tests as well as against `node`,
 // so the claim is checked in both directions rather than assumed for one.
-describe("the documented `node` entry point actually runs (#4034 round 2)", () => {
+describe("the documented `node` entry point actually runs", () => {
   const nodeBin = process.execPath.includes("/bun") ? "node" : process.execPath;
 
   // A pure, offline mode: it prints the trusted-association vocabulary and
@@ -107,13 +106,12 @@ describe("the documented `node` entry point actually runs (#4034 round 2)", () =
   });
 
   it("every entry script LOADS under node, not just the one that regressed", () => {
-    // The Bun-global sweep below is a proxy; this is the property itself.
-    // Round 4 showed the two come apart: `verification-fit.ts` used no Bun
-    // global at all and was still Node-unloadable, first through an
-    // extensionless import and then through a `public readonly` parameter
-    // property in a module it imports — the one piece of TypeScript sugar
-    // Node's strip-only mode refuses (chatgpt-codex-connector, a reference-implementation pull request round
-    // 4). Neither would ever have shown up in a source-text sweep.
+    // The Bun-global sweep below is a proxy; this is the property itself. The
+    // two have come apart before: `verification-fit.ts` used no Bun global at
+    // all and was still Node-unloadable, first through an extensionless import
+    // and then through a `public readonly` parameter property in a module it
+    // imports — the one piece of TypeScript sugar Node's strip-only mode
+    // refuses. Neither would ever have shown up in a source-text sweep.
     //
     // `--help` is not a supported flag on most of these; the point is only
     // whether the module GRAPH loads, so a usage error is a pass and a
@@ -163,24 +161,24 @@ describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
   // nowhere left for a second, drifting copy to hide.
   //
   // Text-matching source is inherently one counterexample behind a hand-rolled
-  // rewrite (round 2: a comment retaining the old call shape while the real
-  // code moved to a hardcoded set would satisfy a naive `toMatch`). Every
-  // check below therefore runs against LIVE code with `//` line comments
-  // stripped first — closing exactly that counterexample.
+  // rewrite (e.g. a comment retaining the old call shape while the real code
+  // moved to a hardcoded set would satisfy a naive `toMatch`). Every check
+  // below therefore runs against LIVE code with `//` line comments stripped
+  // first — closing exactly that counterexample.
   //
-  // Round 3 went further: a consumer that builds its OWN Set with TODAY's
-  // members (`new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])`) passes every
-  // text check here, because the decoy agrees with the export right now — it
-  // only reveals itself once the two diverge. No text scan, comment-stripped
-  // or not, can rule that out; per `.claude/rules/document-scanning-gates.md`
-  // § 3 ("Parse or pin"), the answer is a real runtime dependency: "genuinely
-  // depends on the LIVE TRUSTED_ASSOCIATIONS object" in each consumer's own
-  // describe block (announce-merge-ready.ts here in this file,
-  // reconcile-replied-threads.ts in its own test file) mutates the actually-
-  // exported object before the script loads and asserts the observable
-  // behaviour changes — something a structurally separate copy, however
-  // faithfully it starts out matching, cannot do. Both are mutation-tested
-  // against the exact decoy this round described, confirmed to fail on it.
+  // A subtler decoy goes further: a consumer that builds its OWN Set with
+  // TODAY's members (`new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])`) passes
+  // every text check here, because the decoy agrees with the export right now —
+  // it only reveals itself once the two diverge. No text scan, comment-stripped
+  // or not, can rule that out, so the answer is to parse or pin — a real
+  // runtime dependency: "genuinely depends on the LIVE TRUSTED_ASSOCIATIONS
+  // object" in each consumer's own describe block (announce-merge-ready.ts here
+  // in this file, reconcile-replied-threads.ts in its own test file) mutates
+  // the actually-exported object before the script loads and asserts the
+  // observable behaviour changes — something a structurally separate copy,
+  // however faithfully it starts out matching, cannot do. Both are
+  // mutation-tested against the exact decoy described above, confirmed to fail
+  // on it.
   //
   // What remains out of scope, deliberately: a deliberately adversarial
   // rewrite that fabricates matching text around different live logic (e.g. a
@@ -293,7 +291,7 @@ describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
   });
 });
 
-describe("no raw `gh` spawn escapes the deadline wrapper (#3995 round 17)", () => {
+describe("no raw `gh` spawn escapes the deadline wrapper", () => {
   // The bare binary in argv HEAD position — `['gh', …]` under
   // run()/spawn()/Bun.spawn(), or the (cmd, args) form `<anything>('gh', …)`.
   // Matching the argv head rather than the call name is what keeps prose like
@@ -305,7 +303,7 @@ describe("no raw `gh` spawn escapes the deadline wrapper (#3995 round 17)", () =
   // `execFile*`. Enumerating the API names left the import alias open —
   // `import { spawn as launch } from 'node:child_process'; launch('gh', args)`
   // matched neither pattern, and `GH_ALIAS` does not help because no variable
-  // is bound to the string (docomply-review, a reference-implementation pull request round 2). Resolving
+  // is bound to the string. Resolving
   // aliases would mean tracking imports; refusing to care what the callee is
   // called gets the same coverage with less machinery, because passing `'gh'`
   // as a first argument next to further arguments is not something any
@@ -339,8 +337,8 @@ describe("no raw `gh` spawn escapes the deadline wrapper (#3995 round 17)", () =
   // line, and `run([\n  'gh',\n  'api',\n])` — exactly what the formatter
   // produces for any argv long enough to wrap — matches neither pattern on any
   // single line. So the precise unbounded spawn this gate exists to catch could
-  // be introduced by an ordinary reformat with CI staying green
-  // (docomply-review, a reference-implementation pull request round 1). Both patterns already tolerate
+  // be introduced by an ordinary reformat with CI staying green.
+  // Both patterns already tolerate
   // whitespace between the opener and the argv head, and `\s` spans newlines,
   // so scanning the joined source is the whole fix.
   function scanForRawGh(src: string): string[] {
@@ -389,8 +387,8 @@ describe("no raw `gh` spawn escapes the deadline wrapper (#3995 round 17)", () =
 
   // RECURSIVE, and derived from the filesystem rather than from a hand-listed
   // set of directories — a script added under any nested directory must be
-  // swept without anyone remembering to add it (docomply-review, a reference-implementation pull request
-  // round 18 caught the flat version of exactly this).
+  // swept without anyone remembering to add it (a flat scan missed exactly
+  // this).
   const scan = (dir: string) =>
     [...new Bun.Glob("**/*.ts").scanSync(dir)]
       .sort()
@@ -506,8 +504,8 @@ describe("no raw `gh` spawn escapes the deadline wrapper (#3995 round 17)", () =
       "run([\n  // the binary\n  'gh',\n  'api',\n])",
     ],
     ["a wrapped alias binding", "const GH =\n  'gh';"],
-    // The decoy docomply-review asked for: an import alias defeats a matcher
-    // that enumerates API names, and binds no variable for GH_ALIAS to catch.
+    // An import alias defeats a matcher that enumerates API names, and binds no
+    // variable for GH_ALIAS to catch.
     [
       "a spawn API imported under an alias",
       "import { spawn as launch } from 'node:child_process';\nlaunch('gh', args);",
@@ -682,15 +680,14 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
     // `detached` is forced false on win32 regardless of the option requested
     // (lib/proc.ts computes it from `process.platform` internally), so this
     // reproduces the exact real-world shape: a "detached" request that the
-    // platform silently downgrades. A round-15 fix here reported the LEADER's
+    // platform silently downgrades. An earlier fix here reported the LEADER's
     // own exit as tree-wide evidence and returned `true` — but the leader can
-    // exit via the SIGKILL escalation's `child.kill(sig)` ENOENT fallback
-    // while a real Windows `taskkill /T /F` is still running or has silently
-    // failed, so that was a false witness, not a real one (docomply-review /
-    // chatgpt-codex-connector, a reference-implementation pull request round 16). `stop()` now awaits
-    // taskkill's OWN exit code — on this POSIX runner `taskkill` does not
-    // exist at all, so the honest, fail-closed answer is `false`, exercised
-    // here exactly as it runs on every non-Windows CI box.
+    // exit via the SIGKILL escalation's `child.kill(sig)` ENOENT fallback while
+    // a real Windows `taskkill /T /F` is still running or has silently failed,
+    // so that was a false witness, not a real one. `stop()` now awaits
+    // taskkill's OWN exit code — on this POSIX runner `taskkill` does not exist
+    // at all, so the honest, fail-closed answer is `false`, exercised here
+    // exactly as it runs on every non-Windows CI box.
     const savedPlatform = process.platform;
     try {
       Object.defineProperty(process, "platform", {
@@ -717,10 +714,10 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
   });
 
   it("on Windows, treats a SUCCESSFUL taskkill exit as witnessed", async () => {
-    // A controllable seam for the property round 16 asked to actually
-    // validate: put a fake `taskkill` (any name lookup finds via PATH) in
-    // front of the real one and control exactly what `stop()` awaits, rather
-    // than inferring the tree's fate from the leader process alone.
+    // A controllable seam to actually validate that property: put a fake
+    // `taskkill` (any name lookup finds via PATH) in front of the real one and
+    // control exactly what `stop()` awaits, rather than inferring the tree's
+    // fate from the leader process alone.
     const fakeBinDir = mkdtempSync(join(tmpdir(), "fake-taskkill-"));
     const fakeTaskkill = join(fakeBinDir, "taskkill");
     // Really ends the target (`/pid <pid> /t /f`, so `$2` is the pid) —
@@ -1077,10 +1074,9 @@ describe("sleep — abortable", () => {
  * delivered to this process, or to its group — so without `lib/proc.ts`'s
  * source-time forwarding, terminating a driver leaves the in-flight call
  * running to completion: `guarded-push.ts`'s `git push` lands after the
- * operator believes the operation was cancelled (chatgpt-codex-connector,
- * a reference-implementation pull request against the bash `gh-deadline.sh` → an earlier change, which measured the
- * same hole in this port — the subshell that finding named is gone, the
- * isolated group it was compounded by is not).
+ * operator believes the operation was cancelled (the same hole the earlier bash
+ * `gh-deadline.sh` had — its subshell is gone in this port, the isolated group
+ * it was compounded by is not).
  *
  * End-to-end by necessity: the claim is about what a SEPARATE process does when
  * the kernel delivers it a TERM, which no in-process assertion can reach. Each
@@ -1186,7 +1182,7 @@ describe("cancellation reaches a deadlined child", () => {
       completed: false,
       ownHandlerRan: true,
       // The caller's handler owns the outcome once it exists — no re-raise, and
-      // its own exit code, not the signal's (the #3997 guarantee).
+      // its own exit code, not the signal's.
       code: 9,
     });
   });
@@ -1278,8 +1274,8 @@ describe("cancellation reaches a deadlined child", () => {
 // ── Buffer cap ───
 
 /**
- * Ported from the sibling `/resolve-review-comments` copy of `lib/proc.ts`
- * (docomply-review / chatgpt-codex-connector, a reference-implementation pull request round 3): this file's
+ * Ported from the sibling `/resolve-review-comments` copy of `lib/proc.ts`:
+ * this file's
  * `run()` had the same unbounded `out += d` / `err += d` accumulation, on
  * every `ghCall()`/`git()` path in this skill's own loop.
  *
@@ -1312,19 +1308,18 @@ describe("run's output cap kills a runaway child", () => {
   }): Promise<{ result: Record<string, unknown>; completed: boolean }> {
     const dir = mkdtempSync(join(tmpdir(), "drive-buffer-"));
     const completed = join(dir, "completed");
-    // Writes 1 KiB chunks forever until killed; `completed` only appears if
-    // the loop is allowed to finish on its own, which the cap must prevent.
-    // A `while` counter at a count high enough that a fast CI runner cannot
-    // finish it naturally within the ~2s SIGKILL grace, not `for i in
-    // $(seq 1 1000000)`: nothing throttles a discarded-past-the-cap child's
-    // write rate (the pipe is drained continuously, just not captured), so a
-    // sufficiently fast machine completed 1,000,000 tight-loop iterations —
-    // `completed` existed — inside the grace window, failing the assertion
-    // that `ignoreTerm: true` is never allowed to finish on its own
-    // (measured in CI, not locally: PR #4054's own `code-quality-and-build`
-    // run, sibling `/resolve-review-comments` copy). A count also high
-    // enough that `$(seq ...)` would materialise the whole number list
-    // before the loop's first write, which the `while` form avoids.
+    // Writes 1 KiB chunks forever until killed; `completed` only appears if the
+    // loop is allowed to finish on its own, which the cap must prevent. A
+    // `while` counter at a count high enough that a fast CI runner cannot
+    // finish it naturally within the ~2s SIGKILL grace, not `for i in $(seq 1
+    // 1000000)`: nothing throttles a discarded-past-the-cap child's write rate
+    // (the pipe is drained continuously, just not captured), so a sufficiently
+    // fast machine completed 1,000,000 tight-loop iterations — `completed`
+    // existed — inside the grace window, failing the assertion that
+    // `ignoreTerm: true` is never allowed to finish on its own (measured in CI,
+    // not locally). A count also high enough that `$(seq ...)` would
+    // materialise the whole number list before the loop's first write, which
+    // the `while` form avoids.
     const trap = opts.ignoreTerm ? "trap '' TERM; " : "";
     const script = `${trap}i=0; while [ "$i" -lt 100000000 ]; do printf '%01024d' 0; i=$((i + 1)); done; : > ${JSON.stringify(completed)}`;
     writeFileSync(
@@ -1399,22 +1394,20 @@ describe("run's output cap kills a runaway child", () => {
     // The capture guard used to key only on `bufferExceeded`, so a child that
     // hits the DEADLINE first kept being captured for the whole two-second
     // deadline escalation — an 8 KiB cap stayed unenforced against a
-    // multi-megabyte post-timeout flood (chatgpt-codex-connector, a reference-implementation pull request
-    // round 4).
+    // multi-megabyte post-timeout flood.
     //
     // A THROTTLED writer, not a tight loop under a huge `maxBufferBytes`: an
     // earlier version of this probe let a tight loop run unthrottled under a
-    // 1 GiB cap so only the deadline could trigger — but the loop's own
-    // measured ~100+ MB/s rate meant `r.stdout` legitimately retained tens to
-    // hundreds of megabytes for the whole test, real memory pressure this
-    // suite doesn't need (duplicated again here, on top of the sibling
+    // 1 GiB cap so only the deadline could trigger — but the loop's own measured
+    // ~100+ MB/s rate meant `r.stdout` legitimately retained tens to hundreds
+    // of megabytes for the whole test, real memory pressure this suite doesn't
+    // need (duplicated again here, on top of the sibling
     // `/resolve-review-comments` copy), and on a fast enough or
     // memory-constrained runner it could OOM, or cross even 1 GiB before the
     // 1-second deadline and flip `bufferExceeded` instead of `timedOut`,
-    // failing the very assertion below it (docomply-review, a reference-implementation pull request
-    // round 5). A small, slow, bounded write rate proves the exact same
-    // thing — chunks arriving during the deadline's escalation are
-    // discarded — without either risk.
+    // failing the very assertion below it. A small, slow, bounded write rate
+    // proves the exact same thing — chunks arriving during the deadline's
+    // escalation are discarded — without either risk.
     const dir = mkdtempSync(join(tmpdir(), "drive-buffer-"));
     const completed = join(dir, "completed");
     // ~50 writes/sec of 64 bytes each — keeps going (SIGTERM trapped) through
@@ -1468,7 +1461,7 @@ describe("run's output cap kills a runaway child", () => {
   });
 });
 
-describe("markReadyTimeoutSeconds() outlives mark-ready.ts's own worst-case sequential budget (docomply-review rounds 21-22, PR #4057)", () => {
+describe("markReadyTimeoutSeconds() outlives mark-ready.ts's own worst-case sequential budget", () => {
   const PROC = join(SCRIPTS, "lib", "proc.ts");
 
   function readTimeouts(env: Record<string, string>): {
@@ -1541,7 +1534,7 @@ describe("markReadyTimeoutSeconds() outlives mark-ready.ts's own worst-case sequ
     expect(result.markReady).toBeGreaterThan(result.helper * 4);
   });
 
-  it("clamps to the 32-bit-safe ceiling instead of overflowing when summed (docomply-review round 22, a reference-implementation pull request)", () => {
+  it("clamps to the 32-bit-safe ceiling instead of overflowing when summed", () => {
     // helperTimeoutSeconds() individually refuses a value whose OWN `* 1000`
     // would overflow setTimeout's 32-bit signed millisecond delay — but
     // markReadyTimeoutSeconds() sums up to seven of them, so an individually
@@ -1622,7 +1615,7 @@ describe("driveStatusOnceTimeoutSeconds() outlives drive-status.ts --once's evid
   });
 });
 
-describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case sequential GitHub-call chain (chatgpt-codex-connector, a reference-implementation pull request round 9)", () => {
+describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case sequential GitHub-call chain", () => {
   const PROC = join(SCRIPTS, "lib", "proc.ts");
   // The 15-call success chain, the CI policy's 2 sequential reads, and per
   // proof (3) the commit-status list plus up to MAX_STATUS_PUBLISHERS app
@@ -1664,7 +1657,7 @@ describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case seq
     expect(result.finalVerify).toBe(900 + CALLS * result.gh + CALLS * 2);
   });
 
-  it("budgets THREE lock acquisitions, not two (chatgpt-codex-connector, a reference-implementation pull request round 12)", () => {
+  it("budgets THREE lock acquisitions, not two", () => {
     // The PR-wide remote-mutation lock, the state mutex for the certificate
     // write, and — on a stale post-write finding — a SECOND, independent
     // state-mutex acquisition for the compensating clear. Each can wait the

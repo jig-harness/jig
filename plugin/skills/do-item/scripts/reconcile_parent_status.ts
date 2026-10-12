@@ -1,10 +1,8 @@
 #!/usr/bin/env bun
 /**
  * Decide what a parent (epic) issue's Linear status should become, given its
- * sub-issues' current states — the Step 5a "parent-status decision" SKILL.md
- * previously spelled out as inline pseudocode instead of a tested callsite
- * (PR #4999 fixed the pseudocode's factual errors but explicitly
- * left this move out of scope).
+ * sub-issues' current states — SKILL.md Step 5a's "parent-status decision",
+ * as a tested callsite rather than inline pseudocode.
  *
  * Type: Decision
  * Input: JSON on stdin — see `ReconcileInput` below. The caller (SKILL.md
@@ -216,12 +214,12 @@ export function reconcileParentStatus(
   // the CLI transport: `linear issue view --json`'s own `children`
   // connection carries only `identifier`/`title`/`state` for every child,
   // never `labels` — measured against real linear-cli 2.6.0 output (a live
-  // multi-child epic on the majordomo agent host; also pinned by
+  // multi-child epic; also pinned by
   // `scripts.test.ts`'s "reads linear-cli 2.6.0 connection envelopes"
   // fixture, whose children never carry a `labels` key at all). So the gate
   // that used to sit here made every still-open child fetched via CLI read
   // as an unreadable listing, unconditionally — not the rare partial fetch
-  // it was written to catch (docomply-review round 8, a reference-implementation pull request).
+  // it was written to catch.
   //
   // Defaulting an unreadable-or-missing child's labels to "no tail" instead
   // is the safe direction: it is consumed ONLY by `allIncompleteAreExtractable`
@@ -381,7 +379,7 @@ export function isReconcileInputShape(value: unknown): value is ReconcileInput {
   // real Linear state type (it isn't in `KNOWN_STATE_TYPES` — it's
   // `get_issue.ts`'s OWN sentinel for "the type itself was unreadable"), so
   // this predicate still passed a state neither field actually confirms
-  // (docomply-review round 18, a reference-implementation pull request). Require the type to be one
+  //. Require the type to be one
   // `classifyChildState` actually recognizes, or the name to be non-blank.
   //
   // That name-non-blank branch has its own gap, though: `get_issue.ts`'s
@@ -391,8 +389,7 @@ export function isReconcileInputShape(value: unknown): value is ReconcileInput {
   // exact pair SKILL.md's own `isUnreadableState` treats as unreadable. The
   // two checks must agree on what counts as unreadable, or a child fetch
   // that fails one specific way passes this shared input validator only to
-  // be correctly rejected downstream by the other (docomply-review
-  // round 19, PR #5024).
+  // be correctly rejected downstream by the other.
   const isUnreadableSentinel = (name: unknown, type: unknown): boolean =>
     name === "Unknown" && type === "unknown";
   const hasReadableState = (x: unknown): boolean => {
@@ -422,7 +419,7 @@ export function isReconcileInputShape(value: unknown): value is ReconcileInput {
   return true;
 }
 
-// Bounds on the stdin read below (docomply-review round 9, a reference-implementation pull request):
+// Bounds on the stdin read below:
 // `readStdin` used to await EOF with no deadline and accumulate every chunk
 // with no size cap. SKILL.md's Step 5a invocation pipes a machine-assembled
 // temp file — normally tiny — but a stalled producer would otherwise hang
@@ -436,24 +433,21 @@ export function isReconcileInputShape(value: unknown): value is ReconcileInput {
 // override would silently disable the cap entirely rather than falling back
 // to the default; `setTimeout` with a `NaN` delay coerces to ~1ms in Node,
 // so a typo'd timeout override would make every read fail almost instantly
-// instead (coderabbitai, PR #5024).
+// instead.
 //
 // The optional `max` REJECTS a too-large override back to `fallback`, a
 // DIFFERENT failure mode than the invalid-input fallback above:
 // `Number.isInteger` is true for any finite whole number regardless of
-// magnitude (`Number.isInteger(1e100)` is `true`), so a byte-cap override
-// like `1e100` passed the positive-integer check yet effectively disabled
-// the memory bound entirely — nothing capped it against a sane ceiling
-// (docomply-review round 19, a reference-implementation pull request). An earlier revision CLAMPED an
-// over-`max` value to `max` instead of falling back — for
-// `RECONCILE_STDIN_TIMEOUT_MS`, that turned a clearly-mistaken huge value
-// into "wait up to Node's ~24.8-day setTimeout ceiling" instead of the
-// intended 30-second default, i.e. the opposite of a safety bound
-// (docomply-review round 20, a reference-implementation pull request). These are protective ceilings
-// against a misconfiguration, not a "use as much as is allowed" request, so
-// out-of-range in EITHER direction (too small/invalid, or too large) means
-// the override is not trustworthy and `fallback` is what a caller actually
-// gets.
+// magnitude (`Number.isInteger(1e100)` is `true`), so without a ceiling a
+// byte-cap override like `1e100` passes the positive-integer check yet
+// effectively disables the memory bound entirely. Clamping an over-`max` value
+// to `max` would be wrong too: for `RECONCILE_STDIN_TIMEOUT_MS`, it turns a
+// clearly-mistaken huge value into "wait up to Node's ~24.8-day setTimeout
+// ceiling" instead of the intended 30-second default, i.e. the opposite of a
+// safety bound. These are protective ceilings against a misconfiguration, not a
+// "use as much as is allowed" request, so out-of-range in EITHER direction (too
+// small/invalid, or too large) means the override is not trustworthy and
+// `fallback` is what a caller actually gets.
 export function positiveIntEnv(
   name: string,
   fallback: number,
@@ -474,8 +468,7 @@ const MAX_STDIN_BYTES = positiveIntEnv(
 );
 // Node's setTimeout coerces a delay past its 32-bit signed max (2147483647ms,
 // ~24.8 days) down to ~1ms instead of rejecting it, so an override above that
-// ceiling would make every read fail almost instantly (coderabbitai,
-// PR #5024).
+// ceiling would make every read fail almost instantly.
 const NODE_MAX_TIMEOUT_MS = 2_147_483_647;
 const STDIN_TIMEOUT_MS = positiveIntEnv(
   "RECONCILE_STDIN_TIMEOUT_MS",

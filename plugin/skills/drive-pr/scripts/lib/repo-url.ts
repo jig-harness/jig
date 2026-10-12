@@ -4,7 +4,7 @@
  * (`git@host:owner/repo.git`), https, ssh://, with or without a `.git`
  * suffix, embedded credentials or a port.
  *
- * The HOST is deliberately NOT compared. It cannot be: `git@github-docomply:…`
+ * The HOST is deliberately NOT compared. It cannot be: `git@github-work:…`
  * is a perfectly ordinary `~/.ssh/config` alias for github.com, and this
  * repository's own developer clones use one — comparing hosts would refuse
  * every real push on those machines while catching only the exotic case of an

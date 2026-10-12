@@ -44,11 +44,13 @@ running it (see [M1](../../../M1-gates-enforcement-ladder/)).
 | File | Role |
 |------|------|
 | `check-parity.ts` | the gate; `TALLIES` + `MIN_PRECISION` select inputs |
-| `check-parity.test.ts` | paired self-test (exit codes + the precision math) |
+| `check-parity.test.ts` | paired self-test (exit code per fixture; the precision arithmetic is covered by the shared cases) |
 | `fixtures/clean.tsv` | no missed blockers — must pass |
 | `fixtures/missed.tsv` | a missed blocker — must fail |
 | `fixtures/empty.tsv` | nothing tallied — must pass |
 | `fixtures/bad-row.tsv` | a non-numeric column — must error |
+| `fixtures/duplicate-reviewer.tsv` | the same reviewer tallied twice — must error |
+| `fixtures/extra-column.tsv` | a fifth column (schema drift) — must error |
 
 Run the self-test with `bun test ./check-parity.test.ts` (and run the shared cases with
 `bun test ../../../../lib/module-gates.test.ts` from this directory).

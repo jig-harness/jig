@@ -24,9 +24,10 @@
 
 ## Module scores
 
-> Score per module: absent / convention-only / advisory / enforced (see
-> methodology step 3). For modules with a `maturity.yaml`, score each
-> criterion and roll up; mark inapplicable practices "expected-absent".
+> Score each criterion in the checklist `bun audit/score-modules.ts` prints
+> (paste it below this table), then roll up one line per module: absent /
+> convention-only / advisory / enforced (see methodology step 3). Mark
+> inapplicable practices "expected-absent".
 
 | Module | Score | Evidence (paths) | One-line assessment |
 |--------|-------|------------------|---------------------|

@@ -50,13 +50,11 @@ export const LOCK_ACQUIRE_MAX_SEC = 300;
  * false break only reopens the narrow window this gate exists to close, for
  * one attempt, which is never worse than not having the gate at all.
  *
- * Exported (not merely local to `createLock`'s closure) so a foreign,
- * read-only observer of the SAME `.recovering` gate — `migrate-legacy-
- * state.ts`'s own quiescence scans, which never acquire this lock at all —
- * can apply the identical staleness policy instead of hand-rolling a second
- * magic number that could silently drift from this one
- * (`references/consistency.md`; chatgpt-codex-connector, PR
- * #4626 round 22).
+ * Exported (not merely local to `createLock`'s closure) so a foreign, read-only
+ * observer of the SAME `.recovering` gate — `migrate-legacy- state.ts`'s own
+ * quiescence scans, which never acquire this lock at all — can apply the
+ * identical staleness policy instead of hand-rolling a second magic number that
+ * could silently drift from this one (`references/consistency.md`).
  */
 export const RECOVERING_STALE_MS = 5_000;
 
@@ -71,23 +69,22 @@ export const RECOVERING_STALE_MS = 5_000;
  * Exported so `sweepLockQuarantine` (this file) and `reap-state.ts`'s
  * classifier match the SAME grammar the producer emits — a producer and a
  * matcher maintained as two independent copies is exactly what drifted apart
- * across PR #4197 rounds 13/14 (`reap-state.ts`'s own copy briefly went
- * unbounded, then had to be pinned back to 24 hex chars once a narrower
- * variant of the same over-match recurred). Single source of truth here
- * instead.
+ * (`reap-state.ts`'s own copy briefly went unbounded, then had to be pinned
+ * back to 24 hex chars once a narrower variant of the same over-match
+ * recurred). Single source of truth here instead.
  */
 export const LOCK_GENERATION_RE = /(?:owner\.[0-9a-f]{24}|unowned-[0-9]+)/
   .source;
 
 /**
- * `acquire` throws plain `ExitError(1)` for TWO different reasons (* docomply-review a reference-implementation pull request round 3): genuine contention it gave up waiting on,
- * and an infrastructure failure (could not create the ownership marker after
- * winning the `mkdir` — `EACCES`, `ENOSPC`, a read-only filesystem) that has
- * nothing to do with a rival holder. A caller that blanket-converts every
- * `ExitError` from `acquire` into "another worktree is busy, retry" (as
- * `claimPrLease`'s own gate first did) relabels the second case as
- * the first, hiding a broken state directory behind a message that tells a
- * human or an orchestrator to wait it out.
+ * `acquire` throws plain `ExitError(1)` for TWO different reasons: genuine
+ * contention it gave up waiting on, and an infrastructure failure (could not
+ * create the ownership marker after winning the `mkdir` — `EACCES`, `ENOSPC`, a
+ * read-only filesystem) that has nothing to do with a rival holder. A caller
+ * that blanket-converts every `ExitError` from `acquire` into "another worktree
+ * is busy, retry" (as `claimPrLease`'s own gate first did) relabels the second
+ * case as the first, hiding a broken state directory behind a message that
+ * tells a human or an orchestrator to wait it out.
  *
  * This subclass marks ONLY the two deadline-exceeded throw sites — never the
  * marker-creation failure — so a caller that wants to react differently to
@@ -184,18 +181,17 @@ export interface PathLock {
  * parked decision the mutex exists to prevent, reached through the mutex
  * itself.
  *
- * Both `acquire`'s stale-break and `release` quarantine through the SAME
- * path scheme, `quarantinePath` below, keyed to the GENERATION being
- * displaced (the owner marker's own name) rather than to the acting
- * process's identity. A private, pid-keyed destination is not a fence at
- * all — it is always free, so the rename onto it always succeeds regardless
- * of what is actually at the canonical path, and a check-then-restore
- * cannot make up for that afterwards: the restore renames the (possibly
- * wrong) directory back onto the canonical path BARE, and `rename(2)` onto
- * an empty directory succeeds and silently replaces it, so a third
- * contender that took the path in the meantime is the one that vanishes
- * (this is the exact design `drive.ts` tried and rejected
- * on PR #4031, see its `release`).
+ * Both `acquire`'s stale-break and `release` quarantine through the SAME path
+ * scheme, `quarantinePath` below, keyed to the GENERATION being displaced (the
+ * owner marker's own name) rather than to the acting process's identity. A
+ * private, pid-keyed destination is not a fence at all — it is always free, so
+ * the rename onto it always succeeds regardless of what is actually at the
+ * canonical path, and a check-then-restore cannot make up for that afterwards:
+ * the restore renames the (possibly wrong) directory back onto the canonical
+ * path BARE, and `rename(2)` onto an empty directory succeeds and silently
+ * replaces it, so a third contender that took the path in the meantime is the
+ * one that vanishes (this is the exact design `drive.ts` tried and rejected,
+ * see its `release`).
  *
  * A generation-keyed destination is what makes rename itself the PRIMARY
  * fence for the case that matters: two operations that would each displace
@@ -214,41 +210,38 @@ export interface PathLock {
  * still verifies what it moved by checking for its own marker afterwards,
  * and restores it if the check fails.
  *
- * That restore is itself a rename OUT (already happened) followed by a
- * rename BACK IN, and between the two, the canonical `lock` path genuinely
- * does not exist — a window a completely unrelated, gate-unaware fresh
- * `mkdirSync(lock)` could win, believing the path legitimately free, while
- * the generation this process is trying to give BACK still believes it
- * holds the mutex. Two believed-holders at once is exactly the lost-parked-
- * decision failure this whole file exists to prevent (* `acquire`'s own stale-break restore has the identical gap for the
- * symmetric reason — it can grab a FRESH replacement by mistake in the same
- * kind of syscall-gap the round-2 fix already covers for the async case,
+ * That restore is itself a rename OUT (already happened) followed by a rename
+ * BACK IN, and between the two, the canonical `lock` path genuinely does not
+ * exist — a window a completely unrelated, gate-unaware fresh `mkdirSync(lock)`
+ * could win, believing the path legitimately free, while the generation this
+ * process is trying to give BACK still believes it holds the mutex. Two
+ * believed-holders at once is exactly the lost-parked- decision failure this
+ * whole file exists to prevent (`acquire`'s own stale-break restore has the
+ * identical gap for the symmetric reason — it can grab a FRESH replacement by
+ * mistake in the same kind of syscall-gap already covered for the async case,
  * and must then give it back the same way).
  *
- * `${lock}.recovering` closes it: a second, short-lived mkdir-based gate
- * that BOTH `release`'s quarantine-and-maybe-restore dance and `acquire`'s
+ * `${lock}.recovering` closes it: a second, short-lived mkdir-based gate that
+ * BOTH `release`'s quarantine-and-maybe-restore dance and `acquire`'s
  * stale-break dance must hold for their entire rename-out-through-maybe-
- * restore sequence, and that a fresh `mkdirSync(lock)` success checks
- * before treating itself as final. A fresh acquirer that lands in someone
- * else's held vacancy window backs off — `rmdirSync` on its own directory,
- * which only succeeds while it is still genuinely empty, so it can never
- * clobber content a concurrent restore already placed there — and retries,
- * rather than believing it holds the mutex. `.recovering` gates every
- * canonical-path mutation (`release`'s and `acquire`'s stale-break dances)
- * and the FINALIZE half of a fresh claim (the vacancy-recheck through the
- * marker write) — but not the fresh claim's own initial `mkdirSync(lock)`,
- * which happens before this process ever attempts `.recovering`'s gate at
- * all and so is NOT itself covered by any of this (docomply-review
- * round 12 on #4050: an earlier version of this comment overclaimed "every
- * fresh claim"). For the mutations and finalize sequences that ARE gated,
- * the restore's own rename is guaranteed a destination that is either
- * vacant or still the backing-off acquirer's own (always-empty-until-
- * cleared) directory, never a foreign live one, so it never has anything
- * real left to fail against. A gate abandoned by a crashed holder is broken
- * on sight
- * — everything it protects is a handful of synchronous syscalls with no
- * `await` in between outside tests, so anything older than
- * `RECOVERING_STALE_MS` cannot be a live hold.
+ * restore sequence, and that a fresh `mkdirSync(lock)` success checks before
+ * treating itself as final. A fresh acquirer that lands in someone else's held
+ * vacancy window backs off — `rmdirSync` on its own directory, which only
+ * succeeds while it is still genuinely empty, so it can never clobber content a
+ * concurrent restore already placed there — and retries, rather than believing
+ * it holds the mutex. `.recovering` gates every canonical-path mutation
+ * (`release`'s and `acquire`'s stale-break dances) and the FINALIZE half of a
+ * fresh claim (the vacancy-recheck through the marker write) — but not the
+ * fresh claim's own initial `mkdirSync(lock)`, which happens before this
+ * process ever attempts `.recovering`'s gate at all and so is NOT itself
+ * covered by any of this. For the mutations and finalize sequences that ARE
+ * gated, the restore's own rename is guaranteed a destination that is either
+ * vacant or still the backing-off acquirer's own (always-empty-until- cleared)
+ * directory, never a foreign live one, so it never has anything real left to
+ * fail against. A gate abandoned by a crashed holder is broken on sight —
+ * everything it protects is a handful of synchronous syscalls with no `await`
+ * in between outside tests, so anything older than `RECOVERING_STALE_MS` cannot
+ * be a live hold.
  *
  * Which makes the marker a PRECONDITION of holding the lock, not a decoration
  * on it: a lock taken without one can never be released by the process that
@@ -333,11 +326,10 @@ export function createLock(
   // since genuine contention on this gate is expected to clear in well
   // under a millisecond.
   const RECOVERING_GATE_WAIT_MS = 1_000;
-  // Paced backoff between gate-acquisition retries under live contention —
-  // a genuine synchronous BLOCK (Atomics.wait, portable across Node and
-  // Bun, unlike `Bun.sleepSync`), not a busy spin: docomply-review round 2
-  // on #4050 correctly flagged the first draft's zero-delay retry loop as
-  // pegging a CPU core for up to a second under contention.
+  // Paced backoff between gate-acquisition retries under live contention — a
+  // genuine synchronous BLOCK (Atomics.wait, portable across Node and Bun,
+  // unlike `Bun.sleepSync`), not a busy spin: a zero-delay retry loop pegs a
+  // CPU core for up to a second under contention.
   const RECOVERING_GATE_BACKOFF_MS = 5;
   const recoveringBackoffFlag = new Int32Array(new SharedArrayBuffer(4));
   function recoveringGateBackoff(): void {
@@ -348,7 +340,7 @@ export function createLock(
   // to-removal gap, mirroring `testAcquireStall` above — SYNC, because
   // `recoveringIsLive` must stay callable from `release`'s signal-handler
   // path. Proving the identity-verified removal actually refuses a fresh
-  // replacement (docomply-review round 2 on #4050) needs a way to STALL
+  // replacement needs a way to STALL
   // right there deterministically while a test swaps `.recovering` out.
   function testRecoveringStall(): void {
     const delaySec = testDelaySeconds(
@@ -368,16 +360,15 @@ export function createLock(
    * `RECOVERING_STALE_MS`.
    *
    * A bare `rmSync(recovering, ...)` after this mtime check is the SAME
-   * path-keyed TOCTOU class this whole file exists to fix, reintroduced
-   * one level down: between the check and the removal, another contender
-   * can legitimately replace `.recovering` with a fresh hold (or a long-
-   * suspended TRUE holder can resume and have ITS OWN `releaseRecoveringGate`
-   * delete a successor's gate the same way) — docomply-review round 2 on
-   * #4050. Keying the removal to the observed holder marker, through the
-   * same generation-keyed rename `quarantinePath`/`generationOf` already
-   * use for `lock` itself, makes two contenders that would displace the
-   * SAME holder collide instead of one silently destroying the other's
-   * live gate.
+   * path-keyed TOCTOU class this whole file exists to fix, reintroduced one
+   * level down: between the check and the removal, another contender can
+   * legitimately replace `.recovering` with a fresh hold (or a long- suspended
+   * TRUE holder can resume and have ITS OWN `releaseRecoveringGate` delete a
+   * successor's gate the same way). Keying the removal to the observed holder
+   * marker, through the same generation-keyed rename
+   * `quarantinePath`/`generationOf` already use for `lock` itself, makes two
+   * contenders that would displace the SAME holder collide instead of one
+   * silently destroying the other's live gate.
    */
   function recoveringIsLive(): boolean {
     let mtimeMs: number;
@@ -390,18 +381,17 @@ export function createLock(
     testRecoveringStall();
     const holder = generationOf(recovering);
     if (holder === null) {
-      // Either already gone, or a malformed non-directory node sitting at
-      // this exact path — `generationOf`'s `readdirSync` throws ENOTDIR
-      // against a plain file the same way it throws ENOENT against
-      // nothing at all, and this branch used to report `false` WITHOUT
-      // ever removing it: a leftover file here reads as freshly-stale on
-      // every later check forever (nothing ever touches its mtime), so
-      // `acquireRecoveringGate`'s own `mkdirSync(recovering)` can never
-      // succeed over it either — permanently blocking every later
-      // `release()` from ever getting the gate (docomply-review round 3
-      // on #4050). `rmSync` here is a no-op when it is genuinely already
-      // gone, and a real cleanup when it is junk — nothing valid is ever
-      // at this path without a readable generation marker.
+      // Either already gone, or a malformed non-directory node sitting at this
+      // exact path — `generationOf`'s `readdirSync` throws ENOTDIR against a
+      // plain file the same way it throws ENOENT against nothing at all, and
+      // this branch used to report `false` WITHOUT ever removing it: a leftover
+      // file here reads as freshly-stale on every later check forever (nothing
+      // ever touches its mtime), so `acquireRecoveringGate`'s own
+      // `mkdirSync(recovering)` can never succeed over it either — permanently
+      // blocking every later `release()` from ever getting the gate. `rmSync`
+      // here is a no-op when it is genuinely already gone, and a real cleanup
+      // when it is junk — nothing valid is ever at this path without a readable
+      // generation marker.
       try {
         rmSync(recovering, { recursive: true, force: true });
       } catch {
@@ -448,7 +438,7 @@ export function createLock(
       // the PRIMARY fence — a later rename onto a still-occupied
       // destination failing outright, before it can move anything — is
       // what actually closes it, exactly the way it already does for
-      // `lock` itself (docomply-review round 3 on #4050).
+      // `lock` itself.
       tombstone(doomed, "recovering-broken");
       return false; // genuinely broken
     }
@@ -479,11 +469,11 @@ export function createLock(
    */
   function acquireRecoveringGate(): string | null {
     // `performance.now()`, not `Date.now()` — the outer `acquireDeadline`
-    // already switched for exactly this reason (docomply-review round 6):
+    // already switched for exactly this reason:
     // a wall-clock adjustment mid-contention (or a persistent EACCES/EROFS
     // failure) can make a `Date.now()`-based deadline unreachable, and the
     // outer, monotonic deadline can't regain control while THIS inner loop
-    // is the one stuck (chatgpt-codex-connector, a reference-implementation pull request round 8).
+    // is the one stuck.
     const deadline = performance.now() + RECOVERING_GATE_WAIT_MS;
     for (;;) {
       try {
@@ -491,14 +481,13 @@ export function createLock(
       } catch {
         // Check the deadline unconditionally, BEFORE branching on
         // `recoveringIsLive()` — a `mkdirSync` failure that is not genuine
-        // contention (EACCES, EROFS, a vanished parent directory) also
-        // fails `statSync(recovering)` inside `recoveringIsLive()`, which
-        // reads as "already gone" and used to `continue` straight back to
-        // the top with no deadline check at all: an unbounded spin on an
-        // error this gate can never clear (chatgpt-codex-connector, PR
-        // #4050 round 2). Bounding first makes every non-contention failure
-        // return within one `RECOVERING_GATE_WAIT_MS` window regardless of
-        // what `recoveringIsLive()` reports.
+        // contention (EACCES, EROFS, a vanished parent directory) also fails
+        // `statSync(recovering)` inside `recoveringIsLive()`, which reads as
+        // "already gone" and used to `continue` straight back to the top with
+        // no deadline check at all: an unbounded spin on an error this gate can
+        // never clear. Bounding first makes every non-contention failure return
+        // within one `RECOVERING_GATE_WAIT_MS` window regardless of what
+        // `recoveringIsLive()` reports.
         if (performance.now() > deadline) return null;
         // Pace EVERY failed attempt, not just the ones `recoveringIsLive()`
         // reports as live contention — a persistent, uncleanable failure
@@ -506,7 +495,7 @@ export function createLock(
         // `recoveringIsLive()`'s own `statSync` fail identically on every
         // iteration, and without backoff on THIS branch too the loop still
         // hot-spins the full `RECOVERING_GATE_WAIT_MS` window even though
-        // it is now correctly bounded (docomply-review round 4 on #4050).
+        // it is now correctly bounded.
         recoveringIsLive();
         recoveringGateBackoff();
         continue;
@@ -593,16 +582,15 @@ export function createLock(
     // against.
     const gateHolder = acquireRecoveringGate();
     if (gateHolder === null) {
-      // Could not get the gate within the bound — genuine, sustained
-      // contention on it is itself an extreme scenario. Performing the
-      // rename-out/verify/restore sequence UNGATED would reopen exactly
-      // the vacancy window this gate exists to close (docomply-review
-      // round 2 on #4050: the first draft did this as a fallback, which
-      // defeats the whole gate). Do nothing instead: `lock` stays held
-      // from every other contender's point of view until the normal
-      // staleness window recovers it — worse for liveness, never worse
-      // for correctness. `release` runs from signal handlers, which must
-      // not block indefinitely to avoid this in the first place.
+      // Could not get the gate within the bound — genuine, sustained contention
+      // on it is itself an extreme scenario. Performing the
+      // rename-out/verify/restore sequence UNGATED would reopen exactly the
+      // vacancy window this gate exists to close (as a fallback, that defeats
+      // the whole gate). Do nothing instead: `lock` stays held from every other
+      // contender's point of view until the normal staleness window recovers it
+      // — worse for liveness, never worse for correctness. `release` runs from
+      // signal handlers, which must not block indefinitely to avoid this in the
+      // first place.
       console.error(
         `${label}: could not release ${lock} — the recovery gate stayed contended; it will be recovered as stale after the normal staleness window.`,
       );
@@ -695,17 +683,16 @@ export function createLock(
   // heartbeating a stranger's hold (or a stale directory nobody has claimed
   // yet) rather than its own.
   function touch(): void {
-    // `lockHeld` alone is stale evidence, not proof (docomply-review round
-    // 13): if this process is suspended (a long GC pause, a swapped-out
-    // machine) past the staleness window, a contender's `acquire()` can
-    // quarantine THIS generation and install a fresh one at the canonical
-    // `lock` path before this process ever wakes to notice. `lockHeld` was
-    // set true at OUR acquisition and nothing ever clears it on takeover, so
-    // touching by path alone would then refresh the SUCCESSOR's directory
-    // indefinitely — the exact generation-identity bypass `release()`
-    // already guards against via its own owner-marker check, reproduced
-    // here as an existence check on `owner` (the specific marker THIS hold
-    // created) rather than a blind path touch.
+    // `lockHeld` alone is stale evidence, not proof: if this process is
+    // suspended (a long GC pause, a swapped-out machine) past the staleness
+    // window, a contender's `acquire()` can quarantine THIS generation and
+    // install a fresh one at the canonical `lock` path before this process ever
+    // wakes to notice. `lockHeld` was set true at OUR acquisition and nothing
+    // ever clears it on takeover, so touching by path alone would then refresh
+    // the SUCCESSOR's directory indefinitely — the exact generation-identity
+    // bypass `release()` already guards against via its own owner-marker check,
+    // reproduced here as an existence check on `owner` (the specific marker
+    // THIS hold created) rather than a blind path touch.
     //
     // That check and the mtime write it guards are still two separate
     // syscalls (`existsSync` then `utimesSync`), which reopens the identical
@@ -793,8 +780,7 @@ export function createLock(
     // digit string long enough for `Number.parseInt` to overflow to
     // `Infinity`, or merely a very large finite value — would make
     // `acquireDeadline` below effectively unreachable, polling a wedged
-    // lock forever instead of failing closed within a bounded time
-    // (docomply-review round 5 on #4050).
+    // lock forever instead of failing closed within a bounded time.
     const limit = Math.min(
       LOCK_ACQUIRE_MAX_SEC,
       Math.max(0, parseSigned(process.env.DRIVE_PR_LOCK_TIMEOUT ?? "30", 30)),
@@ -805,18 +791,17 @@ export function createLock(
     // Elapsed time against the moment this call started, not an iteration
     // counter — a fresh-acquisition attempt can now itself block for up to
     // `RECOVERING_GATE_WAIT_MS` before the outer backoff sleep runs, so
-    // counting loop passes as if each were ~1s made a nominal 30s bound run
-    // for roughly twice that, and made the `within ${limit}s` message false
-    // (docomply-review round 4 on #4050). `performance.now()`, not
-    // `Date.now()`: this measures ELAPSED duration, and `Date.now()` is
-    // wall-clock — an NTP or administrator clock adjustment can move it
-    // backward mid-acquire, making `> acquireDeadline` stay false well past
-    // the configured bound and defeating it entirely (docomply-review round
-    // 6 on #4050). `performance.now()` is monotonic and immune to that;
-    // every OTHER deadline/staleness comparison in this file stays on
-    // `Date.now()` deliberately, because those compare against filesystem
-    // mtimes, which are themselves wall-clock and have no monotonic
-    // equivalent to compare against.
+    // counting loop passes as if each were ~1s made a nominal 30s bound run for
+    // roughly twice that, and made the `within ${limit}s` message false.
+    // `performance.now()`, not `Date.now()`: this measures ELAPSED duration,
+    // and `Date.now()` is wall-clock — an NTP or administrator clock adjustment
+    // can move it backward mid-acquire, making `> acquireDeadline` stay false
+    // well past the configured bound and defeating it entirely.
+    // `performance.now()` is monotonic and immune to that; every OTHER
+    // deadline/staleness comparison in this file stays on `Date.now()`
+    // deliberately, because those compare against filesystem mtimes, which are
+    // themselves wall-clock and have no monotonic equivalent to compare
+    // against.
     const acquireDeadline = performance.now() + limit * 1000;
     // Pacing between acquire attempts. This is a POLLING mutex — a waiter only
     // notices a release on its next attempt — so this interval is the lock's
@@ -843,15 +828,15 @@ export function createLock(
     // override differently.
     const staleMinutes = lockStaleMinutes();
     const staleMs = staleMinutes * 60_000;
-    // The caller is always entitled to try once, no matter how long that
-    // one attempt's own internal contention takes — `DRIVE_PR_LOCK_TIMEOUT=0`
-    // is a documented, test-relied-on value meaning "one immediate attempt,
-    // don't retry" rather than "fail unless already held". `acquireDeadline`
-    // at `limit=0` equals this call's own start time, so ANY elapsed time —
-    // even an uncontended success's own marker write — reads as "already
-    // past deadline"; gating the very first attempt's success on that check
-    // rejected a lock nobody was contending for (docomply-review round 7 on
-    // #4050). Only a SECOND OR LATER attempt's success is deadline-checked.
+    // The caller is always entitled to try once, no matter how long that one
+    // attempt's own internal contention takes — `DRIVE_PR_LOCK_TIMEOUT=0` is a
+    // documented, test-relied-on value meaning "one immediate attempt, don't
+    // retry" rather than "fail unless already held". `acquireDeadline` at
+    // `limit=0` equals this call's own start time, so ANY elapsed time — even
+    // an uncontended success's own marker write — reads as "already past
+    // deadline"; gating the very first attempt's success on that check rejected
+    // a lock nobody was contending for. Only a SECOND OR LATER attempt's
+    // success is deadline-checked.
     let firstAttempt = true;
     for (;;) {
       let freshlyAcquired = false;
@@ -871,7 +856,7 @@ export function createLock(
         // rename-out could land in the window between the check and this
         // process's own marker write, so an in-flight restore lands on
         // top of a directory this process already believed it owned
-        // outright (docomply-review round 3 on #4050). Finalizing —
+        // outright. Finalizing —
         // confirming exclusivity AND writing the marker — must happen
         // under the SAME `.recovering` hold, exactly like `release()`'s
         // and the stale-break's own dances below.
@@ -890,19 +875,19 @@ export function createLock(
             // A restore already reclaimed this path — nothing of ours to
             // clean up.
           }
-          // Sleep the SMALLER of one interval and the remaining budget —
-          // both bounds are scars. Skipping the sleep entirely once the
-          // budget is spent is PR #4050 rounds 8/13: `acquireRecoveringGate()`
-          // can itself consume the WHOLE `RECOVERING_GATE_WAIT_MS`, and an
-          // unconditional `sleep(1)` on top made `DRIVE_PR_LOCK_TIMEOUT=0`
-          // take ~2s and any configured limit overshoot by nearly a full
-          // interval. Capping at the REMAINDER instead of skipping when less
-          // than a full interval fits is an earlier change (coderabbitai): the
-          // skip turned the final sub-interval of budget into a hot, unpaced
-          // retry loop — worst in the stale-lock branch, where every hot pass
-          // re-runs the recovery dance and mints a permanent tombstone. A
-          // sleep never extending past the deadline preserves the overshoot
-          // bound; the bottom-of-loop check still exits on time either way.
+          // Sleep the SMALLER of one interval and the remaining budget — both
+          // bounds are needed. Skipping the sleep entirely once the budget is
+          // spent matters because `acquireRecoveringGate()` can itself consume
+          // the WHOLE `RECOVERING_GATE_WAIT_MS`, and an unconditional
+          // `sleep(1)` on top made `DRIVE_PR_LOCK_TIMEOUT=0` take ~2s and any
+          // configured limit overshoot by nearly a full interval. Capping at
+          // the REMAINDER instead of skipping when less than a full interval
+          // fits matters too: skipping turned the final sub-interval of budget
+          // into a hot, unpaced retry loop — worst in the stale-lock branch,
+          // where every hot pass re-runs the recovery dance and mints a
+          // permanent tombstone. A sleep never extending past the deadline
+          // preserves the overshoot bound; the bottom-of-loop check still exits
+          // on time either way.
           const remainingMs = acquireDeadline - performance.now();
           if (remainingMs > 0) {
             await sleep(Math.min(retryMs, remainingMs) / 1000);
@@ -928,15 +913,13 @@ export function createLock(
             try {
               writeFileSync(owner, "", { flag: "wx" });
             } catch (e) {
-              // Ownership could not be established, so this process can
-              // never PROVE the lock is its own — and `release` refuses
-              // to remove a lock it cannot prove is its own, by design.
-              // Swallowing the failure and continuing therefore wedged
-              // the path for every later driver until the staleness
-              // window expired: held from this process's point of view,
-              // unreleasable on exit, and unbreakable by anyone else for
-              // `staleMinutes` minutes (docomply-review, a reference-implementation pull request
-              // round 1).
+              // Ownership could not be established, so this process can never
+              // PROVE the lock is its own — and `release` refuses to remove a
+              // lock it cannot prove is its own, by design. Swallowing the
+              // failure and continuing therefore wedged the path for every
+              // later driver until the staleness window expired: held from this
+              // process's point of view, unreleasable on exit, and unbreakable
+              // by anyone else for `staleMinutes` minutes.
               //
               // Give the directory back instead, by quarantining it as
               // `unowned` — this directory has no marker (that write is
@@ -973,15 +956,14 @@ export function createLock(
           } finally {
             releaseRecoveringGate(gateHolder);
           }
-          // Contention on `.recovering` can consume the whole budget
-          // before THIS attempt finishes, even though it went on to
-          // succeed — the deadline check at the bottom of the loop never
-          // runs for the success path, since it returns first. Checked
-          // here, AFTER the `finally` above already gave this hold back
-          // — calling `release()` from inside it would deadlock against
-          // this process's own still-held gate (docomply-review round 6
-          // on #4050). Exempts the first attempt outright (see the
-          // `firstAttempt` comment above; docomply-review round 7).
+          // Contention on `.recovering` can consume the whole budget before
+          // THIS attempt finishes, even though it went on to succeed — the
+          // deadline check at the bottom of the loop never runs for the success
+          // path, since it returns first. Checked here, AFTER the `finally`
+          // above already gave this hold back — calling `release()` from inside
+          // it would deadlock against this process's own still-held gate.
+          // Exempts the first attempt outright (see the `firstAttempt` comment
+          // above).
           if (!firstAttempt && performance.now() > acquireDeadline) {
             console.error(
               `${label}: could not acquire ${lock} within ${limit}s.`,
@@ -1005,10 +987,10 @@ export function createLock(
           await testAcquireStall();
           // Hold `.recovering` for the whole generation-read-through-maybe-
           // restore sequence below, so no OTHER recovery dance (or fresh
-          // acquirer, per the check above) can interleave with it
-          //. A bounded miss here (genuine, sustained
-          // contention on the gate itself) just skips this attempt — the
-          // outer loop re-evaluates staleness fresh next iteration.
+          // acquirer, per the check above) can interleave with it. A bounded
+          // miss here (genuine, sustained contention on the gate itself) just
+          // skips this attempt — the outer loop re-evaluates staleness fresh
+          // next iteration.
           const gateHolder = acquireRecoveringGate();
           if (gateHolder !== null) {
             // Set inside the hold, acted on AFTER it — sleeping while still
@@ -1019,7 +1001,7 @@ export function createLock(
             // caller consume its own entire `RECOVERING_GATE_WAIT_MS` and
             // fail to get the gate at all, or — past `RECOVERING_STALE_MS`
             // — have this still-live hold broken as abandoned out from
-            // under it (docomply-review round 8 on #4050).
+            // under it.
             let pendingBackoff = false;
             try {
               // The staleness check above and the generation read via
@@ -1036,31 +1018,28 @@ export function createLock(
               const generation = generationOf(lock);
               if (generation === null) {
                 // Either already gone, or a malformed non-directory node
-                // sitting at this exact path — deliberately left ALONE,
-                // not cleaned up: a round-7 attempt to `rmSync` it here
-                // introduced a WORSE failure mode than the one it fixed.
-                // The read (`generationOf`) and any act on `lock` (rename
-                // OR delete) are two separate syscalls, and nothing —
-                // including holding `.recovering`, since a fresh acquirer
-                // does not consult it before its OWN initial
-                // `mkdirSync(lock)` — closes the gap where a
-                // legitimate fresh generation appears in between; deleting
-                // by canonical path there destroys it outright, which is
-                // worse than this branch's own failure mode (an
-                // unreachable entry that just makes every acquire attempt
-                // eventually time out, requiring manual cleanup but
-                // corrupting nothing). Tracked for the real fix in
-                // an earlier change (docomply-review round 8 on #4050) — it needs
-                // the same atomic claim+identity redesign as everything
-                // else in that issue, not a narrower patch here.
+                // sitting at this exact path — deliberately left ALONE, not
+                // cleaned up: an earlier attempt to `rmSync` it here introduced
+                // a WORSE failure mode than the one it fixed. The read
+                // (`generationOf`) and any act on `lock` (rename OR delete) are
+                // two separate syscalls, and nothing — including holding
+                // `.recovering`, since a fresh acquirer does not consult it
+                // before its OWN initial `mkdirSync(lock)` — closes the gap
+                // where a legitimate fresh generation appears in between;
+                // deleting by canonical path there destroys it outright, which
+                // is worse than this branch's own failure mode (an unreachable
+                // entry that just makes every acquire attempt eventually time
+                // out, requiring manual cleanup but corrupting nothing).
+                // Tracked for the real fix in an earlier change — it needs the
+                // same atomic claim+identity redesign as everything else in
+                // that issue, not a narrower patch here.
                 //
                 // Still back off, though — leaving this branch a bare
                 // no-op meant every outer-loop iteration immediately
                 // re-acquired and re-released `.recovering`, minting a
                 // fresh permanent tombstone EVERY time with no delay at
                 // all: measured at 5,472 tombstones in one second before
-                // the default 30s timeout even elapsed
-                // (chatgpt-codex-connector, a reference-implementation pull request round 11).
+                // the default 30s timeout even elapsed.
                 pendingBackoff = true;
               } else {
                 const doomed = quarantinePath(generation);
@@ -1101,32 +1080,29 @@ export function createLock(
                     }
                   }
                 } else {
-                  // Generation-fence collision: another process already
-                  // claimed this exact quarantine slot (already broke or
-                  // released it). Nothing of ours moved, so retrying
-                  // instantly would just re-observe the SAME stale `lock`
-                  // and collide again — hot-looping with no delay while
-                  // also minting a fresh, permanent `.recovering` tombstone
-                  // on every pass (chatgpt-codex-connector, a reference-implementation pull request
-                  // round 7). Back off exactly like ordinary contention —
-                  // OUTSIDE this gate hold, see above.
+                  // Generation-fence collision: another process already claimed
+                  // this exact quarantine slot (already broke or released it).
+                  // Nothing of ours moved, so retrying instantly would just
+                  // re-observe the SAME stale `lock` and collide again —
+                  // hot-looping with no delay while also minting a fresh,
+                  // permanent `.recovering` tombstone on every pass. Back off
+                  // exactly like ordinary contention — OUTSIDE this gate hold,
+                  // see above.
                   pendingBackoff = true;
                 }
               }
             } finally {
               releaseRecoveringGate(gateHolder);
             }
-            // Same both-bounds sleep as the fresh-acquisition contention
-            // branch above. Overshoot bound: with `DRIVE_PR_LOCK_TIMEOUT=0`,
-            // an unconditional sleep here made the collision/malformed-entry
-            // case take ~1s to report failure instead of returning after its
-            // single attempt (chatgpt-codex-connector, a reference-implementation pull request round 12;
-            // round 13 tightened it to `+ retryMs`). Hot-tail bound: the
-            // skip-when-a-full-interval-does-not-fit form spun this branch
-            // unpaced through the final sub-interval of budget, re-running
-            // the stale-recovery dance and minting a permanent tombstone per
-            // pass (coderabbitai) — so cap at the
-            // remainder instead of skipping.
+            // Same both-bounds sleep as the fresh-acquisition contention branch
+            // above. Overshoot bound: with `DRIVE_PR_LOCK_TIMEOUT=0`, an
+            // unconditional sleep here made the collision/malformed-entry case
+            // take ~1s to report failure instead of returning after its single
+            // attempt; the overshoot is now bounded to `+ retryMs`. Hot-tail
+            // bound: the skip-when-a-full-interval-does-not-fit form spun this
+            // branch unpaced through the final sub-interval of budget,
+            // re-running the stale-recovery dance and minting a permanent
+            // tombstone per pass — so cap at the remainder instead of skipping.
             if (pendingBackoff) {
               const remainingMs = acquireDeadline - performance.now();
               if (remainingMs > 0) {
@@ -1139,9 +1115,9 @@ export function createLock(
           // Overshoot bound: an unconditional sleep here made ordinary,
           // non-stale contention take ~1s to report failure under
           // `DRIVE_PR_LOCK_TIMEOUT=0` instead of returning after its single
-          // attempt (docomply-review round 14 on #4050). Hot-tail bound:
+          // attempt. Hot-tail bound:
           // skipping the sleep outright left the final sub-interval of
-          // budget spinning unpaced (coderabbitai) — cap
+          // budget spinning unpaced — cap
           // at the remainder instead.
           const remainingMs = acquireDeadline - performance.now();
           if (remainingMs > 0) {
@@ -1203,27 +1179,25 @@ export function createLock(
  * for any PR, at any point, whether or not that PR's drive is finished;
  * running it from `reset` is a convenient trigger, not a requirement.
  *
- * Never `statSync`-then-delete-by-canonical-path — this file's own
- * established reasoning for why that is unsafe elsewhere (`acquire`'s own
- * malformed-entry handling: "the read and any act on [path] are two
- * separate syscalls, and nothing closes the gap where a legitimate fresh
- * generation appears in between; deleting by canonical path there destroys
- * it outright") applies identically here (docomply-review, a reference-implementation pull request round
- * 1). Instead, `compactQuarantineEntry` below claims each entry via a
- * private, uniquely-named staging `rename(2)` FIRST, mirroring the
- * rename-first idiom `release`/`recoveringIsLive` already use throughout
- * this file, rather than deleting the canonical path directly. `rename(2)`
- * is atomic on identity as well as content: whatever it moves is
- * guaranteed to be exactly what sat AT that path at that instant, so the
- * private copy needs no further identity check — unlike `release`, which
- * verifies identity because it moves the LIVE canonical `lock` path (whose
- * content can legitimately change), this instead claims an ALREADY
- * quarantined path, which by construction never holds anything but a
- * superseded generation placed there by this file's own generation-keyed
- * rename protocol. Every deletion then runs against the PRIVATE staging
- * copy, never the canonical path — nothing else can ever reference the
- * staging name, so nothing this function does can destroy content it did
- * not itself successfully claim.
+ * Never `statSync`-then-delete-by-canonical-path — this file's own established
+ * reasoning for why that is unsafe elsewhere (`acquire`'s own malformed-entry
+ * handling: "the read and any act on [path] are two separate syscalls, and
+ * nothing closes the gap where a legitimate fresh generation appears in
+ * between; deleting by canonical path there destroys it outright") applies
+ * identically here. Instead, `compactQuarantineEntry` below claims each entry
+ * via a private, uniquely-named staging `rename(2)` FIRST, mirroring the
+ * rename-first idiom `release`/`recoveringIsLive` already use throughout this
+ * file, rather than deleting the canonical path directly. `rename(2)` is atomic
+ * on identity as well as content: whatever it moves is guaranteed to be exactly
+ * what sat AT that path at that instant, so the private copy needs no further
+ * identity check — unlike `release`, which verifies identity because it moves
+ * the LIVE canonical `lock` path (whose content can legitimately change), this
+ * instead claims an ALREADY quarantined path, which by construction never holds
+ * anything but a superseded generation placed there by this file's own
+ * generation-keyed rename protocol. Every deletion then runs against the
+ * PRIVATE staging copy, never the canonical path — nothing else can ever
+ * reference the staging name, so nothing this function does can destroy content
+ * it did not itself successfully claim.
  *
  * The claiming rename still opens a brief window at the CANONICAL path
  * between it and the `writeFileSync` that recreates the compacted marker
@@ -1244,25 +1218,23 @@ export function createLock(
  * `RECOVERING_STALE_MS` relies on elsewhere in this file, not an argument
  * that nothing can go wrong.
  *
- * A `writeFileSync` failure after the claim already succeeded is NOT
- * always "a legitimate late arrival already occupies the path" (`EEXIST`,
- * genuinely harmless — some renamer won the window and is now this
- * generation's new, valid occupant). It can also mean the fence is simply
- * GONE with no error anyone will see — `ENOSPC`/`EDQUOT`/`EIO`, or this
- * process being killed between the two calls, both leave the path vacant,
- * not occupied. `compactQuarantineEntry` tells these apart by re-checking
- * `existsSync` and, only when genuinely vacant, restores SOME fence via a
- * different syscall class — a NON-empty directory (`mkdirSync(join(path,
- * 'tombstone'), { recursive: true })`, mirroring `tombstone`'s own
- * EEXIST-vs-other fallback AND its exact marker-subdirectory shape) rather
- * than silently leaving nothing. A bare `mkdirSync(path)` would not do: an
- * EMPTY directory is not a fence, since `rename(2)` may silently replace
- * it — the identical mistake `tombstone`'s own design already rejects
- * (docomply-review, a reference-implementation pull request round 1). This cannot close the
- * process-killed-mid-syscall case — no userland code can — only the killed
- * process's own next start (or another driver's stale-break) would ever
- * revisit this path again, same as any other interrupted syscall in this
- * file.
+ * A `writeFileSync` failure after the claim already succeeded is NOT always "a
+ * legitimate late arrival already occupies the path" (`EEXIST`, genuinely
+ * harmless — some renamer won the window and is now this generation's new,
+ * valid occupant). It can also mean the fence is simply GONE with no error
+ * anyone will see — `ENOSPC`/`EDQUOT`/`EIO`, or this process being killed
+ * between the two calls, both leave the path vacant, not occupied.
+ * `compactQuarantineEntry` tells these apart by re-checking `existsSync` and,
+ * only when genuinely vacant, restores SOME fence via a different syscall class
+ * — a NON-empty directory (`mkdirSync(join(path, 'tombstone'), { recursive:
+ * true })`, mirroring `tombstone`'s own EEXIST-vs-other fallback AND its exact
+ * marker-subdirectory shape) rather than silently leaving nothing. A bare
+ * `mkdirSync(path)` would not do: an EMPTY directory is not a fence, since
+ * `rename(2)` may silently replace it — the identical mistake `tombstone`'s own
+ * design already rejects. This cannot close the process-killed-mid-syscall case
+ * — no userland code can — only the killed process's own next start (or another
+ * driver's stale-break) would ever revisit this path again, same as any other
+ * interrupted syscall in this file.
  *
  * `lock` and `.recovering` themselves — the LIVE paths, not their `.stale.*`
  * history — are deliberately untouched: those remain owned by
@@ -1298,8 +1270,7 @@ export function sweepLockQuarantine(file: string, onEntry?: () => void): void {
   // for THIS lock — not a bare prefix. A foreign sibling sharing the anchor's
   // stale prefix (`<lockBase>.stale.manual-backup`, a human poking at the
   // state dir while debugging a wedged lock) no longer matches, where a plain
-  // `startsWith` check let `compactQuarantineEntry` destroy it outright
-  // (chatgpt-codex-connector, a reference-implementation pull request round 18).
+  // `startsWith` check let `compactQuarantineEntry` destroy it outright.
   const quarantineRe = new RegExp(
     `^${escapedLockBase}(?:\\.recovering)?\\.stale\\.${LOCK_GENERATION_RE}$`,
   );
@@ -1311,7 +1282,7 @@ export function sweepLockQuarantine(file: string, onEntry?: () => void): void {
   // state directory, home to every PR's lock files side by side; a bare
   // `.compacting.` prefix would delete another PR's active or failed
   // staging copy too, widening the exact unfenced interval this protocol
-  // bounds (docomply-review, a reference-implementation pull request round 5).
+  // bounds.
   //
   // The payload capture (group 1) must itself be a genuine quarantine name —
   // not `(.+)` — because the capture, when it exists, is only ever used to
@@ -1320,11 +1291,10 @@ export function sweepLockQuarantine(file: string, onEntry?: () => void): void {
   // foreign (`.compacting.<lockBase>.manual-backup`), the unconditional
   // `rmSync` below used to run anyway with no `canonicalPath` guard at all —
   // deleting a directory OR FILE this protocol never staged, worse than the
-  // `.stale.` branch's bypass since it has no `isDirectory` check either
-  // (chatgpt-codex-connector, a reference-implementation pull request round 18). The claim-instance suffix
-  // is always a pure hex string (`randomBytes(12).toString('hex')`, 24
-  // chars, no dots), so it is always exactly the trailing segment after the
-  // last dot.
+  // `.stale.` branch's bypass since it has no `isDirectory` check either. The
+  // claim-instance suffix is always a pure hex string
+  // (`randomBytes(12).toString('hex')`, 24 chars, no dots), so it is always
+  // exactly the trailing segment after the last dot.
   const compactingEntryPattern = new RegExp(
     `^\\.compacting\\.(${escapedLockBase}(?:\\.recovering)?\\.stale\\.${LOCK_GENERATION_RE})\\.[0-9a-f]{24}$`,
   );
@@ -1350,13 +1320,12 @@ export function sweepLockQuarantine(file: string, onEntry?: () => void): void {
       //     own comment). The canonical path exists; this leftover is pure
       //     debris and deleting it costs nothing.
       //  2. The process was killed between the claim rename and EITHER of
-      //     `rmSync`/`writeFileSync` — `staging` is the ONLY remaining copy
-      //     of this generation's fence, and the canonical path is
-      //     genuinely vacant. Deleting it outright here would destroy the
-      //     last copy of the fence with nothing left to restore it,
-      //     re-opening the exact unfenced-generation window the whole
-      //     tombstone mechanism exists to close (docomply-review, a reference-implementation pull request
-      //     round 5).
+      //     `rmSync`/`writeFileSync` — `staging` is the ONLY remaining copy of
+      //     this generation's fence, and the canonical path is genuinely
+      //     vacant. Deleting it outright here would destroy the last copy of
+      //     the fence with nothing left to restore it, re-opening the exact
+      //     unfenced-generation window the whole tombstone mechanism exists to
+      //     close.
       //
       // The two are told apart by whether the canonical path exists. Case 2
       // restores a fence there FIRST — the same non-empty-directory marker
@@ -1396,15 +1365,14 @@ function compactQuarantineEntry(path: string): void {
   }
   if (alreadyCompact) return;
 
-  // Staged as a SIBLING with a `.compacting.` prefix on the whole entry
-  // name, not appended after `path` — appending would still start with
-  // `${lockBase}.stale.`/`${lockBase}.recovering.stale.` (since `path`
-  // itself already does), so a CONCURRENT `sweepLockQuarantine` call would
-  // match this in-flight staging directory as another quarantine entry of
-  // its own and race to compact it too, leaving permanent `.compacting.*`
-  // debris neither call ever cleans up (docomply-review, a reference-implementation pull request round
-  // 2). Prefixing instead of appending guarantees the staging name can
-  // never start with either scanned prefix.
+  // Staged as a SIBLING with a `.compacting.` prefix on the whole entry name,
+  // not appended after `path` — appending would still start with
+  // `${lockBase}.stale.`/`${lockBase}.recovering.stale.` (since `path` itself
+  // already does), so a CONCURRENT `sweepLockQuarantine` call would match this
+  // in-flight staging directory as another quarantine entry of its own and race
+  // to compact it too, leaving permanent `.compacting.*` debris neither call
+  // ever cleans up. Prefixing instead of appending guarantees the staging name
+  // can never start with either scanned prefix.
   const staging = join(
     dirname(path),
     `.compacting.${basename(path)}.${randomBytes(12).toString("hex")}`,
@@ -1419,15 +1387,14 @@ function compactQuarantineEntry(path: string): void {
   }
   try {
     // Safe to delete outright: `staging`'s name is unique to this call, so
-    // nothing else can ever reference it — this is the private copy
-    // `rename` just proved was, at that instant, exactly what sat at
-    // `path`. Both calls share one `try` — not just the `writeFileSync` —
-    // so a THROW from this `rmSync` (EACCES/EIO) still falls through to the
-    // fence-restore fallback below instead of leaving `path` permanently
-    // vacant with no fence at all and no error anyone sees
-    // (docomply-review, a reference-implementation pull request round 2): `path` was already claimed away
-    // by the rename above, so skipping the fallback here is exactly as
-    // unfenced as `writeFileSync` itself failing.
+    // nothing else can ever reference it — this is the private copy `rename`
+    // just proved was, at that instant, exactly what sat at `path`. Both calls
+    // share one `try` — not just the `writeFileSync` — so a THROW from this
+    // `rmSync` (EACCES/EIO) still falls through to the fence-restore fallback
+    // below instead of leaving `path` permanently vacant with no fence at all
+    // and no error anyone sees: `path` was already claimed away by the rename
+    // above, so skipping the fallback here is exactly as unfenced as
+    // `writeFileSync` itself failing.
     rmSync(staging, { recursive: true, force: true });
     writeFileSync(path, "", { flag: "wx" });
   } catch {

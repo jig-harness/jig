@@ -24,9 +24,9 @@ written.
 
 **Consequences:**
 
-- **Backflow is a standing obligation**: groundwork was distilled from a live
-  reference implementation, and each new lesson there (a corrected design, a
-  new lens) is evaluated for porting. The template ports the *corrected*
-  design, not the first attempt.
+- **Backflow is a standing obligation**: groundwork was distilled from a
+  production codebase, and every repository that uses it keeps learning. Each
+  new lesson there (a corrected design, a new lens) is evaluated for
+  Groundwork, which takes the *corrected* design, not the first attempt.
 - Improvement artifacts (taxonomies, fixtures, lens registries) are versioned
   in the repo like code — the process has a test suite.

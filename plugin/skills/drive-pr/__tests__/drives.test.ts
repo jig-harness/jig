@@ -1,6 +1,6 @@
 /**
- * drives.test.ts — the operator surface over the single-instance locks
- *: `lib/claim.ts`'s claim format + liveness rule, and `drives.ts`'s
+ * drives.test.ts — the operator surface over the single-instance locks:
+ * `lib/claim.ts`'s claim format + liveness rule, and `drives.ts`'s
  * listing / `--here` banner / `--stop`.
  *
  * The format tests write claim files as LITERAL bytes rather than through
@@ -165,15 +165,14 @@ describe("lib/claim.ts — the claim wire format", () => {
       // Every field individually type-valid, but violating the RELATIONAL
       // contract `identity.ts`'s `resolved`/`unresolved` guarantee: a
       // resolved identity (`account` non-null) always carries a real
-      // `vendor` and a `null` `reason` (docomply-review, a reference-implementation pull request).
+      // `vendor` and a `null` `reason`.
       '{"pr":"12","worktree":"w","log":"l","started":"s","account":{"account":"a@b.com","vendor":null,"provenance":"p","reason":"failed"}}',
       // An unresolved identity (`account` null) always carries a non-null
       // `reason` explaining the absence.
       '{"pr":"12","worktree":"w","log":"l","started":"s","account":{"account":null,"vendor":"claude","provenance":"p","reason":null}}',
       // Type-valid AND relationally consistent, but no real `resolved()`
       // call ever produces an EMPTY string for `account` or `provenance` —
-      // a resolved identity with nothing actually identifying it
-      // (chatgpt-codex-connector, a reference-implementation pull request round 5).
+      // a resolved identity with nothing actually identifying it.
       '{"pr":"12","worktree":"w","log":"l","started":"s","account":{"account":"","vendor":"claude","provenance":"","reason":null}}',
       // Same for `unresolved()`'s `reason` — never an empty explanation.
       '{"pr":"12","worktree":"w","log":"l","started":"s","account":{"account":null,"vendor":null,"provenance":"p","reason":""}}',
@@ -189,8 +188,7 @@ describe("lib/claim.ts — the claim wire format", () => {
     // value (the previous test), this is a legitimate transitional shape —
     // an already-running driver upgraded out from under, mid-drive — and
     // degrading the whole diag here would break `drives.ts --stop` and the
-    // `ownParentDriver`/an earlier change stand-down guard for that live process
-    // (docomply-review finding on an earlier revision of this file).
+    // `ownParentDriver` stand-down guard for that live process.
     const record = parseClaimText(
       '123 somehost\n{"pr":"12","worktree":"w","log":"l","started":"s"}\n',
     );
@@ -310,7 +308,7 @@ describe("drives.ts listing", () => {
     // Real drive.ts always exports both env vars together (never one without
     // the other), so a genuine "this is my own parent" test must too — a
     // diagnostics-bearing claim with no matching token in our own env is the
-    // recycled-pid case, not self (docomply-review, a reference-implementation pull request).
+    // recycled-pid case, not self.
     const r = await runDrives([], {
       stateDir,
       env: {
@@ -361,12 +359,12 @@ describe("drives.ts listing", () => {
     expect(r.stdout).not.toContain("self:");
   });
 
-  it("carries self-recognition into --json too, not only the text label (PR #4106)", async () => {
+  it("carries self-recognition into --json too, not only the text label", async () => {
     // The label was derived at the text print site alone, so a pass that
     // censused with `--json` — the natural machine-readable choice — got no
     // self signal at all, applied the second-driver rule to its own parent and
-    // stood down. Measured on PR #4106 by that PR's own drive: two rounds, the
-    // pass quoting `refreshAgeSec` (a --json-only field) while standing down.
+    // stood down. Measured on a live drive: two rounds, the pass quoting
+    // `refreshAgeSec` (a --json-only field) while standing down.
     // Same predicate, so the two surfaces cannot disagree.
     const stateDir = freshStateDir();
     plantLock(stateDir, "pr-drive-4242.lock", {
@@ -400,7 +398,7 @@ describe("drives.ts listing", () => {
     expect(foreignRows.find((row) => row.key === "4242")?.self).toBe(false);
   });
 
-  it("binds `self` to the driver ACQUISITION, not just the pid the OS may have recycled (docomply-review, a reference-implementation pull request)", async () => {
+  it("binds `self` to the driver ACQUISITION, not just the pid the OS may have recycled", async () => {
     // A dead driver's still-fresh claim whose pid the OS then handed to THIS
     // pass's parent reads live (same host, pid alive) and matches
     // $DRIVE_PR_SESSION — so pid+host alone would vouch for a lock the parent
@@ -438,9 +436,8 @@ describe("drives.ts listing", () => {
     // OUR env proves our own real parent writes diagnostics — a diagnostics-
     // free claim matching pid+host under those conditions is therefore proven
     // to be a DIFFERENT process's stale write, not our parent's, and must
-    // refuse (chatgpt-codex-connector, a reference-implementation pull request: the prior version fell back
-    // to pid+host here and would wave through exactly the recycled-pid case
-    // the token exists to catch).
+    // refuse (the prior version fell back to pid+host here and would wave
+    // through exactly the recycled-pid case the token exists to catch).
     const legacyDir = freshStateDir();
     plantLock(legacyDir, "pr-drive-4242.lock", {
       "claim.aaaa": `${process.pid} ${hostname()}\n`,
@@ -479,8 +476,7 @@ describe("drives.ts listing", () => {
     // always alongside the token), so one matching pid+host while OUR env
     // has no token is proof of an unrelated process — most plausibly a
     // modern claim from a dead driver whose pid got recycled — and must
-    // refuse rather than trust pid+host over contradicting evidence
-    // (docomply-review, a reference-implementation pull request).
+    // refuse rather than trust pid+host over contradicting evidence.
     const modernDir = freshStateDir();
     plantLock(modernDir, "pr-drive-4242.lock", {
       "claim.aaaa": formatClaim(process.pid, hostname(), DIAG),
@@ -495,7 +491,7 @@ describe("drives.ts listing", () => {
     ).toBe(false);
   });
 
-  it("withholds the --stop hint for one’s own parent driver (chatgpt-codex-connector, a reference-implementation pull request)", async () => {
+  it("withholds the --stop hint for one’s own parent driver", async () => {
     // The text listing labelled the holder `self:` — "proceed, do not stand
     // down" — and then printed a usable --stop for that same pid two lines
     // later, handing the pass a command that kills the drive it is a round of.
@@ -541,7 +537,7 @@ describe("drives.ts listing", () => {
     // A missing `started` is the ABSENCE of an acquisition token, not a
     // shared one: a stale legacy worktree claim and an unrelated legacy PR
     // claim with a recycled pid must list as separate entries, with no stop
-    // hint for either (coderabbitai, PR #4083 round 9).
+    // hint for either.
     const stateDir = freshStateDir();
     const legacy = `${process.pid} ${hostname()}\n`;
     plantLock(stateDir, "pr-drive-78.lock", { "claim.aaaa": legacy });
@@ -556,8 +552,7 @@ describe("drives.ts listing", () => {
     expect(r.stdout).not.toContain("--stop 78");
     expect(r.stdout).toContain("PR #78 — LIVE");
     // The host renders from the row, not from the internal grouping key —
-    // whose `legacy:` prefix once displayed as the hostname
-    // (chatgpt-codex-connector, a reference-implementation pull request round 11).
+    // whose `legacy:` prefix once displayed as the hostname.
     expect(r.stdout).toContain(`(${hostname()})`);
     expect(r.stdout).not.toContain("(legacy)");
   });
@@ -587,7 +582,7 @@ describe("drives.ts listing", () => {
 
   it("contested and unreadable locks are REPORTED, not silently dropped", async () => {
     // A dropped row reads as "not held" — the one thing an unreadable lock
-    // never established (.claude/rules/document-scanning-gates.md § 1).
+    // never established: a scan that cannot read its input must fail closed.
     const stateDir = freshStateDir();
     plantLock(stateDir, "pr-drive-90.lock", {
       "claim.aaaa": `${process.pid} ${hostname()}\n`,
@@ -633,7 +628,7 @@ describe("drives.ts listing", () => {
   it("two live PR locks naming one owner get no stop hint — directory order must not aim it", async () => {
     // Lock debris or a corrupt claim can leave two live PR locks with the
     // same host/pid; picking the first would decide by directory order which
-    // PR receives the stop command (docomply-review, a reference-implementation pull request round 2).
+    // PR receives the stop command.
     const stateDir = freshStateDir();
     const claim = formatClaim(process.pid, hostname(), DIAG);
     plantLock(stateDir, "pr-drive-11.lock", { "claim.aaaa": claim });
@@ -646,7 +641,7 @@ describe("drives.ts listing", () => {
     expect(r.stdout).not.toContain("--stop 12");
   });
 
-  it("the default (no $DRIVE_PR_STATE_DIR) listing does not mint a clone identity or create the state dir (chatgpt-codex-connector, a reference-implementation pull request round 15)", async () => {
+  it("the default (no $DRIVE_PR_STATE_DIR) listing does not mint a clone identity or create the state dir", async () => {
     // drives.ts describes its own fleet listing as read-only, but without an
     // override it used to resolve through the mutating resolveStateDir() —
     // on a clone with no persisted identity yet, merely LISTING drives
@@ -735,7 +730,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     expect(r.stdout).toContain("--stop 4242");
   });
 
-  it("tells a PASS the banner is its OWN parent driver, and withholds the bystander advice (PR #4106)", async () => {
+  it("tells a PASS the banner is its OWN parent driver, and withholds the bystander advice", async () => {
     // A pass's own SessionStart hook runs this banner, so the unqualified
     // warning is the FIRST thing that frames its parent driver as a rival —
     // before it censuses anything. Every line the normal path adds after the
@@ -782,11 +777,10 @@ describe("drives.ts --here (the SessionStart banner)", () => {
 
   it("diagnostics alone may label but never aim — no matching PR lock means no stop or kill hint", async () => {
     // The stop hint must come from a held per-PR lock's NAME; the advisory
-    // diagnostics line could be stale or corrupt, and an operator following
-    // it would stop a different PR's driver. And no raw `kill <pid>` either:
-    // a fresh claim proves liveness, not identity, so a recycled pid would
-    // send the operator at a stranger, bypassing --stop's process-table
-    // check (both reviewers, PR #4083 round 2).
+    // diagnostics line could be stale or corrupt, and an operator following it
+    // would stop a different PR's driver. And no raw `kill <pid>` either: a
+    // fresh claim proves liveness, not identity, so a recycled pid would send
+    // the operator at a stranger, bypassing --stop's process-table check.
     const stateDir = freshStateDir();
     plantLock(stateDir, lockName, {
       "claim.aaaa": formatClaim(process.pid, hostname(), DIAG),
@@ -805,7 +799,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     // claim; its pid recycled onto another driver must not correlate with
     // that driver's PR lock just because host/pid match. `diag.started` is
     // the per-acquisition token: one acquisition writes one diag to both
-    // locks (chatgpt-codex-connector, a reference-implementation pull request round 5).
+    // locks.
     const stateDir = freshStateDir();
     plantLock(stateDir, lockName, {
       "claim.aaaa": formatClaim(process.pid, hostname(), DIAG),
@@ -827,7 +821,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
   it("two live PR locks naming this driver are ambiguous — labelled, with no stop or kill hint", async () => {
     // Directory order must not decide which PR the stop command targets
     // when lock debris or a corrupt claim leaves two live PR locks naming
-    // the same owner (docomply-review, a reference-implementation pull request round 2).
+    // the same owner.
     const stateDir = freshStateDir();
     const claim = formatClaim(process.pid, hostname(), DIAG);
     plantLock(stateDir, lockName, { "claim.aaaa": claim });
@@ -891,7 +885,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     }
   });
 
-  it("does not mint a clone identity or create the state dir — this runs on EVERY session open (chatgpt-codex-connector, a reference-implementation pull request round 15)", async () => {
+  it("does not mint a clone identity or create the state dir — this runs on EVERY session open", async () => {
     // Without $DRIVE_PR_STATE_DIR, --here used to resolve through the
     // mutating resolveStateDir(): on a clone with no persisted identity
     // yet, merely opening an otherwise-unused repository minted
@@ -969,8 +963,7 @@ describe("drives.ts --stop", () => {
     // The recycled-pid case DRIVER_CMD cannot catch: the pid now runs a
     // GENUINE driver (of some other PR), so its argv passes. The claim
     // binding refuses it — a process that started after the claim's
-    // acquisition timestamp cannot be the process that wrote the claim
-    // (both reviewers, PR #4083 round 3).
+    // acquisition timestamp cannot be the process that wrote the claim.
     const stateDir = freshStateDir();
     const child = markerDriver();
     try {
@@ -993,8 +986,8 @@ describe("drives.ts --stop", () => {
 
   it("refuses a claim whose acquisition time is in the future — a future bound accepts every process", async () => {
     // `procStart > future + slack` is false for ANY process, so a recycled
-    // pid wearing a clock-skewed or corrupt claim would pass the binding
-    // (docomply-review, a reference-implementation pull request round 11). Fixture passes every other
+    // pid wearing a clock-skewed or corrupt claim would pass the binding.
+    // Fixture passes every other
     // clause — driver argv, local host, live pid, readable etime — so the
     // future timestamp is the sole decider.
     const stateDir = freshStateDir();
@@ -1068,9 +1061,8 @@ describe("drives.ts --stop", () => {
   it("fails closed when ps cannot answer for a live pid — refuses, never signals on the claim alone", async () => {
     // `ps` missing (the documented Windows path) or failing transiently must
     // not fall through to SIGTERM: claim freshness proves liveness, not
-    // identity, so a recycled pid would be signaled exactly when
-    // verification fails (both reviewers, PR #4083 round 2). The stranger
-    // must survive, and the refusal must say why.
+    // identity, so a recycled pid would be signaled exactly when verification
+    // fails. The stranger must survive, and the refusal must say why.
     const stateDir = freshStateDir();
     const child = Bun.spawn(["sleep", "300"], {
       stdout: "ignore",
@@ -1101,10 +1093,9 @@ describe("drives.ts --stop", () => {
 
   it("bounds a HUNG ps with a deadline — refuses fail-closed instead of blocking --stop forever", async () => {
     // An OS/process-table problem can make `ps` hang rather than fail; the
-    // probe must carry its own deadline so --stop still terminates, landing
-    // in the same "could not verify" refusal (docomply-review, a reference-implementation pull request
-    // round 4). Without the deadline this test itself hangs past bun's
-    // per-test timeout.
+    // probe must carry its own deadline so --stop still terminates, landing in
+    // the same "could not verify" refusal. Without the deadline this test
+    // itself hangs past bun's per-test timeout.
     const stateDir = freshStateDir();
     const child = Bun.spawn(["sleep", "300"], {
       stdout: "ignore",
@@ -1170,7 +1161,7 @@ describe("drives.ts --stop", () => {
     expect(broken.stdout).toContain("refusing to guess");
   });
 
-  it("falls back to the legacy directory when resolveStateDir() refuses on the very lock --stop needs to reach (docomply-review, a reference-implementation pull request round 7)", async () => {
+  it("falls back to the legacy directory when resolveStateDir() refuses on the very lock --stop needs to reach", async () => {
     // The deadlock this closes: a older driver's own single-instance
     // lock, still sitting in the legacy `--git-common-dir`, is EXACTLY the
     // unmigrated footprint `ensureMigratedFromLegacy` refuses on — so
@@ -1217,8 +1208,8 @@ describe("drives.ts --stop", () => {
     }
   });
 
-  it("does NOT fall back to the legacy directory on a resolveStateDir() failure that is not the migration guard (docomply-review via CodeRabbit, PR #4618 round 8)", async () => {
-    // The over-broad version of the round-7 fix caught ANY resolveStateDir()
+  it("does NOT fall back to the legacy directory on a resolveStateDir() failure that is not the migration guard", async () => {
+    // An over-broad version of the fallback caught ANY resolveStateDir()
     // failure, including one with nothing to do with a live older
     // driver — a malformed $DRIVE_PR_STATE_DIR, here — and silently fell back
     // to the legacy directory anyway, masking the real problem behind a
@@ -1282,14 +1273,14 @@ describe("drives.ts usage", () => {
   });
 });
 
-// an earlier change §2b: `drives.ts --json` (with or without `--doctor`) carries a
-// `doctor` verdict on every PR-kind row. Seeded with `parked: [...]` rather
-// than a live claim's own progress/pass-child machinery, deliberately: a
-// parked item forces `classifyDrive`'s `NEEDS_HUMAN` branch (rule 4),
-// unconditional on lock state, so this test's outcome does not depend on
-// whether the sandbox running it happens to have a working `ps` or a real
-// worktree at `DIAG.worktree` — both of which `NEEDS_HUMAN` outranks
-// entirely (see `lib/doctor.ts`'s own precedence-order header).
+// `drives.ts --json` (with or without `--doctor`) carries a `doctor` verdict on
+// every PR-kind row. Seeded with `parked: [...]` rather than a live claim's own
+// progress/pass-child machinery, deliberately: a parked item forces
+// `classifyDrive`'s `NEEDS_HUMAN` branch (rule 4), unconditional on lock state,
+// so this test's outcome does not depend on whether the sandbox running it
+// happens to have a working `ps` or a real worktree at `DIAG.worktree` — both
+// of which `NEEDS_HUMAN` outranks entirely (see `lib/doctor.ts`'s own
+// precedence-order header).
 describe("drives.ts --json carries the doctor verdict", () => {
   function seedParkedState(stateDir: string, pr: string): void {
     const state = {
@@ -1660,12 +1651,12 @@ describe("--doctor sweeps state files with no surviving lock", () => {
   });
 
   it("an UNREADABLE lock-less state file DOES earn a row — the skip above is not a fail-open", () => {
-    // The distinction the guard turns on, asserted as its own case so the
-    // two cannot regress into one: rule 1 of document-scanning-gates.md is
-    // about input the gate cannot READ, and this file cannot be read. A
-    // state dir full of these is exactly the "your state files predate this
-    // version" signal an operator needs, and it must survive the noise
-    // filter that drops the readable-and-inert ones.
+    // The distinction the guard turns on, asserted as its own case so the two
+    // cannot regress into one: the fail-closed rule for scans is about input
+    // the gate cannot READ, and this file cannot be read. A state dir full of
+    // these is exactly the "your state files predate this version" signal an
+    // operator needs, and it must survive the noise filter that drops the
+    // readable-and-inert ones.
     const stateDir = freshStateDir();
     writeFileSync(join(stateDir, "drive-pr-7031.json"), "{ not json");
     const rows = listStateOnlyRows(stateDir, []);
@@ -1701,16 +1692,15 @@ describe("--doctor sweeps state files with no surviving lock", () => {
     );
   });
 
-  it("a non-ENOENT failure to read the state dir fails CLOSED rather than reporting an empty population (review finding)", () => {
-    // A regular FILE where a directory is expected makes `readdirSync`
-    // throw ENOTDIR on every platform, deterministically and without
-    // depending on permission bits a root-run test could bypass — the
-    // portable stand-in for "a transient permission, descriptor, or I/O
-    // error", which is what the review finding named. Before the fix, this
-    // and the ENOENT case above were indistinguishable: both silently
-    // became `[]`, hiding exactly the quota-parked and human-parked drives
-    // whose normal exit already removed their lock directories — the
-    // entire reason this second census exists.
+  it("a non-ENOENT failure to read the state dir fails CLOSED rather than reporting an empty population", () => {
+    // A regular FILE where a directory is expected makes `readdirSync` throw
+    // ENOTDIR on every platform, deterministically and without depending on
+    // permission bits a root-run test could bypass — the portable stand-in for
+    // "a transient permission, descriptor, or I/O error". Before the fix, this
+    // and the ENOENT case above were indistinguishable: both silently became
+    // `[]`, hiding exactly the quota-parked and human-parked drives whose
+    // normal exit already removed their lock directories — the entire reason
+    // this second census exists.
     const notADir = join(freshStateDir(), "this-is-a-file-not-a-dir");
     writeFileSync(notADir, "");
     let thrown: unknown;

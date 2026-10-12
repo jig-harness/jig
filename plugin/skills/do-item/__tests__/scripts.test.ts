@@ -261,7 +261,7 @@ describe("the CLI wrappers load under node as well as bun", () => {
   // or exits with the wrong code must redden this, which an earlier version
   // (parse stdout, then `toMatchObject({ rel, bin })`) could not: it asserted
   // neither, because the parsed document was never in the expectation and the
-  // exit code was never read at all (docomply-review round 1, a reference-implementation pull request).
+  // exit code was never read at all.
   for (const [rel, args, stdin, status, shape] of [
     ["get_issue.ts", ["ENG-0"], undefined, 2, { found: false }],
     [
@@ -302,8 +302,7 @@ describe("the CLI wrappers load under node as well as bun", () => {
   // Well-formed JSON of the wrong SHAPE is a usage error (exit 2), not the
   // generic unexpected-error exit 1 it produced when `JSON.parse` was asserted
   // straight to `{ labels?: string[]; title?: string }` — `"backend"` was then
-  // iterated character by character and `42` threw inside `toLowerCase()`
-  // (docomply-review round 1, a reference-implementation pull request).
+  // iterated character by character and `42` threw inside `toLowerCase()`.
   for (const [what, stdin] of [
     ["a non-object document", "[]"],
     ["labels as a bare string", '{"labels":"backend"}'],
@@ -328,7 +327,7 @@ describe("the CLI wrappers load under node as well as bun", () => {
   // argparse rejected an unknown option and an extra positional with exit 2;
   // the hand-written ports did neither, two of them taking the FIRST non-flag
   // argument and dropping the rest while determine_agent.ts took the LAST
-  // unrecognised token as its input path (docomply-review round 2, a reference-implementation pull request).
+  // unrecognised token as its input path.
   // One `parseArgs` in scripts/lib/cli.ts now answers for all three, so these
   // cases cover the shared parser through each caller's own option set.
   for (const [what, rel, args, stdin, expected] of [
@@ -369,7 +368,7 @@ describe("the CLI wrappers load under node as well as bun", () => {
     ],
     // An OPTION token following a value flag is a missing value, not the
     // value: consuming `--verbose` as the catalog path made loadCatalog() fail
-    // silently and routed the issue to the default agent (round 6).
+    // silently and routed the issue to the default agent.
     [
       "an option token where a value belongs",
       "determine_agent.ts",
@@ -379,7 +378,7 @@ describe("the CLI wrappers load under node as well as bun", () => {
     ],
     // argparse's rule: any `-`-prefixed token EXCEPT a bare `-` is an option.
     // Testing for `--` alone left single-dash tokens as ordinary values, so
-    // `-v` became the catalog path (round 7 — round 6 fixed this one token
+    // `-v` became the catalog path (an earlier fix covered this one token
     // class narrower).
     [
       "a single-dash token where a value belongs",
@@ -512,8 +511,7 @@ describe("parseArgs matches argparse on `--` and `--opt=value`", () => {
 describe("determine_agent.ts keeps its optional positional", () => {
   // `nargs="?", default="-"` in the Python predecessor: a bare invocation
   // reads stdin. Requiring a positional in the shared parser silently narrowed
-  // that public contract, and the round-2 test locked the narrowing in
-  // (docomply-review, a reference-implementation pull request round 8).
+  // that public contract, and an earlier test locked the narrowing in.
   for (const args of [[], ["--verbose"]] as const) {
     it(`\`${["determine_agent.ts", ...args].join(" ")}\` reads stdin`, () => {
       const r = spawnSync(
@@ -1212,9 +1210,7 @@ describe("tracker.ts", () => {
 // argument) failed `parseArgs`'s usage check on every call, because the
 // shared parser requires a positional unless `defaultPositional` is set and
 // this script declared none — caught only by the end-to-end fallback test
-// above, which is what first invoked main() with the documented argv shape
-// (round 5, self-caught while fixing chatgpt-codex-connector's CLI-fallback
-// finding on this same PR).
+// above, which is what first invoked main() with the documented argv shape.
 describe("select_scout_finding.ts (CLI entrypoint)", () => {
   const run = (args: string[], stdin: string) =>
     spawnSync(

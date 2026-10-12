@@ -15,13 +15,13 @@
  * ── Why growth is split at the moment review STARTED ───────────────────────
  *
  * The obvious measure — first commit's additions versus the merged diff's — is
- * the one explicitly rejects, and the evidence for rejecting it is in
- * the issue: PR #4052 opened with a 17-line commit and merged at 2,777
- * additions. Read naively that is 99% growth caused by review. But a driver
- * often pushes a deliberately minimal first commit and then the real body of
- * the work BEFORE any reviewer has looked, and every one of those pre-review
- * additions lands in the post-review bucket under a first-commit baseline. The
- * measure would then indict review for work review never asked for.
+ * the one this module explicitly rejects, and the evidence for rejecting it is
+ * measured: one PR opened with a 17-line commit and merged at 2,777 additions.
+ * Read naively that is 99% growth caused by review. But a driver often pushes a
+ * deliberately minimal first commit and then the real body of the work BEFORE
+ * any reviewer has looked, and every one of those pre-review additions lands in
+ * the post-review bucket under a first-commit baseline. The measure would then
+ * indict review for work review never asked for.
  *
  * The line that separates the two populations is the moment review STARTED: the
  * head the earliest initiating bot review was submitted against. It is
@@ -43,7 +43,7 @@
  * an earlier change's dials being tuned blind, and a causal label on a correlational
  * measure would replace one blind tuning with a confidently-wrong one —
  * the same error the first-commit baseline was rejected for, moved to a later
- * cutoff (docomply-review rounds 7-8, PR #4068). It is also the standard this
+ * cutoff. It is also the standard this
  * skill already holds `defect-escape.ts` to: the mechanical half is computed,
  * the causal verdict stays a human's.
  *
@@ -146,13 +146,12 @@ export interface LoopMetrics {
    */
   outcomesByCategory: Record<string, Record<Outcome, number>>;
   /**
-   * How often `severityOf` could not read a severity, per thread AUTHOR
-   *.
+   * How often `severityOf` could not read a severity, per thread AUTHOR.
    *
    * INLINE THREADS ONLY — a reviewer's summary-only findings (its sticky
    * comment's own bullets, sampled separately by `summary-findings.ts` and
    * never folded into `PrSample.threads`) carry no severity signal here at
-   * all, readable or not (docomply-review, a reference-implementation pull request round 5). A format
+   * all, readable or not. A format
    * change that breaks only a reviewer's summary-bullet severity tag is
    * therefore invisible to this metric and can report a flattering 0%
    * while that reviewer's summary-only ladder entries are silently
@@ -196,18 +195,18 @@ export interface LoopMetrics {
    *
    * `total`/`unknown`/`unknownShare` are LIFETIME figures — every bot thread
    * this author ever raised on this PR. On a long-running driven PR that is
-   * exactly the population most likely to dilute the outage this metric
-   * exists to catch: a reviewer readable for the first N rounds and then
-   * broken for the rest reports a share dragged toward 0% by its own history,
-   * never the ~100% the live outage actually is (chatgpt-codex-connector,
-   * a reference-implementation pull request). `recentTotal`/`recentUnknown`/`recentUnknownShare` answer the
-   * question the lifetime figure cannot: scoped to this author's own most
-   * recent INITIATING review head (`latestReviewHeadByAuthor` below) — i.e.
-   * THEIR current round, not the PR's.
+   * exactly the population most likely to dilute the outage this metric exists
+   * to catch: a reviewer readable for the first N rounds and then broken for
+   * the rest reports a share dragged toward 0% by its own history, never the
+   * ~100% the live outage actually is.
+   * `recentTotal`/`recentUnknown`/`recentUnknownShare` answer the question the
+   * lifetime figure cannot: scoped to this author's own most recent INITIATING
+   * review head (`latestReviewHeadByAuthor` below) — i.e. THEIR current round,
+   * not the PR's.
    *
    * `recentRoundKnown` is the discriminator `recentUnknownShare === null` used
-   * to be overloaded to carry alone, and the overload was itself a bug
-   * (chatgpt-codex-connector, a reference-implementation pull request round 4): "no initiating review
+   * to be overloaded to carry alone, and the overload was itself a bug:
+   * "no initiating review
    * recorded for this author" (truly unattributable — fall back to the
    * lifetime figure) and "their latest round is known and it raised zero
    * findings" (measured, and clean) both collapsed onto `recentTotal === 0`,
@@ -274,7 +273,7 @@ export interface LoopMetrics {
  * A merge commit's line stats are its diff against its first parent, so a
  * routine `git merge origin/develop` reports the whole base-branch delta as if
  * this branch had authored it. Measured on the first baseline week: one such
- * commit on PR #4023 contributed +52,015 of that PR's 52,442 post-review
+ * commit on one PR contributed +52,015 of that PR's 52,442 post-review
  * additions, on a PR whose entire net diff is 222 lines. Left in, the metric
  * says a round demanded fifty thousand lines nobody wrote — and since merging
  * the base in is exactly what a long-running driven PR does, the error is
@@ -282,10 +281,10 @@ export interface LoopMetrics {
  *
  * `parents >= 2` proves "merge commit", NOT "base-sync merge", and the gap was
  * real: a PR that merges a sibling FEATURE branch has that merge NODE's diff
- * excluded too (docomply-review round 3, a reference-implementation pull request), same as a base sync. But a
+ * excluded too, same as a base sync. But a
  * sibling branch's own one-parent commits are NOT in the base, so GitHub lists
  * them among this PR's commits — and unlike a base sync's imports, they were
- * authored on that OTHER branch, not here (docomply-review round 8, a reference-implementation pull request).
+ * authored on that OTHER branch, not here.
  * `siblingOids` is exactly that set, pre-resolved by `classifySiblingCommits`
  * before this function ever sees the commit list, so those commits are pulled
  * out of `commits`/`additions`/`deletions` into `sibling` instead of being
@@ -410,21 +409,21 @@ export function computeLoopMetrics(
    * pre-GA compatibility path that silently reproduces the known-wrong "sibling
    * commits count as authored churn" behaviour for any caller that has not
    * resolved the ancestry — and BWC concerns are explicitly deferred pre-GA,
-   * so the corrected contract requires every caller to state its own answer
-   * (docomply-review, a reference-implementation pull request). A caller with genuinely nothing to exclude
+   * so the corrected contract requires every caller to state its own answer.
+   * A caller with genuinely nothing to exclude
    * passes `new Set()` explicitly, same as it always did — the only change is
    * that omitting the argument is no longer possible.
    */
   siblingCommitOids: ReadonlySet<string>,
 ): LoopMetrics {
   // Only INITIATING bot reviews mark a round. A thread reply is recorded as a
-  // review, for bots exactly as for humans — the driver's own outcome replies on
-  // PR #4052 showed up as 63 of its 120 reviews — so counting every review
-  // reports the loop's own answers back to it as rounds. The bot half of that is
-  // not hypothetical: a measured share of the baseline week's bot reviews are
-  // reply-only (all `coderabbitai`), and they made heads read as reviewed when
-  // nothing had reviewed them. Figures in `review-loop-baseline.md`, which owns
-  // them. See `ReviewSample.initiating`.
+  // review, for bots exactly as for humans — the driver's own outcome replies
+  // on one measured PR showed up as 63 of its 120 reviews — so counting every
+  // review reports the loop's own answers back to it as rounds. The bot half of
+  // that is not hypothetical: a measured share of the baseline week's bot
+  // reviews are reply-only (all `coderabbitai`), and they made heads read as
+  // reviewed when nothing had reviewed them. Figures in
+  // `review-loop-baseline.md`, which owns them. See `ReviewSample.initiating`.
   const botReviews = initiatingBotReviews(sample.reviews);
   const reviewedHeads = new Set(botReviews.map((r) => r.oid)).size;
   const first = botReviews[0] ?? null;
@@ -692,8 +691,7 @@ export function renderLoopMetrics(m: LoopMetrics): string {
   // Authors sorted worst first by their CURRENT-round share when it is
   // measurable, falling back to the lifetime share otherwise — ranking on the
   // lifetime figure alone would bury a live outage behind its own diluted
-  // history, exactly the failure this ranking exists to avoid
-  // (chatgpt-codex-connector, a reference-implementation pull request).
+  // history, exactly the failure this ranking exists to avoid.
   const sev = m.unknownSeverity;
   lines.push(
     `  severity   ${sev.count}/${sev.total} bot findings unreadable (${pct(sev.share)}) — an unreadable severity leaves the decline ladder INERT for that finding`,

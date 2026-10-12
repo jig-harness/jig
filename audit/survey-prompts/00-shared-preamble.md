@@ -41,7 +41,6 @@ Calibration rules (learned from audit runs):
   enforcement detail belongs to survey 3; other surveys mention it only as
   the nearest-analogue of something absent, in one line.
 
-Provenance: generalized from the founding audit (2026-07-18, run against the
-reference implementation — the run that produced
-[the charter](../../docs/founding-charter-2026-07-18.md)); calibrated against
-a small external OSS library (execa, 2026-07-19).
+Provenance: generalized from a first audit of a mature production
+repository; calibrated against a small external open-source library
+([execa](../calibration/2026-07-19-execa.md)).

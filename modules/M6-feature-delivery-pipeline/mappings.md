@@ -56,11 +56,11 @@ jobs:
           base="${{ github.event.pull_request.base.sha }}"
           git -C pr diff --name-only --diff-filter=d "$base" HEAD -- 'docs/**/*.md' |
           while read -r f; do
-            # one sections manifest per artifact type, committed with the templates
+            # one sections manifest per artifact type, read from the base tree too
             case "$f" in
-              docs/prd/*)          man="$M6/reference/required-sections/fixtures/sections.txt" ;;
-              docs/architecture/*) man="docs/_manifests/architecture-sections.txt" ;;
-              docs/research/*)     man="docs/_manifests/research-sections.txt" ;;
+              docs/prd/*)          man="base/docs/_manifests/prd-sections.txt" ;;
+              docs/architecture/*) man="base/docs/_manifests/architecture-sections.txt" ;;
+              docs/research/*)     man="base/docs/_manifests/research-sections.txt" ;;
               *)                   man="" ;;
             esac
             [ -n "$man" ] && { MANIFEST="$man" bun "$reqsec" "pr/$f" || exit 1; }
@@ -83,14 +83,14 @@ pipeline_docs:
   before_script:
     - git fetch --depth=1 origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
     - mkdir -p base && git archive "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
-        modules/M6-feature-delivery-pipeline | tar -x -C base
+        modules/M6-feature-delivery-pipeline docs/_manifests | tar -x -C base
   script:
     - bun test "$M6"/reference/required-sections/check-required-sections.test.ts
     - bun test "$M6"/reference/stage-review-record/check-stage-accepted.test.ts
     - |
-      git diff --name-only --diff-filter=d "$CI_MERGE_REQUEST_DIFF_BASE_SHA"... -- 'docs/***.md' |
+      git diff --name-only --diff-filter=d "$CI_MERGE_REQUEST_DIFF_BASE_SHA"... -- 'docs/**/*.md' |
       while read -r f; do
-        SECTIONS="$(cat docs/_manifests/$(basename "$(dirname "$f")")-sections.txt 2>/dev/null)" \
+        SECTIONS="$(cat base/docs/_manifests/$(basename "$(dirname "$f")")-sections.txt 2>/dev/null)" \
           bun "$M6"/reference/required-sections/check-required-sections.ts "$f" || exit 1
         bun "$M6"/reference/stage-review-record/check-stage-accepted.ts "$f" || exit 1
       done
@@ -114,8 +114,10 @@ The design-prototype loop is an iterate-and-review skill over a UI surface.
 | Humans | a reviewer other than the author reads the artifact cold | design critique with product + engineering present |
 
 The fresh-context rule is the portable part; which runtime hosts it is a local
-choice. Model-routing and named critique personas from the reference
-implementation are deliberately not prescribed here.
+choice. Model routing and named critique personas are deliberately not
+prescribed here. For the design loop's brief, the
+[`/groundwork:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
+skill assembles and audits the bundle an external design session receives.
 
 ## Issue trackers — epic decomposition + flag labels
 
@@ -142,11 +144,16 @@ pull request opens.
 | Research note | [`research-note-template.md`](templates/research-note-template.md) | `docs/research/<date>-<slug>.md` |
 | PRD | [`prd-template.md`](templates/prd-template.md) | `docs/prd/<feature>.md` |
 | Architecture | [`architecture-template.md`](templates/architecture-template.md) | `docs/architecture/<feature>.md` |
-| Decision | (an ADR — see [M5](../M5-adr-practice/)) | `docs/adr/NNNN-<slug>.md` |
+| Decision | (an ADR — see [M5](../M5-adr-practice/)) | `docs/adr/ADR-NNNN-<slug>.md` |
 
-Where the docs tree is schema-validated ([M4](../M4-docs-governance/)), the
-`status`/`reviewed` frontmatter these gates read is part of that schema, so one
-frontmatter block serves both docs governance and the two M6 gates.
+Where the docs tree is schema-validated ([M4](../M4-docs-governance/)), one
+frontmatter block can serve both docs governance and the two M6 gates, but
+the two vocabularies need joining first. The stage templates carry only what
+the M6 gates read (`status`, `reviewed`), and M4's schema template knows
+neither `accepted` (a `status` value) nor `research-note` (a `type` value).
+Add those values to your schema, and add the schema's required fields
+(`lifecycle`, `owner`, `last_updated`, `tags`) to your copies of the stage
+templates.
 
 ## CI providers
 

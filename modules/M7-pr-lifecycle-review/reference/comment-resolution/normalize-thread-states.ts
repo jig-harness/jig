@@ -18,7 +18,7 @@
 // the freshest reply that actually declares a verdict wins. Sending only the last
 // comment loses verdicts: a reviewer answering "confirmed" after the author's
 // `**accepted** — fixed in a1b2c3d` would export as `unclassified` and block a
-// correctly resolved thread. One row per thread still behaves as it always did.
+// correctly resolved thread. One row per thread works too.
 // Blank lines and `# comments` are ignored.
 //
 // Output (stdout): the gate's states file, `<thread-id> <state> [trail...]`.
@@ -43,8 +43,9 @@
 // `moot` as a rejection, one layer down.
 //
 // Synonyms live HERE. An adopting repo whose tooling says `accepted` / `wontfix` /
-// `obsolete` maps them in `canon()` below — the exporter is already forge- and
-// repo-specific, and the gate's vocabulary stays closed.
+// `obsolete` maps them in `canon()` (the `verdicts` table in
+// lib/module-gates.ts, which holds this gate's implementation) — the exporter
+// is already forge- and repo-specific, and the gate's vocabulary stays closed.
 //
 // Conventions: exit 0 on success, 2 on a usage / input-format error. Rows file
 // via arg or ROWS env so the self-test drives it with fixtures.

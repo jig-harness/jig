@@ -1,6 +1,6 @@
 import { consumerRoot } from "./consumer.ts";
 /**
- * The escalating decline ladder (TASK): load `.config/review-triage.yaml`
+ * The escalating decline ladder: load `.config/review-triage.yaml`
  * and resolve one otherwise-`accepted` finding to a stance.
  *
  * The config is the single source for the weights — this module owns only the
@@ -43,7 +43,7 @@ import { join } from "node:path";
  * was given against this file's own absolute path and falls back to that
  * resolved path verbatim otherwise, so a `--config PATH` override or
  * `$GROUNDWORK_REVIEW_TRIAGE_CONFIG` trial never gets attributed to the
- * canonical source it did not use (chatgpt-codex-connector, a reference-implementation pull request).
+ * canonical source it did not use.
  */
 export const LADDER_CONFIG_RELPATH = ".config/review-triage.yaml";
 
@@ -57,8 +57,8 @@ export const CATEGORY_UNKNOWN = "unknown";
  * `severity_order` can be validated as a permutation of what a real finding
  * will actually carry, not merely "a list of strings". A config that renames
  * or drops one of these makes the real producer value unranked and silently
- * abstaining rather than invalidating the config (rule 1,
- * .claude/rules/document-scanning-gates.md).
+ * abstaining rather than invalidating the config (an input a gate cannot
+ * trust must be refused, never read as an empty, all-clear population).
  */
 export const CANONICAL_SEVERITIES = ["low", "medium", "high", "blocker"];
 
@@ -69,17 +69,17 @@ export const CANONICAL_SEVERITIES = ["low", "medium", "high", "blocker"];
  * pair in the CLI: `accept_if.max_tier` (parseBand, below) and `--tier`
  * (triage-ladder.ts) both bound the identical value, and two independent
  * literals are exactly how the lower bound stayed enforced on both sides
- * while the upper bound silently existed on only one (PR #4501 round 2).
+ * while the upper bound silently existed on only one.
  */
 export const MIN_TIER = 1;
 export const MAX_TIER = 4;
 
 /**
- * /epic-acceptance-review Phase 3's severity vocabulary, weakest first — one
- * of the vocabularies `severity_mapping` binds together. Pinned here, next to
- * `CANONICAL_SEVERITIES`, for the same reason that one is: the mapping has to
- * be validated against what the acceptance skill actually emits, not against
- * "some string".
+ * The severity vocabulary an acceptance review classifies a gap with, weakest
+ * first — one of the vocabularies `severity_mapping` binds together. Pinned
+ * here, next to `CANONICAL_SEVERITIES`, for the same reason that one is: the
+ * mapping has to be validated against the tiers an acceptance review actually
+ * uses, not against "some string".
  */
 export const ACCEPTANCE_TIERS = ["Minor", "Major", "Blocker"];
 
@@ -123,8 +123,9 @@ export interface LadderConfig {
    * `null` when the config carries no `severity_mapping` block. Absence is
    * NOT a config error — the ladder never reads this table, so making it
    * load-bearing for ladder liveness would let deleting it silently disarm
-   * triage. What makes the SHIPPED file's block mandatory is
-   * `__tests__/severity-mapping.test.ts`, which fails closed on a `null`.
+   * triage. A repository that wants the block mandatory enforces it in a test,
+   * as `__tests__/severity-mapping.test.ts` does for this skill's test
+   * configuration: it fails closed on a `null`.
    */
   severityMapping: SeverityMapping | null;
   categories: string[];
@@ -179,8 +180,8 @@ function asRecord(v: unknown, what: string): Record<string, unknown> {
  * Reject a mapping key this loader does not know about. A silently-ignored
  * key (a typo'd `min_severty`, say) is dropped without error whenever another
  * clause still admits — indistinguishable from the typo never having been
- * written — which is exactly the "read nothing, report all clear" shape rule
- * 1 of .claude/rules/document-scanning-gates.md exists to close.
+ * written — which is exactly the "read nothing, report all clear" shape a
+ * gate must never take.
  */
 function assertKnownKeys(
   obj: Record<string, unknown>,
@@ -213,7 +214,7 @@ const TEMPLATE_PLACEHOLDERS = [
  * underscore/hyphen still misses a typo written with a space or other
  * punctuation (`{min severity}`), so the only shape that cannot be defeated
  * by the next typo is "starts with `{`, ends with `}`, matches nothing in
- * between" (chatgpt-codex-connector, a reference-implementation pull request round 5). Matching `[^}]*`
+ * between". Matching `[^}]*`
  * rather than `+` also catches a bare `{}`, which a `+`-quantified charset
  * let through entirely.
  *
@@ -276,8 +277,7 @@ function asStringList(v: unknown, what: string): string[] {
   // `accept_if.categories` entry referencing "the same" token silently
   // create two different vocabulary members, and triage-ladder.ts's
   // `--category` domain check (main(), reads `loaded.config.categories`)
-  // stops triage with exit 2 for input that is not actually a typo
-  // (chatgpt-codex-connector, a reference-implementation pull request).
+  // stops triage with exit 2 for input that is not actually a typo.
   const padded = list.filter((e) => e !== e.trim());
   if (padded.length > 0) {
     throw new ConfigError(
@@ -430,9 +430,8 @@ function parseBand(raw: unknown, index: number): Band {
   // A band with NO clause would decline everything it matched — the exact
   // inversion of this mechanism's fail-open contract, and an easy thing to
   // reach by deleting the last line of an `accept_if`. Refuse the config
-  // instead, which sends the whole ladder inert (rule 1 of
-  // .claude/rules/document-scanning-gates.md: an input the gate cannot trust
-  // is a refusal, not an empty population).
+  // instead, which sends the whole ladder inert (an input the gate cannot
+  // trust is a refusal, not an empty population).
   if (Object.keys(accept).length === 0) {
     throw new ConfigError(
       `bands[${index}].accept_if declares no clause — a band that admits nothing would decline every finding it matched`,
@@ -449,13 +448,13 @@ function parseBand(raw: unknown, index: number): Band {
 
 /**
  * Validate an already-parsed config object. Exported so the test suite can
- * assert the SHIPPED file's structure without re-implementing the parse — the
+ * assert a configuration file's structure without re-implementing the parse — the
  * census that keeps "read nothing" from reading as "all clear".
  */
 /**
  * Parse and validate `severity_mapping` — the one published correspondence
- * between the reviewer severity tokens, /epic-acceptance-review's acceptance
- * tiers, and Linear's priority field (TASK).
+ * between the reviewer severity tokens, an acceptance review's tiers, and
+ * Linear's priority field.
  *
  * `undefined` (no block) returns `null` rather than throwing: see
  * `LadderConfig.severityMapping` for why absence must not disarm the ladder.
@@ -492,13 +491,12 @@ function parseSeverityMapping(
     // ABSENCE of a severity (this file's own row comment ties it to
     // Linear's priority 0, "None", one-to-one), so it must be EXACTLY 0 —
     // any other value invents an urgency for a finding nothing ranked at
-    // all. Every RANKED severity is the opposite case: TASK exists
-    // precisely because an unprioritized ranked follow-up is the measured
-    // failure this mapping is supposed to prevent, so it must map to an
-    // actual priority, 1-4, never 0. A single shared `0-4` bound let both
-    // `low: { linear_priority: 0 }` (unprioritized) and
-    // `unknown: { linear_priority: 1 }` (an unranked finding made urgent)
-    // validate (round 29).
+    // all. Every RANKED severity is the opposite case: an unprioritized
+    // ranked follow-up is the measured failure this mapping is supposed to
+    // prevent, so it must map to an actual priority, 1-4, never 0. A single
+    // shared `0-4` bound let both `low: { linear_priority: 0 }` (unprioritized)
+    // and `unknown: { linear_priority: 1 }` (an unranked finding made urgent)
+    // validate.
     const [minPriority, maxPriority] =
       token === SEVERITY_UNKNOWN
         ? [MIN_LINEAR_PRIORITY, MIN_LINEAR_PRIORITY]
@@ -559,9 +557,9 @@ function parseSeverityMapping(
       );
     }
   }
-  // Row coverage above is one-directional. Every acceptance tier must also
-  // be CARRIED by some row, or `acceptancePriority()` returns null for it and
-  // Phase 5b files that gap with no priority at all (TASK).
+  // Row coverage above is one-directional. Every acceptance tier must also be
+  // CARRIED by some row, or `acceptancePriority()` returns null for it and an
+  // acceptance review files that gap with no priority at all.
   const carried = new Set(
     Object.values(out)
       .map((e) => e.acceptance)
@@ -570,7 +568,7 @@ function parseSeverityMapping(
   const unreachable = ACCEPTANCE_TIERS.filter((t) => !carried.has(t));
   if (unreachable.length > 0) {
     throw new ConfigError(
-      `severity_mapping leaves acceptance tier(s) with no reviewer token behind them: ${unreachable.join(", ")} — acceptancePriority() returns null for those, and /epic-acceptance-review Phase 5b would file such a gap unprioritized`,
+      `severity_mapping leaves acceptance tier(s) with no reviewer token behind them: ${unreachable.join(", ")} — acceptancePriority() returns null for those, and an acceptance review would file such a gap unprioritized`,
     );
   }
   return out;
@@ -580,8 +578,8 @@ function parseSeverityMapping(
  * The acceptance -> Linear priority direction, DERIVED from `severity_mapping`
  * rather than published as a second table: the weakest (numerically largest)
  * priority among the reviewer tokens carrying that acceptance tier. That is
- * the read /epic-acceptance-review Phase 5b needs — a gap classified Blocker/
- * Major/Minor with no reviewer token behind it.
+ * the read an acceptance review needs for a gap classified Blocker/Major/Minor
+ * with no reviewer token behind it.
  *
  * Returns `null` for a tier no row carries, and for a config with no mapping.
  */
@@ -600,7 +598,7 @@ export function acceptancePriority(
 export function validateLadder(doc: unknown): LadderConfig {
   const root = asRecord(doc, "review-triage.yaml");
   // `calibration` is documentation-only (never read below) — allowed but
-  // unvalidated, same as the shipped file's own comment describes it.
+  // unvalidated, as the configuration file's own comment describes it.
   assertKnownKeys(
     root,
     [
@@ -633,10 +631,10 @@ export function validateLadder(doc: unknown): LadderConfig {
     // so the config's declared ORDER — not just its set — is load-bearing. A
     // same-membership but reordered list (e.g. `[blocker, high, medium,
     // low]`) would pass a permutation-only check yet invert which findings a
-    // `min_severity` clause admits (chatgpt-codex-connector, a reference-implementation pull request): it
+    // `min_severity` clause admits: it
     // would make `min_severity: high` admit `medium`/`low` and decline
     // `blocker`. `CANONICAL_SEVERITIES` is itself the one required order
-    // (weakest first, matching the shipped config's own comment), so this
+    // (weakest first, matching the configuration's own comment), so this
     // requires an exact match rather than a looser set check.
     const missing = CANONICAL_SEVERITIES.filter(
       (s) => !severityOrder.includes(s),
@@ -801,7 +799,7 @@ export function validateLadder(doc: unknown): LadderConfig {
   // a template missing it — even one that still mentions `{marker}` in its
   // own prose — produces declines the calibration loop can never find: a
   // silent, permanent hole in the sample the weights are retuned from. A bare
-  // `.includes('{marker}')` check passed this test in round 9 (the trailing
+  // `.includes('{marker}')` check once passed this test (the trailing
   // line was left off, only the prose mentioned it), so this checks the
   // template's own last non-blank line exactly, mirroring what
   // `ladderDeclinePatterns` requires at match time.
@@ -923,9 +921,8 @@ function clauseNames(accept: AcceptClauses): string[] {
  * had its injected `{round}` rewritten to the finding's round, silently
  * misattributing the decline to a file that does not exist; a path containing
  * an unknown token like `{trial}` instead survived to `resolveStance`'s
- * leftover-placeholder guard and turned a VALID decline inert (coderabbitai +
- * chatgpt-codex-connector, a reference-implementation pull request round 17 — both reviewers, independently,
- * on the same root cause).
+ * leftover-placeholder guard and turned a VALID decline inert (both from the
+ * same root cause).
  *
  * One `replaceAll` over `PLACEHOLDER_SOURCE` with a FUNCTION replacer fixes
  * the class rather than the instance: a function replacer's return value is
@@ -939,9 +936,9 @@ function clauseNames(accept: AcceptClauses): string[] {
  * template placeholder that failed to substitute from brace text that arrived
  * inside a substituted VALUE — so an operator config at
  * `/tmp/a{trial}b/review-triage.yaml` tripped the guard and turned a valid
- * decline inert (the second half of the same round-17 finding). "Did the
- * TEMPLATE carry a placeholder I could not fill" is only answerable during
- * substitution; the output string no longer has the information.
+ * decline inert (the second half of the same defect). "Did the TEMPLATE carry a
+ * placeholder I could not fill" is only answerable during substitution; the
+ * output string no longer has the information.
  */
 function render(
   template: string,
@@ -1127,8 +1124,7 @@ export function resolveStance(
   // substituted VALUE can legitimately contain brace text (an operator's
   // `--config /tmp/a{trial}b/review-triage.yaml`), and an output scan cannot
   // tell that apart from a template placeholder that failed — it turned a
-  // valid decline inert (coderabbitai + chatgpt-codex-connector, a reference-implementation pull request
-  // round 17).
+  // valid decline inert.
   if (unrendered.length > 0) {
     return inert(
       [
@@ -1147,8 +1143,7 @@ export function resolveStance(
   // RENDERED text, is what actually guarantees the post below succeeds —
   // deliberately a second copy of that grammar rather than an import, for the
   // same standalone-installable reason `validateOutcomeBody`'s own header
-  // gives for not sharing code with `/drive-pr` (chatgpt-codex-connector,
-  // a reference-implementation pull request).
+  // gives for not sharing code with `/drive-pr`.
   const renderedBody = (rendered.split("\n", 1)[0] ?? "")
     .replace(/\r$/, "")
     .match(/^\*\*(accepted|rejected|wont-fix|deferred|moot)\*\*([ \t]+)(.*)$/);
@@ -1176,7 +1171,8 @@ export function resolveStance(
 }
 
 /**
- * Absolute path to the shipped config, from this module's own location.
+ * Absolute path to the consumer's config (`.config/review-triage.yaml` in the
+ * consumer repository).
  *
  * `$GROUNDWORK_REVIEW_TRIAGE_CONFIG` overrides it — for a probe of the
  * fail-open/fail-closed paths, and for trialling a retune against a
@@ -1196,34 +1192,31 @@ export function defaultConfigPath(): string {
  *
  *   - a bare `.includes(marker)` counted an ordinary, non-ladder reply that
  *     merely discusses the marker in running prose — e.g. "this predates the
- *     review-triage ladder" (chatgpt-codex-connector, a reference-implementation pull request round 6);
+ *     review-triage ladder";
  *   - matching the WHOLE rendered template (wildcarding only its
  *     `{placeholder}`s) fixed that, but tied matching to the templates'
  *     surrounding prose, so rewording `wont_fix`/`deferred` — routine copy
  *     maintenance, `reply.marker` unchanged — silently orphaned every reply
  *     already posted under the old wording, contradicting the config's own
- *     documented contract that only changing the marker does that
- *     (chatgpt-codex-connector, a reference-implementation pull request round 9).
+ *     documented contract that only changing the marker does that.
  *
  * Same "own dedicated line, exact match, never a substring" discipline as
  * `hasLeaveOpenMarker` (drive-pr/scripts/lib/outcome.ts): a bare substring
  * search would still count a decline that quotes a full ladder-shaped
- * example later in its body (round 8's gap) or an indented/padded
- * near-match (a markdown blockquote of the marker). `null` (never a guessed
- * default) when the config is unusable: a filter that silently fell back to
- * a hardcoded string would report an empty escape sample as "no escapes",
- * which is rule 1 of `.claude/rules/document-scanning-gates.md` exactly
- * backwards.
+ * example later in its body or an indented/padded near-match (a markdown
+ * blockquote of the marker). `null` (never a guessed default) when the config
+ * is unusable: a filter that silently fell back to a hardcoded string would
+ * report an empty escape sample as "no escapes" — reading nothing and reporting
+ * all clear, exactly what a gate must never do.
  *
- * SCOPE OF THE VERDICT (rule 6, same file; TASK). These patterns decide
- * that a reply ENDS WITH the public marker line. They do NOT decide that
- * `triage-ladder.ts` produced it, and no version of this function can: the
- * marker is text in a GitHub reply body, `settledBody` is the whole of what
- * the caller can see, and any richer "provenance" string persisted into that
- * same body is one more thing a hand-written decline can copy — the decoy
- * moves, it does not disappear. That is rule 3's execution-classification
- * residual: closable only by an explicit scope decision, never by a better
- * recognizer.
+ * SCOPE OF THE VERDICT. These patterns decide that a reply ENDS WITH the public
+ * marker line. They do NOT decide that `triage-ladder.ts` produced it, and no
+ * version of this function can: the marker is text in a GitHub reply body,
+ * `settledBody` is the whole of what the caller can see, and any richer
+ * "provenance" string persisted into that same body is one more thing a
+ * hand-written decline can copy — the decoy moves, it does not disappear. That
+ * is an execution-classification residual: closable only by an explicit scope
+ * decision, never by a better recognizer.
  *
  * The decision taken, and what bounds it: the only consumer is
  * `defect-escape.ts --ladder-only`, which narrows a CALIBRATION sample a human
@@ -1236,7 +1229,7 @@ export function defaultConfigPath(): string {
  * reassuring one, so it is stated rather than assumed. A copied marker
  * inflates the escape rate's DENOMINATOR, making escapes look rarer — and
  * `review-loop-baseline.md` § What this licenses reads a low escape rate as
- * evidence *for* declining more ("evidence for TASK's direction"), while
+ * evidence *for* declining more ("evidence for the ladder's direction"), while
  * `review-triage.yaml` § `calibration` treats an escape as the signal that a
  * band is too strict. Pollution therefore biases toward TIGHTENING the
  * ladder — declining more work — which is exactly the direction that needs
@@ -1244,8 +1237,8 @@ export function defaultConfigPath(): string {
  *
  * So what settles this is a measurement, not an argument about direction.
  *
- * Measured before taking that decision (TASK, 2026-09-05): every merged PR
- * in the window from the ladder's own merge (`d56f6792d2`, 2026-09-02) to
+ * Measured before taking that decision (2026-09-05): every merged PR
+ * in the window from the ladder's own merge (2026-09-02) to
  * 2026-09-05 — 50 PRs, uncapped — yielded 14 marker-carrying declines, and all
  * 14 also carry the macro's rendered prose (`declined by the review-triage
  * ladder (.config/review-triage.yaml, band \`X\`, round N)`). That reading
@@ -1266,14 +1259,14 @@ export function defaultConfigPath(): string {
  * output, while a genuine macro-rendered reply from a config version whose
  * wording has since moved on would not match, undercounting it. It is
  * reported, never filtered on, because filtering on the templates' prose is
- * what round 9 reverted — read it as the spot-check prompt it is, never as
- * proof in either direction.
+ * what was already tried and reverted — read it as the spot-check prompt it
+ * is, never as proof in either direction.
  *
  * If that monthly read ever observes a polluted series, the fix is a
  * provenance log outside the reply body — `triage-ladder.ts` recording each
- * decline to the `~/.docomply/` JSONL channel `verification-fit.ts` already
- * uses, keyed by thread id + PR, with `--ladder-only` joining against that log
- * instead of the reply text. Until then it is machinery for a hypothetical.
+ * decline to the JSONL channel `verification-fit.ts` already uses, keyed by
+ * thread id + PR, with `--ladder-only` joining against that log instead of
+ * the reply text. Until then it is machinery for a hypothetical.
  *
  * `defect-escape.ts` prints this scope on every `--ladder-only` run rather
  * than leaving it here alone, because the reader who over-reads the sample is

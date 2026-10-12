@@ -9,12 +9,22 @@ context: fork
 
 A systematic review that detects the kinds of artifact a change touches (a
 database migration, an API endpoint, frontend code, a plan document, …) from
-the diff and runs tiered checks against the repository's standards: its
-architecture decision records (ADRs: short numbered documents that each
-record one design decision and its reason, Groundwork module M5) and their
-machine-readable rules, its change-area catalog (one file mapping path
-patterns to named areas of the codebase and what a change to each implies,
-Groundwork module M3), and its specialist review skills.
+the diff and runs [tiered checks](https://github.com/docomply/jig/blob/main/GLOSSARY.md) against the repository's
+standards: its architecture decision records
+([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md): short numbered documents
+that each record one design decision and its reason, Groundwork module
+[M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)) and
+their machine-readable rules, its
+[change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (one file
+mapping path patterns to named areas of the codebase and what a change to each
+implies, Groundwork module
+[M3](https://github.com/docomply/jig/blob/main/modules/M3-change-area-catalog/README.md)),
+and its specialist review skills.
+
+It is the runnable form of the author-side tiered review in Groundwork module
+[M7 (PR lifecycle & review)](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md):
+the review a change gets before it is pushed, ahead of the pull request's own
+reviewers.
 
 Groundwork maintains this procedure and ships it in the `groundwork` plugin.
 Each repository supplies its own values: its rules, its catalog, its
@@ -45,10 +55,11 @@ Every field is optional. Read them from the base branch's copy of
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
 | `repository.base_branch` | The branch the change is compared against (`origin/<branch>`) | The clone's `origin/HEAD` when it has one, else `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` |
-| `adr.rules_file` | Path, from the repository root, to the machine-readable ADR rules file (`pattern_rules`, and optionally `semantic_rules` and `artifact_detection`) | Detected: the one tracked file named `adr-rules.yaml`, `.adr-rules.yaml` or `adr-rules.yml`, or `rules.yaml` inside an `adr-rules/` directory, outside test fixtures and templates. No file: Tier 1 runs the generic checks only and says so in the summary |
+| `adr.rules_file` | Path, from the repository root, to the machine-readable ADR rules file (`pattern_rules`, and optionally `semantic_rules` and `artifact_detection`) | Detected: the one tracked file named `adr-rules.yaml`, `.adr-rules.yaml` or `adr-rules.yml`, or `rules.yaml` or `rules.yml` inside an `adr-rules/` directory, outside test fixtures and templates. No file: Tier 1 runs the generic checks only and says so in the summary |
 | `drive.validation_plan_command` | The command that reads the changed files (one per line) on stdin and prints the validation plan as JSON, including `reviewSkills` (mandatory specialist review skills) and optionally `postDeploy` | No plan command: resolve the catalog by hand (below), or there are no catalog-mandated specialist gates |
 | `drive.change_areas_catalog` | Path to the change-area catalog (YAML whose `areas:` map holds area key → `{paths, impliedBy, review: {skills}, postDeploy, …}`) | No catalog: skip the catalog steps and say so in the summary |
 | `review.bots` | The logins of the repository's AI reviewers | No AI reviewer is assumed |
+| `issue_tracker.team` | The key the tracker's issue identifiers carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names | A deferral must still name its issue; any issue key or link counts |
 
 ### Policy comes from the base branch, not the change under review
 

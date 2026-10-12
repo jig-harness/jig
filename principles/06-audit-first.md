@@ -5,8 +5,9 @@ is **"tell me where I stand."** Groundwork therefore ships as a runnable
 assessor ([audit/](../audit/)), not just reference material:
 
 1. **Fan out parallel read-only surveys** over the target repo, one per
-   practice area (instruction files, docs governance, automation/enforcement,
-   review setup, tasks/memory, environments/CI).
+   practice area (agent scaffolding, docs governance, automation and
+   enforcement, review and learning loop; tasks, memory, environments and CI
+   are covered inside the last two).
 2. **Detect the stack** from observable facts, so recommendations are phrased
    in the target's own tools (principle 1).
 3. **Score each module** against its `maturity.yaml` criteria, where the score
@@ -26,6 +27,7 @@ check** — including on repos that already adopted groundwork.
 
 - Every module must keep its maturity criteria observable and scoreable; a
   module the auditor can't score is incomplete.
-- The audit's own history matters: the founding audit of the reference
-  implementation (2026-07-18) is preserved as the methodology's first run and
-  its prompts seed [audit/survey-prompts/](../audit/survey-prompts/).
+- The audit learns from its own runs: each run that exposes a gap in the
+  method updates the [survey prompts](../audit/survey-prompts/) and the
+  methodology, and the run is kept as a worked example under
+  [audit/calibration/](../audit/calibration/).

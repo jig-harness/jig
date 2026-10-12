@@ -2,7 +2,7 @@
 
 Repositories need one maintained implementation of their development commands,
 so fixes reach every consumer without copying scripts between projects.
-Groundwork keeps reusable command-line tools here as they move in.
+Groundwork keeps those reusable command-line tools in one place.
 
 ## Layout
 
@@ -32,8 +32,9 @@ with that checkout's mise configuration active. The runtime belongs to the
 Groundwork tooling; it does not change the target repository's application
 language or package manager.
 
-This first release uses bundled commands plus a runtime pin. It avoids a separate binary
-matrix and keeps gates, fixtures and module references reviewable together.
+Groundwork ships bundled commands plus a runtime pin. That avoids a separate
+binary matrix and keeps gates, fixtures and module references reviewable
+together.
 [Bun supports standalone executables](https://bun.sh/docs/bundler/executables),
 but producing and distributing them is a later packaging decision. Moving
 files into a consumer requires their relative imports too; prefer operating

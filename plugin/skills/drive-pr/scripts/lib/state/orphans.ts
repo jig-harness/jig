@@ -116,7 +116,7 @@ export function warnAboutOrphans(
   }
   // Built by the exported helper, not spelled a second time: `reset` clears
   // the marker through that helper, so a drifting literal here would leave the
-  // one-time warning permanently disarmed (coderabbitai, PR #4034 round 2).
+  // one-time warning permanently disarmed.
   // Declared below, but a hoisted function declaration, so this call is fine.
   const warned = orphanMarkerPath(stateDir, pr);
   // An UNDELIVERED reservation (empty marker) is recoverable, but not by

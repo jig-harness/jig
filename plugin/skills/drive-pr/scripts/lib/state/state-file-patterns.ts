@@ -50,12 +50,12 @@ export type ArtifactFamily =
  * guard ignores `key` entirely and only cares whether `re` matched at all.
  *
  * `family` travels on the SAME object as `re`/`key`, not in a second,
- * independently-ordered array: an earlier revision of `artifacts.ts` paired
- * a parallel family-tag array to this one purely by array index, guarded
- * only by a length check — which cannot catch a same-length reorder here
- * silently reassigning every family to the wrong pattern (docomply-review,
- * a reference-implementation pull request round 13). Attaching `family` directly makes that reordering
- * safe by construction: there is nothing left to fall out of sync with.
+ * independently-ordered array: an earlier revision of `artifacts.ts` paired a
+ * parallel family-tag array to this one purely by array index, guarded only by
+ * a length check — which cannot catch a same-length reorder here silently
+ * reassigning every family to the wrong pattern. Attaching `family` directly
+ * makes that reordering safe by construction: there is nothing left to fall out
+ * of sync with.
  */
 export const LOCK_ANCHORS: readonly {
   readonly re: RegExp;
@@ -89,10 +89,9 @@ export const LOCK_ANCHORS: readonly {
  * Entries that are NOT lock anchors — plain output and claim files that
  * retire with their family but have no quarantine of their own to compact.
  *
- * See `reap-state.ts`'s pre-extraction history (PR #4197 rounds 1, 3, 5, 17,
- * 18) for why each shape is here: every one of them was once missed and
- * fell into `unrecognised` (or, for the `.orphan-warned`/`.held-claim.`
- * exact-match gaps, was silently over-matched) before being added.
+ * Every shape here was once missed and fell into `unrecognised` (or, for the
+ * `.orphan-warned`/`.held-claim.` exact-match gaps, was silently over-matched)
+ * before being added.
  *
  * `family` is attached per-entry for the same reason as `LOCK_ANCHORS`
  * above — see that array's own doc comment.
@@ -151,9 +150,9 @@ export const COMPACTING_STAGING_RE = /^\.compacting\.(.+)\.[0-9a-f]{24}$/;
 
 /**
  * Strip `lib/state/lock.ts`'s lock-suffix grammar off an entry name, returning
- * the anchor it belongs to — or `null` when the name is not part of a lock.
- * See `reap-state.ts`'s pre-extraction history (PR #4197 rounds 13, 14, 16)
- * for why the suffix grammar is matched exactly, not with a wildcard.
+ * the anchor it belongs to — or `null` when the name is not part of a lock. The
+ * suffix grammar is matched exactly, not with a wildcard: a wildcard tail
+ * attributes foreign files that merely start with `.lock` to a family.
  *
  * `generationRe` is a PATTERN STRING (a regex `.source`, e.g. `lock.ts`'s
  * `LOCK_GENERATION_RE`), not a `RegExp` instance — it is spliced directly

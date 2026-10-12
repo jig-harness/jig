@@ -57,8 +57,8 @@ export const WORKTREE_LOCK = await worktreeLockName();
  * branch — CI's `fetch-depth: 0` does, a shallow or single-branch clone does
  * not — so the suite's verdict depended on a branch nobody would think twice
  * about deleting. `mode 5b` below already names this exact hazard for its own
- * fixture; the module constants must not have it either
- * (chatgpt-codex-connector, a reference-implementation pull request round 3). `realHead()` is what a probe
+ * fixture; the module constants must not have it either.
+ * `realHead()` is what a probe
  * that genuinely needs git to answer uses instead, and
  * `the head tokens are not objects in this repository` pins the property.
  */
@@ -470,7 +470,7 @@ export interface Fixture {
    * That is the precise reachable path a fail-closed SKIP would have opened:
    * probe blips, sweep silently does not run, evaluation succeeds and returns
    * a verdict that does NOT re-arm — leaving nothing to retry the sweep ever
-   * again (docomply-review, a reference-implementation pull request).
+   * again.
    */
   liveProbeFails?: boolean;
   /**
@@ -502,7 +502,7 @@ export const STICKY_ROUND = 7;
 export type CheckRunFixture = NonNullable<Fixture["checkRuns"]>[number];
 
 export const REVIEWER_RUN: CheckRunFixture = {
-  name: "AI review (majordomo)",
+  name: "AI review (shadow)",
   status: "completed",
   conclusion: "neutral",
   app: "example-review",
@@ -541,19 +541,18 @@ export let binDir: string;
  *
  * A SUBPROCESS env, never an in-process `process.env.HOME =`: under Bun,
  * `os.homedir` ignores a runtime `$HOME` change, so an in-process fake is
- * silently ineffective — `.claude/rules/bun-test-fake-home.md`.
+ * silently ineffective.
  */
 export let suiteHome: string;
 /**
  * Env vars `beforeAll` overrides for the whole suite, and their values from
  * BEFORE it ran (`undefined` = the caller had them unset).
  *
- * bun runs every test FILE of one invocation in a single process, so these
- * are process-global: whatever `afterAll` leaves behind is what sibling files
+ * bun runs every test FILE of one invocation in a single process, so these are
+ * process-global: whatever `afterAll` leaves behind is what sibling files
  * observe. Deleting them unconditionally is not a restore — a caller that ran
  * `DRIVE_PR_LOCK_RETRY_MS=500 bun test` would have siblings see it UNSET, so
- * their timing depends on whether this file ran first (docomply-review
- * summary findings 054eb000a4932059 / af8f5397a9f7e477).
+ * their timing depends on whether this file ran first.
  *
  * Every override is captured, not just the reported one: the others were
  * never restored at all, which leaks a VALUE into siblings rather than an
@@ -591,9 +590,9 @@ export function gitCleanEnv(): Record<string, string> {
     // read the REAL drive target and refuse a push to its own throwaway PR
     // #999 — measured: every `finish-round.ts` test in this file
     // fails when the suite is run from inside a live drive-pr pass, passing
-    // only when launched from a plain shell (PR #4501 round 15). Same fix as
-    // `resolve-review-comments/__tests__/scripts.test.ts`'s `gitCleanEnv()`
-    // (PR #4132). Every test that wants one of these sets it EXPLICITLY in its
+    // only when launched from a plain shell. Same fix as
+    // `resolve-review-comments/__tests__/scripts.test.ts`'s `gitCleanEnv()`.
+    // Every test that wants one of these sets it EXPLICITLY in its
     // own `env` afterward, which still wins.
     //
     // `CLAUDE_PID` is the identical hazard through a harness-level variable
@@ -603,9 +602,9 @@ export function gitCleanEnv(): Record<string, string> {
     // session (this file's own doc comment above already says that is common,
     // not exotic) inherits the REAL session's pid through it, so a `999`-PR
     // probe can read back a lease as "already held by session pid <the real
-    // one>" (an earlier change finding, PR #4820 — measured on the
-    // `drive.ts loop control` `set-ci-hold` fixtures specifically, the same
-    // shape as the `DRIVE_PR_SESSION` measurement above).
+    // one>" (measured on the `drive.ts loop control` `set-ci-hold` fixtures
+    // specifically, the same shape as the `DRIVE_PR_SESSION` measurement
+    // above).
     if (
       k.startsWith("GIT_") ||
       k.startsWith("DRIVE_PR_") ||
@@ -696,11 +695,10 @@ export function makeScratchRepo(name: string): {
 
 /**
  * A repo with a merge conflict resolved back to a tree that matches what was
- * already committed — `git checkout --ours` + `git add`, never `git commit`
- * — so `MERGE_HEAD` sits in the git-dir while `git status --porcelain`
- * (even hardened with `--untracked-files=normal --ignore-submodules=none`)
- * reports empty. Reproduces the gap chatgpt-codex-connector found in PR
- * #4046 review round 3.
+ * already committed — `git checkout --ours` + `git add`, never `git commit` —
+ * so `MERGE_HEAD` sits in the git-dir while `git status --porcelain` (even
+ * hardened with `--untracked-files=normal --ignore-submodules=none`) reports
+ * empty. Reproduces that gap.
  */
 export function makeUnresolvedMergeRepo(name: string): {
   dir: string;
@@ -743,9 +741,8 @@ export function makeUnresolvedMergeRepo(name: string): {
  * A repo with an interactive rebase paused at an `edit` instruction — clean
  * index/worktree (the paused commit is fully checked out), `rebase-merge`
  * sitting in the git-dir because the rebase itself was never continued or
- * aborted. Reproduces the gap chatgpt-codex-connector found in PR #4046
- * review round 4 (`unconcludedGitOpMarker()` originally checked only
- * MERGE_HEAD/CHERRY_PICK_HEAD/REVERT_HEAD, missing rebase/am state).
+ * aborted. Reproduces the gap where `unconcludedGitOpMarker()` checked only
+ * MERGE_HEAD/CHERRY_PICK_HEAD/REVERT_HEAD, missing rebase/am state.
  *
  * The sequence editor is a script FILE, not an inline `sed -i` invocation:
  * BSD sed (macOS, local runs) and GNU sed (CI's Linux runners) take the
@@ -811,7 +808,7 @@ export function makeRebasePausedRepo(name: string): {
  * single-parent commit on top of M, touching a THIRD file). `origin/develop`
  * is pointed at D.
  *
- * Exercises an earlier change finding 2:
+ * Exercises the base-sync exclusion:
  * `changedFilesSinceExcludingMerges(root, pr, verifiedSha)` must report ONLY
  * `round-only.txt` (R's own file) as touched by this round — never
  * `develop-only.txt` (D's file, imported solely by the base-sync merge M) —
@@ -834,10 +831,10 @@ export function makeBaseSyncMergeRepo(name: string): {
       stdout: "pipe",
       stderr: "pipe",
     });
-    // an earlier change finding (coderabbitai): every call here used to run
-    // unchecked, so a failed setup step would silently hand the probes below
-    // a repo shape they then assert against for the wrong reason. Matches
-    // the `gitOut` pattern at `makeOrphanCommit` (line 2591's own comment).
+    // Every call here used to run unchecked, so a failed setup step would
+    // silently hand the probes below a repo shape they then assert against for
+    // the wrong reason. Matches the `gitOut` pattern at `makeOrphanCommit`
+    // (line 2591's own comment).
     expect(`git ${args[0]}: ${r.stderr.toString().trim()}`).toBe(
       `git ${args[0]}: `,
     );
@@ -888,11 +885,11 @@ export function makeBaseSyncMergeRepo(name: string): {
 }
 
 /**
- * A repo whose round commit RENAMES its only file (`git mv`, this repo's own
- * convention — `.claude/rules/git-workflow.md`). Exercises the * review finding (chatgpt-codex-connector): without `--no-renames` on
- * `changedFilesSinceExcludingMerges`'s `git log`, a rename reports only the
- * destination path, so a thread still anchored to the pre-rename path never
- * lands in `touched` and the guard misses it.
+ * A repo whose round commit RENAMES its only file (`git mv`). Exercises the
+ * rename case: without `--no-renames` on `changedFilesSinceExcludingMerges`'s
+ * `git log`, a rename reports only the destination path, so a thread still
+ * anchored to the pre-rename path never lands in `touched` and the guard misses
+ * it.
  */
 export function makeRenameRepo(name: string): {
   dir: string;
@@ -986,8 +983,8 @@ export function useDrivePrSuite(): void {
     tmpRoot = mkdtempSync(join(tmpdir(), "drive-pr-test-"));
     binDir = join(tmpRoot, "bin");
     mkdirSync(binDir, { recursive: true });
-    // Point BOTH vendor state roots at empty fixture dirs for the whole suite
-    //. `drive.ts` now snapshots them before EVERY round, not only
+    // Point BOTH vendor state roots at empty fixture dirs for the whole suite.
+    // `drive.ts` now snapshots them before EVERY round, not only
     // when diagnosing a failed pass, so without this every spawned drive in
     // this file synchronously walks the developer's real `~/.claude/projects`
     // and `~/.codex/sessions` — measured at 5932 files here — on every round.
@@ -1207,7 +1204,7 @@ fi
 
 # A REST pull read — \`gh api -i repos/{owner}/{repo}/pulls/<N>\`, which
 # lib/gh-conditional.ts's readPrLiveness issues in place of \`gh pr view --json
-# state\` for the state-ONLY liveness reads (ENG-8616). Answered BY the
+# state\` for the state-ONLY liveness reads. Answered BY the
 # \`pr view\` fixtures rather than from a second copy of them, so every fixture
 # that models a moving, unreadable or lying state keeps modelling it, and every
 # counter (\`live-probes\`, \`state-reads\`, \`head-reads\`) keeps counting the same
@@ -1586,7 +1583,7 @@ fi
 # head-moved window by one.
 #
 # …and it is additionally gated on there being NO \`-q\` filter, because a second
-# caller now issues \`--json state\` too: the ENG-6724 sweep's liveness probe,
+# caller now issues \`--json state\` too: the reconcile sweep's liveness probe,
 # which asks \`--json state -q .state\`. That one is not a head read at all — it
 # decides whether the sweep may run — so counting it advanced every
 # \`headMovesAfter\` window by one the moment the sweep became the harness
@@ -1898,8 +1895,7 @@ for a in "$@"; do
         esac
       done
       # Models a CONCURRENT driver resolving a DIFFERENT held thread between
-      # finish-round.ts's own batch snapshot and THIS item's dispatch — the
-      # exact race chatgpt-codex-connector flagged on PR #4166 round 8: a key
+      # finish-round.ts's own batch snapshot and THIS item's dispatch: a key
       # gone from \`held\` by the time its own resolve-held-thread.ts call runs
       # must read as a stale snapshot (re-read), not a permanent refusal.
       # $F/vanish-key-on-resolve holds the OTHER key to release; \`--if-present\`
@@ -1915,8 +1911,8 @@ for a in "$@"; do
 done
 
 # \`resolve-held-thread.ts\`'s own single-thread \`node(id:...)\` staleness
-# recheck (ENG-7430 review finding, round 5) — discriminated from the
-# PR-wide \`threads.json\` listing the same way \`triage-thread.test.ts\`'s
+# recheck — discriminated from the PR-wide \`threads.json\` listing the same
+# way \`triage-thread.test.ts\`'s
 # own stub already discriminates it (by literal substring, since both this
 # and the ordinary query arrive as \`gh api graphql ...\`). Answered from the
 # SAME \`threads.json\` fixture data \`writeFixture({ threads: [...] })\`
@@ -1934,9 +1930,8 @@ for a in "$@"; do
         echo "gh-stub: node(id:) query matched no thread for id '$tid'" >&2
         exit 1
       fi
-      # \`resolve-held-thread.ts\`'s own dropReheldKey() re-verification
-      # (review finding, docomply-review, a reference-implementation pull request round 1): models a
-      # thread that reads resolved on the FIRST \`node(id:\` call
+      # \`resolve-held-thread.ts\`'s own dropReheldKey() re-verification:
+      # models a thread that reads resolved on the FIRST \`node(id:\` call
       # (\`staleCheck\`) but UNRESOLVED — reopened — by the SECOND
       # \`node(id:\` call this same invocation makes (dropReheldKey's own
       # re-check, immediately before its delete). A per-thread counter file
@@ -2113,7 +2108,8 @@ export function threadCommentNodes(
  * would leave every bypass probe failing condition 4 — the CONVERGED and
  * ROUND_READY probes would redden honestly, but the four AWAITING_REVIEWER
  * probes would keep passing for the wrong reason, asserting nothing about the
- * condition each is named for (`.claude/rules/document-scanning-gates.md` § 5).
+ * condition each is named for (a fail-closed conjunction needs each clause to
+ * be the sole decider in its own probe).
  */
 export const DEFAULT_STICKY_UPDATED_AT = new Date(
   Date.now() - STALLED_MIN_AGE_SEC * 2 * 1000,
@@ -2184,13 +2180,13 @@ export function writeFixture(f: Fixture): { dir: string; stateDir: string } {
   // Every one of these drives the stub's SINGLE-FIELD `state` read — the one
   // drive-status.ts makes immediately ahead of the sweep — and the stub
   // evaluates them in a fixed order (`fails`, then `closed-always`, then
-  // `closed-once`). A fixture setting two therefore gets whichever comes
-  // first and silently models neither of the windows it asked for. Same rule,
-  // same reason, and the same mechanism as the head-read-counter throw below:
-  // a comment saying "never combine them" is a guard held in memory, which is
-  // the thing this whole skill exists to replace (coderabbitai, PR #4067 —
-  // reported on the `Once`/`Always` pair, applied to the class, since
-  // `liveProbeFails` shares the identical read).
+  // `closed-once`). A fixture setting two therefore gets whichever comes first
+  // and silently models neither of the windows it asked for. Same rule, same
+  // reason, and the same mechanism as the head-read-counter throw below: a
+  // comment saying "never combine them" is a guard held in memory, which is the
+  // thing this whole skill exists to replace (applied to the class, not only
+  // the `Once`/`Always` pair, since `liveProbeFails` shares the identical
+  // read).
   //
   // `stateChangesTo` is deliberately NOT in this set: it is layered behind
   // these branches on purpose and matches the multi-field snapshot read as
@@ -2518,7 +2514,7 @@ export async function probeIn(
       // hook past a budget it has already outgrown once.
       //
       // Both halves of that were wrong, and the second was MEASURED wrong on
-      // this suite (docomply-review, a reference-implementation pull request). Correctness first: an inverted
+      // this suite. Correctness first: an inverted
       // default silently moves every pre-existing probe onto the exceptional
       // path, so a change to sweep ordering, output, failure handling or state
       // mutation can break ordinary production invocations while the suite

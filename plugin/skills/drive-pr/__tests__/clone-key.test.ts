@@ -74,8 +74,8 @@ describe("cloneKey", () => {
   });
 
   it("survives a rename/relocation of the checkout — the identity moves WITH the directory, not with its path", () => {
-    // The exact gap a pure realpath(commonDir) hash could not close
-    // (docomply-review, a reference-implementation pull request): the directory's CONTENTS carry the
+    // The exact gap a pure realpath(commonDir) hash could not close:
+    // the directory's CONTENTS carry the
     // identity, so renaming or moving it must not mint a fresh key.
     const parent = mkdtempSync(join(tmpdir(), "clone-key-reloc-"));
     const original = join(parent, "original");
@@ -91,11 +91,11 @@ describe("cloneKey", () => {
   });
 
   it("adopts an already-persisted id rather than minting a new one — the race-safety property the exclusive, durable create provides", () => {
-    // Simulates the losing side of a concurrent mint: another process (or
-    // an earlier call) already won the `wx` create and its id is on disk.
-    // `cloneKey` must hash THAT value, never generate and use its own
-    // (docomply-review, a reference-implementation pull request — the whole point of routing the write
-    // through `createExclusiveDurable` instead of a bare `writeFileSync`).
+    // Simulates the losing side of a concurrent mint: another process (or an
+    // earlier call) already won the `wx` create and its id is on disk.
+    // `cloneKey` must hash THAT value, never generate and use its own (the
+    // whole point of routing the write through `createExclusiveDurable` instead
+    // of a bare `writeFileSync`).
     const dir = mkdtempSync(join(tmpdir(), "clone-key-race-"));
     try {
       createExclusiveDurable(
@@ -113,13 +113,12 @@ describe("cloneKey", () => {
   });
 
   it("adopts a genuinely raced value — the publishing link itself lost, so this call never owned the file", async () => {
-    // The EEXIST-vs-own-failure split this round's fix depends on
-    // (docomply-review, a reference-implementation pull request round 3): when the publishing
+    // The EEXIST-vs-own-failure split this fix depends on: when the publishing
     // `linkSync(tmp, path)` itself throws EEXIST, this call never created
     // `path`, so a re-read finds only a real racer's committed value, never
     // this call's own leftover. Modelled by making `linkSync` deposit the
-    // "other process"'s content and fail with EEXIST in the same instant,
-    // since a real concurrent winner cannot otherwise be produced from one
+    // "other process"'s content and fail with EEXIST in the same instant, since
+    // a real concurrent winner cannot otherwise be produced from one
     // synchronous test.
     const dir = mkdtempSync(join(tmpdir(), "clone-key-eexist-race-"));
     const target = join(dir, "drive-pr-clone-id");
@@ -164,7 +163,7 @@ describe("cloneKey", () => {
     // link from an already-complete temp file means the target is never
     // touched by this call at all when the failure happens this early —
     // there is nothing of this call's own to remove, and nothing to adopt
-    // either (docomply-review, a reference-implementation pull request round 3).
+    // either.
     const dir = mkdtempSync(join(tmpdir(), "clone-key-own-fail-"));
     const target = join(dir, "drive-pr-clone-id");
 
@@ -187,7 +186,7 @@ describe("cloneKey", () => {
   });
 
   it("refuses to trust its own publish when the post-link directory fsync fails, rather than treating it as a raced winner", async () => {
-    // The gap this closes (docomply-review, a reference-implementation pull request round 4): when
+    // The gap this closes: when
     // `createExclusiveDurable`'s publishing `link` succeeds but the
     // FOLLOWING directory fsync then fails, the old code here caught
     // whatever `createExclusiveDurable` threw, re-read the target — which
@@ -229,15 +228,14 @@ describe("cloneKey", () => {
   });
 
   it("never exposes the target file before its content is complete — the write lands on a temp path, not the target", async () => {
-    // The chatgpt-codex-connector finding this round also fixes (PR #4618
-    // round 3): the earlier direct-`wx`-on-target implementation created
-    // the target's own directory entry BEFORE writing any content to it,
-    // so a concurrent reader losing its own `wx` attempt in that window
-    // could see the target exist but empty, or exist but truncated.
+    // The earlier direct-`wx`-on-target implementation created the target's own
+    // directory entry BEFORE writing any content to it, so a concurrent reader
+    // losing its own `wx` attempt in that window could see the target exist but
+    // empty, or exist but truncated.
     // Publishing via an exclusive link from an already-complete temp file
-    // closes the window structurally: the target has no state between
-    // "absent" and "fully written". Verified here by checking the target
-    // does not exist yet at the moment content is actually being written.
+    // closes the window structurally: the target has no state between "absent"
+    // and "fully written". Verified here by checking the target does not exist
+    // yet at the moment content is actually being written.
     const dir = mkdtempSync(join(tmpdir(), "clone-key-no-partial-"));
     const target = join(dir, "drive-pr-clone-id");
 
@@ -269,12 +267,11 @@ describe("cloneKey", () => {
   });
 
   it("refuses a corrupted (non-UUID) persisted identity rather than silently hashing it", () => {
-    // docomply-review, a reference-implementation pull request round 5: `readCloneId` used to accept every
-    // nonempty string, though the only production minting path is
-    // `randomUUID()`. A truncated or otherwise corrupted id file would
-    // silently hash the surviving bytes into a DIFFERENT, valid-looking
-    // state directory, abandoning this clone's parked decisions and round
-    // budget under the original key with no error anywhere.
+    // `readCloneId` used to accept every nonempty string, though the only
+    // production minting path is `randomUUID()`. A truncated or otherwise
+    // corrupted id file would silently hash the surviving bytes into a
+    // DIFFERENT, valid-looking state directory, abandoning this clone's parked
+    // decisions and round budget under the original key with no error anywhere.
     const dir = mkdtempSync(join(tmpdir(), "clone-key-corrupt-"));
     try {
       createExclusiveDurable(join(dir, "drive-pr-clone-id"), "not-a-uuid\n");
@@ -298,10 +295,10 @@ describe("cloneKey", () => {
   });
 
   it("refuses a well-formed non-v4, non-RFC-4122-variant UUID — syntactically generic but impossible for randomUUID() to mint", () => {
-    // docomply-review, a reference-implementation pull request round 12: the 8-4-4-4-12 hex shape alone
-    // accepts a UUID no production writer could ever have produced —
-    // randomUUID() always sets the version nibble to `4` and the variant
-    // nibble to one of `8`/`9`/`a`/`b`. Every nibble `1` clears both.
+    // The 8-4-4-4-12 hex shape alone accepts a UUID no production writer could
+    // ever have produced — randomUUID() always sets the version nibble to `4`
+    // and the variant nibble to one of `8`/`9`/`a`/`b`. Every nibble `1` clears
+    // both.
     const dir = mkdtempSync(join(tmpdir(), "clone-key-non-v4-"));
     try {
       createExclusiveDurable(
@@ -315,10 +312,9 @@ describe("cloneKey", () => {
   });
 
   it("refuses an uppercase-recased UUID — randomUUID() only ever persists lowercase", () => {
-    // docomply-review, a reference-implementation pull request round 13: hashCloneId() hashes case-
-    // sensitively, so accepting uppercase would hash an otherwise-valid,
-    // re-cased id to a DIFFERENT state-directory key than the one this
-    // clone's real (lowercase) identity already resolved to.
+    // hashCloneId() hashes case-sensitively, so accepting uppercase would hash
+    // an otherwise-valid, re-cased id to a DIFFERENT state-directory key than
+    // the one this clone's real (lowercase) identity already resolved to.
     const dir = mkdtempSync(join(tmpdir(), "clone-key-uppercase-"));
     try {
       createExclusiveDurable(
@@ -367,11 +363,10 @@ describe("peekCloneKey", () => {
   });
 
   it("refuses an empty persisted identity file rather than reporting it as unminted", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 7: only ENOENT means "never
-    // minted". A zero-byte file (a truncated write) is not that — treating
-    // it as unminted would let the standalone fence's legacy fallback
-    // inspect the obsolete legacy directory instead of the real one,
-    // missing an active lease actually held under the real identity.
+    // Only ENOENT means "never minted". A zero-byte file (a truncated write) is
+    // not that — treating it as unminted would let the standalone fence's
+    // legacy fallback inspect the obsolete legacy directory instead of the real
+    // one, missing an active lease actually held under the real identity.
     const dir = mkdtempSync(join(tmpdir(), "clone-key-peek-empty-"));
     try {
       createExclusiveDurable(join(dir, "drive-pr-clone-id"), "");

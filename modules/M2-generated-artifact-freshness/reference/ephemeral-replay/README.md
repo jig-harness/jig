@@ -18,7 +18,7 @@ Because every run is a clean-room replay, nothing on the developer's machine
 (a mutated local database, another checkout's container) can contaminate the
 result, and parallel [worktrees](../../../../GLOSSARY.md) never collide.
 
-`check-schema-drift.ts` is a well-commented, native Bun skeleton of this
+`check-schema-drift.ts` is a native Bun implementation of this
 recipe using docker + `psql` + `pg_dump` against a generic migrations
 directory (e.g. one whose first migration creates an `orders` table). It is
 **one instantiation of a general pattern**: the same five steps apply to any
@@ -31,6 +31,21 @@ equivalents; keep the shape.
 bun check-schema-drift.ts <migrations-dir> <committed-schema.sql>
 ```
 
+It replays the `*.sql` files directly inside `<migrations-dir>` (not
+subdirectories) in byte order of their names. Exit codes: 0 when the committed
+schema matches a clean replay, 1 on drift, 2 on a setup error (missing input,
+docker unavailable, the database never becoming ready, a failing migration).
+
+| Environment variable | Effect |
+|----------------------|--------|
+| `PG_IMAGE` | Engine image (default `postgres:18`, a floating tag — set it to a digest-pinned image, see below) |
+| `DOCKER_TIMEOUT_MS` | Deadline for each docker call other than the readiness wait (default 300000) |
+| `DOCKER_RECONCILE_MS` | Pause between cleanup attempts (see Operational gotchas) |
+| `KEEP_CONTAINER` | Any value keeps the container for debugging instead of removing it |
+
+The self-tests (normalization, missing input, migration order, cleanup) are in
+Groundwork's [`scripts/freshness.test.ts`](../../../../scripts/freshness.test.ts).
+
 ## Normalization gotchas (where this pattern actually fails)
 
 Almost every false positive in an ephemeral-replay check is a normalization
@@ -39,8 +54,7 @@ bug, not real drift:
 - **Normalize both sides identically.** Run the committed artifact and the
   fresh dump through the same normalizer, every time. If you normalize only
   the fresh side, any later fix to the normalizer makes every
-  previously-committed artifact look "drifted" until manually regenerated —
-  a proven trap in the reference implementation.
+  previously-committed artifact look "drifted" until manually regenerated.
 - **Strip environment-flavored content at dump time.** Ownership,
   privileges, and tablespaces vary per environment and say nothing about the
   schema: `--no-owner --no-privileges --no-tablespaces --no-security-labels`.
@@ -51,8 +65,9 @@ bug, not real drift:
   not a floating tag. Dump formatting changes between engine versions, so a
   silently-moved tag manufactures phantom drift. Re-pin deliberately when
   upgrading, and use the same pinned image locally and in CI.
-- **Pin ordering.** Apply migrations in `LC_ALL=C` filename order; locale
-  collation differences between machines otherwise change the replay order.
+- **Pin ordering.** Apply migrations in byte order of their filenames (what
+  `LC_ALL=C sort` gives); locale collation differences between machines
+  otherwise change the replay order.
 
 ## Operational gotchas
 
@@ -80,8 +95,8 @@ bug, not real drift:
   milliseconds, default 1000, clamped to 1..10000; invalid values fall back to
   the default), and the whole reconciliation stops after 30s regardless.
 - **Don't use `--rm`.** If initialization fails, `--rm` deletes the
-  container before its logs can be read. Remove explicitly in a cleanup
-  trap, with a `KEEP_CONTAINER=1` escape hatch for debugging.
+  container before its logs can be read. Remove it explicitly in cleanup,
+  with a `KEEP_CONTAINER=1` escape hatch for debugging.
 - **Register cleanup before waiting**, so a timeout or Ctrl-C still tears
   the container down.
 

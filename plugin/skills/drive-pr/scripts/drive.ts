@@ -26,11 +26,12 @@
  *                    as `pull_requests.mark_ready: never` for this run. When
  *                    the drive marks a draft Ready is otherwise
  *                    `pull_requests.mark_ready`: after round N (default 1),
- *                    or only at convergence. Off by default: repo policy births every
- *                    PR as a draft, `docomply-review` reviews drafts but
- *                    CodeRabbit refuses them, so the drive clears the in-house
- *                    findings and THEN marks the PR Ready, spending the paid
- *                    external reviewer's one pass on an already-cleaned head.
+ *                    or only at convergence. Off by default: repo policy births
+ *                    every PR as a draft, the configured AI reviewer reviews
+ *                    drafts but CodeRabbit refuses them, so the drive clears
+ *                    the AI reviewer's findings and THEN marks the PR Ready,
+ *                    spending the paid external reviewer's one pass on an
+ *                    already-cleaned head.
  *                    See mark-ready.ts for the measurements.
  *   --timeout S      forwarded to drive-status.ts.
  *   --interval S     forwarded to drive-status.ts.
@@ -42,7 +43,7 @@
  * `git status`) reads that tree — so a flag pointing the head COMPARISON
  * somewhere else could only ever describe a repository nothing else in this
  * file touches. A briefly-forwarded `--head` was all three reviewers' finding
- * in one round (PR #4106): frozen at startup, it wedges the head-sync guard in
+ * in one round: frozen at startup, it wedges the head-sync guard in
  * HEAD_LAG the moment a pass pushes; being a caller's assertion at one instant
  * rather than a continuing measurement, it cannot attest sameness for the stall
  * stop either; and it left the convergence certification reading the driver's
@@ -53,16 +54,16 @@
  *   --dry-run        report each round's decision; never invoke the pass.
  *
  * The pass command is given as ARGV after `--`, and is executed directly —
- * never through a shell. The bash converge.sh took an opaque `--agent
- * '<string>'` and then had to prove, by walking that string character by
- * character tracking quote state, that every `;`/`&&`/`||`/`|`-separated
- * segment named the right PR — because a pass that silently targets the
- * current branch's PR edits and resolves threads on the wrong pull request.
- * Taking argv removes the shell layer, so there are no segments to prove
- * anything about and the guard below is an exact token test (its converge.ts
- * successor adopted the same interface for the same reason).
+ * never through a shell. An opaque command string run through a shell would
+ * have to be proven, by walking it character by character tracking quote state,
+ * to name the right PR in every `;`/`&&`/`||`/`|`-separated segment — because a
+ * pass that silently targets the current branch's PR edits and resolves threads
+ * on the wrong pull request. Taking argv removes the shell layer, so there are
+ * no segments to prove anything about and the guard below is an exact token
+ * test (resolve-review-comments' converge.ts takes the same interface for the
+ * same reason).
  *
- *   drive.ts 3947 --bots-only -- claude -p "/groundwork:drive-pr --bots-only 3947"
+ *   drive.ts 123 --bots-only -- claude -p "/groundwork:drive-pr --bots-only 123"
  *
  * Exit codes mirror drive-status.ts, plus 6:
  *   0  converged (SHA-verified)
@@ -102,10 +103,9 @@
  *      standing down after mistaking its own parent driver for a
  *      competing drive) burns the whole
  *      --max-rounds budget while the round headers look like progress;
- *      this stop names what did not happen instead. A DIFFERENT code
- *      from `13` deliberately (chatgpt-codex-connector, a reference-implementation pull request,
- *      round 9): a caller reading the exit code alone must be able to
- *      tell "another working tree owns this PR" (recoverable by waiting
+ *      this stop names what did not happen instead. A DIFFERENT code from
+ *      `13` deliberately: a caller reading the exit code alone must be able
+ *      to tell "another working tree owns this PR" (recoverable by waiting
  *      or handing off) from "this pass is stuck and needs a human look"
  *      (recoverable by reading the pass output) — sharing one code
  *      collapsed that distinction, which the terminal-state table exists
@@ -333,14 +333,13 @@ async function leftoverReport(): Promise<string> {
   // Porcelain answers "is anything uncommitted", not "is a git operation
   // still open": resolving a conflict back to a tree that matches what was
   // already committed leaves MERGE_HEAD behind while porcelain reports empty
-  // (chatgpt-codex-connector, a reference-implementation pull request round 3) — the same gap the CONVERGED
+  // — the same gap the CONVERGED
   // path checks via this same helper, below.
   const op = await unconcludedGitOpMarker(gitCallTimeoutSeconds());
   // A stalled tree can carry BOTH signals at once — a conflict-resolution
   // pass commonly does — so report every one that's KNOWN rather than
-  // collapsing to one message and hiding the rest (chatgpt-codex-connector /
-  // docomply-review, a reference-implementation pull request rounds 6 and 8: an early return on the op
-  // marker discarded already-collected dirty paths, and a failed op-marker
+  // collapsing to one message and hiding the rest (an early return on the op
+  // marker once discarded already-collected dirty paths, and a failed op-marker
   // PROBE discarded them too, even though `dirty` — read successfully above
   // — was already known). `op.ok === false` means only the marker check
   // itself is unreadable; the porcelain read that already succeeded is not
@@ -368,9 +367,8 @@ async function leftoverReport(): Promise<string> {
   } else {
     // `dirty.stdout === ''` is known regardless of `op.ok` — the porcelain
     // read succeeded earlier and is independent of the op-marker probe. A
-    // failed probe must not suppress this already-known result too
-    // (docomply-review / chatgpt-codex-connector, a reference-implementation pull request round 10: the
-    // round-8 fix's `else if (op.ok)` guard was the SAME bug it was meant to
+    // failed probe must not suppress this already-known result too (an
+    // earlier `else if (op.ok)` guard here was the SAME bug it was meant to
     // close, one level down).
     report += "  No uncommitted paths — porcelain status is clean.\n";
   }
@@ -493,21 +491,20 @@ async function certifyFinalWorktree(
  * round that did work and the report would state, falsely, that nothing was
  * pushed. `--no-head-sync` is not an exemption from that — a caller declining
  * to COMPARE the local head is not a caller asserting no local head exists
- * (docomply-review, a reference-implementation pull request, twice: first for a measurement that failed,
- * then for the deliberate opt-out). `drive.ts` has deliberately no `--head`
- * to fall back on (this file's own top-of-file comment — it drives the tree
- * it runs in); a drive that genuinely cannot measure in its own tree instead
- * gets `local: ''` / `localSource: 'unavailable'` from drive-status.ts, which
- * the empty-string check above already refuses — losing only this earlier
- * stop and falling back to the `--max-rounds` bound, same as a caller that
- * opts out entirely.
+ * (that holds both for a measurement that failed and for the deliberate
+ * opt-out). `drive.ts` has deliberately no `--head` to fall back on (this
+ * file's own top-of-file comment — it drives the tree it runs in); a drive
+ * that genuinely cannot measure in its own tree instead gets `local: ''` /
+ * `localSource: 'unavailable'` from drive-status.ts, which the empty-string
+ * check above already refuses — losing only this earlier stop and falling
+ * back to the `--max-rounds` bound, same as a caller that opts out entirely.
  *
  * And it binds work IDENTITIES, not cardinalities. Counts alone call a
  * SUBSTITUTION unchanged — a pass resolves thread A while the reviewer posts
- * thread B, so the count stays 1 across a round that did real work (both
- * reviewers, PR #4106). The key arrays are therefore required, not optional:
- * a gate that measured counts but published no keys cannot attest sameness,
- * and says so with `null` rather than falling back to the weaker evidence.
+ * thread B, so the count stays 1 across a round that did real work. The key
+ * arrays are therefore required, not optional: a gate that measured counts
+ * but published no keys cannot attest sameness, and says so with `null`
+ * rather than falling back to the weaker evidence.
  */
 export function roundFingerprint(
   status: Record<string, unknown>,
@@ -526,7 +523,7 @@ export function roundFingerprint(
   // or any source a later build introduces — is refused.
   //
   // Named-denylist first, and that was wrong in the one direction that costs a
-  // productive drive (docomply-review, a reference-implementation pull request round 6): a future
+  // productive drive: a future
   // `localSource: 'cache'` carrying a frozen SHA would read as a continuing
   // measurement and stop the loop at 14 after real pushes. Refusing an unknown
   // source only ever loses this early stop and falls back to the `--max-rounds`
@@ -545,7 +542,7 @@ export function roundFingerprint(
   // (rather than refusing the whole fingerprint) would make two passes that
   // park DIFFERENT findings serialize identically whenever the status report
   // omits this field, which is exactly the false-stall the identity check
-  // exists to prevent (docomply-review, a reference-implementation pull request).
+  // exists to prevent.
   if (!Array.isArray(parkedKeys)) return null;
   return JSON.stringify([
     api,
@@ -718,7 +715,7 @@ async function waitAtMailboxCheckpoint(
  * The driver-only exit codes — every one below is read out of
  * `TERMINAL_STATES` via `driverOnlyExitCode`, not hand-typed, so an edit to
  * the table and an edit to this file cannot silently disagree the way
- * `scripts/check-drive-pr-terminal-states.ts`'s own drift check on
+ * `__tests__/terminal-states-consistency.ts`'s own drift check on
  * `drive.ts` verifies. Before this, each of these was either a
  * bare numeric literal repeated at every `return` site
  * (`MAX_ROUNDS`/`SINGLE_INSTANCE_LOCK`/`WORKTREE_UNCLEAN`/`STALLED`) or —
@@ -755,23 +752,22 @@ export const MAILBOX_PAUSE_TIMEOUT_EXIT = driverOnlyExitCode(
   "MAILBOX_PAUSE_TIMEOUT",
 );
 /**
- * The result of one `runRepairPass` call, kept apart from a raw process
- * exit code (review finding, round 3): the spawned command is
- * caller-supplied and its exit space is its own, so a real pass exiting
- * with, say, 18 or 19 would otherwise collide with this driver's own
- * `MAILBOX_STOPPED_EXIT` / `MAILBOX_PAUSE_TIMEOUT_EXIT` sentinels — the
- * bare-`number` return this replaced conflated the two code spaces into
- * one. `dispatched` says which space `code` (when present) belongs to:
+ * The result of one `runRepairPass` call, kept apart from a raw process exit
+ * code: the spawned command is caller-supplied and its exit space is its
+ * own, so a real pass exiting with, say, 18 or 19 would otherwise collide
+ * with this driver's own `MAILBOX_STOPPED_EXIT` /
+ * `MAILBOX_PAUSE_TIMEOUT_EXIT` sentinels — the bare-`number` return this
+ * replaced conflated the two code spaces into one. `dispatched` says which
+ * space `code` (when present) belongs to:
  *
  *  - `dispatched: true` — the pass actually ran; `code` is ITS exit code,
  *    arbitrary, never to be compared against this file's own exit
  *    constants. `postPassMailboxExit` is this driver's own exit code from a
- *    mailbox checkpoint taken immediately AFTER the pass completed (review
- *    finding, round 4) — `null` on 'clear' or 'resumed' (the pass's own
- *    `code` is what matters either way), non-null on stop/pause-timeout/
- *    unreadable, in which case the caller returns it directly, in
- *    preference to interpreting `code`, once it has committed whatever
- *    budget this confirmed dispatch earned.
+ *    mailbox checkpoint taken immediately AFTER the pass completed — `null`
+ *    on 'clear' or 'resumed' (the pass's own `code` is what matters either
+ *    way), non-null on stop/pause-timeout/unreadable, in which case the
+ *    caller returns it directly, in preference to interpreting `code`, once
+ *    it has committed whatever budget this confirmed dispatch earned.
  *  - `dispatched: false, resumed: true` — a live pause cleared at the
  *    pre-spawn checkpoint before anything spawned; there is no code to
  *    report, and the caller re-gates from the top exactly like every other
@@ -797,7 +793,7 @@ type RepairDispatch =
  * that never returns is invisible to all of them. The driver keeps refreshing
  * its claim from a timer, `drives.ts` keeps reporting it LIVE, and it waits
  * forever. The measured shapes: a pass that died mid-`git merge` leaving the
- * driver polling for a head change that could never arrive (PR #4172), and the
+ * driver polling for a head change that could never arrive, and the
  * spawn's own comment conceding that a descendant which wants to PROMPT is "a
  * hang no deadline in this skill covers".
  *
@@ -832,8 +828,8 @@ export function passTimeoutSeconds(): number {
  *
  * Both were defended on the same reasoning — "this is not a review round, and
  * a triage pass has nothing to do with it" — which is true of TRIAGE and false
- * of the PASS. The pass is a general agent with `/fix-ci` and
- * `resolving-merge-conflicts` available to it, and `base-sync.ts`'s own exit-9
+ * of the PASS. The pass is a general agent with `/groundwork:fix-ci` and
+ * `/groundwork:resolve-conflicts` available to it, and `base-sync.ts`'s exit-9
  * row already documents the conflict procedure *for a pass to follow*. The
  * asymmetry that gave the game away: a conflict WITH findings already comes
  * back `ROUND_READY` and gets merged as part of that round, so the identical
@@ -850,7 +846,7 @@ export function passTimeoutSeconds(): number {
  * one stops every in-flight drive on the fleet at its next state read. The
  * precedent is `noopRounds`, whose own streak is in-memory for the same
  * reason and whose reset-on-restart semantics are already documented to
- * operators in `using-drive-pr.md`. A re-armed drive therefore gets a fresh
+ * operators in the skill's `README.md`. A re-armed drive therefore gets a fresh
  * repair budget, exactly as it gets a fresh stall streak.
  *
  * `0` disables a repair kind, restoring the older stop verbatim.
@@ -920,15 +916,14 @@ export type RepairTask = "ci-repair" | "conflict-resolve";
 
 /**
  * ONE driver per shared resource — and a drive has TWO of them, which is why
- * there are two locks rather than a debate about how to key one (both
- * directions were reported on PR #4031, each correctly, against the other's
- * choice):
+ * there are two locks rather than a debate about how to key one (each keying
+ * is correct against the other's hazard):
  *
  *   - the WORKTREE. Two drivers in one worktree edit, commit and push the same
  *     working tree; one loop's round-agent committed and pushed the other
- *     session's in-progress edits (PR #4019, 2026-08-05). They cross-ship
- *     whether or not they target the same PR, so this lock is keyed by
- *     worktree and carries the PR only as diagnostics.
+ *     session's in-progress edits (measured). They cross-ship whether or not
+ *     they target the same PR, so this lock is keyed by worktree and carries
+ *     the PR only as diagnostics.
  *   - the PR. Two drivers in DIFFERENT worktrees have separate working trees,
  *     so they never cross-ship edits — but they race pushes to one head
  *     branch and share the clone-wide durable state (`resolveStateDir()` is
@@ -964,7 +959,7 @@ interface DriveLock {
    * and removal address one INSTANCE rather than a path. A path names a SLOT,
    * and the slot's occupant can change between any two syscalls, which is
    * exactly how a check-then-act on the path alone hands two drivers the same
-   * resource (docomply-review, a reference-implementation pull request round 7).
+   * resource.
    */
   nonce?: string;
 }
@@ -1018,7 +1013,7 @@ interface Occupant {
    * I/O, or filesystem error, not a confirmed empty or occupied directory.
    * `claimNames` is `[]` in this case too, which is indistinguishable from a
    * genuinely vanished claim set unless a caller checks this flag first
-   * (docomply-review, a reference-implementation pull request round 11): a directory read failure is not
+   *: a directory read failure is not
    * evidence that a successor took over.
    */
   unreadable: boolean;
@@ -1040,12 +1035,11 @@ export function inspect(dir: string): Occupant {
   const nothing = { names, claimNames, claim: null, unreadable: false };
   // Anything that is not exactly one claim is debris, and debris is retired by
   // name rather than trusted as an owner. Entries from a drive.ts older than
-  // this one — a bare `pid`, a `heartbeat` — land here too, since BWC is
-  // deferred pre-GA (CLAUDE.md § Backward Compatibility): this file owes that
-  // old format nothing, not even a liveness check, and does not carry a
-  // second parser to give it one (docomply-review round 4, a reference-implementation pull request — a
-  // liveness check for the legacy shape was tried in round 3 and reverted
-  // here for exactly this reason).
+  // this one — a bare `pid`, a `heartbeat` — land here too, since backward
+  // compatibility is deferred before general availability: this file owes
+  // that old format nothing, not even a liveness check, and does not carry a
+  // second parser to give it one (a liveness check for the legacy shape was
+  // tried and reverted for exactly this reason).
   if (only === null) return nothing;
   try {
     const record = parseClaimText(readFileSync(join(dir, only), "utf8"));
@@ -1080,13 +1074,13 @@ export function inspect(dir: string): Occupant {
  * successor's own rename reads zero claims, not one — `inspect()` also
  * folds a genuine `readdirSync` failure into the same empty result — and
  * either way this generation's own claim is not verifiably still there, so
- * both must read as loss exactly like the other two shapes (docomply-review
- * + chatgpt-codex-connector, a reference-implementation pull request round 6). This function is therefore
- * true whenever `claimNames` is anything OTHER than the single-element array
- * containing exactly `ownClaimName`. Exported so this decision is
- * unit-testable on its own: the real race it detects is a microsecond,
- * unrepeatable window between a `renameSync` and the `inspect()` call that
- * follows it, with nothing in a single-process test able to land inside it.
+ * both must read as loss exactly like the other two shapes. This function is
+ * therefore true whenever `claimNames` is anything OTHER than the
+ * single-element array containing exactly `ownClaimName`. Exported so this
+ * decision is unit-testable on its own: the real race it detects is a
+ * microsecond, unrepeatable window between a `renameSync` and the `inspect()`
+ * call that follows it, with nothing in a single-process test able to land
+ * inside it.
  */
 export function claimWasTakenOver(
   claimNames: readonly string[],
@@ -1100,7 +1094,7 @@ export function claimWasTakenOver(
  * window in which the lock existed with no record in it, indistinguishable
  * from an abandoned one; it was covered by an `mtime < 2000ms` wall-clock
  * guess, which is not a guess a shared or network-backed
- * `$DRIVE_PR_HANDOFF_DIR` honours (coderabbitai, PR #4031). Staging +
+ * `$DRIVE_PR_HANDOFF_DIR` honours. Staging +
  * `rename` removes the window instead of narrowing it.
  *
  * The mutual exclusion is `rename(2)`'s refusal to replace a NON-EMPTY
@@ -1121,7 +1115,7 @@ export function claimWasTakenOver(
  * report the identical pid. Without host in the name, two such hosts compute
  * the identical staging path and each blindly `rmSync`s it as "my own leftover
  * from last time" on entry — destroying whatever the OTHER host had just
- * published there (docomply-review round 2, a reference-implementation pull request). Pid comes first and
+ * published there. Pid comes first and
  * host last so the name parses unambiguously despite a hostname that may
  * itself contain dots: pid is exactly the digits up to the first dot, host is
  * everything after it.
@@ -1195,11 +1189,10 @@ function parseStagingName(
  * (the same convenient default it uses for genuinely old, host-less debris),
  * so a torn read from a FOREIGN host's in-flight publish gets probed
  * locally and can read as dead, and the recursive removal that follows then
- * destroys a directory that was never abandoned at all (docomply-review
- * round 3, PR #4048). The directory's NAME carries no such window: it is
- * fixed, complete, and correct from the single atomic `mkdirSync` that
- * creates it, never touched again — so it is the only identity source this
- * sweep should ever trust.
+ * destroys a directory that was never abandoned at all. The directory's NAME
+ * carries no such window: it is fixed, complete, and correct from the single
+ * atomic `mkdirSync` that creates it, never touched again — so it is the
+ * only identity source this sweep should ever trust.
  *
  * `pidAlive` is necessary but not sufficient ON A HOST THIS PROCESS CAN
  * ACTUALLY PROBE: after the ORIGINAL publisher crashes, the OS can hand that
@@ -1210,12 +1203,12 @@ function parseStagingName(
  * heartbeat: it is meant to exist for three synchronous syscalls, never
  * touched again, so `STAGING_STALE_MS` — far shorter than the lock's
  * multi-minute floor, but still generous by orders of magnitude over that
- * expected lifetime — is the fallback instead (docomply-review round 4, PR
- * #4048). Reclaiming a directory whose pid merely reads as alive by age is
- * still safe by the same argument as everywhere else in this protocol: if
- * that pid IS the true, merely-suspended publisher, its own eventual
- * `renameSync` just fails onto an absent destination and `takeLock` reports
- * failure the ordinary way — never data loss, never two drivers.
+ * expected lifetime — is the fallback instead. Reclaiming a directory whose
+ * pid merely reads as alive by age is still safe by the same argument as
+ * everywhere else in this protocol: if that pid IS the true,
+ * merely-suspended publisher, its own eventual `renameSync` just fails onto
+ * an absent destination and `takeLock` reports failure the ordinary way —
+ * never data loss, never two drivers.
  *
  * That safety argument depends on the age actually being comparable to THIS
  * host's clock, which is exactly what a foreign host's `pidAlive() === true`
@@ -1226,8 +1219,7 @@ function parseStagingName(
  * on a shared mount — the exact class of guess `heartbeatStaleMs`'s own doc
  * rejects for the main lock. The loop below therefore restricts the age
  * fallback to entries on THIS host; a foreign host's entry is left alone
- * unconditionally, same as before this fallback existed (docomply-review
- * round 5, PR #4048).
+ * unconditionally, same as before this fallback existed.
  *
  * Every failure here is swallowed: this is opportunistic cleanup running
  * ahead of an acquire that must still succeed even if a sibling's directory
@@ -1238,8 +1230,7 @@ function parseStagingName(
  * `heartbeatStaleMs()` fallback, and the `pidAlive`-first ordering the
  * comments above justify — lives in `lib/claim.ts`'s `stagingLive`, shared
  * with `migrate-state-dir.ts`'s own staging-liveness check so the two never
- * drift into independently maintained copies of the same rule
- * (chatgpt-codex-connector, a reference-implementation pull request round 11).
+ * drift into independently maintained copies of the same rule.
  */
 function sweepStaleStaging(lock: DriveLock): void {
   const parent = dirname(lock.dir);
@@ -1311,8 +1302,7 @@ let compromised = "";
  * must END it, and neither can if nothing holds a handle to it: the loop's
  * `compromised` check runs only at the next round boundary, so a pass that
  * started before the takeover went on to edit, commit and push on behalf of a
- * claim another driver already held (docomply-review and
- * chatgpt-codex-connector, a reference-implementation pull request round 11).
+ * claim another driver already held.
  */
 let activePass: RunHandle | null = null;
 
@@ -1351,8 +1341,7 @@ let passStopWitness: Promise<boolean> | null = null;
  * from the fact that a signal was sent. Those two are what the first cuts of
  * this used, and both were wrong in the same direction: the leader closing
  * says nothing about a descendant that ignored SIGTERM, and delivering SIGKILL
- * says nothing about a process wedged in uninterruptible sleep
- * (chatgpt-codex-connector and docomply-review, a reference-implementation pull request rounds 12-13).
+ * says nothing about a process wedged in uninterruptible sleep.
  *
  * `false` therefore means "still running, as far as anything can tell" — and
  * callers must treat it as "the locks may NOT be released". A live pass under
@@ -1413,12 +1402,12 @@ function touchLock(lock: DriveLock): void {
   // `release` will not touch the successor's lock, because the only name it
   // removes is ours.
   //
-  // Recording it is not enough on its own, and that was the round-11 finding:
-  // the loop only reads `compromised` at a round boundary, and a pass already
-  // running does not pause at one. So the pass is stopped HERE, the moment
-  // ownership is lost — the fire-and-forget is deliberate, since a timer
-  // callback cannot block and `stop()` is synchronous up to the SIGTERM; the
-  // loop below awaits the same handle before it decides anything.
+  // Recording it is not enough on its own: the loop only reads `compromised`
+  // at a round boundary, and a pass already running does not pause at one. So
+  // the pass is stopped HERE, the moment ownership is lost — the
+  // fire-and-forget is deliberate, since a timer callback cannot block and
+  // `stop()` is synchronous up to the SIGTERM; the loop below awaits the same
+  // handle before it decides anything.
   if (compromised !== "") return;
   compromised = lock.what;
   void stopActivePass(`the ${lock.what} lock was recovered by another driver`);
@@ -1443,10 +1432,9 @@ function touchLock(lock: DriveLock): void {
  * provenance:'CODEX_HOME auth.json'}` and differ only by `reason`, so once
  * one was stamped, a transition to a DIFFERENT cause never rewrote the
  * claim — an operator's exit-11 diagnostic or `drives.ts` listing kept
- * reporting an obsolete cause indefinitely (docomply-review, a reference-implementation pull request
- * round 3). `reason` is user-visible through `formatAccountIdentity`, so a
- * changed cause is exactly the kind of disagreement a display should care
- * about.
+ * reporting an obsolete cause indefinitely. `reason` is user-visible through
+ * `formatAccountIdentity`, so a changed cause is exactly the kind of
+ * disagreement a display should care about.
  */
 function accountChanged(a: AccountIdentity, b: AccountIdentity): boolean {
   return (
@@ -1461,27 +1449,27 @@ function accountChanged(a: AccountIdentity, b: AccountIdentity): boolean {
  * Re-resolve the billing account identity, while no pass is actively
  * running, and rewrite every held claim's diagnostics if it changed.
  *
- * WHY THIS EXISTS (docomply-review, a reference-implementation pull request). `lib/identity.ts` resolves a
+ * WHY THIS EXISTS. `lib/identity.ts` resolves a
  * Claude identity two different ways: `CLAUDE_CODE_OAUTH_TOKEN`, which is
  * THIS PROCESS's own environment and therefore genuinely fixed for the
  * drive's whole life — resolving it once at arm time is correct, and this
  * function's own re-resolution of it will simply keep agreeing forever,
  * confirmed by `accountChanged` returning `false` every tick. But the
  * file-backed path (`oauthAccount` / `CODEX_HOME` auth, i.e. no token set)
- * is LIVE FILE CONTENT the pass re-reads on every fresh spawn — an
- * operator's `/login`, or Hearth's own login-swap, mid-drive changes which
- * account the NEXT pass actually bills against, while a diag resolved only
- * once at arm time would keep reporting the OLD one for the rest of the
- * drive's life, defeating the whole point of an earlier change in exactly the
- * scenario its own Problem section opens with.
+ * is LIVE FILE CONTENT the pass re-reads on every fresh spawn — an operator's
+ * `/login`, or an account-switching wrapper's own login swap, mid-drive changes
+ * which account the NEXT pass actually bills against, while a diag resolved
+ * only once at arm time would keep reporting the OLD one for the rest of the
+ * drive's life, defeating the whole point of reporting the account in exactly
+ * the scenario it exists for.
  *
- * WHY THE CALLER GATES THIS ON "NO ACTIVE PASS" (docomply-review, a reference-implementation pull request
- * round 3). An earlier revision called this unconditionally on every tick,
- * including while a pass was already running. `run` spawns the pass with
- * whatever the environment held AT THAT MOMENT — an already-running child's
- * own billing account does not move — so rewriting the claim mid-pass
- * displayed the account the NEXT pass would use, not the one the CURRENT
- * pass was actually billing against, for the pass's entire remaining life.
+ * WHY THE CALLER GATES THIS ON "NO ACTIVE PASS". An earlier revision called
+ * this unconditionally on every tick, including while a pass was already
+ * running. `run` spawns the pass with whatever the environment held AT THAT
+ * MOMENT — an already-running child's own billing account does not move — so
+ * rewriting the claim mid-pass displayed the account the NEXT pass would
+ * use, not the one the CURRENT pass was actually billing against, for the
+ * pass's entire remaining life.
  * `startHeartbeat` below only calls this while `activePass` is `null`, so
  * the diag holds steady for an active pass and only moves between passes —
  * exactly the window in which "the next pass's account" and "the account a
@@ -1498,7 +1486,7 @@ function accountChanged(a: AccountIdentity, b: AccountIdentity): boolean {
  * takeover (`compromised` set). The heartbeat-timer and post-pass callers
  * ignore this: a `false` there just means the NEXT tick or the pre-spawn
  * call retries. The pre-spawn call site cannot afford to ignore it — see
- * its own comment for why (chatgpt-codex-connector, a reference-implementation pull request round 7).
+ * its own comment for why.
  */
 function refreshAccountIdentity(
   locks: DriveLock[],
@@ -1507,15 +1495,15 @@ function refreshAccountIdentity(
   if (locks.every((l) => l.diag === undefined)) return true; // never taken, or diag never stamped — nothing to synchronize
   const fresh = resolveAccountIdentity(passArgv);
   let allSynced = true;
-  // Mirrors `touchLock`'s own takeover response exactly (chatgpt-codex-
-  // connector, PR #4678 round 10): setting `compromised` alone stops the
-  // ROUND LOOP at its next boundary, but a takeover discovered here can land
-  // while the driver is mid quota-sleep — no round boundary to reach for up
-  // to six hours — or, in principle, while a pass is active. Without this,
-  // only `touchLock`'s OWN detection aborts either; a takeover this
-  // function notices first (its rewrite races a successor's recovery) left
-  // `quotaSleepAbort` untouched, stranding the sleep for its full bound
-  // while the old driver still believes it holds the lock.
+  // Mirrors `touchLock`'s own takeover response exactly: setting
+  // `compromised` alone stops the ROUND LOOP at its next boundary, but a
+  // takeover discovered here can land while the driver is mid quota-sleep —
+  // no round boundary to reach for up to six hours — or, in principle, while
+  // a pass is active. Without this, only `touchLock`'s OWN detection aborts
+  // either; a takeover this function notices first (its rewrite races a
+  // successor's recovery) left `quotaSleepAbort` untouched, stranding the
+  // sleep for its full bound while the old driver still believes it holds
+  // the lock.
   const noteCompromised = (lock: DriveLock): void => {
     if (compromised !== "") return;
     compromised = lock.what;
@@ -1534,9 +1522,8 @@ function refreshAccountIdentity(
     // permanently unretried — the next tick's shared check saw the first
     // lock already agreeing with `fresh` and skipped the loop entirely,
     // stranding the failed lock on the stale account until some LATER
-    // identity change happened to give it another chance (chatgpt-codex-
-    // connector, PR #4678 round 4). Each lock now retries independently
-    // until ITS OWN diag agrees with `fresh`.
+    // identity change happened to give it another chance. Each lock now
+    // retries independently until ITS OWN diag agrees with `fresh`.
     if (!accountChanged(fresh, lock.diag.account)) continue;
     const updated: ClaimDiag = { ...lock.diag, account: fresh };
     const dest = join(lock.dir, claimName(lock.nonce));
@@ -1546,11 +1533,10 @@ function refreshAccountIdentity(
     // briefly held two entries `inspect()`'s `claimNames` scan both counts
     // as generations. That reads as debris to every concurrent reader:
     // `drives.ts --json` reports `contested` instead of `live`, and a
-    // concurrent `acquire()` sees more-than-one claim and refuses outright
-    // (chatgpt-codex-connector, a reference-implementation pull request round 4). A name that never
-    // matches `CLAIM_PREFIX` is invisible to that scan for the whole
-    // window, so exactly one claim is ever visible until the atomic
-    // rename installs the new one.
+    // concurrent `acquire()` sees more-than-one claim and refuses outright.
+    // A name that never matches `CLAIM_PREFIX` is invisible to that scan for
+    // the whole window, so exactly one claim is ever visible until the
+    // atomic rename installs the new one.
     const tmp = join(lock.dir, `rewrite.${lock.nonce}.${process.pid}`);
     try {
       writeFileSync(tmp, formatClaim(process.pid, hostname(), updated));
@@ -1559,14 +1545,13 @@ function refreshAccountIdentity(
       // is real disk I/O, wide enough for a concurrent recovery to delete
       // `dest` and install a successor's own claim while it runs. Renaming
       // over that regardless would still republish this generation's
-      // obsolete claim ALONGSIDE the successor's — both now reading as
-      // valid — even with `touchLock` correctly ordered first (chatgpt-
-      // codex-connector, PR #4678 round 3). This does not make the check
-      // and the rename atomic with each other — no POSIX primitive here
-      // does — but it narrows the exposure from the full write's duration
-      // down to the gap between a stat and a rename. The post-rename check
-      // below is what actually closes the remainder — `touchLock`'s own next
-      // tick cannot (docomply-review, a reference-implementation pull request round 4).
+      // obsolete claim ALONGSIDE the successor's — both now reading as valid
+      // — even with `touchLock` correctly ordered first. This does not make
+      // the check and the rename atomic with each other — no POSIX primitive
+      // here does — but it narrows the exposure from the full write's
+      // duration down to the gap between a stat and a rename. The
+      // post-rename check below is what actually closes the remainder —
+      // `touchLock`'s own next tick cannot.
       if (!existsSync(dest)) {
         throw new Error("claim recovered mid-rewrite");
       }
@@ -1581,16 +1566,16 @@ function refreshAccountIdentity(
       // directory itself) and reinstalling it fresh with the SUCCESSOR's own
       // differently-named claim — after which THIS rename recreates `dest`
       // regardless, republishing our now-obsolete generation ALONGSIDE the
-      // successor's, both reading as valid (docomply-review, a reference-implementation pull request round
-      // 4). `touchLock`'s own next tick is NOT the backstop the round-3
-      // comment claimed: it addresses `dest` by the same fixed name, so a
-      // resurrected file there makes its `utimesSync` succeed and permanently
-      // masks the takeover instead of catching it. Detect it here instead,
-      // the only place that still knows a rewrite just happened: a directory
-      // holding more than one claim is exactly what `acquire` already treats
-      // as unreachable-by-construction, so treat it as this generation's own
-      // takeover signal and repair it immediately rather than leaving a ghost
-      // for the next reader to trip on.
+      // successor's, both reading as valid. `touchLock`'s own next tick is NOT
+      // the backstop an earlier comment here claimed: it addresses `dest` by
+      // the same fixed name, so a resurrected file there makes its
+      // `utimesSync` succeed and permanently masks the takeover instead of
+      // catching it. Detect it here instead, the only place that still knows a
+      // rewrite just happened: a directory holding more than one claim is
+      // exactly what `acquire` already treats as unreachable-by-construction,
+      // so treat it as this generation's own takeover signal and repair it
+      // immediately rather than leaving a ghost for the next reader to trip
+      // on.
       const afterRewrite = inspect(lock.dir);
       if (afterRewrite.unreadable) {
         // The rename just above succeeded, so this generation's claim is on
@@ -1603,7 +1588,7 @@ function refreshAccountIdentity(
       } else if (
         // See `claimWasTakenOver`'s own comment for why this covers both
         // coexistence AND a full successor-only transition, not just the
-        // former (chatgpt-codex-connector, a reference-implementation pull request round 5).
+        // former.
         claimWasTakenOver(afterRewrite.claimNames, claimName(lock.nonce))
       ) {
         if (afterRewrite.claimNames.length > 1) {
@@ -1611,17 +1596,16 @@ function refreshAccountIdentity(
             rmSync(dest, { force: true });
           } catch {
             // NOT harmless if this fails — an earlier revision's comment here
-            // claimed it was, and that claim was wrong (docomply-review, PR
-            // #4678 round 5). `inspect()` reads `claim: null` for a directory
-            // holding more than one `claim.*` entry, and `acquire()` refuses
-            // outright rather than guess which one is real — so a resurrected
-            // entry that survives this removal wedges the lock PERMANENTLY:
-            // no future driver, this generation's takeover included, can ever
-            // auto-recover `lock.dir` again. This generation is about to stop
-            // (via `compromised` below) either way, so print the one thing an
-            // operator needs and cannot otherwise discover on their own: which
-            // directory needs manual cleanup, and why automatic recovery will
-            // never happen for it.
+            // claimed it was, and that claim was wrong. `inspect()` reads
+            // `claim: null` for a directory holding more than one `claim.*`
+            // entry, and `acquire()` refuses outright rather than guess which
+            // one is real — so a resurrected entry that survives this removal
+            // wedges the lock PERMANENTLY: no future driver, this generation's
+            // takeover included, can ever auto-recover `lock.dir` again. This
+            // generation is about to stop (via `compromised` below) either
+            // way, so print the one thing an operator needs and cannot
+            // otherwise discover on their own: which directory needs manual
+            // cleanup, and why automatic recovery will never happen for it.
             console.error(
               `drive.ts: could not remove the resurrected claim at ${dest} — ${lock.dir} now permanently holds more than one claim and no driver can auto-recover it. Manual fix required: inspect the directory and remove the stale entry by hand.`,
             );
@@ -1645,7 +1629,7 @@ function refreshAccountIdentity(
         // into the rewrite path for the NEXT lock while this generation is
         // already known to have lost one — potentially resurrecting a claim
         // beside a successor that is concurrently acquiring it and
-        // permanently wedging that lock (docomply-review, a reference-implementation pull request round 7).
+        // permanently wedging that lock.
         break;
       } else {
         // Advanced only NOW, after the rewrite is actually on disk AND
@@ -1655,8 +1639,7 @@ function refreshAccountIdentity(
         // pointing at `updated`, and the NEXT tick's `accountChanged`
         // compared a fresh read against that already-advanced value, saw no
         // difference, and never retried — stranding one or all persisted
-        // claims on the stale account for the rest of the drive
-        // (docomply-review, a reference-implementation pull request round 3).
+        // claims on the stale account for the rest of the drive.
         lock.diag = updated;
       }
     } catch {
@@ -1674,8 +1657,7 @@ function refreshAccountIdentity(
       // rename), so a failure that stems from `dest` genuinely being gone
       // needs its own check here — otherwise this generation's claim can
       // vanish with `compromised` never set, and this driver keeps going
-      // with no claim protecting the tree at all (chatgpt-codex-connector,
-      // a reference-implementation pull request round 6).
+      // with no claim protecting the tree at all.
       try {
         rmSync(tmp, { force: true });
       } catch {
@@ -1701,7 +1683,7 @@ function refreshAccountIdentity(
  * merely failed transiently (a full disk, a slow filesystem) rather than
  * detecting a takeover — the last chance to close the staleness window
  * before a pass spawns, same reasoning as the ordinary-pass spawn site that
- * introduced this retry (chatgpt-codex-connector, a reference-implementation pull request round 7):
+ * introduced this retry:
  * active-pass gating suppresses the heartbeat's own retries the moment a
  * pass starts, so a rewrite left unretried here would strand a stale claim
  * for that whole pass's life. Bounded rather than looped until success — a
@@ -1711,12 +1693,11 @@ function refreshAccountIdentity(
  * Stops retrying immediately once `compromised` is set: sleeping further
  * would only delay the caller's own takeover handling, never change it.
  *
- * Shared by both spawn sites (chatgpt-codex-connector, a reference-implementation pull request round 9):
+ * Shared by both spawn sites:
  * the repair-pass spawn used to call `refreshAccountIdentity` directly and
  * discard its result, so a transient failure there went unretried right up
  * to the next repair spawn — the same gap this retry closed for the
- * ordinary-pass spawn two PRs earlier, just never generalized to the second
- * call site.
+ * ordinary-pass spawn, just never generalized to the second call site.
  */
 async function refreshAccountIdentityBeforeSpawn(
   locks: DriveLock[],
@@ -1730,9 +1711,7 @@ async function refreshAccountIdentityBeforeSpawn(
   ) {
     // `sleep()` (`lib/cli.ts`) takes SECONDS, not milliseconds — `sleep(200)`
     // waited 200 SECONDS per retry, not 200ms, holding the driver's locks
-    // without launching a pass for up to ~6m40s across both retries
-    // (chatgpt-codex-connector and coderabbitai, PR #4678 round 9, both
-    // independently).
+    // without launching a pass for up to ~6m40s across both retries.
     await sleep(0.2);
     identitySynced = refreshAccountIdentity(locks, passArgv);
   }
@@ -1747,9 +1726,8 @@ async function refreshAccountIdentityBeforeSpawn(
  * the full gate suite and sometimes a Testbox. A single ordinary pass can
  * outlast the staleness window, and another start would then quarantine the
  * locks of a driver that is demonstrably alive and working — reintroducing the
- * concurrent editing and pushes the lock exists to prevent (docomply-review,
- * a reference-implementation pull request round 7). A lease has to be renewed WHILE the work happens, not
- * between units of it.
+ * concurrent editing and pushes the lock exists to prevent. A lease has to be
+ * renewed WHILE the work happens, not between units of it.
  *
  * `run()` spawns asynchronously, so the event loop stays live for the whole
  * pass and this timer fires during it. `unref` keeps the timer from holding
@@ -1757,8 +1735,7 @@ async function refreshAccountIdentityBeforeSpawn(
  *
  * `touchLock` runs FIRST, every tick, unconditionally — `refreshAccountIdentity`
  * runs after, and only when this tick found no takeover and no pass is
- * currently running. Both restrictions were round-3 findings on the same
- * commit (docomply-review, a reference-implementation pull request):
+ * currently running. Both restrictions close a real defect:
  *
  * - **Takeover ordering.** The reverse order let `refreshAccountIdentity`'s
  *   rename RECREATE a claim file a recovering driver had just removed,
@@ -1814,18 +1791,17 @@ function claimAlive(claim: Claim, dir: string): boolean {
  * This is the step every earlier cut got wrong, and always in the same way: it
  * addressed the lock's PATH. Renaming the path to a per-pid destination let a
  * second contender that had observed the same stale owner move a live
- * replacement aside and drive alongside it (docomply-review, a reference-implementation pull request round
- * 7); the same shape in `release` let a suspended owner move its SUCCESSOR's
- * lock and leave the canonical path briefly empty for a third driver (rounds
- * 7-8). Keying the rename's DESTINATION to the observed generation closed
- * both, because `rename(2)` refuses a non-empty directory as a destination —
- * but only for as long as that destination stayed non-empty, which meant a
- * tombstone per generation that nothing could ever reclaim: two permanent
- * directories per drive run, growing with lifetime invocations.
- * An age-based sweep of them is not available, and was tried and reverted in
- * rounds 9-10 of the same PR: the quantity a threshold would have to bound is
- * "does any process still hold an observation of generation N", which the
- * filesystem cannot answer.
+ * replacement aside and drive alongside it; the same shape in `release` let a
+ * suspended owner move its SUCCESSOR's lock and leave the canonical path
+ * briefly empty for a third driver. Keying the rename's DESTINATION to the
+ * observed generation closed both, because `rename(2)` refuses a non-empty
+ * directory as a destination — but only for as long as that destination stayed
+ * non-empty, which meant a tombstone per generation that nothing could ever
+ * reclaim: two permanent directories per drive run, growing with lifetime
+ * invocations. An age-based sweep of them is not available, and was tried and
+ * reverted: the quantity a threshold would have to bound is "does any process
+ * still hold an observation of generation N", which the filesystem cannot
+ * answer.
  *
  * Naming the SOURCE instead needs no fence, and so leaves nothing to bound.
  * Every name here comes from one `readdir` of the lock, and a lock's entries
@@ -1841,7 +1817,7 @@ function claimAlive(claim: Claim, dir: string): boolean {
  * refuses to replace an existing directory at all, empty or not — and this
  * skill supports Windows (SKILL.md's runtime section). Left standing, an
  * emptied slot would make every recovery attempt fail there the same way,
- * forever (chatgpt-codex-connector, a reference-implementation pull request). Removing it is safe by the
+ * forever. Removing it is safe by the
  * SAME identity argument `release` already uses for its own `rmdir`: it
  * refuses a directory that is not empty, so a successor that moved in between
  * this retirement's removals and this `rmdir` is what stops it — the failure
@@ -1880,9 +1856,9 @@ function acquire(lock: DriveLock, pr: string): void {
   const held = occupant.claim;
   if (held !== null && claimAlive(held, lock.dir)) {
     // The diagnostics line answers what this refusal used to leave open —
-    // WHICH PR that driver is working, from where, and where its log is
-    //. A claim without one (an older driver) still names its
-    // owner, and the drives.ts hint covers both.
+    // WHICH PR that driver is working, from where, and where its log is. A
+    // claim without one (an older driver) still names its owner, and the
+    // drives.ts hint covers both.
     const about =
       held.diag === null
         ? []
@@ -1931,14 +1907,12 @@ function acquire(lock: DriveLock, pr: string): void {
  * the only entry this can remove is the one this process published, and a
  * successor's carries a different name. Release used to have a protocol of its
  * own — check the owner, then move the path to a private `.releasing.<nonce>`
- * name and inspect what actually arrived — and three review rounds found three
- * different interleavings through it (chatgpt-codex-connector and
- * docomply-review, a reference-implementation pull request rounds 7-8), all the same defect. A private
- * destination is not a fence: it is always free, so the rename always
- * succeeds, so a process suspended past the staleness window — its lock
- * recovered, the path now holding a SUCCESSOR's live lock — moves that
- * successor's lock away and leaves the canonical path momentarily absent for a
- * third driver to claim.
+ * name and inspect what actually arrived — and three different interleavings
+ * went through it, all the same defect. A private destination is not a fence:
+ * it is always free, so the rename always succeeds, so a process suspended
+ * past the staleness window — its lock recovered, the path now holding a
+ * SUCCESSOR's live lock — moves that successor's lock away and leaves the
+ * canonical path momentarily absent for a third driver to claim.
  *
  * `rmdir` then reclaims the slot, and it is safe by the same argument taking a
  * different route: it refuses a directory that is not empty, so a successor
@@ -1991,14 +1965,12 @@ function teeConsoleTo(logPath: string): void {
   } catch {
     // Best-effort from the very first byte: an unwritable log — full disk, a
     // directory squatting on the path, permissions — must not stop the drive
-    // (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 1: this
-    // header append sat outside the guard every later append had).
+    // (this header append once sat outside the guard every later append had).
   }
   // Reentrancy flag for the Node path, where the original console methods
   // dispatch through the patched `stream.write` below — without it every
-  // console line is appended twice (chatgpt-codex-connector, a reference-implementation pull request
-  // round 7). Console calls are synchronous, so a plain boolean cannot
-  // interleave across writers.
+  // console line is appended twice. Console calls are synchronous, so a
+  // plain boolean cannot interleave across writers.
   let teeingConsole = false;
   const consoleTee =
     (original: (...args: unknown[]) => void) =>
@@ -2006,8 +1978,7 @@ function teeConsoleTo(logPath: string): void {
       try {
         // `util.format` — the same formatter console.log itself applies —
         // so the durable copy keeps placeholders, object inspection and
-        // Error stacks instead of degrading to `[object Object]`
-        // (docomply-review, a reference-implementation pull request round 6).
+        // Error stacks instead of degrading to `[object Object]`.
         appendFileSync(logPath, `${format(...args)}\n`);
       } catch {
         // Best-effort by design — the console copy is the authoritative one.
@@ -2049,9 +2020,9 @@ function teeConsoleTo(logPath: string): void {
 // CLAUDECODE, which the `claude` CLI sets to recognize a nested invocation of
 // itself. Passed through unchanged to a `claude -p` pass command, that marker
 // makes the pass refuse to start as a nested session — silently, after this
-// process has already reported the round as running (docomply-review, PR
-// #4077 round 7). The pass is a fresh top-level session, not a continuation
-// of whatever spawned `drive.ts`, so it must not inherit that marker.
+// process has already reported the round as running. The pass is a fresh
+// top-level session, not a continuation of whatever spawned `drive.ts`, so it
+// must not inherit that marker.
 function passEnv(task?: {
   task: RepairTask;
   detail: string;
@@ -2076,11 +2047,11 @@ function passEnv(task?: {
 /**
  * Spawn one repair pass and return its exit code.
  *
- * The RAW code, not a collapsed boolean (review finding): `guarded-push.ts`
- * exits `5` for `PR_NOT_OPEN` inside the pass, exactly like the ordinary-pass
- * ROUND_READY spawn does, and a caller that only learns "zero or nonzero"
- * cannot tell that apart from an ordinary repair failure — reporting a CI
- * stop or a conflict stop over a PR that already merged or closed, which
+ * The RAW code, not a collapsed boolean: `guarded-push.ts` exits `5` for
+ * `PR_NOT_OPEN` inside the pass, exactly like the ordinary-pass ROUND_READY
+ * spawn does, and a caller that only learns "zero or nonzero" cannot tell
+ * that apart from an ordinary repair failure — reporting a CI stop or a
+ * conflict stop over a PR that already merged or closed, which
  * `passExitDisposition` exists precisely to prevent for the ordinary path.
  * Callers check `=== 5` themselves, mirroring `passExitDisposition`'s own
  * handling rather than duplicating it inside this shared helper.
@@ -2112,9 +2083,9 @@ async function runRepairPass(
   // `string[]`, not `readonly string[]`: `run()`'s own argv parameter is
   // mutable, and widening here would only move the variance error to the call.
   agent: string[],
-  // Mutable (review finding): the unwitnessed-deadline branch
-  // below needs to clear this array in place, the same way the ordinary-pass
-  // path clears `held` — see that branch's own comment for why.
+  // Mutable: the unwitnessed-deadline branch below needs to clear this array
+  // in place, the same way the ordinary-pass path clears `held` — see that
+  // branch's own comment for why.
   locks: DriveLock[],
   task: RepairTask,
   detail: string,
@@ -2122,16 +2093,15 @@ async function runRepairPass(
   // Passed in rather than re-created here: it closes over `mailboxDir`, `pr`
   // and `pauseMaxSec`, all local to `main()`, and re-checking through the
   // SAME closure keeps this function's own re-check indistinguishable from
-  // every other call site's (review finding — see this function's own
-  // pre-spawn re-check below for why one is needed here at all).
+  // every other call site's (see this function's own pre-spawn re-check
+  // below for why one is needed here at all).
   mailboxCheckpoint: () => Promise<"clear" | "resumed" | number>,
 ): Promise<RepairDispatch> {
   const deadlineSec = passTimeoutSeconds();
   // One more refresh, immediately before THIS spawn — not only at the PRIOR
-  // pass's exit, below (review finding,
-  // chatgpt-codex-connector, a reference-implementation pull request): the only other call in this function
-  // ran AFTER `run()` returned, so the very FIRST repair pass of a drive got
-  // no pre-spawn read at all — a file-backed login change landing between
+  // pass's exit, below: the only other call in this function ran AFTER
+  // `run()` returned, so the very FIRST repair pass of a drive got no
+  // pre-spawn read at all — a file-backed login change landing between
   // dispatch and this spawn stayed stale for that pass's whole life, while
   // active-pass gating suppressed the heartbeat's own retries throughout.
   // Same pattern as the ordinary-pass spawn site's own pre-spawn call.
@@ -2152,13 +2122,13 @@ async function runRepairPass(
     );
   }
   // Re-checked HERE, after the identity refresh above, not only by the
-  // caller before this function was invoked (review finding): that refresh
-  // is itself an await a mailbox directive can land during, so the caller's
-  // own pre-dispatch checkpoint does not cover the gap between it and this
-  // spawn — this call is what makes THIS spawn's own checkpoint the LAST
-  // await before `run()`, matching the ordinary-pass site's invariant. Its
-  // outcome is tagged `dispatched: false` (review finding, round 3) so a
-  // caller can never mistake it for the pass's OWN exit code below.
+  // caller before this function was invoked: that refresh is itself an await
+  // a mailbox directive can land during, so the caller's own pre-dispatch
+  // checkpoint does not cover the gap between it and this spawn — this call
+  // is what makes THIS spawn's own checkpoint the LAST await before `run()`,
+  // matching the ordinary-pass site's invariant. Its outcome is tagged
+  // `dispatched: false` so a caller can never mistake it for the pass's OWN
+  // exit code below.
   const mailboxBeforeSpawn = await mailboxCheckpoint();
   if (typeof mailboxBeforeSpawn === "number")
     return { dispatched: false, resumed: false, code: mailboxBeforeSpawn };
@@ -2179,16 +2149,16 @@ async function runRepairPass(
   // here rather than reading `activePass` again below.
   const handle = activePass;
   activePass = null;
-  // Mirror the ordinary-pass path's PASS_DEADLINE handling (review finding,
-  // Chatgpt-codex-connector, a reference-implementation pull request): `run` resolving once its
-  // own SIGKILL escalation FIRES is proof a signal was SENT, not that the
-  // process group is actually GONE — a descendant in uninterruptible sleep,
-  // or one that escaped the group, can outlive it. Re-poll the same
-  // witnessed-termination check before this driver's own exit handler
-  // releases its locks: a live repair descendant under a released lock is
-  // the exact two-drivers-one-tree state those locks exist to prevent. The
-  // ordinary path does this via `passHandle.stop()` re-joining the same
-  // memoised wait `RunHandle.stop()` performs; this is that same call.
+  // Mirror the ordinary-pass path's PASS_DEADLINE handling: `run` resolving
+  // once its own SIGKILL escalation FIRES is proof a signal was SENT, not
+  // that the process group is actually GONE — a descendant in
+  // uninterruptible sleep, or one that escaped the group, can outlive it.
+  // Re-poll the same witnessed-termination check before this driver's own
+  // exit handler releases its locks: a live repair descendant under a
+  // released lock is the exact two-drivers-one-tree state those locks exist
+  // to prevent. The ordinary path does this via `passHandle.stop()`
+  // re-joining the same memoised wait `RunHandle.stop()` performs; this is
+  // that same call.
   if (res.timedOut && handle !== null && !(await handle.stop())) {
     console.error(
       "  the repair pass hit its deadline and its termination could NOT be witnessed — some descendant may still be running.",
@@ -2209,8 +2179,7 @@ async function runRepairPass(
   }
   for (const lock of locks) touchLock(lock);
   // Mirror the ordinary-pass path's post-pass refresh, bounded retry
-  // included (review finding, an earlier change — chatgpt-codex-connector, a reference-implementation pull request
-  // round 9): `activePass` is already `null` (above), which is the exact
+  // included: `activePass` is already `null` (above), which is the exact
   // window a file-backed login change during THIS repair pass needs closed
   // before the next spawn — the CI-repair budget (default 2) lets the loop
   // re-gate and dispatch a second repair pass well inside one heartbeat
@@ -2232,12 +2201,11 @@ async function runRepairPass(
       "  the account-identity claim rewrite did not land after the repair pass — proceeding with a possibly-stale display; the heartbeat retries before the next spawn.",
     );
   }
-  // A directive sent WHILE this repair pass ran must still be honored
-  // before its result is reported (review finding, round 4) — the same gap
-  // the ordinary-pass path had at its own post-pass point. `clear`/
-  // `resumed` both leave `postPassMailboxExit` null: the pass already ran,
-  // so the caller reports its real result either way, once it has
-  // committed the budget this confirmed dispatch earned.
+  // A directive sent WHILE this repair pass ran must still be honored before
+  // its result is reported — the same gap the ordinary-pass path had at its
+  // own post-pass point. `clear`/`resumed` both leave `postPassMailboxExit`
+  // null: the pass already ran, so the caller reports its real result either
+  // way, once it has committed the budget this confirmed dispatch earned.
   const mailboxAfterRepairPass = await mailboxCheckpoint();
   return {
     dispatched: true,
@@ -2384,7 +2352,7 @@ async function main(): Promise<number> {
     // Same 32-bit `setTimeout` millisecond bound `passTimeoutSeconds()` falls
     // back on for the env var — but a FLAG's typo belongs at the front door,
     // exit 2, not a silent substitution that leaves an operator asking for a
-    // longer deadline with a shorter one instead (docomply-review round 3).
+    // longer deadline with a shorter one instead.
     if (passTimeoutN !== 0 && passTimeoutN * 1000 > 2_147_483_647) {
       fail(
         2,
@@ -2410,9 +2378,8 @@ async function main(): Promise<number> {
   // interpolated into a `new RegExp` below, so a metacharacter — `drive.ts '('`
   // — throws a SyntaxError instead of a usage error; and it is exported as
   // $DRIVE_PR_TARGET, where drive-status.ts and guarded-push.ts compare it as a
-  // string and refuse for a less obvious reason (coderabbitai, PR #4034 round
-  // 2). Both of those already apply isDigits; this is the entry point that did
-  // not.
+  // string and refuse for a less obvious reason. Both of those already apply
+  // isDigits; this is the entry point that did not.
   if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
   process.env.PR = pr;
   // The authoritative, out-of-band statement of which PR this drive is about.
@@ -2449,8 +2416,7 @@ async function main(): Promise<number> {
   // never reads it (`lib/claim.ts`).
   // Deadlined like every other git call in main(): this runs before any
   // lock is acquired and only feeds the advisory worktree display string, so
-  // a hung git must not stall the whole drive at startup (coderabbitai,
-  // PR #4083 round 5).
+  // a hung git must not stall the whole drive at startup.
   // The env is scrubbed of GIT_DIR / GIT_WORK_TREE: a hook-launched driver
   // inherits them for another checkout, and they outrank the cwd, so an
   // unscrubbed call would name THAT checkout in `diag.worktree` — which the
@@ -2465,10 +2431,10 @@ async function main(): Promise<number> {
   // only between passes — see `refreshAccountIdentity`'s own comment for
   // why a token-backed identity never needs that (env vars are fixed for
   // this process's life) while a file-backed one does, and why the rewrite
-  // is withheld while a pass is actively running (docomply-review, a reference-implementation pull request:
-  // an operator's login swap mid-drive changes which account the NEXT pass
-  // bills, and a diag resolved only here would keep reporting the old one
-  // for the rest of the drive's life).
+  // is withheld while a pass is actively running (an operator's login swap
+  // mid-drive changes which account the NEXT pass bills, and a diag resolved
+  // only here would keep reporting the old one for the rest of the drive's
+  // life).
   const account = resolveAccountIdentity(agent);
   const diag: ClaimDiag = {
     pr,
@@ -2500,10 +2466,10 @@ async function main(): Promise<number> {
   // a supervisor, `kill <pid>`, a harness shutting a worker down — does not:
   // the old handler released both locks and exited while the agent and
   // whatever it had spawned kept editing and pushing, so the next driver
-  // acquired a free lock on a tree that was still being written
-  // (docomply-review, a reference-implementation pull request round 11). Detaching the pass (below) is what
-  // makes this handler the sole route by which a signal reaches it, and what
-  // lets the stop reach its grandchildren rather than the agent alone.
+  // acquired a free lock on a tree that was still being written. Detaching
+  // the pass (below) is what makes this handler the sole route by which a
+  // signal reaches it, and what lets the stop reach its grandchildren rather
+  // than the agent alone.
   let shuttingDown = false;
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.on(sig, () => {
@@ -2515,9 +2481,8 @@ async function main(): Promise<number> {
       // `held` must be emptied FIRST. `process.exit()` runs the 'exit' handler
       // registered above, which is `releaseAll` — so exiting with the list
       // still populated releases both locks on the way out, producing the exact
-      // live-pass/free-lock state this handler exists to prevent
-      // (chatgpt-codex-connector, a reference-implementation pull request round 12). The `!gone` branch below
-      // already does this; the forced path did not.
+      // live-pass/free-lock state this handler exists to prevent. The `!gone`
+      // branch below already does this; the forced path did not.
       if (shuttingDown) {
         held.length = 0;
         process.exit(code);
@@ -2556,7 +2521,7 @@ async function main(): Promise<number> {
   // number the OS reuses. A pid alone cannot: a dead driver's still-fresh
   // claim whose pid the OS then handed to THIS driver reads live (same-host,
   // alive) and self (pid matches), and the pass would wave through a lock its
-  // parent never took (docomply-review, a reference-implementation pull request). This file already treats
+  // parent never took. This file already treats
   // `diag.started` as the instance token when correlating a worktree lock to
   // a PR lock; `drives.ts` compares the same value against this variable.
   process.env.DRIVE_PR_SESSION_STARTED = diag.started;
@@ -2566,15 +2531,15 @@ async function main(): Promise<number> {
   // persistent shell cwd, and the state dir it legitimately reads — the driver
   // log, the durable state — IS the git common dir: one `cd` there and every
   // later `git rev-parse HEAD` answers with the MAIN worktree's head, which in
-  // a Conductor checkout is `develop`. Measured on PR #4106: the gate then
-  // reported HEAD_LAG against a head that was never going to arrive, the pass
-  // did nothing, and the driver counted the round. Empty when the driver could
-  // not resolve its own root, in which case the pass keeps the old behaviour.
+  // a Conductor checkout is `develop`. Measured: the gate then reported
+  // HEAD_LAG against a head that was never going to arrive, the pass did
+  // nothing, and the driver counted the round. Empty when the driver could not
+  // resolve its own root, in which case the pass keeps the old behaviour.
   if (diag.worktree !== "") process.env.DRIVE_PR_WORKTREE = diag.worktree;
 
   // DURABLE knowledge of where this drive's state lives, handed to every pass
   // so the fence never has to re-derive it from a `.git` marker that may be
-  // gone by then (docomply-review high, PR #4107 round 4).
+  // gone by then.
   //
   // `resolveFenceContext` asks git where the state dir is, and falls back to
   // "is a repository in play at all" when git cannot say. That fallback reads
@@ -2608,11 +2573,9 @@ async function main(): Promise<number> {
   // swap landing DURING the fence, but not one that completed BEFORE the pass
   // started: the fence would enumerate the empty replacement, capture ITS
   // identity, find that identity perfectly stable throughout, and authorize
-  // the POST while the live lease sits in the directory that moved
-  // (chatgpt-codex-connector, a reference-implementation pull request round 14 — the finding asks for "a
-  // directory identity or generation established BY THE DRIVER" for precisely
-  // this reason). Only something that observed the directory before the swap
-  // can answer that, and the driver is the one thing that did.
+  // the POST while the live lease sits in the directory that moved. Only
+  // something that observed the directory before the swap can answer that,
+  // and the driver is the one thing that did.
   //
   // FAIL CLOSED when it cannot be read, rather than omitting the variable.
   // An earlier revision omitted it, reasoning by analogy with
@@ -2624,13 +2587,12 @@ async function main(): Promise<number> {
   // first as though it were the second, and the pass then treats a failed
   // safety read as "no baseline inherited" — so a transient failure here,
   // followed by the directory being replaced before the pass starts, lands in
-  // exactly the pre-pass swap window this baseline exists to close
-  // (chatgpt-codex-connector, a reference-implementation pull request round 16).
+  // exactly the pre-pass swap window this baseline exists to close.
   //
-  // This is `.claude/rules/document-scanning-gates.md` § 1 applied to the
-  // producer: a check that cannot read its input has verified nothing, and
-  // must say so rather than emit an empty answer. Refusing costs a drive that
-  // could not have fenced its own passes anyway.
+  // This is the fail-closed rule for gates applied to the producer: a check
+  // that cannot read its input has verified nothing, and must say so rather
+  // than emit an empty answer. Refusing costs a drive that could not have
+  // fenced its own passes anyway.
   const stateDirIdentity = stateDirIdentityToken(stateDir);
   if (stateDirIdentity === "") {
     fail(
@@ -2641,7 +2603,7 @@ async function main(): Promise<number> {
       "Refusing to start. Every pass this drive spawns inherits that identity as",
       "the baseline proving the directory was not swapped before the pass began;",
       'without it a pass cannot tell a failed read from "no baseline", and would',
-      "post unfenced through exactly that window (PR #4107).",
+      "post unfenced through exactly that window.",
     );
   }
   process.env.DRIVE_PR_STATE_DIR_IDENTITY = stateDirIdentity;
@@ -2839,28 +2801,27 @@ async function main(): Promise<number> {
   // are depends on a driver this one cannot see.
   let readyLeftToOtherDriver = false;
   // Whether the owner converted an already-Ready PR to draft in the window
-  // before this drive's own --record-only read (docomply-review round 13, PR
-  // #4057) — a DIFFERENT unsettled shape than `readyLeftToOtherDriver`: no
-  // other driver is involved, so the "another driver holds the lease" message
-  // would be wrong here. Reported separately so each gets its own accurate
-  // stderr line while both share the same non-terminal exit.
+  // before this drive's own --record-only read — a DIFFERENT unsettled shape
+  // than `readyLeftToOtherDriver`: no other driver is involved, so the
+  // "another driver holds the lease" message would be wrong here. Reported
+  // separately so each gets its own accurate stderr line while both share the
+  // same non-terminal exit.
   let readyFlippedToDraftBeforeRecord = false;
   // Whether the CONVERGED-with-no-round-to-run branch has already re-gated
   // once for a STABLE mark-ready.ts outcome (`already-ready` /
-  // `already-marked` — docomply-review round 22, a reference-implementation pull request). That branch
-  // never runs a round, so it never touches `passes`/`--max-rounds` the way
-  // case 0 (ROUND_READY) does — nothing else bounds a loop that keeps
-  // re-entering it. A genuinely unmoved head answers CONVERGED with the same
-  // stable outcome every time, so one extra gate call closes the TOCTOU
-  // window this re-gate exists for; a second `continue` from this exact spot
-  // would buy nothing further and spin forever on a head that never changes.
+  // `already-marked`). That branch never runs a round, so it never touches
+  // `passes`/`--max-rounds` the way case 0 (ROUND_READY) does — nothing else
+  // bounds a loop that keeps re-entering it. A genuinely unmoved head
+  // answers CONVERGED with the same stable outcome every time, so one extra
+  // gate call closes the TOCTOU window this re-gate exists for; a second
+  // `continue` from this exact spot would buy nothing further and spin
+  // forever on a head that never changes.
   let reGatedForStableMarkReadyOutcome = false;
   // Consecutive post-round transitions that failed. A single failure is not a
   // reason to abandon a productive drive — the lease is released, so the next
   // round retries — but a PERMANENTLY failing one (an unwritable state store, a
   // revoked token) would otherwise run silently to `--max-rounds` with the PR
-  // still a draft, which is the "ignores rc.code entirely" gap review found
-  // three rounds running (docomply-review rounds 1-3, PR #4057).
+  // still a draft — the gap of ignoring `rc.code` entirely.
   let readyMarkFailures = 0;
   // Stall guard: consecutive
   // ROUND_READY gates reading an identical fingerprint mean the passes between
@@ -2868,8 +2829,9 @@ async function main(): Promise<number> {
   // that stands down every round, which no other counter here distinguishes
   // from progress. `counted` never grows on an unmoved head, `attempts` only
   // bounds it at the full --max-rounds budget, and the round headers look
-  // healthy throughout (five wasted rounds on PR #4089, ten on PR #4102 — and
-  // #4089 then merged over six live findings because the log read as driven).
+  // healthy throughout (measured: five wasted rounds on one PR, ten on
+  // another — and the first then merged over six live findings because the
+  // log read as driven).
   // The threshold is deliberately small: ONE no-op round can be a legitimate
   // blip, but a second identical one will not improve by itself, because the
   // next pass is the same command against the same world.
@@ -2883,7 +2845,7 @@ async function main(): Promise<number> {
   // documents — a new `DriveState` field would refuse every state file written
   // before it existed, stopping the whole fleet's in-flight drives — and on
   // the `noopRounds` precedent directly above, whose reset-across-restarts
-  // semantics operators already know from `using-drive-pr.md`.
+  // semantics operators already know from the skill's `README.md`.
   //
   // The CI budget is read ONCE, here, rather than per-iteration: the "how many
   // have I spent" counter and the bound it is compared against must come from
@@ -2974,17 +2936,17 @@ async function main(): Promise<number> {
     if (mailboxAfterStatus === "resumed") continue;
 
     // A dry run can NEVER see the real `code === 9` (PR_CONFLICTING)
-    // certification (review finding): `--no-count` — part
-    // of every dry-run probe's `probeFlags`, unconditionally — suppresses
-    // the replied-thread reconciliation sweep, and `UNRECONCILED_STOPPERS`
-    // (`drive-status.ts`) withholds code 9 until that sweep has run and
-    // succeeded, degrading to INDETERMINATE (1) instead regardless of
-    // `--once`. That silently made case 9's own dry-run preview below dead
-    // code, contradicting using-drive-pr.md's "`--dry-run` reports what each
-    // round would do". Recognise the SAME condition `evaluate()` uses to
-    // decide PR_CONFLICTING — mergeable === 'CONFLICTING' and nothing LIVE
-    // left to work — directly off this already-fetched report instead: the
-    // counts below come from a plain, non-mutating enumeration, not from the
+    // certification: `--no-count` — part of every dry-run probe's
+    // `probeFlags`, unconditionally — suppresses the replied-thread
+    // reconciliation sweep, and `UNRECONCILED_STOPPERS` (`drive-status.ts`)
+    // withholds code 9 until that sweep has run and succeeded, degrading to
+    // INDETERMINATE (1) instead regardless of `--once`. That silently made
+    // case 9's own dry-run preview below dead code, contradicting
+    // README.md's "`--dry-run` reports what each round would do".
+    // Recognise the SAME condition `evaluate()` uses to decide
+    // PR_CONFLICTING — mergeable === 'CONFLICTING' and nothing LIVE left to
+    // work — directly off this already-fetched report instead: the counts
+    // below come from a plain, non-mutating enumeration, not from the
     // reconciliation sweep dry-run suppresses, so reading them here mutates
     // nothing and needs no certification. Every field must be a POSITIVELY
     // measured number, never a null (unmeasured) treated as zero — an
@@ -3018,8 +2980,7 @@ async function main(): Promise<number> {
         // collapses the same comparison to "is the budget positive". Without
         // this, `DRIVE_PR_CONFLICT_REPAIR_ROUNDS=0` still previewed "would
         // run a conflict-resolution pass" even though the real,
-        // non-dry-run path takes the manual exit-9 stop instead (review
-        // finding, round 7).
+        // non-dry-run path takes the manual exit-9 stop instead.
         const conflictBudget = conflictRepairRounds();
         if (base === "") {
           console.error(
@@ -3065,8 +3026,7 @@ async function main(): Promise<number> {
         // else: a new local commit lands with an empty `git status` (nothing
         // uncommitted) and no unconcluded-op marker, so every check below
         // would pass over local HEAD having silently moved from the reviewed
-        // commit to an unreviewed one that was never pushed
-        // (chatgpt-codex-connector, a reference-implementation pull request review round 4). Same fix as
+        // commit to an unreviewed one that was never pushed. Same fix as
         // announce-merge-ready.ts's sibling check.
         const reviewedHead = String(
           (status.head as Record<string, unknown> | undefined)?.api ?? "",
@@ -3110,7 +3070,7 @@ async function main(): Promise<number> {
         // is up to 120s of elapsed time in which an uncommitted edit or a
         // fresh MERGE_HEAD can appear without moving HEAD, leaving the final
         // re-read satisfied and the drive exiting 0 over leftovers it had
-        // certified two minutes earlier (chatgpt-codex-connector, a reference-implementation pull request).
+        // certified two minutes earlier.
         // Moving the call above all three restores the narrow window rather
         // than duplicating the probes on both sides of it.
         const economy = await loopEconomy(pr);
@@ -3119,7 +3079,7 @@ async function main(): Promise<number> {
         // "is anything uncommitted", not "is a git operation still open":
         // resolving a conflict back to a tree that matches what was already
         // committed leaves `MERGE_HEAD` behind while porcelain status reports
-        // empty (chatgpt-codex-connector, a reference-implementation pull request review round 3). Checked
+        // empty. Checked
         // next, same as announce-merge-ready.ts's sibling check.
         const opTimeoutSec = gitCallTimeoutSeconds();
         const op = await unconcludedGitOpMarker(opTimeoutSec);
@@ -3147,13 +3107,11 @@ async function main(): Promise<number> {
         // alone inherits `status.showUntrackedFiles` from repo or user config,
         // and `=no` there makes a plain `git status --porcelain` report an
         // untracked scratch file as a clean tree — silently certifying a
-        // leftover as shipped (chatgpt-codex-connector, a reference-implementation pull request review
-        // round 2, same root cause as announce-merge-ready.ts's sibling
-        // check). `--ignore-submodules=none` closes the same class one level
-        // down: `submodule.<name>.ignore`/`.gitmodules` can set `ignore =
-        // all` and hide modifications inside a tracked submodule regardless
-        // of the untracked-files mode (docomply-review, a reference-implementation pull request review
-        // round 3).
+        // leftover as shipped (the same root cause as announce-merge-ready.ts's
+        // sibling check). `--ignore-submodules=none` closes the same class one
+        // level down: `submodule.<name>.ignore`/`.gitmodules` can set `ignore =
+        // all` and hide modifications inside a tracked submodule regardless of
+        // the untracked-files mode.
         const dirty = await git(
           [
             "status",
@@ -3191,9 +3149,8 @@ async function main(): Promise<number> {
         // undetected; it cannot close it, because the operation-marker and
         // status probes are themselves further elapsed time after that read
         // — a commit landing in that gap leaves `git status` reporting a
-        // clean H2 while this branch was about to exit 0 for reviewed H1
-        // (chatgpt-codex-connector, a reference-implementation pull request review round 5). Same fix as
-        // announce-merge-ready.ts's sibling check.
+        // clean H2 while this branch was about to exit 0 for reviewed H1.
+        // Same fix as announce-merge-ready.ts's sibling check.
         const finalHeadRes = await git(["rev-parse", "HEAD"], {
           stderr: "ignore",
           timeoutSec: headTimeoutSec,
@@ -3224,14 +3181,15 @@ async function main(): Promise<number> {
 
         // Converged AND certified clean — but a drive that gets here while the
         // PR is still an UNMARKED DRAFT has not finished the job the transition
-        // exists for. `docomply-review` reviewed this head and had nothing left
-        // to say; CodeRabbit never looked at it at all, and by repo policy never
-        // will until someone marks the PR Ready. Returning 0 here would report
-        // "the review loop is done" about a PR whose external review is pending
-        // by construction — the false-terminal shape this skill exists to
-        // refuse, arrived at from the one direction the round loop has no hook
-        // in, because a drive that converges on its first gate never runs a pass
-        // and so never reaches the post-round transition below.
+        // exists for. The in-house AI reviewer reviewed this head and had
+        // nothing left to say; CodeRabbit never looked at it at all, and by
+        // repo policy never will until someone marks the PR Ready. Returning 0
+        // here would report "the review loop is done" about a PR whose external
+        // review is pending by construction — the false-terminal shape this
+        // skill exists to refuse, arrived at from the one direction the round
+        // loop has no hook in, because a drive that converges on its first gate
+        // never runs a pass and so never reaches the post-round transition
+        // below.
         //
         // So: mark it Ready, then re-gate rather than returning. Bounded to ONE
         // extra iteration — `readyMarkedRound` is non-zero afterwards, so the
@@ -3250,34 +3208,34 @@ async function main(): Promise<number> {
         // avoid, so the drive earns the right to summon anyone only once it can
         // certify there is nothing left on the floor. Exit 12 therefore leaves
         // the PR a draft, and the retry after the operator cleans up marks it.
-        // Gated on `--keep-draft` ALONE, not on `status.draft` (coderabbitai
-        // P2, PR #4057). A draftness gate here looks like an optimisation and
-        // is a hole: on an ALREADY-Ready PR that converges before any pass
-        // runs, it skips `mark-ready.ts` entirely, so `readyMarkedRound` stays
-        // 0 and this drive keeps no record that it owed nothing. A human who
-        // later converts that PR back to draft then meets the next drive
-        // reading 0, seeing a draft, and marking it Ready again — undoing
-        // their decision, which is the exact case the already-Ready recording
-        // path exists for and the one place it was unreachable.
+        // Gated on `--keep-draft` ALONE, not on `status.draft`. A draftness
+        // gate here looks like an optimisation and is a hole: on an
+        // ALREADY-Ready PR that converges before any pass runs, it skips
+        // `mark-ready.ts` entirely, so `readyMarkedRound` stays 0 and this
+        // drive keeps no record that it owed nothing. A human who later
+        // converts that PR back to draft then meets the next drive reading 0,
+        // seeing a draft, and marking it Ready again — undoing their decision,
+        // which is the exact case the already-Ready recording path exists for
+        // and the one place it was unreachable.
         //
         // `mark-ready.ts` is the right place for that decision anyway: it
         // reads the durable record first, and only then a live snapshot, so
         // the call costs one state read on every round after the first.
         //
-        // NOT gated on `!keepDraft` ALONE (docomply-review round 14, PR
-        // #4057): `--keep-draft` exists to suppress the outward draft→Ready
-        // DISPATCH, not the harmless, side-effect-free record of an
-        // already-Ready observation. `status.draft === false` also runs this
-        // under `--keep-draft`, for the same reason the pre-pass call does —
-        // skipping it left `readyMarkedRound` at 0 for a PR this drive
-        // observed as already Ready, so a later ordinary drive could not
-        // tell a deliberate Ready→draft conversion from a never-marked
-        // draft. `status.draft === true` still respects `--keep-draft`: that
-        // case is the actual dispatch-capable call, which is exactly what
-        // the flag exists to suppress.
+        // NOT gated on `!keepDraft` ALONE: `--keep-draft` exists to suppress
+        // the outward draft→Ready DISPATCH, not the harmless,
+        // side-effect-free record of an already-Ready observation.
+        // `status.draft === false` also runs this under `--keep-draft`, for
+        // the same reason the pre-pass call does — skipping it left
+        // `readyMarkedRound` at 0 for a PR this drive observed as already
+        // Ready, so a later ordinary drive could not tell a deliberate
+        // Ready→draft conversion from a never-marked draft.
+        // `status.draft === true` still respects `--keep-draft`: that case is
+        // the actual dispatch-capable call, which is exactly what the flag
+        // exists to suppress.
         if (!keepDraft || status.draft === false) {
           // `--record-only` when THIS gate's own snapshot already saw the PR
-          // as Ready (docomply-review round 13, a reference-implementation pull request) — mirroring the
+          // as Ready — mirroring the
           // round-loop's pre-pass call: a call that CAN dispatch is exactly
           // what let an earlier version of this branch fire `gh pr ready` on
           // a PR the owner converted to draft in the window before this
@@ -3301,7 +3259,7 @@ async function main(): Promise<number> {
           // fresher observation of the same fact `drive-status.ts` reports as
           // PR_NOT_OPEN, so it propagates as PR_NOT_OPEN rather than falling
           // through into an exit 0 that would tell an operator to merge a PR
-          // that is already gone (docomply-review round 2, a reference-implementation pull request).
+          // that is already gone.
           if (rc.code === 5) {
             console.error(
               `PR #${pr} stopped being open while the converged drive was marking it Ready`,
@@ -3339,12 +3297,11 @@ async function main(): Promise<number> {
             console.error(`  (gh pr ready ${pr}), and re-run the drive.`);
             return 1;
           }
-          // `marked`, `already-ready`, and `already-marked` ALL re-gate
-          // (docomply-review round 22, a reference-implementation pull request): this call is itself the
-          // slow, awaited step in this branch — up to
-          // `markReadyTimeoutSeconds()` of real elapsed time — and another
-          // clone can push a new head while it runs. `mark-ready.ts` only
-          // re-reads PR state and draftness, never `headRefOid`, so
+          // `marked`, `already-ready`, and `already-marked` ALL re-gate:
+          // this call is itself the slow, awaited step in this branch — up
+          // to `markReadyTimeoutSeconds()` of real elapsed time — and
+          // another clone can push a new head while it runs. `mark-ready.ts`
+          // only re-reads PR state and draftness, never `headRefOid`, so
           // declaring convergence straight off this call's outcome vouches
           // for the head the OUTER gate verified minutes ago, not the one
           // live now. `markedReadyThisRun` is set only for `marked` itself:
@@ -3372,7 +3329,7 @@ async function main(): Promise<number> {
           }
           // `claimed-by-other` is NOT proof the transition completed — another
           // driver holds the lease and may still be in flight, or may die
-          // holding it (docomply-review rounds 1-2, PR #4057). It is not a
+          // holding it. It is not a
           // reason to spin here either: re-gating would find the same lease
           // and converge into the same branch.
           if (outcome === "claimed-by-other") {
@@ -3390,7 +3347,7 @@ async function main(): Promise<number> {
         }
 
         // Neither a lease left to another driver NOR an unrecorded draft flip
-        // is full convergence (docomply-review rounds 6 and 13, PR #4057).
+        // is full convergence.
         // Returning exit 0 here claims "nothing left to do" and ends the
         // drive outright — for the lease case, a dead other-driver then
         // leaves the PR a draft forever with no external reviewer summoned
@@ -3425,11 +3382,9 @@ async function main(): Promise<number> {
             "  draft — the owner converted it back before this drive could record it was",
           );
           console.error(
-            "  ever Ready. Not reporting full convergence, and NOT retrying automatically",
+            "  ever Ready. Not reporting full convergence, and NOT retrying automatically:",
           );
-          console.error(
-            "  (docomply-review round 22, a reference-implementation pull request): unlike the lease case above, nothing",
-          );
+          console.error("  unlike the lease case above, nothing");
           console.error(
             "  durable was written here, so a blind retry that reaches this exact branch",
           );
@@ -3507,10 +3462,9 @@ async function main(): Promise<number> {
           );
           return 1;
         }
-        // A fresh witness was just confirmed (review finding
-        // round 7): `witnessWaits` is documented as counting a CONSECUTIVE
-        // unwitnessed streak on one head, but used to reset only on a head
-        // change. A same-head sequence — several `finalCi.code === 4`
+        // A fresh witness was just confirmed: `witnessWaits` is documented as
+        // counting a CONSECUTIVE unwitnessed streak on one head, but used to
+        // reset only on a head change. A same-head sequence — several `finalCi.code === 4`
         // polls, then `code === 0` while an unrelated non-required check is
         // still pending (the branch below loops on it), then a required
         // check rerun returns `code === 4` again — resumed the earlier
@@ -3536,21 +3490,21 @@ async function main(): Promise<number> {
           finalStatus = {};
         }
         const finalVerdict = String(finalStatus.ci ?? "");
-        // The STRUCTURED counterpart to `finalVerdict` (review finding,
-        //): `finalVerdict` is a rendered, delimiter-joined
-        // string, so re-splitting it on `,`/`;` cannot round-trip a check
-        // name that itself contains either character. `Array.isArray` here
-        // is the same defensive read every other array field off this JSON
-        // boundary uses (see `roundFingerprint` above) — an absent or
-        // malformed field degrades to `null`, never to a guessed `[]` that
-        // would silently read as "nothing failing".
+        // The STRUCTURED counterpart to `finalVerdict`: `finalVerdict` is a
+        // rendered, delimiter-joined string, so re-splitting it on `,`/`;`
+        // cannot round-trip a check name that itself contains either
+        // character. `Array.isArray` here is the same defensive read every
+        // other array field off this JSON boundary uses (see
+        // `roundFingerprint` above) — an absent or malformed field degrades
+        // to `null`, never to a guessed `[]` that would silently read as
+        // "nothing failing".
         const finalFailingNamesRaw = finalStatus.failingCheckNames;
         const finalFailingNames = Array.isArray(finalFailingNamesRaw)
           ? finalFailingNamesRaw.filter(
               (name): name is string => typeof name === "string",
             )
           : null;
-        // The CHECK-RUN-ONLY subset (review finding):
+        // The CHECK-RUN-ONLY subset:
         // `completedRequiredCi()` (ci-hold.ts) establishes freshness from
         // check-runs alone — it has no notion of a commit status at all — so
         // the ambiguity `finalCi.code === 4` encodes can only ever apply to a
@@ -3567,17 +3521,16 @@ async function main(): Promise<number> {
               (name): name is string => typeof name === "string",
             )
           : null;
-        // The COMMIT-STATUS-ONLY complement (review finding, an earlier change round
-        // 5): `finalFailingNames` merges check-run and commit-status names
-        // with no per-entry provenance, so a required name that fails in
-        // BOTH sources under the identical name — e.g. a check-run named
-        // `Schema gate` whose freshness `finalCi.code === 4` cannot confirm,
-        // alongside a legacy commit status ALSO named `Schema gate` that is
-        // unambiguously fresh — would satisfy `finalFailingCheckRunNames.
-        // includes(name)` for every merged occurrence of that name,
-        // including the status-sourced one, and read as wholly stale. Only a
-        // name ABSENT from this array can safely be treated as purely
-        // check-run-sourced.
+        // The COMMIT-STATUS-ONLY complement: `finalFailingNames` merges
+        // check-run and commit-status names with no per-entry provenance, so
+        // a required name that fails in BOTH sources under the identical
+        // name — e.g. a check-run named `Schema gate` whose freshness
+        // `finalCi.code === 4` cannot confirm, alongside a legacy commit
+        // status ALSO named `Schema gate` that is unambiguously fresh —
+        // would satisfy `finalFailingCheckRunNames.includes(name)` for every
+        // merged occurrence of that name, including the status-sourced one,
+        // and read as wholly stale. Only a name ABSENT from this array
+        // can safely be treated as purely check-run-sourced.
         const finalFailingStatusNamesRaw = finalStatus.failingStatusNames;
         const finalFailingStatusNames = Array.isArray(
           finalFailingStatusNamesRaw,
@@ -3596,30 +3549,29 @@ async function main(): Promise<number> {
           continue;
         }
         // MUST be checked before interpreting or repairing the CI verdict
-        // below (review finding): a live finding can land
-        // between the original convergence decision and this re-read, which
-        // flips `finalStatus.state` off `CONVERGED` while CI is still red
-        // from the held period. Checking this only at the bottom of the
-        // verdict-handling chain (as before) let a `failing:` verdict
-        // dispatch a `ci-repair` pass — whose documented contract skips
-        // triage — over a head that actually has a fresh, untriaged finding
-        // on it, leaving that finding unanswered.
+        // below: a live finding can land between the original convergence
+        // decision and this re-read, which flips `finalStatus.state` off
+        // `CONVERGED` while CI is still red from the held period. Checking
+        // this only at the bottom of the verdict-handling chain (as before)
+        // let a `failing:` verdict dispatch a `ci-repair` pass — whose
+        // documented contract skips triage — over a head that actually has a
+        // fresh, untriaged finding on it, leaving that finding unanswered.
         if (finalStatusRes.code !== 3 || finalStatus.state !== "CONVERGED") {
           console.error(
             "review evidence changed while final CI freshness was established; re-gating",
           );
           continue;
         }
-        // Only the CONFIRMED-fresh case takes this short, unbounded poll
-        // (review finding): `finalCi.code === 4` means
-        // final-ready could not yet witness a fresh, completed REQUIRED
-        // check, and a `pending:` verdict under that code is exactly the
-        // ambiguous state the bounded witness-wait below exists for — a
-        // required check that never leaves queued/in-progress must still
-        // trip `DRIVE_PR_FINAL_CI_WITNESS_POLLS`, the same as a `skipped`
-        // one does. Falling through here (rather than looping forever on
-        // this branch) is what lets it reach that bound. `finalCi.code ===
-        // 0` means a fresh required witness already exists, so a `pending:`
+        // Only the CONFIRMED-fresh case takes this short, unbounded poll:
+        // `finalCi.code === 4` means final-ready could not yet witness a
+        // fresh, completed REQUIRED check, and a `pending:` verdict under
+        // that code is exactly the ambiguous state the bounded witness-wait
+        // below exists for — a required check that never leaves
+        // queued/in-progress must still trip
+        // `DRIVE_PR_FINAL_CI_WITNESS_POLLS`, the same as a `skipped` one
+        // does. Falling through here (rather than looping forever on this
+        // branch) is what lets it reach that bound. `finalCi.code === 0`
+        // means a fresh required witness already exists, so a `pending:`
         // verdict there names only an unrelated, non-required check still
         // running — genuinely unbounded polling is correct for that case,
         // unchanged.
@@ -3631,60 +3583,58 @@ async function main(): Promise<number> {
           await sleep(FINAL_CI_POLL_SECONDS);
           continue;
         }
-        // A REQUIRED check (review finding): `finalStatus.ci` is
-        // `ciVerdictOf()`'s "latest run per check name", with no notion of
-        // the unlabel-event watermark `final-ready` itself applies. Right
-        // after `ci:hold` is removed — before any post-unlabel run has even
-        // STARTED — the newest run on record for a required check can still
-        // be its deliberately-red held-period one, and this would read that
-        // as a fresh `failing:` verdict. `finalCi.code === 4` is exactly
-        // "final-ready could not positively confirm freshness", which
-        // includes this case, so a required check named in the verdict under
-        // that code is not yet trustworthy either way — fall through to the
-        // SAME bounded witness-wait an earlier change added below rather than
-        // repairing a possibly-imaginary failure or stopping the drive over
-        // one. A NON-required check in the same verdict (a `detect-changes`
-        // failure cascading its dependents into `skipped`, an earlier change's own
+        // A REQUIRED check: `finalStatus.ci` is `ciVerdictOf()`'s "latest run
+        // per check name", with no notion of the unlabel-event watermark
+        // `final-ready` itself applies. Right after `ci:hold` is removed —
+        // before any post-unlabel run has even STARTED — the newest run on
+        // record for a required check can still be its deliberately-red
+        // held-period one, and this would read that as a fresh `failing:`
+        // verdict. `finalCi.code === 4` is exactly "final-ready could not
+        // positively confirm freshness", which includes this case, so a
+        // required check named in the verdict under that code is not yet
+        // trustworthy either way — fall through to the SAME bounded
+        // witness-wait an earlier change added below rather than repairing a
+        // possibly-imaginary failure or stopping the drive over one. A
+        // NON-required check in the same verdict (a `detect-changes` failure
+        // cascading its dependents into `skipped`, an earlier change's own
         // target case) carries no such ambiguity — final-ready says nothing
         // about it either way — so it is trusted immediately, unchanged.
         //
         // "The verdict is stale" therefore has to mean EVERY failing name is
-        // a required one — `.every()`, not `.some()` (review finding,
-        //). The old `.some` treated a MIXED verdict (a
-        // stale required check alongside a genuinely fresh non-required one,
-        // e.g. `failing: Schema gate, detect-changes`) as wholly unreliable
-        // the moment any required name appeared in it, deferring the
-        // actionable non-required failure to the witness wait right along
-        // with the ambiguous one — exactly the case the comment above says
-        // must be trusted immediately. `length > 0` guards the vacuous-truth
-        // trap: `.every()` on an empty array is `true`, which would wrongly
-        // mark a verdict with no failing names at all as "stale".
+        // a required one — `.every()`, not `.some()`. The old `.some`
+        // treated a MIXED verdict (a stale required check alongside a
+        // genuinely fresh non-required one, e.g. `failing: Schema gate,
+        // detect-changes`) as wholly unreliable the moment any required name
+        // appeared in it, deferring the actionable non-required failure to
+        // the witness wait right along with the ambiguous one — exactly the
+        // case the comment above says must be trusted immediately. `length >
+        // 0` guards the vacuous-truth trap: `.every()` on an empty array is
+        // `true`, which would wrongly mark a verdict with no failing names
+        // at all as "stale".
         //
         // Read from `failingCheckNames` — the structured array `evaluate.ts`
         // now publishes alongside the rendered `ci` string — never by
         // re-splitting `finalVerdict` on `,`/`;`: a failing check whose own
         // name contains either delimiter cannot round-trip through that
         // split, so a fragment of it could coincidentally match a required
-        // name exactly (review finding).
+        // name exactly.
         //
-        // Every entry must ALSO be present in `finalFailingCheckRunNames`
-        // (review finding): membership in
-        // the required checks alone is a name test, blind to whether
-        // the entry came from a check-run or a legacy commit status, but
-        // `finalCi.code === 4`'s ambiguity is a check-run-freshness fact only
-        // — `completedRequiredCi()` never reads a commit status. A required
-        // name failing ONLY as a commit status (absent from the check-run
-        // list) is therefore not stale-by-ambiguity at all, and must not
-        // satisfy this predicate.
+        // Every entry must ALSO be present in `finalFailingCheckRunNames`:
+        // membership in the required checks alone is a name test, blind to
+        // whether the entry came from a check-run or a legacy commit status,
+        // but `finalCi.code === 4`'s ambiguity is a check-run-freshness fact
+        // only — `completedRequiredCi()` never reads a commit status. A
+        // required name failing ONLY as a commit status (absent from the
+        // check-run list) is therefore not stale-by-ambiguity at all, and
+        // must not satisfy this predicate.
         //
-        // And it must ALSO be ABSENT from `finalFailingStatusNames` (review
-        // finding): the check above tests membership BY
-        // NAME, blind to provenance, so a required name failing as BOTH a
-        // check-run AND a legacy commit status under the identical name
-        // would otherwise satisfy it for every merged occurrence — including
-        // the status-sourced one, which carries no freshness ambiguity at
-        // all and must be treated as an actionable failure regardless of
-        // what the check-run side is doing.
+        // And it must ALSO be ABSENT from `finalFailingStatusNames`: the
+        // check above tests membership BY NAME, blind to provenance, so a
+        // required name failing as BOTH a check-run AND a legacy commit
+        // status under the identical name would otherwise satisfy it for
+        // every merged occurrence — including the status-sourced one, which
+        // carries no freshness ambiguity at all and must be treated as an
+        // actionable failure regardless of what the check-run side is doing.
         let requiredChecks: readonly string[];
         try {
           requiredChecks = (await ciPolicy(pr)).requiredChecks;
@@ -3732,11 +3682,11 @@ async function main(): Promise<number> {
           );
           console.error(
             // A peek, not a charge — `ciRepairs` is committed only once
-            // `runRepairPass` confirms it actually dispatched, below (review
-            // finding, round 3): an earlier revision charged before the
-            // call and refunded on an abort path, which is exactly the
-            // charge-then-compensate shape whose ABA gap this class of
-            // finding kept re-finding on the durable `attempts` counter.
+            // `runRepairPass` confirms it actually dispatched, below: an
+            // earlier revision charged before the call and refunded on an
+            // abort path, which is exactly the charge-then-compensate shape
+            // whose ABA gap this class of finding kept re-finding on the
+            // durable `attempts` counter.
             // "Never charge until certain" needs no compensating action at
             // all — this line only has to DISPLAY the attempt number the
             // dispatch below, if it happens, will actually become.
@@ -3753,7 +3703,7 @@ async function main(): Promise<number> {
             // The repair pass's OWN pre-spawn checkpoint (inside
             // runRepairPass, after its identity refresh) resumed a pause
             // without ever dispatching — re-gate from the top rather than
-            // trusting this branch's now-stale snapshot (review finding).
+            // trusting this branch's now-stale snapshot.
             // Nothing to refund: `ciRepairs` was never charged for this
             // attempt in the first place.
             if (repair.resumed) continue;
@@ -3771,31 +3721,30 @@ async function main(): Promise<number> {
             // this driver has already lost authority over the PR, which
             // outranks any exit code the mailbox checkpoint might report.
             // Re-join the SAME witness the ordinary-pass path joins on its
-            // own `compromised` branch (review finding): the
-            // takeover stopped this repair pass from a TIMER callback, which
-            // could not wait, so `passStopWitness` is the only place that
-            // wait is still live. Clearing `held` on an unwitnessed
-            // termination is what keeps the loop-top `compromised` check
-            // below from releasing a lock over a repair descendant that may
-            // still be running.
+            // own `compromised` branch: the takeover stopped this repair
+            // pass from a TIMER callback, which could not wait, so
+            // `passStopWitness` is the only place that wait is still live.
+            // Clearing `held` on an unwitnessed termination is what keeps
+            // the loop-top `compromised` check below from releasing a lock
+            // over a repair descendant that may still be running.
             if (passStopWitness !== null && !(await passStopWitness)) {
               held.length = 0;
             }
             continue;
           }
-          // A directive observed immediately after this pass completed
-          // (review finding, round 4) — outranks reporting the pass's own
-          // result, same as the ordinary-pass path's own post-pass
-          // checkpoint. The charge above already stands: the pass DID run.
+          // A directive observed immediately after this pass completed —
+          // outranks reporting the pass's own result, same as the
+          // ordinary-pass path's own post-pass checkpoint. The charge above
+          // already stands: the pass DID run.
           if (repair.postPassMailboxExit !== null)
             return repair.postPassMailboxExit;
-          // Preserve PR_NOT_OPEN (review finding): `guarded-push.ts`
-          // exits 5 inside the pass exactly like the ordinary-pass path's own
-          // push does, and reporting a CI stop over a PR that already merged
-          // or closed sends an operator to fix code nobody can push to
-          // anymore — `passExitDisposition` exists to prevent exactly this
-          // for the ordinary path, so the repair path must not silently drop
-          // the same signal.
+          // Preserve PR_NOT_OPEN: `guarded-push.ts` exits 5 inside the pass
+          // exactly like the ordinary-pass path's own push does, and
+          // reporting a CI stop over a PR that already merged or closed sends
+          // an operator to fix code nobody can push to anymore —
+          // `passExitDisposition` exists to prevent exactly this for the
+          // ordinary path, so the repair path must not silently drop the same
+          // signal.
           if (repairCode === 5) {
             console.error(
               `PR #${pr} stopped being open during the CI-repair pass; stopping.`,
@@ -3817,11 +3766,11 @@ async function main(): Promise<number> {
           // which is what the budget is for.
           continue;
         }
-        // A `pending:` verdict is never a stop condition (review finding,
-        //): it reaches here only when `finalCi.code === 4`
-        // (the branch above let it through deliberately), and it names a
-        // required check still queued/in-progress, not a failure — the
-        // witness-wait branch just below is what bounds the wait on it.
+        // A `pending:` verdict is never a stop condition: it reaches here
+        // only when `finalCi.code === 4` (the branch above let it through
+        // deliberately), and it names a required check still
+        // queued/in-progress, not a failure — the witness-wait branch just
+        // below is what bounds the wait on it.
         const finalVerdictPending = finalVerdict.startsWith("pending:");
         if (
           finalVerdict !== "green" &&
@@ -3838,7 +3787,7 @@ async function main(): Promise<number> {
           }
           return 1;
         }
-        // DEFERRED from above (widened by the review finding
+        // DEFERRED from above (widened by the required-check handling
         // above): either the aggregate verdict is green with nothing
         // failing, or it names only a REQUIRED check whose freshness this
         // same `finalCi.code === 4` already couldn't confirm — and either
@@ -3967,7 +3916,7 @@ async function main(): Promise<number> {
         return 0;
       }
       case 8: {
-        // Deliberately terminal. Re-arming here is the #3933 failure: the loop
+        // Deliberately terminal. Re-arming here is a measured failure: the loop
         // wakes, re-reads the same undeferrable threads, learns nothing it may
         // act on, and burns turns until something external stops it.
         console.error(
@@ -4008,21 +3957,21 @@ async function main(): Promise<number> {
         // row already spells out for a pass to follow. The tell was the
         // asymmetry: a conflict that still HAS findings arrives as
         // ROUND_READY (the live reviewer is a poller and reviews conflicting
-        // heads — PR #3995 round 6) and that same merge happens inside the
-        // round. Only the no-work case was handed back, and only because no
-        // triage came with it.
+        // heads) and that same merge happens inside the round. Only the
+        // no-work case was handed back, and only because no triage came with
+        // it.
         //
         // So: spend the conflict-repair budget first, and fall through to the
         // original stop — message unchanged — once it is gone.
         //
         // Read the base name out of the STATUS REPORT drive-status.ts already
         // fetched, rather than a second, ungated `gh pr view` call. Two
-        // problems with that second call, both found in review: it carries no
-        // deadline of its own, so a stalled connection could keep this script
-        // from ever emitting the fix and exiting 9 — the one thing this
-        // branch exists to guarantee; and a failed/timed-out read silently
-        // fell back to a guessed default, handing an operator a concrete `git
-        // merge` command for the WRONG branch on a release or stacked PR.
+        // problems with that second call: it carries no deadline of its own,
+        // so a stalled connection could keep this script from ever emitting
+        // the fix and exiting 9 — the one thing this branch exists to
+        // guarantee; and a failed/timed-out read silently fell back to a
+        // guessed default, handing an operator a concrete `git merge` command
+        // for the WRONG branch on a release or stacked PR.
         // Reusing the report needs no network call at all, so there is
         // nothing left to fail.
         const base = String(
@@ -4035,9 +3984,9 @@ async function main(): Promise<number> {
           // fail-closed rule the CI side applies to a verdict naming no
           // failing check. This branch exists precisely because guessing
           // `develop` handed an operator a concrete, wrong command on a
-          // release or stacked PR (#3995 review); dispatching a pass with an
-          // empty base would make the same guess one level further away,
-          // where the operator cannot see it being made.
+          // release or stacked PR; dispatching a pass with an empty base
+          // would make the same guess one level further away, where the
+          // operator cannot see it being made.
           base !== ""
         ) {
           if (dryRun || agent.length === 0) {
@@ -4056,7 +4005,7 @@ async function main(): Promise<number> {
           console.error(reasonLine);
           console.error(
             // A peek, not a charge — see the CI-repair call site's own
-            // comment for why (review finding, round 3).
+            // comment for why.
             `  Running conflict-resolution pass ${conflictRepairs + 1}/${conflictBudget} (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=${conflictBudget}; 0 stops here instead).`,
           );
           const resolve = await runRepairPass(
@@ -4067,7 +4016,7 @@ async function main(): Promise<number> {
             mailboxCheckpoint,
           );
           // Same mailbox handling as the CI-repair call site above — see its
-          // own comments for why (review finding).
+          // own comments for why.
           if (!resolve.dispatched) {
             if (resolve.resumed) continue;
             return resolve.code;
@@ -4077,18 +4026,18 @@ async function main(): Promise<number> {
           const resolveCode = resolve.code;
           if (compromised !== "") {
             // Same re-join as the CI-repair call site above — see its own
-            // comment for why (review finding).
+            // comment for why.
             if (passStopWitness !== null && !(await passStopWitness)) {
               held.length = 0;
             }
             continue;
           }
           // Same post-pass mailbox precedence as the CI-repair call site
-          // above — see its own comment for why (review finding, round 4).
+          // above — see its own comment for why.
           if (resolve.postPassMailboxExit !== null)
             return resolve.postPassMailboxExit;
           // Same PR_NOT_OPEN preservation as the CI-repair call site above —
-          // see its own comment for why (review finding).
+          // see its own comment for why.
           if (resolveCode === 5) {
             console.error(
               `PR #${pr} stopped being open during the conflict-resolution pass; stopping.`,
@@ -4116,9 +4065,9 @@ async function main(): Promise<number> {
         return 9;
       }
       // There is no `case 10`. It was `PR_IS_DRAFT`, terminal and un-re-armed
-      // on the premise that no reviewer arm looks at a draft; `docomply-review`
-      // reviews drafts (measured — see mark-ready.ts), so a drive on one now
-      // proceeds and marks it Ready itself at the round
+      // on the premise that no reviewer arm looks at a draft; the in-house AI
+      // reviewer reviews drafts (measured — see mark-ready.ts), so a drive on
+      // one now proceeds and marks it Ready itself at the round
       // `pull_requests.mark_ready` declares.
       // The CODE stays retired rather than being recycled for something else:
       // an operator reading `10` out of an old log or a wrapper script should
@@ -4208,7 +4157,7 @@ async function main(): Promise<number> {
       // uses, for the same reason: `loopEconomy()` is up to 120s of network
       // work, and an edit landing in that window would make a report that
       // already ran and printed "clean" false by the time this function
-      // actually returns (chatgpt-codex-connector, a reference-implementation pull request round 8).
+      // actually returns.
       // Certifying the worktree LAST, right before the exit, is what keeps
       // that window as narrow as it can be.
       const economyReport = await loopEconomy(pr);
@@ -4219,27 +4168,27 @@ async function main(): Promise<number> {
 
     // A PR that is ALREADY Ready when this round starts needs the same
     // durable "nothing owed" record the post-round call gives it — but
-    // recorded NOW, before the pass runs (chatgpt-codex-connector, a reference-implementation pull request).
+    // recorded NOW, before the pass runs.
     // Without it, `readyMarkedRound` stays 0 for the whole pass, which can run
     // several minutes; if the owner converts the PR back to draft while it is
     // running, the post-round call below sees `readyMarkedRound === 0` PLUS
     // the now-draft flag and fires `gh pr ready`, reversing a decision this
     // whole mechanism exists not to undo.
     //
-    // `--record-only` — this call may NEVER fire `gh pr ready` itself
-    // (chatgpt-codex-connector, a reference-implementation pull request). Without it, this call uses the
-    // GENERAL mark-ready.ts path, which — if the owner converts the PR back
-    // to draft in the window between drive-status.ts's read above and
-    // mark-ready.ts's OWN live re-read — would see a draft and immediately
-    // dispatch the transition itself, undoing the very decision this pre-pass
-    // record exists to protect. `--record-only` makes that structurally
-    // impossible: it can only record an already-Ready observation or report
-    // `still-draft` with no side effect, never claim the lease or call
-    // `gh pr ready`. It does not touch the "not at the start" ordering
-    // documented at the post-round call below, which is about spending
-    // CodeRabbit's one pass on a cleaned-up head, a different concern.
+    // `--record-only` — this call may NEVER fire `gh pr ready` itself.
+    // Without it, this call uses the GENERAL mark-ready.ts path, which — if
+    // the owner converts the PR back to draft in the window between
+    // drive-status.ts's read above and mark-ready.ts's OWN live re-read —
+    // would see a draft and immediately dispatch the transition itself,
+    // undoing the very decision this pre-pass record exists to protect.
+    // `--record-only` makes that structurally impossible: it can only record
+    // an already-Ready observation or report `still-draft` with no side
+    // effect, never claim the lease or call `gh pr ready`. It does not touch
+    // the "not at the start" ordering documented at the post-round call
+    // below, which is about spending CodeRabbit's one pass on a cleaned-up
+    // head, a different concern.
     //
-    // NOT gated on `!keepDraft` (docomply-review round 14, a reference-implementation pull request):
+    // NOT gated on `!keepDraft`:
     // `--keep-draft` exists to suppress the outward draft→Ready DISPATCH,
     // which this call structurally cannot perform. Skipping it under
     // `--keep-draft` left `readyMarkedRound` at 0 for a PR this drive
@@ -4265,13 +4214,13 @@ async function main(): Promise<number> {
       }
       const outcome = rc.code === 0 ? rc.stdout.trim() : null;
       // REQUIRE CONFIRMATION before the pass starts, rather than proceeding
-      // on an unconfirmed result (chatgpt-codex-connector, a reference-implementation pull request): this
+      // on an unconfirmed result: this
       // record is the ONLY thing that closes the mid-pass draft-flip race, so
       // continuing hopefully on a failed or malformed record reopens exactly
       // that race for the whole (possibly multi-minute) pass about to run.
       //
       // `claimed-by-other` and `still-draft` are BOTH deliberately NOT
-      // sufficient confirmation (docomply-review rounds 10-11, PR #4057),
+      // sufficient confirmation,
       // even though both are recognized, exit-0 outcomes: neither writes a
       // durable record.
       //
@@ -4315,10 +4264,9 @@ async function main(): Promise<number> {
     if (mailboxBeforePass === "resumed") continue;
 
     // `passes` itself is incremented only at the actual dispatch point,
-    // several awaits below — not here (review finding, round 3): this is
-    // one round-boundary checkpoint among several before the pass is
-    // certain to run, and counting here would double-count against the
-    // late increment.
+    // several awaits below — not here: this is one round-boundary checkpoint
+    // among several before the pass is certain to run, and counting here
+    // would double-count against the late increment.
     // A round boundary is a cheap extra renewal, not the mechanism: the timer
     // started above is what keeps the claim fresh through a long pass. Nothing
     // else distinguishes this driver from a stranger that inherited its pid
@@ -4342,21 +4290,21 @@ async function main(): Promise<number> {
     }
     // A NON-MUTATING peek at what this round's attempt count WOULD become.
     // The durable `bump-attempt` commit itself now happens only immediately
-    // before the pass is actually dispatched, several awaits below (review
-    // finding, round 3) — nothing here may charge the budget yet, because
-    // everything between here and dispatch can still abort without a pass
-    // ever running. An earlier revision charged here and refunded on abort;
-    // that compensating refund had its own correctness gaps (an ABA case on
-    // its compare-and-swap) that a "never charge until certain" design does
-    // not need to defend against at all. `get`, not `attempts` alone,
-    // because the peek must know whether THIS head still matches the stored
-    // `attemptsHead` — a head change resets the count to 1, exactly like
-    // `bump-attempt`'s own reset branch. Also carries `lastReflectedRound`/
-    // `lastReflectedAttempts` for the reflect-duty check below, in the SAME
-    // read: a separate, later `get` call would still be reading state from
-    // BEFORE this round's commit, understating `reflectDepthPastLast` by
-    // exactly one round every time (caught in testing after this file's own
-    // round-3 restructuring away from charge-then-refund).
+    // before the pass is actually dispatched, several awaits below — nothing
+    // here may charge the budget yet, because everything between here and
+    // dispatch can still abort without a pass ever running. An earlier
+    // revision charged here and refunded on abort; that compensating refund
+    // had its own correctness gaps (an ABA case on its compare-and-swap)
+    // that a "never charge until certain" design does not need to defend
+    // against at all. `get`, not `attempts` alone, because the peek must
+    // know whether THIS head still matches the stored `attemptsHead` — a
+    // head change resets the count to 1, exactly like `bump-attempt`'s own
+    // reset branch. Also carries
+    // `lastReflectedRound`/`lastReflectedAttempts` for the reflect-duty
+    // check below, in the SAME read: a separate, later `get` call would
+    // still be reading state from BEFORE this round's commit, understating
+    // `reflectDepthPastLast` by exactly one round every time (caught in
+    // testing after the restructuring away from charge-then-refund).
     const peekRes = await run(tsArgv(driveState, ["get", pr]), {
       stderr: "inherit",
     });
@@ -4391,28 +4339,27 @@ async function main(): Promise<number> {
           : undefined;
       // `lastReflectedAttempts`, unlike `lastReflectedRound`, IS reset by a
       // head change — `bump-attempt`'s own head-change branch zeroes it in
-      // the SAME atomic update that resets `attempts` to 1 (review finding,
-      // round 6). Reading the stored value unconditionally here left a
-      // stale baseline from the PREVIOUS head in place after a head
-      // change — e.g. `peekedAttempts` correctly reset to 1 while this
-      // stayed at 8 from the old head, so `reflectDepthPastLast`'s
-      // `attempts - lastReflectedAttempts` computed `1 - 8` instead of
-      // `1 - 0`, delaying the /reflect duty by however many passes the old
-      // head had already reflected past.
+      // the SAME atomic update that resets `attempts` to 1. Reading the
+      // stored value unconditionally here left a stale baseline from the
+      // PREVIOUS head in place after a head change — e.g. `peekedAttempts`
+      // correctly reset to 1 while this stayed at 8 from the old head, so
+      // `reflectDepthPastLast`'s `attempts - lastReflectedAttempts` computed
+      // `1 - 8` instead of `1 - 0`, delaying the /reflect duty by however
+      // many passes the old head had already reflected past.
       peekedLastReflectedAttempts =
         peeked.attemptsHead === apiHead &&
         typeof peeked.lastReflectedAttempts === "number"
           ? peeked.lastReflectedAttempts
           : undefined;
     } catch {
-      // Fail closed (review finding, round 6): this `get` call already
-      // succeeded (checked above), so a JSON parse failure here means
-      // drive-state.ts returned malformed output for a request that
-      // otherwise worked — not an absence of evidence to fail open on, the
-      // way an unreadable READ is treated elsewhere. Leaving
-      // `peekedAttempts` at 0 let a malformed-but-successful response
-      // under-count the round/max-rounds check and dispatch another pass
-      // past the budget instead of enforcing it.
+      // Fail closed: this `get` call already succeeded (checked above), so a
+      // JSON parse failure here means drive-state.ts returned malformed
+      // output for a request that otherwise worked — not an absence of
+      // evidence to fail open on, the way an unreadable READ is treated
+      // elsewhere. Leaving `peekedAttempts` at 0 let a
+      // malformed-but-successful response under-count the round/max-rounds
+      // check and dispatch another pass past the budget instead of enforcing
+      // it.
       fail(1, `cannot parse durable state for PR #${pr}; stopping`);
     }
     const countedRaw = countedRes.stdout.trim();
@@ -4434,11 +4381,11 @@ async function main(): Promise<number> {
     console.error(reasonLine);
     process.stderr.write(await severityWarnings(pr));
 
-    // Past the third round, AGENTS.md § Addressing PR Comments requires a
-    // `/reflect` pass: rounds that keep producing findings are evidence of a
-    // scaffolding or reviewer-configuration gap, and the round that discovers
-    // it is worth more than the round that patches one more instance. Waiting
-    // for --max-rounds is too late — that is the bound, not the signal.
+    // Past the third round, a `/reflect` pass is due: rounds that keep
+    // producing findings are evidence of a scaffolding or
+    // reviewer-configuration gap, and the round that discovers it is worth
+    // more than the round that patches one more instance. Waiting for
+    // --max-rounds is too late — that is the bound, not the signal.
     //
     // A control loop cannot invoke a slash command, so this arms the PASS,
     // which can: the flag is exported into its environment (SKILL.md § 3
@@ -4458,13 +4405,13 @@ async function main(): Promise<number> {
     // on interactive runs too and what stops the two answering differently
     // (this env var is the legacy transport for passes driven from here).
     //
-    // Built from the EARLY peek above, not a fresh `get` here (review
-    // finding, round 3): a separate read at this point would still be
-    // reading state from BEFORE this round's own `bump-attempt` commit,
-    // which now happens only right before dispatch — understating depth by
-    // exactly one round, every round, and silently delaying the duty past
-    // its own threshold. `rounds` comes from `countedRes` above for the
-    // same reason: it is already this round's accurate value, read once.
+    // Built from the EARLY peek above, not a fresh `get` here: a separate
+    // read at this point would still be reading state from BEFORE this
+    // round's own `bump-attempt` commit, which now happens only right before
+    // dispatch — understating depth by exactly one round, every round, and
+    // silently delaying the duty past its own threshold. `rounds` comes from
+    // `countedRes` above for the same reason: it is already this round's
+    // accurate value, read once.
     const depth = reflectDepthPastLast({
       rounds: counted,
       attempts: peekedAttempts,
@@ -4578,10 +4525,10 @@ async function main(): Promise<number> {
     // file-backed login change landing in that window would otherwise still
     // hand this pass a stale claim for its own entire life — the same
     // failure `refreshAccountIdentity` exists to close, just at the one
-    // remaining call site that had no guaranteed pre-spawn read of its own
-    // (chatgpt-codex-connector, a reference-implementation pull request round 5). Bounded-retried by
-    // `refreshAccountIdentityBeforeSpawn` — see its own header for why a
-    // merely-transient failure here cannot be left unretried.
+    // remaining call site that had no guaranteed pre-spawn read of its own.
+    // Bounded-retried by `refreshAccountIdentityBeforeSpawn` — see its own
+    // header for why a merely-transient failure here cannot be left
+    // unretried.
     const identitySynced = await refreshAccountIdentityBeforeSpawn(held, agent);
     // Checked IMMEDIATELY after: that call can itself detect a resurrection
     // (its own post-rename `claimNames.length > 1` check) and set
@@ -4592,7 +4539,7 @@ async function main(): Promise<number> {
     // holds this lock: `touchLock` returns early once `compromised` is set,
     // so no LATER heartbeat tick can stop it either — the two-drivers state
     // every lock in this file exists to prevent, self-inflicted by this
-    // driver's own refresh call (chatgpt-codex-connector, a reference-implementation pull request round 6).
+    // driver's own refresh call.
     if (compromised !== "") {
       console.error(
         `drive.ts: the ${compromised} lock was recovered by another driver — not starting another pass.`,
@@ -4652,7 +4599,7 @@ async function main(): Promise<number> {
     // Populated by `onSpawn` below with the fire-and-forget `pass-spawned`
     // stamp's own promise, so it can be joined once the pass itself has
     // finished — see the comment at that join point for why this ordering
-    // is load-bearing (review finding).
+    // is load-bearing.
     let passSpawnProgressStamp: Promise<unknown> | null = null;
     // Several awaited state/account reads separate the earlier round check
     // from this spawn, and a directive sent during one of them must still
@@ -4662,17 +4609,16 @@ async function main(): Promise<number> {
     if (typeof mailboxAtSpawn === "number") return mailboxAtSpawn;
     if (mailboxAtSpawn === "resumed") continue;
     // Commit the durable charge and the local pass counter HERE, not
-    // earlier (review finding, round 3): everything above this line can
-    // still abort without a pass running, so nothing above it may spend
-    // real budget. This replaced an earlier charge-then-refund design whose
-    // compensating refund had its own correctness gap (an ABA case on its
-    // compare-and-swap) — "never charge until certain" needs no
-    // compensating action at all. The one irreducible residual is the
-    // `bump-attempt` call's own round-trip immediately below: a directive
-    // landing in that single await is not caught before this dispatch, only
-    // at the next checkpoint — accepted deliberately, because closing it
-    // would need the charge and the spawn to be literally the same
-    // operation, which they cannot be.
+    // earlier: everything above this line can still abort without a pass
+    // running, so nothing above it may spend real budget. This replaced an
+    // earlier charge-then-refund design whose compensating refund had its
+    // own correctness gap (an ABA case on its compare-and-swap) — "never
+    // charge until certain" needs no compensating action at all. The one
+    // irreducible residual is the `bump-attempt` call's own round-trip
+    // immediately below: a directive landing in that single await is not
+    // caught before this dispatch, only at the next checkpoint — accepted
+    // deliberately, because closing it would need the charge and the spawn
+    // to be literally the same operation, which they cannot be.
     passes += 1;
     const bump = await run(
       tsArgv(driveState, ["bump-attempt", pr, "--head", apiHead]),
@@ -4736,9 +4682,9 @@ async function main(): Promise<number> {
     // hundred lines below) rather than before it. A `pass-spawned` stamp
     // that lands after a quota-park write refreshes `lastProgressAt` and
     // clears `quotaPark`, so `--doctor` reads recent HEALTHY progress or
-    // loses the QUOTA_PARKED verdict for a pass that has already stopped
-    // (review finding). The pass itself has already finished by this point,
-    // so joining here adds no latency to its own critical path.
+    // loses the QUOTA_PARKED verdict for a pass that has already stopped.
+    // The pass itself has already finished by this point, so joining here
+    // adds no latency to its own critical path.
     if (passSpawnProgressStamp !== null) {
       await passSpawnProgressStamp;
     }
@@ -4768,7 +4714,7 @@ async function main(): Promise<number> {
     // that changed while this pass ran would otherwise hand that next pass a
     // stale claim for its own entire life, the same failure mode
     // `refreshAccountIdentity` exists to close for the file-backed identity
-    // path (docomply-review, a reference-implementation pull request round 4).
+    // path.
     refreshAccountIdentity(held, agent);
     // Checked immediately after, same as the pre-spawn call site: this
     // refresh can itself detect a resurrection and set `compromised`, and
@@ -4777,7 +4723,7 @@ async function main(): Promise<number> {
     // the quota-sleep path below, which can hold what it believes is a
     // live lock for HOURS after the takeover, and into a Ready-mark
     // transition neither of which re-checks this before the next loop
-    // boundary (chatgpt-codex-connector, a reference-implementation pull request round 6).
+    // boundary.
     if (compromised !== "") {
       console.error(
         `drive.ts: the ${compromised} lock was recovered by another driver — not continuing.`,
@@ -4786,22 +4732,21 @@ async function main(): Promise<number> {
     }
     const disposition = passExitDisposition(passRes.code);
     // A directive sent WHILE this pass ran must still be honored before a
-    // non-success terminal result for it is reported (review finding,
-    // round 4) — PR_NOT_OPEN previously returned with no checkpoint at
-    // all. NOT extended to the SUCCESS path below (no `disposition.kind ===
-    // 'ok'` branch exists here — the function falls through to mark-ready
-    // and the held-batch drain instead): an earlier revision of this fix
-    // checked before `disposition` was even computed, unconditionally, and
-    // broke the documented "a running pass is allowed to complete,
-    // including its post-round Ready transition, before the next
-    // checkpoint" guarantee — caught in testing. A round that succeeded
-    // reaches mark-ready regardless of a directive that arrived while it
-    // ran; it already re-checks the mailbox at the top of the next
-    // iteration in the ordinary course of looping. `clear`/`resumed` both
-    // fall through to reporting PR_NOT_OPEN — the pass already found this
-    // out, so a live pause only delays WHEN it is reported, never what it
-    // was; `stopped`/`pause-timeout`/`unreadable` return their own exit
-    // code in its place.
+    // non-success terminal result for it is reported — PR_NOT_OPEN
+    // previously returned with no checkpoint at all. NOT extended to the
+    // SUCCESS path below (no `disposition.kind === 'ok'` branch exists here
+    // — the function falls through to mark-ready and the held-batch drain
+    // instead): an earlier revision of this fix checked before `disposition`
+    // was even computed, unconditionally, and broke the documented "a
+    // running pass is allowed to complete, including its post-round Ready
+    // transition, before the next checkpoint" guarantee — caught in testing.
+    // A round that succeeded reaches mark-ready regardless of a directive
+    // that arrived while it ran; it already re-checks the mailbox at the top
+    // of the next iteration in the ordinary course of looping.
+    // `clear`/`resumed` both fall through to reporting PR_NOT_OPEN — the
+    // pass already found this out, so a live pause only delays WHEN it is
+    // reported, never what it was; `stopped`/`pause-timeout`/`unreadable`
+    // return their own exit code in its place.
     if (disposition.kind === "not-open") {
       const mailboxAfterNotOpen = await mailboxCheckpoint();
       if (typeof mailboxAfterNotOpen === "number") return mailboxAfterNotOpen;
@@ -4826,8 +4771,7 @@ async function main(): Promise<number> {
         // 'exit' handler releases its locks: a live pass under a released
         // lock is the exact two-drivers-one-tree state those locks exist to
         // prevent. Idempotent — if `run()`'s own escalation already finished
-        // the job, this resolves immediately (chatgpt-codex-connector, PR
-        // #4431 round 4).
+        // the job, this resolves immediately.
         const witnessed = passHandle === null || (await passHandle.stop());
         if (witnessed) {
           console.error(
@@ -4861,12 +4805,12 @@ async function main(): Promise<number> {
           "  ($DRIVE_PR_PASS_TIMEOUT / --pass-timeout; 0 disables this deadline.)",
         );
         // A directive sent WHILE this pass ran must still be honored before
-        // reporting PASS_DEADLINE (review finding, round 4) — but only when
-        // the tree's termination was WITNESSED: checking mailbox (which can
-        // itself wait out a live pause) is not safe to do immediately after
-        // deciding a descendant may still be alive and out there
-        // unsupervised. The unwitnessed branch above already leaves `held`
-        // cleared and returns unconditionally, same as before.
+        // reporting PASS_DEADLINE — but only when the tree's termination was
+        // WITNESSED: checking mailbox (which can itself wait out a live
+        // pause) is not safe to do immediately after deciding a descendant
+        // may still be alive and out there unsupervised. The unwitnessed
+        // branch above already leaves `held` cleared and returns
+        // unconditionally, same as before.
         if (witnessed) {
           const mailboxAfterDeadline = await mailboxCheckpoint();
           if (typeof mailboxAfterDeadline === "number")
@@ -4904,7 +4848,7 @@ async function main(): Promise<number> {
           // unchanged head, `bump-attempt` advances past the limit, and the
           // driver exits 6 having run no further pass. Sleeping first would
           // hold its locks for hours to reach that same exit
-          // (chatgpt-codex-connector, a reference-implementation pull request round 8) — check now instead.
+          // — check now instead.
           if (round >= maxRoundsN) {
             console.error(
               `  round ${round} was already the last of --max-rounds (${maxRoundsN}) — not sleeping ${Math.ceil(plan.ms / 60000)} minute(s) for an attempt that cannot happen.`,
@@ -4928,16 +4872,16 @@ async function main(): Promise<number> {
             // QUOTA_PARKED_EXIT path below. Without this, `--doctor` would
             // see a state-only row with no quota evidence at all and report
             // UNKNOWN instead of QUOTA_PARKED for a drive that hit a real,
-            // genuine wall — the exact distinction this record exists to
-            // draw (review finding; see `recordQuotaPark`'s own callers for
-            // why every other quota-wall exit already does this).
+            // genuine wall — the exact distinction this record exists to draw
+            // (see `recordQuotaPark`'s own callers for why every other
+            // quota-wall exit already does this).
             await recordQuotaPark(driveState, pr, block);
             process.stderr.write(await loopEconomy(pr));
             // A directive sent WHILE the killed pass ran must still be
-            // honored, same as the non-quota failure branch below (review
-            // finding, round 3): `clear`/`resumed` both fall through to
-            // this same non-convergence report — the budget is exhausted
-            // either way, a resumed pause grants no further rounds — while
+            // honored, same as the non-quota failure branch below:
+            // `clear`/`resumed` both fall through to this same
+            // non-convergence report — the budget is exhausted either way, a
+            // resumed pause grants no further rounds — while
             // `stopped`/`pause-timeout`/`unreadable` return their own exit
             // code in its place.
             const mailboxAtQuotaMaxRounds = await mailboxCheckpoint();
@@ -4965,25 +4909,25 @@ async function main(): Promise<number> {
           // long unconditionally left `touchLock`'s takeover signal
           // (`compromised`) unobserved for up to `maxSleepMs()` — six hours
           // by default — because nothing between here and the loop's next
-          // round-boundary check reads it while this `await` is in flight
-          //. `quotaSleepAbort` is what `touchLock` fires the
-          // moment it notices; this wakes on whichever comes first.
+          // round-boundary check reads it while this `await` is in flight.
+          // `quotaSleepAbort` is what `touchLock` fires the moment it
+          // notices; this wakes on whichever comes first.
           // Recorded BEFORE the sleep, not after: the whole interval this
           // call describes is the one during which `--doctor` would
           // otherwise misread this drive (see `recordQuotaPark`). Cleared by
           // the next genuine progress event — the `progress` stamp the
           // resumed round takes before it spawns its pass.
           await recordQuotaPark(driveState, pr, block);
-          // Re-check BEFORE creating the controller (review finding): a
-          // takeover detected by `touchLock` WHILE the await above was in
-          // flight called `quotaSleepAbort?.abort()` against a controller
-          // that did not exist yet — a no-op — and set `compromised`, so
-          // `touchLock`'s own `if (compromised !== '') return;` guard skips
-          // firing it again on every later heartbeat tick. Without this
-          // check, the controller created next would never receive an
-          // abort at all, and the sleep below would run for the FULL
-          // `plan.ms` (up to `maxSleepMs()`, six hours) before the
-          // after-sleep check further down ever saw the takeover.
+          // Re-check BEFORE creating the controller: a takeover detected by
+          // `touchLock` WHILE the await above was in flight called
+          // `quotaSleepAbort?.abort()` against a controller that did not
+          // exist yet — a no-op — and set `compromised`, so `touchLock`'s
+          // own `if (compromised !== '') return;` guard skips firing it
+          // again on every later heartbeat tick. Without this check, the
+          // controller created next would never receive an abort at all, and
+          // the sleep below would run for the FULL `plan.ms` (up to
+          // `maxSleepMs()`, six hours) before the after-sleep check further
+          // down ever saw the takeover.
           if (compromised !== "") {
             continue;
           }
@@ -5044,19 +4988,19 @@ async function main(): Promise<number> {
         // way out — a NORMAL exit, not a crash, so a later `--doctor` sweep
         // finds NO lock directory here at all. Without this record it would
         // therefore see NOTHING for this PR — not even a stale claim to
-        // report — and could not tell a drive that parked ON PURPOSE from
-        // one that never existed. `listStateOnlyRows` (`drives.ts`
-        // review round 2 C1) is what makes the record findable despite the
-        // missing lock: it sweeps `drive-pr-<PR>.json` directly, so this
-        // write is what `--doctor` actually reads to draw the `QUOTA_PARKED`
-        // distinction (`lib/doctor.ts`). Best-effort, same reasoning as the
-        // pre-spawn stamp above: the wall itself is the fact worth acting on,
-        // and refusing to park cleanly over a bookkeeping failure would
-        // strand the drive here instead.
+        // report — and could not tell a drive that parked ON PURPOSE from one
+        // that never existed. `listStateOnlyRows` (`drives.ts`) is what makes
+        // the record findable despite the missing lock: it sweeps
+        // `drive-pr-<PR>.json` directly, so this write is what `--doctor`
+        // actually reads to draw the `QUOTA_PARKED` distinction
+        // (`lib/doctor.ts`). Best-effort, same reasoning as the pre-spawn
+        // stamp above: the wall itself is the fact worth acting on, and
+        // refusing to park cleanly over a bookkeeping failure would strand
+        // the drive here instead.
         await recordQuotaPark(driveState, pr, block);
         // Same as the sleep-branch max-rounds report above, and the
-        // non-quota failure branch below (review finding, round 3): a
-        // directive sent WHILE the killed pass ran must still be honored.
+        // non-quota failure branch below: a directive sent WHILE the killed
+        // pass ran must still be honored.
         // `clear`/`resumed` both fall through to parking — this wall cannot
         // be slept through either way — while `stopped`/`pause-timeout`/
         // `unreadable` return their own exit code in its place.
@@ -5066,11 +5010,10 @@ async function main(): Promise<number> {
       }
 
       // A directive sent WHILE this pass ran must still be honored before
-      // reporting this generic non-quota failure (round 1's original fix
-      // for this exact branch). `clear`/`resumed` fall through to
-      // reporting the failure — it already happened — while `stopped`/
-      // `pause-timeout`/`unreadable` return their own exit code in its
-      // place.
+      // reporting this generic non-quota failure. `clear`/`resumed` fall
+      // through to reporting the failure — it already happened — while
+      // `stopped`/`pause-timeout`/`unreadable` return their own exit code in
+      // its place.
       const mailboxBeforeFailureReport = await mailboxCheckpoint();
       if (typeof mailboxBeforeFailureReport === "number")
         return mailboxBeforeFailureReport;
@@ -5100,9 +5043,8 @@ async function main(): Promise<number> {
     // `mark-ready.ts` is idempotent and durably once-only, so calling it after
     // EVERY round is correct and costs one state read on all but the first.
     //
-    // ITS EXIT CODE IS HANDLED, not ignored (docomply-review rounds 1-3, PR
-    // #4057), and the non-zero codes get opposite treatment because they
-    // mean opposite things:
+    // ITS EXIT CODE IS HANDLED, not ignored, and the non-zero codes get
+    // opposite treatment because they mean opposite things:
     //
     //   5 — the PR stopped being open. Deliberately NOT propagated here: the
     //     gate at the top of the next iteration owns that decision and re-reads
@@ -5129,8 +5071,7 @@ async function main(): Promise<number> {
       // driver has no claim protecting the tree from that moment on.
       // Proceeding to interpret `rc` regardless would let a compromised
       // drive still perform the Ready transition (or count its outcome
-      // toward `readyMarkFailures`) with no lock behind it (coderabbitai, PR
-      // #4678 round 9).
+      // toward `readyMarkFailures`) with no lock behind it.
       if (compromised !== "") {
         console.error(
           `drive.ts: the ${compromised} lock was recovered by another driver — not processing the Ready-mark outcome.`,
@@ -5141,23 +5082,21 @@ async function main(): Promise<number> {
       // words in `MARK_READY_OUTCOMES` — exit 0 with anything else (empty,
       // truncated, garbled) is a malformed protocol response, not progress, and is
       // routed into the same failure-counting path as a nonzero exit rather
-      // than silently resetting `readyMarkFailures` (docomply-review +
-      // chatgpt-codex-connector, a reference-implementation pull request).
+      // than silently resetting `readyMarkFailures`.
       const outcome = rc.code === 0 ? rc.stdout.trim() : null;
       const validOutcome = outcome !== null && MARK_READY_OUTCOMES.has(outcome);
       if (validOutcome) {
-        // `claimed-by-other` is exit 0 and is NOT progress (coderabbitai P2,
-        // PR #4057). The case that makes the distinction load-bearing is the
-        // one this round's own helper deadline creates: if the timeout fires
-        // after `mark-ready.ts` won its lease, the helper is killed before its
-        // cleanup can release it, so the NEXT round meets an orphaned lease,
-        // is told `claimed-by-other`. Leaving `readyMarkFailures` merely
-        // UNCHANGED here (rather than counting it as another unsuccessful
-        // attempt) meant it could never reach the `>= 2` stop condition on its
-        // own — a repeatedly orphaned lease would keep reporting
-        // `claimed-by-other` every round without ever tripping the stop, and
-        // the drive would exhaust `--max-rounds` with the PR still a draft
-        // (docomply-review round 6, a reference-implementation pull request).
+        // `claimed-by-other` is exit 0 and is NOT progress. The case that
+        // makes the distinction load-bearing is the one this round's own
+        // helper deadline creates: if the timeout fires after `mark-ready.ts`
+        // won its lease, the helper is killed before its cleanup can release
+        // it, so the NEXT round meets an orphaned lease, is told
+        // `claimed-by-other`. Leaving `readyMarkFailures` merely UNCHANGED
+        // here (rather than counting it as another unsuccessful attempt) meant
+        // it could never reach the `>= 2` stop condition on its own — a
+        // repeatedly orphaned lease would keep reporting `claimed-by-other`
+        // every round without ever tripping the stop, and the drive would
+        // exhaust `--max-rounds` with the PR still a draft.
         if (outcome !== "claimed-by-other") {
           readyMarkFailures = 0;
         } else {
@@ -5187,13 +5126,13 @@ async function main(): Promise<number> {
             );
             console.error("  see it as held and report the same contention.");
             // A directive sent WHILE this (successful) pass ran must still
-            // be honored before this terminal return (review finding,
-            // round 5): a repeated Ready-mark failure is the one path past
-            // a successful pass that does NOT loop back to the next
-            // iteration's own checkpoint. `clear`/`resumed` fall through to
-            // reporting the repeated-failure stop unchanged; `stopped`/
-            // `pause-timeout`/`unreadable` return their own exit code in
-            // its place.
+            // be honored before this terminal return: a repeated Ready-mark
+            // failure is the one path past a successful pass that does NOT
+            // loop back to the next iteration's own checkpoint.
+            // `clear`/`resumed` fall through to reporting the
+            // repeated-failure stop unchanged;
+            // `stopped`/`pause-timeout`/`unreadable` return their own exit
+            // code in its place.
             const mailboxAtReadyStop = await mailboxCheckpoint();
             if (typeof mailboxAtReadyStop === "number")
               return mailboxAtReadyStop;
@@ -5225,8 +5164,8 @@ async function main(): Promise<number> {
           console.error(
             `  (gh pr ready ${pr}), fix what made this fail, and re-run the drive.`,
           );
-          // Same as the claimed-by-other stop above (review finding,
-          // round 5) — see its own comment for why.
+          // Same as the claimed-by-other stop above — see its own comment for
+          // why.
           const mailboxAtReadyFailStop = await mailboxCheckpoint();
           if (typeof mailboxAtReadyFailStop === "number")
             return mailboxAtReadyFailStop;

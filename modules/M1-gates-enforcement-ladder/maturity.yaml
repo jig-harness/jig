@@ -50,7 +50,7 @@ criteria:
       pre-push hook and CI.
     observe:
       - "check-<rule> scripts present"
-      - "each has a paired test-<rule> self-test with fixtures"
+      - "each has a paired self-test (e.g. check-<rule>.test.ts) with fixtures"
       - "both hook config and CI workflow invoke them"
 
   - id: escape-hatch-documented
@@ -104,7 +104,7 @@ criteria:
       CI runs each grep gate's self-test alongside the gate, so a silently
       broken gate fails the pipeline.
     observe:
-      - "CI workflow invokes the test-<rule> scripts, not only the gates"
+      - "CI workflow runs each gate's self-test, not only the gates"
 
   - id: advisory-gates-carry-promotion-conditions
     level: strict

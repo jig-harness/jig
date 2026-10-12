@@ -21,6 +21,7 @@ when they run.
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/groundwork:resolve-review-comments` |
 | [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/groundwork:review` |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/groundwork:fix-ci` |
+| [resolve-conflicts](skills/resolve-conflicts/SKILL.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files, records every decision in the commit message and checks that no change was silently dropped | `/groundwork:resolve-conflicts` |
 | [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, caching and the repository's own workflow conventions | `/groundwork:github-actions` |
 | [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/groundwork:adr` |
 | [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/groundwork:descar` |
@@ -47,7 +48,7 @@ Contents: [requirements](#requirements) ·
 [where it works](#where-it-works) · [troubleshooting](#troubleshooting) ·
 [how it works](#how-it-works) · [add a skill](#add-or-change-a-skill) ·
 [release](#release-a-new-version) ·
-[migrating from the per-worktree installer](#migrating-from-the-per-worktree-installer)
+[moving off the per-worktree installer](#moving-off-the-per-worktree-installer)
 
 ## Requirements
 
@@ -96,8 +97,8 @@ it finds on `PATH`, and updates when already installed):
 bun tools/plugin/setup.ts
 ```
 
-**Check** what is installed (exit 1 when the plugin is missing for a tool that
-is on `PATH`):
+**Check** what is installed (exit 1 when the plugin is missing or disabled
+for a tool that is on `PATH`):
 
 ```sh
 bun tools/plugin/setup.ts --check
@@ -136,8 +137,9 @@ Skills call the `review-arbiter` agent themselves when a finding is
 contested; you do not invoke it by hand.
 
 Run the agent from inside the repository you want it to work on. The skills
-read that repository's configuration and refuse to run in a repository that has
-none.
+read that repository's configuration. `resolve-review-comments` (and with it
+every `drive-pr` round) and `do-item`'s tracker scripts refuse to run in a
+repository that has none; the other skills fall back to their defaults.
 
 ## Configure a repository
 
@@ -209,10 +211,9 @@ committed: no copy of the skill, no install script, no generated files.
 
 The skills find each other beside themselves in the plugin: `drive-pr` runs
 `resolve-review-comments` for each round, and `do-item` starts `drive-pr`.
-A repository that still keeps its own copy of one of these skills in
-`.claude/skills/<name>` overrides the plugin's sibling, because the review
-skill prefers the repository's copy; delete such leftovers when you adopt the
-plugin's version.
+One exception: when the repository keeps its own copy of `drive-pr` in
+`.claude/skills/drive-pr`, the review skill uses that copy instead of the
+plugin's. Delete such a copy when you adopt the plugin's version.
 
 ## The drive loop and issue pickup
 
@@ -239,10 +240,10 @@ pull_requests:                # how agents open and stack pull requests
 review:
   reviewer_app: example-review   # GitHub App whose check runs show the AI reviewer ran; default: none (any app's check run with a reviewer-shaped name)
 drive:
-  validation_plan_command: "bun tools/change-areas/resolve.ts --files - --format json"
+  validation_plan_command: "<your plan command>"
                               # reads changed files on stdin, prints a JSON validation plan; default: run gates.command
-  load_guard_command: "bun tools/dev/load-guard.ts --wait"   # waits while the machine is busy; default: none
-  change_areas_catalog: tools/change-areas/catalog.yaml       # change-area catalog for area-aware reports; default: none
+  load_guard_command: "<your load-guard command>"   # returns once the machine can take heavy checks; default: none
+  change_areas_catalog: docs/change-areas.yaml      # change-area catalog for area-aware reports; default: none
   reviews_drafts: true        # does the AI reviewer review draft pull requests
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
@@ -296,9 +297,9 @@ review rounds (see the [drive-pr README](skills/drive-pr/README.md#ci-hold)).
 leases (a [lease](../GLOSSARY.md) is a short-lived claim that one session owns the pull
 request's threads) outside the repository, in a per-clone folder:
 `~/.local/state/groundwork/drive-pr/<clone>/` by default. Set
-`DRIVE_PR_STATE_DIR` to move it. A machine that drove pull requests with an
-earlier built-in copy of the skill moves its old state with
-`bun <skill-dir>/scripts/migrate-state-dir.ts --from <old-dir>`. The
+`DRIVE_PR_STATE_DIR` to move it; to move existing state into another folder,
+run `bun <skill-dir>/scripts/migrate-state-dir.ts --from <old-dir>` (see the
+[drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir)). The
 [verification-fit](../GLOSSARY.md) log (the agent's recorded verdicts on whether each round's
 required validation was worth its cost) defaults to the Groundwork state
 folder too; `GROUNDWORK_VERIFICATION_FIT_LOG` overrides it.
@@ -332,13 +333,17 @@ adr:
   directory: docs/adr                 # decision records; default: detected (docs/adr, doc/adr, docs/decisions, …)
   rules_file: docs/adr/rules.yaml     # machine-readable rules (Groundwork M5); default: detected, else none
 descar:
-  lint_command: "bun scripts/check-scars.ts"   # scar lint taking document paths; default: detected, else a manual read
+  lint_command: "bun scripts/check-descarring-scars.ts"   # scar lint taking document paths; default: detected (M4's lint), else a manual read
 promote_memory:
-  lint_command: "bun tools/memory-lint.ts {file}"   # memory check, {dir}/{file} placeholders, exit 0 = clean; default: none
+  lint_command: "<your memory lint> --dir {dir} --file {file}"   # exit 0 = clean; default: none
   target_dir: docs/retrospection      # where promoted pages go (YYYY/MM/ below it); default: docs/retrospection
 fix_ci:
   regenerate_commands:                # commands that regenerate committed generated files CI checks; default: none
     - bun run generate:api
+resolve_conflicts:
+  generated:                          # files rebuilt, never hand-merged, on a conflict; default: the built-in lockfile table
+    - paths: ["src/generated/**"]
+      command: bun run generate
 github_actions:
   conventions_doc: docs/ci.md         # the repository's workflow conventions; default: searched for, else generic guidance
 design_brief:
@@ -352,7 +357,7 @@ decide:
   architect_agent: architect          # subagent that rules in phase 3; default: a briefed general-purpose subagent
   escalation_labels: [agent:architect]   # extra labels on an escalated issue, beside hitl; default: none
 explain:
-  figure_build_command: "bun tools/figure.ts"   # builds one figure, given its stem; default: explainers have no figures
+  figure_build_command: "<your figure build command>"   # builds one figure, given its stem; default: explainers have no figures
 ```
 
 Every field, with its default and the detection behind it, is in the
@@ -389,8 +394,8 @@ them together.
 
 Normally only the agent runs a skill's scripts. When a repository's own code
 also needs them (for example a sibling skill that imports a shared module, or
-a status board that runs `await-round.ts`), it must find the installed copy;
-there is no copy inside the repository any more. Look in this order and fail
+a status board that runs `await-round.ts`), it must find the installed copy,
+because the repository holds none. Look in this order and fail
 with a clear message when none is found:
 
 1. `GROUNDWORK_SKILLS_DIR`, set by the caller (CI jobs and tests point it at
@@ -418,7 +423,7 @@ Paths inside the cache change with each release, so never store them.
   or `codex plugin marketplace add https://github.com/docomply/jig.git --ref v0.3.0`.
   Versions are chosen per machine, not per repository: every repository on a
   machine uses the same release, so releases keep reading older configuration
-  files unless their notes say otherwise.
+  files unless [CHANGELOG.md](../CHANGELOG.md) says otherwise.
 - **What `main` means:** both tools install from the default branch, but a
   machine only receives a change when `version` changes. Every pull request
   that changes `plugin/` therefore bumps the version (see
@@ -504,8 +509,8 @@ needs something to run in every new directory before the session starts, and
 every tool creates directories differently; a skill installed once per machine
 is already visible everywhere. The trade-off is that versions are chosen per
 machine, so skills stay compatible with older configuration files wherever
-they can; a change that needs a configuration edit is a major release, and the
-skill's first step names the edit.
+they can; a change that needs a configuration edit is a breaking release (see
+[release](#release-a-new-version)), and the skill's first step names the edit.
 
 [tools/plugin/plugin.test.ts](../tools/plugin/plugin.test.ts) checks both
 manifests and marketplaces and runs the scripts from a copy outside this repository against a
@@ -555,59 +560,38 @@ of the plugin:
 
 1. In the pull request that changes `plugin/`, bump `version` in **both** `plugin/.claude-plugin/plugin.json` and
    `plugin/.codex-plugin/plugin.json` (the plugin test fails when they differ). Use
-   [semantic versioning](https://semver.org): a change that needs consumers to
-   edit their configuration is a major version, and its release notes say what
-   to change.
-2. Merge it with green gates.
-3. Tag the merge commit `v<version>` and push the tag.
+   [semantic versioning](https://semver.org). Before 1.0.0, a change that
+   needs consumers to edit their configuration or instructions bumps the minor
+   version; from 1.0.0 it is a major version.
+2. In the same pull request, add the version's section to
+   [CHANGELOG.md](../CHANGELOG.md): what changed, and for a breaking change
+   what a consumer must change first (`bun run gates` fails without the
+   section).
+3. Merge it with green gates.
+4. Tag the merge commit `v<version>` and push the tag.
 
 Machines receive the release on their next update. Repositories need no change
-unless the release notes say so.
+unless the changelog says so.
 
-## Migrating from the per-worktree installer
+## Moving off the per-worktree installer
 
-Releases up to `v0.1.1-review-pilot` were installed into each worktree by a
-pinned installer (`.groundwork/`, links under `.claude/skills` and
-`.agents/skills`, a bootstrap script run from `postinstall`, a git hook and a CI
-step). Those tags stay available, so a repository still pinned to one keeps
-working until it migrates. To migrate a repository:
+Releases up to `v0.1.1-review-pilot` were installed into each worktree by an
+installer rather than as a plugin. A repository still on one of those tags
+moves to the plugin like this:
 
-1. Keep `.config/groundwork-overlay.yaml`; fields the plugin does not read are
-   ignored. One value needs attention: since `v0.1.1-review-pilot`, a
-   `review.job_pattern` requires `review.required_checks` (the exact check
-   names that must complete). Older files often carry a pattern such as
-   `"AI review|CodeRabbit"` only because that release could not render `null`;
-   set it to `null` (reviewer checks are then recognised by name) or add
-   `required_checks`. The skill's first step refuses the file until then.
-   `harness.claude_frontmatter` and `harness.codex_frontmatter` are no longer
-   applied: the skill runs on the session's model, and tools it needs beyond
-   `git`, `gh` and `bun` (such as an issue-tracker tool or the gate command's
-   package manager) go into the repository's permissions, for example
-   `permissions.allow` in `.claude/settings.json`.
-2. Remove the per-worktree machinery: the Groundwork pin and assets in the
-   standards manifest, the projected bootstrap script and CI action, its
-   `postinstall` line, git hook and setup-script calls, CI steps that installed
-   the skill, and the installer's block in `.gitignore`.
-3. If repository code imported the installer's shared helpers from
-   `.groundwork/lib/` (guarded git spawning, test helpers, the temp-directory
-   preload), replace those imports first: the plugin does not ship them. Copy
-   the helpers into the repository from Groundwork's `lib/` at the tag you
-   used, or drop the imports. None of the repositories migrated so far
-   imported them.
-4. Delete the leftovers in each existing checkout: `.groundwork/`,
-   `.claude/skills/resolve-review-comments` and
-   `.agents/skills/resolve-review-comments` (all were ignored by git). In the
-   base clone, remove a `.git/hooks/post-checkout` that existed only for the
-   install: one whose second line reads `# groundwork:managed post-checkout`,
-   or a lefthook-generated one when the repository no longer declares a
-   `post-checkout` job (lefthook keeps the file after the job is deleted;
-   reinstall lefthook's hooks afterwards, for example with
-   `npx lefthook install`).
-5. Repository code that ran the skill's scripts by their old path
-   (`.claude/skills/resolve-review-comments/scripts/…`) must
-   [find the installed copy](#call-a-skills-scripts-from-repository-code)
+1. Keep `.config/groundwork-overlay.yaml`. If it sets `review.job_pattern`,
+   also set `review.required_checks`, or set the pattern to `null`; the
+   review skill refuses the file otherwise. `harness.*` fields are ignored:
+   tools a skill needs beyond `git`, `gh` and `bun` go into the repository's
+   permissions (`permissions.allow` in `.claude/settings.json`).
+2. Remove the installer: `.groundwork/`, the links under `.claude/skills` and
+   `.agents/skills`, its `postinstall` line, its git hook (a
+   `.git/hooks/post-checkout` whose second line is
+   `# groundwork:managed post-checkout`), its CI steps and its `.gitignore`
+   block. Code that imported `.groundwork/lib/` or ran a script by its old
+   path must [find the installed copy](#call-a-skills-scripts-from-repository-code)
    instead.
-6. Update instructions that name `/resolve-review-comments` to
-   `/groundwork:resolve-review-comments`, and add the `AGENTS.md` section from
-   [Configure a repository](#configure-a-repository).
-7. Install the plugin on each machine.
+3. Rename `/resolve-review-comments` to `/groundwork:resolve-review-comments`
+   in the repository's instructions, add the `AGENTS.md` section from
+   [Configure a repository](#configure-a-repository), and install the plugin
+   on each machine.

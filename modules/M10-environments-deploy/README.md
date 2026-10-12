@@ -109,26 +109,37 @@ deploy) without the Standard/Strict deploy machinery counting against it; the
 5. Stand up disposable preview environments per PR and a seeded, tenant-isolated,
    resettable test-data factory (platform options in [mappings.md](mappings.md)).
 
-## Port status
+## Status
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| Four-workflow CI/CD architecture (PR gates → verify → deploy → promote) | [`templates/CI-ARCHITECTURE.md`](templates/CI-ARCHITECTURE.md) + [`templates/pipeline.example.yaml`](templates/pipeline.example.yaml) — the contract and a provider-neutral spine |
-| `verified` pointer + self-healing freshness watchdog | [`reference/verified-pointer/`](reference/verified-pointer/) — the watchdog as a mechanical gate + self-test + fixtures |
-| Promotion/deploy safety (manual gate, verified-only) | [`reference/promote-safety/`](reference/promote-safety/) — the safe-wiring rule as a runnable lint + self-test + fixtures |
-| Ephemeral preview-environment pattern + test-data-factory concept | contract prose in `CI-ARCHITECTURE.md`; platform options in [mappings.md](mappings.md) |
+### Runnable form
 
-Also landed: [`mappings.md`](mappings.md) (CI providers, preview-environment
-platforms, promotion gates) and [`maturity.yaml`](maturity.yaml).
+Groundwork's [plugin](../../plugin/README.md) carries the
+[`github-actions`](../../plugin/skills/github-actions/SKILL.md) skill, which
+reviews a change to a repository's workflows against its documented CI
+architecture; [`CI-ARCHITECTURE.md`](templates/CI-ARCHITECTURE.md) is the shape
+it recognises when the repository names no document of its own
+(`github_actions.conventions_doc`).
 
-**Not ported** (per "don't port the unproven" / IP scrub): the reference
-implementation's *concrete* preview-environment spawner and its test-data factory
-are product- and infrastructure-specific code (a particular host, database, and
-tenant model), not a portable mechanism — groundwork ports the **concepts and
-their contracts** (disposable envs; seeded + tenant-isolated + resettable data)
-and leaves the implementation to each repo's stack, with options catalogued in
-`mappings.md`. The private acronyms for the two data-factory variants are
-deliberately omitted (IP scrub); this module says "test-data factory." The
-process-telemetry half of the reference implementation's environments-and-deploy
-area (gate-pass dashboards, deploy metrics) belongs with
-[M11](../M11-process-observability/), not here.
+### What the module provides
+
+| Piece | What it is |
+|-------|------------|
+| [`templates/CI-ARCHITECTURE.md`](templates/CI-ARCHITECTURE.md) | The copyable four-stage contract (PR gates, post-merge verification, deploy, promotion), with the preview-environment and test-data-factory contracts |
+| [`templates/pipeline.example.yaml`](templates/pipeline.example.yaml) | A provider-neutral spine of the four stages |
+| [`reference/verified-pointer/`](reference/verified-pointer/) | The freshness watchdog: fails when the `verified` pointer lags the default branch |
+| [`reference/promote-safety/`](reference/promote-safety/) | The lint that fails a production deploy that can fire on its own or ships a mutable ref |
+| [`mappings.md`](mappings.md) | CI providers, preview-environment platforms, promotion gates |
+| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+
+Each reference gate is a standalone Bun script with a self-test and fixtures.
+
+### Left out by design
+
+- **A preview-environment spawner and a test-data factory.** Both are product-
+  and infrastructure-specific code (a particular host, database and tenant
+  model), not a portable mechanism. The module gives their *contracts*
+  (disposable environments; seeded, tenant-isolated, resettable data) and
+  catalogues platform options in [mappings.md](mappings.md); the
+  implementation belongs to each repository's stack.
+- **Delivery telemetry.** Gate-pass dashboards and deploy metrics belong with
+  [M11](../M11-process-observability/).

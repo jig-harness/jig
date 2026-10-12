@@ -17,6 +17,7 @@
 //   status accepted WITH a review record             -> pass
 //   status accepted WITHOUT a review record          -> FAIL  (exit 1)
 //   frontmatter opened with `---` but never closed   -> error (exit 2)
+//   duplicated `status:` or `reviewed:` key          -> error (exit 2)
 //
 // De-scarring (M4) keeps the finished artifact clean, so the record stays terse
 // — a reviewer and an anchor, not the review dialogue. Input: the artifact via

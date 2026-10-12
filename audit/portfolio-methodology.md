@@ -66,6 +66,7 @@ Place each finding by what it is, not by where it happened to be discovered.
 | Kind | Maintained home |
 |------|-----------------|
 | Universal, tool-independent delivery invariant | Groundwork module, template, mapping, or auditor |
+| Generic runnable mechanism (an agent skill, a review loop, a gate) | The Groundwork plugin, with each organization's values as configuration |
 | Organization-specific policy or supported-tool catalog | A separate organization-owned standards package or repository |
 | Executable service used across repositories | Its own versioned service or product repository |
 | Repo-specific paths, environments, secrets, or reviewer lenses | The consuming repository |
@@ -78,8 +79,8 @@ generated repo overlay. Consumers keep small local configuration and a
 machine-checkable version or freshness record.
 
 Groundwork must remain useful without access to that organization-specific
-home. Port only the corrected, reusable invariant, with product content and
-private values removed.
+home. Bring in only the corrected, reusable invariant, with product content
+and private values removed.
 
 ## 5. Synthesize one portfolio conclusion
 

@@ -276,7 +276,7 @@ describe("normalizeRoundPaths / foldRoundPaths — the stored shape", () => {
     ]);
   });
 
-  // Regression (chatgpt-codex-connector, a reference-implementation pull request): `.trim()` is used only to
+  // Regression: `.trim()` is used only to
   // DETECT a whitespace-only entry, never to transform the stored identity.
   // ` a.ts` and `a.ts` are two distinct, legitimate repository paths — storing
   // both as `a.ts` would alias them to the same recurrence key, arming
@@ -313,7 +313,7 @@ describe("normalizeRoundPaths / foldRoundPaths — the stored shape", () => {
     expect(acc[acc.length - 1]?.round).toBe(ROUND_PATHS_WINDOW + 3);
   });
 
-  // The actual bug (chatgpt-codex-connector, a reference-implementation pull request): a drive that runs
+  // The actual bug: a drive that runs
   // past ROUND_PATHS_WINDOW rounds while an early escalation sits
   // UNACKNOWLEDGED must not have that evidence evicted out from under
   // `structuralEscalationArmed` — the qualifying pair would silently
@@ -352,7 +352,7 @@ describe("normalizeRoundPaths / foldRoundPaths — the stored shape", () => {
   // The uncapped sibling `record-paths` compares against to detect
   // truncation: same filtering as `normalizeRoundPaths`, minus the cap
   // itself, so a caller can tell "the cap dropped real evidence" from "there
-  // was never more than the cap to begin with" (docomply-review, a reference-implementation pull request).
+  // was never more than the cap to begin with".
   it("normalizeRoundPathsUncapped applies the same filtering with no cap", () => {
     const many = Array.from(
       { length: ROUND_PATHS_MAX_PER_ROUND + 5 },
@@ -389,8 +389,7 @@ describe("isUsableState — the new fields are required, not tolerated", () => {
     const s = freshState(999) as Record<string, unknown>;
     // `rounds` set to cover the entry, so the failure below is isolated to
     // the path-list clause under test rather than incidentally tripping the
-    // separate `round > s.rounds` invariant added below (rule 5,
-    // .claude/rules/document-scanning-gates.md).
+    // separate `round > s.rounds` invariant added below.
     s.rounds = 1;
     s.roundPaths = [{ round: 1, paths: ["b.ts", "a.ts"] }];
     expect(isUsableState(s, 999)).toBe(false);
@@ -409,8 +408,7 @@ describe("isUsableState — the new fields are required, not tolerated", () => {
 
   // Mutation check for the pair above: with the assertion's target restored,
   // the SAME fixture shape must pass — otherwise the two refusals could be
-  // failing on some other clause and prove nothing (rule 5,
-  // .claude/rules/document-scanning-gates.md).
+  // failing on some other clause and prove nothing.
   it("accepts the same shape once sorted, de-duplicated and non-negative", () => {
     const s = freshState(999) as Record<string, unknown>;
     s.rounds = 1;
@@ -420,8 +418,7 @@ describe("isUsableState — the new fields are required, not tolerated", () => {
 
   // Collection-level invariants, restating what `foldRoundPaths` itself can
   // never produce — a hand-edited file violating any of these changes what
-  // `structuralEscalationArmed`'s adjacency check is even looking at
-  // (docomply-review, a reference-implementation pull request).
+  // `structuralEscalationArmed`'s adjacency check is even looking at.
   it("refuses a round entry naming a round beyond the state’s own `rounds`", () => {
     const s = freshState(999) as Record<string, unknown>;
     s.rounds = 1;
@@ -501,7 +498,7 @@ describe("isUsableState — the new fields are required, not tolerated", () => {
   // ever counts a real round — `record-paths` now refuses to write one (see
   // the CLI-level probe below), so a stored entry naming it can only be
   // hand-edited or pre-guard, and admitting it would let it sit adjacent to
-  // round 1's real entry (docomply-review, a reference-implementation pull request).
+  // round 1's real entry.
   it("refuses a round-path entry naming round 0", () => {
     const s = freshState(999) as Record<string, unknown>;
     s.rounds = 1;
@@ -514,7 +511,7 @@ describe("isUsableState — the new fields are required, not tolerated", () => {
   // writer-producible — only a hand-edited or corrupted file. Left
   // unchecked, `{rounds: 2, lastEscalatedRound: 999}` would silence
   // `structuralEscalationArmed` for every pair ending at round 999 or
-  // earlier, i.e. effectively forever (docomply-review, a reference-implementation pull request).
+  // earlier, i.e. effectively forever.
   it("refuses a lastEscalatedRound beyond the state’s own `rounds`", () => {
     const s = freshState(999) as Record<string, unknown>;
     s.rounds = 2;
@@ -703,7 +700,7 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // an earlier change (docomply-review finding): validated and persisted on the RAW
+  // an earlier change: validated and persisted on the RAW
   // value, never a trimmed copy — surrounding spaces survive verbatim
   // rather than being silently stripped before the echo-back contract sees
   // them.
@@ -727,7 +724,7 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // an earlier change (docomply-review finding): a value that is ONLY newline-padded
+  // an earlier change: a value that is ONLY newline-padded
   // ("\nclaim\n") must be refused outright, the same as an interior newline
   // — trimming first would have accepted it by stripping the very
   // characters the newline check exists to catch.
@@ -752,7 +749,7 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // an earlier change (docomply-review finding): without this guard, acknowledging
+  // an earlier change: without this guard, acknowledging
   // before any round exists sets `lastEscalatedRound` to the exact sentinel
   // (0) `freshState` starts from — indistinguishable from "never escalated"
   // — while still persisting `--invariant` text nobody can attribute to a
@@ -773,7 +770,7 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // an earlier change (docomply-review finding): a counted round is not, by itself,
+  // an earlier change: a counted round is not, by itself,
   // evidence of a real recurrence. Without this check, acknowledging a round
   // that never armed persists `lastEscalatedInvariant` under a
   // `lastEscalatedRound` that a LATER, genuine arming then echoes back as
@@ -802,7 +799,7 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // Regression (chatgpt-codex-connector, a reference-implementation pull request): a drive that runs past
+  // Regression: a drive that runs past
   // ROUND_PATHS_WINDOW rounds while every round lands on the SAME file stays
   // unacknowledged throughout, so `foldRoundPaths` retains every entry
   // (round > lastEscalatedRound=0 is true for all of them) — growing
@@ -817,8 +814,7 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
   // (e.g. self-inflicted.test.ts's `CLI_TIMEOUT_MS`): the loop below alone
   // launches 2 * (ROUND_PATHS_WINDOW + 3) = 30 sequential `drive-state.ts`
   // subprocesses before the assertions even start, which exceeds Bun's
-  // default 5s per-test timeout on a slower or concurrently loaded runner
-  // (chatgpt-codex-connector, a reference-implementation pull request).
+  // default 5s per-test timeout on a slower or concurrently loaded runner.
   it("set-escalated past the window prunes in the same write, leaving state usable", async () => {
     await withStateDir(async (dir) => {
       const head = (r: number) => r.toString(16).padStart(40, "0");
@@ -965,7 +961,7 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
 
   // The cap is silent in the STORED shape by construction — sort, then slice
   // — so the only place truncation can be surfaced at all is a diagnostic at
-  // write time (docomply-review, a reference-implementation pull request).
+  // write time.
   it("warns on stderr, without failing, when a round exceeds the path cap", async () => {
     await withStateDir(async (dir) => {
       await state(dir, ["bump-round", "999", "--head", SHA_A]);
@@ -1028,7 +1024,7 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
   // directly before that — skipping the `bump-round` every probe above does
   // first — used to write `{round: 0, paths: [...]}`, which then sat
   // adjacent to round 1's real entry the moment counting began
-  // (docomply-review, a reference-implementation pull request). `drive-status.ts`'s own path always bumps
+  //. `drive-status.ts`'s own path always bumps
   // first, so this only ever refuses a direct, out-of-order call.
   it("refuses to record anchors before any round has been counted", async () => {
     await withStateDir(async (dir) => {

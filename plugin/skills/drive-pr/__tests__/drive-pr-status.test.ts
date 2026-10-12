@@ -109,8 +109,7 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
     // `resolve-thread.ts` and resolves threads ON GITHUB. Exit 13 was first
     // raised at the leased `bump-round` much further down, so a second worktree
     // reached the sweep, resolved threads belonging to another resolver's
-    // round, and only afterwards learned it was not admitted
-    // (chatgpt-codex-connector, P2).
+    // round, and only afterwards learned it was not admitted.
     const { dir, stateDir } = writeFixture({
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       reviewedSha: HEAD,
@@ -427,8 +426,7 @@ describe("drive-status.ts --bump-attempt", () => {
     // runs this exact gate command per SKILL.md § 1. Without this guard the
     // spawned pass's own --bump-attempt double-counts every real round under
     // the unattended driver: reflectDue fires after 2 passes instead of more
-    // than 3, and --max-rounds trips around pass 5 instead of 10
-    // (chatgpt-codex-connector, a reference-implementation pull request).
+    // than 3, and --max-rounds trips around pass 5 instead of 10.
     const { dir, stateDir } = writeFixture({
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
     });
@@ -452,7 +450,7 @@ describe("drive-status.ts --bump-attempt", () => {
 // gate: it arms when a reviewer finding lands on the same FILE in two
 // consecutive rounds, which is deliberately sharper than `reflectDue`'s
 // round-DEPTH trigger — it fires while there is one narrow fix to reconsider
-// rather than three (FB-83 measured the depth trigger arriving at round 4 on a
+// rather than three (the depth trigger was measured arriving at round 4 on a
 // signal that was unambiguous at round 2).
 //
 // The predicate's own edges are covered in structural-escalation.test.ts
@@ -499,7 +497,7 @@ describe("drive-status.ts structuralEscalationDue", () => {
     ).toEqual([{ round: 1, paths: ["a.ts", "b.ts"] }]);
   });
 
-  // Regression (chatgpt-codex-connector, a reference-implementation pull request): `a.ts` and ` a.ts` are two
+  // Regression: `a.ts` and ` a.ts` are two
   // distinct, legitimate repository paths — trimming both before storing them
   // as the recurrence identity would alias them to the same key, arming
   // `structuralEscalationDue` on findings from two different files. `.trim()`
@@ -640,8 +638,8 @@ describe("drive-status.ts structuralEscalationDue", () => {
 
   // A parked thread is a human decision already made, not a recurring root
   // cause the fix keeps missing — counting it would arm the signal for as
-  // long as it stays parked, on a file nothing new landed on
-  // (docomply-review, a reference-implementation pull request). The SAME thread id anchors `a.ts` in both
+  // long as it stays parked, on a file nothing new landed on.
+  // The SAME thread id anchors `a.ts` in both
   // rounds here, unresolved and parked throughout; each round also carries a
   // genuinely live thread on a DIFFERENT file so the round stays ROUND_READY
   // (case 0, which records anchors, never runs on HITL_PARKED) without that
@@ -678,11 +676,11 @@ describe("drive-status.ts structuralEscalationDue", () => {
   });
 
   // A thread left open on purpose (`triage-thread.ts --leave-open`, usually a
-  // human thread per AGENTS.md § Addressing PR Comments) is a settled
+  // human thread per `/groundwork:resolve-review-comments` § Human threads) is a settled
   // decision, not a recurring root cause — it stays unresolved on GitHub
   // forever by design, so without this exclusion it would arm the signal for
-  // as long as the PR stays open, on a file nothing new landed on
-  // (chatgpt-codex-connector, a reference-implementation pull request). Same shape as the parked-thread probe
+  // as long as the PR stays open, on a file nothing new landed on.
+  // Same shape as the parked-thread probe
   // above: the SAME thread id anchors `a.ts` in both rounds, with its
   // qualifying reply and leave-open marker unchanged throughout, and each
   // round also carries a genuinely live thread on a different file so the
@@ -729,8 +727,8 @@ describe("drive-status.ts structuralEscalationDue", () => {
   // mutation, not a finding that landed again — the same argument the parked
   // and left-open probes above make, extended to the third way a thread stays
   // open with nothing new for the next pass to have caused. Reachable from a
-  // single transient sweep failure inside `finish-round.ts`'s drain
-  // (chatgpt-codex-connector, a reference-implementation pull request). Unlike a park, holding does NOT
+  // single transient sweep failure inside `finish-round.ts`'s drain.
+  // Unlike a park, holding does NOT
   // remove the thread from `work.unresolvedThreads` — a held item is still
   // live work for ITS round, only its recurrence evidence is stale — so that
   // count is pinned unchanged alongside the path exclusion.
@@ -745,8 +743,8 @@ describe("drive-status.ts structuralEscalationDue", () => {
     // (no per-thread `comments` override) — is what the hold's `commentUrl`
     // must match for the exclusion to hold: `evaluate.ts` now compares the
     // hold against the thread's OWN most recent comment, not the threadId
-    // alone (chatgpt-codex-connector, a reference-implementation pull request; see the dedicated
-    // superseded-hold probe below for the case this replaced).
+    // alone (see the dedicated superseded-hold probe below for the case this
+    // replaced).
     await hold(
       round1.stateDir,
       "PRRT_a",
@@ -777,7 +775,7 @@ describe("drive-status.ts structuralEscalationDue", () => {
     expect(r2.json.structuralEscalationDue).toBe(false);
   });
 
-  // Regression for the fix itself (chatgpt-codex-connector, a reference-implementation pull request): a hold
+  // Regression for the fix itself: a hold
   // recorded against ONE comment must not go on vouching for the thread once
   // a LATER comment lands on it — the reviewer's own example is a plain new
   // finding, not a re-triage, so the comparison must key on the thread's
@@ -844,17 +842,15 @@ describe("drive-status.ts structuralEscalationDue", () => {
     );
   });
 
-  // A trusted `--no-outcome` clarification reply is a settled ask-and-wait,
-  // not a live finding still open (chatgpt-codex-connector, a reference-implementation pull request):
-  // `reply-to-thread.ts` appends `NO_OUTCOME_MARKER` itself whenever
-  // `--no-outcome` is passed, and `isLeftOpenThread` now requires that
-  // durable marker rather than inferring the clarification path from a bare
-  // absence of an outcome token — the marker is what tells this case apart
-  // from a trusted author's own outcome-less prose posted straight on
-  // GitHub, which can never carry it (round 2 of the same PR). As long as
-  // the marked reply stays the thread's most recent comment, this path must
-  // not feed the recurrence signal — same shape as the left-open probe
-  // above.
+  // A trusted `--no-outcome` clarification reply is a settled ask-and-wait, not
+  // a live finding still open: `reply-to-thread.ts` appends `NO_OUTCOME_MARKER`
+  // itself whenever `--no-outcome` is passed, and `isLeftOpenThread` now
+  // requires that durable marker rather than inferring the clarification path
+  // from a bare absence of an outcome token — the marker is what tells this
+  // case apart from a trusted author's own outcome-less prose posted straight
+  // on GitHub, which can never carry it. As long as the marked reply stays the
+  // thread's most recent comment, this path must not feed the recurrence signal
+  // — same shape as the left-open probe above.
   it("a trusted no-outcome clarification’s path never feeds the recurrence signal, until answered", async () => {
     const clarificationThread = {
       id: "PRRT_a",
@@ -917,14 +913,14 @@ describe("drive-status.ts structuralEscalationDue", () => {
     ).toEqual(["a.ts"]);
   });
 
-  // The bug this marker requirement fixes (chatgpt-codex-connector, a reference-implementation pull request
-  // round 2): a trusted author can reply directly on GitHub with ordinary
-  // prose ("I agree; please fix this") that never passes through
-  // `reply-to-thread.ts` and so never carries `NO_OUTCOME_MARKER`. Before the
-  // marker was required, `qualifyingOutcome(body) === null` alone treated
-  // this identically to a genuine `--no-outcome` clarification, silently
-  // dropping a live finding recurrence from the signal. It must instead be
-  // read as live, unresolved work.
+  // The bug this marker requirement fixes: a trusted author can reply directly
+  // on GitHub with ordinary prose ("I agree; please fix this") that never
+  // passes through `reply-to-thread.ts` and so never carries
+  // `NO_OUTCOME_MARKER`. Before the marker was required,
+  // `qualifyingOutcome(body) === null` alone treated this identically to a
+  // genuine `--no-outcome` clarification, silently dropping a live finding
+  // recurrence from the signal. It must instead be read as live, unresolved
+  // work.
   it("a trusted author’s unmarked outcome-less reply is never mistaken for a clarification", async () => {
     const unmarkedReplyThread = {
       id: "PRRT_a",
@@ -970,7 +966,7 @@ describe("drive-status.ts structuralEscalationDue", () => {
   // marker candidate would misclassify this fresh, live finding as an
   // already-settled clarification and permanently blind
   // `structuralEscalationDue` to every fresh human finding on that file
-  // (chatgpt-codex-connector, a reference-implementation pull request) — so, unlike those two probes, this
+  // — so, unlike those two probes, this
   // one MUST feed the recurrence signal and arm on the second round.
   it("a fresh single-comment thread from a trusted author is never mistaken for left-open", async () => {
     const freshHumanThread = {
@@ -1011,7 +1007,7 @@ describe("drive-status.ts structuralEscalationDue", () => {
   // `.authorAssociation` off it. Unreachable through the full CLI pipeline
   // above — the real thread producer sanitizes/crashes on a malformed
   // GraphQL comment node before evaluate.ts would ever see one — so this
-  // calls the exported pure function directly (coderabbitai, PR #4441).
+  // calls the exported pure function directly.
   describe("isLeftOpenThread — a malformed comment element never throws", () => {
     const trustedNoOutcome = {
       authorAssociation: "OWNER",
@@ -1056,15 +1052,14 @@ describe("drive-status.ts structuralEscalationDue", () => {
     });
   });
 
-  // an earlier change finding, round 22 (P1, chatgpt-codex-connector): the
-  // leave-open marker is human-thread-only by design — a bot-started thread
-  // must always eventually resolve. `isLeftOpenThread` must not grant the
-  // exemption on `confirmedHumanStarted` alone being absent/malformed either
-  // (document-scanning-gates.md rule 1: fail closed, count the thread as
-  // live, never silently exempt it) — round 24's own finding on the field's
-  // PRODUCER (list-unresolved-threads.ts) is fixture-tested where that field
-  // is actually computed, not here; this describe block fixture-tests only
-  // this function's own consumption of whatever the field says.
+  // The leave-open marker is human-thread-only by design — a bot-started
+  // thread must always eventually resolve. `isLeftOpenThread` must not grant
+  // the exemption on `confirmedHumanStarted` alone being absent/malformed
+  // either (fail closed: count the thread as live, never silently exempt
+  // it) — the field's PRODUCER (list-unresolved-threads.ts) is
+  // fixture-tested where that field is actually computed, not here; this
+  // describe block fixture-tests only this function's own consumption of
+  // whatever the field says.
   describe("isLeftOpenThread — the leave-open marker is human-thread-only", () => {
     const leaveOpenReply = {
       author: "example-user-2",
@@ -1124,11 +1119,10 @@ describe("drive-status.ts structuralEscalationDue", () => {
     });
   });
 
-  // an earlier change finding, round 24 (high, chatgpt-codex-connector): the
-  // trusted no-outcome CLARIFICATION branch (a question, no outcome token
-  // yet) has the identical requirement as the leave-open-marker branch —
-  // it was fixed in the SAME PR/round, in the OTHER branch of this SAME
-  // function, and this branch was still missed.
+  // The trusted no-outcome CLARIFICATION branch (a question, no outcome token
+  // yet) has the identical requirement as the leave-open-marker branch — it
+  // was once fixed in the OTHER branch of this SAME function while this
+  // branch was still missed.
   describe("isLeftOpenThread — the no-outcome clarification pause is also human-thread-only", () => {
     const clarificationReply = {
       author: "example-user-2",
@@ -1206,12 +1200,12 @@ describe("drive-status.ts structuralEscalationDue", () => {
   });
 
   // A summary-only finding creates no thread at all (summary-findings.ts's own
-  // doc comment: false convergence mode 1, PR #3855), so a recurrence signal
+  // doc comment: false convergence mode 1), so a recurrence signal
   // fed only from `threads` never arms for one that keeps landing on the same
   // file across rounds. This fixture has ZERO threads — only the two backlog
   // entries, both anchored to `AGENTS.md` — so a paths list still missing
-  // `AGENTS.md` here can only be explained by the completeness gap
-  // (docomply-review, a reference-implementation pull request), not by a thread this fixture never had.
+  // `AGENTS.md` here can only be explained by the completeness gap,
+  // not by a thread this fixture never had.
   it("a summary-only finding’s path feeds the recurrence signal too, not only a thread’s", async () => {
     const { dir, stateDir } = writeFixture({ backlog: true });
     const r = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"]);
@@ -1247,7 +1241,7 @@ describe("drive-status.ts structuralEscalationDue", () => {
   // used to do unconditionally. Passing it through (the same convention
   // `parked-keys` above already uses) is what lets a repeated file sorted
   // outside the retained 200 paths still show up on an operator's screen
-  // (docomply-review, a reference-implementation pull request) instead of silently vanishing from the
+  // instead of silently vanishing from the
   // recurrence signal.
   it("passes record-paths’s own cap-truncation warning through to stderr", async () => {
     const many = Array.from(
@@ -1441,17 +1435,17 @@ describe("drive-status.ts publishes the fleet-health advisory", () => {
 });
 
 // A draft is DRIVEN, not refused. `PR_IS_DRAFT` (exit 10) used to be terminal
-// here, on the premise that no reviewer arm looks at a draft; measured false on
-// 2026-08-13, when `example-review` posted findings on #4053 and #4041 — both
-// created as drafts and never marked Ready — about a minute after each was
-// opened: that reviewer's deployment reviews drafts.
+// here, on the premise that no reviewer arm looks at a draft; measured false
+// when `example-review` posted findings on two PRs — both created as drafts
+// and never marked Ready — about a minute after each was opened: that
+// reviewer's deployment reviews drafts.
 //
-// CodeRabbit still refuses a draft ("Review skipped / Draft detected", the same
-// PRs), and that asymmetry is the point: the drive works the in-house findings
-// on the draft and marks it Ready afterwards, so the paid reviewer's one pass
-// lands on a cleaned-up head. `mark-ready.ts` owns the transition; these tests
-// own the gate's half, which is simply that draftness no longer decides
-// anything.
+// CodeRabbit still refuses a draft ("Review skipped / Draft detected", on the
+// same PRs), and that asymmetry is the point: the drive works the in-house
+// findings on the draft and marks it Ready afterwards, so the paid reviewer's
+// one pass lands on a cleaned-up head. `mark-ready.ts` owns the transition;
+// these tests own the gate's half, which is simply that draftness no longer
+// decides anything.
 describe("drive-status.ts draft PRs", () => {
   /** The check-run set on a head the reviewer has not run on at all. */
   const NO_REVIEWER = [DORMANT_ARM];
@@ -1559,8 +1553,8 @@ describe("drive-status.ts draft PRs", () => {
     // dropped from the response entirely is a distinct wire shape `gh` could
     // just as well produce on a partial response. `evaluate()` reads both the
     // same way (`typeof draft !== 'boolean'`), so this must reach the
-    // identical outcome as the null case above (CodeRabbit, PR #4036 round 1
-    // — the fixture builder could not previously produce this shape at all).
+    // identical outcome as the null case above (the fixture builder could not
+    // previously produce this shape at all).
     // mark-ready.ts applies the same rule to its own read of the field, in the
     // same direction, for the same reason.
     const r = await probe({
@@ -1576,9 +1570,8 @@ describe("drive-status.ts draft PRs", () => {
   });
 
   it("a mid-evaluation flip TO draft no longer invalidates CONVERGED", async () => {
-    // The deliberate inverse of a guard that used to live in `still_on_head`
-    // (chatgpt-codex-connector AND docomply-review, independently, PR #4036
-    // round 2): a PR converted back to draft while reviewer and thread evidence
+    // The deliberate inverse of a guard that used to live in `still_on_head`:
+    // a PR converted back to draft while reviewer and thread evidence
     // was being gathered reported PR_IS_DRAFT rather than CONVERGED, because a
     // terminal claim was only sound while a reviewer was scheduled to look.
     //
@@ -1598,7 +1591,7 @@ describe("drive-status.ts draft PRs", () => {
   });
 
   it("a mid-evaluation flip TO draft no longer withholds a ROUND_READY", async () => {
-    // Same retirement on the other path (docomply-review, a reference-implementation pull request round 3).
+    // Same retirement on the other path.
     // The round is dispatched: the findings are real, the reviewer that posted
     // them reads drafts, and the fixes land on the same branch either way.
     const r = await probe({
@@ -1615,8 +1608,7 @@ describe("drive-status.ts draft PRs", () => {
     // is gone with the premise; this half is why the function was KEPT rather
     // than deleted alongside it — a round dispatched onto a PR that merged or
     // closed during enumeration is a whole triage-fix-push pass with nowhere to
-    // land, which was always an independent justification (docomply-review, PR
-    // #4036 round 5).
+    // land, which was always an independent justification.
     //
     // `isDraftMovesTo` rides along to pin the PRECEDENCE that outlived the
     // guard it was found in: GitHub keeps `isDraft` true on a closed draft, so
@@ -1652,11 +1644,11 @@ describe("drive-status.ts draft PRs", () => {
   });
 });
 
-// Mode 14 (#3952): a conflicting PR runs no `pull_request` CI, so the posting
+// Mode 14: a conflicting PR runs no `pull_request` CI, so the posting
 // reviewer never creates a check-run and the mode-4 guard — correctly, on its
 // own evidence — reports AWAITING_REVIEWER and polls to `--timeout`. Exit 4
 // means "becomes something else with time", which a conflict never does.
-describe("drive-status.ts merge conflicts (#3952)", () => {
+describe("drive-status.ts merge conflicts", () => {
   /** Exactly the observed check-run set on the conflicting head. */
   const CONFLICTED_CHECKS = [DORMANT_ARM];
 
@@ -1708,10 +1700,10 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
     expect(control.stderr).toContain("gave up after");
   });
 
-  it("does NOT preempt a round that has live work (#3995 review round 6)", async () => {
+  it("does NOT preempt a round that has live work", async () => {
     // The first cut short-circuited here, on the premise that a conflicting
     // head has no findings "because GitHub runs no pull_request CI on it".
-    // Review falsified it: the live reviewer is the majordomo POLLER, whose
+    // That premise is false: the live reviewer is a self-hosted POLLER, whose
     // eligibility predicate (non-draft, base develop, same-repo head, head not
     // yet reviewed) contains no mergeability term at all — and the only
     // pull_request_target arm in this repo is dormant. A poller is not stopped
@@ -1728,12 +1720,12 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
     expect(r.json.reason).toContain("conflicts with its base");
   });
 
-  // Rounds 8-9 raised the same gap from both directions: skipping the reviewer
+  // The same gap shows from both directions: skipping the reviewer
   // GATES on a conflicting head also skipped READING the reviewed-SHA marker,
   // so the round said nothing about whether its findings were current. The
   // answer is to report it, never to gate on it — gating is the stall
   // under another name, and an unresolved thread is open work on any head.
-  describe("reviewer evidence on a conflicting head (#3995 review rounds 8-9)", () => {
+  describe("reviewer evidence on a conflicting head", () => {
     const CONFLICT_WORK = {
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       checkRuns: CONFLICTED_CHECKS,
@@ -1827,12 +1819,12 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
     expect(r.exitCode).toBe(4);
   });
 
-  it("UNKNOWN is not settled either way — not judged, not converged (#3995 review)", async () => {
+  it("UNKNOWN is not settled either way — not judged, not converged", async () => {
     // The FIRST cut of this guard let UNKNOWN proceed straight to the
     // reviewer/work checks below, which could report CONVERGED over a
     // mergeability verdict GitHub itself had not finished computing — the
     // false-CONVERGED sibling of the false-CONFLICTING case this whole guard
-    // exists to prevent. Caught by review on this very PR before it merged.
+    // exists to prevent.
     const r = await probe({
       threads: [],
       reviewedSha: HEAD,
@@ -1845,11 +1837,11 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
   });
 
   it("a gh missing a required field is a PREREQUISITE error, not a degraded mode", async () => {
-    // Rounds 3-5 built a three-tier CLI-version fallback ladder plus a second
-    // REST parser here, and every tier then needed its own binding and
+    // An earlier version built a three-tier CLI-version fallback ladder plus a
+    // second REST parser here, and every tier then needed its own binding and
     // validation guards — each of which produced the next round's findings.
-    // AGENTS.md / CLAUDE.md § Backward Compatibility forbids exactly that
-    // shape, and the premise was thin anyway: the fields have all been in `gh`
+    // A backward-compatibility ladder of that shape is exactly what to avoid,
+    // and the premise was thin anyway: the fields have all been in `gh`
     // for years. Requiring them deletes the whole surface. Exit 2 is the usage
     // /configuration code, and the message has to name the fix.
     const r = await probe({
@@ -1864,17 +1856,17 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
     expect(r.state).not.toBe("CONVERGED");
     expect(r.state).not.toBe("PR_CONFLICTING");
     // ...and it goes through the REPORTER. The first cut called `exit 2` from
-    // inside evaluate(), which skips report() entirely: `--json` emitted
-    // stderr and no object at all, so a caller parsing the documented contract
-    // got an empty string and could not tell this from a crash (round-8
-    // finding). `probe` parses stdout, so an empty state here IS that bug.
+    // inside evaluate(), which skips report() entirely: `--json` emitted stderr
+    // and no object at all, so a caller parsing the documented contract got an
+    // empty string and could not tell this from a crash. `probe` parses stdout,
+    // so an empty state here IS that bug.
     expect(r.state).toBe("UNSUPPORTED_CLI");
     expect(r.json.exit).toBe(2);
     expect(r.json.pr).toBe(999);
     expect(String(r.json.reason)).toContain("upgrade the GitHub CLI");
   });
 
-  it("an unreadable check-runs API does not block PR_CONFLICTING (#3995 review round 7)", async () => {
+  it("an unreadable check-runs API does not block PR_CONFLICTING", async () => {
     // On a conflicting head every consumer of `runs` is already skipped, so
     // hard-failing on that query let a timeout or a 403 on evidence this path
     // does not use block the new state from ever being reported.
@@ -1897,7 +1889,7 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
     expect(r.exitCode).toBe(1);
   });
 
-  it("liveness is still checked FIRST, even on an unsupported gh (#3995 review round 6)", async () => {
+  it("liveness is still checked FIRST, even on an unsupported gh", async () => {
     // Folding liveness into the combined required-field read broke the
     // "a merged or closed PR stops the loop before anything else" contract:
     // on an old `gh` a finished PR reported a configuration error, so a caller
@@ -1913,7 +1905,7 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
     expect(r.exitCode).not.toBe(2);
   });
 
-  it("a malformed snapshot is INDETERMINATE, not silently mergeable (#3995 review round 3)", async () => {
+  it("a malformed snapshot is INDETERMINATE, not silently mergeable", async () => {
     // A nominally SUCCESSFUL read carrying a null/absent/unhandled `mergeable`
     // collapsed to "" and fell through the case exactly as though the PR were
     // mergeable.
@@ -1927,14 +1919,14 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
     expect(r.stderr).toContain("no handled 'mergeable' value");
   });
 
-  it("a missing mergeStateStatus does NOT block the state it annotates (#3995 review round 8)", async () => {
+  it("a missing mergeStateStatus does NOT block the state it annotates", async () => {
     // The counterpart to the test above, and the other half of the contract
     // review read as self-contradictory. Validation is scoped to the fields a
     // state is DECIDED from — `mergeable` picks the branch, `baseRefOid` arms
     // the base-race guard. `mergeStateStatus` and `baseRefName` are reported
     // and nothing branches on them, so requiring them would block
     // PR_CONFLICTING over evidence this path never consumes — exactly the
-    // round-7 regression the check-runs read had to undo. It degrades to an
+    // regression the check-runs read once had to undo. It degrades to an
     // omitted parenthetical instead.
     const r = await probe({
       threads: [],
@@ -1959,8 +1951,8 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
     expect(r.stderr).toContain("no 'baseRefOid'");
   });
 
-  it("a TRANSIENT failure is INDETERMINATE, never a silent degrade (#3995 review round 2)", async () => {
-    // Round 1's fallback conflated ANY failure of the full read with "this
+  it("a TRANSIENT failure is INDETERMINATE, never a silent degrade", async () => {
+    // An earlier fallback conflated ANY failure of the full read with "this
     // token cannot access mergeability". A transient blip (network, rate
     // limit, timeout) that happens to clear before the narrower retry would
     // then silently disable the merge-conflict guard for that evaluation —
@@ -1983,12 +1975,12 @@ describe("drive-status.ts merge conflicts (#3952)", () => {
   });
 });
 
-// Mode 15 (#3995 review): mergeability is a function of (head, base), not
-// head alone. `still_on_head` must recheck the base tip too, or a base that
-// advances mid-evaluation — measured to be the STANDING lag pattern for
-// `baseRefOid`, not a rare race — lets a stale mergeability verdict survive
-// into a terminal claim.
-describe("drive-status.ts base-race guard (#3995 review)", () => {
+// Mode 15: mergeability is a function of (head, base), not head alone.
+// `still_on_head` must recheck the base tip too, or a base that advances
+// mid-evaluation — measured to be the STANDING lag pattern for `baseRefOid`,
+// not a rare race — lets a stale mergeability verdict survive into a terminal
+// claim.
+describe("drive-status.ts base-race guard", () => {
   it("a base that moves mid-evaluation is HEAD_MOVED, not a terminal CONVERGED", async () => {
     const r = await probe({
       threads: [],
@@ -2013,8 +2005,8 @@ describe("drive-status.ts base-race guard (#3995 review)", () => {
     expect(r.exitCode).toBe(4);
   });
 
-  it('an empty baseRefOid on the recheck is INDETERMINATE, not "unchanged" (#3995 review round 2)', async () => {
-    // Round 1's still_on_head treated an empty base_now as "the base didn't
+  it('an empty baseRefOid on the recheck is INDETERMINATE, not "unchanged"', async () => {
+    // An earlier still_on_head treated an empty base_now as "the base didn't
     // move" (the whole `-n "$base_now" && ...` condition is false when empty),
     // which is the SAME failure mode the head check next to it already
     // refuses: an unreadable recheck is not evidence of anything, and letting
@@ -2039,7 +2031,7 @@ describe("drive-status.ts base-race guard (#3995 review)", () => {
   // of bug it used to invite — a recheck asking for a field the opening
   // snapshot had degraded past, turning an announced degradation into an
   // INDETERMINATE on every terminal return — was deleted with the tier ladder
-  // rather than guarded (#3995 round 5).
+  // rather than guarded.
 });
 
 describe("drive-status.ts terminal witness — the PR merges mid-evaluation", () => {
@@ -2129,7 +2121,7 @@ describe("drive-status.ts reports counts it never measured as null", () => {
   // `evaluate()` returns from the liveness, head-sync and reviewer gates long
   // before it enumerates threads or summary findings. Initialised to 0, those
   // gates published `work.unresolvedThreads: 0` — "not counted" rendered
-  // identically to "none open". Observed while driving #3952: the reviewer gate
+  // identically to "none open". Observed while driving a PR: the reviewer gate
   // reported zero while nine threads were live.
   it("AWAITING_REVIEWER carries null work counts, not zeroes", async () => {
     const r = await probe({ threads: [], checkRuns: [DORMANT_ARM] });
@@ -2172,7 +2164,7 @@ describe("drive-status.ts reports counts it never measured as null", () => {
     expect(work.summaryFindings).toBe(0);
   });
 
-  it("publishes the key sets SORTED, which is what makes the consumer’s equality set equality (docomply-review, a reference-implementation pull request round 6)", async () => {
+  it("publishes the key sets SORTED, which is what makes the consumer’s equality set equality", async () => {
     // `roundFingerprint` serializes what it is given, so the sort has to happen
     // HERE or the stall stop compares order rather than membership. Parked keys
     // are the one set a probe can plant in a chosen order — they come from the
@@ -2223,7 +2215,7 @@ describe("roundFingerprint — what counts as evidence of sameness", () => {
     },
   });
 
-  it("refuses a caller-supplied --head, which asserts one instant rather than measuring (all three reviewers, PR #4106)", () => {
+  it("refuses a caller-supplied --head, which asserts one instant rather than measuring", () => {
     // Forward one frozen `--head` to every gate and the local head never moves
     // however much the pass pushes — sameness the gate never witnessed. The
     // measured shape is the same report with a `git` source.
@@ -2287,15 +2279,14 @@ describe("roundFingerprint — what counts as evidence of sameness", () => {
     // design — so set equality rests entirely on the PRODUCER sorting. That is
     // asserted where it is produced (drive-status.ts, the probe below);
     // asserting it here against arrays this test sorted itself would stay green
-    // with `.sort()` deleted from evaluate.ts (docomply-review, a reference-implementation pull request round
-    // 6, on exactly that vacuous shape).
+    // with `.sort()` deleted from evaluate.ts (exactly that vacuous shape).
     expect(
       roundFingerprint(gate(measured, { parkedKeys: ["b", "a"] })),
     ).not.toBe(roundFingerprint(gate(measured, { parkedKeys: ["a", "b"] })));
   });
 });
 
-describe("claimWasTakenOver — coexistence, a full successor-only transition, AND a vanished claim set (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 6)", () => {
+describe("claimWasTakenOver — coexistence, a full successor-only transition, AND a vanished claim set", () => {
   // The real race this decides is a microsecond window between a
   // `renameSync` and the `inspect()` call that follows it — nothing in a
   // single-process test can land inside it (see drive.ts's own comment on
@@ -2329,7 +2320,7 @@ describe("claimWasTakenOver — coexistence, a full successor-only transition, A
   });
 });
 
-describe("inspect — an unreadable directory is not a confirmed empty claim set (docomply-review, a reference-implementation pull request round 11)", () => {
+describe("inspect — an unreadable directory is not a confirmed empty claim set", () => {
   // `claimWasTakenOver([], ...)` is deliberately `true` (the "vanished claim
   // set" case just above) — a genuine, successfully-read empty directory
   // really is a takeover signal. The bug this covers is upstream of that
@@ -2417,7 +2408,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     };
   }
 
-  it("refuses to measure from inside a git DIRECTORY, rather than reporting the main worktree’s head (PR #4106)", async () => {
+  it("refuses to measure from inside a git DIRECTORY, rather than reporting the main worktree’s head", async () => {
     // The measured wedge: a pass's shell cwd persists across tool calls, and
     // the state dir it legitimately reads — driver log, durable state — IS the
     // git common dir. One `cd` there and `git rev-parse HEAD` answers for the
@@ -2432,7 +2423,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     expect(r.stderr).toContain("outside a working tree");
   });
 
-  it("measures in $DRIVE_PR_WORKTREE when the driver named one, whatever the cwd (PR #4106)", async () => {
+  it("measures in $DRIVE_PR_WORKTREE when the driver named one, whatever the cwd", async () => {
     // The anchor drive.ts exports. Same poisoned cwd as above; the difference
     // is that the driver said which tree it drives, so the reading is that
     // tree's head rather than a refusal.
@@ -2538,15 +2529,15 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     const { mainDir, mainHead, linkedDir, linkedHead } =
       makeMainPlusLinkedWorktree("doc6876-main");
     expect(linkedHead).not.toBe(mainHead);
-    // The driver names the LINKED worktree as the tree to drive; the leak
-    // used to make every git call in this process answer for the MAIN
-    // worktree instead. Stripping GIT_DIR/GIT_WORK_TREE (and the rest of
-    // GIT_LOCATION_VARS) from the measurement calls' own env neutralizes
-    // the leak at the source, so the read correctly falls back to ordinary
+    // The driver names the LINKED worktree as the tree to drive; the leak used
+    // to make every git call in this process answer for the MAIN worktree
+    // instead. Stripping GIT_DIR/GIT_WORK_TREE (and the rest of
+    // GIT_LOCATION_VARS) from the measurement calls' own env neutralizes the
+    // leak at the source, so the read correctly falls back to ordinary
     // cwd-based discovery from `linkedDir` rather than merely detecting the
-    // poisoning and refusing (PR #4124 round 1: the toplevel-identity check
-    // alone cannot catch a GIT_DIR-only leak, since without GIT_WORK_TREE git
-    // treats cwd itself as the worktree root).
+    // poisoning and refusing (the toplevel-identity check alone cannot catch a
+    // GIT_DIR-only leak, since without GIT_WORK_TREE git treats cwd itself as
+    // the worktree root).
     const r = await measureFrom(linkedDir, {
       DRIVE_PR_WORKTREE: linkedDir,
       GIT_DIR: absoluteGitDir(mainDir),
@@ -2620,7 +2611,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     expect(r.local).not.toBe(scratchOther.head);
   });
 
-  it("acceptance (PR #4124 round 1): a GIT_DIR-only leak, with NO GIT_WORK_TREE, never reports the foreign SHA as trustworthy", async () => {
+  it("acceptance: a GIT_DIR-only leak, with NO GIT_WORK_TREE, never reports the foreign SHA as trustworthy", async () => {
     // The shape the toplevel-identity check alone cannot catch: without
     // GIT_WORK_TREE, git treats the CURRENT DIRECTORY as the worktree root,
     // so `--show-toplevel` resolves to `linkedDir` (matching the anchor)
@@ -2669,7 +2660,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     return dir;
   }
 
-  it("the local-HEAD `rev-parse HEAD` read refuses on a TIMEOUT rather than hanging (docomply-review, a reference-implementation pull request review round 1)", async () => {
+  it("the local-HEAD `rev-parse HEAD` read refuses on a TIMEOUT rather than hanging", async () => {
     // Neither of this describe block's two `git()` calls carried a deadline —
     // `git()` is undeadlined by default on the premise that a local call
     // cannot hang the way a network one can, but a stalled FUSE/NFS mount or
@@ -2690,7 +2681,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     });
   });
 
-  it("the local-HEAD `rev-parse --show-toplevel` identity check refuses on a TIMEOUT rather than hanging (docomply-review, a reference-implementation pull request review round 1)", async () => {
+  it("the local-HEAD `rev-parse --show-toplevel` identity check refuses on a TIMEOUT rather than hanging", async () => {
     const gitStubDir = makeHangingGitStub(["rev-parse", "--show-toplevel"]);
     const started = Date.now();
     const r = await measureFrom(scratchClean.dir, {
@@ -2711,7 +2702,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
 });
 
 describe("drive-status.ts refuses to converge — the measured false-convergence modes", () => {
-  it("mode 1: summary-only findings are open work even with zero threads (#3855)", async () => {
+  it("mode 1: summary-only findings are open work even with zero threads", async () => {
     const r = await probe({ threads: [], backlog: true, anchored: [] });
     expect(r.state).not.toBe("CONVERGED");
     expect(r.state).toBe("ROUND_READY");
@@ -2729,10 +2720,10 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     expect(r.state).toBe("CONVERGED");
   });
 
-  it("mode 2+4: a settled non-posting reviewer does not stand in for the posting one (#3880, #3938)", async () => {
+  it("mode 2+4: a settled non-posting reviewer does not stand in for the posting one", async () => {
     // Exactly the observed set on a fresh head: the dormant CI arm (SKIPPED)
     // plus a rate-limited CodeRabbit reporting SUCCESS as a commit status,
-    // while `AI review (majordomo)` has not been created yet.
+    // while `AI review (shadow)` has not been created yet.
     const r = await probe({
       threads: [],
       checkRuns: [DORMANT_ARM],
@@ -2804,11 +2795,11 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
   }
 
   describe("stranded-check-run bypass", () => {
-    // Measured live on PR #4093: the check-run for a head sat 'in_progress'
-    // 3.5+ hours while the review had already published its sticky (round 6,
-    // matching `ai-reviewed-sha`), three inline threads, and a wind-down
-    // entry. The gate reported AWAITING_REVIEWER forever, learning nothing
-    // from the marker it already trusts on the no-check-run path.
+    // Measured live: the check-run for a head sat 'in_progress' 3.5+ hours
+    // while the review had already published its sticky (round 6, matching
+    // `ai-reviewed-sha`), three inline threads, and a wind-down entry. The gate
+    // reported AWAITING_REVIEWER forever, learning nothing from the marker it
+    // already trusts on the no-check-run path.
 
     // Comfortably past the $DRIVE_PR_STALLED_MIN_AGE_SEC age floor — the
     // fourth bypass condition, which rules out reading a sticky that was
@@ -2953,9 +2944,8 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
       // The sticky is dated a second after that start, so it is genuinely
       // THIS run's evidence (condition 5 holds) and the young sticky is the
       // sole decider — without that, the fixture would trip condition 5 and
-      // pass vacuously, asserting nothing about the floor
-      // (`.claude/rules/document-scanning-gates.md` § 5, fail-closed
-      // conjunction).
+      // pass vacuously, asserting nothing about the floor (a fail-closed
+      // conjunction needs each clause to be the sole decider in its probe).
       const startedMs = Date.now() - 5000;
       const { dir, stateDir } = writeFixture({
         threads: [],
@@ -3170,8 +3160,8 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
       // before the drive trusts a sticky with zero threads behind it — so it
       // has to cover the worst case of that repair, not its best.
       //
-      // Round 3 fixed a 600s default that sat under the reactivation threshold
-      // outright. Round 4 caught the follow-on: 2100s cleared the 30-minute
+      // A 600s default sat under the reactivation threshold outright. The
+      // follow-on fix was still short: 2100s cleared the 30-minute
       // threshold but encoded ONLY that, dropping the 15-minute pass cadence
       // (the threshold is evaluated when a pass runs, so worst-case detection
       // is threshold + interval) and the re-run's own publication time (a
@@ -3182,8 +3172,8 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
       // Asserted as the RELATIONSHIP between the service's documented timings,
       // never as a number: an equality against 3600 would restate the sum a
       // reader has to trust, and an inequality against the threshold alone is
-      // exactly the too-weak assertion round 4 found. Retuning any component
-      // stays free; dropping a term from the sum fails here.
+      // exactly the too-weak assertion that let 2100s pass. Retuning any
+      // component stays free; dropping a term from the sum fails here.
       expect(STALLED_MIN_AGE_SEC).toBeGreaterThanOrEqual(
         RECONCILIATION_REACTIVATION_SEC +
           RECONCILIATION_INTERVAL_SEC +
@@ -3248,7 +3238,7 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     expect(exitCode).toBe(4);
   });
 
-  it("mode 5: a stale ai-reviewed-sha marker blocks convergence (#3938)", async () => {
+  it("mode 5: a stale ai-reviewed-sha marker blocks convergence", async () => {
     const r = await probe({ threads: [], reviewedSha: PREV });
     expect(r.state).toBe("STALE_REVIEW");
     expect(r.exitCode).toBe(4);
@@ -3275,12 +3265,12 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     //
     // PREFIX_LEN is 16 hex (64 bits), not the 8 (32 bits) a real ABBREVIATED
     // marker could use: at 8, `git rev-parse` can hit an existing object in
-    // this repository's own object store sharing those first 32 bits and
-    // reject the abbreviation as ambiguous, sending the probe down the
-    // cannot-resolve path instead and making it flaky (docomply-review round
-    // 3). 64 bits keeps that collision astronomically unlikely while the
-    // marker is still well under the 40-hex full length, so it still exercises
-    // the ABBREVIATED-marker path this probe is named for.
+    // this repository's own object store sharing those first 32 bits and reject
+    // the abbreviation as ambiguous, sending the probe down the cannot-resolve
+    // path instead and making it flaky. 64 bits keeps that collision
+    // astronomically unlikely while the marker is still well under the 40-hex
+    // full length, so it still exercises the ABBREVIATED-marker path this probe
+    // is named for.
     const PREFIX_LEN = 16;
     const real = makeOrphanCommit("drive-pr-probe-mode-5b");
     const collidingPrefixHead = `${real.slice(0, PREFIX_LEN)}${PREV.slice(PREFIX_LEN)}`;
@@ -3333,7 +3323,7 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
   });
 
   // The probes below were found by running drive-status.ts against its OWN pull
-  // request (#3952). GitHub returns check-runs newest-FIRST, and one SHA
+  // request. GitHub returns check-runs newest-FIRST, and one SHA
   // routinely carries several runs under the same name — there, a `cancelled`
   // `Parse ops-followups block` sat alongside the `success` that superseded it.
   it("a superseded (cancelled) check-run does not mark CI failing forever", async () => {
@@ -3650,9 +3640,9 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     // With no round to scope by, admitting every inline comment the reviewer
     // ever posted lets a long-resolved comment at the same `path:line` consume
     // a current bullet — the live finding vanishes from `summaryUnaddressed`
-    // while thread count reads zero, which is the #3855 false convergence
-    // reached through the one input nobody controls. Fail closed: nothing
-    // anchors, so the bullet stays open work.
+    // while thread count reads zero, which is the false convergence reached
+    // through the one input nobody controls. Fail closed: nothing anchors, so
+    // the bullet stays open work.
     const r = await probe({
       threads: [],
       backlog: false,
@@ -3761,8 +3751,7 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     // directly. A one-line regression to that wiring (`backlogFingerprints:
     // new Set()`, or restoring the retired `reason === 'winddown-deferred'`
     // filter) would leave `c773d9fdb7974e6d` unaddressed here even though
-    // every direct-call probe above still passes (docomply-review round 2,
-    // a reference-implementation pull request).
+    // every direct-call probe above still passes.
     //
     // Only ONE of the sticky's two backlog entries gets a marker, so the
     // count below is unambiguous evidence THIS fingerprint registered — a
@@ -3837,7 +3826,7 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
   });
 });
 
-describe("drive-status.ts HITL parking (#3933)", () => {
+describe("drive-status.ts HITL parking", () => {
   it("HITL_PARKED — every remaining thread awaits a human", async () => {
     const { dir, stateDir } = writeFixture({
       threads: [{ id: "PRRT_parked", path: "a.ts", bot: true }],
@@ -3950,8 +3939,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
    * writes nothing to stdout — and those are exactly the values three of the
    * assertions in this describe block treat as the passing result. A broken
    * `drive-state.ts held` would therefore have kept them green while proving
-   * nothing about the sweep at all: the vacuous-pass shape (coderabbitai, PR
-   * #4067).
+   * nothing about the sweep at all: the vacuous-pass shape.
    */
   function requireOk(exitCode: number, command: string): void {
     if (exitCode !== 0) {
@@ -3985,7 +3973,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
    * round satisfies that just as well as the unconfirmed one the sweep is
    * required to write, so a regression from the latter to the former is
    * invisible to a key-only assertion and would let a fix-dependent thread be
-   * resolved with no push verification (docomply-review, a reference-implementation pull request round 2).
+   * resolved with no push verification.
    */
   async function heldIn(
     stateDir: string,
@@ -4004,12 +3992,12 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
   }
 
   it("reconciles while the gate is stuck at AWAITING_REVIEWER — the measured leak", async () => {
-    // The shape, from #3974: nothing here becomes true with time (a
-    // CONFLICTING PR gets zero `pull_request` CI; a PR past the reviewer's own
-    // round ceiling never gets another check-run), so the gate returns 4 on
-    // every call forever and no pass ever runs. `**rejected**` is a claim
-    // about the finding's MERIT — not fix-dependent — so the sweep resolves it
-    // outright, and that has to happen despite the verdict, not after it.
+    // The shape: nothing here becomes true with time (a CONFLICTING PR gets
+    // zero `pull_request` CI; a PR past the reviewer's own round ceiling never
+    // gets another check-run), so the gate returns 4 on every call forever and
+    // no pass ever runs. `**rejected**` is a claim about the finding's MERIT —
+    // not fix-dependent — so the sweep resolves it outright, and that has to
+    // happen despite the verdict, not after it.
     const { dir, stateDir } = writeFixture({
       threads: [repliedThread("PRRT_stuck_gate", "**rejected**")],
       checkRuns: [DORMANT_ARM],
@@ -4130,14 +4118,14 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
   }
 
   it("under --bots-only, leaves a replied HUMAN thread open — the deliberate state, not a leak", async () => {
-    // AGENTS.md § Addressing PR Comments makes "a human thread you replied to
+    // `/groundwork:resolve-review-comments` § Human threads makes "a human thread you replied to
     // but chose not to close on the author's behalf" the one sanctioned
     // exception to "every comment you act on ends resolved", and says that
     // exception is WHY continuous mode targets bot threads. This sweep runs
     // unattended, so it is exactly the act that rule governs: a `**rejected**`
     // reply plus a still-open thread IS the exception, and resolving it here
     // would use the author's own triage as the warrant for overriding their
-    // choice (chatgpt-codex-connector, a reference-implementation pull request).
+    // choice.
     const { dir, stateDir } = writeFixture({
       threads: [humanRepliedThread("PRRT_human", "**rejected**")],
       checkRuns: [DORMANT_ARM],
@@ -4156,7 +4144,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // the human-attended run AGENTS.md assigns the wider scope to, so the
     // merit outcome still resolves there. Human-ATTENDED is the whole test —
     // a scheduled --all-open sweep is not, and passes --bots-only like the
-    // gate does (docomply-review, a reference-implementation pull request).
+    // gate does.
     const { dir, stateDir } = writeFixture({
       threads: [humanRepliedThread("PRRT_human", "**rejected**")],
       checkRuns: [DORMANT_ARM],
@@ -4171,9 +4159,8 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // `drive.ts` is the unattended runner, and it accepts `--bots-only` as
     // optional — so a drive started without it ran an UNSCOPED sweep every
     // round, resolving human threads with nobody watching. That is the act
-    // AGENTS.md § Addressing PR Comments reserves, and it does not become
-    // permissible because the operator also wanted human threads COUNTED
-    // (chatgpt-codex-connector, a reference-implementation pull request).
+    // `/groundwork:resolve-review-comments` § Human threads reserves, and it does not become
+    // permissible because the operator also wanted human threads COUNTED.
     //
     // `$DRIVE_PR_TARGET` exists exactly when drive.ts spawned this gate, which
     // is the signal used. Note the two scopes now differ — human threads are
@@ -4228,7 +4215,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // later pass is promised — and a thread the sweep failed to resolve would
     // stay open with nothing left to retry it. That is the leak
     // rebuilt one level up, and two independent reviewers found it in the same
-    // round (chatgpt-codex-connector + docomply-review, a reference-implementation pull request).
+    // round.
     //
     // Same fixture as the test above except for the verdict it reaches: the
     // reviewer run is present (so the evaluation gets past AWAITING_REVIEWER)
@@ -4250,7 +4237,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // 7 was missed on the first cut of the guard because that cut reasoned
     // from "terminal states" rather than from `drive.ts`'s own default branch,
     // which returns 7 alongside 8/9/10. Same consequence: the drive ends, so
-    // nothing retries the sweep (chatgpt-codex-connector, a reference-implementation pull request).
+    // nothing retries the sweep.
     const { dir, stateDir } = writeFixture({
       threads: [repliedThread("PRRT_reviewer_failed", "**rejected**")],
       checkRuns: [{ ...REVIEWER_RUN, conclusion: "failure" }, DORMANT_ARM],
@@ -4266,7 +4253,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // Opting out suppresses the sweep; it must not also VOUCH for one. Folding
     // the flag into "reconciliation succeeded" made a drive-ending verdict
     // reachable with nothing swept — the stranding this guard exists to stop,
-    // available by flag (docomply-review, a reference-implementation pull request). The flag still works for
+    // available by flag. The flag still works for
     // every other verdict: the `--no-reconcile opts out explicitly` probe
     // above reaches 4 with it, unchanged.
     const { dir, stateDir } = writeFixture({
@@ -4288,8 +4275,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // re-read, so the pass entry above it already swept. That holds only if
     // the entry swept SUCCESSFULLY — and a counting pass deliberately returns
     // ROUND_READY over a FAILED sweep, so a re-read inside exactly that round
-    // would certify a drive-ending verdict for a sweep that never succeeded
-    // (docomply-review, a reference-implementation pull request).
+    // would certify a drive-ending verdict for a sweep that never succeeded.
     //
     // The exemption is gone rather than narrowed: `sweepReconciled` is set by
     // one thing only, a sweep that ran and exited 0. Both flags therefore fail
@@ -4354,7 +4340,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // Mutation-tests `convergedUnswept` itself, which neither probe above
     // does: both suppress the sweep via a flag, so `sweepRanAndFailed` can
     // never be true on either call and deleting the guard entirely would
-    // leave both green (docomply-review, a reference-implementation pull request). This fixture is the
+    // leave both green. This fixture is the
     // other half — a COUNTING pass (no `--no-count`/`--no-reconcile`) where
     // the sweep subprocess genuinely spawns and exits nonzero, on a PR that
     // otherwise evaluates to zero unresolved threads. `evaluate()` on its
@@ -4387,8 +4373,8 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
   // the loop-top spent-budget skip and the "liveness read just spent the
   // budget" skip both leave `sweepSuppressed` false too, since neither
   // `--no-count` nor `--no-reconcile` was passed. That produced a false
-  // INDETERMINATE on a genuinely converged PR whose sweep was merely SKIPPED
-  //, which is why `sweepRanAndFailed` below is a
+  // INDETERMINATE on a genuinely converged PR whose sweep was merely SKIPPED,
+  // which is why `sweepRanAndFailed` below is a
   // dedicated flag set at exactly one call site — immediately after the
   // sweep subprocess itself exits nonzero — and nowhere else, including
   // neither skip branch. A black-box probe for the skip side of that
@@ -4411,8 +4397,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // a `4` returned after the whole `--timeout` window mean something. A
     // MAX_QUERY_ERRORS cap made that false after three attempts, leaving the
     // loop still polling but no longer trying to fix what it was waiting on —
-    // so a transient helper failure that cleared mid-window was never retried
-    // (docomply-review, a reference-implementation pull request, from two sources).
+    // so a transient helper failure that cleared mid-window was never retried.
     //
     // Counted via the sweep's OWN liveness probe (`--json state`, that field
     // alone), which is one per attempt. `4` is the verdict throughout, so this
@@ -4454,7 +4439,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // `summary-findings.ts` — on top of `evaluate()`'s own helper spawns.
     //
     // Kept at that price because the property is a twice-reported defect
-    // (chatgpt-codex-connector + docomply-review, a reference-implementation pull request) and nothing
+    // and nothing
     // cheaper distinguishes "retried on every poll" from the capped variant
     // that shipped and had to be removed. But it IS the concrete instance of
     // what lefthook.yml's own timeout comment warns about — "growth past this
@@ -4470,7 +4455,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // guard alone did not cover it: `sweepReconciled` stayed false but exit 0
     // is not a stopper, so a reopened PR was handed a ROUND_READY that never
     // swept — contradicting this gate's own contract that reconciliation
-    // happens before any verdict at all (docomply-review, a reference-implementation pull request).
+    // happens before any verdict at all.
     //
     // Modelled with the probe's `--json state` read answering CLOSED once and
     // every later read answering OPEN, which is exactly the reopen window.
@@ -4512,7 +4497,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // directions: a bare flag was no bound (the next iteration's read set it
     // again, looping forever, `--once` included), and a one-shot latch bounded
     // the loop but let a SECOND disagreement through unswept — reopening the
-    // hole the branch exists to close (both on PR #4067).
+    // hole the branch exists to close.
     //
     // This fixture is the one that actually reaches the branch repeatedly: the
     // single-field probe says CLOSED on every call while the fuller snapshot
@@ -4520,7 +4505,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // UNREADABLE snapshot instead, which made `evaluate()` return 1 — and
     // production requires `code !== 1` to enter the retraction at all, so it
     // was asserting ordinary `case 1` termination and would have stayed green
-    // against exactly the loop it claimed to guard (docomply-review, a reference-implementation pull request).
+    // against exactly the loop it claimed to guard.
     //
     // Both failure modes are covered by the two assertions together:
     // terminating at all rules out the loop, and INDETERMINATE rather than a
@@ -4531,7 +4516,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     });
     // POLLING mode, not `--once`: under `--once` the first disagreement degrades
     // before the retraction counter advances, so a `--once` run passes with the
-    // retraction bound deleted (docomply-review, a reference-implementation pull request).
+    // retraction bound deleted.
     // `--timeout 5 --interval 5` leaves no room for a second poll, so the run
     // ends without sleeping once the retractions are spent.
     const r = await probeIn(
@@ -4562,7 +4547,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
   it("--once does not retract — it evaluates once and defers", async () => {
     // The retraction is the only path in this loop that re-runs `evaluate()`
     // without sleeping, so it was quietly breaking `--once`'s promise to
-    // evaluate once (docomply-review, a reference-implementation pull request). Under `--once` the same
+    // evaluate once. Under `--once` the same
     // disagreement degrades on the FIRST occurrence instead, which is the
     // answer this gate gives everywhere else in that mode: the caller comes
     // back, and its next pass entry sweeps.
@@ -4586,8 +4571,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // `degrade()` bounded retries by count alone, and it is reached from paths
     // that did not exist when the loop's only deadline check was placed down
     // in `case 4` — so it overran `--timeout`: with `--timeout 5 --interval 5`
-    // an unreadable liveness probe slept twice and returned after 10s+ (two
-    // reviewers, independently, PR #4067).
+    // an unreadable liveness probe slept twice and returned after 10s+.
     //
     // Asserted by ATTEMPT COUNT rather than elapsed time, which would pin the
     // machine rather than the bound: one interval already exhausts this
@@ -4615,8 +4599,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // The skip used to fire on "not exactly OPEN", so a malformed `-q` result
     // or a state GitHub adds later would suppress the sweep and then license a
     // verdict that ends the drive. Only CLOSED and MERGED positively mean
-    // finished; everything else takes the retry path (docomply-review, PR
-    // #4067).
+    // finished; everything else takes the retry path.
     const { dir, stateDir } = writeFixture({
       threads: [repliedThread("PRRT_weird_state", "**rejected**")],
       prState: "UNKNOWN",
@@ -4682,8 +4665,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // mutations land on a finished pull request before the gate ever returned
     // PR_NOT_OPEN. The same fixture that resolves on every stuck-but-open
     // verdict above must resolve NOTHING here, which is what separates a
-    // liveness guard from the sweep simply not running (chatgpt-codex-
-    // connector, PR #4067).
+    // liveness guard from the sweep simply not running.
     const { dir, stateDir } = writeFixture({
       threads: [repliedThread("PRRT_merged", "**rejected**")],
       checkRuns: [DORMANT_ARM],
@@ -4704,7 +4686,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // re-arm on HITL_PARKED" — so a pass that skipped the sweep on a
     // transient blip and then returned it would strand the reply forever,
     // rebuilding the exact an earlier change leak the sweep closes, with nothing left
-    // to retry it (docomply-review, a reference-implementation pull request).
+    // to retry it.
     //
     // The fixture is the discriminating one: ONLY the probe fails, so the
     // evaluation below it succeeds and WOULD reach 8. Reading 1 instead is

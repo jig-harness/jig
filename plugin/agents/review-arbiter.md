@@ -35,9 +35,9 @@ The caller provides, for each thread:
   code the PR did not touch,
 - the PR number,
 - computed once per round: the PR's changed-line count and its sensitivity
-  flags (`has-migration`, `api-change`, `dpa-relevant`, `manual-ops`, a
-  high-risk-path hit, or the rubric's `packages/common/src/schemas/**`
-  API-sensitivity exception),
+  flags, as the repository's change-area projection and high-risk path rules
+  define them (for example a database migration, an API contract change, a
+  manual operations step, or a high-risk-path hit),
 - for each thread the arbiter might otherwise rule `fix-now`, **two** mechanical
   [decline ladder](../skills/resolve-review-comments/references/triage-rubric.md#the-decline-ladder)
   **verdicts** — the caller's own `triage-ladder.ts` JSON output, run once
@@ -55,7 +55,7 @@ not hand-interpret `.config/review-triage.yaml`'s bands from a `Read` of the
 file: a manually reasoned decline can diverge from the CLI's fail-open
 polarity, clause evaluation and `minimalDiff` arming, and a hand-composed
 decline carries none of the `{marker}` literal `defect-escape.ts
---ladder-only` needs for calibration (coderabbitai, PR #4501). A missing
+--ladder-only` needs for calibration. A missing
 verdict is not a detail to work around: say so in the verdict, and rule as
 though the ladder were unarmed — which is exactly what the CLI does for
 itself when it cannot compute one.
@@ -84,8 +84,7 @@ is missing, say so in the verdict rather than guessing.
    above) — never interpret `.config/review-triage.yaml`'s bands yourself, and
    never restate its weights in a rationale; cite the verdict's own `band`
    (identical either way). A `declined` stance is `wont-fix`, or `defer` when
-   the work is obligatory (that boundary is unchanged, and it is yours to
-   judge) — **rule obligation first**, then take the reply-draft from
+   the work is obligatory (that boundary is yours to judge) — **rule obligation first**, then take the reply-draft from
    whichever of the two verdicts matches: the `--obligatory` run's `reply` for
    `defer`, the other run's `reply` for `wont-fix`. Copy it **verbatim**,
    never a freshly composed sentence: `reply` already carries the trailing
@@ -124,11 +123,12 @@ the call hinges on information you cannot obtain (product intent, an external
 commitment, a risk trade-off with no precedent in the repo), not because the
 decision is merely difficult. Escalations are batched by the caller into one
 end-of-round question. Write an `escalate` rationale per the
-writing rules for text that asks a human to decide (the consumer's `decide` skill, `references/human-call-elaboration.md`).
+writing rules for text that asks a human to decide (the `decide` skill's
+[human-call elaboration](../skills/decide/references/human-call-elaboration.md)).
 
 **`fix-now` is never available for a finding whose fix would change a value
 the PR records as a human decision** (`Decided by X on <date>`, an
-`ops-followups` block, a decisions table) — the decided value itself, not its
+operations follow-ups block, a decisions table) — the decided value itself, not its
 supporting facts or rationale. Rule `escalate` instead, and say so in the
 rationale: only a human may approve the new value, and your ruling — however
 clear-cut the fix looks — is not that approval
@@ -143,7 +143,7 @@ thread: <threadId or url>
 verdict: fix-now | rejected | wont-fix | defer | escalate
 rationale: <ONE sentence, concrete, citing the code/rule/priority that decided it>
 reply-draft: <the reply body, opening with the matching outcome token per
-  AGENTS.md § Addressing PR Comments. When the verdict came from a `declined`
+  `/groundwork:resolve-review-comments` § 3. When the verdict came from a `declined`
   ladder stance (step 4), a `wont-fix`/`defer` draft here is that verdict's
   own `reply` field, copied verbatim — never a freshly composed sentence, and
   for `defer` the follow-up link goes before its trailing `<!-- {marker} -->`

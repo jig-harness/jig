@@ -1,9 +1,9 @@
 /**
- * legacy-state.test.ts — the guard that refuses to let
- * `resolveStateDir` silently move a clone onto a fresh, empty new-location
- * state dir while the OLD `--git-common-dir` default still holds drive-pr
- * state nobody has migrated (the failure PRs #4596/#4609 already hit once,
- * by hand — see `legacy-state.ts`'s own doc comment).
+ * legacy-state.test.ts — the guard that refuses to let `resolveStateDir`
+ * silently move a clone onto a fresh, empty new-location state dir while the
+ * OLD `--git-common-dir` default still holds drive-pr state nobody has migrated
+ * (a failure already hit once, by hand — see `legacy-state.ts`'s own doc
+ * comment).
  *
  * Both functions under test operate on plain directories, never on a real
  * git repo — `legacyDir`/`newDir` are just paths, so these tests use scratch
@@ -76,7 +76,7 @@ describe("legacyFootprint", () => {
     // an EACCES/EIO means state may exist but could not be inspected, and
     // silently treating that as "nothing to migrate" is exactly what would
     // let `ensureMigratedFromLegacy()` write the migrated marker over state
-    // it never looked at (docomply-review, a reference-implementation pull request). Modelled via
+    // it never looked at. Modelled via
     // `mock.module`, not a real chmod-hostile fixture: `lock.test.ts`
     // already documents why `chmodSync` cannot reliably induce EACCES here
     // — running as root (this reviewer's own sandbox, and plenty of CI/dev
@@ -116,12 +116,11 @@ describe("legacyFootprint", () => {
 
 describe("ensureMigratedFromLegacy", () => {
   it("fsyncs the parent directory after creating a brand-new state directory", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 15: `mkdirSync` alone does not
-    // make the new directory ENTRY durable — a crash right after it, before
-    // its parent's own entry for it commits, can lose `newDir` even though
-    // every write later fsynced inside it was individually durable. Spies
-    // on `openSync` (what `fsyncDirectoryBestEffort` calls first) since a
-    // successful fsync has no other observable side effect.
+    // `mkdirSync` alone does not make the new directory ENTRY durable — a crash
+    // right after it, before its parent's own entry for it commits, can lose
+    // `newDir` even though every write later fsynced inside it was individually
+    // durable. Spies on `openSync` (what `fsyncDirectoryBestEffort` calls
+    // first) since a successful fsync has no other observable side effect.
     const legacy = scratchDir("fsync-new-legacy");
     const parent = scratchDir("fsync-new-parent");
     const newDir = join(parent, "new");
@@ -149,13 +148,12 @@ describe("ensureMigratedFromLegacy", () => {
     }
   });
 
-  it("STILL fsyncs the parent when newDir already existed — presence alone is not proof a prior fsync completed (round 17)", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 17: a prior call could have
-    // had mkdirSync succeed and then crash (or its own fsync throw and
-    // abort) before ever confirming newDir's entry — leaving newDir visible
-    // on this retry. Skipping the fsync merely because the directory
-    // already exists would let that unconfirmed entry stay unconfirmed
-    // forever; a retry must always reconfirm dirname(newDir).
+  it("STILL fsyncs the parent when newDir already existed — presence alone is not proof a prior fsync completed", async () => {
+    // A prior call could have had mkdirSync succeed and then crash (or its own
+    // fsync throw and abort) before ever confirming newDir's entry — leaving
+    // newDir visible on this retry. Skipping the fsync merely because the
+    // directory already exists would let that unconfirmed entry stay
+    // unconfirmed forever; a retry must always reconfirm dirname(newDir).
     const legacy = scratchDir("fsync-existing-legacy");
     const parent = scratchDir("fsync-existing-parent");
     const newDir = join(parent, "new");
@@ -185,12 +183,12 @@ describe("ensureMigratedFromLegacy", () => {
   });
 
   it("fsyncs EVERY newly created ancestor, not just newDir’s immediate parent — the multi-level case", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 17: `{ recursive: true }` can
-    // create several path components at once (a fresh $HOME with no
-    // `~/.local/state/groundwork` at all yet creates it, `drive-pr`, and the clone
-    // directory in one `mkdirSync` call). Fsyncing only `dirname(newDir)`
-    // protects the deepest entry alone — the newly created intermediate
-    // levels' own entries in THEIR parents would still be uncommitted.
+    // `{ recursive: true }` can create several path components at once (a fresh
+    // $HOME with no `~/.local/state/groundwork` at all yet creates it,
+    // `drive-pr`, and the clone directory in one `mkdirSync` call). Fsyncing
+    // only `dirname(newDir)` protects the deepest entry alone — the newly
+    // created intermediate levels' own entries in THEIR parents would still be
+    // uncommitted.
     const legacy = scratchDir("fsync-multilevel-legacy");
     const root = scratchDir("fsync-multilevel-root");
     // Three levels new: root/a, root/a/b, root/a/b/c (== newDir).
@@ -213,8 +211,7 @@ describe("ensureMigratedFromLegacy", () => {
         ensureMigratedFromLegacy(legacy, newDir);
         // Every ancestor's own PARENT is fsynced — root (protects `a`'s
         // entry), level1 (protects `b`'s entry), level2 (protects `c`'s
-        // entry, == newDir's immediate parent, the round-15 fix's own
-        // case).
+        // entry, == newDir's immediate parent, the single-level case).
         expect(openedForSync).toContain(root);
         expect(openedForSync).toContain(level1);
         expect(openedForSync).toContain(level2);
@@ -265,13 +262,13 @@ describe("ensureMigratedFromLegacy", () => {
   });
 
   it("re-checks LIVE immediately before publishing, catching a legacy write that lands after the first scan", async () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 13: a older process can
-    // begin its first legacy write after the initial `legacyFootprint()`
-    // scan returns empty but before the marker is written — the original
-    // code trusted that one snapshot and published anyway, abandoning the
-    // old process's state permanently (every later resolveStateDir() call
-    // trusts the marker without re-scanning). Modelled by making the SECOND
-    // readdirSync call (the re-check) see content the first one did not.
+    // An older process can begin its first legacy write after the initial
+    // `legacyFootprint()` scan returns empty but before the marker is written —
+    // the original code trusted that one snapshot and published anyway,
+    // abandoning the old process's state permanently (every later
+    // resolveStateDir() call trusts the marker without re-scanning). Modelled
+    // by making the SECOND readdirSync call (the re-check) see content the
+    // first one did not.
     const legacy = scratchDir("toctou-legacy");
     const parent = scratchDir("toctou-new-parent");
     const newDir = join(parent, "new");

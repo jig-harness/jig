@@ -97,15 +97,14 @@ export function ciHoldTransitions(
   const transitions: LabelTransition[] = [];
   for (const value of raw) {
     // Not even a proper object — could be a null/primitive/array element
-    // GitHub's API is not documented to emit, but a malformed entry here
-    // means this function cannot tell whether it WAS a ci:hold event: an
-    // older `continue` skipped it, which could expose a stale event as
-    // "latest" and let `release()` remove a label that now belongs to
-    // another actor. Every other unrecognized shape below this line already
-    // fails the whole read closed once it's known to be a ci:hold event;
-    // this is the one case that precedes even knowing that much, so it must
-    // fail closed too rather than assume irrelevance (chatgpt-codex-
-    // connector, PR #4681 round 4).
+    // GitHub's API is not documented to emit, but a malformed entry here means
+    // this function cannot tell whether it WAS a ci:hold event: an older
+    // `continue` skipped it, which could expose a stale event as "latest" and
+    // let `release()` remove a label that now belongs to another actor. Every
+    // other unrecognized shape below this line already fails the whole read
+    // closed once it's known to be a ci:hold event; this is the one case that
+    // precedes even knowing that much, so it must fail closed too rather than
+    // assume irrelevance.
     if (typeof value !== "object" || value === null || Array.isArray(value))
       return null;
     const event = value as Record<string, unknown>;
@@ -246,19 +245,18 @@ export function parseCheckRuns(raw: unknown): CheckRunLite[] | null {
 /**
  * The newest run for `name`+`head`, by id — selected BEFORE any freshness or
  * completion check, never after. An earlier version of every caller below
- * filtered to "completed, non-skipped, fresh" runs FIRST and picked the
- * highest id among THOSE, to stop an unrelated stale/irrelevant run from
- * blocking on its own account — but that same filter also silently prefers
- * an older, already-concluded run over a newer rerun of the identical check
- * that is still queued or in-progress, which is exactly backwards for a
- * proof that is about to certify success: the newest evidence is the only
- * evidence that can still change, so it is the only evidence worth trusting
- * (chatgpt-codex-connector, a reference-implementation pull request round 2, superseding the round 1 fix
- * that introduced the filter-first version). The caller validates
- * freshness/completion/success on the run this returns; there is no
- * fallback to an older one if it fails those checks — waiting for the
- * newest run to actually resolve is the safe direction, not an unrelated
- * inefficiency to route around.
+ * filtered to "completed, non-skipped, fresh" runs FIRST and picked the highest
+ * id among THOSE, to stop an unrelated stale/irrelevant run from blocking on
+ * its own account — but that same filter also silently prefers an older,
+ * already-concluded run over a newer rerun of the identical check that is still
+ * queued or in-progress, which is exactly backwards for a proof that is about
+ * to certify success: the newest evidence is the only evidence that can still
+ * change, so it is the only evidence worth trusting (an earlier filter-first
+ * version got this backwards). The caller validates
+ * freshness/completion/success on the run this returns; there is no fallback to
+ * an older one if it fails those checks — waiting for the newest run to
+ * actually resolve is the safe direction, not an unrelated inefficiency to
+ * route around.
  */
 function newestRunFor(
   runs: readonly CheckRunLite[],

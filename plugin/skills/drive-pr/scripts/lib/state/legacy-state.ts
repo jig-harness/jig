@@ -1,16 +1,15 @@
 /**
  * The legacy-state-dir guard.
  *
- * `resolveStateDir`'s default moved off `--git-common-dir` to
- * stop `.git/` growing without bound. That relocation reproduces,
- * at repo-wide scale, a failure an earlier change's own investigation already hit once
- * by hand: two sibling sessions resolved drive-pr state to two different
- * directories, and each SILENTLY started a fresh round-0 drive over the
- * other's in-flight round budget and held decisions — no error surfaced
- * either time (PRs #4596/#4609). A session running new code must never
- * silently proceed on a fresh, empty new-location state file while the OLD
- * location still holds a drive nobody has migrated — it must refuse loudly
- * instead, and name the fix.
+ * `resolveStateDir`'s default moved off `--git-common-dir` to stop `.git/`
+ * growing without bound. That relocation reproduces, at repo-wide scale, a
+ * failure an earlier investigation already hit once by hand: two sibling
+ * sessions resolved drive-pr state to two different directories, and each
+ * SILENTLY started a fresh round-0 drive over the other's in-flight round
+ * budget and held decisions — no error surfaced either time. A session running
+ * new code must never silently proceed on a fresh, empty new-location state
+ * file while the OLD location still holds a drive nobody has migrated — it must
+ * refuse loudly instead, and name the fix.
  *
  * Gated on a persistent per-clone MARKER (`migratedMarkerPath`), not
  * re-checked on every `resolveStateDir` call: the check itself is a
@@ -37,14 +36,13 @@ import { LOCK_GENERATION_RE } from "./lock.ts";
 import { classifyEntries } from "./state-file-patterns.ts";
 
 /**
- * The bare filename `migratedMarkerPath` writes inside every migrated
- * clone's default state directory — exported so a consumer that needs to
- * recognise the marker by NAME (rather than construct its full path) has
- * one place to import it from, rather than a second hardcoded copy of the
- * string (`reap-state.ts`'s own bookkeeping exclusions — chatgpt-codex-
- * connector, PR #4618 round 13: without this, the reaper's `classify()`
- * had no way to tell this marker apart from real backlog, and reported
- * every healthy migrated clone as containing an "unrecognised" entry).
+ * The bare filename `migratedMarkerPath` writes inside every migrated clone's
+ * default state directory — exported so a consumer that needs to recognise the
+ * marker by NAME (rather than construct its full path) has one place to import
+ * it from, rather than a second hardcoded copy of the string (`reap-state.ts`'s
+ * own bookkeeping exclusions: without this, the reaper's `classify()` had no
+ * way to tell this marker apart from real backlog, and reported every healthy
+ * migrated clone as containing an "unrecognised" entry).
  */
 export const MIGRATED_MARKER_FILENAME = ".migrated-from-legacy";
 
@@ -87,7 +85,7 @@ export function migratedMarkerPath(newDir: string): string {
  * `ensureMigratedFromLegacy` write the migrated marker over state it never
  * actually looked at, abandoning whatever parked decisions and round budget
  * the guard exists to protect — so only ENOENT is treated as empty; every
- * other error refuses loudly instead (docomply-review, a reference-implementation pull request).
+ * other error refuses loudly instead.
  */
 export function legacyFootprint(legacyDir: string): string[] {
   let names: string[];
@@ -126,30 +124,27 @@ const MAX_NAMED_ENTRIES = 10;
  * `migrate-legacy-state.ts` specifically — its legacy-source deletions are
  * explicitly fsynced (see `copyAndRemove`), so the directory could
  * disappear while the originals it was supposed to replace are already
- * gone (chatgpt-codex-connector, a reference-implementation pull request round 15).
+ * gone.
  *
  * `{ recursive: true }` can create SEVERAL path components at once — on a
  * machine with no `~/.local/state/groundwork` at all yet, `dir` sits several
  * new levels deep and `mkdirSync` creates all of them in one call. Fsyncing
  * only `dirname(dir)` protects the deepest new entry alone: the newly created
  * `groundwork` entry in `~/.local/state`, and the newly created `drive-pr`
- * entry in `groundwork`, would both still be uncommitted, so a crash right after this call can lose the
- * WHOLE new hierarchy even though the deepest fsync "succeeded" (chatgpt-
- * codex-connector, PR #4618 round 17). Walking up from `dir` before
- * `mkdirSync` to find every ancestor that does not exist YET, then fsyncing
- * each one's own parent after creation, protects the whole chain — not
- * just its last link.
+ * entry in `groundwork`, would both still be uncommitted, so a crash right
+ * after this call can lose the WHOLE new hierarchy even though the deepest
+ * fsync "succeeded". Walking up from `dir` before `mkdirSync` to find every
+ * ancestor that does not exist YET, then fsyncing each one's own parent after
+ * creation, protects the whole chain — not just its last link.
  *
  * `dirname(dir)` is ALWAYS fsynced, even when `dir` itself already existed
  * before this call (so the walk above found nothing new to add): existence
  * alone is not proof of prior durability. A previous call could have had
- * `mkdirSync` succeed and then crashed, or its fsync itself throw and
- * abort, before ever confirming `dir`'s entry — leaving `dir` visible on a
- * retry with `existed` reading true, which used to skip the fsync
- * permanently. A retry must reconfirm, not trust presence (chatgpt-codex-
- * connector, PR #4618 round 17, fresh evidence after the round-15 fix).
- * One shared helper, not two independently maintained copies, per
- * `references/consistency.md`.
+ * `mkdirSync` succeed and then crashed, or its fsync itself throw and abort,
+ * before ever confirming `dir`'s entry — leaving `dir` visible on a retry with
+ * `existed` reading true, which used to skip the fsync permanently. A retry
+ * must reconfirm, not trust presence. One shared helper, not two independently
+ * maintained copies, per `references/consistency.md`.
  */
 export function createStateDirDurably(dir: string): void {
   const created: string[] = [];
@@ -191,17 +186,16 @@ export function ensureMigratedFromLegacy(
 
   let footprint = legacyFootprint(legacyDir);
   if (footprint.length === 0) {
-    // Re-check immediately before publishing, narrowing the window between
-    // the scan above and this write to microseconds — the same pattern
+    // Re-check immediately before publishing, narrowing the window between the
+    // scan above and this write to microseconds — the same pattern
     // migrate-legacy-state.ts's publishMigratedMarker() already uses for its
-    // own final re-scan. A older process that begins its first
-    // legacy write in that gap would otherwise still get the marker
-    // published over it: every later resolveStateDir() call trusts the
-    // marker without re-scanning, so the old process's state is abandoned
-    // permanently, with nothing to notice (chatgpt-codex-connector, PR
-    // #4618 round 13). Does not claim to close the window entirely — a
-    // process starting after THIS second check is the same accepted
-    // residual the module doc above already documents.
+    // own final re-scan. A older process that begins its first legacy write in
+    // that gap would otherwise still get the marker published over it: every
+    // later resolveStateDir() call trusts the marker without re-scanning, so
+    // the old process's state is abandoned permanently, with nothing to notice.
+    // Does not claim to close the window entirely — a process starting after
+    // THIS second check is the same accepted residual the module doc above
+    // already documents.
     footprint = legacyFootprint(legacyDir);
   }
   if (footprint.length === 0) {

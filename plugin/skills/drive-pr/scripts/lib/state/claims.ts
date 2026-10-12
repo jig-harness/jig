@@ -150,12 +150,11 @@ export function claimPathFor(
  * order is right against a second driver and wrong against a crash — a process
  * killed between the claim and the call left the field non-zero forever, so
  * every future invocation answered `already-marked` without ever looking at
- * GitHub, and the PR stayed a draft that nothing would ever mark (docomply-
- * review rounds 1-3, PR #4057). Splitting the two makes each say only what it
- * can prove: this file says "a driver is attempting the transition right now",
- * expires on its own if that driver dies, and `readyMarkedRound` is written
- * only AFTER `gh pr ready` returns success, so a non-zero value there means
- * the event genuinely fired.
+ * GitHub, and the PR stayed a draft that nothing would ever mark. Splitting the
+ * two makes each say only what it can prove: this file says "a driver is
+ * attempting the transition right now", expires on its own if that driver dies,
+ * and `readyMarkedRound` is written only AFTER `gh pr ready` returns success,
+ * so a non-zero value there means the event genuinely fired.
  *
  * The name does not carry `claimPrefix`, so `claimFilesFor`'s held-batch sweep
  * never sees it — `release-held --all`'s contention check is about held items

@@ -62,39 +62,36 @@ export interface EscapeBaseline {
 // ` {0,3}` before the marker: CommonMark treats up to three leading spaces on
 // an ATX heading as insignificant indentation, not content — anchoring at
 // column zero would let a legally-indented heading (this one, or the
-// `nextHeading` boundary below) slip past unrecognized (`.claude/rules/document-scanning-gates.md`
-// § 1: "a legal-but-unexpected indentation"). Anchored at the END too
-// (`\s*$`, multiline): without it, a heading with trailing content after a
-// valid date pair — `## Baseline window: 2026-09-01 → 2026-09-08 (draft)` —
-// still matched the PREFIX and was accepted as a genuine window rather than
-// failing closed, even though the doc's own contract is the exact shape and
-// nothing else (docomply-review, a reference-implementation pull request round 6). Composes with
-// `WINDOW_CENSUS_RE` below: a heading this excludes for trailing content
-// still matches the broader census, so it is caught as a later malformed
-// heading rather than silently ignored.
+// `nextHeading` boundary below) slip past unrecognized (a legal-but-unexpected
+// indentation). Anchored at the END too (`\s*$`, multiline): without it, a
+// heading with trailing content after a valid date pair — `## Baseline window:
+// 2026-09-01 → 2026-09-08 (draft)` — still matched the PREFIX and was accepted
+// as a genuine window rather than failing closed, even though the doc's own
+// contract is the exact shape and nothing else. Composes with
+// `WINDOW_CENSUS_RE` below: a heading this excludes for trailing content still
+// matches the broader census, so it is caught as a later malformed heading
+// rather than silently ignored.
 const WINDOW_RE =
   /^ {0,3}## Baseline window: (\d{4}-\d{2}-\d{2}) → (\d{4}-\d{2}-\d{2})\s*$/gm;
-// A deliberately BROADER census over the same construct, per
-// `.claude/rules/document-scanning-gates.md` § 2 ("the self-test's recognizer
-// must be strictly broader than the production one, so a construct the
-// parser refuses still fails the test") applied to production code, not just
-// a self-test: `WINDOW_RE` above is precise about digit-shaped dates and the
-// exact arrow, so a heading that is CLOSE but slightly malformed — a
-// single-digit month (`2026-9-01`), a typo'd separator, extra internal
-// whitespace — is invisible to it and `windows.at(-1)` silently falls back
-// to the PREVIOUS, valid window and its stale figure (docomply-review, PR
-// #4674 round 5). This pattern exists only to detect that gap, never to
-// extract data from it. `#{1,6}`, not `{1,3}`: WINDOW_RE only ever matches
-// level-2, but the CENSUS must be broader across every ATX level too, or a
-// `#### Baseline window` heading evades it the same way a malformed date
-// would (coderabbitai, PR #4674).
+// A deliberately BROADER census over the same construct, per the rule that a
+// self-test's recognizer must be strictly broader than the production one, so a
+// construct the parser refuses still fails the test — applied to production
+// code, not just a self-test: `WINDOW_RE` above is precise about digit-shaped
+// dates and the exact arrow, so a heading that is CLOSE but slightly malformed
+// — a single-digit month (`2026-9-01`), a typo'd separator, extra internal
+// whitespace — is invisible to it and `windows.at(-1)` silently falls back to
+// the PREVIOUS, valid window and its stale figure. This pattern exists only to
+// detect that gap, never to extract data from it. `#{1,6}`, not `{1,3}`:
+// WINDOW_RE only ever matches level-2, but the CENSUS must be broader across
+// every ATX level too, or a `#### Baseline window` heading evades it the same
+// way a malformed date would.
 const WINDOW_CENSUS_RE = /^ {0,3}#{1,6}\s*baseline\s*window\b/gim;
 // Anchored to a COMPLETE line (`^...$`, multiline), not merely a substring
 // match anywhere in prose: without this, "Illustration: **Escape rate: 4 of
 // 155 declined findings, ...**" inside the latest window's block is accepted
 // as its authoritative measurement — or, alongside a real line, creates a
 // false "two candidates" ambiguity — even though the doc's own contract is a
-// standalone rate line (docomply-review, a reference-implementation pull request round 5). No comment
+// standalone rate line. No comment
 // suffix needs matching here: `stripNonRenderedMarkdown` already blanks any
 // trailing `<!-- ... -->` before this regex ever runs, so `\s*$` alone
 // covers what remains.
@@ -121,28 +118,25 @@ function backtickRuns(line: string): Array<readonly [number, number]> {
 
 /**
  * Inline code span ranges on ONE line, per CommonMark's actual rule: a span
- * opens on a maximal backtick run and closes on the NEXT run of the EXACT
- * SAME length — any shorter or longer run strictly between the two is
- * itself just content, not a delimiter. `` ``<!--`` `` is a valid
- * two-backtick span containing a literal `<!--`; a single-backtick-only
- * recognizer left it unshielded (docomply-review, a reference-implementation pull request round 7 — the
- * round 6 fix's own stated residual).
+ * opens on a maximal backtick run and closes on the NEXT run of the EXACT SAME
+ * length — any shorter or longer run strictly between the two is itself just
+ * content, not a delimiter. `` ``<!--`` `` is a valid two-backtick span
+ * containing a literal `<!--`; a single-backtick-only recognizer left it
+ * unshielded.
  *
- * DELIBERATE, STATED RESIDUAL (docomply-review, a reference-implementation pull request round 8): spans do
- * not cross lines, though CommonMark permits a code span's closing run to
- * land on a later line. Closing this would require recognizing an inline
- * code span BEFORE fence/comment state is known for the lines it spans —
- * but fence and comment detection deliberately run interleaved, in that
- * order (comment-before-fence, per round 5's own fix), specifically because
+ * DELIBERATE, STATED RESIDUAL: spans do not cross lines, though CommonMark
+ * permits a code span's closing run to land on a later line. Closing this would
+ * require recognizing an inline code span BEFORE fence/comment state is known
+ * for the lines it spans — but fence and comment detection deliberately run
+ * interleaved, in that order (comment-before-fence), specifically because
  * neither can be resolved independently of the other. Giving code spans a
- * document-wide, fence/comment-unaware first pass reopens round 5's exact
- * regression (a fence-shaped line inside a comment misread as a real
- * fence); giving them a document-wide pass AFTER fence/comment resolution
- * needs the interleaved single-pass scanner restructured into multiple
- * dependent passes, which is exactly the general-parser project
- * `.claude/rules/document-scanning-gates.md` § 3 says a hand-rolled
- * recognizer should stop short of, rather than partially build. A
- * multi-line inline span is also a vanishingly rare shape for prose in this
+ * document-wide, fence/comment-unaware first pass reopens the exact regression
+ * (a fence-shaped line inside a comment misread as a real fence); giving them a
+ * document-wide pass AFTER fence/comment resolution needs the interleaved
+ * single-pass scanner restructured into multiple dependent passes, which is
+ * exactly the general-parser project a hand-rolled recognizer should stop short
+ * of, rather than partially build (parse with a real parser, or pin the shape).
+ * A multi-line inline span is also a vanishingly rare shape for prose in this
  * specific, first-party, hand-authored doc, where the risk this residual
  * accepts is negligible next to the risk of reintroducing a confirmed
  * regression to close it.
@@ -176,13 +170,12 @@ function inlineCodeSpans(line: string): Array<readonly [number, number]> {
  * The next `<!--` in `line` at or after `from` that is NOT inside an inline
  * code span — Markdown renders `` `<!--` `` (or `` ``<!--`` ``, or any
  * matching-backtick-length delimiter) as code, not as the start of a real
- * comment, so treating it as one blanks everything after it (with no
- * closing `-->` in sight) through EOF, suppressing every later real
- * heading/rate line (chatgpt-codex-connector, a reference-implementation pull request round 8; round 7's
- * fix, in turn, covered only the single-backtick case). Only applies to
- * finding a comment's START: once `inComment` is already true, nothing
- * about Markdown inline syntax has any meaning inside a real HTML comment,
- * so the search for its closing `-->` is never shielded this way.
+ * comment, so treating it as one blanks everything after it (with no closing
+ * `-->` in sight) through EOF, suppressing every later real heading/rate line
+ * (an earlier fix covered only the single-backtick case). Only applies to
+ * finding a comment's START: once `inComment` is already true, nothing about
+ * Markdown inline syntax has any meaning inside a real HTML comment, so the
+ * search for its closing `-->` is never shielded this way.
  */
 function findUnshieldedCommentStart(line: string, from: number): number {
   const spans = inlineCodeSpans(line);
@@ -201,9 +194,8 @@ function findUnshieldedCommentStart(line: string, from: number): number {
  * validating anything else about it) is a CommonMark-legal fence opener.
  * Backtick-fenced info strings may not themselves contain a backtick — that
  * would be ambiguous with an inline code span — so `` ```foo`bar `` is not a
- * fence at all, just a line starting with backticks (docomply-review, PR
- * #4674 round 5). Tilde fences carry no such restriction, since `~` cannot
- * appear in a backtick code span or vice versa.
+ * fence at all, just a line starting with backticks. Tilde fences carry no such
+ * restriction, since `~` cannot appear in a backtick code span or vice versa.
  */
 function isValidFenceOpen(char: string, rest: string): boolean {
   return char === "`" ? !rest.includes("`") : true;
@@ -216,12 +208,10 @@ function isValidFenceOpen(char: string, rest: string): boolean {
  *
  * Both regexes are plain-text matchers with no notion of Markdown "rendered"
  * context, so without this a heading- or rate-shaped line sitting inside a
- * fenced example or an HTML comment reads as a real one — exactly the class
- * of defeat `.claude/rules/document-scanning-gates.md` § 3 warns a hand-rolled
- * text matcher stays vulnerable to indefinitely, one counterexample per round
- * (docomply-review, a reference-implementation pull request round 3, after two prior rounds of narrower
- * patches to this same file's own scanning logic — this is the class fix,
- * not a fourth variant).
+ * fenced example or an HTML comment reads as a real one — exactly the class of
+ * defeat a hand-rolled text matcher stays vulnerable to indefinitely, one
+ * counterexample per round (this is the class fix, after narrower patches to
+ * this same file's own scanning logic, not another variant).
  *
  * Scoped to what this module's two constructs need excluded, not a general
  * CommonMark implementation: a closing fence must be the SAME character as
@@ -238,8 +228,8 @@ function isValidFenceOpen(char: string, rest: string): boolean {
  * Comment state is checked BEFORE fence recognition, never the reverse: a
  * fence-shaped line inside a multiline HTML comment (`<!--\n\`\`\`\n-->`) is
  * not a real fence, and recognizing it as one left `fence` open past the
- * comment's own close, blanking every real heading/rate line through EOF
- * (docomply-review, a reference-implementation pull request round 5). Once inside a REAL fence, comment
+ * comment's own close, blanking every real heading/rate line through EOF.
+ * Once inside a REAL fence, comment
  * syntax is correctly never scanned at all — `<!--`/`-->` inside a fenced
  * code block are literal text, not a Markdown comment, exactly like
  * CommonMark's own rendering.
@@ -363,27 +353,25 @@ export function parseRecordedEscapeBaseline(
   // hazard the comment above describes. `[ \t]`, not a literal space: a tab
   // is equally legal CommonMark ATX-heading whitespace (`##\tHeading`), and
   // a boundary that only recognized a space would let the scan run past a
-  // tab-delimited unrelated section into whatever decoy sits inside it
-  // (chatgpt-codex-connector, a reference-implementation pull request). `(?:[ \t]|$)`, not just `[ \t]`: a
+  // tab-delimited unrelated section into whatever decoy sits inside it.
+  // `(?:[ \t]|$)`, not just `[ \t]`: a
   // bare `##` at end-of-line is ALSO a valid (empty) ATX heading — CommonMark
   // waives the whitespace-after-marker requirement specifically when the
   // heading is empty — so a boundary requiring trailing whitespace missed it
-  // and let the scan run past it too (coderabbitai, PR #4674).
+  // and let the scan run past it too.
   const nextHeading = /^ {0,3}##(?:[ \t]|$)/m.exec(afterWindowFull);
   const afterWindow =
     nextHeading === null
       ? afterWindowFull
       : afterWindowFull.slice(0, nextHeading.index);
-  // Exactly one, not "at least one": the doc's own convention is one rate
-  // line per window. Two matches — an obsolete line left behind when a
-  // correction is appended above or below it, or a decoy inside a fenced
-  // example or HTML comment within this window's own block — makes `.at(0)`
-  // silently prefer whichever sorts first, which can be the STALE one rather
-  // than the live figure (docomply-review, chatgpt-codex-connector, a reference-implementation pull request
-  // round 2). Ambiguous is exactly the "duplicate entry where the model
-  // assumes uniqueness" shape `.claude/rules/document-scanning-gates.md` § 1
-  // requires failing closed on, so any count other than one degrades to
-  // `null` the same as zero already did.
+  // Exactly one, not "at least one": the doc's own convention is one rate line
+  // per window. Two matches — an obsolete line left behind when a correction is
+  // appended above or below it, or a decoy inside a fenced example or HTML
+  // comment within this window's own block — makes `.at(0)` silently prefer
+  // whichever sorts first, which can be the STALE one rather than the live
+  // figure. Ambiguous is exactly the "duplicate entry where the model assumes
+  // uniqueness" shape a scan must fail closed on, so any count other than one
+  // degrades to `null` the same as zero already did.
   const rateMatches = [...afterWindow.matchAll(RATE_RE)];
   const r = rateMatches.length === 1 ? rateMatches[0] : undefined;
   if (r === undefined) return null;

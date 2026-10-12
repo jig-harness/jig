@@ -18,17 +18,15 @@ shortcut honest against it.
 > labels, deploy tiers, post-deploy actions) are **generated projections** that
 > reference area *names* — they never re-hardcode the patterns. Any
 > hand-maintained shortcut (e.g. a fast-path regex in CI) is mechanically
-> checked against the catalog in both directions — plus, for every tracked
-> file the shortcut itself calls code-bearing, that it resolves to *some*
-> area. Neither guarantee is completeness: a tracked file the shortcut
-> treats as non-code is invisible to all three checks whether or not the
-> catalog would classify it as code-bearing — that determination is the
-> resolver's job when actually invoked, not something a fast-path regex
-> sync check can stand in for. And "resolves to some area" is not
-> "resolves to a *code-bearing* area": a shortcut regex that leaks in a
-> genuinely docs-only area's prefix passes all three checks while still
-> running the heavy build for docs-only changes, since none of them assert
-> that a regex-positive file's area is specifically code-bearing.
+> checked against the catalog in both directions, and every tracked file the
+> shortcut calls code-bearing must resolve to *some* area.
+
+Those shortcut checks keep the regex and the catalog in sync; they do not
+prove the regex complete. A tracked file the regex treats as non-code is
+invisible to them (classifying it is the resolver's job), and "resolves to
+some area" is weaker than "resolves to a code-bearing area": a regex that
+leaks a docs-only area's prefix passes all three checks and runs the heavy
+build for docs-only changes.
 
 The catalog is a *single source of truth* (see [GLOSSARY.md](../../GLOSSARY.md)):
 one shared change-area vocabulary, many thin per-consumer projections.
@@ -72,7 +70,7 @@ one shared change-area vocabulary, many thin per-consumer projections.
    be covered by one of its own globs. A new, unmapped workspace fails CI in
    the same PR that introduces it, instead of silently skipping all its gates.
 
-## Design rules (from the reference implementation)
+## Design rules
 
 - **`impliedBy` is one directed relation, read one way**: "a change to Y also
   implies X" is written by listing Y in X's `impliedBy`. Fan-out and fan-in are
@@ -85,7 +83,7 @@ one shared change-area vocabulary, many thin per-consumer projections.
 - **`category` is a grouping tag only** — never a build or deploy lane. Lanes
   are `deployTier` and the projections.
 - **Don't populate a projection block before its consumer exists** — an empty
-  `review`/`postDeploy`/`linear` block is drift waiting to happen.
+  `review`/`postDeploy`/tracker-label block is drift waiting to happen.
 
 ## Maturity levels
 
@@ -137,23 +135,30 @@ one shared change-area vocabulary, many thin per-consumer projections.
    `checkFilterCodeAreaCoverage`, is unsatisfiable whenever a code-bearing
    area isn't deploy-critical (`deployTier: none`). This is **Strict**.
 
-## Port status
+## Status
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| `tools/change-areas/catalog.yaml` (entry shape) | [`reference/catalog/catalog.example.yaml`](reference/catalog/catalog.example.yaml) — a fully valid generic catalog exercising every field; [`templates/catalog.yaml`](templates/catalog.yaml) — a copyable one-area starter |
-| `schema.ts` + `check-catalog.ts` (schema + graph invariants) | [`reference/catalog/README.md`](reference/catalog/README.md) — the schema and the graph invariants as a language-neutral spec, with the resolver algorithm |
-| `resolve.ts` (seed match → `impliedBy` closure), `emit.ts` (projection emitters) | Documented as an algorithm + the projection list in [`reference/catalog/README.md`](reference/catalog/README.md) |
-| `tools/change-areas/check-catalog.ts`'s four-direction regex-mirror guard (`checkFilterCoverage`, `checkFilterSegmentCoverage`, `checkFilterFileCoverage`, `checkFilterCodeAreaCoverage`) | The four-direction model, with each check's inputs/algorithm/failure condition, is the language-neutral spec in [`reference/catalog/README.md`](reference/catalog/README.md#the-regex-mirror-guard); [`reference/regex-mirror/`](reference/regex-mirror/) ships `checkFilterSegmentCoverage` as a runnable Bun + TypeScript gate (matched against parsed `paths:` values, with a self-test and fixtures — including a fixture asserting that prose under a `notes:` field cannot satisfy path coverage); the other three directions are documented recipes, not implemented here |
+What this module provides:
 
-Also landed: [`mappings.md`](mappings.md) (CI path-filter providers, tracker
-labels, deploy tiers) and [`maturity.yaml`](maturity.yaml).
+- [`templates/catalog.yaml`](templates/catalog.yaml) — a copyable one-area
+  catalog starter.
+- [`reference/catalog/catalog.example.yaml`](reference/catalog/catalog.example.yaml)
+  — a valid generic catalog that exercises every field and both shapes of
+  `impliedBy`.
+- [`reference/catalog/README.md`](reference/catalog/README.md) — the
+  language-neutral specification: entry schema, schema and graph validation,
+  the resolver algorithm, the projections, and the four checks of the
+  regex-mirror guard with each one's inputs, algorithm and failure condition.
+- [`reference/regex-mirror/`](reference/regex-mirror/) — the runnable
+  regex → catalog check (`checkFilterSegmentCoverage`) as a Bun + TypeScript
+  gate that matches against parsed `paths:` values, with its self-test and
+  fixtures.
+- [`mappings.md`](mappings.md) (CI path filters, tracker labels, deploy tiers)
+  and [`maturity.yaml`](maturity.yaml).
 
-**Not ported** (per "don't port the unproven" / values-vs-mechanisms): the
-resolver, validators, and emitters are TypeScript in the reference
-implementation and are represented here as a language-neutral spec plus the one
-guard that runs natively with Bun — a change-area resolver is
-a structured-data + graph job best written in whatever language the target repo
-already uses, implemented in its own stack. The docomply catalog's actual area
-names, deploy tiers, and post-deploy actions are product-domain values and are
-replaced throughout with neutral examples.
+Deliberately left out: a runnable resolver, catalog validator and projection
+emitters. A change-area resolver is a structured-data and graph job best
+written in the language the target repository already uses, so the module
+specifies it instead of shipping one; only the regex → catalog check, which
+needs no resolver, is runnable here. The other three guard checks are
+documented recipes. All area names, deploy tiers and post-deploy actions are
+neutral examples.

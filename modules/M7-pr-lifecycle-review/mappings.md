@@ -8,7 +8,7 @@ mechanisms onto concrete forges, [review bots](../../GLOSSARY.md), agent
 runtimes, [CI](../../GLOSSARY.md) providers, and
 [issue trackers](../../GLOSSARY.md). Replace `<placeholders>` with your values.
 
-## The two gates, per rung
+## The gates, per rung
 
 | Gate | Local (hook) | CI (authority) |
 |------|--------------|----------------|
@@ -144,8 +144,8 @@ pr_hygiene:
 
 | Forge | Draft PR | Human-only merge | Thread state → gate input |
 |-------|----------|------------------|---------------------------|
-| GitHub | native draft PRs | branch protection: required reviews + required checks, no self-merge of bot PRs | GraphQL `pullRequest.reviewThreads` → rows of (`id`, `isResolved`, last comment) |
-| GitLab | `Draft:` title prefix | protected branch + "all threads resolved" + approval rules | `merge_requests/:iid/discussions` (`id`, `resolved`, `resolvable`, last note) → same rows |
+| GitHub | native draft PRs | branch protection: required reviews + required checks, no self-merge of bot PRs | GraphQL `pullRequest.reviewThreads` → rows of (`id`, `isResolved`, reply body), one per reply, newest first |
+| GitLab | `Draft:` title prefix | protected branch + "all threads resolved" + approval rules | `merge_requests/:iid/discussions` (`id`, `resolved`, `resolvable`, every note) → same rows |
 | Gitea / Forgejo | native draft PRs | branch protection + required approvals | conversations API → same rows |
 
 Every forge gives the same three things and nothing more: an id, a resolved
@@ -187,9 +187,10 @@ decodes it:
 | Forge label / emoji | a reaction or thread label | **not shipped** — no forge above models a verdict field. If yours does, fetch it and extend the exporter's `canon()`; a real field beats any body convention |
 
 **Groundwork takes no position on which of the two.** `token` is the exporter's
-*default*, not a recommendation — it is the form the reference implementation
-happens to use, and it has not run through enough review cycles to be called
-settled (see the [README](README.md) § Port status). Both are one variable apart,
+*default*, not a recommendation — it is the form the
+[`resolve-review-comments`](../../plugin/skills/resolve-review-comments/README.md)
+skill writes, and it has not run through enough review cycles to be called
+settled (see the [README](README.md#the-verdict-encoding)). Both are one variable apart,
 deliberately, so an adopter picking the other is not fighting the module. What
 groundwork does assert is the pair of properties below; those are what the
 evidence supports, and they hold for any encoding including a forge field that
@@ -209,7 +210,8 @@ Whichever you pick, two properties do the work:
   [`maturity.yaml`](maturity.yaml) sits a rung above the convention.
 
 Adopters whose tooling emits different words (`accepted` for `addressed`,
-`obsolete` for `moot`) map them in the exporter's `canon()` — the exporter is
+`obsolete` for `moot`) map them in the exporter's `canon()`, whose synonym
+table is `verdicts` in [`lib/module-gates.ts`](../../lib/module-gates.ts) — the exporter is
 already forge- and repo-specific, and the gate's vocabulary stays closed so a
 typo'd resolution still fails.
 
@@ -438,7 +440,7 @@ reads the target base branch's copy.
 
 ## CI providers
 
-Any provider works — the two gates use Bun and TypeScript. The only provider-specific
+Any provider works — the gates use Bun and TypeScript. The only provider-specific
 piece is the thread-state export step (a forge API call), shown above for
 GitHub Actions and GitLab CI.
 

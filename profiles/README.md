@@ -5,8 +5,8 @@ level, for a project shape. Profiles are starting points, not contracts — the
 [audit](../audit/) report's recommendations override generic profile advice
 for brownfield projects.
 
-Every module (M0–M12) is now ported, so a profile's target resolves to
-concrete criteria: "M1 Lite" means passing every `level: lite` criterion in
+Every module (M0–M12) carries a `maturity.yaml`, so a profile's target
+resolves to concrete criteria: "M1 Lite" means passing every `level: lite` criterion in
 [`modules/M1-gates-enforcement-ladder/maturity.yaml`](../modules/M1-gates-enforcement-ladder/maturity.yaml),
 and likewise per module — the criteria live only there (single source of
 truth), so profiles name levels, never restate criteria. The
@@ -43,8 +43,9 @@ does this change imply?" stops being obvious.
 ## Regulated/Strict
 
 Everything in Team/Standard at Strict where defined, plus: **M1 Strict**
-(suppression-token registry, review markers), **M0/M7 Strict** (HITL decision
-registry), **M8** (learning loop with regression corpus), **M10 Standard+**
+(suppression-token registry, review markers), **M0 Strict** (instruction
+freshness checked, a named owner), **M7 Strict** (HITL decision registry,
+merge reserved to humans), **M8** (learning loop with regression corpus), **M10 Standard+**
 (verify-then-promote, environment separation), **M11** (process
 observability/audit trails). Compliance artifacts (data-processing registers,
 threat models) are out of groundwork's scope but hook into M4's governance and

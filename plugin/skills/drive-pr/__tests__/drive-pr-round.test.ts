@@ -331,8 +331,8 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("'ci:hold' is still present");
   });
 
-  it("refuses to announce a converged PR that is still a draft (docomply-review round 6, a reference-implementation pull request)", async () => {
-    // CONVERGED is a claim about the posting reviewer (docomply-review),
+  it("refuses to announce a converged PR that is still a draft", async () => {
+    // CONVERGED is a claim about the posting reviewer,
     // which reviews drafts — it says nothing about CodeRabbit, which refuses
     // one outright. Announcing "safe to merge" about a PR CodeRabbit has
     // never seen, and by repo policy never will until a human or a drive
@@ -340,7 +340,7 @@ describe("announce-merge-ready.ts", () => {
     // refuses to report as exit 0.
     //
     // This is now `checkLiveState()`'s own draft message, not a bespoke
-    // up-front one (docomply-review round 18, a reference-implementation pull request): the up-front check
+    // up-front one: the up-front check
     // used to trust `status.draft`, captured before real elapsed time (the
     // comment sweep, worktree checks) that a human could mark the PR Ready
     // during — folded into `checkLiveState()`'s fresh read instead, which
@@ -351,16 +351,15 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("is a draft again as of this re-read");
   });
 
-  it("withdraws an existing announcement when the PR is ALREADY draft at the up-front gate, not just when it turns draft mid-run (docomply-review rounds 16 and 18, PR #4057)", async () => {
-    // Round 16: the up-front `status.draft === true` check used to fire
-    // through `fail()` before `existingIds` was even computed, so a PR that
-    // is ALREADY a draft when this run starts — with a "Safe to merge"
-    // comment already standing for its current head — refused correctly but
-    // skipped every withdrawal guard below it entirely, leaving the stale
-    // comment visible. Round 18: that fix still trusted the STALE
-    // `status.draft` rather than a fresh read, so it was folded into
-    // `checkLiveState()` entirely — its own draft-confirmed branch already
-    // withdraws `existingIds` via `withdrawIfConfirmedStale`.
+  it("withdraws an existing announcement when the PR is ALREADY draft at the up-front gate, not just when it turns draft mid-run", async () => {
+    // The up-front `status.draft === true` check used to fire through `fail()`
+    // before `existingIds` was even computed, so a PR that is ALREADY a draft
+    // when this run starts — with a "Safe to merge" comment already standing
+    // for its current head — refused correctly but skipped every withdrawal
+    // guard below it entirely, leaving the stale comment visible. The first fix
+    // still trusted the STALE `status.draft` rather than a fresh read, so it
+    // was folded into `checkLiveState()` entirely — its own draft-confirmed
+    // branch already withdraws `existingIds` via `withdrawIfConfirmedStale`.
     const r = await announce({ ...CONVERGED, isDraft: true }, false, {
       staleAnnouncementFor: CONVERGED.head,
     });
@@ -396,7 +395,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).not.toContain("withdrawing now-stale announcement");
   });
 
-  it("refuses to announce (or leave a standing announcement) when the PR turns draft during the sweep (docomply-review round 14, a reference-implementation pull request)", async () => {
+  it("refuses to announce (or leave a standing announcement) when the PR turns draft during the sweep", async () => {
     // The up-front gate only catches a draft PR AT THAT MOMENT. checkLiveState()
     // is what the comment sweep and both idempotence-path checks call
     // afterward, and none of them previously re-read isDraft — so an owner
@@ -414,7 +413,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("is a draft again as of this re-read");
   });
 
-  it("refuses to announce when checkLiveState()'s isDraft read is malformed, not merely `!== true` (docomply-review round 15, a reference-implementation pull request)", async () => {
+  it("refuses to announce when checkLiveState()'s isDraft read is malformed, not merely `!== true`", async () => {
     // isDraft is decision evidence from an external response — the same
     // discipline evaluate() and mark-ready.ts already apply to it. An
     // absent, null, or otherwise non-boolean value must not read as "not a
@@ -428,7 +427,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("not a boolean");
   });
 
-  it("withdraws an EXISTING announcement when the PR is confirmed draft again, not just the CONFLICTING case (docomply-review round 15, a reference-implementation pull request)", async () => {
+  it("withdraws an EXISTING announcement when the PR is confirmed draft again, not just the CONFLICTING case", async () => {
     // `liveConfirmedDraft` mirrors `liveConfirmedConflicting`: a draft
     // confirmed by the very first `checkLiveState()` call — the one this
     // function's top-level `liveRc` check reads before ever reaching the
@@ -449,7 +448,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("the PR is a draft again");
   });
 
-  it('re-checks draftness (not just readLiveness\'s state+head) before reporting "already announced" (docomply-review round 15, a reference-implementation pull request)', async () => {
+  it('re-checks draftness (not just readLiveness\'s state+head) before reporting "already announced"', async () => {
     // The idempotence path used to re-confirm with `readLiveness`, which
     // answers state and head only — so a PR that went back to draft during
     // the comment sweep still passed this check and reported "already
@@ -472,7 +471,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).not.toContain("already announced for");
   });
 
-  it("re-checks draftness one last time after the post-write reconciliation sweep, before the final success return (docomply-review round 15, a reference-implementation pull request)", async () => {
+  it("re-checks draftness one last time after the post-write reconciliation sweep, before the final success return", async () => {
     // `afterRc` (right after the POST) already re-reads isDraft, but the
     // duplicate-reconciliation sweep that follows it is itself a real
     // round-trip an owner's Ready→draft conversion can land in — and until
@@ -492,7 +491,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("withdrawing this announcement");
   });
 
-  it("re-checks draftness before the dry-run success return too, not just the tree (docomply-review round 15, a reference-implementation pull request, summary finding)", async () => {
+  it("re-checks draftness before the dry-run success return too, not just the tree", async () => {
     // The dry-run branch only re-checked cleanliness before its success
     // return; `--dry-run` reporting "would announce" over a PR that went back
     // to draft since the up-front check is the same stale-eligibility mistake
@@ -509,20 +508,19 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("is a draft again as of this re-read");
   });
 
-  it("withdraws the RIVAL announcement too, not just refuses, when the race path confirms draft (docomply-review rounds 15 and 17, PR #4057, summary findings)", async () => {
+  it("withdraws the RIVAL announcement too, not just refuses, when the race path confirms draft", async () => {
     // The race-duplicate branch (our own comment withdrawn, a rival's stands)
     // already re-checked cleanliness one last time before its success return.
-    // Round 15 added the same recheck for draftness, but only to REFUSE
-    // (chatgpt-codex-connector round 17): a confirmed draft must not retain a
-    // STANDING announcement, whoever posted it, so this now withdraws the
-    // rival's surviving comment too — `withdrawIfConfirmedStale` runs against
-    // `[lowest]`, not the pre-POST `existingIds` (which named nothing here;
-    // the rival's comment did not exist yet when that sweep ran).
+    // An earlier version added the same recheck for draftness, but only to
+    // REFUSE: a confirmed draft must not retain a STANDING announcement,
+    // whoever posted it, so this now withdraws the rival's surviving comment
+    // too — `withdrawIfConfirmedStale` runs against `[lowest]`, not the
+    // pre-POST `existingIds` (which named nothing here; the rival's comment did
+    // not exist yet when that sweep ran).
     // `draftAfterLiveStateReads: 3` lets the first three `checkLiveState()`
     // calls (top-level, pre-POST, post-write afterRc) see the fixture's own
-    // non-draft answer — so the POST and the duplicate reconciliation
-    // genuinely happen — and flips to draft for the fourth call, the
-    // race-path recheck.
+    // non-draft answer — so the POST and the duplicate reconciliation genuinely
+    // happen — and flips to draft for the fourth call, the race-path recheck.
     const dirty = makeScratchRepo("scratch-announce-draft-race-reconcile");
     const r = await announce(
       { threads: [], reviewedSha: dirty.head, head: dirty.head },
@@ -608,7 +606,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("leftover-midrun.txt");
   });
 
-  it("re-checks cleanliness at the LAST point before --dry-run's own success return (docomply-review, #4046 round 2 summary finding)", async () => {
+  it("re-checks cleanliness at the LAST point before --dry-run's own success return", async () => {
     // `--dry-run` never posts, but it is still a success return, and body
     // construction sits between the up-front pass and it — the same window
     // the pre-POST and idempotent-return guards close on the paths that DO
@@ -642,7 +640,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.posted).toBe(false);
   });
 
-  it("refuses when the PR stopped being mergeable before the post (#3995 review round 7)", async () => {
+  it("refuses when the PR stopped being mergeable before the post", async () => {
     // CONVERGED is a claim about the REVIEW and deliberately survives a base
     // that moved — gating it on the live base tip would mean never converging,
     // because GitHub's baseRefOid lags an active base as a standing condition.
@@ -660,7 +658,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("SAFE TO MERGE");
   });
 
-  it("refuses as INDETERMINATE (exit 1), not PR_NOT_OPEN (5), on a missing last-moment state (#3995 review round 15)", async () => {
+  it("refuses as INDETERMINATE (exit 1), not PR_NOT_OPEN (5), on a missing last-moment state", async () => {
     // Exit 5 is the shared PR_NOT_OPEN contract elsewhere in this skill and
     // asserts the PR is POSITIVELY known finished (MERGED/CLOSED). A missing
     // or unrecognized `state` on an otherwise-successful read only proves the
@@ -670,7 +668,7 @@ describe("announce-merge-ready.ts", () => {
     // counter as `mergeableMovesTo`/`headMovesTo`; `5` also lets the final-CI
     // certificate's PR snapshot answer truthfully — including its own
     // last-moment re-check, one more read than the certificate used to make
-    // (chatgpt-codex-connector, a reference-implementation pull request round 2) — so this pins THIS
+    // — so this pins THIS
     // script's own last-moment guard.
     const r = await announce(
       { ...CONVERGED, stateMovesTo: null, headMovesAfter: 5 },
@@ -705,7 +703,7 @@ describe("announce-merge-ready.ts", () => {
     // `headMovesAfter: 9` (was 7): `ci-hold.ts final-ready` now re-snapshots
     // the PR a second time before returning success — its own last-moment
     // re-check, closing an equivalent race one layer down
-    // (chatgpt-codex-connector, a reference-implementation pull request round 2) — so each of this script's
+    // — so each of this script's
     // two `confirmFinalCi()` calls ahead of this window (`prePostFinalCiRc`,
     // before the POST, and the read this test targets sits behind both of
     // them) now consumes one more read apiece. Net +2, verified empirically
@@ -720,7 +718,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("withdrawing this announcement");
   });
 
-  it("WITHDRAWS its own announcement when the worktree became dirty DURING the POST (chatgpt-codex-connector, #4046 round 1)", async () => {
+  it("WITHDRAWS its own announcement when the worktree became dirty DURING the POST", async () => {
     // The pre-POST tree check narrows this window; it cannot close it. The
     // check and the POST stay separate operations, so an edit landing in the
     // working directory while the POST is in flight still leaves "Safe to
@@ -743,7 +741,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("withdrawing this announcement");
   });
 
-  it("re-checks cleanliness at the LAST point before the final success return (chatgpt-codex-connector, #4046 round 2)", async () => {
+  it("re-checks cleanliness at the LAST point before the final success return", async () => {
     // The reconciliation sweep after the post-write confirmation is itself a
     // real round-trip, and the normal (no-race) path returns 0 right after it
     // with no further check — reopening the exact check-then-act window the
@@ -764,7 +762,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("withdrawing this announcement");
   });
 
-  it("re-checks cleanliness after withdrawing a duplicate in the race path too (chatgpt-codex-connector, #4046 round 2)", async () => {
+  it("re-checks cleanliness after withdrawing a duplicate in the race path too", async () => {
     // Even in the branch where OUR announcement is withdrawn (a rival's
     // stands), exit 0 is still this session's own claim to leave nothing on
     // the floor — and the DELETE that withdraws our duplicate is itself a
@@ -789,7 +787,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("uncommitted state");
   });
 
-  it("the worktree cleanliness check refuses on a TIMEOUT rather than hanging (chatgpt-codex-connector, #4046 round 2)", async () => {
+  it("the worktree cleanliness check refuses on a TIMEOUT rather than hanging", async () => {
     // `checkWorktreeClean()`'s `git status --porcelain` call carried no
     // deadline: a stalled filesystem or a lock held by another process could
     // hang the announcement indefinitely instead of returning the documented
@@ -835,15 +833,14 @@ describe("announce-merge-ready.ts", () => {
     }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
   });
 
-  it("the unconcluded-git-op probe itself refuses on a TIMEOUT rather than hanging (docomply-review, #4046 round 4)", async () => {
+  it("the unconcluded-git-op probe itself refuses on a TIMEOUT rather than hanging", async () => {
     // The FIRST call `checkWorktreeClean()` makes (`unconcludedGitOpMarker`)
-    // needs its own deadline, distinct from the later `git status
-    // --porcelain` call the sibling probe above targets — a synchronous
-    // `existsSync()` inside that helper had no deadline at all, and folding
-    // the whole check into one bounded subprocess is what closed it (round 4
-    // review). This stub hangs ONLY on `rev-parse --git-dir` — the one call
-    // that helper's own script makes — so the probe pins THIS call, not the
-    // status one.
+    // needs its own deadline, distinct from the later `git status --porcelain`
+    // call the sibling probe above targets — a synchronous `existsSync()`
+    // inside that helper had no deadline at all, and folding the whole check
+    // into one bounded subprocess is what closed it. This stub hangs ONLY on
+    // `rev-parse --git-dir` — the one call that helper's own script makes — so
+    // the probe pins THIS call, not the status one.
     const dirty = makeScratchRepo("scratch-announce-git-rev-parse-hang");
     const realGit = Bun.which("git");
     if (!realGit) throw new Error("no git on PATH to wrap for this probe");
@@ -883,7 +880,7 @@ describe("announce-merge-ready.ts", () => {
     }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
   });
 
-  it("still detects an untracked leftover under status.showUntrackedFiles=no (chatgpt-codex-connector, #4046 round 2)", async () => {
+  it("still detects an untracked leftover under status.showUntrackedFiles=no", async () => {
     // `git status --porcelain` alone inherits `status.showUntrackedFiles` from
     // repo or user config; under `=no` it reports an untracked scratch file as
     // a clean tree, silently certifying a leftover as shipped. An explicit
@@ -909,7 +906,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("leftover-untracked.txt");
   });
 
-  it("still detects a dirty submodule ignored via submodule.<name>.ignore=all (docomply-review, #4046 round 3)", async () => {
+  it("still detects a dirty submodule ignored via submodule.<name>.ignore=all", async () => {
     // `git status` — even with an explicit untracked-files mode — still
     // honours `submodule.<name>.ignore`/`.gitmodules`: `ignore = all` on a
     // tracked submodule hides an uncommitted content change inside it. An
@@ -958,7 +955,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("uncommitted state");
   });
 
-  it("refuses over an unconcluded merge even though porcelain status is empty (chatgpt-codex-connector, #4046 round 3)", async () => {
+  it("refuses over an unconcluded merge even though porcelain status is empty", async () => {
     // `git checkout --ours f && git add f` resolves a conflict back to a
     // tree that matches what was already committed — `git status
     // --porcelain --untracked-files=normal --ignore-submodules=none` reports
@@ -978,7 +975,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("MERGE_HEAD");
   });
 
-  it("refuses over a paused interactive rebase even though the tree is clean (docomply-review, #4046 round 4)", async () => {
+  it("refuses over a paused interactive rebase even though the tree is clean", async () => {
     // Same gap as the merge case above, one state further: an `edit`-paused
     // rebase leaves the checked-out commit's tree fully clean while
     // `rebase-merge` sits in the git-dir because the rebase itself was
@@ -995,7 +992,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("rebase-merge");
   });
 
-  it("refuses over a local commit that landed after drive-status.ts already verified HEAD (chatgpt-codex-connector, #4046 round 4)", async () => {
+  it("refuses over a local commit that landed after drive-status.ts already verified HEAD", async () => {
     // The up-front check passes: local HEAD still matches the reviewed head
     // at that point. `commitAfterReads: 3` lands a REAL commit — not an
     // uncommitted edit — starting at the FIRST head-read this script's own
@@ -1017,7 +1014,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain(dirty.head);
   });
 
-  it("refuses over a commit that lands INSIDE checkWorktreeClean, between its own HEAD read and its later probes (chatgpt-codex-connector, #4046 round 5)", async () => {
+  it("refuses over a commit that lands INSIDE checkWorktreeClean, between its own HEAD read and its later probes", async () => {
     // Narrower than the mid-run probe above: this one never leaves
     // checkWorktreeClean() at all. The FIRST thing that function does is
     // `git rev-parse HEAD`; a `git` stub answers that ONE call with the
@@ -1075,12 +1072,11 @@ describe("announce-merge-ready.ts", () => {
     // function exists to close, reached through the one read it could not
     // make succeed rather than one it could see change.
     //
-    // `prViewUnreadableAfter: 9` (was 7): shares the head-moved probe's
-    // shift above — `ci-hold.ts final-ready` now makes two reads per
-    // `confirmFinalCi()` call instead of one (chatgpt-codex-connector,
-    // a reference-implementation pull request round 2), and two such calls (`prePostFinalCiRc`, then this
-    // window) sit ahead of the POST-WRITE read this test targets. Net +2,
-    // verified empirically against this suite.
+    // `prViewUnreadableAfter: 9` (was 7): shares the head-moved probe's shift
+    // above — `ci-hold.ts final-ready` now makes two reads per
+    // `confirmFinalCi()` call instead of one, and two such calls
+    // (`prePostFinalCiRc`, then this window) sit ahead of the POST-WRITE read
+    // this test targets. Net +2, verified empirically against this suite.
     const r = await announce({ ...CONVERGED, prViewUnreadableAfter: 9 }, false);
     expect(r.exitCode).toBe(1);
     expect(r.posted).toBe(true);
@@ -1089,20 +1085,20 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("withdrawing this announcement");
   });
 
-  it("WITHDRAWS its own announcement when the PR stops being MERGEABLE after the post (#3995 round 17)", async () => {
+  it("WITHDRAWS its own announcement when the PR stops being MERGEABLE after the post", async () => {
     // The post-write re-read used to ask for `state,headRefOid` only, and this
     // comment's claim is broader than either: a BASE branch advancing between
     // the pre-POST check and the POST flips the PR to CONFLICTING with the head
     // sitting exactly where it was. A head-only witness confirms happily, and
-    // "Safe to merge" stands on a PR that no longer merges
-    // (chatgpt-codex-connector, a reference-implementation pull request round 17). The fix is to re-run the
+    // "Safe to merge" stands on a PR that no longer merges.
+    // The fix is to re-run the
     // same `check_live_state` the pre-POST gate uses, so both sides of the
     // write ask one question rather than two that can drift.
     //
     // `headMovesAfter: 8` (was 6): same `final-ready` shift as the sibling
     // probes above — one extra read per `confirmFinalCi()` call, two such
     // calls ahead of this window — net +2, verified empirically against
-    // this suite (chatgpt-codex-connector, a reference-implementation pull request round 2). Only the
+    // this suite. Only the
     // POST-WRITE read sees CONFLICTING, and it sees it at an UNCHANGED head
     // — which is precisely what a state+head check cannot distinguish from
     // success.
@@ -1272,13 +1268,13 @@ describe("announce-merge-ready.ts", () => {
     // probe targets; the confirmation read inside the branch is the first to
     // see the move.
     //
-    // The idempotence-path confirmation is `checkLiveState()` itself now, not
-    // a bespoke re-derivation of the same question (docomply-review round 15,
-    // a reference-implementation pull request — same fix as the CONFLICTING/draft withdrawal path sharing one
-    // predicate), so the wording is that function's own "advanced from ... to
-    // ..." message rather than a branch-local "does not speak for the live
-    // head" — the guarantee under test (refuses, does not post, does not fall
-    // through to "already announced") is unchanged.
+    // The idempotence-path confirmation is `checkLiveState()` itself now, not a
+    // bespoke re-derivation of the same question (the same shape as the
+    // CONFLICTING/draft withdrawal path sharing one predicate), so the wording
+    // is that function's own "advanced from ... to ..." message rather than a
+    // branch-local "does not speak for the live head" — the guarantee under
+    // test (refuses, does not post, does not fall through to "already
+    // announced") is unchanged.
     const r = await announce(
       { ...CONVERGED, headMovesTo: PREV, headMovesAfter: 5 },
       false,
@@ -1336,9 +1332,9 @@ describe("announce-merge-ready.ts", () => {
     //
     // `stateChangesAfter: 9` (was 7): same `final-ready` shift as the sibling
     // probes above — `ci-hold.ts final-ready` now makes two reads per
-    // `confirmFinalCi()` call instead of one (chatgpt-codex-connector,
-    // a reference-implementation pull request round 2), and two such calls sit ahead of the POST-WRITE read
-    // this test targets. Net +2, verified empirically against this suite.
+    // `confirmFinalCi()` call instead of one, and two such calls sit ahead of
+    // the POST-WRITE read this test targets. Net +2, verified empirically
+    // against this suite.
     const r = await announce(
       { ...CONVERGED, stateChangesTo: "MERGED", stateChangesAfter: 9 },
       false,
@@ -1353,12 +1349,11 @@ describe("announce-merge-ready.ts", () => {
     // pre-post read cannot see it. "Safe to merge" is a statement about a
     // decision that has already been taken.
     //
-    // `stateChangesAfter: 5` also lets the final-CI certificate's own two
-    // reads (the entry snapshot and its last-moment re-check,
-    // chatgpt-codex-connector a reference-implementation pull request round 2) answer OPEN, pinning THIS
-    // script's own `check_live_state` guard rather than one of those. Both of
-    // this script's `check_live_state` calls report the identical wording, so
-    // it does not matter which of the two catches it here.
+    // `stateChangesAfter: 5` also lets the final-CI certificate's own two reads
+    // (the entry snapshot and its last-moment re-check) answer OPEN, pinning
+    // THIS script's own `check_live_state` guard rather than one of those. Both
+    // of this script's `check_live_state` calls report the identical wording,
+    // so it does not matter which of the two catches it here.
     const r = await announce(
       { ...CONVERGED, stateChangesTo: "MERGED", stateChangesAfter: 5 },
       false,
@@ -1419,7 +1414,7 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).not.toContain("withdrawing");
   });
 
-  it("a CONFLICTING PR is refused BEFORE the idempotence sweep (#3995 review round 9)", async () => {
+  it("a CONFLICTING PR is refused BEFORE the idempotence sweep", async () => {
     // Review argued the "already announced for $head" short-circuit returns
     // ahead of the last-moment mergeability read, so a base that advanced
     // after an announcement was posted would leave a stale "safe to merge"
@@ -1563,8 +1558,8 @@ describe("round-delta.ts", () => {
     }
   }
 
-  // an earlier change finding (coderabbitai): git quotes a pathname containing
-  // a literal `"` or `\` regardless of `core.quotePath` — that setting only
+  // Git quotes a pathname containing a literal `"` or `\` regardless of
+  // `core.quotePath` — that setting only
   // controls the SEPARATE non-ASCII-escaping behavior. A `\n`-split of
   // quoted `--name-only`/`ls-files` output would keep the surrounding quotes
   // (and backslash-escape any embedded `"`), which then never matches
@@ -1664,7 +1659,7 @@ describe("round-plan.ts", () => {
   }
 
   it("defaults to the CUMULATIVE plan even with a verified SHA recorded", async () => {
-    // AGENTS.md § Change-Proportional Validation requires re-resolving the
+    // drive-pr `SKILL.md` § 5's validation plan requires re-resolving the
     // complete change after each review fix, not once per PR. A delta plan
     // derived from round N's own diff cannot contain the check that catches an
     // interaction with a file round 1 changed — and the cumulative tree is what
@@ -1715,10 +1710,10 @@ describe("round-plan.ts", () => {
 
   // ── Testbox decay ──────────────────────────────────────────────
   //
-  // The scenario these pin is the one measured on #3952: a cumulative plan
+  // The scenario these pin is one measured on a live drive: a cumulative plan
   // holding `testbox.required: true` on the strength of round-1 `profile: full`
-  // files, while the pre-push hook skipped the mandatory heavy phase
-  // on the very same commit because its own (push-range) scope saw nothing
+  // files, while the pre-push hook skipped the mandatory heavy phase on the
+  // very same commit because its own (push-range) scope saw nothing
   // full-profile. Both were right; an operator following both got opposite
   // instructions. The plan now answers once and prints the divergence.
   //
@@ -1908,7 +1903,7 @@ ${second}
       expect(plan.testboxDecision.note).toContain("fail-closed");
       // The floor this issue asked for: when the box IS required, the plan
       // names the evidence. The rule's name alone (`reason`) was true and
-      // useless on twelve consecutive rounds of #3952.
+      // useless on twelve consecutive rounds of one measured drive.
       expect(
         plan.testboxDecision.requiredBy.flatMap(
           (entry: { files: string[] }) => entry.files,
@@ -1933,9 +1928,9 @@ ${second}
       expect(plan.testboxDecision.note).toContain(bogus.slice(0, 12));
     });
 
-    // an earlier change finding (chatgpt-codex-connector): a corrupted state
-    // file can carry a SYMBOLIC ref (e.g. `HEAD`) instead of a 40-character
-    // SHA and still pass `isUsableState`'s bare `typeof === 'string'` check —
+    // A corrupted state file can carry a SYMBOLIC ref (e.g. `HEAD`) instead of
+    // a 40-character SHA and still pass `isUsableState`'s bare `typeof ===
+    // 'string'` check —
     // `set-verified`'s own CLI validation refuses this shape outright, so the
     // corruption is modeled the same way the TRIAGE_CHECK_FAILED fixture
     // does: seed a well-formed state via the CLI, then hand-edit the one
@@ -2500,17 +2495,16 @@ describe("guarded-push.ts", () => {
           // stub above answers ANY `rev-parse` (including `--git-common-dir`)
           // with `localHead`, so without this override `resolveFenceContext`
           // resolves a garbage "state dir" — harmless for the old read-only
-          // tree fence (a nonexistent path reads as "no lease", i.e. pass),
-          // but `assertTreeMutationAllowed` now ACQUIRES a lock there too
-          // (docomply-review / chatgpt-codex-connector round 7-8): creating a
-          // lock file under a directory that does not exist is not "no
+          // tree fence (a nonexistent path reads as "no lease", i.e. pass), but
+          // `assertTreeMutationAllowed` now ACQUIRES a lock there too: creating
+          // a lock file under a directory that does not exist is not "no
           // lease", it is a real failure the lock's own retry loop cannot
           // distinguish from contention, and it burns the full
           // `DRIVE_PR_LOCK_TIMEOUT` (30s) before every unseeded guarded-push
           // probe in this suite. Both vars, never one alone — an override
-          // without its identity token fails closed (PR #4107 round 16's own
-          // ruling), which would make every probe here measure that refusal
-          // instead of whatever the probe actually tests.
+          // without its identity token fails closed, which would make every
+          // probe here measure that refusal instead of whatever the probe
+          // actually tests.
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
           ...(opts.env ?? {}),
@@ -2532,7 +2526,7 @@ describe("guarded-push.ts", () => {
     expect(r.stderr).toContain("PUSHED");
   });
 
-  it("--expect-head refuses BEFORE pushing when local HEAD moved since the caller’s own preflight read (docomply-review, a reference-implementation pull request round 5)", async () => {
+  it("--expect-head refuses BEFORE pushing when local HEAD moved since the caller’s own preflight read", async () => {
     // The caller (finish-round.ts) reads HEAD once, then invokes this script
     // as a NEW subprocess that resolves its OWN localSha independently. A
     // commit landing in the shared worktree in that gap would otherwise be
@@ -2558,7 +2552,7 @@ describe("guarded-push.ts", () => {
     expect(r.stderr).toContain("PUSHED");
   });
 
-  it("refuses an EMPTY --expect-head rather than silently disabling the check (chatgpt-codex-connector, a reference-implementation pull request round 9)", async () => {
+  it("refuses an EMPTY --expect-head rather than silently disabling the check", async () => {
     // `--expect-head ''` is an EXPLICIT empty-string argument, not an omitted
     // flag — the parser's own `take()` only checks a next argv element
     // exists, not that it is usable, so this used to set `expectHead = ''`
@@ -2686,7 +2680,7 @@ describe("guarded-push.ts", () => {
     // Before this fix, the fence read the lease and returned void — the
     // underlying `treeLeaseLock` was never taken at all, so a replacement
     // session's takeover could land in the exact window between the check
-    // and `git push` completing (docomply-review / chatgpt-codex-connector).
+    // and `git push` completing.
     // Proven directly at the lock level, independent of `guarded-push.ts`'s
     // own subprocess plumbing: a second acquirer of the SAME tree-lease path
     // — via the identical `createLock(path, ..., 'tree')` call
@@ -2772,11 +2766,10 @@ describe("guarded-push.ts", () => {
     // The source side names the SHA this process itself resolved, not the
     // literal `HEAD` token: a literal `HEAD:refs/heads/…` refspec would
     // re-resolve HEAD at the moment `git push` actually runs — after every
-    // fence/lock check above has already spent real time — so a commit
-    // landing in this shared worktree during that window would be pushed
-    // even though nothing validated it (chatgpt-codex-connector, a reference-implementation pull request
-    // round 4). The resolved SHA names an exact, already-existing commit
-    // object regardless of what HEAD does afterward.
+    // fence/lock check above has already spent real time — so a commit landing
+    // in this shared worktree during that window would be pushed even though
+    // nothing validated it. The resolved SHA names an exact, already-existing
+    // commit object regardless of what HEAD does afterward.
     const r = await guardedPush({ threads: [] });
     expect(r.stderr).toContain(`origin ${HEAD}:refs/heads/`);
     expect(r.stderr).not.toContain("origin HEAD:refs/heads/");
@@ -2795,7 +2788,7 @@ describe("guarded-push.ts", () => {
     // waits for the PR to report the SHA we pushed — can only ever exhaust its
     // budget and report a push that "may not be on the pull request". That made
     // the one allowlisted option whose entire purpose is a rehearsal a
-    // guaranteed exit 1 (docomply-review, a reference-implementation pull request round 1). `localHead: PREV`
+    // guaranteed exit 1. `localHead: PREV`
     // is the same divergence the probe above uses, so this fails exactly the
     // way the bug did if the skip is ever removed.
     const r = await guardedPush(
@@ -2815,8 +2808,8 @@ describe("guarded-push.ts", () => {
     // The elapsed time IS the assertion. The stub's `sleep` survives the
     // SIGTERM aimed at its bash parent and keeps the inherited pipes open, so
     // 'close' does not fire and a driver that waited for it settled only when
-    // the grandchild finished — the deadline reported, and bounded nothing
-    // (PR #4034 round 1). Asserting only the message would pass either way.
+    // the grandchild finished — the deadline reported, and bounded nothing.
+    // Asserting only the message would pass either way.
     //
     // The stub sleeps far longer than the bound below rather than just past
     // it: the fixed path settles at 1s + the 2s SIGKILL escalation, so a
@@ -2842,7 +2835,7 @@ describe("guarded-push.ts", () => {
     // push` runs the pre-push hook, and that hook runs the build and test
     // suites — a deadline that reports "killed" while those keep running
     // leaves them consuming the machine and producing side effects after the
-    // driver has moved on (docomply-review, a reference-implementation pull request round 2).
+    // driver has moved on.
     //
     // The stub's `sleep` is a genuine grandchild, and it writes the marker
     // only if it lives to finish. Waiting past its full duration before
@@ -2865,8 +2858,7 @@ describe("guarded-push.ts", () => {
     // a descendant survives WITHOUT holding the captured streams therefore
     // fires 'close' first and cancels the only SIGKILL the group was going to
     // get — the wrapper reports 124 while the descendant runs on, which is the
-    // exact leak the group kill exists to close (docomply-review, a reference-implementation pull request
-    // round 3).
+    // exact leak the group kill exists to close.
     //
     // 'background' is what makes the child exit early: the grandchild's stdio
     // goes to /dev/null, so nothing but bash holds the pipes.
@@ -2922,11 +2914,11 @@ describe("guarded-push.ts", () => {
     // `origin` disagrees.
     const r = await guardedPush(
       { threads: [] },
-      { pushUrl: "git@github.com:someone-else/docomply.git" },
+      { pushUrl: "git@github.com:someone-else/project.git" },
     );
     expect(r.exitCode).toBe(2);
     expect(r.stderr).not.toContain("PUSHED");
-    expect(r.stderr).toContain("someone-else/docomply");
+    expect(r.stderr).toContain("someone-else/project");
   });
 
   it("validates EVERY configured push URL, not just the first", async () => {
@@ -3056,7 +3048,7 @@ describe("guarded-push.ts", () => {
   it("pushes when the explicit PR and $DRIVE_PR_TARGET name the same PR in different numeric forms", async () => {
     // `DRIVE_PR_TARGET=0999` and the explicit positional `999` identify
     // the SAME PR, but a raw string comparison before canonicalization
-    // would refuse them as a mismatch (coderabbitai, PR #4446 round 16).
+    // would refuse them as a mismatch.
     const r = await guardedPush(
       { threads: [] },
       { args: ["999"], env: { DRIVE_PR_TARGET: "0999" } },
@@ -3065,13 +3057,12 @@ describe("guarded-push.ts", () => {
     expect(r.stderr).toContain("PUSHED");
   });
 
-  // The end-to-end counterpart the finding on PR #4446 asked for: the
-  // mailbox.test.ts unit tests exercise `isPushHeld` directly, but nothing
-  // wired `DRIVE_PR_MAILBOX_DIR` into a real `guarded-push.ts` invocation and
-  // confirmed the exit-17 refusal (and the subsequent resume) actually fires
-  // through the script's own env resolution — deleting the
-  // `isPushHeld(...)` call from `guarded-push.ts` left every OTHER test in
-  // this describe block green.
+  // The end-to-end counterpart of the mailbox.test.ts unit tests: those
+  // exercise `isPushHeld` directly, but nothing wired `DRIVE_PR_MAILBOX_DIR`
+  // into a real `guarded-push.ts` invocation and confirmed the exit-17 refusal
+  // (and the subsequent resume) actually fires through the script's own env
+  // resolution — deleting the `isPushHeld(...)` call from `guarded-push.ts`
+  // left every OTHER test in this describe block green.
   describe("mailbox 'hold-push' directive", () => {
     const seededMailboxDirs: string[] = [];
     function seededMailboxDir(): string {
@@ -3150,14 +3141,13 @@ describe("guarded-push.ts", () => {
     }
 
     it("a hold sent DURING the pre-push hook window aborts that push (exit 17) instead of being overtaken by it", async () => {
-      // Before an earlier change a hold sent after `guarded-push.ts`'s own check could
-      // never affect the push already underway: the check ran once, and the
-      // pre-push chain (production: up to an hour) ran after it. Round 30 of
-      // PR #4446 "fixed" that by holding the mailbox lock across the push,
-      // which made the SENDER block instead — the hold could not land at
-      // all until the push was over. Now the send lands at once, and the
-      // hook chain's last step, the recheck, aborts the push before it
-      // transfers anything.
+      // Originally a hold sent after `guarded-push.ts`'s own check could never
+      // affect the push already underway: the check ran once, and the pre-push
+      // chain (production: up to an hour) ran after it. An earlier fix held the
+      // mailbox lock across the push, which made the SENDER block instead — the
+      // hold could not land at all until the push was over. Now the send lands
+      // at once, and the hook chain's last step, the recheck, aborts the push
+      // before it transfers anything.
       //
       // Deterministic, not timed: the stubbed hook chain announces it has
       // started (so the push provably cleared its own EARLY check — a hold
@@ -3194,8 +3184,8 @@ describe("guarded-push.ts", () => {
       // child so a failed assertion cannot leave it running.
       try {
         const send = sendHoldPush(mailboxDir);
-        // The sender must land WHILE the hook is still blocked. Were it made
-        // to wait on the push (the round-30 lock), this would sit until the
+        // The sender must land WHILE the hook is still blocked. Were it made to
+        // wait on the push (a lock held across it), this would sit until the
         // lock's own 300s bound, since the hook only proceeds once released.
         const sendOutcome = await Promise.race([
           send.exited,

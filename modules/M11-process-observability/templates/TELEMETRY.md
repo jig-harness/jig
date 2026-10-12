@@ -3,8 +3,8 @@
 > Copy this into your docs tree (e.g. `docs/development/telemetry.md`) and adapt
 > the event names, metrics, and owners to your repo. It is the narrative
 > contract; the machine-checkable pieces are `event-schema.yaml`,
-> `metrics-registry.yaml`, and the two gates under
-> [`../reference/`](../reference/).
+> `metrics-registry.yaml`, and the two gates in Groundwork's
+> [M11 `reference/`](https://github.com/docomply/jig/tree/main/modules/M11-process-observability/reference).
 
 This describes how the **delivery process measures itself** — not the product.
 The product has its own analytics; this is the instrumentation of *how work
@@ -23,15 +23,17 @@ and to keep those numbers honest.
 Measurement must be **real before autonomy increases.** You do not promote a
 gate to blocking, or a reviewer from comment-only to blocking, on a number you
 cannot show is live. Every metric declares a wired `source`; the
-[no-dark-instruments gate](../reference/no-dark-instruments/) fails the build if
-one is dark. Provision the instrument and confirm it emits *before* you lean on
-what it says.
+[no-dark-instruments gate](https://github.com/docomply/jig/tree/main/modules/M11-process-observability/reference/no-dark-instruments) fails the build if
+a declaration is dark (unset, `TODO`, a placeholder). It checks what is
+declared, not what arrives: a wired-looking `source` that names a query nobody
+runs still passes. So provision the instrument and confirm it emits — real
+events, recently — *before* you lean on what it says.
 
 ## What the process emits (events)
 
 Process events are a **closed set** declared in
-[`event-schema.yaml`](event-schema.yaml) and validated by the
-[event-schema lint](../reference/event-schema-lint/). The starting set:
+[`event-schema.yaml`](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/templates/event-schema.yaml) and validated by the
+[event-schema lint](https://github.com/docomply/jig/tree/main/modules/M11-process-observability/reference/event-schema-lint). The starting set:
 
 | Event | Emitted when | Carries (required) |
 |-------|--------------|--------------------|
@@ -42,13 +44,13 @@ Process events are a **closed set** declared in
 | `heartbeat` | an emitter proves it is still alive | emitter id (its silence is a signal) |
 
 Two of these are owned elsewhere and *referenced* here: `gate_result` is the
-[M1](../../M1-gates-enforcement-ladder/) gate ladder's output made into an
-event, and `deploy_result` sources from [M10](../../M10-environments-deploy/).
+[M1](https://github.com/docomply/jig/tree/main/modules/M1-gates-enforcement-ladder) gate ladder's output made into an
+event, and `deploy_result` sources from [M10](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy).
 M11 owns the emission discipline and the schema they must satisfy.
 
 ## How events roll up (metrics + dashboards)
 
-Metrics are registered in [`metrics-registry.yaml`](metrics-registry.yaml), each
+Metrics are registered in [`metrics-registry.yaml`](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/templates/metrics-registry.yaml), each
 naming its wired `source` and an `owner`. Dashboards render from the registry —
 so "what do we measure about ourselves" has one answer, not a scatter of
 hand-built charts.
@@ -63,37 +65,38 @@ hand-built charts.
 
 A dashboard's job is to make **drift visible** — an adoption rate sliding, a
 gate’s pass-rate collapsing, cycle time creeping up — early enough to act. The
-specific threshold/alert *values* are yours; groundwork ships the mechanism, not
+specific threshold/alert *values* are yours; Groundwork ships the mechanism, not
 the numbers.
 
 ## How measurements drive promote/demote
 
 Measurement is not a report you file — it decides posture. This is the shared
-seam with [M8](../../M8-learning-loop/) (which owns the parity/precision
-*computation*) and [M7](../../M7-pr-lifecycle-review/) (whose
+seam with [M8](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop) (which owns the parity/precision
+*computation*) and [M7](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review) (whose
 **precision bar** is the promotion rule for reviewers and lenses):
 
 | Signal (measured) | Decision |
 |-------------------|----------|
-| a reviewer/lens clears the [precision bar](../../M7-pr-lifecycle-review/) on recorded data | **promote** comment-only → blocking |
+| a reviewer/lens clears the [precision bar](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review) on recorded data | **promote** comment-only → blocking |
 | a reviewer misses a blocker an oracle caught (M8 parity) | **do not promote** / open a lever; keep the oracle |
 | a gate’s pass-rate shows it is settled and its findings are real | **promote** advisory → blocking |
 | a gate is constant noise, or a metric goes dark | **demote** / fix the instrument before trusting it |
 
 The rule is one-directional about trust: **a promotion must cite a recorded
-measurement, and the instrument behind it must be provably live** (the
-no-dark-instruments gate is what makes "provably" mechanical). A demotion needs
-no such ceremony — you may always step back to advisory.
+measurement, and the instrument behind it must be provably live**: the
+no-dark-instruments gate proves its source is declared, and the promotion
+cites observed evidence that it emits (recent events, or its `heartbeat`). A
+demotion needs no such ceremony — you may always step back to advisory.
 
 ## Adopt
 
-1. Copy [`event-schema.yaml`](event-schema.yaml); prune to the events you emit,
+1. Copy [`event-schema.yaml`](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/templates/event-schema.yaml); prune to the events you emit,
    and emit at least one for real (start with `gate_result` — you already run
    gates).
-2. Copy [`metrics-registry.yaml`](metrics-registry.yaml); register the metrics
+2. Copy [`metrics-registry.yaml`](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/templates/metrics-registry.yaml); register the metrics
    you will actually watch, each with a **wired** source and an owner.
-3. Wire the [no-dark-instruments gate](../reference/no-dark-instruments/) and
-   the [event-schema lint](../reference/event-schema-lint/) into CI.
+3. Wire the [no-dark-instruments gate](https://github.com/docomply/jig/tree/main/modules/M11-process-observability/reference/no-dark-instruments) and
+   the [event-schema lint](https://github.com/docomply/jig/tree/main/modules/M11-process-observability/reference/event-schema-lint) into CI.
 4. Build the dashboards from the registry; review them on a cadence.
 5. Gate every promote decision (in M7/M8) on a measurement from a live
    instrument — never a dark one.

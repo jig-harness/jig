@@ -1,4 +1,25 @@
 // One canonical skill directory, with a derived runtime discovery mirror.
+//
+// Agent runtimes scan different directories for skills (Claude Code:
+// .claude/skills/, Codex: .agents/skills/). Copying the files makes a second
+// source of truth, so the second directory is a symlink farm instead, one link
+// per skill: .agents/skills/<name> -> ../../.claude/skills/<name>.
+//
+// Recipe:
+//   1. Commit only the canonical directory and gitignore the mirror: it is
+//      derived state, and committed symlinks behave differently per platform.
+//   2. Run this script from the package manager's install hook (or a setup
+//      script) so every install refreshes the mirror.
+//   3. Optionally run it with --check from a pre-push hook to report drift.
+//
+// Usage (from anywhere inside the git repository):
+//   bun sync-skills-mirror.ts            create, repair and prune the links
+//   bun sync-skills-mirror.ts --check    report drift only
+// Environment: CANONICAL_DIR (default .claude/skills) and MIRROR_DIR (default
+// .agents/skills), both relative to the repository root.
+// Exit: 0 in sync; 1 drift, no skills found, or a regular file/directory in a
+// link's place (never removed automatically); 2 not inside a git repository.
+// Windows needs Developer Mode or elevation to create symlinks.
 import {
   existsSync,
   lstatSync,

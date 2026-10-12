@@ -8,7 +8,7 @@ persistent-memory homes, and [CI](../../GLOSSARY.md) providers. Everything here
 is an **option**, not a requirement: pick one row per column. Replace
 `<placeholders>` with your values.
 
-## The two gates, per rung
+## The gates, per rung
 
 | Gate | When it runs | Rung |
 |------|--------------|------|
@@ -17,7 +17,9 @@ is an **option**, not a requirement: pick one row per column. Replace
 
 Point one `M9` variable at wherever you vendored the module and build every path
 from it; a bare `reference/...` resolves from the repo root and will not be
-found.
+found. Each gate imports the shared implementation in `lib/module-gates.ts`, so
+vendor the module together with `lib/` (a pinned Groundwork checkout keeps the
+two in place).
 
 ### GitHub Actions
 
@@ -79,6 +81,11 @@ gate](reference/required-phases/) before a transition to `done`.
 | Linear | issue labels; a `hitl` label marks a deliverable whose merge stays human; automation rules fire on label add | phases as sub-issues or a project's stage; a status-transition automation runs the gate |
 | Dart | tags for flags; an automation ties a tag to a required review | phases as subtasks; a rule gates the closing transition |
 
+Groundwork's [`do-item`](../../plugin/skills/do-item/SKILL.md) skill honours
+the `hitl` and `manual-ops` flags on the trackers its adapter reads (Linear
+today), with the label names taken from `issue_tracker.labels` in the
+repository's [configuration](../../plugin/CONFIGURATION.md#issue_tracker).
+
 The tracker-agnostic contract the gate needs is small: a `status:` and the
 completed phase ids, one per line. Any tracker that can export those (a saved
 view, an API query) can be gated — the export is the only per-tracker adapter.
@@ -97,7 +104,9 @@ durable home. Any of these works.
 
 Promotion from private to shared memory stays [HITL](../../GLOSSARY.md) whatever
 the home — the reflection/promotion *commands* live with
-[M8](../M8-learning-loop/); M9 only fixes where each tier's memory lives.
+[M8](../M8-learning-loop/) (Groundwork runs promotion as the
+[`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) skill); M9 only
+fixes where each tier's memory lives.
 
 ## CI providers
 

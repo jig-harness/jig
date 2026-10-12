@@ -1,8 +1,9 @@
 # TEMPLATE — copy to your repo (e.g. metrics-registry.yaml) and replace the
 # examples with the process metrics YOU roll up. This is the registry of process
 # metrics: each one names the wired event/query behind it (`source`) and who is
-# accountable for it (`owner`). The no-dark-instruments gate
-# (../reference/no-dark-instruments/) FAILS if any `source` is missing, empty, or
+# accountable for it (`owner`). Groundwork's no-dark-instruments gate
+# (modules/M11-process-observability/reference/no-dark-instruments/) FAILS if
+# any `source` is missing, empty, or
 # a placeholder (TODO / tbd / dark / none / fixme) — a metric CLAIMED but not
 # wired is a "dark instrument", and a dark instrument is worse than none.
 #

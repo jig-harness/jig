@@ -117,7 +117,7 @@ export function checkFrontmatter(
           for (const tag of tokens)
             if (!canonical.includes(tag))
               errs.push(
-                `unknown tag '${tag}' (not in canonical list; run the tag normalizer)`,
+                `unknown tag '${tag}' (not in the canonical tag list; add it there or use a listed tag)`,
               );
           if (tokens.length > 8)
             errs.push(`too many tags (${tokens.length} > 8)`);

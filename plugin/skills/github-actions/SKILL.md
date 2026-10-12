@@ -12,6 +12,10 @@ This skill reviews changes to GitHub Actions workflows (the YAML files under
 `.github/workflows/` and the composite actions under `.github/actions/`) for
 security, correctness, performance, and fit with the repository's own CI
 ([continuous integration](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) architecture.
+The pipeline it checks against is the one Groundwork module
+[M10 (environments & deploy)](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/README.md)
+describes: gates on every pull request, verification after merge, deploys of
+verified builds only, and a manual promotion to production.
 
 **Scope:** review and audit of workflow files.
 **Output:** a structured assessment with findings, security notes and

@@ -107,27 +107,35 @@ be; concrete per-ecosystem wiring lives in [mappings.md](mappings.md).
    ([M9](../M9-tasks-memory/) / [M3](../M3-change-area-catalog/)) so the labels
    set here steer the PR loop ([M7](../M7-pr-lifecycle-review/)).
 
-## Port status
+## Status
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| `docs/development/feature-delivery-pipeline.md` (C1) — the idea→shipped narrative | [`templates/PIPELINE.md`](templates/PIPELINE.md) — copyable stage contract with per-stage review + de-scar and the design-loop feedback |
-| `docs/development/templates/prd-template.md` (C3) | [`templates/prd-template.md`](templates/prd-template.md) — genericised, *what*-for-users, with a required `## Success metrics` |
-| `docs/development/templates/architecture-template.md` (C3) | [`templates/architecture-template.md`](templates/architecture-template.md) — genericised *how*; significant decisions link out to ADRs |
-| `docs/development/templates/research-doc-template.md` (C3) | [`templates/research-note-template.md`](templates/research-note-template.md) — dated context/options/evidence/recommendation; decisions graduate to ADRs |
-| "use the committed template" convention | [`reference/required-sections/`](reference/required-sections/) — required headings as a runnable gate + self-test + fixtures |
-| "adversarially reviewed before the next stage consumes it" convention | [`reference/stage-review-record/`](reference/stage-review-record/) — accepted-implies-reviewed as a runnable gate + self-test + fixtures |
-| `seeds/project-kickoff/` phases 1–4, 10–11 (greenfield kickoff) | folded into `PIPELINE.md` (stage order, fresh-context review, separation of *what*/*how*) |
+What this module provides:
 
-Also landed: [`mappings.md`](mappings.md) (agent runtimes, issue trackers,
-doc/template homes, CI) and [`maturity.yaml`](maturity.yaml).
+- [`templates/PIPELINE.md`](templates/PIPELINE.md) — the copyable stage
+  contract: stage order, per-stage review and de-scar, and the design loop's
+  feedback upstream.
+- [`templates/prd-template.md`](templates/prd-template.md) — *what* for users,
+  with a required `## Success metrics`.
+- [`templates/architecture-template.md`](templates/architecture-template.md) —
+  *how*; significant decisions link out to ADRs.
+- [`templates/research-note-template.md`](templates/research-note-template.md)
+  — a dated note with context, options, evidence and a recommendation;
+  decisions graduate to ADRs.
+- [`reference/required-sections/`](reference/required-sections/) — fails a
+  stage artifact that is missing a required heading.
+- [`reference/stage-review-record/`](reference/stage-review-record/) — fails an
+  artifact marked `status: accepted` that carries no review record.
+- [`mappings.md`](mappings.md) (agent runtimes, issue trackers, doc and
+  template homes, CI) and [`maturity.yaml`](maturity.yaml).
 
-**Not ported** (per "don't port the unproven" / IP scrub): the kickoff seed's
-tiered time estimates, its named critique personas, its model-routing table, and
-its specific tool picks (a named tracker, named scaffolding commands) are the
-reference implementation's tuned choices, not a portable mechanism — groundwork
-ports the *stage contract* and the two gates and leaves tool selection to
-[mappings.md](mappings.md) rows. The docomply requirement-ID scheme survives
-only as a light, optional convention in the templates. No product-domain
-examples, customer data, or product-specific label names crossed over; the
-templates use neutral placeholders and a generic "saved views" example.
+Both gates have paired self-tests and fixtures beside them. The
+[`/groundwork:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
+skill runs the first step of the design-prototype loop: it assembles the brief
+for an external design session and audits it before the session starts.
+
+Deliberately left out: tiered time estimates, named critique personas, a
+model-routing table and specific tool picks (a named tracker, named
+scaffolding commands). They are one team's tuned choices, not a portable
+mechanism; the module keeps the stage contract and the two gates, and leaves
+tool selection to [mappings.md](mappings.md). Requirement IDs (`FR-1`,
+`NFR-1`) appear in the templates as a light, optional convention.

@@ -1,7 +1,7 @@
 # Playbook — the end-to-end delivery narrative
 
 This condensed narrative shows how the modules compose into one delivery
-motion. The full, copyable contracts now live in their modules: the feature
+motion. The full, copyable contracts live in their modules: the feature
 pipeline is [M6](modules/M6-feature-delivery-pipeline/)
 ([`PIPELINE.md`](modules/M6-feature-delivery-pipeline/templates/PIPELINE.md)),
 the PR loop is [M7](modules/M7-pr-lifecycle-review/)
@@ -43,11 +43,20 @@ review threads and issues.
    bots, humans), with mandatory review steps selected by what changed.
 3. **Resolve every comment** — accept (fix + reply) or reject (reply with a
    concrete reason), then resolve the thread. Once the draft reviewers settle,
-   a human, or an adopted review driver after its first completed round, marks
-   Ready, and the reviewers that wait for Ready join; loop until zero
-   unresolved threads and the build is clean.
+   a human, or a review driver at the round the repository's pull-request
+   policy names, marks Ready, and the reviewers that wait for Ready join; loop
+   until zero unresolved threads and the build is clean.
 4. **Human merge** — a human merges (a HITL decision); conflicts are resolved
    before merge, tracker updated after.
+
+The [plugin](plugin/README.md) runs this loop for you:
+[`do-item`](plugin/skills/do-item/SKILL.md) takes a tracker item to an open
+pull request, [`drive-pr`](plugin/skills/drive-pr/README.md) runs steps
+2–3 unattended until one named end state,
+[`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md) is
+step 3 on its own, and
+[`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md) resolves a
+conflict with the base. None of them merges.
 
 ## The learning loop (wraps both)
 
@@ -55,4 +64,6 @@ Misses become lenses (see M8): anything an automated step should have caught
 but didn't gets classified, reconstructed as an eval fixture, and turned into
 an additive check — so both loops get stricter over time without growing
 manual vigilance. Session reflections and promoted memories feed the same
-scaffolding.
+scaffolding; the plugin's
+[`promote-memory`](plugin/skills/promote-memory/SKILL.md) skill does the
+promotion.

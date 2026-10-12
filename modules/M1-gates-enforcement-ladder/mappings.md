@@ -62,13 +62,12 @@ update or unexplained version ceiling is hidden maintenance debt.
 ## Non-JavaScript repositories
 
 The invariant is that a gate has one reproducible implementation, independent
-of the application's language. Groundwork chooses a mise-managed Bun pin for
-this kernel: run the complete pinned checkout with its `mise.toml` active,
+of the application's language. Groundwork chooses a mise-managed Bun pin: run the complete pinned checkout with its `mise.toml` active,
 install `bun.lock` with `bun install --frozen-lockfile`, and invoke `bun <gate.ts>`.
 The consumer's application can remain Python, Go or any other stack.
 
 Standalone executables from `bun build --compile` are supported by Bun, but a
-binary release matrix is deferred until distribution needs it. Source plus a
+binary release matrix waits until distribution needs it. Source plus a
 runtime pin keeps fixtures and dependencies together and avoids a second
-packaging contract during this migration. Layout and adoption details:
+packaging contract. Layout and adoption details:
 [tools/README.md](../../tools/README.md).

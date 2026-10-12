@@ -3,8 +3,8 @@
  * (fail-closed), and how it is written (atomically, under the lock, with the
  * handoff regenerated in the same hold).
  *
- * State lives OUTSIDE the repository tree, under `~/.local/state/groundwork/drive-pr/`
- *, keyed per clone: it is per-clone, never committed, and
+ * State lives OUTSIDE the repository tree, under `~/.local/state/groundwork/drive-pr/`,
+ * keyed per clone: it is per-clone, never committed, and
  * survives across separate invocations hours apart — the same placement
  * await-round.ts uses for its round counter, and for the same reason.
  * Override with $DRIVE_PR_STATE_DIR (the test suite does, and it also skips
@@ -55,13 +55,13 @@ import { type DriveState, freshState, isUsableState } from "./schema.ts";
  * `ensureMigratedFromLegacy` (`legacy-state.ts`) is the safety gate this
  * relocation needs before it can be a DEFAULT rather than an opt-in: without
  * it, a session on new code silently resolves to an empty new-location state
- * file while a session on old code (or one that has not yet migrated) is
- * still writing to `--git-common-dir`, and each one's writes are invisible to
- * the other — exactly the failure an earlier change's manual relocation already hit
- * once, by hand, with no error surfaced either time (PRs #4596/#4609). See
- * that module's doc comment for the full guarantee and its one deliberate
- * gap (a marker-gated check, not a per-call one, to avoid reintroducing the
- * very `readdir` cost this relocation exists to eliminate).
+ * file while a session on old code (or one that has not yet migrated) is still
+ * writing to `--git-common-dir`, and each one's writes are invisible to the
+ * other — exactly the failure an earlier manual relocation already hit once, by
+ * hand, with no error surfaced either time. See that module's doc comment for
+ * the full guarantee and its one deliberate gap (a marker-gated check, not a
+ * per-call one, to avoid reintroducing the very `readdir` cost this relocation
+ * exists to eliminate).
  */
 /**
  * Validates and resolves `$DRIVE_PR_STATE_DIR`, or `null` when it is unset —
@@ -72,16 +72,15 @@ import { type DriveState, freshState, isUsableState } from "./schema.ts";
 function resolvedOverride(): string | null {
   const override = process.env.DRIVE_PR_STATE_DIR ?? "";
   if (override === "") return null;
-  // A RELATIVE override resolves against `process.cwd()`, which a human-
-  // or config-supplied path has no fixed anchor for the way git's own dir
-  // does — so two participants launched from different working directories
-  // (the base checkout and a linked worktree, in particular) would resolve
-  // the identical override string to two DIFFERENT absolute directories,
-  // recreating exactly the split state/lease hazard this variable exists
-  // to let an operator opt OUT of (docomply-review + chatgpt-codex-
-  // connector, PR #4612 round 4). Fail closed rather than silently picking
-  // one cwd's answer — a config mistake here must not present as a working
-  // relocation that only sometimes shares state.
+  // A RELATIVE override resolves against `process.cwd()`, which a human-or
+  // config-supplied path has no fixed anchor for the way git's own dir does —
+  // so two participants launched from different working directories (the base
+  // checkout and a linked worktree, in particular) would resolve the identical
+  // override string to two DIFFERENT absolute directories, recreating exactly
+  // the split state/lease hazard this variable exists to let an operator opt
+  // OUT of. Fail closed rather than silently picking one cwd's answer — a
+  // config mistake here must not present as a working relocation that only
+  // sometimes shares state.
   if (!isAbsolute(override)) {
     fail(
       2,
@@ -114,16 +113,15 @@ export async function resolveStateDir(): Promise<string> {
 }
 
 /**
- * Read-only equivalent of `resolveStateDir()` — for a caller that only
- * needs to know where state currently lives, never to admit itself into it.
- * Honors `$DRIVE_PR_STATE_DIR` identically (that branch already has no side
- * effects of its own); on the default path, defers to `peekStateDir()`
- * instead of minting a clone identity, creating the directory, or writing
- * the migration marker (docomply-review, chatgpt-codex-connector, a reference-implementation pull request
- * round 15: `drives.ts`'s fleet listing and `--here` SessionStart-banner
- * path both called the mutating `resolveStateDir()` despite describing
- * themselves as read-only inspection — the same class of gap round 14
- * closed for `reap-state.ts`'s dry-run path).
+ * Read-only equivalent of `resolveStateDir()` — for a caller that only needs to
+ * know where state currently lives, never to admit itself into it. Honors
+ * `$DRIVE_PR_STATE_DIR` identically (that branch already has no side effects of
+ * its own); on the default path, defers to `peekStateDir()` instead of minting
+ * a clone identity, creating the directory, or writing the migration marker
+ * (`drives.ts`'s fleet listing and `--here` SessionStart-banner path both
+ * called the mutating `resolveStateDir()` despite describing themselves as
+ * read-only inspection — the same class of gap `peekStateDir()` closes for
+ * `reap-state.ts`'s dry-run path).
  */
 export async function peekResolvedStateDir(): Promise<string> {
   const overridden = resolvedOverride();
@@ -141,7 +139,7 @@ export async function resolveLegacyStateDir(): Promise<string> {
   // Deadlined: this runs on the SessionStart `--here` path, where a hung git
   // on a stalled filesystem would otherwise outlive the outer hook's timeout
   // and turn "could not check" into silence — the one thing the banner's
-  // contract forbids (chatgpt-codex-connector, a reference-implementation pull request round 8).
+  // contract forbids.
   // Scrubbed of GIT_DIR / GIT_WORK_TREE: a hook-launched driver inherits them
   // for another checkout and they outrank the cwd, which would key the state
   // dir (and every lock under it) to THAT checkout while the worktree key
@@ -192,11 +190,10 @@ export function peekDefaultStateDirFor(legacyDir: string): string | null {
  * where state currently lives, for a caller that only needs to REPORT that,
  * never to admit itself into it. Unlike `resolveStateDir()` itself, mints no
  * clone identity, creates no directory, and writes no migration marker
- * (docomply-review, a reference-implementation pull request round 14: `reap-state.ts`'s dry-run mode, no
- * `--delete`, was reaching `ensureMigratedFromLegacy()` through the ordinary
- * `resolveStateDir()` and inheriting all three side effects on a clone with
- * no persisted identity yet — violating dry-run's own "nothing changed"
- * contract merely by inspecting it).
+ * (`reap-state.ts`'s dry-run mode, no `--delete`, was reaching
+ * `ensureMigratedFromLegacy()` through the ordinary `resolveStateDir()` and
+ * inheriting all three side effects on a clone with no persisted identity yet —
+ * violating dry-run's own "nothing changed" contract merely by inspecting it).
  *
  * Mirrors `lease.ts`'s `resolveLegacyFallbackDir` — the identical fence-
  * fallback decision (peek the clone identity; trust the migration marker
@@ -229,8 +226,8 @@ export function peekStateDir(legacyDir: string): string {
  * — so two drivers in ONE checkout that set that variable differently, or one
  * that set it and one that did not, computed different worktree locks; their
  * per-PR locks did not collide either when they drove different PRs, so both
- * loops ran and cross-shipped each other's uncommitted edits
- * (chatgpt-codex-connector, a reference-implementation pull request round 8). A lock may not be keyed by a
+ * loops ran and cross-shipped each other's uncommitted edits.
+ * A lock may not be keyed by a
  * location whose whole purpose is to be relocated.
  *
  * `--show-toplevel` rather than a git dir: what two drivers collide over is
@@ -283,7 +280,7 @@ export interface StateStore {
    *
    * Without this that path is admitted-but-unfenced, and a claim it validates
    * after its lease was revoked goes on to dispatch a NON-idempotent summary
-   * answer beside its successor's (chatgpt-codex-connector, a reference-implementation pull request). Callers
+   * answer beside its successor's. Callers
    * must clean up before letting the refusal propagate.
    */
   runFence(): Promise<void>;
@@ -294,10 +291,10 @@ export interface StateStore {
    *
    * `runFence`'s own signature (` => void | Promise<void>`) has no way to
    * express "hold this open past my own return", and that gap is exactly the
-   * hole PR #4131 round 2 found: a fence that only checks-then-releases still
-   * leaves the window between the check and `fn` unguarded, because nothing
-   * stops a DIFFERENT pr's `claimTreeLease` — which needs only ITS OWN state
-   * mutex, never this one — from writing in that gap. Holding the SAME lock
+   * hole to close: a fence that only checks-then-releases still leaves the
+   * window between the check and `fn` unguarded, because nothing stops a
+   * DIFFERENT pr's `claimTreeLease` — which needs only ITS OWN state mutex,
+   * never this one — from writing in that gap. Holding the SAME lock
    * `claimTreeLease` needs, for the whole critical section, is what actually
    * closes it. `locked` releases whatever is registered here in its own
    * `finally`, right after `fn` returns or throws; `claimFinding`, the one
@@ -327,8 +324,8 @@ export async function openStore(pr: string): Promise<StateStore> {
   // never gets populated (git only ever creates a `worktrees/` folder inside
   // an actual `.git` dir), so this is now a permanent no-op except for a
   // clone still resolving `stateDir` to `--git-common-dir` itself (an
-  // explicit `$DRIVE_PR_STATE_DIR` override pointed there). The an earlier change
-  // migration this predates has its own guard: `legacy-state.ts`'s
+  // explicit `$DRIVE_PR_STATE_DIR` override pointed there). The later
+  // migration off `--git-common-dir` has its own guard: `legacy-state.ts`'s
   // `ensureMigratedFromLegacy`, called inside `resolveStateDir()` itself.
   if (!process.env.DRIVE_PR_STATE_DIR && !existsSync(file)) {
     warnAboutOrphans(stateDir, file, pr);
@@ -591,7 +588,7 @@ export async function openStore(pr: string): Promise<StateStore> {
       // returned non-zero for a state change that succeeded, and a caller
       // reading that as failure re-ran the command — replaying a NON-idempotent
       // mutation such as `bump-attempt` and burning another attempt against the
-      // round bound (coderabbitai, PR #4034 round 2). The handoff is an
+      // round bound. The handoff is an
       // orientation aid this skill explicitly declines to treat as a
       // transactional mirror of the state (SKILL.md § Handing off), so it is
       // the one artefact whose failure must not invalidate the write.

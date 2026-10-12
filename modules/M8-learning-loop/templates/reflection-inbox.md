@@ -8,11 +8,11 @@ duplicate guard works by finding the `<!-- reflection: … -->` marker, and it r
 the archive as well as this file (`ARCHIVE=`). Delete a processed entry and the
 guard forgets that change ever reflected, so the next re-run of the loop — a CI
 retry, a resumed session — appends it again and double-counts the change in the
-ranking the measurement exists to produce. An `docs/reflection-archive.md` that
+ranking the measurement exists to produce. A `docs/reflection-archive.md` that
 nobody reads still does that job.
 
 Records are written by
-[`reflection-trigger.ts`](../reference/reflection-trigger/), which fires when a
+[`reflection-trigger.ts`](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/reference/reflection-trigger/reflection-trigger.ts), which fires when a
 change takes at least `ROUND_THRESHOLD` review rounds to converge. It fills in
 the two machine-written fields (`change:`, `rounds:`) and leaves the two
 judgement fields blank for you.

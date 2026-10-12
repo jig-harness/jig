@@ -103,7 +103,8 @@ freshest *declared* verdict still wins.
 It supports the two encodings that any forge can carry — a leading token
 (`VERDICT_ENCODING=token`, the default) and a trailing `Verdict:` trailer
 (`=trailer`) — both **anchored** to a fixed position, never a search for a state
-word anywhere in the body. Adopter synonyms live in its `canon()` function. Full
+word anywhere in the body. Adopter synonyms live in its `canon()` function (the
+`verdicts` table in [`lib/module-gates.ts`](../../../../lib/module-gates.ts)). Full
 per-forge recipes are in [`mappings.md`](../../mappings.md).
 
 Its self-test runs every documented encoding through the exporter *and then
@@ -157,8 +158,9 @@ THREADS=pr-threads.txt bun ./check-threads-resolved.ts
 | `fixtures/raw/verdict-then-ack.tsv` | several replies per thread — a verdict buried under an acknowledgement must still win |
 | `fixtures/raw/*.expected` | the gate input each one must produce (golden files) |
 
-Run the self-tests with `./check-threads-resolved.test.ts` and
-`./normalize-thread-states.test.ts`.
+Run the self-tests with `bun test ./check-threads-resolved.test.ts
+./normalize-thread-states.test.ts` (and the shared cases with
+`bun test ../../../../lib/module-gates.test.ts` from this directory).
 
 The native gate uses the shared implementation in Groundwork’s
 [`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and

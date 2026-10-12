@@ -38,16 +38,17 @@ Contents: [the file](#the-file) ·
   other tooling can share the file. The maps whose keys the skills look up
   are strict instead: there a misspelt key would silently keep the default it
   was written to change, so it is an error. They are `pull_requests`,
-  `issue_tracker.states` (keys are canonical states) and
-  `issue_tracker.labels` (keys are label roles). In `review.taxonomy` every
+  `issue_tracker.states` (keys are canonical states),
+  `issue_tracker.labels` (keys are label roles) and `resolve_conflicts`
+  (including each `generated` entry). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
   distinct, nonempty strings, so an unrelated key there is an error too.
-- **Wrong types** depend on the reader. `resolve-review-comments` and the
-  pull-request policy refuse them with an error that names the field and the
-  file. Some `drive-pr` readers treat a wrong-typed value as absent and use
-  the default instead: `review.bots` when it is not a list (entries that are
-  not strings are dropped), and the `fleet_health` fields. The checks below
-  catch the first kind only.
+- **Wrong types** are refused with an error that names the field, except by
+  a few best-effort `drive-pr` readers, which treat a wrong-typed value as
+  absent and use the default instead: `review.bots` when it is not a list
+  (entries that are not strings are dropped), `drive.escape_baseline_doc`,
+  and the `fleet_health` fields. The checks below report refused values
+  only, and only for the fields they print.
 - **Check it.** `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
   prints the review skill's values or what is missing;
   `bun <plugin>/skills/do-item/scripts/pr-plan.ts open` prints the pull-request
@@ -73,7 +74,7 @@ field only to override the derivation:
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, descar | The repository's complete local checks, run before every push |
+| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push |
 
 ## `review`
 
@@ -103,6 +104,34 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 The [resolve-review-comments README](skills/resolve-review-comments/README.md)
 and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
 
+### The review-triage file
+
+In late review rounds, `resolve-review-comments` can decline a finding it
+would otherwise fix, because every pushed fix summons the reviewers for
+another full round. This is the
+[decline ladder](skills/resolve-review-comments/references/triage-rubric.md#the-decline-ladder).
+Which rounds decline what is the repository's choice, in its own file:
+`.config/review-triage.yaml` (`GROUNDWORK_REVIEW_TRIAGE_CONFIG` names another
+file). Without the file the ladder is off and every finding the rubric
+accepts is fixed. A file that cannot be read, or that fails the checks below,
+also leaves the ladder off, and each verdict reports why. An unknown key is
+an error.
+
+| Field | Type | Required | What it does |
+|-------|------|----------|--------------|
+| `version` | `1` | yes | Schema version |
+| `severity_order` | exactly `[low, medium, high, blocker]` | yes | The reviewer severities, weakest first |
+| `categories` | non-empty list of distinct names, not `unknown` | yes | The finding categories that `--category` and the bands' clauses use |
+| `fail_open.inert_when_unknown` | list drawn from `severity`, `category`, `tier`, `self_inflicted`; may be empty | yes | Inputs whose `unknown` value turns the ladder off for that finding |
+| `bands` | non-empty list of `{id, from_round, through_round, minimal_diff, accept_if}` | yes | Round ranges, contiguous from round 1; the last one has `through_round: null`. A finding is kept when it meets any clause of its band's `accept_if` (`unconditional`, `min_severity`, `categories`, `max_tier`, `self_inflicted`) and declined otherwise. `minimal_diff: true` limits the fix of a kept finding to the smallest change |
+| `reply.marker`, `reply.wont_fix`, `reply.deferred` | text | yes | The reply posted on a declined thread. Each template ends with a `<!-- {marker} -->` line, which the loop-cost reports look for |
+| `severity_mapping` | map from each severity, and `unknown`, to `{linear_priority, acceptance}` | no | The tracker priority and acceptance tier each severity corresponds to; checked when present, not used by the ladder |
+| `calibration` | any | no | Notes for people; not read |
+
+The test fixture
+[`review-triage.yaml`](skills/resolve-review-comments/__tests__/fixtures/review-triage.yaml)
+is a complete example.
+
 ## `repository`
 
 | Field | Type | When absent | Read by | What it does |
@@ -115,8 +144,9 @@ How agents open and stack pull requests. `do-item` applies it through
 `scripts/pr-plan.ts` when it opens a pull request; `drive-pr` applies
 `mark_ready` as a drive runs. Merging is not configurable: a person merges.
 Without the section the policy is: one pull request
-per change against the integration branch, branch named `<key>-<title>`,
-opened as a draft, closing its issue on merge, merged by a human.
+per change against the integration branch, branch named `{key_lower}-{slug}`,
+opened as a draft, marked Ready after the first review round, closing its
+issue on merge, merged by a human.
 
 | Field | Values | When absent | What it does |
 |-------|--------|-------------|--------------|
@@ -183,9 +213,9 @@ not resolve it either.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout |
+| `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, resolve-conflicts, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout |
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
-| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). `determine_agent.ts --catalog` overrides it for one run |
+| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). `determine_agent.ts --catalog` overrides it for one run |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
 
@@ -200,25 +230,24 @@ not resolve it either.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
+| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr, decide | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
 | `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-item, drive-pr, review | The key issue identifiers carry (`ENG` for `ENG-123`) |
 | `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read) | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate` |
-| `issue_tracker.labels.epic` | label | `epic`, else `review.taxonomy.epic_label` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue whose sub-issues are worked one at a time |
-| `issue_tracker.labels.hitl` | label | `hitl` | do-item | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
+| `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue whose sub-issues are worked one at a time |
+| `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
 | `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item | A step a person performs outside the code; caps an epic at `ops_pending` |
-| `issue_tracker.labels.followup` | label | `pr-followup`, else `review.taxonomy.provenance_label` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue filed from a review finding |
+| `issue_tracker.labels.followup` | label | `review.taxonomy.provenance_label`, else `pr-followup` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue filed from a review finding |
 | `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-item | Any of these marks a bug |
 | `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item | A recurring pattern's label is `<prefix><slug>` |
 | `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-item | Sizes whose issues the batch check may group into one pull request |
 | `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-item | Open sub-issues an epic may hand off instead of finishing |
-| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, resolve-review-comments, descar, github-actions, promote-memory | How an agent files a new issue by hand, such as a slash command |
+| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory | How an agent files a new issue by hand, such as a slash command |
 
 ## `do_item`
 
-This section was called `do_issue` before the skill was renamed. The old name
-is not read: `do-item` stops and asks for the section to be renamed (its fields
-are unchanged), rather than running without the repository's routing and
-gates.
+A section named `do_issue` (the skill's former name) is refused, not ignored:
+`do-item` stops and asks for it to be renamed `do_item` (the fields are the
+same), rather than running without the repository's routing and gates.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
@@ -296,18 +325,19 @@ comment looks like are described in the header of
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`) detect
+`explain`, `resolve-conflicts`) detect
 what they need from the repository; set a field only when detection picks
 the wrong thing. `programmatic-execution` reads no field.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet, and `decide` and `explain` then use `docs/adr` | adr, review, decide, explain | Where the decision records live. `decide` searches them for precedent, and `decide` and `explain` resolve a bare `ADR-NNNN` citation there when they check a sheet's freshness. `adr` and `review` require a configured folder to exist; `decide` and `explain` do not check, and find no records in a missing one |
-| `adr.rules_file` | path, relative to the root | Detected: the one tracked `adr-rules.yaml`, `.adr-rules.yaml` or `adr-rules/rules.yaml`; several matches are an error | adr, review | The machine-readable decision-rules catalog. A configured file must exist |
+| `adr.rules_file` | path, relative to the root | Detected: the one tracked `adr-rules.yaml`, `adr-rules.yml`, `.adr-rules.yaml` or `adr-rules/rules.yaml` (or `.yml`), outside test fixtures and templates; several matches are an error | adr, review | The machine-readable decision-rules catalog. A configured file must exist |
 | `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the document is checked by hand | descar | Lint that finds review scars in documents |
 | `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
 | `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
+| `resolve_conflicts.generated` | list of `{paths: [globs relative to the root], command: shell command}` | none: only the built-in lockfile table applies | resolve-conflicts | Files that are regenerated, never hand-merged, when they conflict, and the command that rebuilds them (run from the root). An entry also overrides the built-in lockfile command for a path it matches. Unknown keys are refused |
 | `github_actions.conventions_doc` | path, relative to the root | Searched for in the instructions and docs; else generic guidance | github-actions | The document describing the repository's workflows and their conventions |
 | `design_brief.kit` | folder, relative to the root | Detected: a tracked folder ending in `design-kit` or `design_kit` | design-brief-builder | The design kit: voice, colours and type, rubric, component previews, logo |
 | `design_brief.design_language` | path, relative to the root | Detected: the first tracked `*design-language*.md` or `*design-system*.md` | design-brief-builder | The written design canon |
@@ -334,7 +364,14 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_STATE_DIR` | Where a drive keeps its rounds, locks and leases |
 | `GROUNDWORK_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
+| `GROUNDWORK_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
+| `GROUNDWORK_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/groundwork/gh-cache` |
+| `GROUNDWORK_GH_CACHE` | `off` disables that cache |
+| `GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30 |
+| `AWAIT_ROUND_CHECKS_MAX_AGE` | Seconds a still-waiting read of a pull request's checks may be reused while nothing on GitHub changed; default 300, `0` always reads |
+| `GROUNDWORK_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
+| Others | A few knobs of a single skill, such as `REFLECT_THRESHOLD` of `resolve-review-comments`, are described where that skill's `SKILL.md` uses them |
 
 ## Complete example
 
@@ -377,9 +414,9 @@ pull_requests:
   labels: [agent-authored]
   title_format: conventional             # conventional | free
 drive:
-  validation_plan_command: "bun tools/change-areas/resolve.ts --files - --format json"
-  load_guard_command: "bun tools/dev/load-guard.ts --wait"
-  change_areas_catalog: tools/change-areas/catalog.yaml
+  validation_plan_command: "<your plan command>"   # changed files on stdin, JSON plan on stdout
+  load_guard_command: "<your load-guard command>"  # returns once the machine can take heavy checks
+  change_areas_catalog: docs/change-areas.yaml
   reviews_drafts: true
   escape_baseline_doc: docs/review-loop-baseline.md
 ci:
@@ -428,13 +465,17 @@ adr:
   directory: docs/adr
   rules_file: docs/adr/rules.yaml
 descar:
-  lint_command: "bun scripts/check-scars.ts"
+  lint_command: "bun scripts/check-descarring-scars.ts"
 promote_memory:
-  lint_command: "bun tools/memory-lint.ts --dir {dir} --file {file}"
+  lint_command: "<your memory lint> --dir {dir} --file {file}"
   target_dir: docs/retrospection
 fix_ci:
   regenerate_commands:
     - bun run generate:api
+resolve_conflicts:
+  generated:
+    - paths: ["src/generated/**"]
+      command: bun run generate
 github_actions:
   conventions_doc: docs/ci.md
 design_brief:
@@ -448,5 +489,5 @@ decide:
   architect_agent: architect
   escalation_labels: [agent:architect]
 explain:
-  figure_build_command: "bun tools/figure.ts"
+  figure_build_command: "<your figure build command>"
 ```

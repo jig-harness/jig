@@ -56,25 +56,49 @@ pattern-checkable ADR decisions into actual gates — so "we decided X" becomes
   and enforced by a checker in pre-commit + CI, each rule citing its ADR; the
   numbering gate is mirrored client- and server-side.
 
-## Port status
+## Adoption steps
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| `docs/adr/` template + `.claude/skills/adr/SKILL.md` (frontmatter + body shape, amendment mechanism) | [`templates/ADR-template.md`](templates/ADR-template.md) — copyable ADR skeleton with a worked generic example |
-| `tools/check-adr-numbers.sh` (duplicate-number gate) | [`reference/numbering-gate/`](reference/numbering-gate/) — portable gate + self-test + fixtures |
-| `.claude/adr-rules/rules.yaml` (extracted rules catalog) | [`templates/adr-rules.yaml`](templates/adr-rules.yaml) — generic rules catalog (deny-on-match + require-nearby) |
-| `.claude/scripts/adr-tier1-check.sh` (staged-code pattern checker) | [`reference/decisions-to-checks/`](reference/decisions-to-checks/) — a **generic** interpreter of `adr-rules.yaml` + self-test + fixtures |
+1. Copy [`templates/ADR-template.md`](templates/ADR-template.md) as the
+   starting point for every record under `docs/adr/`, and write the
+   amendment-or-supersession rule into your conventions. This is **Lite**.
+2. Run [`reference/numbering-gate/`](reference/numbering-gate/) in CI, and
+   validate ADR frontmatter with
+   [M4](../M4-docs-governance/)'s frontmatter checker, whose schema requires
+   `decision_date`, `supersedes` and `superseded_by` for `type: adr`. This is
+   **Standard**.
+3. Copy [`templates/adr-rules.yaml`](templates/adr-rules.yaml), extract every
+   pattern-checkable decision into it, and run
+   [`reference/decisions-to-checks/`](reference/decisions-to-checks/) and its
+   self-test in pre-commit and CI; run the numbering gate in a pre-push hook as
+   well. This is **Strict**.
 
-Also landed: [`mappings.md`](mappings.md) (issue trackers, hook managers, CI
-providers) and [`maturity.yaml`](maturity.yaml).
+## Status
 
-**Not ported** (per "don't port the unproven" / IP scrub): the reference
-implementation's `adr-tier1-check.sh` is a *bespoke* script hardcoding three
-specific ADR rules with linter-suppression parsing — groundwork ports the
-*generic mechanism* (a rules-driven interpreter) instead, since a per-rule
-hand-written script is exactly what the `adr-rules.yaml` catalog exists to
-avoid. The **semantic (LLM-reviewed) rule tier** and the `adr_summaries` /
-`artifact_detection` routing map stay out until validated — they belong with
-the review harness ([M7](../M7-pr-lifecycle-review/)) / learning loop
-([M8](../M8-learning-loop/)). All real ADR decisions are product-domain and are
-replaced with neutral examples (config format, fetch timeouts).
+What this module provides:
+
+- [`templates/ADR-template.md`](templates/ADR-template.md) — the record's
+  frontmatter and body, the amendment mechanism, and a worked neutral example.
+- [`templates/adr-rules.yaml`](templates/adr-rules.yaml) — the rules catalog
+  with one example of each rule shape (deny-on-match, require-nearby).
+- [`reference/numbering-gate/`](reference/numbering-gate/) — fails when two
+  ADRs share a number.
+- [`reference/decisions-to-checks/`](reference/decisions-to-checks/) — a
+  generic interpreter that applies the rules catalog to changed files.
+- [`mappings.md`](mappings.md) (hook managers, CI providers, issue trackers)
+  and [`maturity.yaml`](maturity.yaml).
+
+Each reference gate has a paired self-test beside it. The
+[`/groundwork:adr`](../../plugin/skills/adr/SKILL.md) skill is the runnable
+form of this practice: it writes a record, extracts its checkable rules into
+the rules catalog and validates them against the interpreter's format.
+[`/groundwork:decide`](../../plugin/skills/decide/SKILL.md) checks a new
+question against the existing records first, and hands a ruling that clears
+its bar to `/groundwork:adr`.
+
+Deliberately left out: one hand-written script per rule, because a per-rule
+script is what a rules catalog exists to replace; and the semantic,
+model-reviewed rule tier with its routing map, which stays out until a working
+repository has validated it — it belongs with the review harness
+([M7](../M7-pr-lifecycle-review/)) and the learning loop
+([M8](../M8-learning-loop/)). Example decisions are neutral (configuration
+format, structured logging, fetch timeouts).

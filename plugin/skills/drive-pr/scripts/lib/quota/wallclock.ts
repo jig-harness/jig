@@ -122,15 +122,14 @@ export function nextWallClock(
   // Every "has this candidate already passed" decision in this function
   // compares against this FLOORED value, never against `now` directly: a
   // candidate is always constructed at second 0 of its target minute, so an
-  // instant-precision comparison rejects one seconds into the SAME minute
-  // as already past — round 22 fixed this for the OUTER "at or after"
+  // instant-precision comparison rejects one seconds into the SAME minute as
+  // already past — an earlier fix covered this for the OUTER "at or after"
   // decision below, but missed the IDENTICAL comparison inside `resolve()`
   // itself, which decides whether to seek a fall-back-transition's LATER
   // occurrence. Left at full precision there, a genuinely valid FIRST
   // occurrence a few seconds into the current minute (during a fall-back's
   // doubled hour) is wrongly treated as passed and swapped for the second,
-  // later occurrence instead — sleeping roughly an extra hour
-  // (docomply-review, a reference-implementation pull request round 23).
+  // later occurrence instead — sleeping roughly an extra hour.
   const nowFlooredToMinute = Math.floor(now.getTime() / 60_000) * 60_000;
 
   // Resolve a candidate date (zone-local Y/M/D + the target time) to an
@@ -176,7 +175,7 @@ export function nextWallClock(
     // `candidate` is the EARLIER of the two and it has already passed, the
     // LATER occurrence can still be minutes away — returning null here would
     // make the caller advance a whole day, past an instant that is actually
-    // imminent (chatgpt-codex-connector, a reference-implementation pull request round 4). Detect the shift
+    // imminent. Detect the shift
     // by comparing the zone's offset now against a day later, when any
     // transition in between has settled: a POSITIVE shift is exactly a
     // fall-back (the offset got smaller); anything else — no transition, or
@@ -212,35 +211,33 @@ export function nextWallClock(
  * detection: the block is still recognised, it just cannot be slept through,
  * which routes it to the stop-and-notify branch.
  */
-// Exported so a caller that must recognise a WHOLE notice — not merely find
-// a reset clause inside one — can compose its own anchored regex from this
-// SAME source rather than hand-copying the pattern, which is what let the
-// clause's own shape drift out of sync the one time it was duplicated
-// (the Claude adapter's session-limit notice matcher, PR #4431 rounds
-// 18-20 — see its own comment for why a hand-copied fragment there kept
-// leaving a new bypass position for each round to find).
+// Exported so a caller that must recognise a WHOLE notice — not merely find a
+// reset clause inside one — can compose its own anchored regex from this SAME
+// source rather than hand-copying the pattern, which is what let the clause's
+// own shape drift out of sync the one time it was duplicated (the Claude
+// adapter's session-limit notice matcher — see its own comment for why a
+// hand-copied fragment there kept leaving a new bypass position open).
 //
 // The zone's parentheses are `\(zone\)` OR `zone` — an alternation, not
 // `\(?zone\)?`, whose two `?`s are independently optional and therefore also
-// accept the mismatched `(zone` and `zone)`. That mismatch was harmless
-// while this regex only ever searched loosely for a clause to report as
-// evidence, but the Claude adapter now embeds it inside an ANCHORED,
-// fail-closed notice matcher (round 20) — there, accepting a malformed
-// clause means classifying a malformed notice as a trusted, sleepable short
-// window instead of taking the QUOTA_PARKED path (docomply-review,
-// a reference-implementation pull request round 21). The alternation puts the zone text in whichever
-// capture group corresponds to the branch that matched — group 4
-// (parenthesized) or group 5 (bare) — both read by every caller below.
+// accept the mismatched `(zone` and `zone)`. That mismatch was harmless while
+// this regex only ever searched loosely for a clause to report as evidence, but
+// the Claude adapter now embeds it inside an ANCHORED, fail-closed notice
+// matcher — there, accepting a malformed clause means classifying a malformed
+// notice as a trusted, sleepable short window instead of taking the
+// QUOTA_PARKED path. The alternation puts the zone text in whichever capture
+// group corresponds to the branch that matched — group 4 (parenthesized) or
+// group 5 (bare) — both read by every caller below.
 export const RESET_CLAUSE_RE =
   /resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:\(([A-Za-z0-9+_-]+(?:\/[A-Za-z0-9+_-]+)*)\)|([A-Za-z0-9+_-]+(?:\/[A-Za-z0-9+_-]+)*))/i;
 
 /**
  * The `resets ...` substring `parseResetClause` recognises, with none of the
- * surrounding free text — for a caller that wants to record what was
- * RECOGNISED (e.g. as log/evidence text) without storing the raw message it
- * was found in, which can carry unrelated content the vendor happened to
- * bundle alongside its own rate-limit line (docomply-review, a reference-implementation pull request
- * round 15). `null` on no match, exactly like `parseResetClause` itself.
+ * surrounding free text — for a caller that wants to record what was RECOGNISED
+ * (e.g. as log/evidence text) without storing the raw message it was found in,
+ * which can carry unrelated content the vendor happened to bundle alongside its
+ * own rate-limit line. `null` on no match, exactly like `parseResetClause`
+ * itself.
  */
 export function matchResetClauseText(text: string): string | null {
   return RESET_CLAUSE_RE.exec(text)?.[0] ?? null;
@@ -250,19 +247,17 @@ export function parseResetClause(
   text: string,
   now: Date,
 ): { at: Date; zone: string } | null {
-  // The zone's `/`-joined tail is OPTIONAL (`*`, not `+`): `UTC` and `GMT`
-  // are valid, single-component `Intl.DateTimeFormat` zones with no slash at
-  // all, and requiring one meant a genuinely resolvable zone still parsed as
-  // "no reset clause found," falling through to QUOTA_PARKED instead of the
-  // sleep-and-resume it should have gotten (chatgpt-codex-connector, PR
-  // #4431 round 13). Each segment also needs DIGITS, not just letters: a
-  // letters-only class truncates a real zone that happens to contain one —
-  // `EST5EDT` (a genuine, DST-observing IANA backward-compat name) matched
-  // only as far as `EST` and resolved against the WRONG, fixed-offset zone
-  // of that same name, an hour off during daylight time; `Etc/GMT+5`
-  // truncated to the invalid `Etc/GMT+` and fell through to QUOTA_PARKED
-  // instead of sleeping through a perfectly resolvable wall
-  // (chatgpt-codex-connector, a reference-implementation pull request round 15).
+  // The zone's `/`-joined tail is OPTIONAL (`*`, not `+`): `UTC` and `GMT` are
+  // valid, single-component `Intl.DateTimeFormat` zones with no slash at all,
+  // and requiring one meant a genuinely resolvable zone still parsed as "no
+  // reset clause found," falling through to QUOTA_PARKED instead of the
+  // sleep-and-resume it should have gotten. Each segment also needs DIGITS, not
+  // just letters: a letters-only class truncates a real zone that happens to
+  // contain one — `EST5EDT` (a genuine, DST-observing IANA backward-compat
+  // name) matched only as far as `EST` and resolved against the WRONG,
+  // fixed-offset zone of that same name, an hour off during daylight time;
+  // `Etc/GMT+5` truncated to the invalid `Etc/GMT+` and fell through to
+  // QUOTA_PARKED instead of sleeping through a perfectly resolvable wall.
   const m = RESET_CLAUSE_RE.exec(text);
   if (m === null) return null;
   const rawHour = Number.parseInt(m[1] as string, 10);

@@ -2,8 +2,10 @@
 
 > Copy this into your repo (e.g. `docs/development/ci-architecture.md`) and
 > adjust the tool names to your stack. It is the tool-independent contract; the
-> per-provider wiring lives in `../mappings.md`, and the two enforcement gates
-> live in `../reference/`.
+> per-provider wiring lives in Groundwork's
+> [M10 mappings](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/mappings.md), and
+> the two enforcement gates in its
+> [`reference/`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference).
 
 ## The core idea: "it merged" is not "it's verified"
 
@@ -36,7 +38,7 @@ fires itself.
 
 Every pull request runs the quick, diff-scoped checks: format, lint, unit tests,
 type checks, the change-area-selected reviews (see
-[M7](../../M7-pr-lifecycle-review/)), and any security/link/table gates. These
+[M7](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review)), and any security/link/table gates. These
 are necessary but **not sufficient** — they see the diff, not the integrated
 system. A human still merges. PR gates *inform* that decision;
 they do not certify production-readiness.
@@ -64,8 +66,8 @@ The fix is a **watchdog**: a scheduled check on how far the pointer lags the
 default-branch tip (in commits and in time). When the lag crosses a threshold it
 fails loudly — page on-call, and ideally trigger an automatic **heal** run
 (re-kick verification from the current tip). This is a freshness gate on a
-*pointer* instead of a file (see [M2](../../M2-generated-artifact-freshness/));
-the runnable version is [`../reference/verified-pointer/`](../reference/verified-pointer/).
+*pointer* instead of a file (see [M2](https://github.com/docomply/jig/tree/main/modules/M2-generated-artifact-freshness));
+the runnable version is the [`verified-pointer`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/verified-pointer).
 
 ### Stage 3 — deploy verified artifacts only
 
@@ -81,8 +83,8 @@ Production is reached by a **deliberate human action** on an
 already-verified-and-deployed build — a manual trigger plus an environment
 **protection rule** (required reviewers / a wait timer). It must be impossible
 for a push to auto-promote to production. This is the last human checkpoint (a
-[HITL](../../M7-pr-lifecycle-review/) boundary), and it is enforced by
-configuration, not habit: the [`../reference/promote-safety/`](../reference/promote-safety/)
+[HITL](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review) boundary), and it is enforced by
+configuration, not habit: the [`promote-safety`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/promote-safety)
 lint fails a production deploy that auto-fires or ships a mutable ref.
 
 ## The environment kit that makes verification real

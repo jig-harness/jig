@@ -66,7 +66,7 @@ describe("readMailboxFile", () => {
     // regular file sitting where a directory belongs) — never for
     // "genuinely nothing there", which ENOENT already covers on its own.
     // Treating ENOTDIR as `absent` folded a broken mailbox location as
-    // CLEAR (chatgpt-codex-connector, a reference-implementation pull request round 21).
+    // CLEAR.
     const brokenMailboxDir = join(dir, "broken-mailbox");
     writeFileSync(brokenMailboxDir, "this is a file, not a directory");
     const r = readMailboxFile(join(brokenMailboxDir, "inbox.jsonl"));
@@ -185,7 +185,7 @@ describe("outboxRecordsForPr", () => {
     // would report the message as done with nothing IN it, while
     // `unseenMessages` treats the id as acknowledged and suppresses
     // redelivery — leaving the sender with neither a response nor a
-    // warning (chatgpt-codex-connector, a reference-implementation pull request round 16).
+    // warning.
     appendFileSync(
       outboxPath(dir),
       `${JSON.stringify({ id: "m-no-response", ts: new Date().toISOString(), pr: "999", status: "done" })}\n`,
@@ -313,7 +313,7 @@ describe("foldGateState", () => {
     // identifiable PR — it is exactly as ambiguous as a record naming no
     // PR at all, and must poison like the "no pr" / malformed-directive
     // case, not be skipped as though it belonged to a different,
-    // legitimate PR (chatgpt-codex-connector, a reference-implementation pull request round 23).
+    // legitimate PR.
     writeFileSync(
       inboxPath(dir),
       `${JSON.stringify({ id: "m-1", ts: new Date().toISOString(), kind: "directive", from: "x", pr: "", command: "hold-push" })}\n`,
@@ -332,14 +332,13 @@ describe("foldGateState", () => {
   });
 
   it("fails CLOSED on a directive whose pr field is digits but NOT canonical (a leading zero), rather than silently skipping it as belonging to another PR", async () => {
-    // `isDigits('0999')` is true, but `'0999'` is a DIFFERENT string from
-    // the canonical `'999'` every writer in this module actually produces
-    // (`resolvePrArg`'s own `BigInt(...).toString()`) — comparing it
-    // against `pr` with plain `===` would read it as "a different, valid
-    // PR" and skip it as out-of-scope, when it is really a corrupt or
-    // hand-edited record that names no identifiable PR at all
-    // (docomply-review, a reference-implementation pull request round 24, sharpening round 23's own
-    // isDigits-only fix).
+    // `isDigits('0999')` is true, but `'0999'` is a DIFFERENT string from the
+    // canonical `'999'` every writer in this module actually produces
+    // (`resolvePrArg`'s own `BigInt(...).toString()`) — comparing it against
+    // `pr` with plain `===` would read it as "a different, valid PR" and skip
+    // it as out-of-scope, when it is really a corrupt or hand-edited record
+    // that names no identifiable PR at all (an isDigits-only check is not
+    // enough).
     writeFileSync(
       inboxPath(dir),
       `${JSON.stringify({ id: "m-1", ts: new Date().toISOString(), kind: "directive", from: "x", pr: "0999", command: "hold-push" })}\n`,
@@ -350,11 +349,10 @@ describe("foldGateState", () => {
 
   it("fails CLOSED on a directive whose pr field is '0' — digits and its own canonical form, but never a real PR number", async () => {
     // `'0'` is BOTH `isDigits` and its own canonical form
-    // (`BigInt('0').toString() === '0'`), so the round-24 fix's own
-    // canonicality check alone still accepted it as "a valid, different
-    // PR" and skipped it — but GitHub PR numbers are never `0`, so this
-    // identifies no REAL PR any more than `'0999'` or `'abc'` do
-    // (docomply-review, a reference-implementation pull request round 25).
+    // (`BigInt('0').toString() === '0'`), so a canonicality check alone still
+    // accepted it as "a valid, different PR" and skipped it — but GitHub PR
+    // numbers are never `0`, so this identifies no REAL PR any more than
+    // `'0999'` or `'abc'` do.
     writeFileSync(
       inboxPath(dir),
       `${JSON.stringify({ id: "m-1", ts: new Date().toISOString(), kind: "directive", from: "x", pr: "0", command: "hold-push" })}\n`,
@@ -383,7 +381,7 @@ describe("foldGateState", () => {
     expect(r.warnings).toEqual([]);
   });
 
-  it("DOES fail closed on valid JSON that cannot be classified as either a note or a directive — round 3 counterexamples", async () => {
+  it("DOES fail closed on valid JSON that cannot be classified as either a note or a directive", async () => {
     for (const bad of [
       "null",
       "{}",
@@ -418,8 +416,7 @@ describe("foldGateState", () => {
     // the note carve-out as an unambiguously clear note, even though it
     // looks exactly like an attempted (but malformed) directive. Neither
     // `parseInboxMessage` nor `repairInbox` can clean this up: the record
-    // parses fine as valid JSON, so it survives repair untouched
-    // (docomply-review, a reference-implementation pull request round 30).
+    // parses fine as valid JSON, so it survives repair untouched.
     for (const contaminated of [
       {
         id: "m-1",
@@ -447,23 +444,23 @@ describe("foldGateState", () => {
   });
 
   it("DOES fail closed unconditionally on ANY line that fails to parse as JSON — no leniency, no classifier to defeat", async () => {
-    // Three review rounds (1, 2, 5) each defeated a narrower heuristic here
-    // with a new counterexample — see foldGateState's own comment. The
-    // fix is to have no classifier left: every one of these poisons.
+    // Each narrower heuristic tried here was defeated by a new counterexample —
+    // see foldGateState's own comment. The fix is to have no classifier left:
+    // every one of these poisons.
     for (const bad of [
-      // A truncated NOTE tail — round 1/2's "safe to drop" case, no longer
+      // A truncated NOTE tail — once treated as "safe to drop", no longer
       // exempt; appendLine's self-healing (below) means this can only be a
       // genuine, isolated interrupted-write tail now, recoverable via repair.
       '{"id":"m-1","ts":"2026-01-01T00:00:00.000Z","kind":"note","from":"x","pr":"999","body":"trunc',
       // A truncated DIRECTIVE tail.
       '{"id":"m-1","ts":"2026-01-01T00:00:00.000Z","kind":"directive","from":"x","pr":"999","command":"hold-p',
-      // Truncated before "kind" was even reached — round 2's counterexample.
+      // Truncated before "kind" was even reached.
       '{"id":"m-1","ts":"2026-01-01T00:00:00.000',
-      // A directive-shaped line for a DIFFERENT PR — round 1's PR-scoping
+      // A directive-shaped line for a DIFFERENT PR — the PR-scoping
       // carve-out applied to structurally-parsed JSON only; an unparsable
       // line's claimed `pr` is not trustworthy evidence of anything.
       '{"id":"m-1","ts":"2026-01-01T00:00:00.000Z","kind":"directive","from":"x","pr":"111","command":"hold-p',
-      // Round 5's adversarial constructions: a conflicting marker...
+      // Adversarial constructions: a conflicting marker...
       '{"pr":"999","kind":"directive" garbage "kind":"note"}',
       // ...and a decoy `pr` token ahead of the real one.
       '{"pr":"111"} garbage {"pr":"999","kind":"directive"',
@@ -551,11 +548,10 @@ describe("the line-size cap", () => {
 
 describe("appendLine durability (fsync after append)", () => {
   it("fsyncs the file after every append, not just a plain buffered write", async () => {
-    // A plain `writeFileSync(path, content, {flag:'a'})` reports success
-    // once the bytes reach the page cache, not stable storage -- on a
-    // crash immediately after, a hold-push directive could be lost while
-    // foldGateState reads the resulting file as CLEAR (chatgpt-codex-
-    // connector, PR #4446 round 18).
+    // A plain `writeFileSync(path, content, {flag:'a'})` reports success once
+    // the bytes reach the page cache, not stable storage -- on a crash
+    // immediately after, a hold-push directive could be lost while
+    // foldGateState reads the resulting file as CLEAR.
     const actualFs = await import("node:fs");
     const realFsyncSync = actualFs.fsyncSync;
     const realFs = { ...actualFs };
@@ -607,8 +603,7 @@ describe("appendLine durability (fsync after append)", () => {
     // worktree). Fsyncing only `dirname(path)` (the mailbox directory
     // itself) would leave its OWN entry — in ITS now-also-new parent —
     // undurable, so a power loss could discard the whole newly created
-    // mailbox directory tree even though the file inside it was fsynced
-    // (chatgpt-codex-connector, a reference-implementation pull request round 20).
+    // mailbox directory tree even though the file inside it was fsynced.
     const nestedContext = join(dir, "nested-context");
     const nestedMailbox = join(nestedContext, "drive-mailbox");
     expect(existsSync(nestedContext)).toBe(false);
@@ -638,17 +633,16 @@ describe("appendLine durability (fsync after append)", () => {
     }
   });
 
-  it("fsyncs the parent and grandparent unconditionally, even when THIS call's own mkdirSync reports nothing was created — closes the round-20 fix's own concurrent-first-sender race", async () => {
-    // Simulates the race the round-20 fix left open: a CONCURRENT sender
-    // creates the whole directory chain moments before this call's own
-    // mkdirSync runs (so mkdirSync here legitimately returns `undefined`
-    // — the whole chain already exists by the time THIS process calls
-    // it) — yet the parent/grandparent directory entries are STILL newly
-    // created (by the other sender) and still need fsyncing, which this
-    // process has no way to know from its own mkdirSync return value
-    // alone. Round 20's fix relied on exactly that return value and would
-    // have fsynced only `nestedMailbox` here, missing both ancestors
-    // (chatgpt-codex-connector, a reference-implementation pull request round 22).
+  it("fsyncs the parent and grandparent unconditionally, even when THIS call's own mkdirSync reports nothing was created — closes the concurrent-first-sender race", async () => {
+    // Simulates the concurrent-first-sender race: a CONCURRENT sender creates
+    // the whole directory chain moments before this call's own mkdirSync runs
+    // (so mkdirSync here legitimately returns `undefined` — the whole chain
+    // already exists by the time THIS process calls it) — yet the
+    // parent/grandparent directory entries are STILL newly created (by the
+    // other sender) and still need fsyncing, which this process has no way to
+    // know from its own mkdirSync return value alone. An earlier fix relied on
+    // exactly that return value and would have fsynced only `nestedMailbox`
+    // here, missing both ancestors.
     const nestedContext = join(dir, "raced-context");
     const nestedMailbox = join(nestedContext, "drive-mailbox");
     mkdirSync(nestedMailbox, { recursive: true }); // the "concurrent sender" already created it
@@ -677,13 +671,11 @@ describe("appendLine durability (fsync after append)", () => {
 
   it("flushes every ancestor created by a $DRIVE_PR_MAILBOX_DIR override deeper than the default two-level layout", async () => {
     // The fixed two-level floor (mailboxDir() === worktreeRoot/.context/
-    // drive-mailbox) only bounds the DEFAULT production layout. Under
-    // the test/operator override, `resolveMailboxDir()` permits an
-    // arbitrarily deep path, and mkdirSync's own recursive create walks
-    // as far up as it needs to — a chain missing MORE than two levels
-    // would leave the higher, still-new ancestors unfsynced if the walk
-    // stopped at the fixed floor alone (chatgpt-codex-connector, a reference-implementation pull request
-    // round 25).
+    // drive-mailbox) only bounds the DEFAULT production layout. Under the
+    // test/operator override, `resolveMailboxDir()` permits an arbitrarily deep
+    // path, and mkdirSync's own recursive create walks as far up as it needs to
+    // — a chain missing MORE than two levels would leave the higher, still-new
+    // ancestors unfsynced if the walk stopped at the fixed floor alone.
     const level1 = join(dir, "override-l1");
     const level2 = join(level1, "override-l2");
     const level3 = join(level2, "override-l3");
@@ -722,8 +714,7 @@ describe("appendLine durability (fsync after append)", () => {
     // existed) leaves an empty/partial file behind. A later, otherwise-
     // successful retry would then observe existing.kind === 'ok' — not
     // 'absent' — setting fileIsNew false and skipping the ancestor-
-    // directory fsyncs entirely, even though nobody has ever run them
-    // (chatgpt-codex-connector, a reference-implementation pull request round 23).
+    // directory fsyncs entirely, even though nobody has ever run them.
     const path = inboxPath(dir);
 
     const actualFs = await import("node:fs");
@@ -783,7 +774,7 @@ describe("repairInbox dry-run is genuinely read-only", () => {
     // command's own "reports without writing" contract: it creates
     // .lock.stale.*/.lock.recovering.stale.* tombstone directories as a
     // side effect and would fail outright against a genuinely read-only
-    // mailbox directory (chatgpt-codex-connector, a reference-implementation pull request round 18).
+    // mailbox directory.
     //
     // The inbox content is written DIRECTLY here (bypassing appendLine),
     // deliberately: appendLine's own lock acquire/release is itself a
@@ -889,8 +880,7 @@ describe("appendLine self-healing (interrupted-write delimiter)", () => {
         appendDirective(dir, "999", "orchestrator", "hold-push"),
       ).rejects.toThrow(ExitError);
       // Refused BEFORE writing anything — the truncated tail is untouched,
-      // not glued to a directive it could not safely delimit
-      // (docomply-review, a reference-implementation pull request round 14).
+      // not glued to a directive it could not safely delimit.
       expect(realReadFileSync(path, "utf8")).toBe(original);
     } finally {
       mock.module("node:fs", () => realFs);
@@ -946,14 +936,13 @@ describe("repairInbox", () => {
   });
 
   it("fails CLOSED, not a clean absent result, when the mailbox directory's own PARENT exists but is not a directory (ENOTDIR)", async () => {
-    // The sibling of readMailboxFile's own round-21 fix, at the
-    // directory level rather than the file level: `lstatSync(dir)`
-    // raises ENOTDIR when `dir`'s PARENT exists but is the wrong type (a
-    // regular file, not a directory) — a broken location, never a
-    // genuinely absent one. This module's own comment on the lstatSync
-    // call below claims it "mirrors readMailboxFile's own absent/
-    // unreadable split so the two agree" — this test is what keeps that
-    // claim true (chatgpt-codex-connector, a reference-implementation pull request round 21).
+    // The sibling of readMailboxFile's own ENOTDIR handling, at the directory
+    // level rather than the file level: `lstatSync(dir)` raises ENOTDIR when
+    // `dir`'s PARENT exists but is the wrong type (a regular file, not a
+    // directory) — a broken location, never a genuinely absent one. This
+    // module's own comment on the lstatSync call below claims it "mirrors
+    // readMailboxFile's own absent/unreadable split so the two agree" — this
+    // test is what keeps that claim true.
     const notADirectory = join(dir, "not-a-directory");
     writeFileSync(notADirectory, "this is a file, not a directory");
     const brokenMailboxDir = join(notADirectory, "drive-mailbox");
@@ -970,7 +959,7 @@ describe("repairInbox", () => {
     // wrong type) — the lock treats that as ordinary contention and
     // eventually reports "another driver is updating state", sending an
     // operator chasing a nonexistent rival instead of the actual broken
-    // path (chatgpt-codex-connector, a reference-implementation pull request round 29).
+    // path.
     const mailboxPathIsAFile = join(dir, "mailbox-is-actually-a-file");
     writeFileSync(mailboxPathIsAFile, "this is a file, not a directory");
 
@@ -990,8 +979,7 @@ describe("repairInbox", () => {
     // is not a directory", even though `readMailboxFile`'s own
     // `readFileSync` calls read straight through it without complaint.
     // `statSync` (which follows the link) is what the type check itself
-    // must use; `lstatSync` still owns the earlier absent/unreadable split
-    // (coderabbitai, PR #4446).
+    // must use; `lstatSync` still owns the earlier absent/unreadable split.
     const realDir = join(dir, "real-mailbox-dir");
     mkdirSync(realDir);
     const linkedDir = join(dir, "mailbox-via-symlink");
@@ -1005,15 +993,13 @@ describe("repairInbox", () => {
   });
 
   it("succeeds on a mailbox directory that does not exist yet, and never creates it — repair as the very first mailbox command on a fresh worktree", async () => {
-    // Every other test's `dir` is pre-created by `beforeEach`'s
-    // `mkdtempSync`, which never exercises this: `createLock`'s own
-    // `mkdirSync(lock)` is not recursive, so an earlier fix (round 9) had
-    // repair create the mailbox directory itself before locking — which
-    // then broke `--dry-run`'s own "reports without writing" contract by
-    // mutating a fresh worktree unconditionally (docomply-review,
-    // a reference-implementation pull request round 10). The fix instead short-circuits on an absent
-    // directory before touching the filesystem at all, for both dry-run
-    // and a real repair.
+    // Every other test's `dir` is pre-created by `beforeEach`'s `mkdtempSync`,
+    // which never exercises this: `createLock`'s own `mkdirSync(lock)` is not
+    // recursive, so an earlier fix had repair create the mailbox directory
+    // itself before locking — which then broke `--dry-run`'s own "reports
+    // without writing" contract by mutating a fresh worktree unconditionally.
+    // The fix instead short-circuits on an absent directory before touching the
+    // filesystem at all, for both dry-run and a real repair.
     const freshDir = join(dir, "never-created-yet");
     expect(existsSync(freshDir)).toBe(false);
 
@@ -1081,11 +1067,10 @@ describe("repairInbox", () => {
     // `appendedSince` is unit-tested as a pure function below, but nothing
     // exercised the INTEGRATION that consumes it: `repairInbox`'s own
     // `kept.map(...).join('') + suffix` concatenation, only reached when
-    // `dropped.length > 0`. Every other repair test here runs with no
-    // writer between the two reads, so `suffix` is always empty and a bug
-    // in the concatenation itself — dropped, or ordered before `kept` —
-    // would pass every one of them silently (coderabbitai, PR #4446
-    // round 16).
+    // `dropped.length > 0`. Every other repair test here runs with no writer
+    // between the two reads, so `suffix` is always empty and a bug in the
+    // concatenation itself — dropped, or ordered before `kept` — would pass
+    // every one of them silently.
     const path = inboxPath(dir);
     await appendNote(dir, "999", "orchestrator", "original");
     appendFileSync(path, '{"truncated-tail-no-newline'); // the line repair drops
@@ -1164,11 +1149,11 @@ describe("appendedSince", () => {
 });
 
 describe("concurrent senders (real processes, not same-process promises)", () => {
-  // The unit tests above exercise the lock through same-process `await`s,
-  // which never actually contends it — this is the test that does: many
-  // REAL, independent `mailbox.ts send` processes racing the same inbox
-  // file, verifying the round-8 lock actually serializes them rather than
-  // merely looking correct in a single-threaded harness.
+  // The unit tests above exercise the lock through same-process `await`s, which
+  // never actually contends it — this is the test that does: many REAL,
+  // independent `mailbox.ts send` processes racing the same inbox file,
+  // verifying the lock actually serializes them rather than merely looking
+  // correct in a single-threaded harness.
   it("every concurrent sender lands a complete, individually-parseable line — none glued, none lost", async () => {
     const mailboxScript = join(import.meta.dir, "..", "scripts", "mailbox.ts");
     const COUNT = 12;
@@ -1243,8 +1228,7 @@ describe("mailbox.ts ack CLI validation", () => {
     // the "at least one --id" count check and reached
     // appendOutboxRecord, writing a record `parseOutboxRecord` later
     // rejects for having a non-empty-string id — the command reported
-    // success while the ack never actually took effect
-    // (chatgpt-codex-connector, a reference-implementation pull request round 19).
+    // success while the ack never actually took effect.
     const p = runAck(["--id", ""]);
     const [exitCode, stderr] = await Promise.all([
       p.exited,
@@ -1277,11 +1261,10 @@ describe("mailbox.ts ack CLI validation", () => {
   });
 
   it("refuses an id that is not a known inbox message — a typo, not a real ack", async () => {
-    // A typo'd id, or a following flag mistakenly consumed as an id's
-    // value, previously durably wrote an outbox record for an id naming
-    // NO real inbox message — the command reported success while the
-    // message actually intended stayed unseen forever (docomply-review,
-    // a reference-implementation pull request round 20).
+    // A typo'd id, or a following flag mistakenly consumed as an id's value,
+    // previously durably wrote an outbox record for an id naming NO real inbox
+    // message — the command reported success while the message actually
+    // intended stayed unseen forever.
     await appendNote(dir, "999", "orchestrator", "hello");
     const p = runAck(["--id", "m-typo-does-not-exist"]);
     const [exitCode, stderr] = await Promise.all([
@@ -1344,7 +1327,7 @@ describe("mailbox.ts send CLI validation", () => {
     // silently skip. This CLI-side check is defense in depth: a rejected
     // `send 0 ...` never gets to write the directive at all, so no later
     // fold for any real PR is ever put in the poisoned state in the first
-    // place (chatgpt-codex-connector, a reference-implementation pull request round 26).
+    // place.
     const p = Bun.spawn(
       [
         "bun",
@@ -1378,8 +1361,7 @@ describe("mailbox.ts send CLI validation", () => {
     // directive branch — a contradictory `--kind note --command hold-push`
     // used to write a plain note and exit 0, with no complaint. An operator
     // making that mistake could believe a hold was installed while
-    // `guarded-push.ts` remained clear and proceeded to push
-    // (chatgpt-codex-connector, a reference-implementation pull request round 28).
+    // `guarded-push.ts` remained clear and proceeded to push.
     const p = Bun.spawn(
       [
         "bun",

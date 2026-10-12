@@ -9,8 +9,8 @@
  * side in one test (below), and every precedence guard must be provably
  * load-bearing — verified by actually reverting each one in `doctor.ts` and
  * confirming the corresponding test here reddens (recorded in the PR
- * description / final report per an earlier change's own instructions, not restated
- * here as a comment nothing checks).
+ * description / final report, not restated here as a comment nothing
+ * checks).
  *
  * FIXTURES, NOT REAL PROCESSES OR A REAL FILESYSTEM. `classifyDrive` takes a
  * plain `DoctorInput` record and a `now`, and does no I/O of its own — that is
@@ -125,7 +125,7 @@ describe("classifyDrive — fail-closed guards (rule 1 and friends)", () => {
     expect(row.reason).toContain("state file could not be read");
   });
 
-  it("an unreadable state file does NOT preempt DEAD_WITH_LEFTOVERS when the leftovers probe independently confirms stranded work (review finding)", () => {
+  it("an unreadable state file does NOT preempt DEAD_WITH_LEFTOVERS when the leftovers probe independently confirms stranded work", () => {
     // `gatherDoctorInput` runs the leftovers probe off the WORKTREE, not the
     // state file, so it answers this question regardless of whether the
     // state snapshot parsed — an old/malformed state file (reachable right
@@ -268,8 +268,7 @@ describe("classifyDrive — precedence order", () => {
     expect(classifyDrive(sleeping, NOW).verdict).toBe("QUOTA_PARKED");
     // The SAME input with no park recorded is the genuine wedge — proving
     // the park is the sole decider here, not some other field of the fixture
-    // (document-scanning-gates § 5: the clause under test must be what
-    // decides).
+    // (a test must prove the clause under test is what makes it pass).
     expect(classifyDrive({ ...sleeping, quotaPark: null }, NOW).verdict).toBe(
       "WEDGED",
     );
@@ -485,7 +484,7 @@ describe("classifyDrive — precedence order", () => {
     expect(row.reason).toContain("already past, not yet re-armed");
   });
 
-  it("WEDGED outranks an EXPIRED quota park: the window reopened and nothing resumed (review finding)", () => {
+  it("WEDGED outranks an EXPIRED quota park: the window reopened and nothing resumed", () => {
     // The "self-resolving" premise behind branch 3's precedence has failed
     // here: `resetAt` is 2h in the past, yet the lock is still live, progress
     // is stale past the threshold, and no pass child is running — exactly

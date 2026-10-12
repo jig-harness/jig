@@ -50,7 +50,7 @@ let PLAN: string; // built in beforeAll, after repoBase is known — see plan()
 // call, not just once — the point is that no invocation of `git` in this
 // describe block ever inherits ambient repo location, regardless of caller.
 //
-// Prefix-scrubbed rather than enumerated (coderabbitai, PR #4114): a
+// Prefix-scrubbed rather than enumerated: a
 // hand-maintained list of location vars is one counterexample behind
 // permanently — this one carried four of the seven and the reviewer had to
 // name the missing three. `GIT_` covers every location var git has now or
@@ -175,7 +175,7 @@ async function runScript(
     // keeps the suite runnable where the enclosing checkout is not a git
     // worktree at all — remote gates host, Blacksmith Testbox.
     cwd: opts.cwd ?? baseRepo,
-    // Scrubbed, not raw `process.env` (coderabbitai, PR #4114): the script
+    // Scrubbed, not raw `process.env`: the script
     // under test resolves its actor identity with `git rev-parse`, and a
     // hook-exported GIT_DIR overrides `cwd` — so the leak this suite already
     // guards its OWN `git` calls against reached the subject of the test

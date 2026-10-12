@@ -6,9 +6,9 @@
  * cache: the checker needs the TypeScript compiler API (`typescript6`, a
  * repository devDependency).
  *
- * Per `document-scanning-gates.md` rule 5, every fixture below is mutated
- * from a form the checker is known to accept — a passing test alone proves
- * nothing about whether the assertion is reachable at all.
+ * Every fixture below is mutated from a form the checker is known to accept — a
+ * passing test alone proves nothing about whether the assertion is reachable at
+ * all.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -148,7 +148,7 @@ describe("runCheck — forms that MUST be read correctly", () => {
   });
 
   test("a bold, mixed-case, or prose cell with NO embedded backtick token is correctly SKIPPED, not misread as an identifier", () => {
-    // "PR not open" (no backticks at all) is human prose (using-drive-pr.md's
+    // "PR not open" (no backticks at all) is human prose (README.md's
     // actual style for a genuinely un-annotated row) — the checker must not
     // guess an identifier out of it, and must not choke on it either.
     const file = corpus(
@@ -166,7 +166,7 @@ describe("runCheck — forms that MUST be read correctly", () => {
     );
     // Only 2 of the 3 rows yield a bare identifier (CONVERGED,
     // DRIVE_HELD_BY_OTHER_WORKTREE) — set minPairs=2 to match. `+remap`
-    // matches using-drive-pr.md's own real corpus entry: it shows only the
+    // matches README.md's own real corpus entry: it shows only the
     // drive.ts-remapped code for CONVERGED, never drive-status.ts's raw one.
     withCorpus([`${file}=pipe-table-exit-first+remap=2`], () =>
       expect(runCheck()).toBe(0),
@@ -174,12 +174,11 @@ describe("runCheck — forms that MUST be read correctly", () => {
   });
 
   test("a prose cell with a canonical state named INLINE in backticks is read via the embedded form, not skipped", () => {
-    // "**PR not open** (`PR_NOT_OPEN`)" is using-drive-pr.md's own real,
-    // fixed style after this round: prose stays human-readable, but the
-    // canonical state rides along in backticks so this checker can still
-    // verify the row — closing the gap the whole-cell-only form left open
-    // (chatgpt-codex-connector: only 2 of
-    // using-drive-pr.md's 12 real rows were checkable at all).
+    // "**PR not open** (`PR_NOT_OPEN`)" is README.md's own real style:
+    // prose stays human-readable, but the canonical state rides along in
+    // backticks so this checker can still verify the row — closing the gap
+    // the whole-cell-only form leaves open (a human-prose table whose cells
+    // only rarely hold a bare identifier is barely checkable at all).
     const file = corpus(
       "using-drive-pr-embedded.md",
       [
@@ -221,7 +220,7 @@ describe("runCheck — forms that MUST be read correctly", () => {
     // The real regression: SKILL.md's own CONVERGED row uses exactly this
     // shape, and a whole-cell-anchored EXIT_CELL made it invisible to the
     // checker entirely — the one row the whole feature exists to police went
-    // unchecked (chatgpt-codex-connector).
+    // unchecked.
     const file = corpus(
       "annotated-exit.md",
       [
@@ -259,7 +258,7 @@ describe("runCheck — forms that MUST be read correctly", () => {
     );
   });
 
-  test("EXIT_CELL rejects a malformed suffix on the exit code instead of silently accepting its digit prefix (docomply-review)", () => {
+  test("EXIT_CELL rejects a malformed suffix on the exit code instead of silently accepting its digit prefix", () => {
     // Each of these carries a real identifier (PR_NOT_OPEN) behind a
     // corrupted exit cell — `5oops`/`5.5`/a garbage suffix after a
     // backtick-wrapped digit. An unanchored EXIT_CELL still captured the
@@ -308,17 +307,15 @@ describe("runCheck — forms that MUST be read correctly", () => {
   });
 
   test("CONVERGED's drive.ts remap (exit 0) is accepted ONLY in a file flagged `documentsDriveTsRemap` — every other file requires drive-status.ts's own exit 3, header included", () => {
-    // The second real regression: applying the remap allowance to every
-    // non-header file let a genuinely wrong `CONVERGED` → `0` row pass in
-    // ANY prose file, not just the two (using-drive-pr.md, pr-lifecycle.md)
-    // that actually document drive.ts's operator-facing exit (chatgpt-
-    // codex-connector, mutation-proven). Scoping
-    // was first narrowed to "not the header" (round 1) — too broad: it still
-    // let the same wrong row pass in SKILL.md's own primary cell and in
-    // references/terminal-states.md's table, both of which document
-    // drive-status.ts's contract exactly like the header does (found and
-    // fixed independently, review round 2). The `+remap` suffix below is
-    // the explicit, per-file opt-in that replaced the role-based guess.
+    // Applying the remap allowance to every non-header file lets a genuinely
+    // wrong `CONVERGED` → `0` row pass in ANY prose file, not just the one
+    // (README.md) that actually documents drive.ts's operator-facing exit
+    // (mutation-proven). Scoping it to "not the header" is too broad: it
+    // still lets the same wrong row pass in SKILL.md's own primary cell and
+    // in references/terminal-states.md's table, both of which document
+    // drive-status.ts's contract exactly like the header does. The `+remap`
+    // suffix below is the explicit, per-file opt-in instead of a role-based
+    // guess.
     const prose = corpus(
       "remap-ok.md",
       [
@@ -373,12 +370,11 @@ describe("runCheck — forms that MUST be read correctly", () => {
   });
 
   test("extraction is bounded to the named heading’s section — an unrelated table elsewhere in the same file is ignored", () => {
-    // pr-lifecycle.md's real shape: a stage-flow table with bare `0`–`9`
-    // first cells sits BEFORE the real "## The drive's terminal states"
-    // section. Without a heading bound, a row there that happens to pair a
-    // small number with an ALL-CAPS token reads as a state/exit pair and can
-    // be wrongly flagged (chatgpt-codex-connector,
-    // INFO). Bounding to the heading must ignore it entirely.
+    // A stage-flow table with bare `0`–`9` first cells can sit BEFORE the
+    // real terminal-states section. Without a heading bound, a row there that
+    // happens to pair a small number with an ALL-CAPS token reads as a
+    // state/exit pair and can be wrongly flagged. Bounding to the heading
+    // must ignore it entirely.
     const file = corpus(
       "bounded.md",
       [
@@ -428,7 +424,7 @@ describe("runCheck — forms that MUST be read correctly", () => {
   });
 });
 
-describe("runCheck — drift MUST be caught (document-scanning-gates.md rule 5)", () => {
+describe("runCheck — drift MUST be caught", () => {
   const dir = mkdtempSync(join(tmpdir(), "drive-pr-terminal-states-drift-"));
 
   const corpus = (name: string, body: string): string => {
@@ -555,7 +551,7 @@ describe("runCheck — drift MUST be caught (document-scanning-gates.md rule 5)"
 
   test("fails on the population floor — a table reformatted past what the extractor recognizes must not read as clean", () => {
     // Mutating this away (e.g. accepting < the floor) must be caught here —
-    // this is the guard document-scanning-gates.md rule 5 itself asks for.
+    // a gate's guard is proven only by a test that fails without it.
     const file = corpus(
       "reformatted.md",
       [
@@ -614,8 +610,8 @@ describe("runCheck — drift MUST be caught (document-scanning-gates.md rule 5)"
 
 describe("runCheck — the real repo corpus", () => {
   // The end-to-end guarantee: the actual, checked-in corpus (drive-status.ts,
-  // SKILL.md, terminal-states.md, using-drive-pr.md, and pr-lifecycle.md — see
-  // CORPUS_FILES) is self-consistent today. A future edit to any of them that
+  // SKILL.md, terminal-states.md and README.md — see CORPUS_FILES) is
+  // self-consistent today. A future edit to any of them that
   // documents a pair TERMINAL_STATES does not contain fails THIS test, not
   // just the fixture-driven ones above.
   test("the shipped corpus is drift-free", () => {
@@ -626,7 +622,7 @@ describe("runCheck — the real repo corpus", () => {
 describe("findMissingRequired — catches ONE row silently vanishing, not just total loss", () => {
   // The named gap: "The per-file population floors are only lower bounds
   // ... The tests only mutate a table to zero recognized rows, so they do
-  // not catch this partial-loss evasion" (chatgpt-codex-connector). These
+  // not catch this partial-loss evasion". These
   // fixtures construct `pairs` directly — bypassing extraction and the
   // `DRIVE_PR_TERMINAL_STATES_TEST_FILES` override entirely, since that
   // override never sets `requiredIdentifiers` (see its own doc comment on
@@ -651,9 +647,8 @@ describe("findMissingRequired — catches ONE row silently vanishing, not just t
   test("PARTIAL loss: one required row silently vanished while enough OTHER rows remain to clear any population floor", () => {
     // Mirrors the real header's shape: 14 required identifiers, and this
     // fixture drops exactly one (PR_CONFLICTING) while keeping 13 — well
-    // above even a loosely-set floor, which is exactly the slack the
-    // reviewer measured (chatgpt-codex-connector:
-    // "the recognizer sees ... 14 [rows], while this floor is only 12").
+    // above even a loosely-set floor, which is exactly the measured slack
+    // (the recognizer sees 14 rows, while a floor can be as low as 12).
     const required = [
       "ROUND_READY",
       "CONVERGED",
@@ -778,7 +773,7 @@ describe("runCheck — requiredIdentifiers wired end to end through the TEST_REQ
   });
 });
 
-describe("findExitConstantMismatches — pure comparison, an earlier change", () => {
+describe("findExitConstantMismatches — pure comparison", () => {
   const terminalStates = {
     MAX_ROUNDS: { exitCode: 6 },
     SINGLE_INSTANCE_LOCK: { exitCode: 11 },
@@ -914,7 +909,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
     );
   });
 
-  test("a top-level exported `let` (not `const`) is NOT treated as the canonical binding — a reassignment elsewhere could break it without this gate ever noticing (docomply-review)", () => {
+  test("a top-level exported `let` (not `const`) is NOT treated as the canonical binding — a reassignment elsewhere could break it without this gate ever noticing", () => {
     const source = [
       realImport,
       // Same provenance and value as the clean shape, but declared `let`:
@@ -932,7 +927,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
     );
   });
 
-  test("a decoy declaration inside a NESTED function does not rescue a reverted top-level export (docomply-review)", () => {
+  test("a decoy declaration inside a NESTED function does not rescue a reverted top-level export", () => {
     const source = [
       realImport,
       // The real, top-level export was reverted to a bare literal...
@@ -952,7 +947,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
     expect(mismatches[0]?.constantName).toBe("MAX_ROUNDS_EXIT");
   });
 
-  test("driverOnlyExitCode imported from a DIFFERENT module is not accepted as the real one (docomply-review)", () => {
+  test("driverOnlyExitCode imported from a DIFFERENT module is not accepted as the real one", () => {
     const source = [
       "import { driverOnlyExitCode } from './some-other-module.ts';",
       "export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS');",
@@ -967,7 +962,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
     ]);
   });
 
-  test('a decoy module specifier merely CONTAINING "terminal-states" is not accepted as the real one (docomply-review, an earlier change — the earlier check was a substring test via .includes, so ./fake-terminal-states.ts satisfied it)', () => {
+  test('a decoy module specifier merely CONTAINING "terminal-states" is not accepted as the real one (a substring test via .includes would let ./fake-terminal-states.ts satisfy it)', () => {
     const source = [
       "import { driverOnlyExitCode } from './fake-terminal-states.ts';",
       "export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS');",
@@ -983,7 +978,7 @@ describe("findConstantProvenanceMismatches — the declaration itself, not the r
   });
 });
 
-describe("driverOnlyExitBindings — requires a real module for live export values, an earlier change", () => {
+describe("driverOnlyExitBindings — requires a real module for live export values", () => {
   const dir = mkdtempSync(join(tmpdir(), "drive-pr-terminal-states-module-"));
 
   test("reads all real driver-only values from the actual drive.ts", () => {
@@ -1022,7 +1017,7 @@ describe("driverOnlyExitBindings — requires a real module for live export valu
   });
 });
 
-describe("findBareLiteralExits — a real AST scan, not a text/regex match, an earlier change", () => {
+describe("findBareLiteralExits — a real AST scan, not a text/regex match", () => {
   test("a bare-literal return of a tracked exit code is found, with its line number", () => {
     const source = [
       "async function main(): Promise<number> {",
@@ -1046,7 +1041,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
     expect(findBareLiteralExits(source)).toEqual([]);
   });
 
-  test('a NON-EXPORTED top-level const is not the canonical binding and IS flagged — the exemption is for the exported constant, not for "any top-level declaration" (docomply-review)', () => {
+  test('a NON-EXPORTED top-level const is not the canonical binding and IS flagged — the exemption is for the exported constant, not for "any top-level declaration"', () => {
     const source = [
       "const exit = 6;", // top-level, but never exported — not a driver-only-exit constant
       "async function main(): Promise<number> {",
@@ -1059,7 +1054,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
   });
 
   test("a numeric literal that is part of a LARGER expression is not mistaken for a bare exit-code return", () => {
-    // `document-scanning-gates.md` rule 3: this is exactly the false-positive
+    // Parse, don't pattern-match: this is exactly the false-positive
     // class a text/regex match over "return ... 6" would trip on, and a real
     // AST-level check (matching only when the WHOLE return expression is the
     // literal) must not.
@@ -1074,7 +1069,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
     expect(findBareLiteralExits(source)).toEqual([]);
   });
 
-  test("15/16 (PASS_DEADLINE_EXIT/QUOTA_PARKED_EXIT — already had named constants before) ARE flagged, same as the other four (docomply-review)", () => {
+  test("15/16 (PASS_DEADLINE_EXIT/QUOTA_PARKED_EXIT — already had named constants before) ARE flagged, same as the other four", () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (a) {",
@@ -1098,7 +1093,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
     expect(findBareLiteralExits(source)).toEqual([]);
   });
 
-  test("a parenthesized bare literal — return (6); — is caught (docomply-review)", () => {
+  test("a parenthesized bare literal — return (6); — is caught", () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return (6);",
@@ -1127,7 +1122,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
     expect(findBareLiteralExits(source)).toEqual([]);
   });
 
-  test("a local const alias — const exit = 6; return exit; — is caught (docomply-review)", () => {
+  test("a local const alias — const exit = 6; return exit; — is caught", () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const exit = 6;",
@@ -1186,7 +1181,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
     ]);
   });
 
-  test("a TypeScript `as` wrapper — return 6 as number; — is caught (docomply-review)", () => {
+  test("a TypeScript `as` wrapper — return 6 as number; — is caught", () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return 6 as number;",
@@ -1197,7 +1192,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
     ]);
   });
 
-  test("a `satisfies` wrapper — return 6 satisfies number; — is caught (docomply-review)", () => {
+  test("a `satisfies` wrapper — return 6 satisfies number; — is caught", () => {
     const source = [
       "async function main(): Promise<number> {",
       "  return 6 satisfies number;",
@@ -1219,7 +1214,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
     ]);
   });
 
-  test("a shadowed BLOCK-scoped local does not steal a return that correctly reads the outer, canonical binding (docomply-review)", () => {
+  test("a shadowed BLOCK-scoped local does not steal a return that correctly reads the outer, canonical binding", () => {
     // The real fix: `const exit = MAX_ROUNDS_EXIT;` (an identifier
     // initializer, not a literal) is what `return exit;` actually reads —
     // the nested `if`-block's own `const exit = 6;` is a DIFFERENT,
@@ -1240,7 +1235,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
   });
 
   test("reassignment is still NOT tracked — a documented residual, not a regression (let exit = 6; exit = MAX_ROUNDS_EXIT; return exit;)", () => {
-    // Pinned per document-scanning-gates.md rule 5: `resolveIdentifierLiteral`
+    // Pinned as a mutation guard: `resolveIdentifierLiteral`
     // resolves the identifier's DECLARATION via the real binder (fixing the
     // block-scope case above), but still only reads that declaration's own
     // initializer, not a later write. This mutation must keep failing until a
@@ -1258,7 +1253,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
     ]);
   });
 
-  test("the scanned code set is DERIVED from TERMINAL_STATES, not an independent literal list (chatgpt-codex-connector)", () => {
+  test("the scanned code set is DERIVED from TERMINAL_STATES, not an independent literal list", () => {
     // Every value here comes from the real `driverOnlyExitCode` read, never
     // a number typed into this test — if `TERMINAL_STATES` ever renumbers one
     // of these states, this test keeps exercising whatever the CURRENT real
@@ -1290,7 +1285,7 @@ describe("findBareLiteralExits — a real AST scan, not a text/regex match, an e
   });
 });
 
-describe("runCheck — the drive.ts emitter checks reach the real entry point, an earlier change", () => {
+describe("runCheck — the drive.ts emitter checks reach the real entry point", () => {
   // A FRESH directory per fixture, not one shared `dir` for the whole
   // describe block: Bun's `require()` snapshots a directory's contents on
   // its FIRST resolution there, so a second, different file written into an
@@ -1416,7 +1411,7 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point, a
     withDriveTsSeams(modulePath, sourcePath, () => expect(runCheck()).toBe(1));
   });
 
-  test("a missing drive.ts source file fails closed, per document-scanning-gates.md rule 1", () => {
+  test("a missing drive.ts source file fails closed", () => {
     const modulePath = fixture("healthy-module-2.ts", healthyModule);
     const missingDir = mkdtempSync(
       join(tmpdir(), "drive-pr-terminal-states-drivets-e2e-missing-"),
@@ -1427,7 +1422,7 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point, a
   });
 });
 
-describe("outOfBandExitBindings — requires a real module for live export values, an earlier change", () => {
+describe("outOfBandExitBindings — requires a real module for live export values", () => {
   const dir = mkdtempSync(
     join(tmpdir(), "drive-pr-terminal-states-outofband-module-"),
   );
@@ -1463,7 +1458,7 @@ describe("outOfBandExitBindings — requires a real module for live export value
   });
 });
 
-describe("findConstantProvenanceMismatches — generalized helper/specifier params serve lease.ts too, an earlier change", () => {
+describe("findConstantProvenanceMismatches — generalized helper/specifier params serve lease.ts too", () => {
   test("a healthy outOfBandExitCode(...) declaration, imported from the real relative path, passes", () => {
     const source = [
       "import { outOfBandExitCode } from '../status/terminal-states.ts';",
@@ -1547,7 +1542,7 @@ describe("findConstantProvenanceMismatches — generalized helper/specifier para
   });
 });
 
-describe("outOfBand — report.state and the returned exit code come from ONE lookup, an earlier change", () => {
+describe("outOfBand — report.state and the returned exit code come from ONE lookup", () => {
   // The bug this closes: a `drive-status.ts` branch used to set
   // `report.state` by hand and separately `emit`/`return` its own imported
   // `*_EXIT` constant, so a branch that set `report.state =
@@ -1555,7 +1550,7 @@ describe("outOfBand — report.state and the returned exit code come from ONE lo
   // `DRIVE_HELD_ELSEWHERE_EXIT` (or vice versa) with nothing to catch it —
   // `findBareLiteralExits` only rejects a BARE numeric literal, and either
   // sibling constant is an equally well-formed named identifier
-  // (chatgpt-codex-connector, a reference-implementation pull request /). `outOfBand` closes the
+  //. `outOfBand` closes the
   // gap structurally: both values are read off ONE `TERMINAL_STATES[name]`
   // lookup inside the function, so they cannot be written to disagree at a
   // call site the way two independent statements could.
@@ -1654,7 +1649,7 @@ describe("findBareLiteralExits — a custom exitCodes param scopes the scan", ()
     }
   });
 
-  test("a value no longer among the CURRENT out-of-band exit codes is still caught when it is retained in the reserved set — pins the renumber case (docomply-review)", () => {
+  test("a value no longer among the CURRENT out-of-band exit codes is still caught when it is retained in the reserved set — pins the renumber case", () => {
     // Simulates SESSION_LEASE_HELD having moved away from 11 to some other
     // code: the "current" half of the reserved set no longer contains 11 at
     // all, yet a stale `return 11;` left behind by the renumber must still
@@ -1686,7 +1681,7 @@ describe("findBareLiteralExits — a custom exitCodes param scopes the scan", ()
   });
 });
 
-describe("buildReservedExitCodes — unions CURRENT values with the retired set (docomply-review)", () => {
+describe("buildReservedExitCodes — unions CURRENT values with the retired set", () => {
   test("returns the current values unchanged while nothing has been retired", () => {
     // RETIRED_RESERVED_EXIT_CODES is empty today (no driver-only/out-of-band
     // entry has ever been renumbered) — this pins that current, honest state
@@ -1699,7 +1694,7 @@ describe("buildReservedExitCodes — unions CURRENT values with the retired set 
     // and a broken `new Set(currentValues)` (the union silently deleted)
     // produce an identical result, so this assertion cannot distinguish
     // them — deleting the union from `buildReservedExitCodes` would leave
-    // this test green (docomply-review). The test
+    // this test green. The test
     // below exercises the union directly through the injectable
     // `retiredValues` parameter instead.
     expect(buildReservedExitCodes([6, 12])).toEqual(new Set([6, 12]));
@@ -1716,7 +1711,7 @@ describe("buildReservedExitCodes — unions CURRENT values with the retired set 
   });
 });
 
-describe("findBareLiteralExits — comparison and call sites, not just return (docomply-review)", () => {
+describe("findBareLiteralExits — comparison and call sites, not just return", () => {
   // The finding: a future `if (bump.code === 11)` or `emit(11)` bypasses the
   // named constant exactly like a bare `return 11;` does, but the scan only
   // looked at `return` statements. These sites are code-bound in
@@ -1794,7 +1789,7 @@ describe("findBareLiteralExits — comparison and call sites, not just return (d
     ).toEqual([]);
   });
 
-  test("a `bump['code'] === <literal>` element-access comparison is caught too — a behavior-preserving rewrite of the dot-access shape (docomply-review)", () => {
+  test("a `bump['code'] === <literal>` element-access comparison is caught too — a behavior-preserving rewrite of the dot-access shape", () => {
     const source = [
       "async function main(): Promise<number> {",
       "  if (bump['code'] === 11) {",
@@ -1837,7 +1832,7 @@ describe("findBareLiteralExits — comparison and call sites, not just return (d
   });
 
   test("a computed element access through an intermediate variable is NOT resolved — a documented residual, not a regression", () => {
-    // Pinned per document-scanning-gates.md rule 5: `isCodePropertyAccess`
+    // Pinned as a mutation guard: `isCodePropertyAccess`
     // stays name-based, matching a string-literal key directly. A key held
     // in a variable (`const k = 'code'; bump[k]`) is out of scope, same as
     // the function's own header states.
@@ -1855,7 +1850,7 @@ describe("findBareLiteralExits — comparison and call sites, not just return (d
     ).toEqual([]);
   });
 
-  test("a local extraction of the `.code` access into its own variable is still caught — a behavior-preserving rewrite of the property-access shape (docomply-review)", () => {
+  test("a local extraction of the `.code` access into its own variable is still caught — a behavior-preserving rewrite of the property-access shape", () => {
     const source = [
       "async function main(): Promise<number> {",
       "  const code = bump.code;",
@@ -1985,7 +1980,7 @@ describe("findBareLiteralExits — comparison and call sites, not just return (d
     ).toEqual([]);
   });
 
-  test("an alias of `emit` is still caught — a behavior-preserving rename evading identifier-text matching (docomply-review)", () => {
+  test("an alias of `emit` is still caught — a behavior-preserving rename evading identifier-text matching", () => {
     const source = [
       "async function emit(code: number): Promise<void> {}",
       "async function main(): Promise<number> {",
@@ -1999,14 +1994,13 @@ describe("findBareLiteralExits — comparison and call sites, not just return (d
     ).toEqual([{ line: 4, value: 11, kind: "call" }]);
   });
 
-  test("an alias of a differently-named but DECLARED local function is now caught the same as an alias of emit — position, not name, identifies the reporter (docomply-review, a reference-implementation pull request round 6)", () => {
-    // Before round 6 this test pinned the OPPOSITE claim ("NOT mistaken"),
-    // precisely because the old lookup identified the reporter by matching
-    // the literal spelling `emit`. That name-coupling is exactly what round
-    // 6 found broken: a behavior-preserving rename of the REAL reporter
-    // defeated it just as completely as this fixture's differently-named
-    // function did. The fix drops name-matching entirely in favor of
-    // structural position, so a function declared in the same recognized
+  test("an alias of a differently-named but DECLARED local function is now caught the same as an alias of emit — position, not name, identifies the reporter", () => {
+    // Identifying the reporter by matching the literal spelling `emit` would
+    // pin the OPPOSITE claim ("NOT mistaken"), and that name-coupling is
+    // broken: a behavior-preserving rename of the REAL reporter defeats it
+    // just as completely as this fixture's differently-named function does.
+    // The check drops name-matching entirely in favor of structural
+    // position, so a function declared in the same recognized
     // zone as `emit` is now — correctly, on purpose — indistinguishable from
     // it, whatever it happens to be called.
     const source = [
@@ -2023,7 +2017,7 @@ describe("findBareLiteralExits — comparison and call sites, not just return (d
   });
 
   test("a reassigned emit alias is still resolved off its own declaration's initializer, not the later write — a documented residual, not a regression", () => {
-    // Pinned per document-scanning-gates.md rule 5, mirroring the identical
+    // Pinned as a mutation guard, mirroring the identical
     // stance `resolveIdentifierLiteral` already takes on reassignment: this
     // reads `report`'s own declaration initializer (`emit`), not the later
     // write, so this case stays flagged rather than silently falling out of
@@ -2063,7 +2057,7 @@ describe("findBareLiteralExits — comparison and call sites, not just return (d
   });
 });
 
-describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking the wrong sibling state, an earlier change", () => {
+describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking the wrong sibling state", () => {
   const IMPORTS = [
     "import { DRIVE_HELD_ELSEWHERE_EXIT, SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
     "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -2300,7 +2294,7 @@ describe("findOutOfBandNamePairingMismatches — outOfBand call sites picking th
   });
 });
 
-describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cross-check (docomply-review, WARNING)", () => {
+describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cross-check", () => {
   const IMPORTS = [
     "import { DRIVE_HELD_ELSEWHERE_EXIT, SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
     "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -2519,7 +2513,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     expect(result.anchoredCount).toBeLessThan(result.candidateCount);
   });
 
-  test("a renaming import alias of the REAL helper is still counted as a candidate and its wrong state name is caught — the local identifier text is irrelevant (docomply-review)", () => {
+  test("a renaming import alias of the REAL helper is still counted as a candidate and its wrong state name is caught — the local identifier text is irrelevant", () => {
     // Before the fix, candidateCount required the call's LOCAL identifier
     // text to literally be `outOfBand`. An aliased import of the real
     // helper — `import { outOfBand as reportOutOfBand } from …` — is called
@@ -2552,7 +2546,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("a local CONST REBIND of the real helper is still counted as a candidate and its wrong state name is caught (docomply-review, high)", () => {
+  test("a local CONST REBIND of the real helper is still counted as a candidate and its wrong state name is caught", () => {
     // Distinct from the renaming-import-alias test above: `const alias =
     // outOfBand;` is a LOCAL VARIABLE declaration, not an ImportSpecifier —
     // `alias`'s own symbol resolves to that VariableDeclaration, so the
@@ -2605,7 +2599,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a call wrapped in redundant parens — `(outOfBand)(…)` — still anchors (docomply-review, a reference-implementation pull request, high — "normalize transparent expression wrappers")', () => {
+  test("a call wrapped in redundant parens — `(outOfBand)(…)` — still anchors (transparent expression wrappers are normalized)", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -2624,12 +2618,11 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a callee wrapped in an `as` type assertion — `(outOfBand as typeof outOfBand)(…)` — still anchors (docomply-review, a reference-implementation pull request, high, round 4)", () => {
-    // Before this fix, unwrapTransparentExpression only stripped parens,
-    // mirroring the ORIGINAL (round-1) shape of the sibling `unwrapLiteral`
-    // helper before ITS OWN round-2 fix added as/satisfies/non-null — this
-    // is the identical residual recurring on a second resolver in the same
-    // file, closed by the same established loop.
+  test("a callee wrapped in an `as` type assertion — `(outOfBand as typeof outOfBand)(…)` — still anchors", () => {
+    // An unwrapTransparentExpression that only strips parens has the same
+    // residual a parens-only `unwrapLiteral` would (no as/satisfies/non-null),
+    // recurring on a second resolver in the same file; both are closed by the
+    // same established loop.
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -2648,7 +2641,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a mutable (`let`) rebind is NOT trusted as provenance — a later reassignment must not still anchor through the stale initial import — but IS now an AMBIGUOUS candidate rather than silently excluded (docomply-review, a reference-implementation pull request, medium; widened round 9, high)", () => {
+  test("a mutable (`let`) rebind is NOT trusted as provenance — a later reassignment must not still anchor through the stale initial import — but IS now an AMBIGUOUS candidate rather than silently excluded", () => {
     // Before this fix, resolveIdentifierImportBinding recursed into ANY
     // VariableDeclaration's initializer regardless of `const`/`let`, so
     // `let alias = outOfBand; alias = decoy; alias(...)` still resolved from
@@ -2658,12 +2651,11 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     // list to carry `NodeFlags.Const` excludes a `let` rebind from the
     // STRICT resolver — that part is unchanged and still holds here.
     //
-    // What changed (round 9): this scenario used to fall all the way through
-    // to SILENT EXCLUSION (candidateCount: 0) rather than the ambiguous
-    // candidate every other unresolvable shape in this file gets — the exact
-    // gap-class docomply-review's round-9 finding named ("the recursion
-    // reaches the imported outOfBand identifier and returns false because
-    // its declaration is an ImportSpecifier, not a VariableDeclaration").
+    // This scenario must not fall all the way through to SILENT EXCLUSION
+    // (candidateCount: 0) rather than the ambiguous candidate every other
+    // unresolvable shape in this file gets: the recursion reaches the
+    // imported outOfBand identifier, whose declaration is an
+    // ImportSpecifier, not a VariableDeclaration.
     // This scan has no control-flow analysis, so it cannot actually tell "the
     // real import was overwritten by a decoy before the call" apart from "the
     // real import is still live at the call" — treating the former as a
@@ -2690,7 +2682,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a NAMESPACE-QUALIFIED call to the real helper (`terminalStates.outOfBand(…)`) is still counted as a candidate and its wrong state name is caught (docomply-review, high)", () => {
+  test("a NAMESPACE-QUALIFIED call to the real helper (`terminalStates.outOfBand(…)`) is still counted as a candidate and its wrong state name is caught", () => {
     const source = [
       "import { DRIVE_HELD_ELSEWHERE_EXIT, SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2716,7 +2708,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("an ELEMENT-ACCESS call to the real helper (`terminalStates['outOfBand'](…)`) still anchors and its wrong state name is caught (docomply-review, a reference-implementation pull request, high)", () => {
+  test("an ELEMENT-ACCESS call to the real helper (`terminalStates['outOfBand'](…)`) still anchors and its wrong state name is caught", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2742,7 +2734,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("an ELEMENT-ACCESS call keyed by a CONST identifier resolving to 'outOfBand' (`const key = 'outOfBand' as const; terminalStates[key](…)`) still anchors and its wrong state name is caught (docomply-review, a reference-implementation pull request, high, round 5)", () => {
+  test("an ELEMENT-ACCESS call keyed by a CONST identifier resolving to 'outOfBand' (`const key = 'outOfBand' as const; terminalStates[key](…)`) still anchors and its wrong state name is caught", () => {
     // Before this fix, outOfBandMemberExpressionObject's element-access
     // branch required the key ITSELF to be a string literal —
     // `ts.isStringLiteralLike(expr.argumentExpression)` — so a key held in a
@@ -2818,8 +2810,8 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a mutable (`let`) ELEMENT-ACCESS key is NOT trusted as provenance, but is now an AMBIGUOUS candidate rather than silently excluded (docomply-review, a reference-implementation pull request, high, round 7: "the already-tested mutable let key... can invoke the real helper while both candidate and anchor counts remain zero")', () => {
-    // Before round 7, `resolveIdentifierStringLiteral`'s own const-only
+  test("a mutable (`let`) ELEMENT-ACCESS key is NOT trusted as provenance, but is now an AMBIGUOUS candidate rather than silently excluded (a mutable let key can invoke the real helper while both candidate and anchor counts remain zero)", () => {
+    // In an earlier version, `resolveIdentifierStringLiteral`'s own const-only
     // requirement made this key unresolvable — correctly not TRUSTED as
     // naming 'outOfBand' — but `isAmbiguousOutOfBandElementAccess` then
     // special-cased "the key is an identifier" as automatically excluded too,
@@ -2847,7 +2839,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('an UNRESOLVABLE identifier ELEMENT-ACCESS key — a function parameter, with no initializer to trace at all — is likewise an AMBIGUOUS candidate on the real helper namespace (docomply-review, a reference-implementation pull request, high, round 7: "function f(key: keyof typeof terminalStates) { terminalStates[key](report, ...) } ... can invoke the real helper while both candidate and anchor counts remain zero")', () => {
+  test("an UNRESOLVABLE identifier ELEMENT-ACCESS key — a function parameter, with no initializer to trace at all — is likewise an AMBIGUOUS candidate on the real helper namespace (`function f(key: keyof typeof terminalStates) { terminalStates[key](report, ...) }` can invoke the real helper while both candidate and anchor counts remain zero)", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2866,7 +2858,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a GENUINELY dynamic ELEMENT-ACCESS key (a function call) on the REAL helper namespace is an AMBIGUOUS candidate that never anchors — fails closed instead of vanishing from the census (docomply-review, a reference-implementation pull request, high, round 6: round 5 pinned this exact shape as an accepted 0/0 residual, and a mutated state-name argument through it still produced 0/0, i.e. runCheck() passed vacuously on a real bypass)", () => {
+  test("a GENUINELY dynamic ELEMENT-ACCESS key (a function call) on the REAL helper namespace is an AMBIGUOUS candidate that never anchors — fails closed instead of vanishing from the census (accepting this shape as a 0/0 residual lets a mutated state-name argument through it pass runCheck() vacuously)", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2881,10 +2873,10 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     // candidateCount: 1, anchoredCount: 0 — this is what `runCheck()`'s own
     // coverage cross-check (`anchoredCount < candidateCount`) reads as "a
     // real outOfBand() call site exists that this scan could not verify",
-    // exactly the fail-closed outcome document-scanning-gates.md §1 requires
-    // for content the gate cannot read. Mismatches stay empty because this
-    // scan deliberately never attempts to compare a state name it cannot
-    // trust belongs to this call in the first place.
+    // exactly the fail-closed outcome a gate owes content it cannot read.
+    // Mismatches stay empty because this scan deliberately never attempts to
+    // compare a state name it cannot trust belongs to this call in the first
+    // place.
     expect(scanOutOfBandNamePairings(source, "drive-status.ts")).toEqual({
       candidateCount: 1,
       anchoredCount: 0,
@@ -2892,7 +2884,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a mutated state-name argument through that same dynamic-key shape is STILL not silently accepted — candidateCount stays ahead of anchoredCount regardless of what the call actually names (docomply-review, a reference-implementation pull request, high, round 6 — this is the exact mutation the round-5 fixture above let pass vacuously)", () => {
+  test("a mutated state-name argument through that same dynamic-key shape is STILL not silently accepted — candidateCount stays ahead of anchoredCount regardless of what the call actually names (the exact mutation a 0/0 residual would let pass vacuously)", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2949,15 +2941,15 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a local CONST REBIND of a genuinely dynamic ELEMENT-ACCESS callee (`const alias = terminalStates[computeKey()]; alias(…)`) is likewise an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 7: "A normal rebind such as const alias = terminalStates[computeKey()]; alias(...) is missed... The resulting 0/0 counts let the wrong sibling state pass")', () => {
-    // Before round 7, isAmbiguousOutOfBandElementAccess was only ever called
-    // on the call expression's OWN callee — `alias`, a bare identifier — so
-    // its `!ts.isElementAccessExpression` guard excluded this shape
+  test("a local CONST REBIND of a genuinely dynamic ELEMENT-ACCESS callee (`const alias = terminalStates[computeKey()]; alias(…)`) is likewise an AMBIGUOUS candidate, not invisible to the census (missing it leaves 0/0 counts that let the wrong sibling state pass)", () => {
+    // In an earlier version, isAmbiguousOutOfBandElementAccess was only ever
+    // called on the call expression's OWN callee — `alias`, a bare identifier —
+    // so its `!ts.isElementAccessExpression` guard excluded this shape
     // immediately, one hop before it could see the dynamic element access
     // `alias` was rebound from. isAmbiguousOutOfBandCallee follows the same
-    // same-scope rebind chain resolveOutOfBandImportProvenance already
-    // follows on the RESOLVED side, so this now reaches the identical
-    // ambiguous verdict the direct-callee shape above already gets.
+    // same-scope rebind chain resolveOutOfBandImportProvenance already follows
+    // on the RESOLVED side, so this now reaches the identical ambiguous verdict
+    // the direct-callee shape above already gets.
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as terminalStates from './lib/status/terminal-states.ts';",
@@ -2977,7 +2969,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a local CONST REBIND of a namespace-qualified callee (`const alias = terminalStates.outOfBand; alias(…)`) still anchors and its wrong state name is caught (docomply-review, a reference-implementation pull request, high)", () => {
+  test("a local CONST REBIND of a namespace-qualified callee (`const alias = terminalStates.outOfBand; alias(…)`) still anchors and its wrong state name is caught", () => {
     // Distinct from the bare-identifier CONST rebind test above: `alias`'s
     // own initializer here is a PropertyAccessExpression, not another
     // identifier, so the identifier-to-identifier alias chain alone cannot
@@ -3008,7 +3000,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("a DESTRUCTURED rebind of a namespace-qualified callee (`const { outOfBand: alias } = terminalStates; alias(…)`) still anchors and its wrong state name is caught (docomply-review, a reference-implementation pull request, high, round 4)", () => {
+  test("a DESTRUCTURED rebind of a namespace-qualified callee (`const { outOfBand: alias } = terminalStates; alias(…)`) still anchors and its wrong state name is caught", () => {
     // A destructured identifier's own declaration is a BindingElement, not
     // the VariableDeclaration the property-access rebind test above already
     // knew how to follow — the exact same shape `resolvesToCodePropertyAccess`
@@ -3042,7 +3034,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     ]);
   });
 
-  test("a DESTRUCTURED rebind from an UNRELATED module with its own `outOfBand` property is not treated as the real helper (docomply-review, a reference-implementation pull request, high, round 4)", () => {
+  test("a DESTRUCTURED rebind from an UNRELATED module with its own `outOfBand` property is not treated as the real helper", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import * as decoyModule from './some-other-module.ts';",
@@ -3100,7 +3092,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a same-named outOfBand decoy imported from elsewhere is excluded from the coverage census entirely — candidateCount stays 0, not just mismatches staying empty (docomply-review)", () => {
+  test("a same-named outOfBand decoy imported from elsewhere is excluded from the coverage census entirely — candidateCount stays 0, not just mismatches staying empty", () => {
     // Before the fix, candidateCount counted ANY call whose local
     // identifier text was `outOfBand`, so this decoy (real import, but from
     // an unrelated module) was still counted as a candidate that
@@ -3129,9 +3121,9 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias populated by ASSIGNMENT rather than its own initializer, then called on a genuinely dynamic key (`let alias: typeof terminalStates.outOfBand; alias = terminalStates[computeKey()]; alias(...)`), is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 8: "The ambiguity census only follows a variable declaration\'s initializer... has no declaration initializer, so this returns false")', () => {
-    // Before round 8, isAmbiguousOutOfBandCallee's identifier-chase bailed
-    // out the moment `declaration.initializer === undefined` — a `let`
+  test("a `let` alias populated by ASSIGNMENT rather than its own initializer, then called on a genuinely dynamic key (`let alias: typeof terminalStates.outOfBand; alias = terminalStates[computeKey()]; alias(...)`), is an AMBIGUOUS candidate, not invisible to the census (it has no declaration initializer, so an initializer-only census misses it)", () => {
+    // In an earlier version, isAmbiguousOutOfBandCallee's identifier-chase
+    // bailed out the moment `declaration.initializer === undefined` — a `let`
     // declared with no initializer at all, populated only by a later plain
     // assignment, had nothing for that chain to follow and the call vanished
     // from the census with candidateCount/anchoredCount both at 0.
@@ -3155,9 +3147,9 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let`-REASSIGNED namespace alias, then called on a genuinely dynamic key (`let ns = decoyModule; ns = terminalStates; ns[computeKey()](...)`), is an AMBIGUOUS candidate (docomply-review, a reference-implementation pull request, high, round 8: "The same gap affects a reassigned namespace alias")', () => {
-    // Before round 8, isAmbiguousOutOfBandElementAccess's object-side check
-    // ran through resolveIdentifierImportBinding, which requires a CONST
+  test("a `let`-REASSIGNED namespace alias, then called on a genuinely dynamic key (`let ns = decoyModule; ns = terminalStates; ns[computeKey()](...)`), is an AMBIGUOUS candidate", () => {
+    // In an earlier version, isAmbiguousOutOfBandElementAccess's object-side
+    // check ran through resolveIdentifierImportBinding, which requires a CONST
     // chain — a `let`-declared namespace alias reassigned away from its own
     // initializer resolved to nothing there and the call vanished from the
     // census identically to the case above, one hop further out.
@@ -3182,13 +3174,13 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias assigned DIRECTLY to the real `outOfBand` import — no member access at all (`let alias; alias = outOfBand; alias(...)`) — is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 9: "the recursion reaches the imported outOfBand identifier and returns false because its declaration is an ImportSpecifier, not a VariableDeclaration")', () => {
-    // Before round 9, isAmbiguousOutOfBandCallee's identifier-chase recursed
-    // into the assigned candidate `outOfBand`, but its own base case only
-    // continued the chase past a `ts.VariableDeclaration` — an ImportSpecifier
-    // (what `outOfBand` itself resolves to) failed that guard and the whole
-    // chase returned false, so this call vanished from the census exactly
-    // like the round-7/8 gaps above, one hop earlier: no member access, no
+  test("a `let` alias assigned DIRECTLY to the real `outOfBand` import — no member access at all (`let alias; alias = outOfBand; alias(...)`) — is an AMBIGUOUS candidate, not invisible to the census (its declaration is an ImportSpecifier, not a VariableDeclaration)", () => {
+    // In an earlier version, isAmbiguousOutOfBandCallee's identifier-chase
+    // recursed into the assigned candidate `outOfBand`, but its own base case
+    // only continued the chase past a `ts.VariableDeclaration` — an
+    // ImportSpecifier (what `outOfBand` itself resolves to) failed that guard
+    // and the whole chase returned false, so this call vanished from the census
+    // exactly like the gaps above, one hop earlier: no member access, no
     // dynamic key, just a direct reassignment of the real helper onto a
     // reassignable binding.
     const source = [
@@ -3211,8 +3203,8 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias assigned to a DEFINITE `.outOfBand` PROPERTY ACCESS on the real namespace (`let alias; alias = terminalStates.outOfBand; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 9: "alias = terminalStates.outOfBand likewise reaches a property access that is neither an ambiguous dynamic element access nor an identifier")', () => {
-    // Before round 9, the recursion into the assigned candidate
+  test("a `let` alias assigned to a DEFINITE `.outOfBand` PROPERTY ACCESS on the real namespace (`let alias; alias = terminalStates.outOfBand; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (a property access that is neither an ambiguous dynamic element access nor an identifier)", () => {
+    // In an earlier version, the recursion into the assigned candidate
     // `terminalStates.outOfBand` first tried isAmbiguousOutOfBandElementAccess
     // (which requires an ElementAccessExpression and so refused a plain
     // PropertyAccessExpression outright), then tried ts.isIdentifier (also
@@ -3240,11 +3232,11 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias assigned DIRECTLY to a same-named `outOfBand` DECOY import (not the real helper) produces no candidate at all — the round-9 direct-import reach stays scoped to the real import, mirroring the decoy exclusions elsewhere in this suite", () => {
-    // Guards the round-9 fix above against over-triggering: reaching SOME
-    // import specifier through a reassignable alias must not by itself widen
-    // the census — the reached specifier still has to actually be the real
-    // `outOfBand` export of the real helper module.
+  test("a `let` alias assigned DIRECTLY to a same-named `outOfBand` DECOY import (not the real helper) produces no candidate at all — the direct-import reach stays scoped to the real import, mirroring the decoy exclusions elsewhere in this suite", () => {
+    // Guards the direct-import reach above against over-triggering: reaching
+    // SOME import specifier through a reassignable alias must not by itself
+    // widen the census — the reached specifier still has to actually be the
+    // real `outOfBand` export of the real helper module.
     const source = [
       "import { outOfBand } from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3265,11 +3257,11 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias populated by a COMPOUND LOGICAL ASSIGNMENT to the real `outOfBand` import (`let alias; alias ??= outOfBand; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 10: "the new assignment census only records `identifier = rhs`... ignores... `alias ??= outOfBand`")', () => {
-    // Before round 10, findAssignedValues only matched EqualsToken, so a
+  test("a `let` alias populated by a COMPOUND LOGICAL ASSIGNMENT to the real `outOfBand` import (`let alias; alias ??= outOfBand; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (an assignment census recording only `identifier = rhs` ignores `alias ??= outOfBand`)", () => {
+    // In an earlier version, findAssignedValues only matched EqualsToken, so a
     // `??=`/`||=`/`&&=` reassignment of the real helper left `alias` with no
     // recorded reaching value at all — vanishing from the census exactly
-    // like the round-9 direct-`=` gap this mirrors, one operator token wider.
+    // like the direct-`=` gap this mirrors, one operator token wider.
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3290,7 +3282,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by a COMPOUND LOGICAL ASSIGNMENT to a same-named `outOfBand` DECOY import produces no candidate at all — mirrors the round-9 decoy guard for the compound-operator shape", () => {
+  test("a `let` alias populated by a COMPOUND LOGICAL ASSIGNMENT to a same-named `outOfBand` DECOY import produces no candidate at all — mirrors the direct-import decoy guard for the compound-operator shape", () => {
     const source = [
       "import { outOfBand } from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3311,11 +3303,11 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias populated by an OBJECT-DESTRUCTURING ASSIGNMENT off the real helper namespace (`let alias; ({ outOfBand: alias } = terminalStates); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 10: "ignores other legal assignments that can bind the real helper, such as `({ outOfBand: alias } = terminalStates)`")', () => {
-    // Before round 10, findAssignedValues required `ts.isIdentifier(node.left)`,
-    // so a destructuring-ASSIGNMENT pattern (as opposed to the round-4 fix for
-    // a destructuring DECLARATION, `const { outOfBand: alias } = terminalStates`)
-    // left `alias` with no recorded reaching value at all.
+  test("a `let` alias populated by an OBJECT-DESTRUCTURING ASSIGNMENT off the real helper namespace (`let alias; ({ outOfBand: alias } = terminalStates); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census", () => {
+    // In an earlier version, findAssignedValues required
+    // `ts.isIdentifier(node.left)`, so a destructuring-ASSIGNMENT pattern (as
+    // opposed to a destructuring DECLARATION, `const { outOfBand: alias } =
+    // terminalStates`) left `alias` with no recorded reaching value at all.
     const source = [
       "import * as terminalStates from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3336,7 +3328,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by an OBJECT-DESTRUCTURING ASSIGNMENT off an UNRELATED decoy module with its own `outOfBand` property produces no candidate at all — mirrors the round-4 destructuring-declaration decoy guard for the assignment-pattern shape", () => {
+  test("a `let` alias populated by an OBJECT-DESTRUCTURING ASSIGNMENT off an UNRELATED decoy module with its own `outOfBand` property produces no candidate at all — mirrors the destructuring-declaration decoy guard for the assignment-pattern shape", () => {
     const source = [
       "import * as decoyModule from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3403,15 +3395,15 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by a COMPUTED-KEY object-destructuring assignment off the real helper namespace (`let alias; ({ ['outOfBand']: alias } = terminalStates); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 11: \"explicitly left unsupported here... yet `candidateCount` and `anchoredCount` both remain zero\")", () => {
-    // Before round 11, findAssignedValues resolved the destructuring TARGET
-    // fine (`alias` was found as the property-assignment's own initializer)
-    // but then demanded a STATICALLY named key to synthesize a candidate
-    // value — a ComputedPropertyName, even one wrapping a plain string
-    // literal, made objectAssignmentPatternPropertyName() return undefined,
-    // so the whole match was silently dropped. assignmentPatternBindsSymbol
-    // no longer needs to name the property at all — it only has to prove
-    // `alias` is A target somewhere in the pattern.
+  test("a `let` alias populated by a COMPUTED-KEY object-destructuring assignment off the real helper namespace (`let alias; ({ ['outOfBand']: alias } = terminalStates); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (left unsupported, `candidateCount` and `anchoredCount` would both remain zero)", () => {
+    // In an earlier version, findAssignedValues resolved the destructuring
+    // TARGET fine (`alias` was found as the property-assignment's own
+    // initializer) but then demanded a STATICALLY named key to synthesize a
+    // candidate value — a ComputedPropertyName, even one wrapping a plain
+    // string literal, made objectAssignmentPatternPropertyName() return
+    // undefined, so the whole match was silently dropped.
+    // assignmentPatternBindsSymbol no longer needs to name the property at all
+    // — it only has to prove `alias` is A target somewhere in the pattern.
     const source = [
       "import * as terminalStates from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3432,7 +3424,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by a COMPUTED-KEY object-destructuring assignment off an UNRELATED decoy module produces no candidate at all — guards the round-11 fix against over-triggering", () => {
+  test("a `let` alias populated by a COMPUTED-KEY object-destructuring assignment off an UNRELATED decoy module produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import * as decoyModule from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3453,9 +3445,9 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by an ARRAY-PATTERN destructuring assignment off the real helper (`let alias; [alias] = [terminalStates.outOfBand]; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 11)", () => {
-    // Before round 11, findAssignedValues only recognized an identifier or
-    // an OBJECT-literal pattern as the assignment LHS — an ArrayLiteralExpr
+  test("a `let` alias populated by an ARRAY-PATTERN destructuring assignment off the real helper (`let alias; [alias] = [terminalStates.outOfBand]; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census", () => {
+    // In an earlier version, findAssignedValues only recognized an identifier
+    // or an OBJECT-literal pattern as the assignment LHS — an ArrayLiteralExpr
     // ession pattern matched neither branch, so the walker fell straight
     // through to forEachChild without ever recording a candidate.
     const source = [
@@ -3478,7 +3470,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by an ARRAY-PATTERN destructuring assignment off an UNRELATED decoy value produces no candidate at all — guards the round-11 fix against over-triggering", () => {
+  test("a `let` alias populated by an ARRAY-PATTERN destructuring assignment off an UNRELATED decoy value produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import * as decoyModule from './some-other-module.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3499,8 +3491,8 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias populated by a CONDITIONAL (ternary) expression naming the real helper in one branch (`alias = flag ? outOfBand : decoy; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 11: "collected as a value but the ambiguity walker cannot trace the conditional expression")', () => {
-    // Before round 11, findAssignedValues correctly pushed the whole
+  test("a `let` alias populated by a CONDITIONAL (ternary) expression naming the real helper in one branch (`alias = flag ? outOfBand : decoy; alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (the ambiguity walker traces the conditional expression it collected as a value)", () => {
+    // In an earlier version, findAssignedValues correctly pushed the whole
     // ConditionalExpression as a reassignment candidate, but both consumers
     // only recursed when `ts.isIdentifier(unwrapTransparentExpression(cand
     // idate))` — a ternary node is neither, so it was dropped without ever
@@ -3528,7 +3520,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by a CONDITIONAL expression naming only UNRELATED decoys in both branches produces no candidate at all — guards the round-11 fix against over-triggering", () => {
+  test("a `let` alias populated by a CONDITIONAL expression naming only UNRELATED decoys in both branches produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoyA: (report: unknown, name: string, reason: string) => number;",
@@ -3573,8 +3565,8 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a direct COMMA-EXPRESSION callee naming the real helper as its right operand (`(sideEffect(), outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 21: "`composingExpressionLeaves()` does not expand `CommaToken`")', () => {
-    // Before round 21, composingExpressionLeaves only expanded `?:`/`||`/
+  test('a direct COMMA-EXPRESSION callee naming the real helper as its right operand (`(sideEffect(), outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census (`composingExpressionLeaves()` expands `CommaToken`)', () => {
+    // In an earlier version, composingExpressionLeaves only expanded `?:`/`||`/
     // `&&`/`??` — a comma-expression callee fell through to the default
     // `return [unwrapped]`, treating the whole BinaryExpression as one
     // opaque leaf that is neither a member access, an element access, a
@@ -3600,7 +3592,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a direct COMMA-EXPRESSION callee naming an UNRELATED decoy as its right operand produces no candidate — guards the round-21 fix against over-triggering", () => {
+  test("a direct COMMA-EXPRESSION callee naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function sideEffect(): void;",
@@ -3620,10 +3612,9 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a direct PLAIN-ASSIGNMENT callee naming the real helper as its right operand (`(alias = outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate (docomply-review, a reference-implementation pull request, high, round 22: "the immediately adjacent assignment-expression form as a known detector bypass")', () => {
-    // Round 22 found the gap round 21's own doc comment had explicitly named
-    // and deferred: an EqualsToken binary expression fell through to the
-    // opaque-leaf default exactly like an unhandled CommaToken did.
+  test('a direct PLAIN-ASSIGNMENT callee naming the real helper as its right operand (`(alias = outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate (the assignment-expression form one operator over from the comma)', () => {
+    // In an earlier version, an EqualsToken binary expression fell through to
+    // the opaque-leaf default exactly like an unhandled CommaToken did.
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3643,7 +3634,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a direct PLAIN-ASSIGNMENT callee naming an UNRELATED decoy as its right operand produces no candidate — guards the round-22 fix against over-triggering", () => {
+  test("a direct PLAIN-ASSIGNMENT callee naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -3663,7 +3654,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a direct callee using each LOGICAL COMPOUND-ASSIGNMENT operator (`??=`, `||=`, `&&=`) naming the real helper as its right operand is an AMBIGUOUS candidate — closing the full closed family alongside the reported plain-`=` gap rather than leaving these as a predictable round 23", () => {
+  test("a direct callee using each LOGICAL COMPOUND-ASSIGNMENT operator (`??=`, `||=`, `&&=`) naming the real helper as its right operand is an AMBIGUOUS candidate — closing the full closed family alongside the plain-`=` form", () => {
     for (const op of ["??=", "||=", "&&="] as const) {
       const source = [
         "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -3685,7 +3676,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     }
   });
 
-  test("a direct callee using a LOGICAL COMPOUND-ASSIGNMENT operator naming an UNRELATED decoy as its right operand produces no candidate — guards the round-22 fix against over-triggering", () => {
+  test("a direct callee using a LOGICAL COMPOUND-ASSIGNMENT operator naming an UNRELATED decoy as its right operand produces no candidate — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -3705,11 +3696,12 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a direct AWAIT-EXPRESSION callee naming the real helper (`(await outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate (docomply-review, a reference-implementation pull request, high, round 23: "composingExpressionLeaves() returns the AwaitExpression as an opaque leaf")', () => {
-    // Round 23 found the family extends past binary operators entirely: an
-    // AwaitExpression is a unary, no-operator-token wrapper that forwards
-    // its inner expression's value, so neither binary branch above could
-    // ever match it — it fell through to the opaque `[unwrapped]` default.
+  test('a direct AWAIT-EXPRESSION callee naming the real helper (`(await outOfBand)(report, "X", reason)`) is an AMBIGUOUS candidate (an AwaitExpression is not an opaque leaf)', () => {
+    // The family extends past binary operators entirely: an AwaitExpression
+    // is a unary, no-operator-token wrapper that forwards its inner
+    // expression's value, so neither binary branch above can ever match it —
+    // without its own case it falls through to the opaque `[unwrapped]`
+    // default.
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3728,7 +3720,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a direct AWAIT-EXPRESSION callee naming an UNRELATED decoy produces no candidate — guards the round-23 fix against over-triggering", () => {
+  test("a direct AWAIT-EXPRESSION callee naming an UNRELATED decoy produces no candidate — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -3747,11 +3739,11 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a direct callee producing its value by RETURNING ONE OF ITS OWN ARGUMENTS (`(await Promise.resolve(outOfBand))(report, "X", reason)`) is an AMBIGUOUS candidate (docomply-review, a reference-implementation pull request, high, round 24: "isAmbiguousOutOfBandCallee() then calls containsRealHelperReference() only on that call\'s callee... not on its arguments")', () => {
-    // Round 24 found that unwrapping `await` alone is not enough when the
+  test('a direct callee producing its value by RETURNING ONE OF ITS OWN ARGUMENTS (`(await Promise.resolve(outOfBand))(report, "X", reason)`) is an AMBIGUOUS candidate (the call arguments are checked, not only its callee)', () => {
+    // Unwrapping `await` alone is not enough when the
     // awaited value comes from a CALL that forwards one of its own arguments
     // to its return value (`Promise.resolve(x)` returns `x` unchanged) — the
-    // callee-only check the round-16 fix added never looks at arguments at
+    // callee-only CallExpression-leaf check never looks at arguments at
     // all. Conservatively treating every argument of a call-producing-a-value
     // leaf as a candidate too closes this without needing to model
     // `Promise.resolve` specifically.
@@ -3773,7 +3765,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a direct callee whose produced value comes from a call passed only an UNRELATED decoy argument produces no candidate — guards the round-24 fix against over-triggering", () => {
+  test("a direct callee whose produced value comes from a call passed only an UNRELATED decoy argument produces no candidate — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -3792,12 +3784,13 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias populated by an OBJECT-LITERAL right-hand side whose OWN property is the real helper (`({ x: alias } = { x: outOfBand }); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 12: "neither ambiguity walker descends into object-literal values")', () => {
-    // Before round 12, findAssignedValues pushed the whole right-hand side
-    // `{ x: outOfBand }` as a candidate, but neither consumer descended INTO
-    // an ObjectLiteralExpression candidate — composingExpressionLeaves only
-    // named `?:`/`||`/`&&`/`??`. containsRealHelperReference now walks every
-    // child regardless of container kind, so the nested `outOfBand` is found.
+  test("a `let` alias populated by an OBJECT-LITERAL right-hand side whose OWN property is the real helper (`({ x: alias } = { x: outOfBand }); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (the ambiguity walkers descend into object-literal values)", () => {
+    // In an earlier version, findAssignedValues pushed the whole right-hand
+    // side `{ x: outOfBand }` as a candidate, but neither consumer descended
+    // INTO an ObjectLiteralExpression candidate — composingExpressionLeaves
+    // only named `?:`/`||`/`&&`/`??`. containsRealHelperReference now walks
+    // every child regardless of container kind, so the nested `outOfBand` is
+    // found.
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3818,7 +3811,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by an OBJECT-LITERAL right-hand side whose own property is an UNRELATED decoy produces no candidate at all — guards the round-12 fix against over-triggering", () => {
+  test("a `let` alias populated by an OBJECT-LITERAL right-hand side whose own property is an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -3839,10 +3832,10 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias reached through a NON-LITERAL array container one more `const` away (`const helpers = [outOfBand]; [alias] = helpers; alias(...)`) is an AMBIGUOUS candidate (docomply-review, a reference-implementation pull request, high, round 12: "the same happens with a non-literal array container")', () => {
-    // Before round 12, findAssignedValues's array-literal special-case only
-    // fired when the RIGHT-HAND SIDE of the destructure was ITSELF a literal
-    // array — `helpers` is a plain identifier, so the push was just
+  test("a `let` alias reached through a NON-LITERAL array container one more `const` away (`const helpers = [outOfBand]; [alias] = helpers; alias(...)`) is an AMBIGUOUS candidate", () => {
+    // In an earlier version, findAssignedValues's array-literal special-case
+    // only fired when the RIGHT-HAND SIDE of the destructure was ITSELF a
+    // literal array — `helpers` is a plain identifier, so the push was just
     // `helpers` whole, and neither consumer chased its OWN declaration
     // initializer `[outOfBand]` into its elements.
     const source = [
@@ -3866,7 +3859,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias reached through a non-literal array container of only UNRELATED decoys produces no candidate at all — guards the round-12 fix against over-triggering", () => {
+  test("a `let` alias reached through a non-literal array container of only UNRELATED decoys produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -3888,11 +3881,12 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias populated by a destructuring DEFAULT naming the real helper (`({ x: alias = outOfBand } = decoy); alias(...)`) is an AMBIGUOUS candidate regardless of what the source object is (docomply-review, a reference-implementation pull request, high, round 12: "the value never depends on the destructured RHS")', () => {
-    // Before round 12, findAssignedValues pushed only `node.right` (`decoy`)
-    // for a destructuring-assignment match — the DEFAULT value embedded in
-    // the LHS pattern itself was never collected as a candidate at all, even
-    // though it is exactly what `alias` receives when `decoy` has no `x`.
+  test("a `let` alias populated by a destructuring DEFAULT naming the real helper (`({ x: alias = outOfBand } = decoy); alias(...)`) is an AMBIGUOUS candidate regardless of what the source object is (the value never depends on the destructured right-hand side)", () => {
+    // In an earlier version, findAssignedValues pushed only `node.right`
+    // (`decoy`) for a destructuring-assignment match — the DEFAULT value
+    // embedded in the LHS pattern itself was never collected as a candidate at
+    // all, even though it is exactly what `alias` receives when `decoy` has no
+    // `x`.
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -3914,7 +3908,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by a destructuring default naming only an UNRELATED decoy produces no candidate at all — guards the round-12 fix against over-triggering", () => {
+  test("a `let` alias populated by a destructuring default naming only an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoyDefault: (report: unknown, name: string, reason: string) => number;",
@@ -3958,8 +3952,8 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `let` alias populated by a CALL to a LOCALLY DECLARED function whose body returns the real helper (`function getHelper() { return outOfBand; } let alias; alias = getHelper(); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 13: "the later call contributes neither a candidate nor an anchor")', () => {
-    // Before round 13, findAssignedValues pushed the CallExpression
+  test("a `let` alias populated by a CALL to a LOCALLY DECLARED function whose body returns the real helper (`function getHelper() { return outOfBand; } let alias; alias = getHelper(); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (otherwise the later call contributes neither a candidate nor an anchor)", () => {
+    // In an earlier version, findAssignedValues pushed the CallExpression
     // `getHelper()` as a candidate, but containsRealHelperReference's
     // forEachChild walk only reaches the call's own callee identifier and
     // argument list — the FunctionDeclaration body lives elsewhere in the
@@ -3989,7 +3983,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `let` alias populated by a call to a locally declared function returning only an UNRELATED decoy produces no candidate at all — guards the round-13 fix against over-triggering", () => {
+  test("a `let` alias populated by a call to a locally declared function returning only an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4013,8 +4007,9 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a further hop of indirection between the call and the function — `const indirect = getHelper; let alias; alias = indirect(); alias(...)` — is still an AMBIGUOUS candidate (docomply-review, a reference-implementation pull request, high, round 14: "a legal alias defeats it")', () => {
-    // Before round 14, the round-13 fix only traced a function's body when
+  test("a further hop of indirection between the call and the function — `const indirect = getHelper; let alias; alias = indirect(); alias(...)` — is still an AMBIGUOUS candidate (a legal alias must not defeat it)", () => {
+    // In an earlier version, the call-through-local-function check only
+    // traced a function's body when
     // an identifier sat DIRECTLY in a CallExpression's own callee position
     // and its OWN declaration was the function. `indirect`'s declaration is
     // a plain identifier initializer (`getHelper`, not a function literal),
@@ -4056,7 +4051,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("the same further-hop chain reaching only an UNRELATED decoy produces no candidate at all — guards the round-14 fix against over-triggering", () => {
+  test("the same further-hop chain reaching only an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4081,8 +4076,8 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a STATIC CLASS METHOD returning the real helper (`class Factory { static getHelper() { return outOfBand; } } let alias; alias = Factory.getHelper(); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 15: "not a MethodDeclaration body")', () => {
-    // Before round 15, functionBodyOfDeclaration recognized only
+  test("a STATIC CLASS METHOD returning the real helper (`class Factory { static getHelper() { return outOfBand; } } let alias; alias = Factory.getHelper(); alias(...)`) is an AMBIGUOUS candidate, not invisible to the census (a MethodDeclaration body is inspected too)", () => {
+    // In an earlier version, functionBodyOfDeclaration recognized only
     // FunctionDeclaration and a VariableDeclaration-held arrow/function
     // expression — never a MethodDeclaration (or any other class member).
     // `Factory.getHelper`'s property-name resolves to a MethodDeclaration
@@ -4092,7 +4087,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     // body-bearing function-shaped declaration (FunctionDeclaration,
     // MethodDeclaration, GetAccessor, SetAccessor, Constructor,
     // FunctionExpression, ArrowFunction) — one predicate instead of
-    // enumerating declaration kinds one reviewer round at a time.
+    // enumerating declaration kinds one at a time.
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -4118,7 +4113,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a static class method returning only an UNRELATED decoy produces no candidate at all — guards the round-15 fix against over-triggering", () => {
+  test("a static class method returning only an UNRELATED decoy produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4144,7 +4139,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("mutual recursion between two locally declared helper functions does not hang the scan (round-13 fix, seen-guard)", () => {
+  test("mutual recursion between two locally declared helper functions does not hang the scan (seen-guard)", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4171,14 +4166,14 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a DIRECT CALL through a locally returned helper — no intervening alias at all (`function getHelper() { return outOfBand; } getHelper()(report, "X", reason)`) — is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 16: "the outer call\'s callee is itself a CallExpression; strict provenance rejects that shape... isAmbiguousOutOfBandCallee() expands only conditional/logical expressions and then returns false for any non-identifier/non-member expression")', () => {
-    // Before round 16, the census's `visit()` failed strict resolution (the
-    // outer call's callee `getHelper()` is not an import-bound identifier),
-    // then fell to isAmbiguousOutOfBandCallee(callee=getHelper()) — which
-    // checked member access, then element access, then required
+  test('a DIRECT CALL through a locally returned helper — no intervening alias at all (`function getHelper() { return outOfBand; } getHelper()(report, "X", reason)`) — is an AMBIGUOUS candidate, not invisible to the census (the outer callee is itself a CallExpression, which strict provenance rejects)', () => {
+    // In an earlier version, the census's `visit()` failed strict resolution
+    // (the outer call's callee `getHelper()` is not an import-bound
+    // identifier), then fell to isAmbiguousOutOfBandCallee(callee=getHelper())
+    // — which checked member access, then element access, then required
     // `ts.isIdentifier(resolved)`: `getHelper()` is a CallExpression, not an
-    // identifier, so this returned false immediately. The call contributed
-    // to NEITHER candidateCount NOR anchoredCount at all.
+    // identifier, so this returned false immediately. The call contributed to
+    // NEITHER candidateCount NOR anchoredCount at all.
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -4200,16 +4195,16 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("one further hop of indirection before the direct double-call (`const indirect = getHelper; indirect()(...)`) is still an AMBIGUOUS candidate — the round-16 CallExpression branch composes with the pre-existing arbitrary-alias-depth walk", () => {
+  test("one further hop of indirection before the direct double-call (`const indirect = getHelper; indirect()(...)`) is still an AMBIGUOUS candidate — the CallExpression-callee branch composes with the pre-existing arbitrary-alias-depth walk", () => {
     // candidateCount is 2, not 1: the INNER call `indirect()` is itself a
-    // census candidate too, independent of the round-16 fix — `indirect`'s
-    // own identifier-tail chase (unchanged by this round) treats a bare
+    // census candidate too, independent of the CallExpression-leaf branch —
+    // `indirect`'s own identifier-tail chase treats a bare
     // alias whose reaching value is a function reference the same as any
     // other reaching value, so `indirect()` alone already reads as
     // ambiguous under the pre-existing identifier chase (verified in
     // isolation: `indirect(report, name, reason)` with no outer call at all
-    // still reports candidateCount 1). The round-16 branch above then adds a
-    // SECOND, independent candidate for the outer call, whose own callee is
+    // still reports candidateCount 1). The CallExpression-leaf branch then adds
+    // a SECOND, independent candidate for the outer call, whose own callee is
     // `indirect()` — a CallExpression.
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -4233,7 +4228,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a direct call through a locally returned UNRELATED decoy (`function getHelper() { return decoy; } getHelper()(...)`) produces no candidate at all — guards the round-16 fix against over-triggering", () => {
+  test("a direct call through a locally returned UNRELATED decoy (`function getHelper() { return decoy; } getHelper()(...)`) produces no candidate at all — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: (report: unknown, name: string, reason: string) => number;",
@@ -4255,7 +4250,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a SINGLE, non-doubled call to a locally declared function that merely RETURNS the real helper (`function getHelper() { return outOfBand; } getHelper(report, "X", reason)`) produces no candidate — calling getHelper once executes its own body and returns outOfBand, it does not invoke outOfBand; guards the round-16 fix against the over-broad variant tried and reverted in the same round (routing every non-member/non-element leaf, not just a CallExpression one, through containsRealHelperReference)', () => {
+  test('a SINGLE, non-doubled call to a locally declared function that merely RETURNS the real helper (`function getHelper() { return outOfBand; } getHelper(report, "X", reason)`) produces no candidate — calling getHelper once executes its own body and returns outOfBand, it does not invoke outOfBand; guards against an over-broad variant (routing every non-member/non-element leaf, not just a CallExpression one, through containsRealHelperReference)', () => {
     const source = [
       "import { outOfBand } from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -4277,10 +4272,10 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `.outOfBand` MEMBER access through a locally returned real NAMESPACE object (`function getNamespace() { return terminalStates; } getNamespace().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census (docomply-review, a reference-implementation pull request, high, round 17: "outOfBandMemberExpressionObject() returns the getNamespace() CallExpression, but this branch requires that object to be an identifier and returns false... this real helper invocation contributes neither a candidate nor an anchor and runCheck() passes vacuously")', () => {
-    // Before round 17, isAmbiguousOutOfBandCallee's member-object branch
+  test('a `.outOfBand` MEMBER access through a locally returned real NAMESPACE object (`function getNamespace() { return terminalStates; } getNamespace().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census (the object side is a CallExpression, not an identifier; requiring an identifier lets runCheck() pass vacuously)', () => {
+    // In an earlier version, isAmbiguousOutOfBandCallee's member-object branch
     // required `ts.isIdentifier(unwrappedObject)` before chasing it at all —
-    // the round-16 CallExpression-leaf widening covers the OUTER callee
+    // the CallExpression-leaf widening covers the OUTER callee
     // position, but composes with nothing on the OBJECT side of a member
     // access, so this call contributed to NEITHER candidateCount NOR
     // anchoredCount at all.
@@ -4305,7 +4300,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `.outOfBand` member access through a locally returned UNRELATED decoy object (`function getNamespace() { return decoy; } getNamespace().outOfBand(...)`) produces no candidate — guards the round-17 fix against over-triggering", () => {
+  test("a `.outOfBand` member access through a locally returned UNRELATED decoy object (`function getNamespace() { return decoy; } getNamespace().outOfBand(...)`) produces no candidate — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare const decoy: {",
@@ -4329,7 +4324,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a computed ELEMENT access on a locally returned real NAMESPACE object (`function getNamespace() { return terminalStates; } getNamespace()[computeKey()](...)`) is an AMBIGUOUS candidate — the sibling isAmbiguousOutOfBandElementAccess object check had the identical identifier-only gate as isAmbiguousOutOfBandCallee (round 17)", () => {
+  test("a computed ELEMENT access on a locally returned real NAMESPACE object (`function getNamespace() { return terminalStates; } getNamespace()[computeKey()](...)`) is an AMBIGUOUS candidate — the sibling isAmbiguousOutOfBandElementAccess object check needs the same non-identifier handling as isAmbiguousOutOfBandCallee", () => {
     const source = [
       "import * as terminalStates from './lib/status/terminal-states.ts';",
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
@@ -4352,8 +4347,8 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `.outOfBand` member access on a CLASS INSTANCE whose own property aliases the real helper (`class Holder { outOfBand = outOfBand } new Holder().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census — the object never reaches the real NAMESPACE at all, only the PROPERTY itself does (docomply-review, a reference-implementation pull request, high, round 18: "containsRealHelperReference() reaches the Holder identifier and stops at its ClassDeclaration without inspecting the PropertyDeclaration initializer")', () => {
-    // Before round 18, isAmbiguousOutOfBandCallee's member-object branch
+  test('a `.outOfBand` member access on a CLASS INSTANCE whose own property aliases the real helper (`class Holder { outOfBand = outOfBand } new Holder().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census — the object never reaches the real NAMESPACE at all, only the PROPERTY itself does (the walk inspects the PropertyDeclaration initializer rather than stopping at the ClassDeclaration)', () => {
+    // In an earlier version, isAmbiguousOutOfBandCallee's member-object branch
     // asked only "does the OBJECT reach the real terminal-states namespace"
     // (`couldReachRealHelperNamespace` for an identifier object,
     // `containsRealHelperReference` on the object alone otherwise) — the
@@ -4383,7 +4378,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `.outOfBand` member access on a class instance whose own property is an UNRELATED decoy (`class Holder { outOfBand = decoy }`) produces no candidate — guards the round-18 fix against over-triggering", () => {
+  test("a `.outOfBand` member access on a class instance whose own property is an UNRELATED decoy (`class Holder { outOfBand = decoy }`) produces no candidate — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -4405,10 +4400,10 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `.outOfBand` member access on a class instance whose own property is a METHOD that merely RETURNS the real helper (`class Holder { outOfBand(...args) { return outOfBand; } } new Holder().outOfBand(report, "X", reason)`) produces no candidate — calling the method once executes its own body and returns outOfBand, it does not invoke outOfBand; the member equivalent of the round-16 single-call guard (docomply-review, a reference-implementation pull request, medium, round 19: "at runtime this call invokes only `Holder.outOfBand` and does not invoke the returned function")', () => {
-    // Before round 19, isAmbiguousOutOfBandCallee's member-object branch
+  test('a `.outOfBand` member access on a class instance whose own property is a METHOD that merely RETURNS the real helper (`class Holder { outOfBand(...args) { return outOfBand; } } new Holder().outOfBand(report, "X", reason)`) produces no candidate — calling the method once executes its own body and returns outOfBand, it does not invoke outOfBand; the member equivalent of the single-call guard (at runtime this call invokes only `Holder.outOfBand`, not the returned function)', () => {
+    // In an earlier version, isAmbiguousOutOfBandCallee's member-object branch
     // routed the WHOLE resolved member expression through
-    // containsRealHelperReference (round 18), whose generic forEachChild
+    // containsRealHelperReference, whose generic forEachChild
     // fallback visits the `.outOfBand` name identifier and, for ANY
     // identifier, unconditionally walks the referenced symbol's own function
     // body — here, the MethodDeclaration body `{ return outOfBand; }` —
@@ -4438,16 +4433,15 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test('a `.outOfBand` member access on a class instance whose own property is a GETTER that returns the real helper (`class Holder { get outOfBand(): typeof outOfBand { return outOfBand; } } new Holder().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census — accessing the getter runs its body and produces the real helper before the call syntax is even reached, unlike a plain method (docomply-review, a reference-implementation pull request, high, round 20: "the property symbol resolves to a `GetAccessorDeclaration`, this guard returns false, and the call contributes neither a candidate nor an anchor")', () => {
-    // Before round 20, couldDirectInvocationReachHelper gated candidacy on
-    // `ts.hasOnlyExpressionInitializer(declaration)` alone, which a
+  test('a `.outOfBand` member access on a class instance whose own property is a GETTER that returns the real helper (`class Holder { get outOfBand(): typeof outOfBand { return outOfBand; } } new Holder().outOfBand(report, "X", reason)`) is an AMBIGUOUS candidate, not invisible to the census — accessing the getter runs its body and produces the real helper before the call syntax is even reached, unlike a plain method (the property symbol resolves to a `GetAccessorDeclaration`)', () => {
+    // In an earlier version, couldDirectInvocationReachHelper gated candidacy
+    // on `ts.hasOnlyExpressionInitializer(declaration)` alone, which a
     // GetAccessorDeclaration never satisfies (a getter has a body, not an
-    // initializer) — the identical shape of exclusion the round-19 fix
-    // correctly applied to a MethodDeclaration, but wrongly applied here
-    // too: unlike a method, merely ACCESSING a getter already runs its body
-    // and produces whatever it returns, so `new Holder().outOfBand`
-    // evaluates to the real helper before the trailing `(...)` is even
-    // reached.
+    // initializer) — the identical shape of exclusion the method fix correctly
+    // applied to a MethodDeclaration, but wrongly applied here too: unlike a
+    // method, merely ACCESSING a getter already runs its body and produces
+    // whatever it returns, so `new Holder().outOfBand` evaluates to the real
+    // helper before the trailing `(...)` is even reached.
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "import { outOfBand } from './lib/status/terminal-states.ts';",
@@ -4471,7 +4465,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
     });
   });
 
-  test("a `.outOfBand` member access on a class instance whose own property is a GETTER returning an UNRELATED decoy (`class Holder { get outOfBand() { return decoy; } }`) produces no candidate — guards the round-20 fix against over-triggering", () => {
+  test("a `.outOfBand` member access on a class instance whose own property is a GETTER returning an UNRELATED decoy (`class Holder { get outOfBand() { return decoy; } }`) produces no candidate — guards against over-triggering", () => {
     const source = [
       "import { SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
       "declare function decoy(report: unknown, name: string, reason: string): number;",
@@ -4496,7 +4490,7 @@ describe("scanOutOfBandNamePairings — candidateCount/anchoredCount coverage cr
   });
 });
 
-describe("runCheck — the outOfBand coverage cross-check catches a real call site losing its anchor, an earlier change", () => {
+describe("runCheck — the outOfBand coverage cross-check catches a real call site losing its anchor", () => {
   test("an else-branch mutation on the real drive-status.ts source fails runCheck() via the coverage cross-check, not the mismatch check", () => {
     const realSource = readFileSync(driveStatusTsSourcePath(), "utf8");
     const target = [
@@ -4552,7 +4546,7 @@ describe("runCheck — the outOfBand coverage cross-check catches a real call si
     }
   });
 
-  test("a same-named, non-imported outOfBand decoy added alongside the real corpus does NOT fail runCheck — the coverage cross-check false positive this issue exists to close (docomply-review)", () => {
+  test("a same-named, non-imported outOfBand decoy added alongside the real corpus does NOT fail runCheck — the coverage cross-check false positive this issue exists to close", () => {
     // The mirror image of the test above: before the fix, ANY same-named
     // decoy call anywhere in drive-status.ts inflated candidateCount
     // without inflating anchoredCount, so the coverage cross-check failed
@@ -4604,7 +4598,7 @@ describe("runCheck — the outOfBand coverage cross-check catches a real call si
   });
 });
 
-describe("findBareLiteralExits — alias-resolution gaps closed across all three sibling resolvers (docomply-review, a reference-implementation pull request round 4)", () => {
+describe("findBareLiteralExits — alias-resolution gaps closed across all three sibling resolvers", () => {
   test("a two-hop identifier alias chain is followed to its literal — resolveIdentifierLiteral no longer stops at the first hop", () => {
     const source = [
       "async function main(): Promise<number> {",
@@ -4775,20 +4769,20 @@ describe("findBareLiteralExits — alias-resolution gaps closed across all three
   });
 });
 
-describe("findBareLiteralExits — the emitter nested inside its own top-level function, the real drive-status.ts shape (docomply-review, a reference-implementation pull request round 5)", () => {
-  // Every fixture in the round-4 describe block above declares `emit` as a
-  // TOP-LEVEL sibling of `main` — but the real drive-status.ts declares its
-  // dispatch emitter one level DEEPER, directly inside `main()`'s own body
+describe("findBareLiteralExits — the emitter nested inside its own top-level function, the real drive-status.ts shape", () => {
+  // Every alias-resolution fixture in the describe block above declares `emit`
+  // as a TOP-LEVEL sibling of `main` — but the real drive-status.ts declares
+  // its dispatch emitter one level DEEPER, directly inside `main()`'s own body
   // (`async function main() { async function emit(code) { ... } ... }`).
-  // `findTopLevelFunctionDeclaration` only searched `sourceFile.statements`,
-  // so on the real file `emitDeclaration` was always `undefined`; every real
+  // `findTopLevelFunctionDeclaration` only searched `sourceFile.statements`, so
+  // on the real file `emitDeclaration` was always `undefined`; every real
   // `emit(<literal>)` call then resolved to a declaration that fails BOTH the
   // `declaration === emitDeclaration` check (undefined never equals a real
-  // node) and the `ts.isVariableDeclaration` fallback (a FunctionDeclaration
-  // is neither), so `resolvesToLocalEmit` silently returned `false` for
-  // every real call site — the scan never looked at drive-status.ts's own
-  // `emit(...)` calls at all. This fixture reproduces that exact shape and
-  // would have reported `[]` before the fix.
+  // node) and the `ts.isVariableDeclaration` fallback (a FunctionDeclaration is
+  // neither), so `resolvesToLocalEmit` silently returned `false` for every real
+  // call site — the scan never looked at drive-status.ts's own `emit(...)`
+  // calls at all. This fixture reproduces that exact shape and would have
+  // reported `[]` before the fix.
   test("a bare-literal emit() call is caught when emit is declared inside main(), not beside it", () => {
     const source = [
       "async function main(): Promise<number> {",
@@ -4807,7 +4801,7 @@ describe("findBareLiteralExits — the emitter nested inside its own top-level f
     // canonical `emit` one level into a top-level function's body, not
     // arbitrarily deep. `helper()` here is itself nested inside `main()`, so
     // its own `emit` is two levels down from the SourceFile and must stay a
-    // rejected shadow, exactly like the round-4 fixture at the true top level.
+    // rejected shadow, exactly like the shadow fixture at the true top level.
     const source = [
       "async function main(): Promise<number> {",
       "  async function emit(code: number): Promise<void> {}",
@@ -4881,13 +4875,13 @@ describe("findBareLiteralExits — the emitter nested inside its own top-level f
   });
 });
 
-describe("findBareLiteralExits — the reporter is identified by structural position, never by name (docomply-review, a reference-implementation pull request round 6)", () => {
-  // The round-6 finding: `findTopLevelFunctionDeclaration(sourceFile,
-  // 'emit')` located the reporter by matching the literal spelling `emit`.
-  // A behavior-preserving rename of the real nested function AND its call
-  // sites to `emitReport` made that lookup return `undefined`, so
-  // `resolvesToLocalEmit` rejected the perfectly resolvable `emitReport`
-  // declaration and let `await emitReport(11)` through the gate uncaught.
+describe("findBareLiteralExits — the reporter is identified by structural position, never by name", () => {
+  // A `findTopLevelFunctionDeclaration(sourceFile, 'emit')` lookup locates
+  // the reporter by matching the literal spelling `emit`. A
+  // behavior-preserving rename of the real nested function AND its call
+  // sites to `emitReport` makes that lookup return `undefined`, so the
+  // perfectly resolvable `emitReport` declaration is rejected and `await
+  // emitReport(11)` passes the gate uncaught.
   // `isEmitterZoneFunctionDeclaration` replaces the name check with a pure
   // position test, so every fixture below renames BOTH the declaration and
   // every call site and still expects the bare literal to be caught.
@@ -4950,8 +4944,8 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
   });
 
   test("the real repo corpus: renaming the actual drive-status.ts reporter — declaration AND every call site — is still caught", () => {
-    // Mirrors the round-5 real-corpus test above, but exercises the fix THIS
-    // round actually adds: a rename, not just a bare-literal argument swap.
+    // Mirrors the real-corpus injection test above, but exercises a rename,
+    // not just a bare-literal argument swap.
     // Every occurrence of the identifier followed by `(` — the declaration
     // included, since `async function emit(code: number)` contains the exact
     // same `emit(` substring as every call site — is renamed uniformly, so
@@ -4994,11 +4988,10 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
   });
 });
 
-describe("findBareLiteralExits — the reporter is identified by call contract, not position alone (docomply-review, a reference-implementation pull request round 7)", () => {
-  // Two independent findings on the same round: the position-only test
-  // (round 6) neither recognized a function-VALUED variable declaration nor
-  // excluded an unrelated sibling declared at the identical structural
-  // depth. Both are closed by `matchesReporterSignature` plus
+describe("findBareLiteralExits — the reporter is identified by call contract, not position alone", () => {
+  // A position-only test neither recognizes a function-VALUED variable
+  // declaration nor excludes an unrelated sibling declared at the identical
+  // structural depth. Both are closed by `matchesReporterSignature` plus
   // `isEmitterZoneVariableDeclaration` — see their own doc comments above
   // `resolvesToLocalReporter`.
 
@@ -5079,7 +5072,7 @@ describe("findBareLiteralExits — the reporter is identified by call contract, 
   });
 });
 
-describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach the real entry point, an earlier change", () => {
+describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach the real entry point", () => {
   // Same reasoning as the drive.ts describe block above: a FRESH directory
   // per fixture, because Bun's `require()` snapshots a directory's contents
   // on its first resolution there.
@@ -5136,11 +5129,10 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     "",
   ].join("\n");
 
-  // Mirrors the real drive-status.ts shape (docomply-review
-  // round 1): a `.code ===` comparison and an `emit(...)` call both precede
-  // the matching `return`, and each one binds the constant independently —
-  // exactly the three code-bound parts the mutation tests below exercise one
-  // at a time.
+  // Mirrors the real drive-status.ts shape: a `.code ===` comparison and an
+  // `emit(...)` call both precede the matching `return`, and each one binds the
+  // constant independently — exactly the three code-bound parts the mutation
+  // tests below exercise one at a time.
   const healthyDriveStatusSource = [
     "import { DRIVE_HELD_ELSEWHERE_EXIT, SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
     "async function main(): Promise<number> {",
@@ -5250,13 +5242,11 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     withSeams(paths, () => expect(runCheck()).toBe(1));
   });
 
-  // The two mutations below are the exact residual named by docomply-review
-  //: a `return`-only scan misses a `.code ===`
-  // comparison or an `emit(...)` call reverted to a bare literal while the
-  // function's own trailing `return` still reads the real constant —
-  // `healthyDriveStatusSource` above deliberately carries all three shapes
-  // so each mutation below trips ONLY the clause under test (`document-
-  // scanning-gates.md` rule 5).
+  // The two mutations below are the exact residual of a `return`-only scan:
+  // it misses a `.code ===` comparison or an `emit(...)` call reverted to a
+  // bare literal while the function's own trailing `return` still reads the
+  // real constant — `healthyDriveStatusSource` above deliberately carries all
+  // three shapes so each mutation below trips ONLY the clause under test.
   test("a drive-status.ts .code COMPARISON reverted to a bare literal fails runCheck(), even though the return in the same block still uses the named constant", () => {
     const paths = healthyPaths();
     paths.driveStatusTsSource = fixture(
@@ -5281,7 +5271,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     withSeams(paths, () => expect(runCheck()).toBe(1));
   });
 
-  test("a missing lease.ts source file fails closed, per document-scanning-gates.md rule 1", () => {
+  test("a missing lease.ts source file fails closed", () => {
     const paths = healthyPaths();
     const missingDir = mkdtempSync(
       join(tmpdir(), "drive-pr-terminal-states-outofband-e2e-missing-"),
@@ -5290,7 +5280,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     withSeams(paths, () => expect(runCheck()).toBe(1));
   });
 
-  test("a missing drive-status.ts source file fails closed, per document-scanning-gates.md rule 1", () => {
+  test("a missing drive-status.ts source file fails closed", () => {
     const paths = healthyPaths();
     const missingDir = mkdtempSync(
       join(tmpdir(), "drive-pr-terminal-states-outofband-e2e-missing-2-"),
@@ -5300,7 +5290,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
   });
 });
 
-describe("runCheck — the outOfBand name-pairing check reaches the real entry point, an earlier change", () => {
+describe("runCheck — the outOfBand name-pairing check reaches the real entry point", () => {
   // Same reasoning as the two describe blocks above: a FRESH directory per
   // fixture, and the healthy drive.ts/lease.ts fixtures duplicated rather
   // than shared (no existing shared-fixture convention in this file) — both

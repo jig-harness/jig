@@ -93,17 +93,16 @@ describe("answer-summary-finding.ts", () => {
           ...gitCleanEnv(),
           PATH: `${binDir}:${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
-          // The script now consults the session lease before it posts
-          //, so every probe needs a state dir of its own. Left
+          // The script consults the session lease before it posts, so
+          // every probe needs a state dir of its own. Left
           // unset, the fence would read the REAL clone's drive state and a
           // live drive in this worktree would refuse the whole describe block.
           DRIVE_PR_STATE_DIR: stateDir,
-          // And since PR #4107 round 16 the override REQUIRES its identity
-          // beside it: `$DRIVE_PR_STATE_DIR` without
-          // `$DRIVE_PR_STATE_DIR_IDENTITY` is a superseded driver and
-          // refuses. This is what a current `drive.ts` would have exported
-          // for this fixture, so the probe exercises the ordinary path rather
-          // than the refusal.
+          // And the override REQUIRES its identity beside it:
+          // `$DRIVE_PR_STATE_DIR` without `$DRIVE_PR_STATE_DIR_IDENTITY` is a
+          // superseded driver and refuses. This is what a current `drive.ts`
+          // would have exported for this fixture, so the probe exercises the
+          // ordinary path rather than the refusal.
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
           ...opts.env,
         },
@@ -150,7 +149,7 @@ describe("answer-summary-finding.ts", () => {
     expect(r.stderr).toContain("closed-vocabulary");
   });
 
-  it("rejects a reason that already opens with an outcome token (#3995 round 10)", async () => {
+  it("rejects a reason that already opens with an outcome token", async () => {
     // Measured on this skill's own PR. The token is composed from --outcome, so
     // a reason carrying one too posts `**accepted** — **accepted** — …`, which
     // the reviewer-scoring harvester reads as a malformed sample — and the
@@ -173,7 +172,7 @@ describe("answer-summary-finding.ts", () => {
   // direct `$REASON` test keeps it green. A reason naturally starts with
   // indentation or a blank line when it is pasted out of an indented block or a
   // heredoc, and those are exactly the inputs that slipped through before
-  // (docomply-review, a reference-implementation pull request round 17). Each variant is asserted separately:
+  //. Each variant is asserted separately:
   // one table row failing must name which whitespace shape regressed.
   for (const [label, reason] of [
     [
@@ -186,7 +185,7 @@ describe("answer-summary-finding.ts", () => {
       "\n**wont-fix** — declined per the triage rubric (docs tier).",
     ],
   ] as const) {
-    it(`rejects a reason whose outcome token is preceded by ${label} (#3995 round 17)`, async () => {
+    it(`rejects a reason whose outcome token is preceded by ${label}`, async () => {
       // `rejected`, deliberately NOT `accepted`: the fix-dependent outcomes
       // also exit 2 when `--pushed-sha` is missing, so on a regressed guard an
       // `accepted` probe still exits 2 — for an unrelated reason — and only the
@@ -378,7 +377,7 @@ describe("answer-summary-finding.ts", () => {
   });
 
   // The probes below pin what the REMOVED `--held-at-sha` gate made
-  // impossible (PR #4049 rounds 4-7). It required `--pushed-sha` to be a strict
+  // impossible. It required `--pushed-sha` to be a strict
   // descendant of the SHA the finding was held at, to prove a commit landed
   // since — but it proved a commit landed in the ROUND, never that the commit
   // was this finding's (two findings held together share a held SHA), so it
@@ -391,8 +390,7 @@ describe("answer-summary-finding.ts", () => {
     // and no further commit is owed — so a round whose work is entirely
     // moot/rejected pushes nothing and answers at the same SHA it held at.
     // Under the old gate this could never be answered at all, and the drive
-    // could not converge without manufacturing an unrelated commit
-    // (chatgpt-codex-connector, a reference-implementation pull request round 7).
+    // could not converge without manufacturing an unrelated commit.
     const r = await answer(
       [
         "--outcome",
@@ -416,7 +414,7 @@ describe("answer-summary-finding.ts", () => {
     // now at 7, bound 3) is expired but still ON the PR, over a fix that landed
     // rounds ago and is still perfectly good: `collectAddressed` re-asks the
     // finding and the driver renews the marker at the SAME head, because there
-    // is nothing new to commit (chatgpt-codex-connector, a reference-implementation pull request round 4).
+    // is nothing new to commit.
     const r = await answer(
       [
         "--outcome",
@@ -592,10 +590,9 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
   // real session, but it defeats a test whose whole point is isolating the
   // PER-PR fence's OWN narrowing logic: the tree fence does not narrow by
   // `--pr` at all, so a `seedLease`-based fixture makes every `--pr`-scoped
-  // assertion here fail for a reason unrelated to what it tests
-  // (docomply-review round 10, a reference-implementation pull request — the tree fence is now wired into
-  // `answer-summary-finding.ts`'s posting path too, which this suite's
-  // `fence()` helper spawns).
+  // assertion here fail for a reason unrelated to what it tests (the tree
+  // fence is wired into `answer-summary-finding.ts`'s posting path too, which
+  // this suite's `fence()` helper spawns).
   function seedRawPrLease(stateDir: string, pr: string, pid: number): void {
     writeFileSync(
       leasePathFor(stateDir, pr, ACTOR),
@@ -652,10 +649,10 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
         // driver exported `$DRIVE_PR_STATE_DIR_IDENTITY` for ITS OWN state
         // directory. Inherited here it names a different directory than the
         // per-test one, so every test would refuse for a reason that has
-        // nothing to do with what it asserts (CodeRabbit, PR #4107 round 16).
+        // nothing to do with what it asserts.
         //
-        // A correct baseline rather than an empty one, because since round 16
-        // the override path REQUIRES one: `$DRIVE_PR_STATE_DIR` without
+        // A correct baseline rather than an empty one, because the override
+        // path REQUIRES one: `$DRIVE_PR_STATE_DIR` without
         // `$DRIVE_PR_STATE_DIR_IDENTITY` is a superseded driver and refuses.
         // So the default here is what a current `drive.ts` would have
         // exported for this fixture. `...env` still overrides, so a test that
@@ -735,8 +732,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // identically to "999" — but a strict `===` against the lease filename's
     // own canonical PR segment would not match, silently narrowing this
     // caller to zero candidates and authorizing the POST past a live lease
-    // that should have refused it (chatgpt-codex-connector, a reference-implementation pull request
-    // round 7).
+    // that should have refused it.
     const holder = Bun.spawn(["sleep", "600"], {
       stdout: "ignore",
       stderr: "ignore",
@@ -758,8 +754,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // left running in the OLD tree — which holds no lease of its own here —
     // must still see that successor's live lease to refuse correctly.
     // Without the PR-wide search, `leaseFilesForActor` finds zero candidates
-    // under THIS tree's own (nonexistent) lease and wrongly allows the post
-    // (chatgpt-codex-connector, a reference-implementation pull request round 8).
+    // under THIS tree's own (nonexistent) lease and wrongly allows the post.
     const holder = Bun.spawn(["sleep", "600"], {
       stdout: "ignore",
       stderr: "ignore",
@@ -783,7 +778,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
           lastSeen: new Date().toISOString(),
           command: "hold",
           generation: "f".repeat(32),
-          // Required since round 15 — this fixture is about the CROSS-TREE
+          // Required — this fixture is about the CROSS-TREE
           // search, so it must parse cleanly and reach the holder-naming
           // refusal (11) rather than stopping at the unreadable one (1).
           sessionStarted: "",
@@ -806,8 +801,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // (9007199254740992): the next integer up, "9007199254740993", silently
     // rounds DOWN to "9007199254740992" under a float round-trip. The old
     // canonicalization would then search for the WRONG (rounded) PR, find no
-    // lease under it, and allow the post past the real, live one — the exact
-    // reproduction docomply-review gave (round 10).
+    // lease under it, and allow the post past the real, live one.
     const holder = Bun.spawn(["sleep", "600"], {
       stdout: "ignore",
       stderr: "ignore",
@@ -871,8 +865,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // directory necessarily existed a moment ago. If it is gone now (a
     // renamed git common dir, a moved worktree), that is an anomaly this
     // fence must not read as "no lease", or a pass whose inherited path went
-    // stale mid-drive posts unfenced (chatgpt-codex-connector, a reference-implementation pull request
-    // round 6).
+    // stale mid-drive posts unfenced.
     const gone = join(mkdtempSync(join(tmpdir(), "fence-vanished-")), "state");
     // Deliberately never created — `mkdtempSync` made the PARENT, `state`
     // itself does not exist, which is the "existed, then moved away" shape an
@@ -888,8 +881,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // enumerates the override directory as its OWN existence check
     // (`readdirSync` directly, no separate `stat` first): a dangling symlink
     // makes that same call fail with `ENOENT` on the real target, exactly
-    // like the wholly-vanished case above (chatgpt-codex-connector, a reference-implementation pull request
-    // round 7).
+    // like the wholly-vanished case above.
     const parent = mkdtempSync(join(tmpdir(), "fence-symlink-"));
     const link = join(parent, "state-link");
     symlinkSync(join(parent, "state-target-does-not-exist"), link);
@@ -899,7 +891,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
   });
 
   it("fails CLOSED when the lease set cannot be enumerated", async () => {
-    // Rule 1 of .claude/rules/document-scanning-gates.md. A state dir that is
+    // A gate that cannot read its input fails closed. A state dir that is
     // a FILE makes `readdirSync` fail with ENOTDIR — neither "no leases" nor
     // "a lease" — and the only safe reading of an unreadable answer, in front
     // of a mutation with no undo, is "do not post".
@@ -917,7 +909,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
   it("fails CLOSED on a lease file it can enumerate but cannot READ", async () => {
     // The class one level below the probe above, and the half that was still
     // open: fencing the DIRECTORY while an unreadable FILE inside it read as
-    // "no lease" and permitted the post (docomply-review, a reference-implementation pull request round 1).
+    // "no lease" and permitted the post.
     // `readLease` collapses absent and unreadable to the same `null`, which is
     // the right ruling for CLAIMING and the wrong one here.
     //
@@ -994,7 +986,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // not touch, and the tree fence does not narrow by `--pr` — so without
       // this, a still-alive `holder` would leave the tree lease live and this
       // assertion would refuse for a reason unrelated to what it tests
-      // (docomply-review round 10, a reference-implementation pull request). Awaited, not just signalled: a
+      //. Awaited, not just signalled: a
       // `pidAlive` check on a killed-but-not-yet-reaped process can still see
       // it as running.
       holder.kill();
@@ -1006,9 +998,9 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
   });
 
   it("fails CLOSED when the git probe fails for an OPERATIONAL reason", async () => {
-    // Reproduced by chatgpt-codex-connector on PR #4107 round 1: with `git`
-    // off $PATH the probe failed, the failure was read as "no drive state",
-    // and the fence exited 0 having checked no lease at all.
+    // Reproduced: with `git` off $PATH the probe failed, the failure was read
+    // as "no drive state", and the fence exited 0 having checked no lease at
+    // all.
     //
     // No $DRIVE_PR_STATE_DIR: the override short-circuits the probe, so
     // setting it would test nothing. cwd is this repo, which IS a repository —
@@ -1065,8 +1057,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
 
   it("refuses when the `.git` marker EXISTS but the filesystem cannot resolve it", async () => {
     // The filesystem census that replaced the exit-128 check retained the same
-    // temporal hole one step further in (chatgpt-codex-connector P2 and
-    // docomply-review high, PR #4107 round 4, independently): `existsSync`
+    // temporal hole one step further in: `existsSync`
     // reports `false` for confirmed absence and for indeterminate failure
     // alike. A drive writes a live lease and the marker THEN becomes a broken
     // symlink (or an ancestor becomes unsearchable); the walk runs to the root,
@@ -1079,10 +1070,10 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // because the marker entry plainly exists.
     //
     // Every OTHER clause of the fence's fail-closed conjunction is satisfied so
-    // that `repositoryIsInPlay` is the sole decider (document-scanning-gates.md
-    // § 5): $DRIVE_PR_STATE_DIR is empty so the override cannot short-circuit
-    // the probe, git is on $PATH and runs cleanly, and it exits 128 "not a git
-    // repository" — measured — so `stateDir` is empty and `timedOut` is false.
+    // that `repositoryIsInPlay` is the sole decider: $DRIVE_PR_STATE_DIR is
+    // empty so the override cannot short-circuit the probe, git is on $PATH and
+    // runs cleanly, and it exits 128 "not a git repository" — measured — so
+    // `stateDir` is empty and `timedOut` is false.
     const lost = mkdtempSync(join(tmpdir(), "fence-marker-lost-"));
     symlinkSync("/nonexistent/gitdir-target", join(lost, ".git"));
 
@@ -1118,8 +1109,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // Exit 128 is git's GENERIC fatal status — dubious ownership, permissions,
     // corruption — so reading it as "no repository, therefore no lease" is the
     // same fail-open as reading a missing binary that way, one step narrower.
-    // Found independently by both reviewers on PR #4107 round 2, and their
-    // refutation is the reachable part: a drive writes a live lease, the
+    // The reachable failure: a drive writes a live lease, the
     // repository THEN becomes unreadable, and the lease is still sitting there.
     //
     // An invalid `GIT_DIR` produces a 128 that is emphatically not "there is no
@@ -1153,7 +1143,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     expect(stderr).toContain("IS a repository");
   });
 
-  describe("state-directory identity (PR #4107 findings A and C)", () => {
+  describe("state-directory identity", () => {
     // `resolveFenceContext`'s override path freezes the NAME LIST from one
     // `readdirSync`, but `assertRemoteMutationAllowed` still has to OPEN each
     // candidate afterwards to learn who holds it — a genuine second
@@ -1208,8 +1198,8 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // the enumeration, and this directory's identity in the same breath.
       const overrideEntries = readdirSync(stateDir);
       // `statSync(..., { bigint: true })`, matching production: the identity
-      // FOLLOWS symlinks (round 16) and is BigInt-valued (round 17, since
-      // 64-bit dev/ino round when read as numbers). Hand-building it from
+      // FOLLOWS symlinks and is BigInt-valued (since 64-bit dev/ino round
+      // when read as numbers). Hand-building it from
       // `lstatSync`'s numeric fields would compare a rounded, link-scoped
       // identity against a followed BigInt one and never agree.
       const before = statSync(stateDir, { bigint: true });
@@ -1268,8 +1258,8 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
 
       const overrideEntries = readdirSync(stateDir);
       // `statSync(..., { bigint: true })`, matching production: the identity
-      // FOLLOWS symlinks (round 16) and is BigInt-valued (round 17, since
-      // 64-bit dev/ino round when read as numbers). Hand-building it from
+      // FOLLOWS symlinks and is BigInt-valued (since 64-bit dev/ino round
+      // when read as numbers). Hand-building it from
       // `lstatSync`'s numeric fields would compare a rounded, link-scoped
       // identity against a followed BigInt one and never agree.
       const before = statSync(stateDir, { bigint: true });
@@ -1314,8 +1304,8 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       mkdirSync(stateDir);
       const overrideEntries = readdirSync(stateDir);
       // `statSync(..., { bigint: true })`, matching production: the identity
-      // FOLLOWS symlinks (round 16) and is BigInt-valued (round 17, since
-      // 64-bit dev/ino round when read as numbers). Hand-building it from
+      // FOLLOWS symlinks and is BigInt-valued (since 64-bit dev/ino round
+      // when read as numbers). Hand-building it from
       // `lstatSync`'s numeric fields would compare a rounded, link-scoped
       // identity against a followed BigInt one and never agree.
       const before = statSync(stateDir, { bigint: true });
@@ -1332,8 +1322,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // The returned lock is captured and released — a formerly-void call
       // now resolves to a still-HELD `PathLock`, and discarding
       // it here would leave both the lock directory and `createLock`'s
-      // process/signal listeners live for the rest of this test run
-      // (docomply-review, a reference-implementation pull request round 6).
+      // process/signal listeners live for the rest of this test run.
       const lock = await assertRemoteMutationAllowed(
         {
           stateDir,
@@ -1356,7 +1345,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     });
   });
 
-  describe("session-started token (PR #4107 finding B — pid recycling)", () => {
+  describe("session-started token (pid recycling)", () => {
     // `isMine` used to match a held lease against the caller's session on
     // (pid, host) alone. If a driver dies and the OS later recycles its
     // exact pid for an unrelated NEW drive-pr session, this caller's
@@ -1446,8 +1435,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // superseded code has on disk. An earlier revision normalized it to ''
       // so such records kept parsing; that is an accepts-both-shapes parser,
       // which the pre-GA BWC stance rules out, and it quietly kept the weaker
-      // pid/host-only ownership decision alive for exactly those records
-      // (chatgpt-codex-connector, a reference-implementation pull request round 15).
+      // pid/host-only ownership decision alive for exactly those records.
       //
       // The case that must keep working is a token-LESS session, and it does:
       // the VALUE '' is legal (asserted in the sibling test below). Only the
@@ -1513,7 +1501,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     });
   });
 
-  describe("$DRIVE_PR_STATE_DIR_IDENTITY — the driver-established baseline (PR #4107 round 14, finding C)", () => {
+  describe("$DRIVE_PR_STATE_DIR_IDENTITY — the driver-established baseline", () => {
     // The window every OTHER identity check in this fence is blind to: the
     // swap completed BEFORE this pass started. The fence then enumerates the
     // replacement, captures ITS identity, finds it perfectly stable for the
@@ -1522,10 +1510,10 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // answer that, and the driver is the one thing that observed it.
 
     it("fails CLOSED when the directory was swapped BEFORE the pass started", async () => {
-      // Fixture built so this clause is the SOLE decider (document-scanning-
-      // gates.md § 5): the replacement is a real, readable, EMPTY directory,
-      // so every other check in the chain passes and the unfixed code
-      // authorizes the post with exit 0. Only the driver baseline differs.
+      // Fixture built so this clause is the SOLE decider: the replacement is a
+      // real, readable, EMPTY directory, so every other check in the chain
+      // passes and the unfixed code authorizes the post with exit 0. Only the
+      // driver baseline differs.
       const original = stateDirFor("identity-swapped-before");
       const identity = stateDirIdentityToken(original);
       expect(identity).not.toBe(""); // the baseline itself must be real
@@ -1549,7 +1537,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // earlier clause firing.
       //
       // (Phrased as a matching baseline rather than an absent one, because
-      // since round 16 an absent baseline on the override path refuses in its
+      // an absent baseline on the override path refuses in its
       // own right, which would make an absent-baseline mutation check pass
       // for the wrong reason.)
       const matching = await fence(original, ["--pr", "999"], {
@@ -1567,12 +1555,11 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     });
 
     it("REFUSES an absent baseline on the override path — no compatibility path for superseded drivers", async () => {
-      // `$DRIVE_PR_STATE_DIR` is set only by `drive.ts`, which since round 16
-      // either exports the identity beside it or refuses to start. So an
-      // override arriving without one can only come from a superseded driver,
-      // and allowing it would preserve the unfenced pre-baseline behaviour
-      // indefinitely — the dual-path tolerance pre-GA policy rejects
-      // (docomply-review / chatgpt-codex-connector, a reference-implementation pull request round 16).
+      // `$DRIVE_PR_STATE_DIR` is set only by `drive.ts`, which either exports
+      // the identity beside it or refuses to start. So an override arriving
+      // without one can only come from a superseded driver, and allowing it
+      // would preserve the unfenced pre-baseline behaviour indefinitely — the
+      // dual-path tolerance pre-GA policy rejects.
       const d = stateDirFor("identity-absent");
       const r = await fence(d, ["--pr", "999"], {
         DRIVE_PR_STATE_DIR_IDENTITY: "",
@@ -1592,7 +1579,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       expect(r.exitCode).toBe(0);
     });
 
-    it("FOLLOWS a symlinked state dir, so a swap of its TARGET is caught (PR #4107 round 16)", async () => {
+    it("FOLLOWS a symlinked state dir, so a swap of its TARGET is caught", async () => {
       // The link's own inode is untouched by a target rename-and-recreate, so
       // an `lstat`-based identity matches straight through the swap while
       // `readdirSync` — which follows — enumerates the replacement. Fixture
@@ -1638,7 +1625,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     });
   });
 
-  describe("single-snapshot lease decisions (PR #4107 round 15)", () => {
+  describe("single-snapshot lease decisions", () => {
     it("parseLease REJECTS a record whose sessionStarted key is absent, and accepts an empty one", () => {
       // The unit-level statement of the same rule the fence tests above
       // exercise end-to-end. Asserted on the parser directly so a future
@@ -1671,7 +1658,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     });
 
     it("stateDirIdentityToken reports UNREADABLE as empty, and drive.ts refuses on it rather than omitting the baseline", () => {
-      // Two halves of the same guard (PR #4107 round 16).
+      // Two halves of the same guard.
       //
       // The contract: '' means "could not establish", never "there is none".
       expect(
@@ -1684,8 +1671,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // writes its driver log INTO it before reaching this guard, so by the
       // time the guard runs a stat failure is only reachable as a transient
       // race that no deterministic fixture can stage. That is exactly the
-      // case the finding describes, and `.claude/rules/document-scanning-
-      // gates.md` § 3 prefers a verbatim pin over a text-matching model for
+      // case at issue, and a verbatim pin beats a text-matching model for
       // "does this code actually do X" — so the pin is on the refusal itself,
       // and it fails if the omit-the-variable form ever returns.
       const src = readFileSync(join(SCRIPTS, "drive.ts"), "utf8");
@@ -1702,7 +1688,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       );
     });
 
-    it("carries a 64-bit dev/ino through the token without rounding (PR #4107 round 17)", () => {
+    it("carries a 64-bit dev/ino through the token without rounding", () => {
       // Node's NUMERIC stat fields round past Number.MAX_SAFE_INTEGER, and
       // filesystems do expose dev/ino above it. Rounding either compares two
       // different directories as identical — a swap the fence should catch —
@@ -1731,7 +1717,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       });
     });
 
-    it("leasePathFor and the reader agree on a NONCANONICAL pr (PR #4107 round 16)", () => {
+    it("leasePathFor and the reader agree on a NONCANONICAL pr", () => {
       // The producer used to persist whatever spelling it was handed, so an
       // explicit `0999` wrote `pr-drive-lease-0999-*` while a posting caller
       // canonicalized its own target to `999` and filtered on that prefix —
@@ -1930,7 +1916,7 @@ describe("resolve-held-thread.ts", () => {
           PATH: `${binDir}:${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
-          // claim-held mutates state (review round 2), so — like every other
+          // claim-held mutates state, so — like every other
           // state-mutating probe in this file — it regenerates a handoff file
           // via `git rev-parse --show-toplevel`. Left unset, that resolves to
           // whichever scratch repo `cwd` points at (scratchClean/scratchOther
@@ -2007,8 +1993,7 @@ describe("resolve-held-thread.ts", () => {
       ACCEPTED_COMMENT_URL,
     ]);
     // SKILL.md § 6's own `set-verified`, called right after guarded-push.ts
-    // lands the fix — the second half of what a claim now requires (review
-    // round 2).
+    // lands the fix — the second half of what a claim requires.
     await seed(stateDir, ["stamp-held", "999", "--sha", scratchClean.head]);
     const r = await resolveHeld(
       stateDir,
@@ -2026,11 +2011,10 @@ describe("resolve-held-thread.ts", () => {
     expect(r.resolved.trim()).toBe("PRRT_a");
   });
 
-  // an earlier change finding (chatgpt-codex-connector, round 5): the
-  // comment-staleness recheck. `finish-round.ts`'s own pre-push guard already
-  // confirmed the hold's `commentUrl` matched the thread's latest comment —
-  // but that runs BEFORE `guarded-push.ts`, which SKILL.md documents as
-  // potentially taking tens of minutes. A reply landing on the thread during
+  // The comment-staleness recheck. `finish-round.ts`'s own pre-push guard
+  // already confirmed the hold's `commentUrl` matched the thread's latest
+  // comment — but that runs BEFORE `guarded-push.ts`, which SKILL.md documents
+  // as potentially taking tens of minutes. A reply landing on the thread during
   // that window must not be silently resolved by the drain that follows.
   it("restores (never resolves) when a NEW comment landed on the thread after it was held", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-stale2-"));
@@ -2079,10 +2063,10 @@ describe("resolve-held-thread.ts", () => {
     ]);
   });
 
-  // an earlier change finding (chatgpt-codex-connector, round 7): a GitHub
-  // comment keeps its permalink when EDITED, so the url-only check above
-  // cannot catch a trusted reply whose outcome token was removed or changed
-  // after it was held. The url still matches; only the body no longer does.
+  // A GitHub comment keeps its permalink when EDITED, so the url-only check
+  // above cannot catch a trusted reply whose outcome token was removed or
+  // changed after it was held. The url still matches; only the body no longer
+  // does.
   it("restores (never resolves) when the held reply was EDITED after being held (same URL, different outcome)", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-edited-"));
     await seed(stateDir, ["bump-round", "999", "--head", PREV]);
@@ -2136,7 +2120,7 @@ describe("resolve-held-thread.ts", () => {
 
   // Reviewer bots post a confirming follow-up within seconds of an
   // outcome reply, so the strict "the held reply is the latest comment" rule
-  // lost that race on every drain (4–5 cycles on PR #4618). The narrow
+  // lost that race on every drain (measured: 4–5 cycles). The narrow
   // exceptions below, and the near misses around each that must still refuse.
   describe("bot confirmation race", () => {
     const CONFIRMATION_MARKER =
@@ -2318,15 +2302,14 @@ describe("resolve-held-thread.ts", () => {
     });
   });
 
-  // Review finding (docomply-review, a reference-implementation pull request round 1): `dropReheldKey()`'s
-  // own cleanup — for a key that has REAPPEARED in `held` since `claim-held`
-  // removed the original entry (a concurrent driver's own reconciliation
-  // re-holding it) — used to delete unconditionally on the strength of the
-  // `isResolved: true` read `staleCheck` took EARLIER. That assumes
-  // resolution is monotonic, which GitHub does not guarantee: any writer can
-  // UNRESOLVE a thread, so the reappeared entry can be a legitimate, FRESH
-  // re-triage made after the thread was reopened, not a stale leftover. The
-  // fix re-verifies `isResolved` immediately before the delete rather than
+  // `dropReheldKey()`'s own cleanup — for a key that has REAPPEARED in `held`
+  // since `claim-held` removed the original entry (a concurrent driver's own
+  // reconciliation re-holding it) — used to delete unconditionally on the
+  // strength of the `isResolved: true` read `staleCheck` took EARLIER. That
+  // assumes resolution is monotonic, which GitHub does not guarantee: any
+  // writer can UNRESOLVE a thread, so the reappeared entry can be a legitimate,
+  // FRESH re-triage made after the thread was reopened, not a stale leftover.
+  // The fix re-verifies `isResolved` immediately before the delete rather than
   // trusting the earlier read.
   describe("dropReheldKey's re-verification before deleting a REAPPEARED hold", () => {
     it("does NOT delete a re-appeared hold when the live re-check finds the thread REOPENED", async () => {
@@ -2468,9 +2451,8 @@ describe("resolve-held-thread.ts", () => {
     expect(resolved).toBe("");
   });
 
-  // an earlier change finding (docomply-review, round 6): a comment node with
-  // no readable `url` must refuse outright, never be silently dropped from
-  // the population. Filtering it out would shift "the latest comment" to an
+  // A comment node with no readable `url` must refuse outright, never be
+  // silently dropped from the population. Filtering it out would shift "the latest comment" to an
   // OLDER node, which can coincidentally still match the hold's own
   // `commentUrl` — resolving a thread whose real latest comment could not
   // actually be confirmed.
@@ -2599,7 +2581,7 @@ describe("resolve-held-thread.ts", () => {
     expect(r.resolved.trim()).toBe("PRRT_a");
   });
 
-  // The review-flagged bypass (round 2): an unrelated push lands WITHOUT ever
+  // The bypass: an unrelated push lands WITHOUT ever
   // going through a counting drive-status.ts gate, so `.rounds` never
   // advances — a round-only comparison would read this as a match, even
   // though this SHA never went through the validate → push → set-verified
@@ -2722,8 +2704,7 @@ describe("resolve-held-thread.ts", () => {
     // The restored entry carries its ORIGINAL commentUrl forward — a restore
     // that dropped it would read as provenance-free to the next standalone
     // reconciliation, which treats that as a different (superseding) comment
-    // and downgrades a hold that was never actually invalidated
-    // (docomply-review round 11, a reference-implementation pull request).
+    // and downgrades a hold that was never actually invalidated.
     //
     // And its `actor` + `verifiedSha`, for a sharper reason still:
     // `set-verified` has already run for this push and will not run again, so
@@ -2815,7 +2796,7 @@ describe("resolve-held-thread.ts", () => {
     // a caller (finish-round.ts) must see one code for "not in the held
     // batch at all" regardless of which of the two catches it, since that is
     // the one case worth re-reading the batch over rather than recording a
-    // permanent refusal (chatgpt-codex-connector, a reference-implementation pull request).
+    // permanent refusal.
     expect(r.exitCode).toBe(4);
     expect(r.stderr).toContain("no held item with key 'PRRT_ghost'");
   });
@@ -3004,7 +2985,7 @@ describe("finish-round.ts", () => {
     }
   });
 
-  it("the fake git push rejects the remote and refspec swapped (docomply-review round 2)", () => {
+  it("the fake git push rejects the remote and refspec swapped", () => {
     // Presence checks alone ("did 'origin' and a refspec token occur
     // somewhere") would still accept an accidentally swapped invocation —
     // guarded-push.ts always calls git(['push', ...extra, 'origin', refspec]),
@@ -3140,11 +3121,10 @@ describe("finish-round.ts", () => {
       stderr: "pipe",
     });
     const headParent = headParentRes.stdout.toString().trim();
-    // an earlier change finding (coderabbitai): assert both setup calls
-    // actually succeeded — a failed `rev-parse` would silently hand
-    // `update-ref` an empty ref name, and a failed `update-ref` would leave
-    // `origin/develop` unset, both producing a repo shape the probes below
-    // assert against for the wrong reason.
+    // Assert both setup calls actually succeeded — a failed `rev-parse` would
+    // silently hand `update-ref` an empty ref name, and a failed `update-ref`
+    // would leave `origin/develop` unset, both producing a repo shape the
+    // probes below assert against for the wrong reason.
     expect(headParentRes.exitCode).toBe(0);
     expect(headParent).not.toBe("");
     const updateRefRes = Bun.spawnSync(
@@ -3159,7 +3139,7 @@ describe("finish-round.ts", () => {
     return {
       ...gitCleanEnv(),
       DRIVE_PR_STATE_DIR: stateDir,
-      // Required beside the override since PR #4107 round 16 — an unaccompanied
+      // Required beside the override — an unaccompanied
       // `$DRIVE_PR_STATE_DIR` reads as a superseded driver and refuses.
       DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
       // An unset handoff dir writes `.context/` into whichever repo `cwd`
@@ -3177,7 +3157,7 @@ describe("finish-round.ts", () => {
       // that runs right after the push, the same way an unset
       // `DRIVE_PR_HANDOFF_DIR` used to.
       DRIVE_PR_MAILBOX_DIR: join(fixtureDir, "mailbox"),
-      // set-ci-hold is test-only fixture seeding (PR #4681 round 4) —
+      // set-ci-hold is test-only fixture seeding —
       // harmless to set unconditionally here since no other command reads
       // this variable.
       DRIVE_PR_ALLOW_TEST_CI_HOLD_SEED: "1",
@@ -3728,9 +3708,9 @@ describe("finish-round.ts", () => {
           "accepted",
           // Matches `threadCommentNodes()`'s deterministic comment-1 URL for
           // a thread with an explicit `comments` array ending in a real
-          // trusted accepted reply — required since resolve-held-thread.ts's
-          // an earlier change drain-time recheck re-verifies both the latest
-          // comment's URL AND its outcome (round 7), not merely its URL.
+          // trusted accepted reply — required because resolve-held-thread.ts's
+          // drain-time recheck re-verifies both the latest comment's URL AND
+          // its outcome, not merely its URL.
           "--comment-url",
           "https://example.invalid/PRRT_held/comment-1",
         ]);
@@ -3768,7 +3748,7 @@ describe("finish-round.ts", () => {
     expect(JSON.parse(held)).toEqual([]);
   });
 
-  it("aborts as BATCH_UNREADABLE, not a per-item refusal, when release-held cannot read state after the answer already posted (chatgpt-codex-connector, a reference-implementation pull request round 9)", async () => {
+  it("aborts as BATCH_UNREADABLE, not a per-item refusal, when release-held cannot read state after the answer already posted", async () => {
     const r = await finishRound({
       seedState: async ({ stateDir, fixtureDir, cwd }) => {
         await seed(
@@ -3888,7 +3868,7 @@ describe("finish-round.ts", () => {
     expect(held.map((h) => h.key)).toEqual(["PRRT_stale"]);
   });
 
-  it("re-reads the batch instead of refusing when a CONCURRENT resolve removes a different held thread (chatgpt-codex-connector, a reference-implementation pull request round 8/9)", async () => {
+  it("re-reads the batch instead of refusing when a CONCURRENT resolve removes a different held thread", async () => {
     const r = await finishRound({
       // Only PRRT_vanisher needs a live thread entry: PRRT_victim is released
       // (vanish-key-on-resolve below) before its own dispatch would reach
@@ -4104,12 +4084,11 @@ describe("finish-round.ts", () => {
       );
     });
 
-    // an earlier change finding (chatgpt-codex-connector): a PR that closed or
-    // merged between the last round's push and this one still has offending
-    // threads sitting on GitHub, but there is nothing left to triage-and-
-    // retry against — `guarded-push.ts` would report PR_NOT_OPEN a few lines
-    // later regardless, so this guard reports it directly instead of getting
-    // there first with the misleading REFUSED_UNTRIAGED reason.
+    // A PR that closed or merged between the last round's push and this one
+    // still has offending threads sitting on GitHub, but there is nothing left
+    // to triage-and-retry against — `guarded-push.ts` would report PR_NOT_OPEN
+    // a few lines later regardless, so this guard reports it directly instead
+    // of getting there first with the misleading REFUSED_UNTRIAGED reason.
     it("reports PR_NOT_OPEN instead of REFUSED_UNTRIAGED when the PR closed before this check ran", async () => {
       const r = await finishRound({
         fixture: {
@@ -4123,11 +4102,11 @@ describe("finish-round.ts", () => {
       expect(r.report.stamped).toBe(false);
     });
 
-    // an earlier change finding, round 4 (docomply-review): a FAILED liveness
+    // A FAILED liveness
     // read must not fall through to REFUSED_UNTRIAGED — that verdict's own
     // wording tells the operator to triage and retry, which is wrong advice
-    // when liveness itself could not be confirmed. Per document-scanning-
-    // gates.md rule 1, an unreadable external read is a gate failure.
+    // when liveness itself could not be confirmed. An unreadable external
+    // read is a gate failure, and the gate fails closed.
     it("reports TRIAGE_CHECK_FAILED, not REFUSED_UNTRIAGED, when the liveness read itself fails", async () => {
       const r = await finishRound({
         fixture: {
@@ -4140,7 +4119,7 @@ describe("finish-round.ts", () => {
       expect(r.pushed).toBe("");
     });
 
-    // an earlier change finding, round 8 (chatgpt-codex-connector): the
+    // The
     // documented non-atomic window in triage-thread.ts (reply posted, but
     // the process is killed before the durable hold is recorded). A bare
     // `currentReplyOutcome`-based check would exempt this thread on the strength of
@@ -4228,9 +4207,9 @@ describe("finish-round.ts", () => {
         seedState: async ({ stateDir, fixtureDir, cwd }) => {
           // The hold's own key IS the offending thread's id, AND its
           // `--comment-url` matches the thread's actual latest comment — a
-          // real trusted accepted reply, required since resolve-held-
-          // thread.ts's an earlier change drain-time recheck re-verifies both the
-          // latest comment's URL AND its outcome (round 7) — so the hold is
+          // real trusted accepted reply, required because resolve-held-
+          // thread.ts's drain-time recheck re-verifies both the latest
+          // comment's URL AND its outcome — so the hold is
           // CURRENT: a triage decision already made and posted, pending
           // only the drain.
           await seed(stateDir, fixtureDir, cwd, [
@@ -4252,12 +4231,12 @@ describe("finish-round.ts", () => {
       expect(r.pushed).not.toBe("");
     });
 
-    // an earlier change finding, round 9 (docomply-review): a comment keeps
+    // A comment keeps
     // its permalink when EDITED, so a hold's url matching the latest comment
     // is not enough — the comment's own outcome must still match what was
     // held. This is the pre-push counterpart to the identical fix already
-    // made in resolve-held-thread.ts's drain-time recheck (round 7); the
-    // reviewer's own point was that the drain-time check runs AFTER the
+    // made in resolve-held-thread.ts's drain-time recheck; the point is that
+    // the drain-time check runs AFTER the
     // irreversible push, so this guard must catch it BEFORE.
     it("STILL refuses when the held reply was EDITED to a DIFFERENT outcome (same URL)", async () => {
       const r = await finishRound({
@@ -4301,7 +4280,7 @@ describe("finish-round.ts", () => {
       expect(r.report.state).toBe("REFUSED_UNTRIAGED");
       expect(r.pushed).toBe("");
       expect(String(r.report.reason)).toContain("PRRT_edited");
-      // an earlier change finding, round 13 (docomply-review): the remedy TEXT
+      // The remedy TEXT
       // itself, not just the refusal, must name the actual case — an earlier
       // cut's `currentReplyNeedsOnlyAHold` read true for ANY qualifying
       // outcome (not only accepted/moot), so an edited-to-`rejected` thread
@@ -4315,9 +4294,8 @@ describe("finish-round.ts", () => {
       expect(reason).not.toContain("no hold was recorded");
     });
 
-    // ── an earlier change finding (chatgpt-codex-connector, round 2): a hold
-    // must be revalidated against the thread's LATEST comment, not merely
-    // its key ─────────────────────────────────────────────────────────────
+    // ── A hold must be revalidated against the thread's LATEST comment, not
+    // merely its key ─────────────────────────────────────────────────────
     it("STILL refuses when the held reply is STALE — a newer comment landed on the thread after it was held", async () => {
       const r = await finishRound({
         fixture: {
@@ -4357,22 +4335,21 @@ describe("finish-round.ts", () => {
       expect(r.report.state).toBe("REFUSED_UNTRIAGED");
       expect(r.pushed).toBe("");
       expect(String(r.report.reason)).toContain("PRRT_stale_hold");
-      // an earlier change finding, round 7: a STALE hold gets the
+      // A STALE hold gets the
       // direct-post-supersession remedy, not the plain "triage-thread.ts"
       // instruction — `triage-thread.ts` alone would just reconcile to the
       // stale hold and refuse again next round.
       expect(String(r.report.reason)).toContain("reply-to-thread.ts");
     });
 
-    // Review finding (docomply-review, a reference-implementation pull request round 1): this guard used
-    // to judge a hold's currency against the thread's LITERAL latest
-    // comment only, so a CodeRabbit confirmation landing BEFORE the push —
-    // the common case, since it reacts within seconds of the reply, well
+    // This guard used to judge a hold's currency against the thread's LITERAL
+    // latest comment only, so a CodeRabbit confirmation landing BEFORE the push
+    // — the common case, since it reacts within seconds of the reply, well
     // inside a round's own triage-to-push window — refused the round on the
-    // very comment resolve-held-thread.ts's an earlier change exception exists to
-    // tolerate. That post-push exception was therefore unreachable in the
-    // documented finish-round path whenever the race resolved before the
-    // push. `isThreadHoldCurrent` now shares the identical predicate
+    // very comment resolve-held-thread.ts's an earlier change exception exists
+    // to tolerate. That post-push exception was therefore unreachable in the
+    // documented finish-round path whenever the race resolved before the push.
+    // `isThreadHoldCurrent` now shares the identical predicate
     // (`./lib/bot-confirmation.ts`) pre-push.
     describe("bot confirmation race, pre-push", () => {
       const CONFIRMATION_MARKER =
@@ -4535,7 +4512,7 @@ describe("finish-round.ts", () => {
       expect(String(r.report.reason)).not.toContain("reply-to-thread.ts");
     });
 
-    // an earlier change finding, round 8 (docomply-review): a TRUNCATED thread
+    // A TRUNCATED thread
     // with a hold on its own key would otherwise read as "stale" and get the
     // reply-to-thread.ts supersession remedy — but triage-thread.ts refuses a
     // truncated thread UNCONDITIONALLY, so that remedy is just as broken as
@@ -4589,7 +4566,7 @@ describe("finish-round.ts", () => {
         fixture: {
           threads: [
             {
-              // Human-started (round 22 review finding, P1): the leave-open
+              // Human-started: the leave-open
               // exemption is documented as human-thread-only, so this
               // fixture's own opening comment must not be bot-authored.
               id: "PRRT_left_open",
@@ -4615,9 +4592,8 @@ describe("finish-round.ts", () => {
       expect(r.report.state).toBe("FINISHED");
     });
 
-    // an earlier change finding, round 14 (P1, chatgpt-codex-connector): the
-    // earlier fix for the accepted/moot crash-before-HOLD window (round 8)
-    // did not cover the separate merit-outcome crash-before-RESOLVE window.
+    // The fix for the accepted/moot crash-before-HOLD window does not cover
+    // the separate merit-outcome crash-before-RESOLVE window.
     // A rejected/wont-fix/deferred reply with no --leave-open marker sitting
     // on a thread this script only ever sees as UNRESOLVED cannot be a
     // legitimately-finished dispatch — a finished one would have called
@@ -4651,7 +4627,7 @@ describe("finish-round.ts", () => {
       expect(reason).not.toContain("no hold was recorded");
     });
 
-    // an earlier change finding, round 22 (P1, chatgpt-codex-connector): the
+    // The
     // leave-open marker is human-thread-only by design. A BOT-started thread
     // wrongly marked leave-open (an operator mistake `triage-thread.ts`
     // itself does not prevent in code) must still refuse — and its remedy
@@ -4686,7 +4662,7 @@ describe("finish-round.ts", () => {
       expect(reason).toContain("resolve-thread.ts PRRT_bot_left_open directly");
     });
 
-    // an earlier change finding, round 25 (high, chatgpt-codex-connector): a
+    // A
     // trusted author can EDIT an existing marked wont-fix/deferred reply's
     // outcome word to `accepted` in place, leaving the LEAVE_OPEN_MARKER
     // trailing line untouched — GitHub preserves it, and no posting-time
@@ -4723,12 +4699,12 @@ describe("finish-round.ts", () => {
       expect(reason).toContain("no hold was recorded");
     });
 
-    // an earlier change finding (chatgpt-codex-connector): the offending check
-    // used to scan backward and accept the FIRST trusted qualifying reply it
-    // found, so an earlier round's accepted reply kept exempting the thread
-    // even after a fresh, unaddressed comment landed on it afterward — the
-    // short-circuiting `&&` in the offending filter meant `isThreadHoldCurrent`
-    // (which DOES check staleness) was never even reached for this thread.
+    // The offending check used to scan backward and accept the FIRST trusted
+    // qualifying reply it found, so an earlier round's accepted reply kept
+    // exempting the thread even after a fresh, unaddressed comment landed on it
+    // afterward — the short-circuiting `&&` in the offending filter meant
+    // `isThreadHoldCurrent` (which DOES check staleness) was never even reached
+    // for this thread.
     it("STILL refuses when a qualifying reply exists but is NOT the latest comment — fresh feedback landed after it", async () => {
       const r = await finishRound({
         fixture: {
@@ -4804,7 +4780,7 @@ describe("finish-round.ts", () => {
       expect(String(r.report.reason)).toContain("PRRT_truncated");
     });
 
-    // an earlier change finding, round 5 (docomply-review): a `commentsTruncated`
+    // A `commentsTruncated`
     // thread's visible list is only the first 100 comments, so its last
     // VISIBLE comment is not necessarily the thread's real latest — hidden
     // feedback past the cap could supersede a qualifying reply that happens
@@ -4875,7 +4851,7 @@ describe("finish-round.ts", () => {
       expect(r.report.state).toBe("FINISHED");
     });
 
-    // ── an earlier change finding 1: a PARKED thread must not wedge a drive ──
+    // ── A PARKED thread must not wedge a drive ──
     //
     // `drive-state.ts park` writes to `state.parked`, a list DISJOINT from
     // `state.held` — so a parked thread is, by construction, still unresolved
@@ -4924,8 +4900,8 @@ describe("finish-round.ts", () => {
       expect(r.pushed).not.toBe("");
     });
 
-    // Fail-closed on the verified-SHA read itself (an earlier change finding,
-    // docomply-review round 2). Before that fix, `readVerifiedSha` (inside
+    // Fail-closed on the verified-SHA read itself. In an earlier version,
+    // `readVerifiedSha` (inside
     // `roundBase`, the FIRST drive-state.ts read this guard makes) swallowed
     // its own subprocess failure into `''` — indistinguishable from "no round
     // has verified yet" — and silently fell back to the cumulative
@@ -4957,8 +4933,7 @@ describe("finish-round.ts", () => {
       expect(String(r.report.reason)).toContain("drive-state.ts verified");
     });
 
-    // ── an earlier change finding 2: base-sync merges must not inflate "this
-    // round's own commits" ──────────────────────────────────────────────────
+    // ── Base-sync merges must not inflate "this round's own commits" ───────
     //
     // `changedFilesSince` (what this guard used before the fix) diffs the
     // verified SHA against the working tree directly, so it silently included
@@ -5012,9 +4987,8 @@ describe("finish-round.ts", () => {
       expect(String(r.report.reason)).toContain("PRRT_round_file");
     });
 
-    // ── an earlier change finding (chatgpt-codex-connector): a `git mv` in
-    // this round's own commit must not hide the thread anchored to the
-    // pre-rename path ──────────────────────────────────────────────────────
+    // ── A `git mv` in this round's own commit must not hide the thread
+    // anchored to the pre-rename path ────────────────────────────────────
     it("catches an untriaged thread anchored to a file this round's own commit RENAMED away from", async () => {
       const repo = makeRenameRepo(`finish-round-rename-${++finishSeq}`);
       const r = await finishRound({
@@ -5033,7 +5007,7 @@ describe("finish-round.ts", () => {
       expect(String(r.report.reason)).toContain("PRRT_pre_rename");
     });
 
-    // an earlier change finding, round 14 (chatgpt-codex-connector): a
+    // A
     // thread's own OPENING comment is the finding, not a reply to it, even
     // when a trusted author's opening text happens to parse as the outcome
     // grammar. Before the fix, `currentReplyOutcome` read the single
@@ -5077,7 +5051,7 @@ describe("finish-round.ts", () => {
         fixture: {
           threads: [
             {
-              // Human-started (round 22 review finding, P1): the marker
+              // Human-started: the marker
               // this test relies on to sidestep the separate merit-resolve
               // requirement is human-thread-only, so this fixture's own
               // opening comment must not be bot-authored either.
@@ -5091,8 +5065,8 @@ describe("finish-round.ts", () => {
                   authorAssociation: "OWNER",
                   // Marked leave-open — this test is only about which
                   // COMMENT counts as the reply, not about the separate
-                  // merit-outcome resolve requirement (round 14 finding,
-                  // covered by its own dedicated test above).
+                  // merit-outcome resolve requirement (covered by its own
+                  // dedicated test above).
                   body: `**wont-fix** — pre-existing, not part of this diff.\n\n${LEAVE_OPEN_MARKER}`,
                 },
               ],
@@ -5104,7 +5078,7 @@ describe("finish-round.ts", () => {
       expect(r.report.state).toBe("FINISHED");
     });
 
-    // an earlier change finding, round 14 (chatgpt-codex-connector): a
+    // A
     // `--bots-only` round must not be refused by an untouched HUMAN thread —
     // continuous bots-only mode is explicitly scoped to never act on human
     // threads (SKILL.md's own "the identical mistake" caveat is about the
@@ -5208,7 +5182,6 @@ describe("list-unresolved-threads.ts", () => {
     expect(trusted?.comments[0]?.authorAssociation).toBe("OWNER");
   });
 
-  // an earlier change finding, round 24 (high, chatgpt-codex-connector):
   // `confirmedHumanStarted` must fail CLOSED (`false`) on a malformed or
   // absent opening-comment author shape — `ThreadCommentNode.author` and its
   // `__typename` are both optional in the real GraphQL response type, so

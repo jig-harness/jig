@@ -1248,7 +1248,7 @@ describe("runFleetHealth", () => {
 // ── Review-driven additions ────────────────────────────────────────────────
 
 describe("attribution to an epic named directly", () => {
-  it("counts a trailer that names the epic itself toward that epic (PR #5032 →)", () => {
+  it("counts a trailer that names the epic itself toward that epic", () => {
     const epic = issue("ENG-7488", { labels: ["epic"], ancestors: [] });
     expect(epicOf(epic)).toBe("ENG-7488");
     const plan = pr(5032, {

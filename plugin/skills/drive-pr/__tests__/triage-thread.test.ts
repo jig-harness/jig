@@ -57,23 +57,22 @@ let scratchWorktree: string;
  * happens to carry (the `current-round.test.ts` pattern, same reasoning).
  *
  * Several tests here run TWO separate subprocess calls against the SAME
- * `stateDir` in sequence — e.g. a fresh `runTriage` accepted+hold, then a
- * later `postReplyDirectly` simulating a direct supersession — and every
- * state-mutating `drive-state.ts` call (including `hold`) claims a
- * sessionless tree-wide presence record when no session identity
- * is set. Left unpinned, that reads as an IDENTIFIED session locally (a
- * Claude Code harness always sets `$CLAUDE_PID`, which the ladder falls back
- * to) and as ladder tier 3 — sessionless — on a clean CI/gates shell that
- * does not: on tier 3, the second subprocess call sees the first one's own
- * presence record and refuses it as "another live resolver," a false
- * collision with nothing to do with what these tests actually check
- * (outcome/reconciliation logic, not multi-session lease semantics).
- * Verified: this exact test file passes locally (ambient `$CLAUDE_PID`
- * masks it) but failed reproducibly on remote gates before this pin
- * (chatgpt-codex-connector round 20 area, PR #4129). Pinning an
- * explicit session — every subprocess this file spawns sees the SAME
- * pid, so they self-recognize per an earlier change — avoids the tier
- * entirely, deterministically, regardless of which shell runs the suite.
+ * `stateDir` in sequence — e.g. a fresh `runTriage` accepted+hold, then a later
+ * `postReplyDirectly` simulating a direct supersession — and every
+ * state-mutating `drive-state.ts` call (including `hold`) claims a sessionless
+ * tree-wide presence record when no session identity is set. Left unpinned,
+ * that reads as an IDENTIFIED session locally (a Claude Code harness always
+ * sets `$CLAUDE_PID`, which the ladder falls back to) and as ladder tier 3 —
+ * sessionless — on a clean CI/gates shell that does not: on tier 3, the second
+ * subprocess call sees the first one's own presence record and refuses it as
+ * "another live resolver," a false collision with nothing to do with what these
+ * tests actually check (outcome/reconciliation logic, not multi-session lease
+ * semantics).
+ * Verified: this exact test file passes locally (ambient `$CLAUDE_PID` masks
+ * it) but failed reproducibly on remote gates before this pin. Pinning an
+ * explicit session — every subprocess this file spawns sees the SAME pid, so
+ * they self-recognize — avoids the tier entirely, deterministically, regardless
+ * of which shell runs the suite.
  */
 function scrubbedGitEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -229,7 +228,7 @@ function writeNode(
  * reply-to-thread.ts's drive-lease fence (assert-post-allowed.ts), which
  * triage-thread.ts spawns on the posting path — the same derivation
  * `/resolve-review-comments`'s own scripts.test.ts uses, see its comment on
- * why an override without an identity refuses (PR #4107 round 16).
+ * why an override without an identity refuses.
  */
 function withStateDirIdentity(
   env: Record<string, string>,
@@ -553,7 +552,7 @@ describe("triage-thread.ts", () => {
     expect(item).toMatchObject({ key: "PRRT_moot_crash", outcome: "moot" });
   });
 
-  it("EXCEPT a RECONCILED moot carrying the --leave-open marker: trusted as the merit outcome it was, not force-held (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 12)", () => {
+  it("EXCEPT a RECONCILED moot carrying the --leave-open marker: trusted as the merit outcome it was, not force-held", () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, { comments: [] });
     // First invocation: fresh **moot** + --leave-open, no --moot-pending-push
@@ -704,7 +703,7 @@ describe("triage-thread.ts", () => {
     expect(heldKeys(stateDir)).toBe(""); // the stale accepted hold is gone
   });
 
-  it("an explicit --leave-open on a RECONCILING call whose existing reply has no marker FAILS CLOSED — the choice cannot be made durable, since reconciliation posts nothing to persist it onto (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 14, superseding round 11's own OR-combine fix on the same gap)", () => {
+  it("an explicit --leave-open on a RECONCILING call whose existing reply has no marker FAILS CLOSED — the choice cannot be made durable, since reconciliation posts nothing to persist it onto", () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, { comments: [] });
     // Posted DIRECTLY via reply-to-thread.ts, exactly as the deliberate-
@@ -746,14 +745,13 @@ describe("triage-thread.ts", () => {
 
   it('the same fail-closed refusal STILL releases a stale hold on this key before exiting — the refusal means the thread cannot be made durable, not "skip cleanup too" (Architect Agent review 2026-08-21, closing PRRT_kwDOO7knac6a05qG/07oD)', () => {
     const { dir, stateDir } = writeFixtureDir();
-    // The hold's own commentUrl identifies the EARLIER accepted comment —
-    // NOT the later superseding reply. Seeding both with distinct URLs (and
-    // holding the accepted one's) is what makes this fixture actually
-    // exercise `seenUrls` being built from ALL current comments, not just
-    // the reconciled reply's own URL — a fixture that reused one URL for
-    // both would stay green even if production stopped considering the
-    // rest of the thread (docomply-review round 23, CRITICAL: caught
-    // exactly this in the original single-URL version of this fixture).
+    // The hold's own commentUrl identifies the EARLIER accepted comment — NOT
+    // the later superseding reply. Seeding both with distinct URLs (and holding
+    // the accepted one's) is what makes this fixture actually exercise
+    // `seenUrls` being built from ALL current comments, not just the reconciled
+    // reply's own URL — a fixture that reused one URL for both would stay green
+    // even if production stopped considering the rest of the thread (the
+    // original single-URL version of this fixture had exactly that gap).
     const acceptedUrl =
       "https://example.invalid/pull/1#discussion_stale_leaveopen_accepted";
     const wontFixUrl =
@@ -797,14 +795,13 @@ describe("triage-thread.ts", () => {
     expect(heldKeys(stateDir)).toBe("");
   });
 
-  it("--cleanup-only releases a stale hold this key's direct-post supersession left behind, posting and resolving nothing (chatgpt-codex-connector, a reference-implementation pull request, closing the direct-post-fallback variant of the same gap)", () => {
+  it("--cleanup-only releases a stale hold this key's direct-post supersession left behind, posting and resolving nothing (the direct-post-fallback variant of the same gap)", () => {
     const { dir, stateDir } = writeFixtureDir();
     // The hold's own commentUrl identifies the EARLIER accepted comment, not
-    // the later superseding reply — see the identical fixture note on the
-    // test above (docomply-review round 23, CRITICAL: the original version
-    // of this fixture reused one URL for both, so it stayed green even
-    // against a production change that stopped considering the rest of the
-    // thread).
+    // the later superseding reply — see the identical fixture note on the test
+    // above (the original version of this fixture reused one URL for both, so
+    // it stayed green even against a production change that stopped considering
+    // the rest of the thread).
     const acceptedUrl =
       "https://example.invalid/pull/1#discussion_cleanup_only_accepted";
     const wontFixUrl =
@@ -861,7 +858,7 @@ describe("triage-thread.ts", () => {
     expect(heldKeys(stateDir)).toBe("");
   });
 
-  it("--cleanup-only does NOT release a genuinely ACTIVE hold whose only reply is the original accepted post — no confirmed merit supersession exists, so nothing is released (docomply-review round 22, CRITICAL: the first cut of this flag vouched for every comment URL unconditionally and matched the hold's own accepted reply)", () => {
+  it("--cleanup-only does NOT release a genuinely ACTIVE hold whose only reply is the original accepted post — no confirmed merit supersession exists, so nothing is released (the first cut of this flag vouched for every comment URL unconditionally and matched the hold's own accepted reply)", () => {
     const { dir, stateDir } = writeFixtureDir();
     const acceptedUrl =
       "https://example.invalid/pull/1#discussion_active_accepted";
@@ -981,7 +978,7 @@ describe("triage-thread.ts", () => {
     expect(heldKeys(stateDir)).toBe("");
   });
 
-  it("an already-resolved AND truncated thread cannot confirm its stale-hold check, so it fails (exit 1) rather than silently reporting success over a possibly-stranded hold (docomply-review, a reference-implementation pull request round 13)", () => {
+  it("an already-resolved AND truncated thread cannot confirm its stale-hold check, so it fails (exit 1) rather than silently reporting success over a possibly-stranded hold", () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, {
       isResolved: true,
@@ -1065,7 +1062,7 @@ describe("triage-thread.ts", () => {
     expect(heldKeys(stateDir)).toBe("");
   });
 
-  it("an already-resolved thread ALSO releases a stale hold when the last qualifying reply is a MARKED moot — the marker is positive proof of a merit supersession the outcome word alone cannot give (docomply-review, a reference-implementation pull request round 13)", () => {
+  it("an already-resolved thread ALSO releases a stale hold when the last qualifying reply is a MARKED moot — the marker is positive proof of a merit supersession the outcome word alone cannot give", () => {
     const { dir, stateDir } = writeFixtureDir();
     const existingUrl = "https://example.invalid/pull/1#discussion_stale_moot";
     writeNode(dir, {
@@ -1178,7 +1175,7 @@ describe("triage-thread.ts", () => {
     expect(postedCount(dir)).toBe(0);
   });
 
-  it("a rejected outcome's own reply/resolve does not need a PR — but an unresolvable PR still fails the stale-hold check (docomply-review, a reference-implementation pull request round 9)", () => {
+  it("a rejected outcome's own reply/resolve does not need a PR — but an unresolvable PR still fails the stale-hold check", () => {
     // `resolvePr('')` conflates "genuinely no PR for this thread's context"
     // with "gh pr view failed transiently", and this fixture's `gh` stub has
     // no `pr view` case at all — so this cannot be told apart from a real
@@ -1243,7 +1240,7 @@ describe("triage-thread.ts", () => {
     expect(postedBody(dir, 1)).toContain("<!-- triage-thread:leave-open -->");
   });
 
-  it("a RECONCILED --leave-open reply stays open even when the retry omits the flag — recovered from the durable marker, not this invocation's own argv (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 9)", () => {
+  it("a RECONCILED --leave-open reply stays open even when the retry omits the flag — recovered from the durable marker, not this invocation's own argv", () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, { comments: [] });
     const body =
@@ -1299,7 +1296,7 @@ describe("triage-thread.ts", () => {
     expect(heldKeys(stateDir)).toBe("PRRT_leaveopen_hold");
   });
 
-  it('--leave-open has no effect on a HELD moot (--moot-pending-push) outcome, and does NOT mark the reply — the marker means "left open", which a held reply is not (docomply-review, a reference-implementation pull request round 11)', () => {
+  it('--leave-open has no effect on a HELD moot (--moot-pending-push) outcome, and does NOT mark the reply — the marker means "left open", which a held reply is not', () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, { comments: [] });
 
@@ -1320,7 +1317,7 @@ describe("triage-thread.ts", () => {
     );
   });
 
-  it("refuses (exit 2) a HELD moot (--moot-pending-push) whose own body already ends in the marker — reconcile-replied-threads.ts trusts a marked moot as left-open regardless of --moot-pending-push, so it would release this not-yet-verified hold before the promised push ever lands (chatgpt-codex-connector, a reference-implementation pull request round 28)", () => {
+  it("refuses (exit 2) a HELD moot (--moot-pending-push) whose own body already ends in the marker — reconcile-replied-threads.ts trusts a marked moot as left-open regardless of --moot-pending-push, so it would release this not-yet-verified hold before the promised push ever lands", () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, { comments: [] });
 
@@ -1352,7 +1349,7 @@ describe("triage-thread.ts", () => {
     expect(postedBody(dir, 1)).toContain("<!-- triage-thread:leave-open -->");
   });
 
-  it("refuses (exit 2) a fresh merit body whose own trailing line already matches LEAVE_OPEN_MARKER without --leave-open — posting it unchanged would be indistinguishable from a deliberate leave-open (chatgpt-codex-connector, a reference-implementation pull request round 19)", () => {
+  it("refuses (exit 2) a fresh merit body whose own trailing line already matches LEAVE_OPEN_MARKER without --leave-open — posting it unchanged would be indistinguishable from a deliberate leave-open", () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, { comments: [] });
 
@@ -1382,15 +1379,15 @@ describe("triage-thread.ts", () => {
     expect(postedCount(dir)).toBe(1);
     expect(resolvedCount(dir)).toBe(0);
     // Not doubled: the body already ends in the marker, so the append is
-    // skipped and the posted body is the caller's own body verbatim —
-    // asserted by exact equality, not `.toContain` (which would also pass
-    // on a doubled marker; chatgpt-codex-connector, a reference-implementation pull request round 19).
+    // skipped and the posted body is the caller's own body verbatim — asserted
+    // by exact equality, not `.toContain` (which would also pass on a doubled
+    // marker).
     expect(postedBody(dir, 1)).toBe(
       "**wont-fix** — declined; this reply happens to end with the exact marker line while explaining it.\n\n<!-- triage-thread:leave-open -->",
     );
   });
 
-  it("DOES refuse (exit 2) a self-marked body on an accepted (hold) outcome — this script never consults the marker for hold outcomes, but reconcile-replied-threads.ts's standalone sweep does, regardless of outcome word (chatgpt-codex-connector, a reference-implementation pull request round 28: an earlier version of this guard wrongly allowed this)", () => {
+  it("DOES refuse (exit 2) a self-marked body on an accepted (hold) outcome — this script never consults the marker for hold outcomes, but reconcile-replied-threads.ts's standalone sweep does, regardless of outcome word", () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, { comments: [] });
 
@@ -1453,10 +1450,9 @@ describe("triage-thread.ts", () => {
 
   it("a qualifying reply with no readable url fails closed instead of posting a second outcome token", () => {
     const { dir, stateDir } = writeFixtureDir();
-    // The existing reply qualifies (right grammar, trusted author) but its
-    // url came back unreadable — the exact gap an earlier change CRITICAL 2
-    // found: falling through to "post" here would put a second **accepted**
-    // token on this one triage decision.
+    // The existing reply qualifies (right grammar, trusted author) but its url
+    // came back unreadable — the exact gap this pins: falling through to "post"
+    // here would put a second **accepted** token on this one triage decision.
     writeNode(dir, {
       comments: [
         {

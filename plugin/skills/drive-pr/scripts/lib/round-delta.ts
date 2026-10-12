@@ -50,15 +50,14 @@ import { prBaseRef } from "./overlay.ts";
 import { git, run, tsArgv } from "./proc.ts";
 
 /**
- * The last SHA `finish-round.ts` verified and stamped for this PR (`drive-
- * state.ts verified [pr]`), or `''` when the read succeeded and none is
+ * The last SHA `finish-round.ts` verified and stamped for this PR
+ * (`drive-state.ts verified [pr]`), or `''` when the read succeeded and none is
  * recorded, or `null` when the read itself FAILED (non-zero exit) — a
- * distinction earlier callers collapsed to `''` either way (an earlier change
- * finding, docomply-review round 2): `roundBase` below then could not tell
- * "no round has verified yet" (legitimately falls back to the cumulative
- * merge-base) from "the state read is broken" (must fail closed instead of
- * silently falling back to the same place). `pr === ''` asks `drive-
- * state.ts` to resolve the PR from the current branch, the same as every
+ * distinction earlier callers collapsed to `''` either way: `roundBase` below
+ * then could not tell "no round has verified yet" (legitimately falls back to
+ * the cumulative merge-base) from "the state read is broken" (must fail closed
+ * instead of silently falling back to the same place). `pr === ''` asks
+ * `drive-state.ts` to resolve the PR from the current branch, the same as every
  * other caller in this skill that accepts an optional PR argument.
  */
 export async function readVerifiedSha(
@@ -137,7 +136,7 @@ export async function changedFilesSince(
  * with untracked, exactly as `changedFilesSince` unions them — or `null`
  * when any read fails.
  *
- * an earlier change finding 2. `changedFilesSince(root, since)` diffs `since`
+ * Why a separate function: `changedFilesSince(root, since)` diffs `since`
  * against the working tree directly, so it includes every file a base-sync
  * merge (SKILL.md § 5 runs `base-sync.ts` every round before pushing) brought
  * in from `origin/<base>` along the way — not just what this round's own
@@ -146,20 +145,19 @@ export async function changedFilesSince(
  * false whenever a base-sync merge landed since `since`, because the merge's
  * entire imported delta silently counted as "touched by this round".
  *
- * `lib/metrics.ts`'s `sizeOf` already measured the size of this class of
- * error on real data: one base-sync merge commit on PR #4023 contributed
- * +52,015 of that PR's 52,442 post-review additions, on a PR whose entire net
- * diff was 222 lines (see that file's own comment). `sizeOf` fixes it by
- * excluding merge commits (`parents >= 2`) from a GitHub PR commit sample
- * that ALREADY excludes anything an ancestor of the PR's base — a population
- * this module does not have. Working from raw local git history instead,
- * `--no-merges` alone is not enough: `since..HEAD` still lists every
- * individual (non-merge) commit `origin/<base>` itself contributed, because
- * those commits are not ancestors of `since` even though they ARE ancestors
- * of `origin/<base>`. `^origin/<base>` closes that gap — it excludes every
- * commit reachable from the current `origin/<base>` tip, whichever side of
- * the merge it arrived from, leaving only commits genuinely authored on this
- * branch since `since`.
+ * `lib/metrics.ts`'s `sizeOf` already measured the size of this class of error
+ * on real data: one base-sync merge commit on one PR contributed +52,015 of
+ * that PR's 52,442 post-review additions, on a PR whose entire net diff was 222
+ * lines (see that file's own comment). `sizeOf` fixes it by excluding merge
+ * commits (`parents >= 2`) from a GitHub PR commit sample that ALREADY excludes
+ * anything an ancestor of the PR's base — a population this module does not
+ * have. Working from raw local git history instead, `--no-merges` alone is not
+ * enough: `since..HEAD` still lists every individual (non-merge) commit
+ * `origin/<base>` itself contributed, because those commits are not ancestors
+ * of `since` even though they ARE ancestors of `origin/<base>`.
+ * `^origin/<base>` closes that gap — it excludes every commit reachable from
+ * the current `origin/<base>` tip, whichever side of the merge it arrived from,
+ * leaving only commits genuinely authored on this branch since `since`.
  *
  * `git log`'s revision-walk semantics make `<since>..HEAD ^origin/<base>`
  * exact rather than approximate: `A..B` expands to "positive B, negative A",
@@ -186,18 +184,16 @@ export async function changedFilesSinceExcludingMerges(
     return null;
   }
   const ref = resolved.ref;
-  // `-c core.quotePath=false` on both reads (an earlier change finding,
-  // coderabbitai): `core.quotePath` defaults to true, which backslash-octal-
-  // escapes a non-ASCII path in `--name-only`/`ls-files` output. The
-  // `touched.has(t.path)` comparison in `finish-round.ts` matches this
-  // output against GitHub's own (unescaped, plain-UTF-8) thread path, so a
+  // `-c core.quotePath=false` on both reads: `core.quotePath` defaults to true,
+  // which backslash-octal-escapes a non-ASCII path in `--name-only`/`ls-files`
+  // output. The `touched.has(t.path)` comparison in `finish-round.ts` matches
+  // this output against GitHub's own (unescaped, plain-UTF-8) thread path, so a
   // quoted path would silently never match and the guard would fail OPEN on
-  // exactly the files its own escaping made unmatchable. `--no-renames` on
-  // the `log` call: a
-  // rename this round's own commit made (this repo's convention is `git mv`
-  // — `.claude/rules/git-workflow.md`) reports only the destination path
-  // under rename detection, so a thread still anchored to the pre-rename
-  // path would never appear in `touched` and the guard would miss it.
+  // exactly the files its own escaping made unmatchable. `--no-renames` on the
+  // `log` call: a rename this round's own commit made (`git mv`) reports only
+  // the destination path under rename detection, so a thread still anchored to
+  // the pre-rename path would never appear in `touched` and the guard would
+  // miss it.
   const own = await git(
     [
       "-C",
@@ -336,8 +332,8 @@ export async function roundBase(
   // succeeds (`git merge-base` rarely fails), so silently routing a broken
   // `drive-state.ts verified` read through it would let `checkUntriagedThreads`
   // proceed on a state file it never actually managed to read — exactly the
-  // input-read failure this guard's own contract says must fail closed
-  //. Return an empty
+  // input-read failure this guard's own contract says must fail closed.
+  // Return an empty
   // `base` directly, with no `git merge-base` fallback attempt, so the
   // caller's `rb.base === ''` check fires.
   if (verifiedSha === null) {

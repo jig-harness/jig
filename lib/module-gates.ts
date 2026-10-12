@@ -60,6 +60,8 @@ const verdicts = new Map([
   ["done", "addressed"],
   ["rejected", "rejected"],
   ["wontfix", "rejected"],
+  // The verdict resolve-review-comments writes for "valid but declined".
+  ["wont-fix", "rejected"],
   ["declined", "rejected"],
   ["invalid", "rejected"],
   ["deferred", "deferred"],

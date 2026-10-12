@@ -13,7 +13,7 @@
  * A JS runtime can: the deadline is a timer in the SAME process that spawned
  * the child, so there is no watchdog to outlive the script and no PID-reuse
  * hazard (the measured failure that ruled out the background-and-kill shell
- * pattern, TASK) — and no dependency on either external binary, which is
+ * pattern) — and no dependency on either external binary, which is
  * what makes this port run on Windows at all.
  *
  * Distributed independently of consumer drivers. Drivers with richer process
@@ -27,9 +27,9 @@
  * refused `0` for exactly that reason; the refusal is kept even though a JS
  * timer would technically fire, because a caller writing `0` is asking for an
  * unbounded call whichever implementation they get, and that is the exact
- * failure mode this file exists to prevent (docomply-review, a reference-implementation pull request
- * round 10). A non-numeric or non-positive value is a caller mistake, not a
- * configuration to tolerate, so it is rejected rather than quietly floored.
+ * failure mode this file exists to prevent. A non-numeric or non-positive
+ * value is a caller mistake, not a configuration to tolerate, so it is
+ * rejected rather than quietly floored.
  */
 
 import { type SpawnOptions, spawn } from "node:child_process";
@@ -58,7 +58,7 @@ export function readTimeoutEnv(
   // (~24.8 days) overflows and fires IMMEDIATELY, so a caller asking for an
   // enormous timeout would silently get an instant one — the deadline
   // inverted rather than relaxed, on the one knob whose whole job is to be
-  // generous (docomply-review, a reference-implementation pull request round 4). A value that cannot be
+  // generous. A value that cannot be
   // represented is a caller mistake like the others here, so it is refused
   // rather than clamped: clamping would honour a request nobody made.
   if (!Number.isSafeInteger(seconds) || seconds * 1000 > 2_147_483_647) {
@@ -101,9 +101,9 @@ export interface RunResult {
    * `true` when NO CHILD EVER RAN — the binary was not on `PATH`, the path did
    * not resolve, `spawn` itself refused the arguments.
    *
-   * `code` alone cannot answer this and must not be used to (TASK). A
-   * failed spawn reports 127 because every bash call site read a missing
-   * command and a failed one the same way (see `run`'s header), but 127 is
+   * `code` alone cannot answer this and must not be used to. A failed
+   * spawn reports 127, the shell's code for a command that could not be
+   * found (see `run`'s header), but 127 is
    * also an exit code a REAL child may legitimately return — a shell wrapper
    * whose own inner command was missing being the obvious case. The two are
    * opposite facts about whether anything happened, and a caller that has to
@@ -127,7 +127,7 @@ export interface RunResult {
  * into a single document, so the bound has to be generous — but a bound of
  * some size is what stands between a runaway `gh` response and this
  * process's heap, and `run()`'s `data` handlers accumulate into JS strings
- * with no bound of their own (docomply-review, a reference-implementation pull request).
+ * with no bound of their own.
  */
 export const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
@@ -155,8 +155,7 @@ export interface RunOptions {
    * Test-only: fires once per stdout/stderr chunk with whether it was
    * captured or discarded past the buffer cap. Lets a test assert directly
    * that later chunks are excluded, rather than inferring it from a captured
-   * byte count a real OS pipe's chunking makes an unreliable proxy
-   * (docomply-review, a reference-implementation pull request round 3).
+   * byte count a real OS pipe's chunking makes an unreliable proxy.
    */
   onChunk?: (
     stream: "stdout" | "stderr",
@@ -174,10 +173,9 @@ export interface RunOptions {
  * delivered to this process, or to its group, from reaching it. Nothing else
  * forwards one, so terminating the script leaves the `gh` call running to
  * completion: `reply-to-thread`'s GraphQL mutation lands after the operator
- * believes the operation was cancelled (chatgpt-codex-connector, a reference-implementation pull request
- * against the bash `gh-deadline.sh`; reproduced unchanged against this port,
- * TASK — the subshell the finding named is gone, the isolated group it was
- * compounded by is not).
+ * believes the operation was cancelled (first seen against the bash
+ * `gh-deadline.sh` and reproduced unchanged against this port — the subshell
+ * involved there is gone, the isolated group it was compounded by is not).
  */
 interface CancellationRegistry {
   groups: Map<number, Set<symbol>>;
@@ -303,8 +301,8 @@ const CANCEL_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
  * listener is present, that listener runs next in this same dispatch and owns
  * the outcome; re-raising would only run it twice, so it's skipped, and the
  * forwarder is left in place for whatever signal comes next. This is the
- * #3997 guarantee that a caller's own INT/TERM/HUP handlers survive a
- * `gh_call`, kept by construction rather than by capture-and-restore.
+ * guarantee that a caller's own INT/TERM/HUP handlers survive a `gh_call`,
+ * kept by construction rather than by capture-and-restore.
  */
 for (const sig of CANCEL_SIGNALS) {
   if (cancellation.handlers.has(sig)) continue;
@@ -339,7 +337,7 @@ for (const sig of CANCEL_SIGNALS) {
  * command and a missing command the same way, as a non-zero status. IT NEVER
  * REJECTS, so a caller cannot learn "nothing ran" from a `try`/`catch` — and
  * 127 does not tell it either, since a real child may exit 127 too. The result
- * says so directly instead: `spawnFailed` (TASK). Read that, never the
+ * says so directly instead: `spawnFailed`. Read that, never the
  * code, when the question is whether a child existed at all.
  */
 export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
@@ -360,8 +358,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     // the whole tree rather than one process. `kill(pid)` reaches the child
     // only; anything it spawned — `gh`'s credential helpers, a wrapper shell —
     // survives, and goes on holding resources and running side effects after
-    // this script reports the operation killed (docomply-review, a reference-implementation pull request
-    // round 2).
+    // this script reports the operation killed.
     //
     // ONLY when a deadline is set, and that condition is load-bearing rather
     // than incidental. Detaching costs terminal signal delivery: a Ctrl-C at
@@ -423,8 +420,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     // Tracked incrementally rather than re-derived from `Buffer.byteLength(out)
     // + Buffer.byteLength(err)` on every chunk: the latter rescans the WHOLE
     // accumulated string per 'data' event, so capture cost grows with the
-    // square of the byte count as the cap is approached (docomply-review, PR
-    // #4054 round 2).
+    // square of the byte count as the cap is approached.
     let capturedBytes = 0;
     let killTimer: NodeJS.Timeout | undefined;
     let escalateTimer: NodeJS.Timeout | undefined;
@@ -459,8 +455,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       // data right up to the SIGKILL. Gating this on `bufferExceeded` alone
       // left the DEADLINE's own escalation window uncapped — `timedOut` sets
       // and `enforceBufferLimit` no-ops forever, but nothing stopped these
-      // handlers from still appending (chatgpt-codex-connector, a reference-implementation pull request
-      // round 4).
+      // handlers from still appending.
       const captured = !(bufferExceeded || timedOut);
       if (captured) {
         out += d;
@@ -524,9 +519,9 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
             // event — the surrounding try/catch never sees it, and an
             // unhandled one on a ChildProcess throws. So the fallback has to
             // be a listener, not a catch block, or a machine without taskkill
-            // loses the kill AND crashes the driver (coderabbitai, PR #4034
-            // round 4). Attached BEFORE unref, which only detaches it from the
-            // event loop and does not remove listeners.
+            // loses the kill AND crashes the driver. Attached BEFORE unref,
+            // which only detaches it from the event loop and does not remove
+            // listeners.
             killer.on("error", () => {
               try {
                 child.kill(sig);
@@ -566,7 +561,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
           // of them lives, and the deadline that just fired would go on
           // waiting for a grandchild. That is the very hang this timer exists
           // to bound, so it must not be reachable through it. Measured in the
-          // drive-pr copy, PR #4034 round 1.
+          // drive-pr copy.
           //
           // Destroying our ends of the pipes is what lets the runtime exit
           // afterwards — an orphaned grandchild holding a live handle would
@@ -588,7 +583,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     // idempotent, so a post-exit 'error' never reaches here, and the residual
     // case would make `converge.ts` DECLINE to release a lease it could have,
     // which is the harmless direction (the record expires by staleness, the
-    // pre-TASK behaviour). The dangerous direction is the reverse, and
+    // behaviour without the release). The dangerous direction is the reverse, and
     // this flag exists to close it.
     child.on("error", (e) => {
       spawnFailed = true;
@@ -599,7 +594,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       // own escalation: `settle` clears `escalateTimer`, so if 'close' fires
       // before the two seconds elapse the group SIGKILL never happens and the
       // tree leaks anyway, while this wrapper reports the wrong outcome
-      // (docomply-review, a reference-implementation pull request round 3). So the kill moves here, where it
+      //. So the kill moves here, where it
       // cannot be raced.
       if (timedOut || bufferExceeded) signalTree("SIGKILL");
       settle(timedOut ? 124 : bufferExceeded ? 1 : (code ?? 1));
@@ -610,7 +605,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       // makes the pipe emit EPIPE on the stream. A writable stream with no
       // 'error' listener raises that as an UNHANDLED error, which terminates
       // the driver outright instead of resolving the RunResult this function
-      // advertises (docomply-review, a reference-implementation pull request round 1). Absorbed rather than
+      // advertises. Absorbed rather than
       // reported: the child's own exit status is the meaningful answer, and
       // `close` still settles the promise with it.
       child.stdin.on("error", () => {

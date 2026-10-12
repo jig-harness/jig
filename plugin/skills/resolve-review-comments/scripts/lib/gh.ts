@@ -8,11 +8,10 @@
  * completes parks the caller indefinitely — mode 13 in drive-pr's
  * references/terminal-states.md. These scripts are spawned by the drive loop
  * (drive-pr SKILL.md §§ 2 and 6), so an unbounded call here hangs an
- * unattended driver exactly as one in drive-pr itself would (docomply-review,
- * a reference-implementation pull request round 1).
+ * unattended driver exactly as one in drive-pr itself would.
  *
- * Built on the sibling `lib/proc.ts`'s `run()` rather than `spawnSync`
- * (TASK). The straight-line callers here used to justify a separate
+ * Built on the sibling `lib/proc.ts`'s `run()` rather than `spawnSync`.
+ * The straight-line callers here used to justify a separate
  * synchronous implementation — `spawnSync`'s own `timeout` was the deadline,
  * and a killed child surfaced as `status === null` with a `signal`. But while
  * the parent is blocked in that syscall it cannot run a JS signal handler, and
@@ -98,7 +97,7 @@ export async function ghOrExit(
 /**
  * `gh repo view <args>` with `ghOrExit`'s failure discipline, answered from the
  * cross-process cache when a previous call for this repository succeeded
- * (`lib/gh-conditional.ts`, TASK). The repository's owner/name never
+ * (`lib/gh-conditional.ts`). The repository's owner/name never
  * changes for a clone, but `gh repo view` is a GraphQL call — one point per
  * script invocation, which a drive multiplies by every script it spawns.
  */

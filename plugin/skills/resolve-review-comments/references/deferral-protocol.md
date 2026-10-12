@@ -3,8 +3,11 @@
 What to do with a review finding that is **real but does not belong in this pull
 request**. Consumer values are declared in the repository's
 `.config/groundwork-overlay.yaml`: `review.deferral_team`, `review.repo_label`,
-and `review.taxonomy` determine where issues go and which labels apply. The shipped tracker adapter uses Linear;
-another adapter can implement the same find/create/update contract.
+and `review.taxonomy` determine where issues go and which labels apply. The
+`pr-followup` and `epic` labels named below are the defaults of the `followup`
+and `epic` roles in `issue_tracker.labels`; read them as the repository's own
+labels for those roles. The shipped tracker adapter uses Linear; another
+adapter can implement the same find/create/update contract.
 
 `<skill-dir>` in the commands below is this skill's directory, the parent of
 this `references/` directory. Run the commands from the repository root.
@@ -51,7 +54,7 @@ issue later at a higher round cost.
 
 Deferring is a scope decision. Clear-cut cases are decided autonomously by the
 [triage rubric](triage-rubric.md) — and, where the rubric does not settle it,
-by the **Review Arbiter** agent (the consumer's configured independent review agent). A human
+by the **Review Arbiter** agent (`groundwork:review-arbiter`). A human
 decides only when the arbiter **escalates**: a genuine product or risk call the
 repo's own evidence cannot answer. Escalations are batched into one question at
 round end and must not stall the rest of the round — proceed with the in-scope
@@ -104,7 +107,7 @@ No justification in the round report, no individual issue.
 The batch key and contract:
 
 - **One batch issue per PR and Type**, titled
-  `PR #NNNN <type> review follow-ups` (e.g. `PR #3947 bug review follow-ups`).
+  `PR #NNNN <type> review follow-ups` (e.g. `PR #42 bug review follow-ups`).
   The Type is in the title because it is the lookup key. Its description
   lists every batched finding: the thread URL, the reviewer's finding quoted,
   and the deferral reason — each entry self-contained enough to act on
@@ -163,8 +166,8 @@ batch's priority but never downgrading it. A deferred `blocker`
 is a contradiction (see [When to defer](#when-to-defer) above — it should
 have been fixed or escalated, not deferred); the script warns loudly when
 one is passed, but still files it, at Urgent priority. `--category` is
-**also required**, mirroring `triage-ladder.ts`'s own requirement (§ 3 of the
-parent skill, step 3): an omitted flag is indistinguishable from an explicit
+**also required**, mirroring `triage-ladder.ts`'s own requirement (step 3 of
+[the procedure](../SKILL.md)): an omitted flag is indistinguishable from an explicit
 `unknown` and could silently discard a real parsed value the caller already
 computed. It is recorded in the entry text only — pass the same value fed to
 `triage-ladder.ts --category` (`unknown` when the reviewer emits no
@@ -221,12 +224,11 @@ disagree, and this row picks the label deliberately. Child-bearing is far
 weaker evidence than it reads: most issues with children are mid-tree
 groupings that have a genuine epic parent of their own, so treating a
 non-empty children set as proof files their follow-up parentless and silently
-discards the correct parent this table asks for. The label is what
-`labels.yaml` declares for this exact question ("Flag: issue is an epic — a
+discards the correct parent this table asks for. The epic label is a
+[flag label](https://github.com/docomply/jig/blob/main/GLOSSARY.md) that exists to answer exactly this question ("this issue is a
 coordination container"), so it is the thing to ask.
 
-The trade, stated because both directions have a real failure mode and
-reviewers have pulled each way on it: under the label rule an epic that nobody
+The trade, stated because both directions have a real failure mode: under the label rule an epic that nobody
 labelled gets its follow-up parented to the grandparent, which is a **labelling
 defect with a visible fix** — add the flag. Under a children rule an ordinary
 grouping loses a correct parent, which is **silent and unrecoverable** after
@@ -251,18 +253,17 @@ follow-up; it does not close epics or assume a particular debt project.
 
 This does not change the following, each easy to get backwards:
 
-- **New deferrals still resolve by the table above, domain-mismatch override
-  included** — not a blanket "always parent to the epic". The table (and its
-  override) is unchanged; the sweep runs at closure, not at deferral. Filing a
-  fresh, epic-domain follow-up straight into the debt ledger would lose the
-  epic association the sweep later depends on — but a domain-mismatched one
-  was always filed parentless, before or after this section.
+- **New deferrals resolve by the table above, domain-mismatch override
+  included** — not a blanket "always parent to the epic". The sweep runs at
+  closure, not at deferral. Filing a fresh, epic-domain follow-up straight
+  into the debt ledger would lose the epic association the sweep later
+  depends on; a domain-mismatched one is filed parentless either way.
 - **"Designed scope delivered" is a judgement, not a child count.** The sweep
-  will not act on the mechanical check alone: it requires an accept or
-  accept-with-followups verdict from `/epic-acceptance-review`, or a human
-  waiver recorded on the epic. That skill exists precisely because sub-issues
-  marked Done whose code never landed are a recurring pattern here, which is
-  why counting them cannot be what authorizes a closure.
+  will not act on the mechanical check alone: it requires an accepting
+  verdict from the repository's epic acceptance review, or a human waiver
+  recorded on the epic. Sub-issues marked done whose code never landed are a
+  recurring failure, which is why counting them cannot be what authorizes a
+  closure.
 
 ### Description
 
@@ -276,7 +277,7 @@ reviewable without re-reading the PR:
 - the reviewer's finding, quoted;
 - the finding's **severity** and **category** (`--severity`/`--category`,
   always rendered — see the command above; severity also sets the batch
-  issue's priority, category is text-only for now);
+  issue's priority, category is recorded as text only);
 - why it was deferred rather than fixed in that PR;
 - what a fix would involve, to the extent the round established it.
 

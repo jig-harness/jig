@@ -6,9 +6,8 @@
  *   1. The SHIPPED config. `.config/review-triage.yaml` is the single source
  *      for every weight, and nothing else in the repo parses it, so a typo
  *      there sends the ladder permanently (and quietly) inert. These probes
- *      are the census rule 1 of `.claude/rules/document-scanning-gates.md`
- *      demands: assert the parsed population rather than letting "read
- *      nothing" read as "all clear".
+ *      are the census a gate owes its input: assert the parsed population
+ *      rather than letting "read nothing" read as "all clear".
  *   2. The mechanism, over PURPOSE-BUILT configs — so the behavioural probes
  *      still mean something after somebody retunes the shipped weights, which
  *      is the whole point of the config.
@@ -258,7 +257,7 @@ describe("clause evaluation", () => {
   // interpolates, per the shipped config's `reply.wont_fix`/`reply.deferred`
   // — must attribute the fixture's own path. Attributing the canonical
   // `.config/review-triage.yaml` here would credit weights the fixture, not
-  // the shipped file, actually decided (chatgpt-codex-connector, a reference-implementation pull request).
+  // the shipped file, actually decided.
   it("attributes an override config to its own path, not the canonical one", async () => {
     const loaded = await loadFixture(FIXTURE);
     expect(loaded.configLabel).not.toBe(".config/review-triage.yaml");
@@ -269,8 +268,7 @@ describe("clause evaluation", () => {
 
   // `render()` used to substitute one placeholder per pass, so text a value
   // INSERTED was re-read as template syntax by every later pass. `{config}` is
-  // the reachable vector: its value is an operator-supplied path. Both
-  // reviewers found this independently in round 17.
+  // the reachable vector: its value is an operator-supplied path.
   //
   // The fixture path is built by `loadFixture` from `mkdtempSync`, so these
   // write the placeholder-shaped segment into the config's own FILE NAME —
@@ -321,7 +319,7 @@ describe("clause evaluation", () => {
   });
 });
 
-describe("ladderDeclinePatterns — boundary-aware match, not a bare marker substring (chatgpt-codex-connector, a reference-implementation pull request round 6)", () => {
+describe("ladderDeclinePatterns — boundary-aware match, not a bare marker substring", () => {
   async function loadPatterns(
     yaml: string,
   ): ReturnType<typeof ladderDeclinePatterns> {
@@ -365,9 +363,8 @@ describe("ladderDeclinePatterns — boundary-aware match, not a bare marker subs
   // An unanchored pattern therefore matches an ordinary, non-ladder decline
   // that merely embeds a ladder-shaped example LATER in its body — exactly
   // the false positive that contaminates the `--ladder-only` calibration
-  // sample with declines the ladder never made (chatgpt-codex-connector, PR
-  // #4501 round 8). The earlier decoy test above only exercised a BARE
-  // marker mention and could not catch this.
+  // sample with declines the ladder never made. The earlier decoy test above
+  // only exercised a BARE marker mention and could not catch this.
   it("does NOT match a decline that embeds a ladder-shaped example later in its body", async () => {
     const { patterns } = await loadPatterns(FIXTURE);
     // The template's own literal skeleton ("**wont-fix** — test ladder band
@@ -382,7 +379,7 @@ describe("ladderDeclinePatterns — boundary-aware match, not a bare marker subs
     expect(patterns?.some((p) => p.test(decoy))).toBe(false);
   });
 
-  // Round 9's gap: matching the whole rendered template tied every match to
+  // The gap: matching the whole rendered template tied every match to
   // the templates' own prose, so rewording `wont_fix`/`deferred` — with
   // `reply.marker` unchanged — silently orphaned every reply already posted
   // under the old wording, contradicting the config's own documented
@@ -414,12 +411,11 @@ describe("ladderDeclinePatterns — boundary-aware match, not a bare marker subs
 
   // Targets the new mechanism's own decision boundary — the earlier decoys
   // above lack HTML-comment syntax entirely and would pass vacuously against
-  // almost any comment-based implementation (document-scanning-gates.md rule
-  // 5: a decoy must exercise what actually distinguishes the two behaviours).
-  // Here the marker comment IS present, but mid-body rather than as the
-  // reply's own trailing line — quoting a real ladder reply as an
-  // illustrative example, the same shape `hasLeaveOpenMarker` defends
-  // against for its own marker.
+  // almost any comment-based implementation (a decoy must exercise what
+  // actually distinguishes the two behaviours). Here the marker comment IS
+  // present, but mid-body rather than as the reply's own trailing line —
+  // quoting a real ladder reply as an illustrative example, the same shape
+  // `hasLeaveOpenMarker` defends against for its own marker.
   it("does NOT match a marker comment quoted mid-body rather than as the trailing line", async () => {
     const { patterns } = await loadPatterns(FIXTURE);
     const decoy =
@@ -555,7 +551,7 @@ describe("fail-open polarity", () => {
     expect(v.anomalies.join(" ")).toContain("{min-severity}");
   });
 
-  it("refuses to post — goes inert — if the rendered rationale has no letter or digit even though the raw template does (chatgpt-codex-connector, a reference-implementation pull request)", async () => {
+  it("refuses to post — goes inert — if the rendered rationale has no letter or digit even though the raw template does", async () => {
     // asTemplate (config-load time) validates the RAW template text, and
     // `{marker}` itself contains letters — so `wont_fix: "**wont-fix**
     // {marker}"` passes that check regardless of what `reply.marker` renders
@@ -618,8 +614,8 @@ describe("config validation refuses what would invert the polarity", () => {
   // rendered text looking like an unrendered placeholder, and — worse — a
   // SEQUENTIAL substitution order means the later `{round}` substitution
   // then overwrites the id's own text with the round ordinal, misattributing
-  // the decision to the wrong band (chatgpt-codex-connector, a reference-implementation pull request round
-  // 8). Same check, and same reason, as `reply.marker` below.
+  // the decision to the wrong band. Same check, and same reason, as
+  // `reply.marker` below.
   it("refuses a band id shaped like a placeholder", () => {
     expect(
       bad((s) => s.replace("  - id: strict", '  - id: "{round}"')),
@@ -634,7 +630,7 @@ describe("config validation refuses what would invert the polarity", () => {
     ).not.toThrow();
   });
 
-  it("refuses a whitespace-only band id (chatgpt-codex-connector, a reference-implementation pull request)", () => {
+  it("refuses a whitespace-only band id", () => {
     // A bare `id === ''` check let `id: "   "` through, interpolating an
     // apparently blank band name into decline replies — the marker and
     // category validators already trim before checking non-emptiness.
@@ -674,7 +670,7 @@ describe("config validation refuses what would invert the polarity", () => {
   // A padded token parses fine but never equals the clean value a real
   // caller passes (`--category security`), so a padded `categories:` entry
   // silently creates an unusable vocabulary member instead of failing at
-  // config-load time (chatgpt-codex-connector, a reference-implementation pull request).
+  // config-load time.
   it("refuses a top-level category padded with whitespace", () => {
     expect(
       bad((s) =>
@@ -702,7 +698,7 @@ describe("config validation refuses what would invert the polarity", () => {
   // placeholder-shaped category (e.g. `{tier}`) reappears in the rendered
   // text looking like an unrendered placeholder — the later `{tier}`
   // substitution then overwrites it with the numeric tier, corrupting the
-  // audit trail instead of failing open (chatgpt-codex-connector, a reference-implementation pull request).
+  // audit trail instead of failing open.
   it("refuses a top-level category shaped like a placeholder", () => {
     expect(
       bad((s) =>
@@ -743,8 +739,7 @@ describe("config validation refuses what would invert the polarity", () => {
 
   it("refuses a marker shaped like a placeholder with a hyphen or digit", () => {
     // The placeholder shape is ANY brace-delimited content, not just
-    // `[a-zA-Z_]+` — a charset restricted to that would miss exactly these
-    // (chatgpt-codex-connector, a reference-implementation pull request round 5).
+    // `[a-zA-Z_]+` — a charset restricted to that would miss exactly these.
     expect(
       bad((s) =>
         s.replace('marker: "test ladder"', 'marker: "{min-severity}"'),
@@ -783,7 +778,7 @@ describe("config validation refuses what would invert the polarity", () => {
     // `severityOrder.indexOf(severity) >= severityOrder.indexOf(minSeverity)`
     // comparison would then invert which findings a `min_severity` clause
     // admits: with this reversed order, `min_severity: high` would admit
-    // `medium`/`low` and decline `blocker` (chatgpt-codex-connector, a reference-implementation pull request).
+    // `medium`/`low` and decline `blocker`.
     expect(
       bad((s) =>
         s.replace(
@@ -897,8 +892,8 @@ describe("config validation refuses what would invert the polarity", () => {
   it("refuses a reply macro missing its trailing marker line — the calibration sample would be unfindable", () => {
     // Removing the {marker} mention from the PROSE alone is no longer enough
     // to break this: `ladderDeclinePatterns` matches on the trailing
-    // `<!-- {marker} -->` line alone (round 9), so validation checks that
-    // line specifically rather than "{marker} appears somewhere".
+    // `<!-- {marker} -->` line alone, so validation checks that line
+    // specifically rather than "{marker} appears somewhere".
     expect(
       bad((s) =>
         s.replace("**wont-fix** — {marker} band", "**wont-fix** — band"),

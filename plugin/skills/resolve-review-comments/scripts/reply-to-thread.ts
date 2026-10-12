@@ -2,8 +2,8 @@
 import { siblingSkill } from "./lib/consumer.ts";
 /**
  * Reply IN-THREAD on a review thread, keyed off its GraphQL node id — the SAME
- * id that drives resolve-thread.ts (one id for both actions, per AGENTS.md
- * § Addressing PR Comments). Uses addPullRequestReviewThreadReply so the reply
+ * id that drives resolve-thread.ts (one id for both actions, per
+ * `/groundwork:resolve-review-comments` § Human threads). Uses addPullRequestReviewThreadReply so the reply
  * always lands inside the thread, never as a detached top-level comment, so
  * the fix/reject rationale stays attached to the finding. Prints the new
  * comment url.
@@ -16,15 +16,14 @@ import { siblingSkill } from "./lib/consumer.ts";
  *   BODY is read from stdin — never a shell argument. A body passed as an
  *   argument would be shell-evaluated (backticks, $(...), $VAR
  *   expanded/dropped before this script ever runs, corrupting the audit trail
- *   silently — TASK). Use a QUOTED heredoc (<<'EOF', not <<EOF) or a file
+ *   silently). Use a QUOTED heredoc (<<'EOF', not <<EOF) or a file
  *   for literal review text. The danger is specifically a double-quoted
  *   BODY="...raw text..." assignment — that expands backticks/$()/$VAR at
- *   ASSIGNMENT time, before the script ever runs, moving the TASK
- *   corruption one step earlier instead of eliminating it (caught by
- *   chatgpt-codex-connector on PR #3571). An already-safely-held variable is
- *   fine to pass through: quoted expansion ("$BODY") does not re-evaluate its
- *   contents, so `printf '%s' "$BODY" | reply-to-thread.ts "$THREAD_NODE_ID"`
- *   is safe.
+ *   ASSIGNMENT time, before the script ever runs, moving the same corruption
+ *   one step earlier instead of eliminating it. An already-safely-held variable
+ *   is fine to pass through: quoted expansion ("$BODY") does not re-evaluate
+ *   its contents, so
+ *   `printf '%s' "$BODY" | reply-to-thread.ts "$THREAD_NODE_ID"` is safe.
  *
  * On Windows, invoke through the runtime (`bun reply-to-thread.ts …`) — a
  * shebang only carries the POSIX direct-execution path.
@@ -78,19 +77,19 @@ genuinely not an outcome (a clarifying question), pass --no-outcome.`;
  * Subsequent body lines are free form; only the first line is constrained.
  *
  * The bash original spent ~80 lines fighting locale-dependent bracket
- * expressions and multibyte segmentation here (docomply-review round 15,
- * a reference-implementation pull request, TASK). JS strings are UTF-16 with no locale in sight, so the
- * same rules are literal: token, then ASCII space/tab boundary
- * (`[ \t]` — deliberately NOT `\s`, which matches Unicode spaces like U+2003
- * that the token boundary must not accept), then a reason containing at least
- * one ASCII letter or digit (so a bare em dash is not a reason).
+ * expressions and multibyte segmentation here. JS strings are UTF-16 with no
+ * locale in sight, so the same rules are literal: token, then ASCII space/tab
+ * boundary (`[ \t]` — deliberately NOT `\s`, which matches Unicode spaces
+ * like U+2003 that the token boundary must not accept), then a reason
+ * containing at least one ASCII letter or digit (so a bare em dash is not a
+ * reason).
  */
 export function validateOutcomeBody(body: string): boolean {
   // A terminal `\r` is a line TERMINATOR, not content. A reply read from a
   // CRLF-encoded file — routine on Windows, which this script now runs on —
   // leaves one at the end of firstLine, and `.` does not match it, so an
   // otherwise valid reply failed validation and exited 2 before posting
-  // (chatgpt-codex-connector, a reference-implementation pull request round 4). Stripped here only; the body
+  //. Stripped here only; the body
   // sent to GitHub is untouched, which renders identically either way.
   const firstLine = (body.split("\n", 1)[0] ?? "").replace(/\r$/, "");
   const m = firstLine.match(
@@ -117,8 +116,7 @@ export function validateOutcomeBody(body: string): boolean {
  * This is NOT authentication (an agent invoking this script directly can set
  * the same env var) — it closes the one ACCIDENTAL path: a trusted author
  * posting a reply straight through this script whose body happens to end in
- * the marker's exact trailing-line form without meaning to (Architect Agent
- * review, 2026-08-21, Fix A, PR #4129).
+ * the marker's exact trailing-line form without meaning to.
  */
 const LEAVE_OPEN_MARKER = "<!-- triage-thread:leave-open -->";
 const LEAVE_OPEN_MARKER_PRODUCER_ENV = "DRIVE_PR_INTERNAL_LEAVE_OPEN_MARKER";
@@ -132,8 +130,8 @@ function hasLeaveOpenMarker(body: string): boolean {
   if (i < 0) return false;
   // The candidate itself gets no such tolerance: an indented or padded
   // near-match (a doc example, a quoted snippet) must not count as the
-  // durable marker — exact match only (chatgpt-codex-connector, a reference-implementation pull request
-  // round 23, same root cause as lib/outcome.ts's own copy of this function).
+  // durable marker — exact match only (same root cause as lib/outcome.ts's
+  // own copy of this function).
   return lines[i]?.replace(/\r$/, "") === LEAVE_OPEN_MARKER;
 }
 
@@ -148,8 +146,7 @@ function hasLeaveOpenMarker(body: string): boolean {
  * Exists so `isLeftOpenThread` (`lib/status/evaluate.ts`) can tell a genuine
  * `--no-outcome` clarifying question apart from a trusted author's own
  * outcome-less prose posted straight on GitHub — which never passes through
- * this script and so can never carry the marker (chatgpt-codex-connector,
- * a reference-implementation pull request).
+ * this script and so can never carry the marker.
  */
 const NO_OUTCOME_MARKER = "<!-- reply-to-thread:no-outcome -->";
 function hasNoOutcomeMarker(body: string): boolean {
@@ -184,12 +181,11 @@ const SKILLS_ROOT = dirname(DRIVE_PR_ROOT);
  * NOT say WHICH component failed to resolve, and the two answers are different
  * facts: the root alone being absent is the standalone install, while an
  * ANCESTOR having been removed or renamed is a damaged tree that says nothing
- * about whether a drive exists (docomply-review, a reference-implementation pull request, after the sibling
- * ENOTDIR fix). Reachable for the same reason ENOTDIR is: this process is
- * already loaded, so the tree it loaded from can change underneath it — the
- * mid-run mutation this whole page is about. Round 8 closed the
- * prefix-is-a-file half and left the prefix-is-GONE half open, because ENOENT
- * covers both.
+ * about whether a drive exists. Reachable for the same reason ENOTDIR is: this
+ * process is already loaded, so the tree it loaded from can change underneath
+ * it — the mid-run mutation this whole page is about. The ENOTDIR fix closed
+ * the prefix-is-a-file half and left the prefix-is-GONE half open, because
+ * ENOENT covers both.
  *
  * So the skip needs both halves stated separately: the parent intact AND the
  * child absent. `stat`, not `lstat` — a `skills/` reached through a symlink to
@@ -202,19 +198,18 @@ const SKILLS_ROOT = dirname(DRIVE_PR_ROOT);
  * directory, removed, file-instead-of-directory, symlink-to-directory, dangling
  * symlink) rather than argued about in a comment.
  *
- * Those predicate probes are NOT the whole harness, and saying so cost a round.
- * A first cut claimed the integration path "cannot be fixtured — a test cannot
- * both host the running script under `<skills>` and present that same
- * `<skills>` to it as missing", and used that to justify covering the predicate
- * alone. The claim was false and the gap it excused was exactly the one that
- * matters: deleting the `if (!skillsParentIsIntact())` branch below left every
- * predicate probe green while restoring the fail-open (docomply-review,
- * a reference-implementation pull request). The fixture the claim said was impossible is straightforward —
- * `main()` reads stdin BEFORE calling `assertPostAllowed`, so a child spawned
- * with an open stdin pipe parks with every module loaded and the fence not yet
- * run, and the skills root can simply be deleted in that window. It is the
- * real mid-run mutation rather than a simulation of one, and it is now pinned
- * by `fails CLOSED when the SKILLS PARENT disappears mid-run`.
+ * Those predicate probes are NOT the whole harness. A first cut claimed the
+ * integration path "cannot be fixtured — a test cannot both host the running
+ * script under `<skills>` and present that same `<skills>` to it as missing",
+ * and used that to justify covering the predicate alone. The claim was false
+ * and the gap it excused was exactly the one that matters: deleting the
+ * `if (!skillsParentIsIntact())` branch below left every predicate probe green
+ * while restoring the fail-open. The fixture the claim said was impossible is
+ * straightforward — `main()` reads stdin BEFORE calling `assertPostAllowed`, so
+ * a child spawned with an open stdin pipe parks with every module loaded and
+ * the fence not yet run, and the skills root can simply be deleted in that
+ * window. It is the real mid-run mutation rather than a simulation of one, and
+ * it is now pinned by `fails CLOSED when the SKILLS PARENT disappears mid-run`.
  */
 export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
   try {
@@ -225,10 +220,9 @@ export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
 }
 
 /**
- * Refuse to post when this session's drive lease has been taken over
- * (TASK).
+ * Refuse to post when this session's drive lease has been taken over.
  *
- * A reply is IRREVERSIBLE. TASK fenced every drive-STATE mutation behind
+ * A reply is IRREVERSIBLE. Every drive-STATE mutation is fenced behind
  * the lease, but this script met that fence only afterwards, when the caller
  * recorded the outcome via `drive-state.ts hold` — so a pass whose driver had
  * died, and whose lease a replacement driver had already taken over, still got
@@ -243,7 +237,7 @@ export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
  * held by another LIVE session refuses.
  *
  * That the fence is OPTIONAL — so post safety varies with what is installed —
- * is a decided design point, not an oversight awaiting one (TASK). It is
+ * is a decided design point, not an oversight awaiting one. It is
  * sound because `/drive-pr` is the only thing that WRITES a lease, because this
  * depends on its executable rather than on its file format (so its absence is
  * exactly a filesystem question, with no second policy to choose between), and
@@ -275,18 +269,16 @@ export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
  * on this one file, and each narrowing closed a real gap. Keyed on the file
  * (the original shape), any `/drive-pr` that is present but incomplete or
  * stale — the fence script deleted, a partial checkout, a half-finished
- * upgrade — silently reverted to unfenced posting (docomply-review, a reference-implementation pull request
- * round 1). Keyed on `scripts/` (the fix for that), the SAME class of gap
- * reopens one directory up: a checkout that stopped between creating
- * `/drive-pr` and populating `scripts/` — or any other state where the root
- * exists but `scripts/` does not — reads identically to "the skill was never
- * installed", so it skipped too (chatgpt-codex-connector, a reference-implementation pull request round 13).
- * A missing `scripts/` under a present root is exactly the "installed but
- * broken" case the previous fix was written to catch, just one level shallower
- * than where it was looking. Only a confirmed-absent ROOT is the standalone
- * `/resolve-review-comments` case; a confirmed-absent `scripts/` under a
- * present root, and everything below that (this file, `assert-post-allowed.ts`
- * itself), refuses.
+ * upgrade — silently reverted to unfenced posting. Keyed on `scripts/` (the
+ * fix for that), the SAME class of gap reopens one directory up: a checkout
+ * that stopped between creating `/drive-pr` and populating `scripts/` — or any
+ * other state where the root exists but `scripts/` does not — reads identically
+ * to "the skill was never installed", so it skipped too. A missing `scripts/`
+ * under a present root is exactly the "installed but broken" case the previous
+ * fix was written to catch, just one level shallower than where it was looking.
+ * Only a confirmed-absent ROOT is the standalone `/resolve-review-comments`
+ * case; a confirmed-absent `scripts/` under a present root, and everything
+ * below that (this file, `assert-post-allowed.ts` itself), refuses.
  *
  * Deliberately NOT also skipped when the environment names no session. That
  * looked like a free optimisation — the fence answers "allowed" for a runtime
@@ -298,14 +290,14 @@ export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
  *
  * Anything non-zero fails CLOSED, including a timeout: a fence that could not
  * read its input has verified nothing, and this one guards a mutation with no
- * undo (`.claude/rules/document-scanning-gates.md` rule 1). Its stderr is
+ * undo (an unreadable input is a refusal, never a pass). Its stderr is
  * inherited, so the refusal a human has to act on — the holder's pid, the
  * liveness check, the `clear-lease` recovery — arrives verbatim rather than
  * summarised.
  */
 /**
  * Refuse the standalone-install skip when THIS PROCESS is carrying drive
- * context (TASK review, PR #4132 — found independently by both reviewers).
+ * context.
  *
  * The skip's argument is that a checkout with no `/drive-pr` cannot reach a
  * state the fence would have refused, because no drive can START there. True,
@@ -316,8 +308,8 @@ export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
  * pass alive with the root gone. Its `lstat` then reports a clean ENOENT and
  * the pass posts unfenced — holding exactly the PR-wide context (`--pr`
  * defaults to `$DRIVE_PR_TARGET` in `assert-post-allowed.ts`) that would have
- * swept every worktree's leases and refused, which is the TASK damage
- * reinstated by a `git checkout`.
+ * swept every worktree's leases and refused: the unfenced post, reinstated
+ * by a `git checkout`.
  *
  * So the skip is keyed on the absence of a drive, not on the absence of a
  * directory, and `$DRIVE_PR_TARGET` is what tells the two apart: `drive.ts`
@@ -334,8 +326,7 @@ export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
  *
  * Refusing rather than fencing is the only sound answer available: the fence
  * this process would spawn is precisely what is missing, so it has verified
- * nothing, and this guards a mutation with no undo
- * (`.claude/rules/document-scanning-gates.md` rule 1).
+ * nothing, and this guards a mutation with no undo.
  *
  * The residual is narrower and stated in `/drive-pr`'s `references/post-fence.md`:
  * a session carrying NO drive context, in a tree whose root went absent while a
@@ -354,7 +345,7 @@ function assertNoDriveContext(): void {
     "nothing else, so a drive is live against a checkout that no longer carries",
     "the skill — the one root-absent state that is NOT the standalone install.",
     "The lease fence that would answer for it is the file that is missing, so",
-    "skipping it here would reinstate the unfenced POST TASK removed.",
+    "skipping it here would reinstate the unfenced POST the fence prevents.",
     "",
     "Restore /drive-pr in this working tree, or stop the drive before posting.",
   );
@@ -366,24 +357,24 @@ async function assertPostAllowed(): Promise<void> {
   // this exact path, an ancestor that became unsearchable — so it cannot tell
   // "standalone install" from "a /drive-pr this process merely could not see"
   // (the same fail-open class `readLeaseForFence` and `repositoryIsInPlay`
-  // both had; docomply-review, a reference-implementation pull request). Only a positively-confirmed ENOENT
-  // may skip the fence; anything else refuses.
+  // both had). Only a positively-confirmed ENOENT may skip the fence;
+  // anything else refuses.
   //
-  // ENOENT ONLY — not ENOTDIR, which used to skip alongside it (docomply-review,
-  // a reference-implementation pull request). The two are not the same answer. ENOENT is "this path does not
-  // exist", which is the standalone install. ENOTDIR is "a component of the
-  // path PREFIX is not a directory" — measured, not assumed: `lstat` of
-  // `<file>/child` gives ENOTDIR while `<missing>/child` gives ENOENT. Here the
-  // only prefix is the `skills/` directory this very script is loaded from, so
-  // ENOTDIR means that directory has become a non-directory underneath a
-  // running process. That is a corrupt tree, and it is precisely the
-  // installed-but-broken case the paragraph below refuses — a standalone
-  // consumer repo produces ENOENT, never this. Granting it the skip gave the
-  // fail-open to exactly one population: trees too damaged to reason about.
+  // ENOENT ONLY — not ENOTDIR, which used to skip alongside it. The two are
+  // not the same answer. ENOENT is "this path does not exist", which is the
+  // standalone install. ENOTDIR is "a component of the path PREFIX is not a
+  // directory" — measured, not assumed: `lstat` of `<file>/child` gives ENOTDIR
+  // while `<missing>/child` gives ENOENT. Here the only prefix is the `skills/`
+  // directory this very script is loaded from, so ENOTDIR means that directory
+  // has become a non-directory underneath a running process. That is a corrupt
+  // tree, and it is precisely the installed-but-broken case the paragraph below
+  // refuses — a standalone consumer repo produces ENOENT, never this. Granting
+  // it the skip gave the fail-open to exactly one population: trees too damaged
+  // to reason about.
   //
   // It is a narrow state — the prefix must be replaced mid-run, since a
   // non-directory there would have stopped this module loading — but "narrow"
-  // is the same argument the TASK skip made about a drive outliving its
+  // is the same argument the root-absent skip made about a drive outliving its
   // directory, and that one turned out to be an ordinary `git checkout`. A
   // guard over a mutation with no undo does not get to assume the tree holds
   // still. No test pins the ENOTDIR shape specifically — a fixture cannot
@@ -395,22 +386,21 @@ async function assertPostAllowed(): Promise<void> {
   // after this same "unfixturable" claim turned out to be excusing a real gap.
   //
   // ENOENT is then split in TWO, which the ENOTDIR fix alone did not do and
-  // needed to (docomply-review, a reference-implementation pull request, the round after it). "This path does
+  // needed to. "This path does
   // not resolve" is not "the root alone is absent": an ancestor REMOVED or
   // renamed after this process loaded returns ENOENT just as a genuinely
   // missing `/drive-pr` does, and that is a damaged tree telling us nothing
-  // about whether a drive exists. Round 8 closed the prefix-is-a-FILE half and
-  // left the prefix-is-GONE half wide open through the very code path it had
-  // just narrowed. `skillsParentIsIntact` supplies the missing half, so the
-  // skip now requires the parent present AND the child absent.
+  // about whether a drive exists. The ENOTDIR fix closed the prefix-is-a-FILE
+  // half and left the prefix-is-GONE half wide open through the very code
+  // path it had just narrowed. `skillsParentIsIntact` supplies the missing
+  // half, so the skip now requires the parent present AND the child absent.
   //
   // Probed at the ROOT, not at `scripts/`: a root that is confirmed absent is
   // the only state that is actually "no /drive-pr here", so it is the only
   // one that may skip. A root that exists makes this an installed-but-broken
   // question, not a standalone-install question, so from here on everything
   // — a missing `scripts/`, a missing `assert-post-allowed.ts`, an unreadable
-  // path — refuses rather than skips (chatgpt-codex-connector, a reference-implementation pull request
-  // round 13).
+  // path — refuses rather than skips.
   try {
     lstatSync(DRIVE_PR_ROOT);
   } catch (e) {
@@ -427,7 +417,7 @@ async function assertPostAllowed(): Promise<void> {
           "WHICH component of it failed — and a skills/ directory that has been",
           "removed or renamed underneath this already-loaded process is a damaged",
           "tree, not the standalone install. It is no evidence that no drive exists,",
-          "so skipping the fence here would be the unfenced POST TASK removed.",
+          "so skipping the fence here would be the unfenced POST the fence prevents.",
           "",
           "Restore the checkout, or re-run once the tree has settled.",
         );
@@ -443,7 +433,7 @@ async function assertPostAllowed(): Promise<void> {
       "Refusing to post. An indeterminate look at this path is not evidence this",
       "is the standalone install — it could be a real /drive-pr this process",
       "merely could not see, and posting unfenced would be the exact behaviour",
-      "TASK removed.",
+      "the fence prevents.",
     );
   }
   if (!existsSync(DRIVE_PR_SCRIPTS)) {
@@ -455,7 +445,7 @@ async function assertPostAllowed(): Promise<void> {
       "Refusing to post. This is not the standalone-install case — the skill root",
       "exists, so a checkout that stopped mid-way (or a half-finished upgrade)",
       "is at least as likely as a deliberate standalone install, and posting",
-      "unfenced would be the exact behaviour TASK removed.",
+      "unfenced would be the exact behaviour the fence prevents.",
       "",
       "Restore /drive-pr fully, or remove it entirely if you mean to run without",
       "the fence.",
@@ -469,7 +459,7 @@ async function assertPostAllowed(): Promise<void> {
       "",
       "Refusing to post. A drive may be running in this working tree, and the one",
       "check that would say so is not there — so posting would be the unfenced",
-      "behaviour TASK removed, reinstated silently by a broken install.",
+      "behaviour the fence prevents, reinstated silently by a broken install.",
       "",
       "Restore the file, or remove the /drive-pr skill entirely if you mean to run",
       "without the fence.",
@@ -513,12 +503,11 @@ async function main(): Promise<number> {
   // Reject a stale two-argument call (the pre-TASK body-as-argument form)
   // BEFORE reading stdin. Checked by ARITY, not by whether argv[1] is
   // non-empty: a caller passing an explicit empty string as the second
-  // argument (e.g. an unset $REPLY) must fail the same way (caught
-  // independently by both coderabbitai and chatgpt-codex-connector on PR
-  // #3571). Silently accepting either form would ignore the argument and read
-  // whatever stdin the caller happens to have open — e.g. the remaining
-  // NDJSON lines of a `list-unresolved-threads.ts | while read ...` loop —
-  // and post that as the reply instead of failing fast.
+  // argument (e.g. an unset $REPLY) must fail the same way. Silently accepting
+  // either form would ignore the argument and read whatever stdin the caller
+  // happens to have open — e.g. the remaining NDJSON lines of a
+  // `list-unresolved-threads.ts | while read ...` loop — and post that as the
+  // reply instead of failing fast.
   let requireOutcome = true;
   if (argv.length === 2) {
     if (argv[1] === "--no-outcome") {

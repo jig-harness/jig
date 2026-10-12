@@ -16,11 +16,11 @@
  * Exit codes: 0 decided, 2 usage, 1 unreadable stdin.
  *
  * Extracted so the freshness branches are unit-tested directly
- * (`selectScoutFinding`) instead of hand-run by whichever agent reads the
- * prose — the same shape as `determine_agent.ts`'s `determineAgents`. Before
- * this, "Step 2" was prose-only conditional logic with no callsite to attach
- * a test to; a created_at/createdAt field-name mismatch shipped and was only
- * caught by a later review round (docomply-review, a reference-implementation pull request round 4).
+ * (`selectScoutFinding`) instead of hand-run by whichever agent reads the prose
+ * — the same shape as `determine_agent.ts`'s `determineAgents`. As prose-only
+ * conditional logic, "Step 2" has no callsite to attach a test to, and a
+ * field-name mismatch such as `created_at` against `createdAt` is exactly the
+ * bug only a test catches.
  *
  * Runs under Bun and under Node ≥ 22.18 (type stripping): only `node:` APIs,
  * erasable-syntax-only TypeScript — the same contract as the drive-pr and
@@ -78,8 +78,7 @@ function isScoutFindingsComment(body: string): boolean {
  * revision did, by sharing this function with freshness validation — let a
  * malformed/future timestamp on the actually-newest comment demote it to
  * "oldest" in the sort, resurrecting an older comment's (fresher-looking)
- * findings instead of failing closed on the newest one (chatgpt-codex-
- * connector, PR #4535 round 10).
+ * findings instead of failing closed on the newest one.
  */
 function parseOrderingMs(c: ScoutFindingsComment): number | null {
   const raw = c.created_at ?? c.createdAt;
@@ -170,7 +169,7 @@ export function selectScoutFinding(
   // rank it, so it lost the sort by construction, not by evidence. Reusing
   // `selected` purely on ITS OWN freshness in that situation risks
   // resurrecting an older comment's stale findings over a genuinely newer,
-  // malformed-timestamp one (chatgpt-codex-connector, a reference-implementation pull request round 11).
+  // malformed-timestamp one.
   // `hashSame` is exempt: a hash match against the current commit is
   // evidence about content, not timing, and stands regardless of what any
   // other candidate's timestamp says.
@@ -226,7 +225,7 @@ async function main(): Promise<number> {
     // This script takes NO positional — every input is `--current-hash` plus
     // stdin. `noPositional` rejects any positional, including exactly one —
     // unlike faking this with `defaultPositional: ''`, which only rejects
-    // TWO or more (chatgpt-codex-connector + docomply-review, a reference-implementation pull request).
+    // TWO or more.
     noPositional: true,
     usage:
       "Usage: select_scout_finding.ts --current-hash <hash>  (comments JSON array on stdin)",

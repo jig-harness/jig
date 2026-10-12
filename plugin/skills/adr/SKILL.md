@@ -39,8 +39,8 @@ one, and the decision-rules file. It reads two optional fields from
   `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`,
   `doc/architecture/decisions`, `adr`, `decisions` that exists.
 - `adr.rules_file`: the decision-rules catalog. Default: the one tracked file
-  named `adr-rules.yaml`, `.adr-rules.yaml` or `adr-rules/rules.yaml` (outside
-  test fixtures and templates).
+  named `adr-rules.yaml`, `adr-rules.yml`, `.adr-rules.yaml` or
+  `adr-rules/rules.yaml` (or `.yml`), outside test fixtures and templates.
 
 `directory: null` means the repository has no records yet: propose `docs/adr`
 and confirm with the user before creating it. `rulesFile: null` means it has no
@@ -196,9 +196,10 @@ and its interpreter, and create one only if the user agrees.
    It checks that the file parses (a duplicated key is an error), that every
    rule has an id and no id appears twice, that every pattern rule has a
    pattern, that every `severity` is `critical`, `warning` or `info`, that
-   every `pattern` and `follow_check` compiles, and that M5's line-by-line
+   every `pattern`, `follow_check` and `exclude` glob compiles, and that M5's line-by-line
    interpreter reads every `pattern_rules` entry the same as the YAML does.
-   Exit 1 lists the problems; fix them and run it again.
+   Exit 1 lists the problems; fix them and run it again. Exit 2 means the file
+   could not be read or parsed.
 
 ### 3. Report rule coverage
 

@@ -3,9 +3,10 @@
 A decision sheet is an HTML view of an `escalated` call. It shows the
 question, the hidden branches, the options with their costs, and an outcome
 matrix of options against scenarios. A human reads it to make a call that
-spans several stakeholders or several options. The pilot sheet showed the
-value: in its outcome matrix, two options mirrored each other, each failing
-the same way in opposite scenarios. The prose did not show this.
+spans several stakeholders or several options. The outcome matrix shows
+what prose hides: two options can mirror each other, each failing the same
+way in opposite scenarios, and a text that lists the options one by one does
+not make that visible.
 
 The sheet is a projection. The **decision source** is one JSON file, and the
 renderer makes three outputs from it:
@@ -145,13 +146,12 @@ start a sentence with it.
 | Layout | What it is | Use it when |
 |---|---|---|
 | `document` (default) | One page set as a report. For a single call the first screen shows the question, the owners, the status, the reversibility, the recommendation and the whole outcome matrix; a source with several calls opens on the overview question and the call index, and each call's matrix sits in its own section below. Hover or focus on an option, a call or an owner traces it across the page. A reader can pick one option for each open call and copy the picks as text | The reader is a human who must decide. This is the layout for almost every sheet |
-| `compact` | The drawing sheet, the first layout: panels with grid references, one sheet for each call and an overview | The author asks for it |
+| `compact` | The drawing sheet: panels with grid references, one sheet for each call and an overview | The author asks for it |
 
 Both layouts read the same source. The markdown elaboration and the comment do
 not depend on the layout. The document sheet records its layout in the
 embedded source block (`data-template="document"`). A sheet without that
-attribute is a compact sheet, as are all sheets made before the document
-layout existed.
+attribute is a compact sheet.
 
 The picks on a document sheet are kept in the reader's browser, for each
 decision id. They are not a ruling. The decision record stays canonical. The
@@ -175,7 +175,9 @@ It writes three files: `<id>-decision-sheet.html`, `<id>-comment.md` and
 template, the trigger result, the freshness result and the attachment fields to
 upload.
 
-`--require-fresh` refuses to render, with exit code `3`, in two cases:
+`--require-fresh` refuses to render, with exit code `3`, when the guard
+cannot run at all (no git checkout, or `verifiedAt.commit` is unknown to this
+clone), and in two more cases:
 
 - a file that the source cites changed between `verifiedAt.commit` and the
   working tree
@@ -266,7 +268,9 @@ disappears once every call is ruled.
 
 ## What the renderer guarantees
 
-The tests in `__tests__/decision-sheet.test.ts` pin each of these:
+The tests in `__tests__/` (`decision-sheet.test.ts`,
+`decision-sheet-document.test.ts` and the browser test below) pin each of
+these:
 
 - **No claim absent from the source.** Every word on the sheet comes from
   the source or from the fixed label table in
@@ -281,12 +285,14 @@ The tests in `__tests__/decision-sheet.test.ts` pin each of these:
   call gives one sheet, and two or more calls give an overview sheet with the
   call index and the interplay panel, then one sheet per call. On the document
   sheet, every call is a section of one page, behind a call index.
-- **The compact layout does not change.** Its output for a source without
-  reference tokens is byte-identical to what it was before the document layout
-  existed. A test holds it to a stored copy.
+- **The compact layout is stable.** Its output for a source without
+  reference tokens is byte-identical to a stored copy
+  (`__tests__/fixtures/decision-sheet/pilot.compact.html.txt`), so a change
+  made for the document layout cannot alter it.
 - **References are explicit.** No pattern over prose links an option or a call.
-- **Pilot parity.** The pilot source renders every claim of the pilot
-  sheet.
+- **Pilot parity.** The pilot fixture
+  (`__tests__/fixtures/decision-sheet/pilot.json`) renders every claim of the
+  stored pilot sheet.
 - **Contrast.** The colours are the sheet kit's own neutral palette
   (`scripts/sheet-kit/html.ts` and `css.ts`). The outcome colours meet the
   4.5:1 text contrast minimum of the Web Content Accessibility Guidelines
@@ -297,7 +303,7 @@ The tests in `__tests__/decision-sheet.test.ts` pin each of these:
   off, and in print, all content is visible. Only the Pick controls, the tray
   and the time left need a script. Every hover has the same effect on keyboard
   focus and shows a focus state. The sheet makes no network request and logs no
-  console error. The pilot sheet stays at or under 60 kilobytes, and its first screen
+  console error. The pilot fixture's sheet stays at or under 60 kilobytes, and its first screen
   at 1440 x 900 shows every matrix row. The top bar fits or wraps from 1024 px
   up. A browser test holds each of these (`decision-sheet-browser.test.ts`). It
   needs Google Chrome: where Chrome is missing it skips and says so, and with

@@ -11,16 +11,17 @@
  * out of the harvested dataset. Both corrupt the reviewer-scoring sample rather
  * than failing.
  *
- * The ATTRIBUTION, because the whole issue turns on it. an earlier change rejects the
- * first-commit-versus-final measure by name, and a test that only asserted "the
- * numbers add up" would pass just as happily on the rejected measure. So the
- * cases below pin the DISTINCTION: a driver that pushes half its work before
- * any reviewer arrives must not have that half counted as post-review.
+ * The ATTRIBUTION, because the whole metric turns on it. The
+ * first-commit-versus-final measure is rejected by name, and a test that only
+ * asserted "the numbers add up" would pass just as happily on the rejected
+ * measure. So the cases below pin the DISTINCTION: a driver that pushes half
+ * its work before any reviewer arrives must not have that half counted as
+ * post-review.
  *
- * The RECURRENCE rule, because the escape rate is the number the whole an earlier change
- * recall trade rests on and its inputs arrive in the wrong order. Merge order
- * does not establish finding order, so a test that only asserted "a proximate
- * later thread is a re-find" would pass on the inverted-causality measure
+ * The RECURRENCE rule, because the escape rate is the number the whole recall
+ * trade rests on and its inputs arrive in the wrong order. Merge order does not
+ * establish finding order, so a test that only asserted "a proximate later
+ * thread is a re-find" would pass on the inverted-causality measure
  * `lib/escape.ts` exists to reject.
  *
  * No network: `computeLoopMetrics` and `refindsFor` are pure over a `PrSample`,
@@ -288,7 +289,7 @@ describe("computeLoopMetrics — growth attribution", () => {
 
   it("excludes a merge from the churn but keeps its count", () => {
     // Measured, not hypothetical: one `Merge remote-tracking branch
-    // 'origin/develop'` commit on PR #4023 reports +52,015 against its first
+    // 'origin/develop'` commit on one PR reports +52,015 against its first
     // parent, on a PR whose whole net diff is 222 additions. Counted, the
     // metric says a round demanded fifty thousand lines nobody wrote — and
     // worst on exactly the long-running PRs the dials are aimed at.
@@ -318,8 +319,8 @@ describe("computeLoopMetrics — growth attribution", () => {
 
   it("ignores a human review when deciding where review started", () => {
     // Every outcome reply the driver posts creates a review authored by a User
-    // — 63 of PR #4052's 120. Counting those would make the loop's own answers
-    // look like the rounds that provoked them.
+    // — 63 of one measured PR's 120. Counting those would make the loop's own
+    // answers look like the rounds that provoked them.
     const m = computeLoopMetrics(
       sample({
         commits: [
@@ -650,14 +651,13 @@ describe("computeLoopMetrics — outcome mix", () => {
     expect(m.unknownSeverity).toEqual({ count: 3, total: 5, share: 0.6 });
   });
 
-  // chatgpt-codex-connector, a reference-implementation pull request round 4: `recentUnknownShare === null`
-  // used to be the ONLY signal for "not measured", so it could not tell "no
-  // round is known for this author" apart from "their known latest round
-  // produced zero findings" — both left `recentTotal === 0`. An author with
-  // one unreadable finding from an EARLIER round, followed by a clean latest
-  // round (a real initiating review, zero threads), must read as a clean
-  // round — never as a fabricated "every finding this round" outage borrowed
-  // from the stale lifetime figure.
+  // `recentUnknownShare === null` used to be the ONLY signal for "not
+  // measured", so it could not tell "no round is known for this author" apart
+  // from "their known latest round produced zero findings" — both left
+  // `recentTotal === 0`. An author with one unreadable finding from an EARLIER
+  // round, followed by a clean latest round (a real initiating review, zero
+  // threads), must read as a clean round — never as a fabricated "every finding
+  // this round" outage borrowed from the stale lifetime figure.
   it("reads a known-but-empty latest round as clean, not as an outage borrowed from lifetime history", () => {
     const m = computeLoopMetrics(
       sample({
@@ -706,11 +706,11 @@ describe("computeLoopMetrics — outcome mix", () => {
     expect(out).not.toContain("EVERY finding this round");
   });
 
-  // chatgpt-codex-connector, a reference-implementation pull request: a lifetime aggregate dilutes a mid-PR
-  // format switch by every readable finding that author posted BEFORE it
-  // broke, so a live outage in the latest round can read far below the 100%
-  // that would actually trip the warning. `recentUnknownShare` is scoped to
-  // this author's own most recent initiating-review head instead.
+  // A lifetime aggregate dilutes a mid-PR format switch by every readable
+  // finding that author posted BEFORE it broke, so a live outage in the latest
+  // round can read far below the 100% that would actually trip the warning.
+  // `recentUnknownShare` is scoped to this author's own most recent
+  // initiating-review head instead.
   it("scopes the outage to the CURRENT round, not diluted by earlier readable rounds", () => {
     const m = computeLoopMetrics(
       sample({
@@ -896,7 +896,7 @@ describe("renderLoopMetrics", () => {
     expect(out).toContain("INERT");
     // The metric's scope is stated in the output itself, not only in the
     // source comment — a reviewer's summary-only findings carry no severity
-    // signal here at all (docomply-review, a reference-implementation pull request round 5).
+    // signal here at all.
     expect(out).toContain("inline threads only");
     // No per-author line for a reviewer with nothing unreadable — the one
     // line that matters must not be a needle in a list of healthy zeroes.
@@ -981,10 +981,10 @@ describe("renderLoopMetrics", () => {
     expect(warnings).not.toContain("— reviewer:");
   });
 
-  // docomply-review, a reference-implementation pull request round 1: the warning used to claim "EVERY
-  // finding this round" even when `recentRoundKnown` is false and the outage
-  // is actually a lifetime-only measurement with no attributable current
-  // round — a misleading claim about what was measured.
+  // The warning used to claim "EVERY finding this round" even when
+  // `recentRoundKnown` is false and the outage is actually a lifetime-only
+  // measurement with no attributable current round — a misleading claim about
+  // what was measured.
   it("labels a lifetime-only outage as lifetime, not as a current round it never measured", () => {
     const warnings = renderSeverityOutageWarnings(
       computeLoopMetrics(
@@ -1046,16 +1046,14 @@ describe("renderLoopMetrics", () => {
 
 describe("loop-metrics.ts CLI output — paired with the defect-escape anchor", () => {
   // `renderReport` is the function that COMPOSES the text `main()` writes to
-  // stdout — pinned here directly, not rebuilt. This block does NOT by
-  // itself prove `main()` still calls it: calling `renderReport` here
-  // exercises only the composition, not the wiring that hands it `main()`'s
-  // real inputs and writes its result to stdout (docomply-review, a reference-implementation pull request
-  // round 1 — an earlier version of this comment claimed the opposite, which
-  // was false: a regression reverting `main()`'s write call back to
-  // `renderLoopMetrics(metrics)` directly left every test in this block
-  // green). That wiring is pinned separately, below, via `runReport` — the
-  // ONE place it lives now that `main()` is reduced to argv parsing plus a
-  // single call into it. The anchor content itself (recorded figure vs. the
+  // stdout — pinned here directly, not rebuilt. This block does NOT by itself
+  // prove `main()` still calls it: calling `renderReport` here exercises only
+  // the composition, not the wiring that hands it `main()`'s real inputs and
+  // writes its result to stdout (a regression reverting `main()`'s write call
+  // back to `renderLoopMetrics(metrics)` directly left every test in this block
+  // green). That wiring is pinned separately, below, via `runReport` — the ONE
+  // place it lives now that `main()` is reduced to argv parsing plus a single
+  // call into it. The anchor content itself (recorded figure vs. the
   // "unmeasured" marker, and the parsing rule) is pinned in
   // `escape-baseline.test.ts`.
   it("never prints the loop-economy block without the defect-escape anchor trailing it", () => {
@@ -1367,7 +1365,7 @@ describe("refindsFor — a recurrence needs ORDER, not just proximity", () => {
     // declines re-found, almost all of it noise on a hot file. The measured
     // share is a published baseline result and lives in
     // `review-loop-baseline.md`; the figure once restated here had already
-    // drifted from it (docomply-review round 9, a reference-implementation pull request).
+    // drifted from it.
     expect(r).toMatchObject({ proximate: false, after: true });
     expect(isRecurrence(r as Refind)).toBe(false);
   });
@@ -1397,8 +1395,8 @@ describe("refindsFor — a recurrence needs ORDER, not just proximity", () => {
 
   it("discards a renamed candidate when the caller supplies an exact-path matcher", () => {
     // A `samePath` resolver that only matches exact paths is the caller's own
-    // choice to make no rename allowance — the mandatory-parameter fix (PR
-    // #4104) does not change this outcome, only who is answerable for it.
+    // choice to make no rename allowance — making the parameter mandatory does
+    // not change this outcome, only who is answerable for it.
     expect(
       refindsFor(decline, [later({ path: "b.ts", line: 105 })], exactPath),
     ).toHaveLength(0);
@@ -1836,7 +1834,7 @@ describe("initiatingFromPrefix — what a first page of comments settles", () =>
     // `' '` and bare line breaks are not a review body. Untrimmed, they made a
     // pure thread-reply read as initiating, inflating `reviewedHeads` and
     // potentially moving `firstReviewedHead` — the commit boundary the whole
-    // attribution split hangs off (docomply-review round 6, a reference-implementation pull request).
+    // attribution split hangs off.
     expect(initiatingFromPrefix(" ", [reply], false)).toBe(false);
     expect(initiatingFromPrefix("\n\t \r\n", [reply], false)).toBe(false);
     expect(initiatingFromPrefix("", [reply], false)).toBe(false);
@@ -1855,8 +1853,7 @@ describe("initiatingFromPrefix — what a first page of comments settles", () =>
   it("refuses to settle reply-only when more comments exist", () => {
     // `comments(first:100)` is a nested connection that `graphqlPages` does not
     // follow, so an all-replies prefix proves nothing about comment 101. Read
-    // as `false`, it dropped a genuinely reviewed head (docomply-review round 6
-    // / backlog f6bcdc9ee45116ee, PR #4068).
+    // as `false`, it dropped a genuinely reviewed head.
     expect(initiatingFromPrefix("", [reply, reply], true)).toBe("unresolved");
   });
 
@@ -1932,7 +1929,7 @@ describe("threadFrom — asOf freezes a recorded window", () => {
   });
 });
 
-describe("asOf survives comment EDITS, and stamp rejects junk (round 11)", () => {
+describe("asOf survives comment EDITS, and stamp rejects junk", () => {
   const c = (
     createdAt: string,
     body: string,
@@ -2027,7 +2024,7 @@ describe("asOf survives comment EDITS, and stamp rejects junk (round 11)", () =>
     ).toBe("2026-08-10T00:00:00Z");
   });
 
-  it("withholds category when the RAISING comment was edited after the cutoff (chatgpt-codex-connector, a reference-implementation pull request)", () => {
+  it("withholds category when the RAISING comment was edited after the cutoff", () => {
     // The raising comment's category had the identical bug the settlement
     // filter already guards against: GitHub returns the current body
     // regardless of asOf, so an edit after the cutoff can retroactively
@@ -2077,7 +2074,7 @@ describe("asOf survives comment EDITS, and stamp rejects junk (round 11)", () =>
     expect(t.category).toBe("security");
   });
 
-  it("withholds category when the RAISING comment was CREATED after the cutoff — the createdAt half recoverableAsOf alone missed (chatgpt-codex-connector, a reference-implementation pull request round 5)", () => {
+  it("withholds category when the RAISING comment was CREATED after the cutoff — the createdAt half recoverableAsOf alone missed", () => {
     // Nothing requires a thread's first comment to predate an arbitrary
     // later cutoff. A raising comment posted after CUT and never edited
     // passes `recoverableAsOf` vacuously (`lastEditedAt` is null), so the
@@ -2107,7 +2104,7 @@ describe("asOf survives comment EDITS, and stamp rejects junk (round 11)", () =>
     expect(t.category).toBe("unknown");
   });
 
-  it("excludes a comment created marginally AFTER the cutoff even when its fractional-second suffix sorts lexically BEFORE the cutoff string (coderabbitai, PR #4527 review round 2)", () => {
+  it("excludes a comment created marginally AFTER the cutoff even when its fractional-second suffix sorts lexically BEFORE the cutoff string", () => {
     // Chronologically 0.5s after CUT ('...59Z', no fraction) — but as a
     // STRING, '...59.5Z' sorts BEFORE '...59Z' (`.` < `Z` in ASCII), so a
     // lexical `<=`/`>` comparison reads this as at-or-before the cutoff.

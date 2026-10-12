@@ -54,18 +54,17 @@ import {
   RESET_CLAUSE_RE,
 } from "./wallclock.ts";
 
-// The measured notice (this file's header comment) is a SELF-CONTAINED
-// text block — the phrase, then the reset clause, and nothing else. Every
-// earlier version of this recognizer instead looked for the phrase as a
-// substring, or required only that it transition directly into "resets",
-// which left a bypass at whichever position (before the phrase, between it
-// and "resets", or after the reset clause) that round's fix had not yet
-// closed (docomply-review / chatgpt-codex-connector, a reference-implementation pull request rounds
-// 17-20). Anchoring the WHOLE block — built from `RESET_CLAUSE_RE` itself
-// rather than a second, hand-copied reset-clause fragment, so the two can
-// never drift apart — closes every position at once: a block satisfies
-// this only by being EXACTLY the phrase followed by EXACTLY a reset
-// clause, with nothing before, between, or after either.
+// The measured notice (this file's header comment) is a SELF-CONTAINED text
+// block — the phrase, then the reset clause, and nothing else. Every earlier
+// version of this recognizer instead looked for the phrase as a substring, or
+// required only that it transition directly into "resets", which left a bypass
+// at whichever position (before the phrase, between it and "resets", or after
+// the reset clause) that version had not yet closed. Anchoring the WHOLE block
+// — built from `RESET_CLAUSE_RE` itself rather than a second, hand-copied
+// reset-clause fragment, so the two can never drift apart — closes every
+// position at once: a block satisfies this only by being EXACTLY the phrase
+// followed by EXACTLY a reset clause, with nothing before, between, or after
+// either.
 const SESSION_LIMIT_NOTICE_RE = new RegExp(
   `^you(?:'|’)ve hit your session limit\\s*·\\s*${RESET_CLAUSE_RE.source}$`,
   "i",
@@ -78,10 +77,10 @@ const SESSION_LIMIT_NOTICE_RE = new RegExp(
 function projectsRoot(): string {
   const override = process.env.DRIVE_PR_CLAUDE_PROJECTS_DIR;
   if (override !== undefined && override !== "") return override;
-  // `CLAUDE_CONFIG_DIR` relocates Claude Code's own state directory —
-  // provisioned per-slot outside the worktree in a factory execution plane
-  // (ADR-0078 §2: "CLAUDE_CONFIG_DIR=~/.forge/slots/<slot>/claude"). See the
-  // Codex adapter's identical `CODEX_HOME` handling.
+  // `CLAUDE_CONFIG_DIR` relocates Claude Code's own state directory — an
+  // execution service may provision it per slot outside the worktree (for
+  // example `CLAUDE_CONFIG_DIR=/srv/agents/<slot>/claude`). See the Codex
+  // adapter's identical `CODEX_HOME` handling.
   const configDir = process.env.CLAUDE_CONFIG_DIR;
   return configDir !== undefined && configDir !== ""
     ? join(configDir, "projects")
@@ -111,7 +110,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
   // `scanned` budget below gets to check even once, so a root (or a single
   // project directory) with far more entries than the cap still pays the
   // full enumeration cost upfront — the exact failure the cap exists to
-  // prevent (docomply-review, a reference-implementation pull request round 26).
+  // prevent.
   const rootComplete = forEachDirEntry(root, (rootEntry) => {
     if (
       scanBudgetExceeded(
@@ -130,12 +129,12 @@ function candidateFiles(sinceMs: number): CandidateScan {
     // `forEachDirEntry`'s own return distinguishes an I/O failure (EACCES, a
     // vanished mount, ...) from a clean walk — an outcome the budget check
     // above cannot see, since it never runs when the directory could not be
-    // read at all (chatgpt-codex-connector, a reference-implementation pull request round 3).
+    // read at all.
     const dirComplete = forEachDirEntry(dirPath, (fileEntry) => {
       // A circuit breaker on the AGGREGATE enumeration/stat cost across
       // every project directory, not on how many turn out relevant — see
       // MAX_CANDIDATE_FILES_SCANNED's own doc comment for the residual gap
-      // this accepts (docomply-review, a reference-implementation pull request round 24).
+      // this accepts.
       if (
         scanBudgetExceeded(
           scanned,
@@ -165,7 +164,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
           // one MAX_CANDIDATE_FILES_SCANNED/maxCandidateScanMs() already
           // close. Mark the walk truncated so the caller degrades exactly as
           // it does for those circuit breakers, rather than trusting this
-          // file's absence (docomply-review, a reference-implementation pull request round 4).
+          // file's absence.
           if (!isConfirmedAbsence(err)) {
             truncated = true;
           }
@@ -198,17 +197,15 @@ function candidateFiles(sinceMs: number): CandidateScan {
  * specially in `prepareSpawn` below: the CLI's own long-form syntax (`-r,
  * --resume [value]`, confirmed via `claude --help`; `--session-id` takes its
  * value the same unambiguous way) hands each an explicit target id, so that
- * value — not a freshly minted one — becomes the correlation id when no
- * OTHER conflict is present, with argv left completely unchanged either way
- * (docomply-review, a reference-implementation pull request round 8 — a caller's own `--session-id` used to
- * be treated as an outright conflict and correlate on nothing, even though
- * the value it supplies is exactly as exact a key as one this adapter would
- * mint itself). Every other member (and `--resume`/`--session-id` in a form
- * this adapter cannot safely read a value from — bundled/attached short
- * flags, or `--resume` paired with `--fork-session`, which mints a NEW id
- * instead of reusing the resumed one) still leaves the command fully
- * unclaimed, exactly as before (docomply-review/chatgpt-codex-connector, PR
- * #4718 round 2).
+ * value — not a freshly minted one — becomes the correlation id when no OTHER
+ * conflict is present, with argv left completely unchanged either way (a
+ * caller's own `--session-id` used to be treated as an outright conflict and
+ * correlate on nothing, even though the value it supplies is exactly as exact a
+ * key as one this adapter would mint itself). Every other member (and
+ * `--resume`/`--session-id` in a form this adapter cannot safely read a value
+ * from — bundled/attached short flags, or `--resume` paired with
+ * `--fork-session`, which mints a NEW id instead of reusing the resumed one)
+ * still leaves the command fully unclaimed.
  */
 const SPAWN_PREP_CONFLICTS: ReadonlySet<string> = new Set([
   "--session-id",
@@ -261,8 +258,8 @@ function isClaudeCli(command: string): boolean {
  * can bundle more than one block, and classifying from the JOIN risks an
  * incidental "session limit" mention in one block combining with an
  * unrelated `resets ...` clause substring from a DIFFERENT block into a
- * false SHORT classification for a wall that is actually unknown or weekly
- * (docomply-review, a reference-implementation pull request round 17). The caller decides per block.
+ * false SHORT classification for a wall that is actually unknown or weekly.
+ * The caller decides per block.
  */
 function textBlocks(record: Record<string, unknown>): string[] {
   const message = record.message;
@@ -331,31 +328,30 @@ export const claudeAdapter: QuotaAdapter = {
     // long-form `--resume` with no readable value, is decided directly below
     // from `sawResume && resumeValue === null` instead, since `--resume`
     // already has its own tracking variables and a separate flag here would
-    // just be a second name for the same fact. Both cases mean the same
-    // thing to the caller: the command is CONFIRMED to be Claude's own CLI
-    // deliberately targeting an EXISTING session, but no exact id is
-    // available to correlate on. Deliberately scoped to the LONG forms only:
-    // the short-flag loop below cannot tell an actual `-c`/`-r` from a value
+    // just be a second name for the same fact. Both cases mean the same thing
+    // to the caller: the command is CONFIRMED to be Claude's own CLI
+    // deliberately targeting an EXISTING session, but no exact id is available
+    // to correlate on. Deliberately scoped to the LONG forms only: the
+    // short-flag loop below cannot tell an actual `-c`/`-r` from a value
     // character that merely happens to be one (see its own comment), so it
     // classifies every match as `otherHardConflict` instead, never this.
     // Distinct from `otherHardConflict` (`--session-id`, `--cloud`, `--bg`,
     // `--background`, and every short-flag match): those either name an
     // identity this adapter must not override, run somewhere/somehow this
-    // module's evidence cannot follow, or are too ambiguous to trust as
-    // resume intent at all — regardless, a command classified there gets no
-    // correlation. A pass in one of THESE (long-form) forms still appends to
-    // a transcript that predates the spawn, and `sessionId: null` is still a
+    // module's evidence cannot follow, or are too ambiguous to trust as resume
+    // intent at all — regardless, a command classified there gets no
+    // correlation. A pass in one of THESE (long-form) forms still appends to a
+    // transcript that predates the spawn, and `sessionId: null` is still a
     // positive claim worth returning — for the argv-injection decision above
-    // (do not append a fresh `--session-id`) and for `drive.ts`'s own log
-    // line — but `detect()` does NOT let it bypass the file-level
+    // (do not append a fresh `--session-id`) and for `drive.ts`'s own log line
+    // — but `detect()` does NOT let it bypass the file-level
     // `preexistingSessions` exclusion: without an exact id there is no way to
     // tell the resumed file apart from an unrelated preexisting file in the
     // same worktree, so a genuine wall here is a missed detection, not a
-    // misattribution (docomply-review, a reference-implementation pull request round 4 tried the bypass;
-    // round 5 found the two-candidate gap and reverted it — see `detect()`'s
-    // own comment on the exclusion). The unambiguous long-form
-    // `--resume <value>` above is unaffected: its exact id both bypasses the
-    // exclusion and narrows the per-record match.
+    // misattribution (a bypass here was tried and reverted over the
+    // two-candidate gap — see `detect()`'s own comment on the exclusion). The
+    // unambiguous long-form `--resume <value>` above is unaffected: its exact
+    // id both bypasses the exclusion and narrows the per-record match.
     let deliberateResumeNoId = false;
     const rest = argv.slice(1);
     for (let i = 0; i < rest.length; i++) {
@@ -442,17 +438,16 @@ export const claudeAdapter: QuotaAdapter = {
         // flag, never `resumeValue`.
         //
         // Classified as `otherHardConflict`, deliberately NOT
-        // `deliberateResumeNoId`, even though the only single-letter members
-        // of SPAWN_PREP_CONFLICTS (`-r`, `-c`) are themselves resume/continue
+        // `deliberateResumeNoId`, even though the only single-letter members of
+        // SPAWN_PREP_CONFLICTS (`-r`, `-c`) are themselves resume/continue
         // selectors: this loop cannot tell an ACTUAL `-c`/`-r` flag from a
-        // value character that merely happens to be one, which is exactly
-        // the `-mclaude-opus-5` case just above — its embedded `c` matched
-        // `-c` here too. Marking that as a CONFIRMED deliberate resume would
-        // let `detect()` trust a resumed-file's evidence for a command that
-        // was never resuming anything, reopening the misattribution this
-        // whole module exists to prevent — a strictly worse failure than the
-        // missed detection `otherHardConflict` settles for (docomply-review,
-        // a reference-implementation pull request round 4).
+        // value character that merely happens to be one, which is exactly the
+        // `-mclaude-opus-5` case just above — its embedded `c` matched `-c`
+        // here too. Marking that as a CONFIRMED deliberate resume would let
+        // `detect()` trust a resumed-file's evidence for a command that was
+        // never resuming anything, reopening the misattribution this whole
+        // module exists to prevent — a strictly worse failure than the missed
+        // detection `otherHardConflict` settles for.
         for (const ch of arg.slice(1)) {
           if (!/[a-zA-Z]/.test(ch)) break;
           if (SPAWN_PREP_CONFLICTS.has(`-${ch}`)) otherHardConflict = true;
@@ -534,8 +529,7 @@ export const claudeAdapter: QuotaAdapter = {
     // while `since` (`passStartedAt` in drive.ts) is millisecond-precise.
     // Comparing either directly rejects a genuine wall recorded in the SAME
     // second the pass started as "older than the pass", turning correct quota
-    // handling into a generic exit-1 failure (docomply-review, a reference-implementation pull request round
-    // 5).
+    // handling into a generic exit-1 failure.
     const sinceFloorMs = Math.floor(sinceMs / 1000) * 1000;
     const untilMs = opts.now.getTime() + MAX_CLOCK_SKEW_MS;
     let best: QuotaBlock | null = null;
@@ -562,8 +556,8 @@ export const claudeAdapter: QuotaAdapter = {
     // snapshot missed" is the exact session-id match below — and that check
     // only exists when `ourSessionId !== null`. Without it, treating absence
     // as newness would re-open exactly the misattribution an earlier change closed,
-    // now reachable BELOW `MAX_CANDIDATE_FILES_SCANNED` via the wall-clock cap
-    // (docomply-review, a reference-implementation pull request). Counted, not silently skipped, for the
+    // now reachable BELOW `MAX_CANDIDATE_FILES_SCANNED` via the wall-clock cap.
+    // Counted, not silently skipped, for the
     // same "never fail quiet" reason `rejectedBySession` is.
     const snapshotUnreliable =
       opts.preexistingSessionsTruncated === true && ourSessionId === null;
@@ -576,7 +570,7 @@ export const claudeAdapter: QuotaAdapter = {
     // divergence `preexistingSessionsTruncated`'s own doc comment describes
     // for the other walk. Its `.truncated` used to be discarded here, so a
     // transcript this walk never reached read as "no wall" indistinguishably
-    // from a genuinely clean one (docomply-review, a reference-implementation pull request round 3).
+    // from a genuinely clean one.
     const scan = candidateFiles(sinceFloorMs);
     for (const path of scan.files) {
       const isPreexisting = opts.preexistingSessions?.has(path) ?? false;
@@ -587,32 +581,30 @@ export const claudeAdapter: QuotaAdapter = {
       // deliberate `--resume <id>` pass: it appends to a transcript that
       // legitimately predates the spawn, so a genuine wall from THIS pass
       // would otherwise be discarded here before ever reaching the exact-id
-      // check below (chatgpt-codex-connector, a reference-implementation pull request round 2). Skip this
+      // check below. Skip this
       // blanket exclusion when `ourSessionId !== null`: the exact id lets the
       // per-record match a few lines down narrow the resumed file down to
       // just the records this pass wrote, so the file-level exclusion has
       // nothing further to add.
       //
-      // Round 4 tried widening this to every `vendorConfirmed` command —
+      // An earlier version widened this to every `vendorConfirmed` command —
       // including `--continue`/`-c`/an ambiguous `--resume`, none of which
-      // carry an exact id — reasoning that `prepareSpawn` having confirmed
-      // the command deliberately continues an EXISTING Claude session was
-      // already more than file identity alone could tell us. That reasoning
-      // missed a case with more than one candidate: with two pre-existing
-      // session files in the worktree, a human's own concurrent session can
-      // append a wall to the file THIS pass did NOT resume, after `since` —
-      // the `since` floor narrows by TIME, not by WHICH file, so that
-      // unrelated wall passed every remaining check and could park or sleep
-      // this pass on someone else's evidence (docomply-review, a reference-implementation pull request
-      // round 5). Without an exact id there is no way to tell the resumed
-      // file apart from any other preexisting file in the same worktree, so
-      // the invariant is: a preexisting file's evidence is trusted only when
-      // it can be bound to THIS pass by an exact session id. A genuine wall
-      // from a `--continue`/no-id-resume pass is therefore a missed
-      // detection (degrades to an ordinary pass failure, same as the
-      // no-correlation case below) rather than the misattribution risk the
-      // wider bypass reopened — the same fail-closed direction this module
-      // takes everywhere else.
+      // carry an exact id — reasoning that `prepareSpawn` having confirmed the
+      // command deliberately continues an EXISTING Claude session was already
+      // more than file identity alone could tell us. That reasoning missed a
+      // case with more than one candidate: with two pre-existing session files
+      // in the worktree, a human's own concurrent session can append a wall to
+      // the file THIS pass did NOT resume, after `since` — the `since` floor
+      // narrows by TIME, not by WHICH file, so that unrelated wall passed every
+      // remaining check and could park or sleep this pass on someone else's
+      // evidence. Without an exact id there is no way to tell the resumed file
+      // apart from any other preexisting file in the same worktree, so the
+      // invariant is: a preexisting file's evidence is trusted only when it can
+      // be bound to THIS pass by an exact session id. A genuine wall from a
+      // `--continue`/no-id-resume pass is therefore a missed detection
+      // (degrades to an ordinary pass failure, same as the no-correlation case
+      // below) rather than the misattribution risk the wider bypass reopened —
+      // the same fail-closed direction this module takes everywhere else.
       if (isPreexisting && ourSessionId === null) {
         continue;
       }
@@ -624,8 +616,7 @@ export const claudeAdapter: QuotaAdapter = {
       // lets through anymore) — that fact does not become less true because
       // the snapshot walk missed some OTHER, unrelated file. Scoping to
       // `!isPreexisting` keeps this check from re-discarding an already-
-      // trusted exact-id file for a reason that has nothing to do with it
-      // (docomply-review, a reference-implementation pull request round 4).
+      // trusted exact-id file for a reason that has nothing to do with it.
       if (!isPreexisting && snapshotUnreliable) {
         discardedByTruncatedSnapshot++;
         continue;
@@ -656,8 +647,7 @@ export const claudeAdapter: QuotaAdapter = {
         // header comment) is a `type: "assistant"` record. Without it, a
         // different transcript record type that happens to carry compatible
         // `error`/`isApiErrorMessage`/`apiErrorStatus`/`cwd`/`timestamp`/
-        // text fields becomes authoritative account telemetry too
-        // (docomply-review, a reference-implementation pull request round 19).
+        // text fields becomes authoritative account telemetry too.
         if (record.type !== "assistant") continue;
         if (record.error !== "rate_limit") continue;
         // The documented shape (this file's header comment) carries further
@@ -665,8 +655,7 @@ export const claudeAdapter: QuotaAdapter = {
         // `isApiErrorMessage: true` and `apiErrorStatus: 429`. Without them,
         // any record that merely reuses the `rate_limit` error string for an
         // unrelated reason becomes authoritative account telemetry — able to
-        // manufacture a sleep/QUOTA_PARKED for an unrelated pass failure
-        // (docomply-review, a reference-implementation pull request round 15).
+        // manufacture a sleep/QUOTA_PARKED for an unrelated pass failure.
         if (record.isApiErrorMessage !== true) continue;
         if (record.apiErrorStatus !== 429) continue;
         if (!belongsToWorktree(record.cwd, opts.cwd)) continue;
@@ -702,17 +691,16 @@ export const claudeAdapter: QuotaAdapter = {
         }
         // Newest wins: a pass can hit the wall, retry, and hit it again, and
         // only the last reset time is the one still in force. Claude's
-        // whole-second precision means two genuinely distinct records in
-        // the SAME file can round to the identical displayed second — a
-        // strict `<=` rejected every record after the first of a tie,
-        // leaving an earlier SHORT record standing over a later, more
-        // restrictive one recorded moments afterward (docomply-review, PR
-        // #4431 round 23). This file's own line order is real chronological
+        // whole-second precision means two genuinely distinct records in the
+        // SAME file can round to the identical displayed second — a strict `<=`
+        // rejected every record after the first of a tie, leaving an earlier
+        // SHORT record standing over a later, more restrictive one recorded
+        // moments afterward. This file's own line order is real chronological
         // evidence for a tie, since it is written append-only: let a
-        // same-second record from the SAME file win. A tie against a
-        // DIFFERENT file gets no such benefit — `readdirSync` order across
-        // files is not a chronological contract, so an equal timestamp
-        // there is left exactly as strict as before.
+        // same-second record from the SAME file win. A tie against a DIFFERENT
+        // file gets no such benefit — `readdirSync` order across files is not a
+        // chronological contract, so an equal timestamp there is left exactly
+        // as strict as before.
         if (ts < bestAt) continue;
         if (ts === bestAt && path !== bestPath) continue;
 
@@ -720,16 +708,14 @@ export const claudeAdapter: QuotaAdapter = {
         // Classified from a SINGLE block, never the join of all of them: a
         // vendor message can bundle more than one block, and an incidental
         // "session limit" mention in one block combined with an unrelated
-        // `resets ...` clause substring from a DIFFERENT block would report
-        // a false SHORT classification for a wall that is actually unknown
-        // or weekly — defeating the fail-closed policy this file otherwise
-        // follows (docomply-review, a reference-implementation pull request round 17). First block that
-        // itself contains the phrase wins; its OWN reset clause is the only
-        // one ever trusted.
-        // Matched against the WHOLE block via `SESSION_LIMIT_NOTICE_RE`
-        // (defined above, next to why it is anchored end to end) — see that
-        // comment for why a partial match at any position kept leaving a
-        // fresh bypass across rounds 17-20.
+        // `resets ...` clause substring from a DIFFERENT block would report a
+        // false SHORT classification for a wall that is actually unknown or
+        // weekly — defeating the fail-closed policy this file otherwise
+        // follows. First block that itself contains the phrase wins; its OWN
+        // reset clause is the only one ever trusted. Matched against the WHOLE
+        // block via `SESSION_LIMIT_NOTICE_RE` (defined above, next to why it is
+        // anchored end to end) — see that comment for why a partial match at
+        // any position kept leaving a fresh bypass, one position after another.
         let isSession = false;
         let reset: { at: Date; zone: string } | null = null;
         let sessionBlock = "";
@@ -752,7 +738,7 @@ export const claudeAdapter: QuotaAdapter = {
         // retention bound. Record only what was actually RECOGNISED: the
         // session-limit phrase (a fixed label, not a quote) and the `resets
         // ...` clause substring itself — never the free text either was
-        // found in (docomply-review, a reference-implementation pull request round 15). For an
+        // found in. For an
         // unrecognised wall, still surface any resets clause found in ANY
         // block purely as evidence — it is never trusted for `resetAt` or
         // `window` unless it came from the block that also matched the

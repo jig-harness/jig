@@ -45,8 +45,8 @@ failure.
 unreadable is an error**, not a skip — it is part of the duplicate census, so
 quietly dropping it would let an already-processed change be recorded again. A
 symlinked `INBOX` is resolved to its target before anything is written, since
-replacing the link would leave the canonical file untouched while reporting success. The inbox is worked down as entries
-become levers, so the inbox alone only guards a retry that arrives *before* anyone
+replacing the link would leave the canonical file untouched while reporting
+success. The inbox is worked down as entries become levers, so the inbox alone only guards a retry that arrives *before* anyone
 processed the entry. Move processed entries to an archive rather than deleting
 them and the guard keeps holding, because it reads the archive too.
 
@@ -60,13 +60,14 @@ wrapper, all deliberate:
   isolated machine. Here a re-run on the *same* runner is a real race, so
   bypassing would remove the guard where it is needed.
 - **No automatic stale-lock reclamation.** M12 reclaims a lock whose holder PID is
-  gone; this does not, because doing it safely needs compare-and-swap and POSIX
-  the filesystem API has atomic *create* but no atomic *replace-if-unchanged*. Every
-  PID-liveness scheme is a read then a delete, and two processes racing on the same
-  dead owner can each remove what the other just created — ending in concurrent
-  appends, the exact failure the lock exists to prevent. Instead the wait is bounded
-  and the error names the file to remove. A stale lock costs one `rm`; a subtly
-  wrong reclaim costs a duplicate record that nothing reports.
+  gone; this does not. The filesystem API has atomic *create* but no atomic
+  *replace-if-unchanged*, so a naive PID-liveness scheme is a read then a delete,
+  and two processes racing on the same dead owner can each remove what the other
+  just created — ending in concurrent appends, the exact failure the lock exists
+  to prevent. M12 closes that race with a claim protocol; this trigger runs
+  rarely enough that it stays simpler instead: the wait is bounded and the error
+  names the file to remove. A stale lock costs one `rm`; a subtly wrong reclaim
+  costs a duplicate record that nothing reports.
 - **A foreign lock path is fatal, not cleared.** `$INBOX` is caller-selected, so
   `$INBOX.lock` may hold data this script never created. M12's lock lives under a
   path it owns and can afford to clear leftovers; this one refuses and exits. A

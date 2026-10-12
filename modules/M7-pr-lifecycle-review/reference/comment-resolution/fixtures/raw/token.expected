@@ -2,3 +2,4 @@ T-9001 addressed added the guard in a1b2c3d
 T-9002 rejected intended: the retry is handled one layer up in the caller
 T-9003 deferred filed as ISSUE-482 (perf tuning, out of scope here)
 T-9004 moot superseded by the rewrite in 4f5a6b7
+T-9005 rejected valid, but the cost outweighs the benefit here

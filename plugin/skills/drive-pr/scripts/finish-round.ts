@@ -43,15 +43,13 @@
  *                per-item outcome is in it, so a caller never parses the log.
  *   --bots-only  scope the untriaged-thread refusal to bot-started
  *                threads only, forwarded verbatim to
- *                `list-unresolved-threads.ts` (an earlier change finding, round
- *                14, chatgpt-codex-connector). Pass this whenever the round
+ *                `list-unresolved-threads.ts`. Pass this whenever the round
  *                itself is being driven `--bots-only` — without it, an
  *                untouched HUMAN thread on a file the round's bot-only fix
  *                touches refuses the push, even though bots-only mode is
- *                explicitly scoped to never act on human threads (SKILL.md
- *                § "the identical mistake" caveat is about NON-bots-only
- *                mode; it does not license this guard to ignore its own
- *                caller's scope).
+ *                explicitly scoped to never act on human threads (SKILL.md §
+ *                "the identical mistake" caveat is about NON-bots-only mode; it
+ *                does not license this guard to ignore its own caller's scope).
  *
  * Re-running after an interruption is the designed recovery, and it is safe
  * because every step is either idempotent or already guarded:
@@ -75,36 +73,32 @@
  * have landed. A push through the pre-push hook is measured in tens of
  * minutes and is supposed to be.
  *
- * THE UNTRIAGED-THREAD REFUSAL. One more pre-push check sits
- * alongside the dirty-worktree / unconcluded-git-op refusals:
- * `checkUntriagedThreads` refuses when at least one unresolved review thread
- * anchors a file this round's own non-merge commits touch, is not currently
- * PARKED, and its OWN triage state is not complete and current — never
- * triaged, a current reply with the OTHER half of its dispatch missing (a
- * hold, or a resolve), or an existing hold gone stale. That conjunction is
- * what catches the measured driver mistake — every finding fixed in code,
- * `triage-thread.ts` never invoked, this script pushing and reporting "0
- * held item(s) drained" with no complaint, indistinguishable from a round
- * that genuinely rejected/wont-fixed everything — without flagging a round
- * that legitimately left a triaged thread open (`triage-thread.ts
- * --leave-open`) or a thread a human already parked. It does NOT
- * retroactively fix an already-pushed round; it only stops THIS round's push
- * when it can prove, from data it can read, that this round's own file
- * changes left a live, untriaged, unparked thread behind. And per
- * `.claude/rules/document-scanning-gates.md` rule 1, it fails CLOSED —
- * refuses, never silently proceeds — whenever it cannot read its own inputs
- * (an unusable round base, an unparsable `held` batch, an unreadable
- * `parked-keys` set, a `list-unresolved-threads.ts` call that fails or emits
- * a line it cannot read), the same posture `BATCH_UNREADABLE` already takes
- * for the drain step below.
+ * THE UNTRIAGED-THREAD REFUSAL. One more pre-push check sits alongside the
+ * dirty-worktree / unconcluded-git-op refusals: `checkUntriagedThreads` refuses
+ * when at least one unresolved review thread anchors a file this round's own
+ * non-merge commits touch, is not currently PARKED, and its OWN triage state is
+ * not complete and current — never triaged, a current reply with the OTHER half
+ * of its dispatch missing (a hold, or a resolve), or an existing hold gone
+ * stale. That conjunction is what catches the measured driver mistake — every
+ * finding fixed in code, `triage-thread.ts` never invoked, this script pushing
+ * and reporting "0 held item(s) drained" with no complaint, indistinguishable
+ * from a round that genuinely rejected/wont-fixed everything — without flagging
+ * a round that legitimately left a triaged thread open (`triage-thread.ts
+ * --leave-open`) or a thread a human already parked. It does NOT retroactively
+ * fix an already-pushed round; it only stops THIS round's push when it can
+ * prove, from data it can read, that this round's own file changes left a live,
+ * untriaged, unparked thread behind. And it fails CLOSED — refuses, never
+ * silently proceeds — whenever it cannot read its own inputs (an unusable round
+ * base, an unparsable `held` batch, an unreadable `parked-keys` set, a
+ * `list-unresolved-threads.ts` call that fails or emits a line it cannot read),
+ * the same posture `BATCH_UNREADABLE` already takes for the drain step below.
  *
  * The full case breakdown, its own remedies, and why they are not
- * interchangeable are NOT restated here a fifth time (round 15/16 review
- * findings: this exact paragraph had drifted stale, independently, in
- * SKILL.md, references/round-finish.md, `checkUntriagedThreads`'s own
- * header, and here — twice). Read `checkUntriagedThreads`, `isThreadTriaged`
- * and `remedyFor`'s own headers, which are the code and cannot drift from
- * themselves.
+ * interchangeable are NOT restated here a fifth time (this exact paragraph had
+ * drifted stale, independently, in SKILL.md, references/round-finish.md,
+ * `checkUntriagedThreads`'s own header, and here — twice). Read
+ * `checkUntriagedThreads`, `isThreadTriaged` and `remedyFor`'s own headers,
+ * which are the code and cannot drift from themselves.
  *
  * Exit codes:
  *   0  the round is finished: pushed, stamped, head-synced, batch drained
@@ -379,13 +373,12 @@ interface UntriagedThreadLine {
  * The comment url of this thread's MOST RECENT comment, from anyone — not
  * merely the most recent qualifying reply. Same function, same reasoning, as
  * `lib/status/evaluate.ts`'s own `latestCommentUrl`: comparing against the
- * literal last comment (qualifying or not) is what catches a NEW, non-
- * outcome comment landing on an already-held thread — the case `isThreadHold
- * Current` below exists for (an earlier change finding, chatgpt-codex-
- * connector). `null` on a truncated thread or an empty/unreadable comment
+ * literal last comment (qualifying or not) is what catches a NEW, non- outcome
+ * comment landing on an already-held thread — the case `isThreadHold Current`
+ * below exists for. `null` on a truncated thread or an empty/unreadable comment
  * array — every one of those is NOT MEASURED, and the caller must treat that
- * the same as "not current" (fail toward re-checking the thread, never
- * toward silently trusting a stale hold).
+ * the same as "not current" (fail toward re-checking the thread, never toward
+ * silently trusting a stale hold).
  */
 function latestCommentUrl(t: UntriagedThreadLine): string | null {
   if (t.commentsTruncated) return null;
@@ -397,26 +390,23 @@ function latestCommentUrl(t: UntriagedThreadLine): string | null {
 /**
  * Parse one line of `list-unresolved-threads.ts`'s NDJSON stream,
  * ELEMENT-checked rather than merely syntax-checked — the same posture
- * `parseHeld` takes on `drive-state.ts held`'s payload, and for the
- * identical reason: a line this function cannot fully describe must not
- * silently read as "no evidence of prior triage"
- * (`.claude/rules/document-scanning-gates.md` rule 1). `null` on anything
- * this cannot describe; the caller refuses the whole check rather than
- * skipping the one bad line, because a dropped line is a thread this
- * refusal might have needed.
+ * `parseHeld` takes on `drive-state.ts held`'s payload, and for the identical
+ * reason: a line this function cannot fully describe must not silently read as
+ * "no evidence of prior triage". `null` on anything this cannot describe; the
+ * caller refuses the whole check rather than skipping the one bad line, because
+ * a dropped line is a thread this refusal might have needed.
  *
- * `threadId` must be a real string — never `null` (round 15 review finding,
- * docomply-review): `list-unresolved-threads.ts` only ever emits a null
- * `threadId` for a REDACTED human-history entry, and only under
- * `--include-resolved` (its own header, and the `historyOnly &&
- * !includeResolved` skip in its emit loop) — a flag this guard's own call
- * never passes. A null `threadId` reaching this parser therefore cannot be a
- * legitimate line for THIS caller; treating it as parseable let it flow
- * through as `'(redacted id)'` with a printed remedy ("triage it via
- * triage-thread.ts") that cannot actually be executed — there is no key to
- * pass. Refusing it here instead surfaces `TRIAGE_CHECK_FAILED`, an honest
- * "cannot confirm" for shaped input this caller never expected, rather than
- * a remedy that reads as actionable but is not.
+ * `threadId` must be a real string — never `null`: `list-unresolved-threads.ts`
+ * only ever emits a null `threadId` for a REDACTED human-history entry, and
+ * only under `--include-resolved` (its own header, and the `historyOnly &&
+ * !includeResolved` skip in its emit loop) — a flag this guard's own call never
+ * passes. A null `threadId` reaching this parser therefore cannot be a
+ * legitimate line for THIS caller; treating it as parseable let it flow through
+ * as `'(redacted id)'` with a printed remedy ("triage it via triage-thread.ts")
+ * that cannot actually be executed — there is no key to pass. Refusing it here
+ * instead surfaces `TRIAGE_CHECK_FAILED`, an honest "cannot confirm" for shaped
+ * input this caller never expected, rather than a remedy that reads as
+ * actionable but is not.
  */
 function parseThreadLine(line: string): UntriagedThreadLine | null {
   let parsed: unknown;
@@ -472,52 +462,49 @@ function parseThreadLine(line: string): UntriagedThreadLine | null {
 /**
  * Requires the qualifying reply to be the thread's own LATEST comment — not
  * merely present somewhere in its history. `triage-thread.ts`'s own
- * `existingOutcome` scan (its "last qualifying reply" search) walks
- * backward and accepts the first trusted-author qualifying reply it finds,
- * which is right for THAT script's purpose (deciding what outcome a
- * *reconciling* call should report) but wrong for THIS guard's purpose
- * (deciding whether a thread is safe to push past): a reply from an earlier
- * round stays "found" by that backward scan even after a NEW, unaddressed
- * comment lands on the same thread afterward — silently exempting a thread
- * whose fresh feedback was never triaged (an earlier change finding,
- * chatgpt-codex-connector). This is the identical staleness this guard's own
+ * `existingOutcome` scan (its "last qualifying reply" search) walks backward
+ * and accepts the first trusted-author qualifying reply it finds, which is
+ * right for THAT script's purpose (deciding what outcome a *reconciling* call
+ * should report) but wrong for THIS guard's purpose (deciding whether a thread
+ * is safe to push past): a reply from an earlier round stays "found" by that
+ * backward scan even after a NEW, unaddressed comment lands on the same thread
+ * afterward — silently exempting a thread whose fresh feedback was never
+ * triaged. This is the identical staleness this guard's own
  * `isThreadHoldCurrent` already fixed for its state-file hold, via the exact
  * same reasoning: "comparing against the literal last comment (qualifying or
  * not) is what catches a NEW, non-outcome comment landing on an
- * already-[qualified] thread." The two functions are therefore deliberately
- * NOT the same predicate `triage-thread.ts` uses — this guard's stricter
- * requirement (latest comment only) is its own, matching `isThreadHoldCurrent`'s.
+ * already-[qualified] thread." The two functions are therefore deliberately NOT
+ * the same predicate `triage-thread.ts` uses — this guard's stricter
+ * requirement (latest comment only) is its own, matching
+ * `isThreadHoldCurrent`'s.
  *
  * A `commentsTruncated` thread returns `false` unless the one VISIBLE latest
- * comment itself qualifies — never `true` on the strength of "maybe one
- * exists past the cap" or "maybe the true latest comment, hidden past the
- * cap, is unrelated". A reply past the 100-comment cap could supersede what
- * is visible (the same rule `triage-thread.ts` itself applies), so "cannot
- * confirm the latest comment" fails CLOSED to "treat as untriaged" rather
- * than being silently excluded (`.claude/rules/document-scanning-gates.md`
- * rule 1).
+ * comment itself qualifies — never `true` on the strength of "maybe one exists
+ * past the cap" or "maybe the true latest comment, hidden past the cap, is
+ * unrelated". A reply past the 100-comment cap could supersede what is visible
+ * (the same rule `triage-thread.ts` itself applies), so "cannot confirm the
+ * latest comment" fails CLOSED to "treat as untriaged" rather than being
+ * silently excluded.
  */
 /**
- * The outcome the thread's own latest comment currently carries, or `null`
- * when there is none — truncated (the visible tail is not confirmed to be
- * the real latest, an earlier change finding round 5), no comments, an
- * untrusted author, or a body that doesn't parse as a qualifying reply. The
- * sole primitive for "is there a current qualifying reply" — every caller
- * that only needs the boolean compares the result to `null` rather than
- * re-deriving it a second way.
+ * The outcome the thread's own latest comment currently carries, or `null` when
+ * there is none — truncated (the visible tail is not confirmed to be the real
+ * latest), no comments, an untrusted author, or a body that doesn't parse as a
+ * qualifying reply. The sole primitive for "is there a current qualifying
+ * reply" — every caller that only needs the boolean compares the result to
+ * `null` rather than re-deriving it a second way.
  */
 function currentReplyOutcome(t: UntriagedThreadLine): string | null {
-  // Requires a REPLY, not merely a latest comment (an earlier change finding,
-  // round 14, chatgpt-codex-connector): a thread's own OPENING comment is
-  // the finding, not an answer to it, even when its author is trusted
-  // (OWNER/MEMBER/COLLABORATOR) and its body happens to parse as the
+  // Requires a REPLY, not merely a latest comment: a thread's own OPENING
+  // comment is the finding, not an answer to it, even when its author is
+  // trusted (OWNER/MEMBER/COLLABORATOR) and its body happens to parse as the
   // outcome grammar — a human can open a brand-new thread with a note that
   // reads "**wont-fix** — pre-existing, not part of this diff" as its very
-  // first word. With only that one comment on the thread, nobody has
-  // actually REPLIED to it yet, so treating comments[0] as if it were the
-  // answer would let this guard wave a genuinely untriaged thread through.
-  // `comments.length < 2` therefore always reads as "no reply exists",
-  // regardless of what the sole comment says.
+  // first word. With only that one comment on the thread, nobody has actually
+  // REPLIED to it yet, so treating comments[0] as if it were the answer would
+  // let this guard wave a genuinely untriaged thread through. `comments.length
+  // < 2` therefore always reads as "no reply exists", regardless of what the
+  // sole comment says.
   if (t.commentsTruncated || t.comments.length < 2) return null;
   const last = t.comments[t.comments.length - 1];
   if (
@@ -533,31 +520,29 @@ function currentReplyOutcome(t: UntriagedThreadLine): string | null {
 /**
  * Diagnostic-only counterpart to `currentReplyOutcome`: true when a trusted
  * qualifying reply exists ANYWHERE in the thread's history, not only as its
- * literal latest comment — the OLD, pre-round-4 definition of "already
- * triaged". Never used to decide whether to refuse (that is
- * `currentReplyOutcome`'s job alone); used only to pick which remedy this
- * refusal's own message names.
+ * literal latest comment — the OLD, looser definition of "already triaged".
+ * Never used to decide whether to refuse (that is `currentReplyOutcome`'s job
+ * alone); used only to pick which remedy this refusal's own message names.
  *
- * The distinction matters because the two remedies are NOT interchangeable
- *: `triage-thread.ts`'s own reconciliation
- * rule (its header's step 5) treats ANY qualifying reply, wherever it sits in
- * history, as "the answer" — so re-running it on a thread with a STALE
- * qualifying reply does not post anything new; it silently re-confirms the
- * stale reply and this guard refuses again on the next round, a
- * non-converging loop. The documented escape hatch for that case is
- * `reply-to-thread.ts` directly (a genuinely new reply, which becomes the
- * new latest comment) followed by `triage-thread.ts` to complete the
- * disposition — never `triage-thread.ts` alone.
+ * The distinction matters because the two remedies are NOT interchangeable:
+ * `triage-thread.ts`'s own reconciliation rule (its header's step 5) treats ANY
+ * qualifying reply, wherever it sits in history, as "the answer" — so
+ * re-running it on a thread with a STALE qualifying reply does not post
+ * anything new; it silently re-confirms the stale reply and this guard refuses
+ * again on the next round, a non-converging loop. The documented escape hatch
+ * for that case is `reply-to-thread.ts` directly (a genuinely new reply, which
+ * becomes the new latest comment) followed by `triage-thread.ts` to complete
+ * the disposition — never `triage-thread.ts` alone.
  */
 function hasStaleQualifyingReply(t: UntriagedThreadLine): boolean {
   if (t.commentsTruncated) return false;
-  // Skips comments[0] for the identical reason `currentReplyOutcome` does
-  //: the opening comment is the finding,
-  // never a reply to it, so a trusted author's qualifying-shaped OPENING
-  // comment must not be reported as a stale reply either — that would send
-  // `remedyFor` down the "post a fresh reply first" path for a thread
-  // `triage-thread.ts` can already answer directly from its own backward
-  // scan (which legitimately does include comments[0] — see its header).
+  // Skips comments[0] for the identical reason `currentReplyOutcome` does: the
+  // opening comment is the finding, never a reply to it, so a trusted author's
+  // qualifying-shaped OPENING comment must not be reported as a stale reply
+  // either — that would send `remedyFor` down the "post a fresh reply first"
+  // path for a thread `triage-thread.ts` can already answer directly from its
+  // own backward scan (which legitimately does include comments[0] — see its
+  // header).
   for (let i = 1; i < t.comments.length; i++) {
     const c = t.comments[i];
     if (
@@ -588,33 +573,28 @@ function hasStaleQualifyingReply(t: UntriagedThreadLine): boolean {
  * Refuses only when ALL of:
  *   (a) that thread's own key carries no held triage decision — a hold is
  *       keyed per-thread (`HeldItem.key`, the threadId for `kind: 'thread'`),
- *       so a held item recorded against a DIFFERENT thread is not evidence
- *       that THIS one was triaged (an earlier change finding 1: an earlier cut
- *       treated the mere presence of any held item, anywhere in the batch,
- *       as sufficient — an accepted-and-held thread on file A silently
- *       excused a never-triaged thread on file B);
+ *       so a held item recorded against a DIFFERENT thread is not evidence that
+ *       THIS one was triaged (an earlier cut treated the mere presence of any
+ *       held item, anywhere in the batch, as sufficient — an accepted-and-held
+ *       thread on file A silently excused a never-triaged thread on file B);
  *   (b) at least one UNRESOLVED review thread — bot or human BY DEFAULT
  *       (no `--bots-only` filter, since a human thread left untriaged is the
  *       identical mistake), scoped to bot-started threads only when THIS
- *       script's own `--bots-only` flag is passed (round 14 review finding:
- *       an earlier revision of this header still claimed "no filter,
- *       ever") — is anchored (`path`) to a file THIS round's own
- *       local NON-MERGE commits touch (`roundBase` +
+ *       script's own `--bots-only` flag is passed — is anchored (`path`) to a
+ *       file THIS round's own local NON-MERGE commits touch (`roundBase` +
  *       `changedFilesSinceExcludingMerges`, `lib/round-delta.ts` — the same
  *       base `round-plan.ts` uses to decide what to validate, but the
- *       merge-exclusion variant: a base-sync merge's own imported files do
- *       not count as "this round touched", an earlier change finding 2). A
- *       thread with `path === null` (a PR-level, non-file-anchored comment)
- *       can never satisfy this — the guard only ever reasons about threads
- *       anchored to a file;
+ *       merge-exclusion variant: a base-sync merge's own imported files do not
+ *       count as "this round touched"). A thread with `path === null` (a
+ *       PR-level, non-file-anchored comment) can never satisfy this — the guard
+ *       only ever reasons about threads anchored to a file;
  *   (c) that thread's triage state is incomplete or stale — not only "no
- *       qualifying reply at all" (round 15 review finding: this contract
- *       undersold what `isThreadTriaged` actually checks), but also an
- *       accepted/moot reply with no hold recorded, an unmarked merit reply
- *       (rejected/wont-fix/deferred) on a thread that was never actually
- *       resolved, or an existing hold whose current reply has been edited
- *       to a different qualifying outcome — see `isThreadTriaged` and
- *       `remedyFor`'s own headers for the full case breakdown;
+ *       qualifying reply at all", but also an accepted/moot reply with no hold
+ *       recorded, an unmarked merit reply (rejected/wont-fix/deferred) on a
+ *       thread that was never actually resolved, or an existing hold whose
+ *       current reply has been edited to a different qualifying outcome — see
+ *       `isThreadTriaged` and `remedyFor`'s own headers for the full case
+ *       breakdown;
  *   (d) that thread is NOT currently PARKED (`drive-state.ts park` /
  *       `parked-keys`). A parked thread is a recorded human decision, often
  *       precisely BECAUSE `triage-thread.ts` itself refused to post a
@@ -639,15 +619,14 @@ function hasStaleQualifyingReply(t: UntriagedThreadLine): boolean {
  *
  * WHAT THIS DOES NOT DO: it cannot retroactively fix an already-pushed round
  * (see an earlier change's own incident log for what that recovery costs — a
- * retroactive `triage-thread.ts` run against a head that has already moved
- * on); it only stops THIS round's push when it can PROVE, from data it can
- * read, that this round's own file changes left a live, untriaged, unparked
- * thread behind. And it fails CLOSED whenever it cannot read its own inputs
- * — an unusable round base, a `held` read this script cannot parse, an
- * unreadable `parked-keys` set, a `list-unresolved-threads.ts` call that
- * fails or emits an unparsable line — refusing rather than silently
- * proceeding, the same posture `BATCH_UNREADABLE` already takes for the
- * drain step below (`.claude/rules/document-scanning-gates.md` rule 1).
+ * retroactive `triage-thread.ts` run against a head that has already moved on);
+ * it only stops THIS round's push when it can PROVE, from data it can read,
+ * that this round's own file changes left a live, untriaged, unparked thread
+ * behind. And it fails CLOSED whenever it cannot read its own inputs — an
+ * unusable round base, a `held` read this script cannot parse, an unreadable
+ * `parked-keys` set, a `list-unresolved-threads.ts` call that fails or emits an
+ * unparsable line — refusing rather than silently proceeding, the same posture
+ * `BATCH_UNREADABLE` already takes for the drain step below.
  */
 async function checkUntriagedThreads(
   pr: string,
@@ -679,10 +658,9 @@ async function checkUntriagedThreads(
   }
 
   // `changedFilesSinceExcludingMerges`, NOT `changedFilesSince` — this guard
-  // must reason about what THIS ROUND's own commits touched, not the
-  // cumulative diff a base-sync merge (SKILL.md § 5) can inflate with
-  // `origin/develop`'s own unrelated churn (an earlier change finding 2; see
-  // that function's own header for the measured case).
+  // must reason about what THIS ROUND's own commits touched, not the cumulative
+  // diff a base-sync merge (SKILL.md § 5) can inflate with the base branch's
+  // own unrelated churn (see that function's own header for the measured case).
   const touchedFiles = await changedFilesSinceExcludingMerges(
     root,
     pr,
@@ -711,12 +689,11 @@ async function checkUntriagedThreads(
   // park instead.
   //
   // Both this call and the `held` read below are local, lock-guarded reads of
-  // this skill's own state file — not a `gh` network call — but they can
-  // still stall on lock contention, so they carry the same
-  // `helperTimeoutSeconds()` deadline as the `list-unresolved-threads.ts`
-  // spawn a few lines down, in this same function (an earlier change finding 2
-  // and 3: an unbounded `run()` here can hang this check, and therefore the
-  // whole round-finish, indefinitely instead of returning
+  // this skill's own state file — not a `gh` network call — but they can still
+  // stall on lock contention, so they carry the same `helperTimeoutSeconds()`
+  // deadline as the `list-unresolved-threads.ts` spawn a few lines down, in
+  // this same function (an unbounded `run()` here can hang this check, and
+  // therefore the whole round-finish, indefinitely instead of returning
   // `TRIAGE_CHECK_FAILED`).
   const parkedRes = await run(tsArgv(driveState, ["parked-keys", pr]), {
     stderr: "pipe",
@@ -762,36 +739,34 @@ async function checkUntriagedThreads(
   }
   // A `thread`-kind hold's own key IS the threadId `triage-thread.ts` held it
   // under — the same identity `resolve-held-thread.ts` claims by later
-  // (SKILL.md § 6). Correlated against below, per offending thread, rather
-  // than treated as a blanket "some thread somewhere was triaged" signal: an
-  // UNRELATED held item must not excuse a DIFFERENT, untriaged thread that
-  // also anchors a file this round touched (an earlier change finding 1 — the
-  // existential check this replaced let one accepted-and-held thread on file
-  // A stand in for triage never done on file B).
+  // (SKILL.md § 6). Correlated against below, per offending thread, rather than
+  // treated as a blanket "some thread somewhere was triaged" signal: an
+  // UNRELATED held item must not excuse a DIFFERENT, untriaged thread that also
+  // anchors a file this round touched (the existential check this replaced let
+  // one accepted-and-held thread on file A stand in for triage never done on
+  // file B).
   //
-  // Keyed to `commentUrl`, not just presence in the batch (an earlier change
-  // finding, chatgpt-codex-connector round 2): a reviewer or human can post a
-  // NEW comment on a thread AFTER it was held but BEFORE this round's push
-  // completes. The key alone would still exempt it — `resolve-held-thread.ts`
-  // then resolves the thread unconditionally, silently closing the fresh
-  // comment with no outcome reply ever posted to it. `lib/status/evaluate.ts`
-  // already carries the identical fix for its own `structuralEscalationDue`
-  // recurrence evidence (`isThreadHoldCurrent`/`latestCommentUrl`, PR #4441);
-  // this mirrors it rather than inventing a second copy of the same
-  // reasoning.
+  // Keyed to `commentUrl`, not just presence in the batch: a reviewer or human
+  // can post a NEW comment on a thread AFTER it was held but BEFORE this
+  // round's push completes. The key alone would still exempt it —
+  // `resolve-held-thread.ts` then resolves the thread unconditionally, silently
+  // closing the fresh comment with no outcome reply ever posted to it.
+  // `lib/status/evaluate.ts` already carries the identical fix for its own
+  // `structuralEscalationDue` recurrence evidence
+  // (`isThreadHoldCurrent`/`latestCommentUrl`); this mirrors it rather than
+  // inventing a second copy of the same reasoning.
   const heldThreadByKey = new Map<string, string | undefined>(
     batch.items
       .filter((i) => i.kind === "thread")
       .map((i) => [i.key, i.commentUrl] as const),
   );
-  // The outcome each hold was RECORDED for — needed because a URL match
-  // alone is not enough: GitHub preserves
-  // a comment's permalink when it is EDITED, so a hold made for `accepted`
-  // whose comment is later edited to `**rejected** — ...` (or any other
-  // valid outcome token) still matches on url. This is the identical gap
-  // `resolve-held-thread.ts`'s own drain-time recheck (round 7) already
-  // closes for the push AFTER it lands; this closes it for the PRE-PUSH
-  // guard too, which is where an operator actually needs the refusal.
+  // The outcome each hold was RECORDED for — needed because a URL match alone
+  // is not enough: GitHub preserves a comment's permalink when it is EDITED, so
+  // a hold made for `accepted` whose comment is later edited to `**rejected** —
+  // ...` (or any other valid outcome token) still matches on url. This is the
+  // identical gap `resolve-held-thread.ts`'s own drain-time recheck already
+  // closes for the push AFTER it lands; this closes it for the PRE-PUSH guard
+  // too, which is where an operator actually needs the refusal.
   const heldOutcomeByKey = new Map<string, string>(
     batch.items
       .filter((i) => i.kind === "thread")
@@ -804,31 +779,28 @@ async function checkUntriagedThreads(
   // record this clone's own writers produced; it is corrupt or hand-edited
   // state (or a malformed `drive-state.ts held` response this parser cannot
   // otherwise validate) that the shared store's own gate should have already
-  // rejected. Per `.claude/rules/document-scanning-gates.md` rule 1 (fail
-  // closed on undecodable input) and CLAUDE.md's pre-GA BWC stance (no
-  // tolerance path for data this shape was never meant to have), NOT
-  // granting the exemption is correct here even though `evaluate.ts`'s
-  // identically-named fallback returns `true` for its own `undefined` case —
-  // that function's `heldByKey` is unfiltered by kind, so its `undefined`
-  // routinely means "this key belongs to a `finding` hold", a legitimate and
-  // expected case that ID-space collision makes vanishingly rare in
-  // practice. This function's map is already thread-only, so `undefined`
-  // here has no equivalent innocent explanation (docomply-review round 3,
-  // a reference-implementation pull request). Any OTHER mismatch — including `latestCommentUrl` returning
+  // rejected. Since undecodable input fails closed, and there is no tolerance
+  // path for data this shape was never meant to have, NOT granting the
+  // exemption is correct here even though `evaluate.ts`'s identically-named
+  // fallback returns `true` for its own `undefined` case — that function's
+  // `heldByKey` is unfiltered by kind, so its `undefined` routinely means "this
+  // key belongs to a `finding` hold", a legitimate and expected case that
+  // ID-space collision makes vanishingly rare in practice. This function's map
+  // is already thread-only, so `undefined` here has no equivalent innocent
+  // explanation. Any OTHER mismatch — including `latestCommentUrl` returning
   // `null` on a truncated or unreadable comment list — fails toward NOT
-  // granting the exemption for the same reason.
-  // Review finding (docomply-review, a reference-implementation pull request round 1): a comment landing AFTER the
-  // held reply is still compatible with the hold when it is a reviewer
-  // bot's own automated confirmation — the identical an earlier change tolerance
-  // `resolve-held-thread.ts` applies post-push, via the SAME shared
-  // predicate (`./lib/bot-confirmation.ts`). Before this, a CodeRabbit
-  // confirmation landing on a held thread BEFORE the push (the common case
-  // — it reacts within seconds of the reply, well inside a round's own
-  // triage-to-push window) made `latestCommentUrl(t) !== heldUrl`, so this
-  // guard refused the round on the exact comment an earlier change's exception
-  // exists to tolerate — that exception was therefore unreachable in the
-  // documented finish-round path whenever the race resolved before the
-  // push rather than during `resolve-held-thread.ts`'s own post-push wait.
+  // granting the exemption for the same reason. A comment landing AFTER the
+  // held reply is still compatible with the hold when it is a reviewer bot's
+  // own automated confirmation — the identical tolerance
+  // `resolve-held-thread.ts` applies post-push, via the SAME shared predicate
+  // (`./lib/bot-confirmation.ts`). Before this, a CodeRabbit confirmation
+  // landing on a held thread BEFORE the push (the common case — it reacts
+  // within seconds of the reply, well inside a round's own triage-to-push
+  // window) made `latestCommentUrl(t) !== heldUrl`, so this guard refused the
+  // round on the exact comment that exception exists to tolerate — that
+  // exception was therefore unreachable in the documented finish-round path
+  // whenever the race resolved before the push rather than during
+  // `resolve-held-thread.ts`'s own post-push wait.
   const isThreadHoldCurrent = (t: UntriagedThreadLine): boolean => {
     const key = t.threadId;
     if (!heldThreadByKey.has(key)) return false;
@@ -851,7 +823,7 @@ async function checkUntriagedThreads(
     // Without this, this pre-push guard could tolerate a later comment this
     // predicate is willing to accept, push, and then have the post-push
     // check refuse and restore the hold on the very comment this guard just
-    // let through (docomply-review, a reference-implementation pull request round 5).
+    // let through.
     return later.every(
       (c) =>
         typeof c.url === "string" &&
@@ -928,51 +900,49 @@ async function checkUntriagedThreads(
     threads.push(t);
   }
 
-  // A qualifying reply alone is not always enough (an earlier change finding,
-  // round 8): `triage-thread.ts` is SELF-RECONCILING, not atomic (its own
-  // header, lines 20-29) — a kill between posting the reply and recording its
-  // durable disposition leaves a valid, current, trusted reply on GitHub with
-  // the OTHER half of the dispatch never having happened. The documented
-  // recovery is re-invoking `triage-thread.ts` on that thread, which
-  // completes the missing half — but an operator who instead commits a fix
-  // and skips straight to `finish-round.ts` would otherwise sail through:
-  // `currentReplyOutcome` sees a valid reply and exempts the thread, the
-  // round pushes, and the promised disposition never actually lands.
+  // A qualifying reply alone is not always enough: `triage-thread.ts` is
+  // SELF-RECONCILING, not atomic (its own header, lines 20-29) — a kill between
+  // posting the reply and recording its durable disposition leaves a valid,
+  // current, trusted reply on GitHub with the OTHER half of the dispatch never
+  // having happened. The documented recovery is re-invoking `triage-thread.ts`
+  // on that thread, which completes the missing half — but an operator who
+  // instead commits a fix and skips straight to `finish-round.ts` would
+  // otherwise sail through: `currentReplyOutcome` sees a valid reply and
+  // exempts the thread, the round pushes, and the promised disposition never
+  // actually lands.
   //
   // What "the other half" is differs by outcome, so the check below is NOT
-  // simply "accepted/moot need a hold" (round 14 review finding, P1,
-  // chatgpt-codex-connector — the fix that closed that finding's own
-  // predecessor left THIS half of the identical bug open): `rejected`,
-  // `wont-fix` and `deferred` never create a hold, but `triage-thread.ts`'s
-  // normal completion for them calls `resolve-thread.ts` and RESOLVES the
-  // thread. This function only ever sees threads `list-unresolved-
-  // threads.ts` reports as UNRESOLVED, so a merit reply sitting here with NO
-  // `--leave-open` marker cannot be a legitimately-finished dispatch — a
-  // finished one would have resolved the thread and it would not be in this
-  // list at all. It can only be triage-thread.ts crashing between posting
-  // the reply and calling `resolve-thread.ts`. The one way a merit reply (or
-  // an unmarked moot) legitimately stays unresolved forever is the
-  // LEAVE_OPEN marker — `triage-thread.ts --leave-open` works identically
-  // across every non-hold outcome (its own header), so this check does too,
-  // rather than special-casing `moot` the way an earlier revision did.
+  // simply "accepted/moot need a hold" (checking only that left THIS half of
+  // the identical bug open): `rejected`, `wont-fix` and `deferred` never create
+  // a hold, but `triage-thread.ts`'s normal completion for them calls
+  // `resolve-thread.ts` and RESOLVES the thread. This function only ever sees
+  // threads `list-unresolved- threads.ts` reports as UNRESOLVED, so a merit
+  // reply sitting here with NO `--leave-open` marker cannot be a
+  // legitimately-finished dispatch — a finished one would have resolved the
+  // thread and it would not be in this list at all. It can only be
+  // triage-thread.ts crashing between posting the reply and calling
+  // `resolve-thread.ts`. The one way a merit reply (or an unmarked moot)
+  // legitimately stays unresolved forever is the LEAVE_OPEN marker —
+  // `triage-thread.ts --leave-open` works identically across every non-hold
+  // outcome (its own header), so this check does too, rather than
+  // special-casing `moot` the way an earlier revision did.
   function isThreadTriaged(t: UntriagedThreadLine): boolean {
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);
     if (heldThreadByKey.has(key)) {
-      // A hold exists for this key. It counts as a completed triage
-      // decision only if its recorded `commentUrl` still points at a
-      // comment `isThreadHoldCurrent` accepts as current — the thread's
-      // literal latest, or the held reply followed only by a
-      // trusted bot's own confirmation — AND that HELD comment's own
-      // outcome still matches what was held (an earlier change finding,
-      // round 9): a comment keeps its permalink when edited, so url-match
-      // alone is not enough — an accepted reply edited to a different
-      // outcome, or to remove the outcome token entirely (`null`, which can
-      // never equal a real held outcome), still matches on url. Either
-      // mismatch means the held record no longer describes reality, so this
-      // thread needs an explicit re-triage before push rather than being
-      // silently exempted on the strength of a stale record — regardless of
-      // whether the NEW outcome would, on its own, need a hold at all.
+      // A hold exists for this key. It counts as a completed triage decision
+      // only if its recorded `commentUrl` still points at a comment
+      // `isThreadHoldCurrent` accepts as current — the thread's literal latest,
+      // or the held reply followed only by a trusted bot's own confirmation —
+      // AND that HELD comment's own outcome still matches what was held: a
+      // comment keeps its permalink when edited, so url-match alone is not
+      // enough — an accepted reply edited to a different outcome, or to remove
+      // the outcome token entirely (`null`, which can never equal a real held
+      // outcome), still matches on url. Either mismatch means the held record
+      // no longer describes reality, so this thread needs an explicit re-triage
+      // before push rather than being silently exempted on the strength of a
+      // stale record — regardless of whether the NEW outcome would, on its own,
+      // need a hold at all.
       //
       // `heldReplyOutcome`, not `outcome` (`currentReplyOutcome`, computed
       // above from the literal latest comment): once a trailing bot
@@ -989,38 +959,34 @@ async function checkUntriagedThreads(
     }
     if (outcome === null) return false; // never triaged at all
     const latest = t.comments[t.comments.length - 1];
-    // Marked leave-open: a deliberate choice to leave THIS thread
-    // unresolved, valid for any non-hold outcome (not only moot) per
-    // triage-thread.ts's own `--leave-open` gating — but ONLY on a
-    // HUMAN-started thread (round 22 review finding, P1,
-    // chatgpt-codex-connector): SKILL.md's "Leaving a human thread open"
-    // exception, and `triage-thread.ts --leave-open`'s own documented
-    // prohibition, are both scoped to human-started threads — a bot finding
-    // must always eventually resolve. `triage-thread.ts` does not enforce
-    // that prohibition in code, so an operator (or agent) mistakenly passing
-    // `--leave-open` while triaging a BOT thread is a reachable operator
-    // error, not a hypothetical — this guard must not compound that mistake
-    // by trusting the marker on exactly the one thread class it was never
-    // meant to exempt. `t.confirmedHumanStarted` names who opened the thread, not who
-    // wrote the marker (only a trusted author can ever produce one, per
-    // LEAVE_OPEN_MARKER's own header — that authorship residual is separately
-    // accepted and unaffected by this check).
+    // Marked leave-open: a deliberate choice to leave THIS thread unresolved,
+    // valid for any non-hold outcome (not only moot) per triage-thread.ts's own
+    // `--leave-open` gating — but ONLY on a HUMAN-started thread: SKILL.md's
+    // "Leaving a human thread open" exception, and `triage-thread.ts
+    // --leave-open`'s own documented prohibition, are both scoped to
+    // human-started threads — a bot finding must always eventually resolve.
+    // `triage-thread.ts` does not enforce that prohibition in code, so an
+    // operator (or agent) mistakenly passing `--leave-open` while triaging a
+    // BOT thread is a reachable operator error, not a hypothetical — this guard
+    // must not compound that mistake by trusting the marker on exactly the one
+    // thread class it was never meant to exempt. `t.confirmedHumanStarted`
+    // names who opened the thread, not who wrote the marker (only a trusted
+    // author can ever produce one, per LEAVE_OPEN_MARKER's own header — that
+    // authorship residual is separately accepted and unaffected by this check).
     //
-    // AND `outcome !== 'accepted'` (round 25 review finding, high, chatgpt-
-    // codex-connector): `accepted` is ALWAYS a fix-dependent hold outcome —
-    // `--leave-open` on it is not a real posting path at all (triage-
+    // AND `outcome !== 'accepted'`: `accepted` is ALWAYS a fix-dependent hold
+    // outcome — `--leave-open` on it is not a real posting path at all (triage-
     // thread.ts's own gating only ever appends the marker for a non-hold
     // outcome). But a trusted author can EDIT an existing marked reply's
     // outcome word in place on GitHub — `**wont-fix** ... <MARKER>` to
-    // `**accepted** ... <MARKER>` — which no posting-time validation ever
-    // sees, since it happens after the fact. Without this exclusion,
-    // `currentReplyOutcome` reads `accepted`, there is still no hold, and
-    // this branch would return `true` anyway on the strength of the
-    // leftover marker — recreating the exact crash-before-hold gap this
-    // guard exists to refuse. `lib/status/evaluate.ts`'s parallel
-    // derivation already excludes `accepted` from its own leave-open
-    // recognition (`candidate.outcome !== 'accepted'`); this was the one
-    // place that contract went unmirrored.
+    // `**accepted** ... <MARKER>` — which no posting-time validation ever sees,
+    // since it happens after the fact. Without this exclusion,
+    // `currentReplyOutcome` reads `accepted`, there is still no hold, and this
+    // branch would return `true` anyway on the strength of the leftover marker
+    // — recreating the exact crash-before-hold gap this guard exists to refuse.
+    // `lib/status/evaluate.ts`'s parallel derivation already excludes
+    // `accepted` from its own leave-open recognition (`candidate.outcome !==
+    // 'accepted'`); this was the one place that contract went unmirrored.
     if (
       outcome !== "accepted" &&
       t.confirmedHumanStarted &&
@@ -1029,13 +995,12 @@ async function checkUntriagedThreads(
       return true;
     // Unmarked, or marked on a thread that isn't CONFIRMED human-started —
     // bot-started, or an opening comment this guard's own producer could not
-    // read (round 24 review finding: an unreadable opening comment must fail
-    // closed toward "not exempt", never toward "assume human"). `accepted`/
-    // `moot` are fix-dependent hold outcomes — this branch runs only when no
-    // hold exists (checked above), so both are offending regardless. A
-    // wrongly-marked-leave-open thread is exactly as offending as an
-    // unmarked one: the resolve half of the dispatch never legitimately
-    // happens for it.
+    // read (an unreadable opening comment must fail closed toward "not exempt",
+    // never toward "assume human"). `accepted`/ `moot` are fix-dependent hold
+    // outcomes — this branch runs only when no hold exists (checked above), so
+    // both are offending regardless. A wrongly-marked-leave-open thread is
+    // exactly as offending as an unmarked one: the resolve half of the dispatch
+    // never legitimately happens for it.
     return false;
   }
 
@@ -1053,26 +1018,24 @@ async function checkUntriagedThreads(
   if (offending.length === 0) return null;
 
   // Only reached when this guard is ABOUT to refuse, so the extra `gh` round
-  // trip is paid for exactly the case that needs it (an earlier change
-  // finding, chatgpt-codex-connector): a PR that closed or merged in the
-  // window between the last round's push and this one still has offending
-  // threads sitting on GitHub, and telling the operator to "triage and
-  // retry" against a PR that can no longer receive a push is actively
-  // misleading — `guarded-push.ts` would report `PR_NOT_OPEN` a few lines
-  // later regardless, so this refusal should say the same thing rather than
-  // getting there first with the wrong reason.
+  // trip is paid for exactly the case that needs it: a PR that closed or merged
+  // in the window between the last round's push and this one still has
+  // offending threads sitting on GitHub, and telling the operator to "triage
+  // and retry" against a PR that can no longer receive a push is actively
+  // misleading — `guarded-push.ts` would report `PR_NOT_OPEN` a few lines later
+  // regardless, so this refusal should say the same thing rather than getting
+  // there first with the wrong reason.
   //
   // A FAILED or unusable read is `TRIAGE_CHECK_FAILED`, not a silent
-  // fall-through to `REFUSED_UNTRIAGED`:
-  // per `.claude/rules/document-scanning-gates.md` rule 1, a failed external
-  // read must produce a gate failure, not a derived verdict — the same
-  // posture every OTHER read in this function already takes (a failed
-  // `list-unresolved-threads.ts`, `parked-keys`, or verified-SHA read all
-  // return `TRIAGE_CHECK_FAILED`, never a best-guess REFUSED_UNTRIAGED). This
-  // check is not exempt merely because both of its two possible verdicts
-  // happen to refuse the push either way — `REFUSED_UNTRIAGED`'s specific
-  // wording tells the operator to triage and retry, which is actively wrong
-  // advice when the underlying liveness could not be established at all.
+  // fall-through to `REFUSED_UNTRIAGED`: a failed external read must produce a
+  // gate failure, not a derived verdict — the same posture every OTHER read in
+  // this function already takes (a failed `list-unresolved-threads.ts`,
+  // `parked-keys`, or verified-SHA read all return `TRIAGE_CHECK_FAILED`, never
+  // a best-guess REFUSED_UNTRIAGED). This check is not exempt merely because
+  // both of its two possible verdicts happen to refuse the push either way —
+  // `REFUSED_UNTRIAGED`'s specific wording tells the operator to triage and
+  // retry, which is actively wrong advice when the underlying liveness could
+  // not be established at all.
   const liveness = await ghCall(["pr", "view", pr, "--json", "state"], {
     timeoutSec: helperTimeoutSeconds(),
   });
@@ -1111,30 +1074,28 @@ async function checkUntriagedThreads(
     };
   }
 
-  // Never-triaged, crash-before-hold, edited-in-place, and stale-hold
-  // threads all need DIFFERENT remedies (an earlier change findings, rounds
-  // 7-13): `triage-thread.ts`'s own reconciliation rule treats any
-  // qualifying reply anywhere in a thread's history as "the answer", so
-  // running it on a thread with a STALE qualifying reply or a stale hold on
-  // its own key does not post anything new — it silently re-confirms the
-  // stale state and this guard refuses again next round, a loop that never
-  // converges. Naming the wrong remedy per-thread would send an operator
-  // straight into that loop, so each offending thread gets the remedy that
-  // actually applies to it — computed with explicit branches, one per case
-  // `isThreadTriaged` itself distinguishes, rather than a chain of derived
-  // booleans whose interaction is easy to get wrong (a review finding
-  // caught exactly that: an earlier `currentReplyNeedsOnlyAHold` derived
-  // boolean read true for ANY qualifying outcome, not only accepted/moot,
-  // so an edited-to-`rejected` thread was told it "carries an accepted/moot
-  // reply" when it did not).
+  // Never-triaged, crash-before-hold, edited-in-place, and stale-hold threads
+  // all need DIFFERENT remedies: `triage-thread.ts`'s own reconciliation rule
+  // treats any qualifying reply anywhere in a thread's history as "the answer",
+  // so running it on a thread with a STALE qualifying reply or a stale hold on
+  // its own key does not post anything new — it silently re-confirms the stale
+  // state and this guard refuses again next round, a loop that never converges.
+  // Naming the wrong remedy per-thread would send an operator straight into
+  // that loop, so each offending thread gets the remedy that actually applies
+  // to it — computed with explicit branches, one per case `isThreadTriaged`
+  // itself distinguishes, rather than a chain of derived booleans whose
+  // interaction is easy to get wrong (an earlier `currentReplyNeedsOnlyAHold`
+  // derived boolean read true for ANY qualifying outcome, not only
+  // accepted/moot, so an edited-to-`rejected` thread was told it "carries an
+  // accepted/moot reply" when it did not).
   function remedyFor(t: UntriagedThreadLine): string {
     if (t.commentsTruncated) {
-      // `triage-thread.ts` refuses a truncated thread UNCONDITIONALLY (its
-      // own comments(first:100) cap means the visible tail is never
-      // confirmed current, an earlier change finding round 8), so every OTHER
-      // remedy below — which routes through `triage-thread.ts` — is just as
-      // broken for a truncated thread as plain `triage-thread.ts` is. The
-      // one remedy that actually works is the documented one.
+      // `triage-thread.ts` refuses a truncated thread UNCONDITIONALLY (its own
+      // comments(first:100) cap means the visible tail is never confirmed
+      // current), so every OTHER remedy below — which routes through
+      // `triage-thread.ts` — is just as broken for a truncated thread as plain
+      // `triage-thread.ts` is. The one remedy that actually works is the
+      // documented one.
       return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --reason '...' (SKILL.md § 4)";
     }
     const key = t.threadId;
@@ -1149,20 +1110,18 @@ async function checkUntriagedThreads(
         return 'a NEWER comment has moved past its existing reply/hold — post a fresh reply via reply-to-thread.ts directly, then triage-thread.ts to complete the disposition (SKILL.md § 3 "Leaving a human thread open" / the deliberate-supersession path — triage-thread.ts ALONE will silently reconcile to the stale reply and refuse again)';
       }
       // The URL still matches, so the SAME comment was EDITED in place to a
-      // different outcome (or to remove the outcome token entirely
-      // review finding, round 9). Re-running triage-thread.ts reconciles to
-      // whatever the comment currently says — completing a new hold, or
-      // resolving-and-releasing the stale one if the new text is a merit
-      // outcome — no new post is needed or safe.
+      // different outcome (or to remove the outcome token entirely). Re-running
+      // triage-thread.ts reconciles to whatever the comment currently says —
+      // completing a new hold, or resolving-and-releasing the stale one if the
+      // new text is a merit outcome — no new post is needed or safe.
       const heldOutcome = heldOutcomeByKey.get(key);
       return `its held '${heldOutcome}' outcome no longer matches the thread's current reply (now reads as '${outcome ?? "no qualifying outcome at all"}') — the comment was EDITED in place after being held. Re-run triage-thread.ts on this thread with ANY valid outcome body on stdin (triage-thread.ts refuses empty stdin outright, before it ever reconciles): its self-reconciliation will find the existing reply and win over whatever this invocation's own body said, completing the correct disposition — do NOT post via reply-to-thread.ts again, that would double-post`;
     }
     if (outcome === "accepted" || outcome === "moot") {
       // No hold at all, but a current reply exists whose outcome NEEDS one
-      // (`isThreadTriaged` already confirmed this, else the thread would not
-      // be offending) — the crash-before-hold window (an earlier change
-      // finding, round 8): `triage-thread.ts` posted the reply but was
-      // killed before recording the hold.
+      // (`isThreadTriaged` already confirmed this, else the thread would not be
+      // offending) — the crash-before-hold window: `triage-thread.ts` posted
+      // the reply but was killed before recording the hold.
       return `its latest comment already carries a valid, current '${outcome}' reply, but no hold was recorded for it — a crash between reply-to-thread.ts and drive-state.ts hold (triage-thread.ts is SELF-RECONCILING, not atomic). Re-run triage-thread.ts on this thread: it will detect the existing reply and complete the missing hold — do NOT post via reply-to-thread.ts again, that would double-post`;
     }
     if (outcome !== null) {
@@ -1170,26 +1129,24 @@ async function checkUntriagedThreads(
       if (!t.confirmedHumanStarted && hasLeaveOpenMarker(latest?.body ?? "")) {
         // A thread NOT confirmed human-started (bot-started, or an opening
         // comment this guard's own producer could not read) carrying the
-        // leave-open marker — never a legitimate crash (round 22/24 review
-        // findings, P1/high, chatgpt-codex-connector): `--leave-open` is
-        // documented as human-thread-only, and `triage-thread.ts` itself
-        // will not fix this by re-running — its own reconciliation recovers
+        // leave-open marker — never a legitimate crash: `--leave-open` is
+        // documented as human-thread-only, and `triage-thread.ts` itself will
+        // not fix this by re-running — its own reconciliation recovers
         // `effectiveLeaveOpen` from the marker's mere PRESENCE regardless of
         // this invocation's own `--leave-open` flag (its own comment: "a
         // retrying agent has no reason to have set it"), so a plain re-run
         // continues honoring the same misapplied marker forever. Call
         // resolve-thread.ts DIRECTLY instead — the reply already carries a
-        // valid, current merit outcome, so nothing further needs posting;
-        // only the resolve itself was skipped.
+        // valid, current merit outcome, so nothing further needs posting; only
+        // the resolve itself was skipped.
         return `its latest comment already carries a valid, current '${outcome}' reply with a LEAVE_OPEN marker, but this thread is not confirmed human-started (bot-started, or its opening comment could not be read) — that marker is documented as human-thread-only and triage-thread.ts's own reconciliation will keep honoring it on any re-run regardless of flags. Call resolve-thread.ts ${key} directly instead — do NOT post via reply-to-thread.ts again, that would double-post`;
       }
       // A merit outcome (rejected/wont-fix/deferred), unmarked, sitting on a
       // thread THIS SCRIPT ONLY EVER SEES AS UNRESOLVED — a legitimately
-      // finished dispatch for one of these would have called
-      // resolve-thread.ts and the thread would not be in this list at all
-      //.
-      // The other half of the SELF-RECONCILING dispatch is the resolve, not
-      // a hold, so the remedy names that instead.
+      // finished dispatch for one of these would have called resolve-thread.ts
+      // and the thread would not be in this list at all. The other half of the
+      // SELF-RECONCILING dispatch is the resolve, not a hold, so the remedy
+      // names that instead.
       return `its latest comment already carries a valid, current '${outcome}' reply, but the thread was never resolved — a crash between reply-to-thread.ts and resolve-thread.ts (triage-thread.ts is SELF-RECONCILING, not atomic). Re-run triage-thread.ts on this thread: it will detect the existing reply and complete the resolve — do NOT post via reply-to-thread.ts again, that would double-post`;
     }
     if (hasStaleQualifyingReply(t)) {
@@ -1213,11 +1170,10 @@ async function checkUntriagedThreads(
     code: 7,
     state: "REFUSED_UNTRIAGED",
     reason:
-      // Not "no qualifying reply AND no held decision" (round 11 review
-      // finding, docomply-review) — `isThreadTriaged` also catches a
-      // CURRENT accepted/fix-dependent-moot reply with no hold recorded
-      // (crash before hold) and an existing hold whose url or outcome has
-      // gone stale, neither of which is "no record at all". "Incomplete or
+      // Not "no qualifying reply AND no held decision" — `isThreadTriaged` also
+      // catches a CURRENT accepted/fix-dependent-moot reply with no hold
+      // recorded (crash before hold) and an existing hold whose url or outcome
+      // has gone stale, neither of which is "no record at all". "Incomplete or
       // stale triage state" covers every case `remedyFor` actually names.
       `${offending.length} unresolved thread(s) anchor file(s) this round's own commits touch with incomplete or stale triage state and no park record: ${named}` +
       " — then re-run",
@@ -1557,18 +1513,17 @@ async function main(): Promise<number> {
 
   // ── The drain ────────────────────────────────────────────────────────────
   const attempts = new Map<string, number>();
-  // Keyed by item key, not appended — a key's LATEST non-stale outcome is
-  // what belongs in the report, not every attempt along the way. A plain
-  // counter of refusals double-counted a key that failed once and then
-  // succeeded on a later attempt (the outer loop retries a NON-stale-capped
-  // key too, whenever a DIFFERENT key's staleness forces a fresh read): the
-  // counter incremented on the first attempt and was never given back on the
-  // second attempt's success, so a batch that fully drained still reported
-  // PARTIAL over a refusal that no longer existed (chatgpt-codex-connector,
-  // a reference-implementation pull request round 7). Deriving `report.items` and `refused` from this map's
-  // final contents, rather than accumulating either as the loop runs, means
-  // there is nothing to give back — the map only ever holds each key's
-  // current truth.
+  // Keyed by item key, not appended — a key's LATEST non-stale outcome is what
+  // belongs in the report, not every attempt along the way. A plain counter of
+  // refusals double-counted a key that failed once and then succeeded on a
+  // later attempt (the outer loop retries a NON-stale-capped key too, whenever
+  // a DIFFERENT key's staleness forces a fresh read): the counter incremented
+  // on the first attempt and was never given back on the second attempt's
+  // success, so a batch that fully drained still reported PARTIAL over a
+  // refusal that no longer existed. Deriving `report.items` and `refused` from
+  // this map's final contents, rather than accumulating either as the loop
+  // runs, means there is nothing to give back — the map only ever holds each
+  // key's current truth.
   const resultsByKey = new Map<string, ItemResult>();
   for (let read = 0; read < MAX_BATCH_READS; read++) {
     const heldRes = await run(tsArgv(driveState, ["held", pr]), {
@@ -1631,21 +1586,19 @@ async function main(): Promise<number> {
         return done(outcome.abort.code, outcome.abort.state, outcome.abort.why);
       }
       // A stale outcome (claim-held exit 4: "not in the held batch") is not
-      // recorded at all — it means a fresh `held` read is needed, and the
-      // key is either already handled elsewhere (gone from the next read,
-      // nothing left to reconcile) or still there (re-attempted, and THAT
-      // attempt's own outcome — success or a genuine refusal — is what
-      // overwrites this key's entry). Recording it unconditionally made one
-      // logical key appear TWICE in a FINISHED report whenever a transient
-      // stale retry was followed by a real success (chatgpt-codex-connector /
-      // docomply-review, a reference-implementation pull request rounds 4-6), and the SAME map is what fixes
-      // the sibling bug: a key's non-stale REFUSAL that later succeeds (a
-      // DIFFERENT key going stale forces a fresh read that retries this one
-      // too) now overwrites its own earlier refused entry, instead of a
-      // separate counter remembering a refusal that no longer exists (PR
-      // #4166 round 7). `echoDiagnostic` already surfaced the stale event
-      // live at the call site above, so nothing here is silently lost — only
-      // the misleading permanent record is.
+      // recorded at all — it means a fresh `held` read is needed, and the key
+      // is either already handled elsewhere (gone from the next read, nothing
+      // left to reconcile) or still there (re-attempted, and THAT attempt's own
+      // outcome — success or a genuine refusal — is what overwrites this key's
+      // entry). Recording it unconditionally made one logical key appear TWICE
+      // in a FINISHED report whenever a transient stale retry was followed by a
+      // real success, and the SAME map is what fixes the sibling bug: a key's
+      // non-stale REFUSAL that later succeeds (a DIFFERENT key going stale
+      // forces a fresh read that retries this one too) now overwrites its own
+      // earlier refused entry, instead of a separate counter remembering a
+      // refusal that no longer exists. `echoDiagnostic` already surfaced the
+      // stale event live at the call site above, so nothing here is silently
+      // lost — only the misleading permanent record is.
       if (!outcome.stale) {
         resultsByKey.set(item.key, outcome.result);
         report.items = Array.from(resultsByKey.values());
@@ -1656,19 +1609,18 @@ async function main(): Promise<number> {
       }
     }
     if (!stale) break;
-    // Back off before the next re-read. `references/round-finish.md`
-    // documents this as this caller's own obligation — the per-key exit 4
-    // contract only says "re-read"; it deliberately leaves retry pacing to
-    // the caller ("A caller MUST bound its own per-item retries (and back
-    // off between them) rather than relying on the outer pass counter") — and
-    // an immediate re-read failed that obligation: a stale exit 4 means some
-    // OTHER operation is racing this same key, and reading again instantly
-    // just races it again, turning sustained contention into a tight
-    // subprocess/API/lock loop instead of letting it settle (docomply-review
-    // round 9, PR #4166). Exponential and keyed to `read` — a later re-read is
-    // more likely genuine sustained contention than a one-off race, so it
-    // backs off harder — capped at 2s so MAX_BATCH_READS's own bound on total
-    // wall-clock stays meaningful.
+    // Back off before the next re-read. `references/round-finish.md` documents
+    // this as this caller's own obligation — the per-key exit 4 contract only
+    // says "re-read"; it deliberately leaves retry pacing to the caller ("A
+    // caller MUST bound its own per-item retries (and back off between them)
+    // rather than relying on the outer pass counter") — and an immediate
+    // re-read failed that obligation: a stale exit 4 means some OTHER operation
+    // is racing this same key, and reading again instantly just races it again,
+    // turning sustained contention into a tight subprocess/API/lock loop
+    // instead of letting it settle. Exponential and keyed to `read` — a later
+    // re-read is more likely genuine sustained contention than a one-off race,
+    // so it backs off harder — capped at 2s so MAX_BATCH_READS's own bound on
+    // total wall-clock stays meaningful.
     await sleep(Math.min(0.25 * 2 ** read, 2));
   }
 
@@ -1681,16 +1633,15 @@ async function main(): Promise<number> {
     );
   }
 
-  // Neither exhaustion path above — `pending.length === 0` (every remaining
-  // key already at its attempt cap) nor the `for` loop's own MAX_BATCH_READS
-  // bound running out — is itself a counted refusal: a stale (exit 4)
-  // outcome is never recorded in `resultsByKey` (that is what keeps a batch
-  // that fully drains on a refreshed snapshot from a false PARTIAL, see
-  // above), so a key that stays stale on every attempt can exhaust either
-  // bound with `refused` still at 0. Verify the batch is ACTUALLY empty
-  // before reporting FINISHED, rather than trusting that a loop which
-  // stopped iterating means nothing is left held (chatgpt-codex-connector,
-  // a reference-implementation pull request round 4).
+  // Neither exhaustion path above — `pending.length === 0` (every remaining key
+  // already at its attempt cap) nor the `for` loop's own MAX_BATCH_READS bound
+  // running out — is itself a counted refusal: a stale (exit 4) outcome is
+  // never recorded in `resultsByKey` (that is what keeps a batch that fully
+  // drains on a refreshed snapshot from a false PARTIAL, see above), so a key
+  // that stays stale on every attempt can exhaust either bound with `refused`
+  // still at 0. Verify the batch is ACTUALLY empty before reporting FINISHED,
+  // rather than trusting that a loop which stopped iterating means nothing is
+  // left held.
   const postDrainRes = await run(tsArgv(driveState, ["held", pr]), {
     stderr: "inherit",
   });
@@ -1717,14 +1668,13 @@ async function main(): Promise<number> {
     );
   }
   if (finalBatch.items.length > 0) {
-    // Exit 6's documented contract (this file's own exit table, SKILL.md,
-    // the PR description) is "drained with refusals, each named in
-    // `report.items`" — a caller inspecting `items` for what to reconcile
-    // must not find it empty just because these items were never dispatched
-    // rather than dispatched-and-refused (docomply-review, a reference-implementation pull request round
-    // 7). Synthesizing an entry per remaining key keeps that contract true
-    // for this case too, rather than adding a second exit-6 meaning nothing
-    // downstream can distinguish.
+    // Exit 6's documented contract (this file's own exit table, SKILL.md, the
+    // PR description) is "drained with refusals, each named in `report.items`"
+    // — a caller inspecting `items` for what to reconcile must not find it
+    // empty just because these items were never dispatched rather than
+    // dispatched-and-refused. Synthesizing an entry per remaining key keeps
+    // that contract true for this case too, rather than adding a second exit-6
+    // meaning nothing downstream can distinguish.
     for (const item of finalBatch.items) {
       // `attempts` is this key's own count, not a batch-wide one: a key can
       // reach here having gone stale on every attempt it DID get (some
@@ -1739,8 +1689,7 @@ async function main(): Promise<number> {
       // exit 4" and "never dispatched" in the SAME sentence for a key that
       // was, in fact, dispatched and refused with that exact code every time
       // is self-contradictory; reporting it for a key that was never
-      // dispatched at all invents a helper call that did not happen
-      // (docomply-review, a reference-implementation pull request round 8).
+      // dispatched at all invents a helper call that did not happen.
       const seen = attempts.get(item.key) ?? 0;
       resultsByKey.set(item.key, {
         key: item.key,
@@ -1764,8 +1713,7 @@ async function main(): Promise<number> {
     // exhaust the bounds with later siblings never attempted even once. A
     // summary that unconditionally says "each stayed stale on every attempt"
     // contradicts those siblings' own honest per-item diagnostics and can
-    // misdirect recovery toward reconciling a refusal that never happened
-    // (docomply-review, a reference-implementation pull request round 9).
+    // misdirect recovery toward reconciling a refusal that never happened.
     const neverDispatched = finalBatch.items.filter(
       (item) => (attempts.get(item.key) ?? 0) === 0,
     ).length;
@@ -1842,7 +1790,7 @@ async function resolveThreadItem(
     // problem — `answerFindingItem` already treats the identical exit from
     // the finding path as a batch-level abort; this mirrors it, rather than
     // iterating the rest of an untrustworthy snapshot one silently-refused
-    // thread at a time (chatgpt-codex-connector, a reference-implementation pull request round 7).
+    // thread at a time.
     echoDiagnostic("resolve-held-thread.ts", res.stderr);
     return {
       result: {
@@ -1876,8 +1824,7 @@ async function resolveThreadItem(
       // going stale (a concurrent operation, most often this very thread's
       // own resolve, already removed it since this drain's last read), not a
       // property of this item. Recording it as a permanent refusal made the
-      // drain return PARTIAL/6 over work that had already finished
-      // (chatgpt-codex-connector, a reference-implementation pull request).
+      // drain return PARTIAL/6 over work that had already finished.
       stale: res.code === 4,
     };
   }
@@ -2088,15 +2035,14 @@ async function answerFindingItem(
         },
       };
     }
-    // Exit 3 is the state file itself being unreadable — not a per-key
-    // problem, the same "malformed, refuse" condition the claim step already
-    // aborts the whole drain over (`claimRes.code === 3` above) and
-    // `resolveThreadItem` mirrors for the thread path. Falling through to an
-    // ordinary per-item refusal here left a batch-level failure looking like
-    // one bad key: if this was the last item, the drain returns PARTIAL/6
-    // naming ONE finding to reconcile, when the real problem is that nothing
-    // in `held` can be trusted right now (chatgpt-codex-connector, a reference-implementation pull request
-    // round 9).
+    // Exit 3 is the state file itself being unreadable — not a per-key problem,
+    // the same "malformed, refuse" condition the claim step already aborts the
+    // whole drain over (`claimRes.code === 3` above) and `resolveThreadItem`
+    // mirrors for the thread path. Falling through to an ordinary per-item
+    // refusal here left a batch-level failure looking like one bad key: if this
+    // was the last item, the drain returns PARTIAL/6 naming ONE finding to
+    // reconcile, when the real problem is that nothing in `held` can be trusted
+    // right now.
     if (releaseRes.code === 3) {
       return {
         ...out,

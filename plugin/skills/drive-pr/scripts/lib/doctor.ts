@@ -93,7 +93,7 @@ import type { QuotaParkRecord } from "./state/schema.ts";
  * it) — the two genuinely SEQUENTIAL, out-of-pass components are:
  * `passTimeoutSeconds`'s own default (`drive.ts`) budgeting 90 minutes for
  * one honest round — merge a base, run the full cumulative validation plan,
- * wait on the machine-wide test mutex (`tools/dev/with-resource-lock.sh`) if
+ * wait on a machine-wide test mutex (such as M12's resource lock) if
  * another worktree is mid-gate — and the GATE POLL `drive.ts` itself runs
  * BEFORE spawning that round's pass: its own `--timeout` flag is forwarded
  * straight to `drive-status.ts`'s poll, defaulting to 1800s (30 minutes),

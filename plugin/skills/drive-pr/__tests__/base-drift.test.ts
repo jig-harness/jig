@@ -70,7 +70,7 @@ function fakeGit(a: Answers): {
       // `... <mergeBase> <baseRef>` is the base's. Keyed on the trailing arg
       // being the base ref itself, not on argv length: a length check would
       // silently start comparing the PR's diff against itself the day a flag
-      // is added to both calls in `probeBaseDrift` (coderabbitai, PR #4279).
+      // is added to both calls in `probeBaseDrift`.
       const twoRevs = args.at(-1) === "origin/develop";
       const list = twoRevs ? a.baseFiles : a.prFiles;
       return list === null ? bad() : ok(`${(list ?? []).join("\n")}\n`);
@@ -113,8 +113,7 @@ describe("probeBaseDrift", () => {
       "+refs/heads/develop:refs/remotes/origin/develop",
     ]);
     // The bound itself — a regression dropping `{ timeoutSec: fetchSeconds }`
-    // from the fetch call would leave every other assertion here green
-    // (docomply-review, a reference-implementation pull request).
+    // from the fetch call would leave every other assertion here green.
     expect(opts[fetchIndex]?.timeoutSec).toBe(120);
     // The fetch precedes every measurement — a probe that measured first would
     // be reporting the stale ref it exists to refresh.
@@ -250,7 +249,7 @@ describe("probeBaseDrift", () => {
 
   // `Number.parseInt` alone would read both of these as valid: it stops at
   // the first non-digit rather than rejecting the rest of the string, and a
-  // leading '-' still satisfies `Number.isFinite` (docomply-review, a reference-implementation pull request).
+  // leading '-' still satisfies `Number.isFinite`.
   it.each(["2garbage", "-1"])(
     "fails on a malformed commit count %p rather than coercing it",
     async (raw) => {
@@ -301,13 +300,13 @@ describe("verifyOriginIsPrRepo", () => {
 
   it("refuses when origin fetches a different repository — the fork case", async () => {
     const r = await verifyOriginIsPrRepo(
-      fakeOrigin("https://github.com/someone-else/docomply.git"),
+      fakeOrigin("https://github.com/someone-else/project.git"),
       "/repo",
       "example-org/example-repo",
     );
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.why).toContain("someone-else/docomply");
+      expect(r.why).toContain("someone-else/project");
       expect(r.why).toContain("example-org/example-repo");
     }
   });
@@ -332,12 +331,11 @@ describe("verifyOriginIsPrRepo", () => {
 });
 
 describe("verifyCheckoutIsPrHead", () => {
-  // Pins the fix for the gap the reviewer named (chatgpt-codex-connector, PR
-  // #4279): an ancestor check ALONE is not proof this checkout is the PR's
-  // own branch — a sibling branch created from, or later merged with, the
-  // PR's head has `apiHead` as an ancestor of its own HEAD too, so an
-  // ancestor-only check would pass and publish the sibling's drift as the
-  // PR's own. The branch-name check must run, and must run FIRST.
+  // Pins the fix for this gap: an ancestor check ALONE is not proof this
+  // checkout is the PR's own branch — a sibling branch created from, or later
+  // merged with, the PR's head has `apiHead` as an ancestor of its own HEAD
+  // too, so an ancestor-only check would pass and publish the sibling's drift
+  // as the PR's own. The branch-name check must run, and must run FIRST.
 
   const HEAD_REF = "feature-branch";
   const API_HEAD = "deadbeefcafe";
@@ -373,7 +371,7 @@ describe("verifyCheckoutIsPrHead", () => {
   });
 
   it("refuses when the checkout is on an unrelated branch, even though it is a descendant of apiHead (the sibling-branch case)", async () => {
-    // The exact shape the reviewer named: a sibling branch created from the
+    // The exact shape this pins: a sibling branch created from the
     // PR's head. `--is-ancestor` would report success on its own — this
     // fixture never even stubs `merge-base`, so a regression that dropped the
     // branch check would show up as `bad()`'s generic refusal instead of this

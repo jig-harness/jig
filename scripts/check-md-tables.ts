@@ -1,5 +1,5 @@
 // Scope: tracked/non-ignored Markdown except test fixtures and frozen seeds.
-// Tables in templates and docs are checked, matching the original gate.
+// Tables in templates are checked too.
 import { readFileSync } from "node:fs";
 import { cli } from "../lib/cli.ts";
 import { markdownFiles } from "../lib/files.ts";

@@ -1,5 +1,5 @@
-// Scope: tracked/non-ignored prose except templates, fixtures and frozen
-// seeds/docs. Acronyms are a proxy; fenced and inline code is excluded.
+// Scope: tracked/non-ignored prose except templates, test fixtures
+// (`fixtures/` and `fixture/` directories) and the frozen seeds. Acronyms are a proxy; fenced and inline code is excluded.
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cli } from "../lib/cli.ts";
@@ -26,8 +26,8 @@ export function checkGlossary(
   for (const file of markdownFiles(root, [
     "templates",
     "fixtures",
+    "fixture",
     "seeds",
-    "docs",
   ])) {
     if (resolve(file) === resolve(glossary)) continue;
     for (const term of acronyms(readFileSync(file, "utf8")))

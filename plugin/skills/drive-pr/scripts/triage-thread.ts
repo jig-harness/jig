@@ -17,17 +17,17 @@
  * half — so the crash window is bounded by this script's own execution, not
  * by agent turn boundaries.
  *
- * This is SELF-RECONCILING, not transactionally atomic (docomply-review, PR
- * #4129 round 2) — a kill between the post and its dispatch still leaves the
- * reply briefly without a durable record, exactly as before, just no longer
- * exposed to a full agent turn boundary. Closing that window outright would
- * need a primitive GitHub's comment API does not expose (no conditional
- * write, no idempotency key — the same limitation the concurrent-post
- * residual noted at the fresh-post call site below runs into, arbitrated
- * `wont-fix` for the identical reason). What this script actually
- * guarantees is that the NEXT invocation — the retry a crash always forces
- * anyway — completes the missing half instead of duplicating the reply; see
- * the reconciliation rule (step 5) for the mechanism.
+ * This is SELF-RECONCILING, not transactionally atomic — a kill between the
+ * post and its dispatch still leaves the reply briefly without a durable
+ * record, exactly as before, just no longer exposed to a full agent turn
+ * boundary. Closing that window outright would need a primitive GitHub's
+ * comment API does not expose (no conditional write, no idempotency key — the
+ * same limitation the concurrent-post residual noted at the fresh-post call
+ * site below runs into, arbitrated `wont-fix` for the identical reason). What
+ * this script actually guarantees is that the NEXT invocation — the retry a
+ * crash always forces anyway — completes the missing half instead of
+ * duplicating the reply; see the reconciliation rule (step 5) for the
+ * mechanism.
  *
  * Usage:
  *   triage-thread.ts <THREAD_NODE_ID> [PR] [--moot-pending-push] [--leave-open] <<'EOF'
@@ -47,7 +47,7 @@
  *                       to clean up a stale prior hold on the same key (see
  *                       step 7 below); that lookup never blocks the resolve
  *                       itself.
- *   --moot-pending-push per AGENTS.md § Addressing PR Comments, `moot`
+ *   --moot-pending-push per SKILL.md § 3, `moot`
  *                       defaults to resolving immediately (the anchored code
  *                       is simply gone) and is held ONLY when its premise is
  *                       specifically an unpushed accepted fix from this same
@@ -63,33 +63,32 @@
  *   --leave-open        skip the resolve for a MERIT outcome (`rejected`/
  *                       `wont-fix`/`deferred`/plain `moot`) — the reply still
  *                       posts (or reconciles), but the thread stays open.
- *                       Preserves AGENTS.md § Addressing PR Comments' human-
- *                       thread exception: "a human thread you replied to but
- *                       chose not to close on the author's behalf" — the old
- *                       two-command flow honored it simply by never calling
- *                       `resolve-thread.ts`, a choice point this one-call
- *                       command otherwise removes. No effect on `accepted` or
- *                       a HELD `moot` (`--moot-pending-push` on a fresh post,
- *                       or reconciled — always held) — neither is ever
- *                       resolved by this script regardless (released by
+ *                       Preserves the human-thread exception (SKILL.md's
+ *                       "Leaving a human thread open"): a human thread you
+ *                       replied to but chose not to close on the author's
+ *                       behalf — the old two-command flow honored it simply by
+ *                       never calling `resolve-thread.ts`, a choice point this
+ *                       one-call command otherwise removes. No effect on
+ *                       `accepted` or a HELD `moot` (`--moot-pending-push` on a
+ *                       fresh post, or reconciled — always held) — neither is
+ *                       ever resolved by this script regardless (released by
  *                       `resolve-held-thread.ts` in step 6 instead). A fresh
  *                       PLAIN `moot` (no `--moot-pending-push`) IS a merit
  *                       outcome per `isHoldOutcome`, so `--leave-open` DOES
- *                       apply to it, same as any other merit outcome. A
- *                       FRESH, non-hold post with this flag also appends
+ *                       apply to it, same as any other merit outcome. A FRESH,
+ *                       non-hold post with this flag also appends
  *                       `LEAVE_OPEN_MARKER` to the reply body (invisible on
  *                       GitHub), so a LATER invocation that reconciles this
- *                       same reply — a later round re-enumerating a thread
- *                       left deliberately open, not only a crash — recovers
- *                       the choice from the marker even when its OWN
- *                       `--leave-open` is omitted; see `effectiveLeaveOpen`'s
- *                       own comment. An explicit `--leave-open` on a
- *                       RECONCILING call whose existing reply ALREADY has
- *                       the marker is a no-op (the marker alone already
- *                       covers it) — but on one with NO marker (the
- *                       deliberate-supersession path, which reaches
- *                       reconciliation on its first call, is the common way
- *                       to hit this), the flag REFUSES instead of silently
+ *                       same reply — a later round re-enumerating a thread left
+ *                       deliberately open, not only a crash — recovers the
+ *                       choice from the marker even when its OWN `--leave-open`
+ *                       is omitted; see `effectiveLeaveOpen`'s own comment. An
+ *                       explicit `--leave-open` on a RECONCILING call whose
+ *                       existing reply ALREADY has the marker is a no-op (the
+ *                       marker alone already covers it) — but on one with NO
+ *                       marker (the deliberate-supersession path, which reaches
+ *                       reconciliation on its first call, is the common way to
+ *                       hit this), the flag REFUSES instead of silently
  *                       honouring an unpersistable promise: reconciliation
  *                       posts nothing, so there is no comment to append a
  *                       marker to, and the choice would evaporate the moment
@@ -99,33 +98,30 @@
  *                       old two-command flow's own answer: stop after
  *                       `reply-to-thread.ts`'s own post and never invoke this
  *                       script's resolve step at all — durable against every
- *                       UNATTENDED sweep specifically (SKILL.md's own
- *                       "Leaving a human thread open" section has the full
- *                       argument and the one human-attended exception; not
- *                       repeated here to avoid a second copy that can drift).
- *                       Never use this path — or `--leave-open` itself — on a
- *                       BOT-started thread: see `LEAVE_OPEN_MARKER`'s own
- *                       header in `lib/outcome.ts` for the accepted
- *                       provenance residual this flag lives inside of. That
- *                       fallback still owes ONE follow-up call —
- *                       `--cleanup-only` below — since stopping after the
- *                       post means this script's own reconciliation branch
- *                       (the only caller of the stale-hold cleanup) never
- *                       runs.
+ *                       UNATTENDED sweep specifically (SKILL.md's own "Leaving
+ *                       a human thread open" section has the full argument and
+ *                       the one human-attended exception; not repeated here to
+ *                       avoid a second copy that can drift). Never use this
+ *                       path — or `--leave-open` itself — on a BOT-started
+ *                       thread: see `LEAVE_OPEN_MARKER`'s own header in
+ *                       `lib/outcome.ts` for the accepted provenance residual
+ *                       this flag lives inside of. That fallback still owes ONE
+ *                       follow-up call — `--cleanup-only` below — since
+ *                       stopping after the post means this script's own
+ *                       reconciliation branch (the only caller of the
+ *                       stale-hold cleanup) never runs.
  *   --cleanup-only       release a stale `accepted`/`moot` hold on this key
- *                        WITHOUT posting or resolving anything — the answer
- *                        to `--leave-open`'s own "durable equivalent" above:
- *                        a direct-post supersession that deliberately never
+ *                        WITHOUT posting or resolving anything — the answer to
+ *                        `--leave-open`'s own "durable equivalent" above: a
+ *                        direct-post supersession that deliberately never
  *                        invokes this script's post/resolve branch also never
  *                        reaches `attemptStaleHoldCleanup`, so a hold the
- *                        direct post superseded is stranded with no other
- *                        path back (chatgpt-codex-connector, a reference-implementation pull request,
- *                        surfaced fresh after Fix B closed the RECONCILING
- *                        variant of this same gap). Reads no stdin, requires
- *                        no outcome grammar, and refuses (exit 2) combined
- *                        with `--moot-pending-push`/`--leave-open` — those
- *                        govern how a reply is posted, and this posts
- *                        nothing.
+ *                        direct post superseded is stranded with no other path
+ *                        back (the RECONCILING variant of this same gap is
+ *                        closed separately). Reads no stdin, requires no
+ *                        outcome grammar, and refuses (exit 2) combined with
+ *                        `--moot-pending-push`/`--leave-open` — those govern
+ *                        how a reply is posted, and this posts nothing.
  *   BODY                read from stdin, exactly as `reply-to-thread.ts`
  *                       requires it — the first line opens with a bold,
  *                       lowercase outcome token (`**accepted**`,
@@ -180,7 +176,7 @@
  *      relationship to whether a promised accepted/moot fix ever passed
  *      gates or got pushed, so blindly releasing on any `isResolved` sighting
  *      could delete the only durable record of a genuinely unverified
- *      obligation (docomply-review, a reference-implementation pull request round 6). A last qualifying
+ *      obligation. A last qualifying
  *      reply that is `null`, `accepted`, or plain `moot` (the SAME fail-safe
  *      exclusion `isHoldOutcome` applies to reconciliation, and for the
  *      identical reason) leaves a stale hold untouched for the normal
@@ -188,34 +184,33 @@
  *   5. **The reconciliation rule: if a qualifying reply is found at all, its
  *      outcome is THE ANSWER — regardless of what this invocation's own body
  *      says.** This mirrors the ORIGINAL SKILL.md § 3 crash-recovery rule
- *      exactly ("the outcome the qualifying reply already committed to
- *      decides which") rather than comparing it against this call's intent:
- *      a retrying agent has no memory of what an earlier, interrupted pass
- *      decided, so it can easily land on a genuinely different outcome word
- *      for the SAME finding on retry — and posting THAT would put a second
- *      outcome token on one triage decision, exactly what this script exists
- *      to prevent. Do NOT post again in this case; skip straight to step 7,
- *      using the found comment's own outcome and url. A comment that
- *      qualifies but carries no readable `url` fails closed (exit 1) ONLY
- *      when step 7 will need it — i.e. when the outcome is a HOLD one — since
- *      a `--comment-url`-less hold cannot be recorded and guessing here would
- *      either drop the disposition silently or double-post. A merit outcome
- *      needs no url at all (`resolve-thread.ts` takes only the threadId), so
- *      an unreadable one there does not block the resolve — matching
+ *      exactly ("the outcome the qualifying reply already committed to decides
+ *      which") rather than comparing it against this call's intent: a retrying
+ *      agent has no memory of what an earlier, interrupted pass decided, so it
+ *      can easily land on a genuinely different outcome word for the SAME
+ *      finding on retry — and posting THAT would put a second outcome token on
+ *      one triage decision, exactly what this script exists to prevent. Do NOT
+ *      post again in this case; skip straight to step 7, using the found
+ *      comment's own outcome and url. A comment that qualifies but carries no
+ *      readable `url` fails closed (exit 1) ONLY when step 7 will need it —
+ *      i.e. when the outcome is a HOLD one — since a `--comment-url`-less hold
+ *      cannot be recorded and guessing here would either drop the disposition
+ *      silently or double-post. A merit outcome needs no url at all
+ *      (`resolve-thread.ts` takes only the threadId), so an unreadable one
+ *      there does not block the resolve — matching
  *      `reconcile-replied-threads.ts`'s own precedent of checking it only in
- *      its hold branch (docomply-review, a reference-implementation pull request round 6: an earlier,
- *      unconditional version of this check left a trusted merit reply with an
- *      unreadable url permanently unresolved).
- *      A DELIBERATE supersession (a trusted author overriding their own
- *      earlier verdict with new information) still works exactly as before —
- *      post the new reply with `reply-to-thread.ts` directly, then invoke
- *      THIS script to complete the disposition (never optional: neither the
- *      resolve nor the stale-hold release happens on its own —
- *      `reply-to-thread.ts` only posts). It will find that AS the qualifying
- *      reply and act on it. Left un-invoked, the thread stays unresolved and
- *      picks up the SAME reconciliation the next time step 2/3's ordinary
- *      loop reaches it — not stuck, but a needless extra round for a
- *      dispatch this call could have completed immediately.
+ *      its hold branch (an earlier, unconditional version of this check left a
+ *      trusted merit reply with an unreadable url permanently unresolved). A
+ *      DELIBERATE supersession (a trusted author overriding their own earlier
+ *      verdict with new information) still works exactly as before — post the
+ *      new reply with `reply-to-thread.ts` directly, then invoke THIS script to
+ *      complete the disposition (never optional: neither the resolve nor the
+ *      stale-hold release happens on its own — `reply-to-thread.ts` only
+ *      posts). It will find that AS the qualifying reply and act on it. Left
+ *      un-invoked, the thread stays unresolved and picks up the SAME
+ *      reconciliation the next time step 2/3's ordinary loop reaches it — not
+ *      stuck, but a needless extra round for a dispatch this call could have
+ *      completed immediately.
  *
  *      Whichever way this resolves — reconciliation or (in step 6) a fresh
  *      post — decides ONE outcome word, the "prospective" one. If that word
@@ -225,7 +220,7 @@
  *      it against.
  *   6. Otherwise (nothing qualifying found): post the reply for real via
  *      `reply-to-thread.ts` (which enforces the grammar, fences the post
- *      behind the drive lease per an earlier change, and performs the actual GraphQL
+ *      behind the drive lease, and performs the actual GraphQL
  *      mutation) and take the comment url it prints.
  *   7. Dispatch on the outcome (`moot` follows the `rejected`/`wont-fix`/
  *      `deferred` row UNLESS this is a FRESH post AND `--moot-pending-push`
@@ -237,7 +232,7 @@
  *          wait on. Afterwards, best-effort:
  *          release a STALE prior `accepted`/`moot` hold for this same key —
  *          mirroring `reconcile-replied-threads.ts`'s own post-resolve
- *          cleanup exactly (docomply-review rounds 8-19, PR #4028) — since a
+ *          cleanup exactly — since a
  *          merit reply found in step 5 can be a deliberate supersession of an
  *          earlier accepted/moot verdict this script itself (or a prior
  *          round) once held, and `resolve-thread.ts` has no notion of
@@ -269,23 +264,22 @@
  *       state could not be fetched, the trusted-association set could not be
  *       read, `reply-to-thread.ts` printed no comment url, a HOLD outcome
  *       (accepted, or a held moot) was found with no readable url — never a
- *       merit outcome, which needs none — a hold outcome could not resolve a
- *       PR number, a merit dispatch (fresh or reconciled, or the
- *       already-resolved path) resolved/confirmed the thread but then FAILED
- *       to clean up a stale prior accepted/moot hold on the same key, the
- *       thread is BOTH already resolved AND `commentsTruncated` — the stale-
- *       hold check cannot run (truncation makes the last qualifying reply
- *       unreliable) and cannot be skipped silently either — or an explicit
- *       `--leave-open` on a RECONCILING call whose existing reply carries no
- *       LEAVE_OPEN_MARKER: reconciliation posts nothing, so the choice
- *       cannot be made durable and this refuses rather than silently
- *       proceeding on a promise the next invocation will not see (see
- *       `--leave-open`'s own usage entry). Reported this way rather than as
- *       a silent stderr-only warning because nothing else will ever revisit
- *       a RESOLVED thread to retry it (`releaseStaleHold`'s own header).
- *       Fail-closed per `.claude/rules/document-scanning-gates.md` rule 1 —
- *       an unreadable precondition in front of an irreversible post is a
- *       refusal, not a guess.
+ *       merit outcome, which needs none — a hold outcome could not resolve a PR
+ *       number, a merit dispatch (fresh or reconciled, or the already-resolved
+ *       path) resolved/confirmed the thread but then FAILED to clean up a stale
+ *       prior accepted/moot hold on the same key, the thread is BOTH already
+ *       resolved AND `commentsTruncated` — the stale- hold check cannot run
+ *       (truncation makes the last qualifying reply unreliable) and cannot be
+ *       skipped silently either — or an explicit `--leave-open` on a
+ *       RECONCILING call whose existing reply carries no LEAVE_OPEN_MARKER:
+ *       reconciliation posts nothing, so the choice cannot be made durable and
+ *       this refuses rather than silently proceeding on a promise the next
+ *       invocation will not see (see `--leave-open`'s own usage entry).
+ *       Reported this way rather than as a silent stderr-only warning because
+ *       nothing else will ever revisit a RESOLVED thread to retry it
+ *       (`releaseStaleHold`'s own header). Fail-closed — an unreadable
+ *       precondition in front of an irreversible post is a refusal, not a
+ *       guess.
  *   2   usage error, or the stdin body does not open with the outcome
  *       grammar.
  *   3   the thread is `commentsTruncated` — needs a human look
@@ -322,14 +316,13 @@ const resolveThread = join(rrcScripts, "resolve-thread.ts");
 /**
  * Is this outcome fix-dependent (held, never resolved on the spot)?
  *
- * `accepted` always is. `moot` is NOT by default — per AGENTS.md §
- * Addressing PR Comments and SKILL.md § 3, a moot finding defaults to
- * resolving immediately (the anchored code is simply gone) and is held ONLY
- * when its premise is specifically an unpushed accepted fix from this same
- * round (holding it with the accepted batch, since its premise fails if that
- * fix's own gates do). This script cannot tell those two `moot` cases apart
- * from the reply grammar alone — both use the identical `**moot**` token —
- * so the caller states it via `treatMootAsHold`. `rejected`/`wont-fix`/
+ * `accepted` always is. `moot` is NOT by default — per SKILL.md § 3, a moot
+ * finding defaults to resolving immediately (the anchored code is simply gone)
+ * and is held ONLY when its premise is specifically an unpushed accepted fix
+ * from this same round (holding it with the accepted batch, since its premise
+ * fails if that fix's own gates do). This script cannot tell those two `moot`
+ * cases apart from the reply grammar alone — both use the identical `**moot**`
+ * token — so the caller states it via `treatMootAsHold`. `rejected`/`wont-fix`/
  * `deferred` are never held under any value of it — `drive-state.ts hold`
  * hard-refuses them too, for the same reason.
  *
@@ -453,24 +446,24 @@ query($id:ID!){
 /**
  * Post-resolve cleanup: release a STALE `accepted`/`moot` hold for
  * `threadId`, mirroring `reconcile-replied-threads.ts`'s own logic exactly
- * (docomply-review rounds 8-19, PR #4028) — see that script's header for the
+ * — see that script's header for the
  * full history of why this is scoped to a hold whose `commentUrl` is one of
  * `seenUrls` (a hold this pass's OWN read of the thread accounted for)
  * rather than deleted unconditionally by key.
  *
- * Never fails the THREAD's own disposition: it resolved successfully
- * regardless of whether this cleanup runs. But a failure here is not
- * swallowed either — returns `false`, reported loudly on stderr, and the
- * CALLER propagates that into a nonzero process exit (docomply-review, PR
- * #4129 round 8: an earlier revision returned `void` unconditionally, so a
- * transient `held`-read or `release-held` failure reported success even
- * though a stale hold was left stranded — and nothing else would ever
- * revisit a RESOLVED thread to retry it, since `list-unresolved-threads.ts`
- * stops enumerating it the moment it resolves. A nonzero exit is the one
- * signal a caller — an agent processing a batch, or a future automated
- * sweep — cannot silently miss the way an easily-lost stderr line can be).
- * `true` covers BOTH "nothing to clean up" and "cleaned up successfully" —
- * only a genuine failure to read or write state returns `false`.
+ * Never fails the THREAD's own disposition: it resolved successfully regardless
+ * of whether this cleanup runs. But a failure here is not swallowed either —
+ * returns `false`, reported loudly on stderr, and the CALLER propagates that
+ * into a nonzero process exit (an earlier revision returned `void`
+ * unconditionally, so a transient `held`-read or `release-held` failure
+ * reported success even though a stale hold was left stranded — and nothing
+ * else would ever revisit a RESOLVED thread to retry it, since
+ * `list-unresolved-threads.ts` stops enumerating it the moment it resolves. A
+ * nonzero exit is the one signal a caller — an agent processing a batch, or a
+ * future automated sweep — cannot silently miss the way an easily-lost stderr
+ * line can be). `true` covers BOTH "nothing to clean up" and "cleaned up
+ * successfully" — only a genuine failure to read or write state returns
+ * `false`.
  */
 async function releaseStaleHold(
   pr: string,
@@ -535,22 +528,19 @@ async function releaseStaleHold(
  * skipped" message or the failure-propagation contract.
  *
  * PR resolution failing here now propagates (`false`), same as a
- * `releaseStaleHold` failure once a PR IS known (docomply-review round 9,
- * two independent findings on the same spot): `resolvePr('')` conflates two
- * different facts behind one empty string — "this thread's context
- * genuinely has no associated PR" and "the branch has a PR but `gh pr view`
- * failed transiently" — and this function has no way to tell them apart.
- * Treating the empty result as "nothing to strand" assumed the first case;
- * the second case has a PR-keyed held state that this call is silently
- * failing to check, and per rule 1
- * (`.claude/rules/document-scanning-gates.md`) an external command that
- * failed must not be read as "found nothing". Since the ambiguity cannot be
- * resolved from here, the safe assumption is the one where a stranded hold
- * is possible: propagate failure. The thread's own reply/resolve still
- * happens regardless (see both call sites) — this only affects whether the
- * PROCESS reports success, so a caller that truly has no PR context still
- * gets its primary disposition done, just with a nonzero exit flagging "the
- * stale-hold check could not be confirmed, look by hand".
+ * `releaseStaleHold` failure once a PR IS known: `resolvePr('')` conflates two
+ * different facts behind one empty string — "this thread's context genuinely
+ * has no associated PR" and "the branch has a PR but `gh pr view` failed
+ * transiently" — and this function has no way to tell them apart. Treating the
+ * empty result as "nothing to strand" assumed the first case; the second case
+ * has a PR-keyed held state that this call is silently failing to check, and an
+ * external command that failed must not be read as "found nothing". Since the
+ * ambiguity cannot be resolved from here, the safe assumption is the one where
+ * a stranded hold is possible: propagate failure. The thread's own
+ * reply/resolve still happens regardless (see both call sites) — this only
+ * affects whether the PROCESS reports success, so a caller that truly has no PR
+ * context still gets its primary disposition done, just with a nonzero exit
+ * flagging "the stale-hold check could not be confirmed, look by hand".
  */
 async function attemptStaleHoldCleanup(
   pr: string,
@@ -650,17 +640,16 @@ async function main(): Promise<number> {
   // 3's own rule: a reply past the 100-comment cap could supersede what is
   // visible. `isResolved` is a top-level thread field, unaffected by the
   // comment-window cap, so it is still trustworthy under truncation — but
-  // whether a stale hold is safe to release (below) is NOT, since that
-  // depends on reading the LAST qualifying reply, which truncation makes
-  // unreliable. So a truncated-and-resolved thread SKIPS the cleanup rather
-  // than guessing at it from a partial view — but does not report success
-  // over that skip either (`return 1`, not `0`): a merit dispatch interrupted
-  // between resolving the thread and releasing its prior hold, retried once
-  // the thread has passed the truncation cap, would otherwise exit 0 having
-  // never even checked whether that hold remains — and a resolved thread is
-  // never re-enumerated, so the stale hold would be permanently stranded
-  // with no other path back to this script (docomply-review, a reference-implementation pull request round
-  // 13). `--cleanup-only` needs the identical caution regardless of
+  // whether a stale hold is safe to release (below) is NOT, since that depends
+  // on reading the LAST qualifying reply, which truncation makes unreliable. So
+  // a truncated-and-resolved thread SKIPS the cleanup rather than guessing at
+  // it from a partial view — but does not report success over that skip either
+  // (`return 1`, not `0`): a merit dispatch interrupted between resolving the
+  // thread and releasing its prior hold, retried once the thread has passed the
+  // truncation cap, would otherwise exit 0 having never even checked whether
+  // that hold remains — and a resolved thread is never re-enumerated, so the
+  // stale hold would be permanently stranded with no other path back to this
+  // script. `--cleanup-only` needs the identical caution regardless of
   // `isResolved` — it has no OTHER outcome to fall back on posting/resolving,
   // so a truncated thread always refuses (exit 1) rather than guessing.
   if (thread.commentsTruncated) {
@@ -709,29 +698,27 @@ async function main(): Promise<number> {
     break;
   }
 
-  // --cleanup-only: for the documented direct-post-supersession fallback
-  // ("stop after reply-to-thread.ts and never invoke this script's resolve
-  // step" — the answer for a human thread meant to stay open). That fallback
-  // means this script's own reconciliation branches below — the only callers
-  // of `attemptStaleHoldCleanup` — never run, so a stale accepted/moot hold
-  // this direct post superseded is stranded with no path back
-  // (chatgpt-codex-connector, a reference-implementation pull request, fresh evidence after Fix B closed the
-  // reconciling-refusal variant of the identical gap). No stdin, no outcome
-  // grammar, no post, no resolve.
+  // --cleanup-only: for the documented direct-post-supersession fallback ("stop
+  // after reply-to-thread.ts and never invoke this script's resolve step" — the
+  // answer for a human thread meant to stay open). That fallback means this
+  // script's own reconciliation branches below — the only callers of
+  // `attemptStaleHoldCleanup` — never run, so a stale accepted/moot hold this
+  // direct post superseded is stranded with no path back (the
+  // reconciling-refusal variant of the identical gap is closed separately). No
+  // stdin, no outcome grammar, no post, no resolve.
   //
   // Runs REGARDLESS of `thread.isResolved` — the fallback this exists for
   // leaves the thread OPEN by design, so gating only on the resolved branch
   // below would miss the common case entirely. Gated on the identical
-  // CONFIRMED-merit-supersession check the resolved branch uses (round 6,
-  // chatgpt-codex-connector P1): a fresh first cut of this flag instead
-  // vouched for every comment URL unconditionally, so calling it on a thread
-  // whose ONLY reply is the original accepted/moot post (nothing has
-  // superseded it — no reachable, concrete case, just an operator running it
-  // too early or on the wrong thread) matched that reply's own URL and
-  // deleted a live, unconfirmed hold (docomply-review round 22). Only a
-  // CONFIRMED supersession vouches for the thread's comment URLs; otherwise
-  // `seenUrls` stays empty, so `releaseStaleHold` can only ever find nothing
-  // to release — never mistake an active hold for a stale one.
+  // CONFIRMED-merit-supersession check the resolved branch uses: a first cut of
+  // this flag instead vouched for every comment URL unconditionally, so calling
+  // it on a thread whose ONLY reply is the original accepted/moot post (nothing
+  // has superseded it — no reachable, concrete case, just an operator running
+  // it too early or on the wrong thread) matched that reply's own URL and
+  // deleted a live, unconfirmed hold. Only a CONFIRMED supersession vouches for
+  // the thread's comment URLs; otherwise `seenUrls` stays empty, so
+  // `releaseStaleHold` can only ever find nothing to release — never mistake an
+  // active hold for a stale one.
   if (cleanupOnly) {
     const confirmedMeritSupersession =
       existingOutcome === "rejected" ||
@@ -773,8 +760,7 @@ async function main(): Promise<number> {
     // or got pushed. Blindly releasing a stale hold on any isResolved sighting
     // (an earlier revision of this branch did) could delete the ONLY durable
     // record of a genuinely unverified obligation — the drive would then
-    // believe it converged over a fix that was never confirmed
-    // (docomply-review, a reference-implementation pull request round 6, chatgpt-codex-connector P1).
+    // believe it converged over a fix that was never confirmed.
     //
     // Cleanup is therefore gated on a CONFIRMED merit supersession: the last
     // qualifying trusted reply (scanned above) is itself an unambiguous merit
@@ -795,7 +781,7 @@ async function main(): Promise<number> {
     // the post-time outcome was genuinely non-hold, so its presence on this
     // thread's last qualifying reply is positive proof of a merit
     // supersession even though the outcome word alone is ambiguous.
-    // Reachable sequence (docomply-review, a reference-implementation pull request round 13): an accepted
+    // Reachable sequence: an accepted
     // reply creates a hold, a marked plain-moot supersedes it, the thread
     // resolves (by a human, or a concurrent driver) before this script's own
     // cleanup runs, and a retry lands here — excluding the marked moot left
@@ -817,8 +803,7 @@ async function main(): Promise<number> {
       );
       const cleanedUp = await attemptStaleHoldCleanup(pr, threadId, seenUrls);
       // A stranded hold on a now-resolved thread has no other path back to
-      // this script — propagate the failure rather than reporting success
-      // (docomply-review, a reference-implementation pull request round 8).
+      // this script — propagate the failure rather than reporting success.
       if (!cleanedUp) return 1;
     } else {
       console.error(
@@ -830,7 +815,7 @@ async function main(): Promise<number> {
 
   // Whether `moot` is treated as fix-dependent — resolved ONCE, here, and
   // reused by both call sites below so the same call never disagrees with
-  // itself about it (docomply-review, a reference-implementation pull request round 2). It is NOT simply
+  // itself about it. It is NOT simply
   // `mootPendingPush`: that flag names only THIS invocation's own belief,
   // but a moot RECONCILED from an existing reply may have been posted by an
   // earlier, now-gone invocation whose own flag this one cannot see — the
@@ -848,18 +833,17 @@ async function main(): Promise<number> {
   // by the flag it was actually given.
   //
   // EXCEPT when the existing reply carries LEAVE_OPEN_MARKER: unlike the
-  // outcome token, the marker is only ever added when the post-time outcome
-  // was genuinely non-hold (`postBody`'s own comment) — its presence is
-  // therefore positive proof this was a plain, left-open moot, not a
-  // recovery guess. Without this exception, EVERY retry on a fresh
-  // `**moot** --leave-open` reply (no `--moot-pending-push`) would force an
-  // `--unconfirmed` hold at round -1 despite the marker — and since a plain
-  // moot has no unpushed fix to ever confirm, nothing would advance that
-  // round, permanently stranding the hold instead of merely recovering it
-  // (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 12). "Assume
-  // held" stays the default for every OTHER reconciled moot — an old-style
-  // plain moot posted before this marker existed, or one truly meant as
-  // fix-dependent — where it remains the safe, recoverable guess.
+  // outcome token, the marker is only ever added when the post-time outcome was
+  // genuinely non-hold (`postBody`'s own comment) — its presence is therefore
+  // positive proof this was a plain, left-open moot, not a recovery guess.
+  // Without this exception, EVERY retry on a fresh `**moot** --leave-open`
+  // reply (no `--moot-pending-push`) would force an `--unconfirmed` hold at
+  // round -1 despite the marker — and since a plain moot has no unpushed fix to
+  // ever confirm, nothing would advance that round, permanently stranding the
+  // hold instead of merely recovering it. "Assume held" stays the default for
+  // every OTHER reconciled moot — an old-style plain moot posted before this
+  // marker existed, or one truly meant as fix-dependent — where it remains the
+  // safe, recoverable guess.
   const treatMootAsHold =
     existingOutcome === "moot"
       ? !hasLeaveOpenMarker(existingBody ?? "")
@@ -902,13 +886,12 @@ async function main(): Promise<number> {
     sourcedFromReconciliation = true;
     if (isHoldOutcome(effectiveOutcome, treatMootAsHold)) {
       // A permalink is required only to CREATE a hold (`drive-state.ts hold
-      // --comment-url`) — the merit dispatch below (`resolve-thread.ts`)
-      // needs nothing but the threadId, so an unreadable url must refuse
-      // ONLY the hold path, not every reconciled outcome uniformly
-      // (docomply-review, a reference-implementation pull request round 6: the earlier, unconditional
-      // check left a trusted merit reply with an unreadable url permanently
-      // unresolved, against `reconcile-replied-threads.ts`'s own precedent
-      // of checking `commentUrl` only in its hold branch).
+      // --comment-url`) — the merit dispatch below (`resolve-thread.ts`) needs
+      // nothing but the threadId, so an unreadable url must refuse ONLY the
+      // hold path, not every reconciled outcome uniformly (an earlier,
+      // unconditional check left a trusted merit reply with an unreadable url
+      // permanently unresolved, against `reconcile-replied-threads.ts`'s own
+      // precedent of checking `commentUrl` only in its hold branch).
       if (existingUrl === null) {
         fail(
           1,
@@ -931,59 +914,54 @@ async function main(): Promise<number> {
     // mutation — nothing here duplicates any of that.
     //
     // The scan above and this post are a non-atomic read-then-write — GitHub
-    // exposes no conditional-write primitive on a review-thread comment, and
-    // a local mutex spanning the outbound call would prove nothing about the
+    // exposes no conditional-write primitive on a review-thread comment, and a
+    // local mutex spanning the outbound call would prove nothing about the
     // moment GitHub actually accepts it (lib/state/lease.ts's own "THE CHECK
     // AND THE POST ARE TWO MOMENTS" residual makes the identical argument for
-    // the drive-lease fence). Accepted as a residual, not fixed here
-    // (docomply-review, a reference-implementation pull request round 1, arbitrated wont-fix): the an earlier change
-    // posting fence already refuses every cross-session and cross-worktree
-    // case before the POST, and the remaining same-process case needs two
-    // concurrent triage calls on ONE threadId, which SKILL.md § 6's
-    // one-item-at-a-time loop never issues. This scan STRICTLY NARROWS the
-    // pre-existing duplicate-outcome-token window rather than widening it —
-    // the two-command flow it replaces posted with no live-state check at
-    // all, so the crash-retry duplicate (the failure mode this PR actually
-    // measures) is exactly what the scan above closes.
-    // `--leave-open` gets its marker appended here, not composed by the
-    // caller — LEAVE_OPEN_MARKER's own header explains why a durable record
-    // of this choice is needed at all. Gated on the outcome actually being
-    // non-hold (merit): `--leave-open` already "has no effect" on a HELD
-    // outcome (line 788 below only consults it inside the non-hold branch),
-    // but marking the reply anyway let the marker survive onto a held
+    // the drive-lease fence). Accepted as a residual, not fixed here: the
+    // posting fence already refuses every cross-session and cross-worktree case
+    // before the POST, and the remaining same-process case needs two concurrent
+    // triage calls on ONE threadId, which SKILL.md § 6's one-item-at-a-time
+    // loop never issues. This scan STRICTLY NARROWS the pre-existing
+    // duplicate-outcome-token window rather than widening it — the two-command
+    // flow it replaces posted with no live-state check at all, so the
+    // crash-retry duplicate (the measured failure mode) is exactly what the
+    // scan above closes. `--leave-open` gets its marker appended here, not
+    // composed by the caller — LEAVE_OPEN_MARKER's own header explains why a
+    // durable record of this choice is needed at all. Gated on the outcome
+    // actually being non-hold (merit): `--leave-open` already "has no effect"
+    // on a HELD outcome (line 788 below only consults it inside the non-hold
+    // branch), but marking the reply anyway let the marker survive onto a held
     // moot-pending-push reply too — and reconcile-replied-threads.ts's own
     // standalone sweep has no `--moot-pending-push` equivalent, so it cannot
     // tell a HELD moot from a plain one from the outcome word alone. Scoping
     // injection to the case the marker actually MEANS something for makes
     // "carries the marker" imply "was a merit reply left open" unconditionally
-    // — which is what lets that sweep trust the marker for `moot` too, not
-    // only for the three outcomes it already classifies as merit
-    // (docomply-review, a reference-implementation pull request round 11).
+    // — which is what lets that sweep trust the marker for `moot` too, not only
+    // for the three outcomes it already classifies as merit.
     //
     // A caller-composed body ending in the marker's own exact trailing-line
     // form (e.g. prose that quotes or discusses this mechanism, plausible on
-    // exactly this PR) is otherwise posted unchanged — indistinguishable on
-    // the next read from a genuine `--leave-open` post, since
-    // `hasLeaveOpenMarker` cannot see who produced the line (docomply-review
-    // a reference-implementation pull request round 19). Refuse rather than post ambiguous content: only
-    // THIS branch's own append may legitimately put the marker on a reply.
+    // exactly this PR) is otherwise posted unchanged — indistinguishable on the
+    // next read from a genuine `--leave-open` post, since `hasLeaveOpenMarker`
+    // cannot see who produced the line. Refuse rather than post ambiguous
+    // content: only THIS branch's own append may legitimately put the marker on
+    // a reply.
     //
-    // Gated on HOLD outcomes too, not just merit ones — `--leave-open` "has
-    // no effect" on accepted/held-moot, but that only describes what THIS
-    // script does with it; a marker-bearing body still reaches GitHub, and
+    // Gated on HOLD outcomes too, not just merit ones — `--leave-open` "has no
+    // effect" on accepted/held-moot, but that only describes what THIS script
+    // does with it; a marker-bearing body still reaches GitHub, and
     // `reconcile-replied-threads.ts`'s standalone sweep trusts the marker as
     // proof of a merit left-open reply independent of what outcome word
-    // accompanies it. A held moot whose caller-supplied body happened to end
-    // in the marker was therefore misread by that sweep as deliberately left
-    // open, releasing its own not-yet-verified hold before the promised push
-    // ever landed (chatgpt-codex-connector, a reference-implementation pull request round 28 — the hold-
-    // outcome sibling of round 19's finding; an earlier revision of this
-    // guard excluded hold outcomes on the reasoning that THIS script never
-    // consults the marker for them, which is true but not the whole system).
-    // The one exemption stays exactly what it was: a caller who explicitly
-    // passed `--leave-open` on a genuinely non-hold outcome already gets the
-    // marker appended below anyway, so refusing their own pre-supplied copy
-    // of it would serve no one.
+    // accompanies it. A held moot whose caller-supplied body happened to end in
+    // the marker was therefore misread by that sweep as deliberately left open,
+    // releasing its own not-yet-verified hold before the promised push ever
+    // landed (an earlier revision of this guard excluded hold outcomes on the
+    // reasoning that THIS script never consults the marker for them, which is
+    // true but not the whole system). The one exemption stays exactly what it
+    // was: a caller who explicitly passed `--leave-open` on a genuinely
+    // non-hold outcome already gets the marker appended below anyway, so
+    // refusing their own pre-supplied copy of it would serve no one.
     const sanctionedSelfMarked =
       leaveOpen && !isHoldOutcome(intendedOutcome, treatMootAsHold);
     if (hasLeaveOpenMarker(body) && !sanctionedSelfMarked) {
@@ -1006,11 +984,10 @@ async function main(): Promise<number> {
       // every guard governing whether postBody may legitimately carry
       // LEAVE_OPEN_MARKER already ran above (the `!leaveOpen` refusal, the
       // doubling-avoidance check), so this call is always the sanctioned
-      // producer regardless of whether postBody ends in the marker this
-      // time. Set unconditionally rather than only when the marker was
-      // actually appended: a caller-composed body that already ends in the
-      // marker under `--leave-open` is equally sanctioned (Architect Agent
-      // review, 2026-08-21, Fix A).
+      // producer regardless of whether postBody ends in the marker this time.
+      // Set unconditionally rather than only when the marker was actually
+      // appended: a caller-composed body that already ends in the marker under
+      // `--leave-open` is equally sanctioned.
       env: { ...process.env, [LEAVE_OPEN_MARKER_PRODUCER_ENV]: "1" },
     });
     if (posted.code !== 0) return posted.code;
@@ -1035,21 +1012,18 @@ async function main(): Promise<number> {
     (sourcedFromReconciliation && hasLeaveOpenMarker(existingBody ?? ""));
 
   // But a PRESENT `--leave-open` on a RECONCILING call whose existing reply
-  // carries NO marker cannot be made durable at all: this call posts
-  // nothing (the whole point of reconciliation), so there is no comment to
-  // append a marker to, and the existing one was written by whatever posted
-  // it directly — an OR-combine that honors the flag anyway (round 11's own
-  // fix, docomply-review + chatgpt-codex-connector) skips the resolve THIS
+  // carries NO marker cannot be made durable at all: this call posts nothing
+  // (the whole point of reconciliation), so there is no comment to append a
+  // marker to, and the existing one was written by whatever posted it directly
+  // — an OR-combine that honors the flag anyway skips the resolve THIS
   // invocation, but the choice evaporates the moment this process exits: the
   // next `triage-thread.ts` retry, or `reconcile-replied-threads.ts`'s
   // standalone sweep, sees an unmarked merit reply and resolves it anyway —
-  // reversing a choice that read as honored (docomply-review +
-  // chatgpt-codex-connector, a reference-implementation pull request round 14, on the SAME gap round 11
-  // left open). Fail closed instead of silently proceeding on an
-  // unpersistable promise: the documented alternative for a directly-posted
-  // reply meant to stay open is the one the old two-command flow always
-  // had — stop after `reply-to-thread.ts`'s own post and never invoke this
-  // script's resolve step at all.
+  // reversing a choice that read as honored. Fail closed instead of silently
+  // proceeding on an unpersistable promise: the documented alternative for a
+  // directly-posted reply meant to stay open is the one the old two-command
+  // flow always had — stop after `reply-to-thread.ts`'s own post and never
+  // invoke this script's resolve step at all.
   if (
     sourcedFromReconciliation &&
     leaveOpen &&
@@ -1058,11 +1032,10 @@ async function main(): Promise<number> {
   ) {
     // Still runs the stale-hold cleanup before refusing — this refusal means
     // "the thread's own disposition cannot be made durable," never "skip the
-    // cleanup too." Those are orthogonal per the identical invariant the
-    // merit branch below states explicitly; this branch used to exit via
-    // `fail()` before reaching it, silently stranding a hold on the SAME key
-    // this reply just superseded (docomply-review, a reference-implementation pull request rounds 2/3,
-    // Architect Agent review 2026-08-21).
+    // cleanup too." Those are orthogonal per the identical invariant the merit
+    // branch below states explicitly; this branch used to exit via `fail()`
+    // before reaching it, silently stranding a hold on the SAME key this reply
+    // just superseded.
     const seenUrls = new Set(
       thread.comments.map((c) => c.url).filter((u): u is string => u !== null),
     );
@@ -1084,13 +1057,13 @@ async function main(): Promise<number> {
 
   if (!isHoldOutcome(effectiveOutcome, treatMootAsHold)) {
     if (effectiveLeaveOpen) {
-      // AGENTS.md § Addressing PR Comments: "a human thread you replied to
-      // but chose not to close on the author's behalf" is a deliberate open
+      // SKILL.md's "Leaving a human thread open": a human thread you replied to
+      // but chose not to close on the author's behalf is a deliberate open
       // state, not a leak — the old two-command flow let a caller stop after
-      // reply-to-thread.ts and never call resolve-thread.ts at all to honor
-      // it. This is that same choice point, explicit rather than implicit
-      // (an omitted call an atomic command has no equivalent of). Still runs
-      // the stale-hold cleanup below — leaving a thread open is orthogonal to
+      // reply-to-thread.ts and never call resolve-thread.ts at all to honor it.
+      // This is that same choice point, explicit rather than implicit (an
+      // omitted call an atomic command has no equivalent of). Still runs the
+      // stale-hold cleanup below — leaving a thread open is orthogonal to
       // whether an EARLIER hold on this same key is now stale.
       console.error(
         sourcedFromReconciliation

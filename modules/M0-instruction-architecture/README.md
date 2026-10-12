@@ -50,25 +50,59 @@ system that keeps agent guidance findable, small, scoped, and single-sourced.
   are CI-verified against reality, referenced paths are checked to exist, and
   the instruction set has a named owner and review cadence.
 
-## Port status
+## Adoption steps
 
-Ported and genericized from the reference implementation (docomply
-`develop`) — all sources below have landed:
+1. Copy [`templates/AGENTS-skeleton.md`](templates/AGENTS-skeleton.md) to the
+   repository root as `AGENTS.md`, fill in the quality gates and the
+   guardrails, and keep it near 150 lines. Copy
+   [`templates/GLOSSARY-skeleton.md`](templates/GLOSSARY-skeleton.md) to
+   `GLOSSARY.md` and link it from `AGENTS.md`. This is **Lite**.
+2. Turn every runtime-specific file into a delta plus a pointer (where each
+   runtime reads from: [`mappings.md`](mappings.md)); add nested instruction
+   files where a directory's conventions differ; if you use conditional rules,
+   copy [`templates/rules-README.md`](templates/rules-README.md) into the rules
+   directory; write your dispositions from
+   [`templates/dispositions.md`](templates/dispositions.md), each with its flip
+   condition. This is **Standard**.
+3. Check the instruction files mechanically in CI: stated counts and
+   referenced paths with [M2](../M2-generated-artifact-freshness/)'s
+   [`prose-facts`](../M2-generated-artifact-freshness/reference/prose-facts/)
+   checks. Name an owner for the instruction set and a review cadence. This is
+   **Strict**.
 
-| Source | Became |
-|--------|--------|
-| `AGENTS.md` (structure, not content) | [`templates/AGENTS-skeleton.md`](templates/AGENTS-skeleton.md) |
-| `.claude/rules/README.md` (C8) | [`templates/rules-README.md`](templates/rules-README.md) (loading semantics documented inline) |
-| `CONTEXT.md` + glossary rule | [`templates/GLOSSARY-skeleton.md`](templates/GLOSSARY-skeleton.md) (authoring notes in header comment) |
-| Dispositions (systematic default, BWC-deferred, minimalism ladder) | [`templates/dispositions.md`](templates/dispositions.md) — each with its flip condition |
-| `docs/development/ai-tools/model-routing-policy.md` (C9) | [`reference/model-routing-policy.md`](reference/model-routing-policy.md) (tiered model economics) |
-| `docs/development/hitl-decision-registry.md` (C6) | [`templates/hitl-registry.md`](templates/hitl-registry.md) (shared with M7) |
-| Cross-runtime skill discovery (symlink mirror + sync script) | [`reference/sync-skills-mirror.ts`](reference/sync-skills-mirror.ts) + `mappings.md` entry |
+## Status
 
-Also written: [`mappings.md`](mappings.md) (Claude Code / Codex / Cursor /
-Copilot file conventions) and [`maturity.yaml`](maturity.yaml). Noted as
-future (not ported — reference-implementation-specific or unproven): the
-generated per-agent model roster tooling (its pattern is described in the
-routing-policy reference; the generator belongs with M2), and the
-PR-review-side consumer of rule frontmatter (belongs with M7's reviewer
-harness).
+What this module provides:
+
+- [`templates/AGENTS-skeleton.md`](templates/AGENTS-skeleton.md) — the
+  universal instruction file's structure: overview, guardrails, gates, git
+  workflow, per-directory table.
+- [`templates/GLOSSARY-skeleton.md`](templates/GLOSSARY-skeleton.md) — a
+  one-page domain glossary with _Avoid_ aliases; authoring notes in its header
+  comment.
+- [`templates/rules-README.md`](templates/rules-README.md) — the conditional
+  rules directory's README, with the loading semantics written inline.
+- [`templates/dispositions.md`](templates/dispositions.md) — the systematic
+  default, the minimalism ladder and the deferred-backward-compatibility
+  stance, each with its flip condition.
+- [`templates/hitl-registry.md`](templates/hitl-registry.md) — the registry of
+  decisions that always stay with a human (shared with
+  [M7](../M7-pr-lifecycle-review/)).
+- [`reference/model-routing-policy.md`](reference/model-routing-policy.md) —
+  which model tier handles which work, and why.
+- [`reference/sync-skills-mirror.ts`](reference/sync-skills-mirror.ts) — keeps
+  a second runtime's skill directory as a symlink mirror of the canonical one;
+  `--check` reports drift. Its self-test is in
+  [`scripts/freshness.test.ts`](../../scripts/freshness.test.ts); the recipe is
+  in [`mappings.md`](mappings.md#cross-runtime-skill-discovery-the-symlink-mirror).
+- [`mappings.md`](mappings.md) (Claude Code, Codex, Cursor and Copilot file
+  conventions) and [`maturity.yaml`](maturity.yaml).
+
+Groundwork's own [`AGENTS.md`](../../AGENTS.md), `CLAUDE.md` pointer and
+nested `AGENTS.md` files are a working instance of this module.
+
+Future: a generator for a per-agent model roster (the routing policy describes
+the pattern; the generate-and-check mechanism belongs with
+[M2](../M2-generated-artifact-freshness/)), and a pull-request review step that
+reads rule frontmatter to pick the rules relevant to a diff (it belongs with
+[M7](../M7-pr-lifecycle-review/)'s review harness).

@@ -17,7 +17,7 @@
  *     overrides `ref:`). Local green and CI red is therefore a reachable, and
  *     silent, disagreement.
  *   - Conflicts get more expensive the longer they are left, and resolving one
- *     is exactly the intent-tracing work `resolving-merge-conflicts` owns —
+ *     is exactly the intent-tracing work `/groundwork:resolve-conflicts` owns —
  *     work an unattended round should meet EARLY, while there is still a human
  *     around to park it for, not at the announce gate.
  *
@@ -192,7 +192,7 @@ function impliedDirectories(paths: Iterable<string>): Set<string> {
  * `foo/bar.ts` while the base adds a plain file `foo` (or vice versa) shares
  * no path string, so a set intersection reports zero overlap — yet git cannot
  * construct the merge tree, and `no-overlap` would skip the merge that could
- * have surfaced that early (docomply-review, a reference-implementation pull request). A path one side's
+ * have surfaced that early. A path one side's
  * diff implies is a DIRECTORY and the other side's diff touches as a FILE is
  * exactly that collision, in either direction.
  */
@@ -219,7 +219,7 @@ function pathCollisions(prSet: Set<string>, baseSet: Set<string>): string[] {
  * fetch reads exactly like a right one. This check has to run BEFORE that
  * fetch, using the identical `owner/name` extraction `guarded-push.ts` checks
  * the push side with — the same reachable failures, the opposite side of one
- * PR (chatgpt-codex-connector, a reference-implementation pull request).
+ * PR.
  *
  * `expectedRepo` is `owner/name` for the repository the caller already knows
  * `gh` resolved this PR against — GitHub has no per-PR "base repository"
@@ -247,7 +247,7 @@ export async function verifyOriginIsPrRepo(
   // GitHub repository paths are case-insensitive (and ASCII-only, so a plain
   // `toLowerCase()` is length-preserving and safe here) — an `origin` whose
   // configured URL casing differs from `gh`'s canonical `owner/name` is the
-  // SAME repository, not a mismatch (chatgpt-codex-connector, a reference-implementation pull request).
+  // SAME repository, not a mismatch.
   if (actual === "" || actual.toLowerCase() !== expectedRepo.toLowerCase()) {
     return {
       ok: false,
@@ -268,7 +268,7 @@ export async function verifyOriginIsPrRepo(
  * from, or later merged with, the PR's head, the ancestor check alone would
  * pass — `apiHead` is an ancestor of the sibling's HEAD too — and publish
  * that sibling branch's files and overlap as the requested PR's drift
- * (chatgpt-codex-connector, a reference-implementation pull request). The branch-name check catches exactly
+ *. The branch-name check catches exactly
  * that case; the ancestor check on top of it still matters, since a same-
  * named unrelated local branch would pass the name check alone.
  *
@@ -335,14 +335,14 @@ export async function probeBaseDrift(
   // `rev-list` / `diff` / `ls-files` exactly as an unresponsive API hangs
   // `gh` — the same reasoning `gitCallTimeoutSeconds()`'s own doc comment
   // gives — and an undeadlined local call here parks the unattended driver
-  // just as surely as an undeadlined network one (docomply-review, a reference-implementation pull request).
+  // just as surely as an undeadlined network one.
   //
   // `env` is optional and forwarded to every call below: a leaked
   // `GIT_DIR`/`GIT_WORK_TREE` pair (a lefthook hook exports both) makes `-C
   // root` alone insufficient — git resolves the location vars first — so the
   // caller-sanitized env has to reach `fetch`, `merge-base`, `rev-list`,
   // `diff` and `ls-files` alike, not just the `-C root` argument
-  // (coderabbitai, PR #4279). A caller with no leak to guard against (no
+  //. A caller with no leak to guard against (no
   // hook env in play) simply omits it.
   const localTimeoutSec = gitCallTimeoutSeconds();
   const baseRef = `origin/${baseBranch}`;
@@ -353,7 +353,7 @@ export async function probeBaseDrift(
   // exact ref `baseRef` above reads every measurement below from. Forcing the
   // destination here makes success mean what every caller already assumes it
   // means: `origin/<baseBranch>` was actually refreshed
-  // (chatgpt-codex-connector, a reference-implementation pull request). `baseBranch` cannot smuggle a second
+  //. `baseBranch` cannot smuggle a second
   // `:` into this refspec: `base-sync.ts` runs it through `git
   // check-ref-format --branch` when it comes from `--base`, and git branch
   // names — which is all a colon-free ref name can be — never contain a `:`
@@ -394,7 +394,7 @@ export async function probeBaseDrift(
   // rest of the string, so a malformed subprocess response like `2garbage`
   // silently becomes `2`, and a sign-only string like `-1` still passes
   // `Number.isFinite` — both read as a normal drift verdict instead of the
-  // failed probe they actually are (docomply-review, a reference-implementation pull request). `git rev-list
+  // failed probe they actually are. `git rev-list
   // --count` only ever emits a bare non-negative decimal integer, so anything
   // else is the subprocess answering unreliably, not a value to coerce.
   const behindRaw = behindRes.stdout.trim();

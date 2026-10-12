@@ -28,7 +28,7 @@ Two independent lag signals; supply either or both:
 | Signal | Meaning | Threshold (env) |
 |--------|---------|-----------------|
 | `BEHIND` | commits the `verified` pointer trails the default-branch tip | `MAX_BEHIND` (default `20`) |
-| `AGE_SECONDS` | seconds since the `verified` pointer last advanced | `MAX_AGE_SECONDS` (default `86400`, 24h) |
+| `AGE_SECONDS` | seconds the oldest commit not yet verified has waited (its committer time; `0` when the pointer is at the tip) | `MAX_AGE_SECONDS` (default `86400`, 24h) |
 
 The pointer is **stalled** (exit `1`) if *either* supplied signal exceeds its
 threshold; it is **fresh** (exit `0`) only if every supplied signal is at or
@@ -44,8 +44,10 @@ the numbers from git (recipes per forge in [`../../mappings.md`](../../mappings.
 
 ```sh
 BEHIND=$(git rev-list --count verified..origin/main)
-AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
-MAX_BEHIND=20 MAX_AGE_SECONDS=86400 bun ./check-verified-fresh.ts
+OLDEST=$(git log --reverse --format=%ct verified..origin/main | head -n 1)
+NOW=$(date +%s); AGE_SECONDS=$(( NOW - ${OLDEST:-$NOW} ))
+BEHIND="$BEHIND" AGE_SECONDS="$AGE_SECONDS" \
+  MAX_BEHIND=20 MAX_AGE_SECONDS=86400 bun ./check-verified-fresh.ts
 ```
 
 An input file passes the same observation as `<KEY> <value>` lines (`BEHIND` /
@@ -67,8 +69,12 @@ is still the authority for running it (see [M1](../../../M1-gates-enforcement-la
 | `fixtures/fresh.txt` | keeping up — must pass |
 | `fixtures/boundary.txt` | exactly at threshold — must pass |
 | `fixtures/stalled-behind.txt` | too far behind — must fail |
-| `fixtures/stalled-age.txt` | not advanced in too long — must fail |
+| `fixtures/stalled-age.txt` | oldest unverified commit waited too long — must fail |
 | `fixtures/bad-value.txt` | non-numeric observation — must error |
+| `fixtures/huge-value.txt` | a value beyond the 64-bit range — must error, not read as fresh |
+| `fixtures/duplicate-key.txt` | the same key twice (a stall, then a fresh value) — must error, not let the last one win |
+| `fixtures/unknown-key.txt` | an unrecognised key (schema drift) — must error |
+| `fixtures/empty.txt` | no observation at all — must error |
 
 Run the self-test with `bun test ./check-verified-fresh.test.ts`.
 

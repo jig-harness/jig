@@ -25,9 +25,12 @@ definitions, ORM types from migrations, dependency notices from lockfiles.
 
 | File | Role |
 |------|------|
-| `generate-index.ts` | Generator: docs tree in, deterministic `index.md` out |
-| `check-index-fresh.ts` | Drift check: regenerate to temp, diff, fail loudly |
+| `generate-index.ts` | Generator: `<docs-dir> [output-file]` in, deterministic `index.md` out (default output `<docs-dir>/index.md`), written to a temporary file and renamed into place |
+| `check-index-fresh.ts` | Drift check: `<docs-dir> [index-file]`; regenerates in memory with the same generator code, compares, exits 1 with the fix command when stale or missing |
 | `fixture/docs/` | Tiny docs tree (with its committed, fresh `index.md`) to run against |
+
+Both exit 2 on a usage error or unreadable input. Their self-tests are in
+Groundwork's [`scripts/freshness.test.ts`](../../../../scripts/freshness.test.ts).
 
 Try it with the pinned Bun runtime:
 
@@ -36,6 +39,7 @@ bun generate-index.ts fixture/docs        # regenerate the artifact
 bun check-index-fresh.ts fixture/docs     # exit 0: fresh
 echo '# New page' > fixture/docs/new.md
 bun check-index-fresh.ts fixture/docs     # exit 1: stale, prints the fix
+rm fixture/docs/new.md                    # restore the fixture
 ```
 
 ## Wiring the third leg: the auto-stage hook
@@ -56,7 +60,7 @@ pre-commit:
       stage_fixed: true
 ```
 
-Two hard-won details worth keeping:
+Two details worth keeping:
 
 - **Skip the self-trigger.** If the only staged doc change *is* the artifact
   itself (a regeneration commit), exit early — otherwise the hook loops on

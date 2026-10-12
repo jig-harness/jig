@@ -18,7 +18,8 @@
 // Matching is forgiving (low false alarm): a required label matches any ATX
 // heading (`#`..`######`) in the artifact whose text is equal after trimming
 // whitespace, dropping the leading `#` markers, a trailing `:` and any closing
-// `#`, and lowercasing. Headings inside fenced code blocks are ignored.
+// `#`, and lowercasing. Only rendered headings count: headings inside fenced or
+// indented code blocks, HTML comments and the frontmatter block are ignored.
 //
 // Conventions: exit 0 all present, 1 a required heading missing, 2 usage/format
 // error (no artifact, file not found, no required sections given).

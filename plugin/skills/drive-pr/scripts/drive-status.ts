@@ -19,8 +19,8 @@
  *      headRefOid` still returns the PREVIOUS SHA, where everything was
  *      settled and resolved.
  *   4. A satisfied non-posting reviewer masks the posting reviewer's
- *      not-yet-created check-run. `gh pr checks` can omit `AI review
- *      (majordomo)` entirely while listing CodeRabbit as settled.
+ *      not-yet-created check-run. `gh pr checks` can omit the posting
+ *      reviewer's check entirely while listing CodeRabbit as settled.
  *
  * The fix in every one of those cases is the same shape: never infer a
  * reviewer's verdict from the absence of contrary evidence. Ask the check-runs
@@ -60,35 +60,35 @@
  *                        CONVERGED) is untouched.
  *   --bump-attempt       on ROUND_READY (case 0 below), also record a pass
  *                        attempt on this head (drive-state.ts bump-attempt)
- *                        BEFORE computing `reflectDue` — the single
- *                        pass-start entry point for the interactive path
- *                        (SKILL.md § 1). Folds what used to be two more
- *                        commands, run only after this one, into this same
- *                        call: without it, `reflectDue` was read off
- *                        counters as they stood before the pass they
- *                        describe was recorded, off by exactly one pass
- *. `drive.ts` does not pass this — it
- *                        bumps the attempt itself, after this script
- *                        returns, and derives its own `$DRIVE_PR_REFLECT_DUE`
- *                        from the post-bump state directly. A pass `drive.ts`
- *                        SPAWNS still runs this script with the flag (SKILL.md
- *                        § 1 always passes it), but the bump itself is skipped
+ *                        BEFORE computing `reflectDue` — the single pass-start
+ *                        entry point for the interactive path (SKILL.md § 1).
+ *                        Folds what used to be two more commands, run only
+ *                        after this one, into this same call: without it,
+ *                        `reflectDue` was read off counters as they stood
+ *                        before the pass they describe was recorded, off by
+ *                        exactly one pass. `drive.ts` does not pass this — it
+ *                        bumps the attempt itself, after this script returns,
+ *                        and derives its own `$DRIVE_PR_REFLECT_DUE` from the
+ *                        post-bump state directly. A pass `drive.ts` SPAWNS
+ *                        still runs this script with the flag (SKILL.md § 1
+ *                        always passes it), but the bump itself is skipped
  *                        there — `$DRIVE_PR_TARGET`, present only inside a
- *                        drive.ts-spawned pass, is the signal that the
- *                        driver's own bump already covered this round.
+ *                        drive.ts-spawned pass, is the signal that the driver's
+ *                        own bump already covered this round.
  *
  * Every COUNTING invocation — i.e. a pass entry — first runs
- * `reconcile-replied-threads.ts` on this PR. That script answers a
- * question this gate deliberately refuses to ("was an outcome reply already
- * posted on a thread that never got resolved or held?"), and it needs nothing
- * this gate withholds. Wiring it in here is what bounds the leak: every state
- * below except ROUND_READY ends the round without a pass running, so a duty
- * that only ever executed inside a pass could never fire while the gate was
- * stuck on one of them — which is precisely when it is needed (* measured on PR #3974: a CONFLICTING PR gets zero `pull_request` CI, the
- * posting reviewer's check-run never appears, and AWAITING_REVIEWER below
- * returns before this evaluation even enumerates threads). The sweep runs
- * BEFORE the evaluation, once per invocation, behind a liveness read — a
- * finished PR must not be mutated by a round it already stopped.
+ * `reconcile-replied-threads.ts` on this PR. That script answers a question
+ * this gate deliberately refuses to ("was an outcome reply already posted on a
+ * thread that never got resolved or held?"), and it needs nothing this gate
+ * withholds. Wiring it in here is what bounds the leak: every state below
+ * except ROUND_READY ends the round without a pass running, so a duty that only
+ * ever executed inside a pass could never fire while the gate was stuck on one
+ * of them — which is precisely when it is needed (measured: a CONFLICTING PR
+ * gets zero `pull_request` CI, the posting reviewer's check-run never appears,
+ * and AWAITING_REVIEWER below returns before this evaluation even enumerates
+ * threads). The sweep runs BEFORE the evaluation, once per invocation, behind a
+ * liveness read — a finished PR must not be mutated by a round it already
+ * stopped.
  *
  * Its failure never wedges a round this gate could otherwise judge, but it is
  * not simply discarded either, and the line between those is which verdict
@@ -101,12 +101,12 @@
  * `UNRECONCILED_STOPPERS` below is that set FOR MOST CODES, and is the single
  * place their membership is enumerated. Restating the members here would be a
  * second copy to keep in step, and was already stale once (it still named the
- * pre-exit-7 set, plus a count derived from it — docomply-review, a reference-implementation pull request).
- * The criterion that produces the set, and the reason each excluded code is
- * excluded, live with the guard at the bottom of the poll loop. CONVERGED (3)
- * is withheld the same way but is NOT a member of that set — it has its own,
- * narrower condition beside the guard (`convergedUnswept`), for a reason
- * documented there and in an earlier change.
+ * pre-exit-7 set, plus a count derived from it). The criterion that produces
+ * the set, and the reason each excluded code is excluded, live with the guard
+ * at the bottom of the poll loop. CONVERGED (3) is withheld the same way but is
+ * NOT a member of that set — it has its own, narrower condition beside the
+ * guard (`convergedUnswept`), for a reason documented there and in an earlier
+ * change.
  *
 
  * Exit codes — the driver contract. Every one of them is a distinct decision;
@@ -115,7 +115,7 @@
  * Each row is tagged with which of four kinds of identifier it carries — the
  * distinction `<skill-dir>/scripts/lib/status/terminal-states.ts`
  * (the code-bound single source of truth for the pairing below) formalizes,
- * and `scripts/check-drive-pr-terminal-states.ts` (repo root) checks this
+ * and `__tests__/terminal-states-consistency.ts` (repo root) checks this
  * table against: [state] a real `state` value this script's `--json` report
  * can carry; [class label] a name for a FAMILY of states sharing one exit
  * code, never itself emitted; [retired] a withdrawn code, deliberately never
@@ -145,12 +145,11 @@
  *                       --timeout
  *   5  PR_NOT_OPEN      [state] merged or closed — stop, and do NOT push
  *  10  RETIRED          [retired, never emitted] was PR_IS_DRAFT, on the
- *                       premise that no reviewer arm looks at a draft.
- *                       Measured false 2026-08-13 (#4053, #4041):
- *                       `docomply-review` reviews drafts, so a draft is
- *                       driven like any other PR and `mark-ready.ts` marks it
- *                       Ready at the round pull_requests.mark_ready
- *                       declares — see
+ *                       premise that no reviewer arm looks at a draft. Measured
+ *                       false 2026-08-13: the posting reviewer reviews drafts,
+ *                       so a draft is driven like any other PR and
+ *                       `mark-ready.ts` marks it Ready at the round
+ *                       pull_requests.mark_ready declares — see
  *                       lib/status/evaluate.ts's header. Not recycled: an old
  *                       log's `10` should mean nothing, not something new
  *   7  REVIEWER_FAILED  [state] the posting reviewer's check-run did not
@@ -179,14 +178,14 @@
  *                       a distinct [drive.ts only] cause sharing this code by
  *                       design, never this script's `SESSION_LEASE_HELD`
  *  13  DRIVE_HELD_BY_OTHER_WORKTREE  [state]
- *                       another LIVE working tree is driving this PR
- *. The cross-tree twin of 11, raised at the
- *                       same leased bump and propagated for the same reason —
- *                       and a DISTINCT code because the remedy differs: 11
- *                       points at a session the reader can see and `clear-lease`
- *                       where they stand, while 13 names a tree they are not in
- *                       and whose driver is very likely the one that should
- *                       finish. Same code and meaning as `drive-state.ts`'s 13
+ *                       another LIVE working tree is driving this PR. The
+ *                       cross-tree twin of 11, raised at the same leased bump
+ *                       and propagated for the same reason — and a DISTINCT
+ *                       code because the remedy differs: 11 points at a session
+ *                       the reader can see and `clear-lease` where they stand,
+ *                       while 13 names a tree they are not in and whose driver
+ *                       is very likely the one that should finish. Same code
+ *                       and meaning as `drive-state.ts`'s 13
  *   1  INDETERMINATE    [state] the state could not be read — never reported
  *                       as settled
  *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite: a `gh` that cannot
@@ -285,14 +284,13 @@ const MIN_INTERVAL = 5;
 const MAX_QUERY_ERRORS = 3;
 
 /**
- * `realpathSync`, bounded — a stalled FUSE/NFS mount can block this
- * SYNCHRONOUS call indefinitely in THIS process, and `GIT_CALL_TIMEOUT`
- * bounding the local-HEAD measurement's `git()` subprocess calls (further
- * down this file) does nothing for it (chatgpt-codex-connector, a reference-implementation pull request
- * review round 3). Runs as a separate
- * bounded subprocess — same convention `unconcludedGitOpMarker`'s marker
- * probe in `lib/proc.ts` uses — so `run()`'s existing timeout-and-kill can
- * bound it exactly like every other call here, without a shell of any kind.
+ * `realpathSync`, bounded — a stalled FUSE/NFS mount can block this SYNCHRONOUS
+ * call indefinitely in THIS process, and `GIT_CALL_TIMEOUT` bounding the
+ * local-HEAD measurement's `git()` subprocess calls (further down this file)
+ * does nothing for it. Runs as a separate bounded subprocess — same convention
+ * `unconcludedGitOpMarker`'s marker probe in `lib/proc.ts` uses — so `run()`'s
+ * existing timeout-and-kill can bound it exactly like every other call here,
+ * without a shell of any kind.
  */
 const REALPATH_PROBE_SCRIPT = `
 const { realpathSync } = require('node:fs');
@@ -447,10 +445,10 @@ async function main(): Promise<number> {
   // `local` has two unrelated causes — the caller switched the measurement off,
   // or it was attempted and failed — and a consumer that cannot tell them apart
   // reads a failed measurement as a positive "nothing here to compare"
-  // (docomply-review, a reference-implementation pull request: drive.ts's stall fingerprint treated both as the
-  // same empty string, so a local commit made while measurement was broken
-  // counted toward the no-op streak). `flag`/`git` both carry a real SHA;
-  // `disabled` is a deliberate opt-out; `unavailable` is the failure.
+  // (drive.ts's stall fingerprint treated both as the same empty string, so a
+  // local commit made while measurement was broken counted toward the no-op
+  // streak). `flag`/`git` both carry a real SHA; `disabled` is a deliberate
+  // opt-out; `unavailable` is the failure.
   let localHeadSource: "flag" | "git" | "disabled" | "unavailable" =
     localHead !== "" ? "flag" : headSync ? "git" : "disabled";
 
@@ -460,17 +458,16 @@ async function main(): Promise<number> {
     // the state dir it legitimately reads — driver log, durable state — is the
     // git common dir, whose HEAD is the MAIN worktree's (`develop`, in a
     // Conductor checkout). One `cd` there and this read silently measures a
-    // different tree: on PR #4106 the gate reported HEAD_LAG against a head
-    // that could never arrive, so the pass did nothing while the driver
-    // counted the round. `$DRIVE_PR_WORKTREE` is the anchor drive.ts exports.
+    // different tree: the gate once reported HEAD_LAG against a head that could
+    // never arrive, so the pass did nothing while the driver counted the round.
+    // `$DRIVE_PR_WORKTREE` is the anchor drive.ts exports.
     const anchor = process.env.DRIVE_PR_WORKTREE;
     // Deadlined like every other local `git` call this skill considers capable
     // of hanging (`GIT_CALL_TIMEOUT`, `gitCallTimeoutSeconds()`) — `git()`
     // itself defaults to undeadlined on the premise that a local call cannot
     // hang the way a network one can, but a stalled FUSE/NFS mount or a held
     // filesystem lock defeats that premise, and this read feeds a fail-closed
-    // guard that must not block forever waiting to fail closed
-    // (docomply-review, a reference-implementation pull request review round 1).
+    // guard that must not block forever waiting to fail closed.
     const r = await git(["rev-parse", "HEAD"], {
       stderr: "ignore",
       env: gitIdentityEnv(),
@@ -479,22 +476,21 @@ async function main(): Promise<number> {
     });
     localHead = r.code === 0 ? r.stdout.trim() : "";
     // Verify the IDENTITY of the tree the read answered for, not the shape of
-    // its cwd. The earlier version asked "is cwd inside a git DIRECTORY" —
-    // true only when cwd sits inside `.git` itself — but the cwd that
-    // actually poisons a pass is the MAIN WORKTREE (a normal, non-bare
-    // worktree one level up), and a leaked git-hook env (lefthook exports
-    // both `GIT_DIR` and `GIT_WORK_TREE`) makes `git rev-parse HEAD` answer
-    // for that tree even with an explicit `cwd: anchor` — `--is-inside-git-dir`
-    // there answers `false` (it IS a real worktree, just the wrong one), so
-    // the old guard never fired (measured on PR #4106 and again, twice, on PR
-    // #4114). Comparing `--show-toplevel` against the driven tree's own
-    // identity catches both shapes with one predicate: a leaked
-    // `GIT_DIR`+`GIT_WORK_TREE` makes THIS call answer for the wrong tree too
-    // (same leaked env, same process), so it disagrees with `anchor`; reading
-    // from inside `.git` with no anchor set makes it fail outright (git
-    // refuses `--show-toplevel` there). Unreadable beats wrong either way:
-    // `unavailable` disarms the head-sync guard and produces no stall
-    // fingerprint, where a confidently wrong SHA wedges the drive.
+    // its cwd. The earlier version asked "is cwd inside a git DIRECTORY" — true
+    // only when cwd sits inside `.git` itself — but the cwd that actually
+    // poisons a pass is the MAIN WORKTREE (a normal, non-bare worktree one
+    // level up), and a leaked git-hook env (lefthook exports both `GIT_DIR` and
+    // `GIT_WORK_TREE`) makes `git rev-parse HEAD` answer for that tree even
+    // with an explicit `cwd: anchor` — `--is-inside-git-dir` there answers
+    // `false` (it IS a real worktree, just the wrong one), so the old guard
+    // never fired (measured more than once). Comparing `--show-toplevel`
+    // against the driven tree's own identity catches both shapes with one
+    // predicate: a leaked `GIT_DIR`+`GIT_WORK_TREE` makes THIS call answer for
+    // the wrong tree too (same leaked env, same process), so it disagrees with
+    // `anchor`; reading from inside `.git` with no anchor set makes it fail
+    // outright (git refuses `--show-toplevel` there). Unreadable beats wrong
+    // either way: `unavailable` disarms the head-sync guard and produces no
+    // stall fingerprint, where a confidently wrong SHA wedges the drive.
     if (localHead !== "") {
       const topRes = await git(["rev-parse", "--show-toplevel"], {
         stderr: "ignore",
@@ -504,26 +500,24 @@ async function main(): Promise<number> {
       });
       const top = topRes.code === 0 ? topRes.stdout.trim() : "";
       // Neither side is guaranteed comparable as a raw string: `anchor` is
-      // untrusted env input, not necessarily symlink-resolved the way git's
-      // own `--show-toplevel` always is (e.g. macOS's `/var` → `/private/var`),
-      // and on Windows the two can differ in separators AND per-component
-      // casing (Git may preserve caller casing while the filesystem's own
-      // canonical name differs) — a manual case-fold heuristic (drive-letter-
-      // only, or blanket) is unsound either way: it either misses a real
-      // difference or conflates two genuinely distinct directories on a
-      // case-sensitive NTFS volume (chatgpt-codex-connector and
-      // docomply-review, a reference-implementation pull request review rounds 1-3). Resolving BOTH sides
-      // through the same canonicalization (Node's `realpathSync`, which on
-      // Windows returns the actual on-disk name/casing) and then comparing
-      // the results verbatim sidesteps case-folding entirely — identity is
-      // decided by the filesystem, not by a heuristic. A resolution failure
-      // on either side (path no longer exists, or the bounded read timed
-      // out) is itself grounds to refuse. `top === ''` (the `--show-toplevel`
-      // call itself already failed or timed out) must short-circuit rather
-      // than reach `boundedRealpath`: Node's `realpathSync('')` resolves to
-      // `process.cwd()` instead of throwing, and that cwd is this whole
-      // process's own — routinely identical to `anchor` — which would launder
-      // a git-call FAILURE into a spurious MATCH.
+      // untrusted env input, not necessarily symlink-resolved the way git's own
+      // `--show-toplevel` always is (e.g. macOS's `/var` → `/private/var`), and
+      // on Windows the two can differ in separators AND per-component casing
+      // (Git may preserve caller casing while the filesystem's own canonical
+      // name differs) — a manual case-fold heuristic (drive-letter- only, or
+      // blanket) is unsound either way: it either misses a real difference or
+      // conflates two genuinely distinct directories on a case-sensitive NTFS
+      // volume. Resolving BOTH sides through the same canonicalization (Node's
+      // `realpathSync`, which on Windows returns the actual on-disk
+      // name/casing) and then comparing the results verbatim sidesteps
+      // case-folding entirely — identity is decided by the filesystem, not by a
+      // heuristic. A resolution failure on either side (path no longer exists,
+      // or the bounded read timed out) is itself grounds to refuse. `top ===
+      // ''` (the `--show-toplevel` call itself already failed or timed out)
+      // must short-circuit rather than reach `boundedRealpath`: Node's
+      // `realpathSync('')` resolves to `process.cwd()` instead of throwing, and
+      // that cwd is this whole process's own — routinely identical to `anchor`
+      // — which would launder a git-call FAILURE into a spurious MATCH.
       const [topReal, anchorReal] =
         anchor && top !== ""
           ? await Promise.all([
@@ -569,7 +563,7 @@ async function main(): Promise<number> {
   // Exit 0 with empty or single-token stdout leaves these undefined, and every
   // later call then asks for `repos/undefined/undefined/...`, 404s, and reports
   // INDETERMINATE three times over — naming the check-run read as the fault
-  // when repository resolution was (coderabbitai, PR #4034 round 2). The `pr`
+  // when repository resolution was. The `pr`
   // resolution above already treats empty stdout as failure; same rule here.
   if (!owner || !repo) {
     fail(2, "could not resolve the repository (gh returned no owner/name)");
@@ -614,21 +608,21 @@ async function main(): Promise<number> {
   // state and through the SAME shared predicate, so the /reflect duty fires on
   // interactive runs with no drive.ts in the chain (the env var never exists
   // there) and cannot answer differently from the loop's own copy — three
-  // divergent formulations of it is what PR #4031 rounds 1-3 were spent on.
-  // Attempts count passes on an unmoving head, which is still work a /reflect
-  // should see. Best-effort by design — the duty is advisory, and unreadable
-  // state already hard-stops the paths that must not proceed on it. Read AFTER
-  // case 0's bump-round AND its `--bump-attempt` bump (emit runs last), so the
-  // value reflects the pass being reported rather than the one before it
-  // — a caller that omits `--bump-attempt` still gets a value, just
-  // one still missing this pass's own attempt, which is why the interactive
-  // path (SKILL.md § 1) always passes the flag now. `drive.ts` re-derives it
-  // post-bump for the env-var transport itself, from the same durable state.
+  // divergent formulations of one duty drift apart. Attempts count passes on an
+  // unmoving head, which is still work a /reflect should see. Best-effort by
+  // design — the duty is advisory, and unreadable state already hard-stops the
+  // paths that must not proceed on it. Read AFTER case 0's bump-round AND its
+  // `--bump-attempt` bump (emit runs last), so the value reflects the pass
+  // being reported rather than the one before it — a caller that omits
+  // `--bump-attempt` still gets a value, just one still missing this pass's own
+  // attempt, which is why the interactive path (SKILL.md § 1) always passes the
+  // flag now. `drive.ts` re-derives it post-bump for the env-var transport
+  // itself, from the same durable state.
   //
   // Bounded by $DRIVE_PR_HELPER_TIMEOUT like every other helper spawn here: an
   // unbounded one parks `--json` (and, through it, the drive loop) on a hung
   // child, and `run` reports a timeout as a non-zero code, which this already
-  // degrades to `false` (coderabbitai, PR #4031).
+  // degrades to `false`.
   async function reflectDue(): Promise<boolean> {
     const r = await run(tsArgv(ctx.driveStateScript, ["get", pr]), {
       stderr: "ignore",
@@ -656,11 +650,11 @@ async function main(): Promise<number> {
    * a second subprocess spawn buys nothing here and risks the two answers
    * disagreeing if state changed between them.
    *
-   * Read AFTER `recordRoundPaths` has filed this round's anchors — case 0
-   * files them and only then calls `emit`, which runs this — so the field
-   * reports the pass it describes rather than the one before it. That is the
-   * same off-by-one `--bump-attempt` closed for `reflectDue`, which took until
-   * PR #4031 round 10 to be noticed there and is cheaper to simply not repeat.
+   * Read AFTER `recordRoundPaths` has filed this round's anchors — case 0 files
+   * them and only then calls `emit`, which runs this — so the field reports the
+   * pass it describes rather than the one before it. That is the same
+   * off-by-one `--bump-attempt` closed for `reflectDue`, which went unnoticed
+   * there for a long time and is cheaper to simply not repeat.
    *
    * On every OTHER exit it reports whatever durable state already says, which
    * is the honest answer: an escalation armed two rounds ago is still owed
@@ -716,18 +710,18 @@ async function main(): Promise<number> {
    *   consecutive-round chain on evidence nobody gathered, which silences the
    *   signal rather than merely failing to arm it.
    *
-   *   BEST-EFFORT. A failed write costs a deferred signal on an advisory
-   *   field, never a verdict; the round bump above already hard-stops on the
-   *   durable state being unwritable, so this cannot be the first place that
-   *   fault is discovered. "Best-effort" means the failure does not block the
-   *   round, not that it is invisible: `bump-round` hard-stopping on the SAME
-   *   class of fault does not prove THIS write succeeded — it is a separate
-   *   call, with its own lease and timeout window, and a report reaching
-   *   `structuralEscalationDue` afterwards reads whatever durable state
-   *   already had, silently stale by exactly this round's missing entry
-   *   (docomply-review, a reference-implementation pull request). So a non-zero exit here is reported on
-   *   stderr — not escalated to a state or exit-code change, which would
-   *   turn an advisory field into a gate over a network call.
+   *   BEST-EFFORT. A failed write costs a deferred signal on an advisory field,
+   *   never a verdict; the round bump above already hard-stops on the durable
+   *   state being unwritable, so this cannot be the first place that fault is
+   *   discovered. "Best-effort" means the failure does not block the round, not
+   *   that it is invisible: `bump-round` hard-stopping on the SAME class of
+   *   fault does not prove THIS write succeeded — it is a separate call, with
+   *   its own lease and timeout window, and a report reaching
+   *   `structuralEscalationDue` afterwards reads whatever durable state already
+   *   had, silently stale by exactly this round's missing entry. So a non-zero
+   *   exit here is reported on stderr — not escalated to a state or exit-code
+   *   change, which would turn an advisory field into a gate over a network
+   *   call.
    *
    *   `record-paths`'s OWN stderr is PASSED THROUGH, not discarded — the same
    *   convention `parked-keys` above uses, and for the same reason: a
@@ -737,8 +731,7 @@ async function main(): Promise<number> {
    *   `lib/state/schema.ts`) — a case the exit-code branch below cannot see,
    *   since the write still succeeds. Discarding that warning here made a
    *   repeated file sorted outside the retained 200 paths silently vanish
-   *   from the recurrence signal with nothing anywhere saying so
-   *   (docomply-review, a reference-implementation pull request).
+   *   from the recurrence signal with nothing anywhere saying so.
    */
   async function recordRoundPaths(): Promise<void> {
     if (noCount) return;
@@ -746,8 +739,7 @@ async function main(): Promise<number> {
     if (paths === null) return;
     // `--stdin` rather than one `--path` argument per path: a round with
     // enough long paths can push the child's argv past the ~32KB Windows
-    // command-line limit, silently failing to record this round's anchors
-    // (chatgpt-codex-connector, a reference-implementation pull request).
+    // command-line limit, silently failing to record this round's anchors.
     const args = ["record-paths", pr, "--stdin"];
     const r = await run(tsArgv(ctx.driveStateScript, args), {
       stdout: "ignore",
@@ -799,11 +791,11 @@ async function main(): Promise<number> {
     // above is: pass cwd persists across tool calls, and a `cd` to the main
     // checkout or another worktree would otherwise make `--show-toplevel`
     // resolve THAT tree's root, silently measuring drift for the wrong
-    // checkout (chatgpt-codex-connector, a reference-implementation pull request). `env: gitIdentityEnv()`
+    // checkout. `env: gitIdentityEnv()`
     // for the same reason the local-head reads above carry it: a leaked
     // `GIT_DIR`/`GIT_WORK_TREE` pair overrides `-C`/`cwd` alike, so without it
     // this call — and every call `probeBaseDrift` makes after it — can answer
-    // for the main worktree instead of `anchor` (coderabbitai, PR #4279).
+    // for the main worktree instead of `anchor`.
     const anchor = process.env.DRIVE_PR_WORKTREE;
     const identityEnv = gitIdentityEnv();
     const rootRes = await git(["rev-parse", "--show-toplevel"], {
@@ -820,7 +812,7 @@ async function main(): Promise<number> {
     // `gh`/git disagreement). This read is best-effort like the rest of
     // `baseDrift()`, so a mismatch just degrades to `null` rather than
     // failing the gate — but it must not silently measure drift off the
-    // wrong repository's history (chatgpt-codex-connector, a reference-implementation pull request).
+    // wrong repository's history.
     const originCheck = await verifyOriginIsPrRepo(
       git,
       root,
@@ -833,13 +825,13 @@ async function main(): Promise<number> {
     // unrelated branch or worktree (`DRIVE_PR_WORKTREE` unset or pointed
     // elsewhere), this call would otherwise happily measure and publish
     // drift for whatever is checked out here, mislabeled with this PR's
-    // number (chatgpt-codex-connector, a reference-implementation pull request). `verifyCheckoutIsPrHead`
+    // number. `verifyCheckoutIsPrHead`
     // is the same branch-name-plus-ancestor check `base-sync.ts` guards this
     // identical hazard with: the ancestor check alone is NOT sufficient — a
     // sibling branch created from, or later merged with, the PR's head has
     // `apiHead` as an ancestor of its own HEAD too, so it would pass an
     // ancestor-only check and publish that sibling's files and overlap as
-    // this PR's drift (chatgpt-codex-connector, a reference-implementation pull request). This path never
+    // this PR's drift. This path never
     // has a human-facing message to spend on naming which half failed, so
     // both degrade to the same silent "no drift published" as every other
     // best-effort branch in this function.
@@ -938,7 +930,7 @@ async function main(): Promise<number> {
             parkedSummaryFindings: countOrNull(report.summaryParked),
             // WHICH items, not just how many: a count cannot tell a resolved
             // thread replaced by a new one from a round that did nothing
-            // (both reviewers, PR #4106). Sorted, so equality is set equality.
+            // Sorted, so equality is set equality.
             unresolvedThreadKeys: report.openThreadKeys,
             summaryUnaddressedKeys: report.summaryUnaddressedKeys,
             parkedKeys: report.parkedItemKeys,
@@ -953,22 +945,19 @@ async function main(): Promise<number> {
             unresolvedThreadPaths: report.openThreadPaths,
           },
           ci: report.ci,
-          // The structured evidence behind `ci` (review finding
-          // round 4 — found while fixing a narrower provenance bug in the
-          // same predicate): `evaluate()` has computed both of these on its
-          // internal `report` object since round 2, but this hand-built
-          // payload never included either, so `drive.ts`'s own
+          // The structured evidence behind `ci`: `evaluate()` has computed both
+          // of these on its internal `report` object all along, but this
+          // hand-built payload never included either, so `drive.ts`'s own
           // `finalStatus.failingCheckNames`/`failingCheckRunNames` reads were
-          // always `undefined` and `staleRequiredFailure` could never
-          // evaluate `true` in production — every round-2/round-4 fix to
-          // that predicate's LOGIC was polishing evidence that never
-          // actually arrived at the CLI boundary.
+          // always `undefined` and `staleRequiredFailure` could never evaluate
+          // `true` in production — every earlier fix to that predicate's LOGIC
+          // was polishing evidence that never actually arrived at the CLI
+          // boundary.
           failingCheckNames: report.failingCheckNames,
           failingCheckRunNames: report.failingCheckRunNames,
-          // The commit-status-only complement (review finding
-          // round 5) — `drive.ts` needs this to tell a purely check-run-
-          // sourced failure from one that ALSO has a fresh, unambiguous
-          // commit-status occurrence under the same name.
+          // The commit-status-only complement — `drive.ts` needs this to tell a
+          // purely check-run- sourced failure from one that ALSO has a fresh,
+          // unambiguous commit-status occurrence under the same name.
           failingStatusNames: report.failingStatusNames,
         })}\n`,
       );
@@ -1010,18 +999,17 @@ async function main(): Promise<number> {
   //   of one per status read. `--no-reconcile` is the explicit opt-out for a
   //   caller that wants the verdict and nothing else.
   //
-  //   Non-fatal TO A RE-ARMING VERDICT, and off this script's stdout. The
-  //   sweep emits NDJSON there, which would corrupt the `--json` report its
-  //   callers parse — so its stdout is captured and re-emitted on stderr with
-  //   the rest of the round's narration. A non-zero exit never makes a round
-  //   this gate could otherwise judge unjudgeable: 0 and 4 both re-arm, so the
-  //   next pass sweeps again. It DOES block every member of
-  //   `UNRECONCILED_STOPPERS` — the verdicts that do not re-arm — see
-  //   `sweepReconciled` at the loop below for why that distinction is the
-  //   whole rule rather than two competing ones. Named rather than enumerated:
-  //   this copy still said "8/9/10" after exit 7 joined the set, which is the
-  //   second time a hand-written restatement of it drifted (the header's copy
-  //   was the first — chatgpt-codex-connector and docomply-review, a reference-implementation pull request).
+  //   Non-fatal TO A RE-ARMING VERDICT, and off this script's stdout. The sweep
+  //   emits NDJSON there, which would corrupt the `--json` report its callers
+  //   parse — so its stdout is captured and re-emitted on stderr with the rest
+  //   of the round's narration. A non-zero exit never makes a round this gate
+  //   could otherwise judge unjudgeable: 0 and 4 both re-arm, so the next pass
+  //   sweeps again. It DOES block every member of `UNRECONCILED_STOPPERS` — the
+  //   verdicts that do not re-arm — see `sweepReconciled` at the loop below for
+  //   why that distinction is the whole rule rather than two competing ones.
+  //   Named rather than enumerated: this copy still said "8/9/10" after exit 7
+  //   joined the set, which is the second time a hand-written restatement of it
+  //   drifted (the header's copy was the first).
   //
   // Deadlined like every other helper spawn here (mode 13 in
   // references/terminal-states.md) — the sweep bounds each of its OWN network
@@ -1034,17 +1022,15 @@ async function main(): Promise<number> {
   //
   // SCOPED by --bots-only, forwarded verbatim. An earlier version deliberately
   // did not, reasoning that a human thread already carrying a trusted outcome
-  // token has been triaged and so is not intentionally open. `AGENTS.md`
-  // § Addressing PR Comments says the opposite in as many words, and it is the
-  // canonical rule: "a **human** thread you replied to but chose not to close
-  // on the author's behalf" is the ONE sanctioned exception to "every comment
-  // you act on ends resolved", and "that exception is why continuous mode
-  // targets bot threads (`--bots-only`)". A replied-but-open human thread is
-  // therefore the exception itself, not a leak — and this sweep runs
-  // unattended, which is precisely the act the rule governs, so sweeping it
-  // closed would have turned the author's own triage into the warrant for
-  // overriding their choice not to close it (chatgpt-codex-connector, PR
-  // #4067).
+  // token has been triaged and so is not intentionally open. The canonical rule
+  // (`/resolve-review-comments` § Human threads) says the opposite: a **human**
+  // thread you replied to but chose not to close on the author's behalf is the
+  // ONE sanctioned exception to "every comment you act on ends resolved", and
+  // that exception is why continuous mode targets bot threads (`--bots-only`).
+  // A replied-but-open human thread is therefore the exception itself, not a
+  // leak — and this sweep runs unattended, which is precisely the act the rule
+  // governs, so sweeping it closed would have turned the author's own triage
+  // into the warrant for overriding their choice not to close it.
   //
   // The invariant that fix established is ONE-DIRECTIONAL, and it is worth
   // stating that way rather than as "the scopes are identical": the sweep must
@@ -1052,7 +1038,7 @@ async function main(): Promise<number> {
   // convergence does not measure. Narrower is safe, and `sweepBotsOnly` below
   // uses that room — an unattended drive sweeps bot threads even when the
   // operator asked to count human ones too, because "nobody is watching" is
-  // what the AGENTS.md exception turns on, not what the operator wanted
+  // what the human-thread exception turns on, not what the operator wanted
   // counted.
   //
   // LIVENESS FIRST, ahead of it, and failing closed. "A merged or closed PR
@@ -1063,7 +1049,7 @@ async function main(): Promise<number> {
   // before the gate ever returned PR_NOT_OPEN. Those are mutations on a
   // finished pull request, taken by a round that was not entitled to run at
   // all; `--all-open` already scopes itself to OPEN PRs, so the embedded sweep
-  // was the one caller that did not (chatgpt-codex-connector, a reference-implementation pull request).
+  // was the one caller that did not.
   //
   // A separate `gh` read, on `state` alone — the same cheap read, for the
   // same reason, as the liveness probe on `evaluate()`'s missing-field path.
@@ -1080,24 +1066,23 @@ async function main(): Promise<number> {
   // What IS closed here is the direction that outlives the window: a decision
   // taken on a stale read can never license a verdict that ends the drive,
   // because that permission comes from `sweepReconciled` below, not from this
-  // read (docomply-review, a reference-implementation pull request).
+  // read.
   //
   // An UNREADABLE answer does not merely skip the sweep, though — that is the
   // whole reason this sits inside the loop rather than above it. "Skipping
-  // costs a deferral to the next pass entry" is true only where there IS a
-  // next pass, and the verdicts this sweep exists for are precisely the ones
-  // that do not re-arm — `UNRECONCILED_STOPPERS`, named rather than restated
-  // for the same reason as above: this copy still listed the retired
-  // PR_IS_DRAFT. Every one of them ends
-  // the drive, so a pass that skipped the sweep on a transient `gh` blip and
-  // then returned one of them would recreate the indefinite unresolved-thread
-  // leak an earlier change closed, with nothing left to retry it (docomply-review, PR
-  // #4067). So an unreadable state degrades the WHOLE pass to INDETERMINATE —
-  // the retry class, sharing `evaluate()`'s own bounded budget below — and no
-  // terminal verdict is ever reported by a pass that skipped the sweep for a
-  // reason that might clear. A read that positively says the PR is finished
-  // is a different matter: it will not clear, and `evaluate()` is about to
-  // return PR_NOT_OPEN for it anyway.
+  // costs a deferral to the next pass entry" is true only where there IS a next
+  // pass, and the verdicts this sweep exists for are precisely the ones that do
+  // not re-arm — `UNRECONCILED_STOPPERS`, named rather than restated for the
+  // same reason as above: this copy still listed the retired PR_IS_DRAFT. Every
+  // one of them ends the drive, so a pass that skipped the sweep on a transient
+  // `gh` blip and then returned one of them would recreate the indefinite
+  // unresolved-thread leak this sweep closes, with nothing left to retry it. So
+  // an unreadable state degrades the WHOLE pass to INDETERMINATE — the retry
+  // class, sharing `evaluate()`'s own bounded budget below — and no terminal
+  // verdict is ever reported by a pass that skipped the sweep for a reason that
+  // might clear. A read that positively says the PR is finished is a different
+  // matter: it will not clear, and `evaluate()` is about to return PR_NOT_OPEN
+  // for it anyway.
   const deadline = Date.now() + timeout * 1000;
   /**
    * What is LEFT of the caller's `--timeout`. Non-positive means spent.
@@ -1110,11 +1095,10 @@ async function main(): Promise<number> {
    * invariant is what to preserve — no site spends time it has not checked for
    * — rather than a tally of which sites currently do, since that number is
    * derivable from the control flow below and goes stale the moment another
-   * wait or spawn is added (chatgpt-codex-connector, a reference-implementation pull request).
+   * wait or spawn is added.
    *
    * Worth recording because it is why this is one bug rather than several:
-   * chatgpt-codex-connector, coderabbitai and docomply-review each reported a
-   * different site of the same omission, in the same round.
+   * every such site is a different instance of the same omission.
    */
   const budgetLeftMs = (): number => deadline - Date.now();
   /**
@@ -1123,8 +1107,7 @@ async function main(): Promise<number> {
    * The predicate every waiting site stops on, so the answer cannot differ by
    * site. Refusing a sleep that would not fit is the same rule as refusing to
    * act after the deadline has passed, stated one poll earlier: `--timeout 30
-   * --interval 30` must not return at 50s because a sweep spent the first 20
-   * (chatgpt-codex-connector, a reference-implementation pull request).
+   * --interval 30` must not return at 50s because a sweep spent the first 20.
    */
   const intervalFits = (): boolean => budgetLeftMs() >= interval * 1000;
   let queryErrors = 0;
@@ -1138,14 +1121,13 @@ async function main(): Promise<number> {
   /**
    * Scope for the SWEEP, which is not always the scope for the COUNT.
    *
-   * `--bots-only` narrows both, as before. What this adds is that an
-   * UNATTENDED drive sweeps bot threads whether or not the operator asked to
-   * count only those: `$DRIVE_PR_TARGET` exists exactly when `drive.ts`
-   * spawned this gate, and `drive.ts` is the unattended runner. Resolving a
-   * human's replied-but-open thread with nobody watching is the act
-   * `AGENTS.md` § Addressing PR Comments reserves, and it does not become
-   * permissible because the operator also wanted human threads counted
-   * (chatgpt-codex-connector, a reference-implementation pull request).
+   * `--bots-only` narrows both, as before. What this adds is that an UNATTENDED
+   * drive sweeps bot threads whether or not the operator asked to count only
+   * those: `$DRIVE_PR_TARGET` exists exactly when `drive.ts` spawned this gate,
+   * and `drive.ts` is the unattended runner. Resolving a human's
+   * replied-but-open thread with nobody watching is the act
+   * `/resolve-review-comments` § Human threads reserves, and it does not become
+   * permissible because the operator also wanted human threads counted.
    *
    * The two scopes may therefore differ, but only in the safe direction. The
    * rule the earlier fix established is that reconciliation must never act on
@@ -1168,14 +1150,14 @@ async function main(): Promise<number> {
    *
    * DENY BY DEFAULT is the whole design, and it is the correction to how this
    * guard was built. It started as "8/9/10 need a successful sweep" and then
-   * acquired one exemption per reported signal: `--no-reconcile` (round 4),
-   * then `--no-count` (round 6), each argued individually and each a hole.
-   * `--no-count` was the clearest demonstration that per-signal reasoning does
-   * not work here: it "proves the pass entry already swept" only if that entry
-   * swept SUCCESSFULLY, and a counting pass deliberately returns ROUND_READY
-   * over a FAILED sweep — so a mid-round `--no-count` re-read inside exactly
-   * that round would have certified a drive-ending verdict for a sweep that
-   * never succeeded (docomply-review, a reference-implementation pull request).
+   * acquired one exemption per reported signal: `--no-reconcile`, then
+   * `--no-count`, each argued individually and each a hole. `--no-count` was
+   * the clearest demonstration that per-signal reasoning does not work here: it
+   * "proves the pass entry already swept" only if that entry swept
+   * SUCCESSFULLY, and a counting pass deliberately returns ROUND_READY over a
+   * FAILED sweep — so a mid-round `--no-count` re-read inside exactly that
+   * round would have certified a drive-ending verdict for a sweep that never
+   * succeeded.
    *
    * So no signal is an exemption any more. A suppressed sweep (either flag)
    * simply never sets this, which means such an invocation cannot certify one
@@ -1190,12 +1172,11 @@ async function main(): Promise<number> {
    * not the "liveness read just spent the budget" skip, not the
    * skippedAsFinished liveness path. `!sweepSuppressed && !sweepReconciled`
    * looks like the same thing and is not: both skip paths above leave
-   * `sweepSuppressed` false too (neither flag was passed), so that predicate
-   * is true whenever the sweep merely never got a turn — which, for CONVERGED
+   * `sweepSuppressed` false too (neither flag was passed), so that predicate is
+   * true whenever the sweep merely never got a turn — which, for CONVERGED
    * specifically, produced a false INDETERMINATE on a genuinely converged PR
-   * whose sweep was skipped for budget, not attempted and failed (an earlier change
-   * review round 2). Only this flag distinguishes "ran and failed" from
-   * "never got a turn".
+   * whose sweep was skipped for budget, not attempted and failed. Only this
+   * flag distinguishes "ran and failed" from "never got a turn".
    */
   let sweepRanAndFailed = false;
   /**
@@ -1222,13 +1203,12 @@ async function main(): Promise<number> {
     if (!sweepSuppressed) sweepSettled = false;
     queryErrors += 1;
     // BOTH bounds, not just the count. `--timeout` is the deadline the caller
-    // advertised, and this helper is reached from paths that did not exist
-    // when the only deadline check was placed down in `case 4` — so a
-    // count-only bound overran it: `--timeout 5 --interval 5` slept twice and
-    // returned after 10s+, and a clamped sweep before it widened the overrun
-    // further (chatgpt-codex-connector + docomply-review, a reference-implementation pull request,
-    // independently). Checked BEFORE the sleep, since sleeping past a deadline
-    // that has already passed is the overrun.
+    // advertised, and this helper is reached from paths that did not exist when
+    // the only deadline check was placed down in `case 4` — so a count-only
+    // bound overran it: `--timeout 5 --interval 5` slept twice and returned
+    // after 10s+, and a clamped sweep before it widened the overrun further.
+    // Checked BEFORE the sleep, since sleeping past a deadline that has already
+    // passed is the overrun.
     if (once || queryErrors >= MAX_QUERY_ERRORS || !intervalFits()) {
       await emit(1);
       return 1;
@@ -1249,15 +1229,15 @@ async function main(): Promise<number> {
     // NO SPAWN EVER STARTS ON A SPENT BUDGET. The ONE exemption is the FIRST
     // `evaluate()`, and it is deliberately that narrow.
     //
-    // Getting the scope of that exemption right took three review rounds, so
-    // the two wrong shapes are worth keeping written down. First the guard sat
+    // Getting the scope of that exemption right took several attempts, so the
+    // two wrong shapes are worth keeping written down. First the guard sat
     // inside `if (!sweepSettled)`, which covered that block's spawns and
-    // nothing else — a settled sweep skipped it and `evaluate()` began past
-    // the deadline anyway. Then it moved here but exempted the whole first
+    // nothing else — a settled sweep skipped it and `evaluate()` began past the
+    // deadline anyway. Then it moved here but exempted the whole first
     // ITERATION, which still let a spent budget start a liveness read and a
     // reconciliation subprocess, so `--timeout` could be consumed entirely by
     // work that is not the promised evaluation and `evaluate()` would then run
-    // on top of it (docomply-review, a reference-implementation pull request, rounds 19 and 20).
+    // on top of it.
     //
     // The distinction that resolves it: the evaluation is what the caller is
     // PROMISED (`--once` promises exactly one, so a `--timeout` shorter than
@@ -1291,14 +1271,13 @@ async function main(): Promise<number> {
     iterations += 1;
 
     // `!spent` applies on EVERY iteration, the first included — that is the
-    // whole of the round-20 fix. A first iteration with nothing left skips
-    // straight to the evaluation it owes the caller, rather than spending the
-    // overrun on a sweep whose failure mode is merely a deferral.
+    // whole of the fix. A first iteration with nothing left skips straight to
+    // the evaluation it owes the caller, rather than spending the overrun on a
+    // sweep whose failure mode is merely a deferral.
     //
     // RECORDED, not silent. That skip is what makes a pass reach a verdict
     // with no sweep attempted, and the guard at the bottom needs to know it
-    // happened — reported as a high-severity finding on exactly this fix
-    // (docomply-review, a reference-implementation pull request round 21).
+    // happened — reported as a high-severity finding on exactly this fix.
     if (!sweepSettled && spent) {
       console.error(
         `drive-status.ts: skipping the replied-thread reconciliation sweep for #${pr} — the ${timeout}s budget was already spent when this iteration began, so it is deferred to the next pass entry`,
@@ -1307,16 +1286,14 @@ async function main(): Promise<number> {
     if (!sweepSettled && !spent) {
       // An EXPIRED budget is not a small budget, which is what the `!spent`
       // condition above is protecting: the sweep spawn floors its deadline at
-      // one second (`run` treats 0 as "no deadline", so the floor itself has
-      // to stay), and without that guard the floor turned a spent budget into
-      // a fresh subprocess plus a whole `evaluate()` (coderabbitai +
-      // docomply-review, a reference-implementation pull request, independently).
+      // one second (`run` treats 0 as "no deadline", so the floor itself has to
+      // stay), and without that guard the floor turned a spent budget into a
+      // fresh subprocess plus a whole `evaluate()`.
       //
       // CLAMPED TO THE REMAINING BUDGET, not merely deadlined. `ghCall`
       // applies `GH_CALL_TIMEOUT` (30s), which is INDEPENDENT of `--timeout`
       // — so on a gate asked for 30s this one read could spend the whole
-      // budget on its own and then hand the sweep below a spent one
-      // (coderabbitai, PR #4067).
+      // budget on its own and then hand the sweep below a spent one.
       //
       // Through the shared chokepoints rather than a raw `run(['gh', …])`:
       // this skill has a guardrail test asserting every outbound `gh` call
@@ -1333,13 +1310,13 @@ async function main(): Promise<number> {
         timeoutSec: Math.max(1, Math.ceil(budgetLeftMs() / 1000)),
         caller: "sweep",
       });
-      // An EXPLICIT closed set, in both directions. `OPEN` sweeps; `CLOSED`
-      // and `MERGED` are the only values that positively mean finished.
-      // Everything else — a failed read, a malformed answer, a state GitHub
-      // adds later — is unreadable, not finished: treating "not exactly OPEN"
-      // as a confirmed terminal state let an unrecognised value skip the sweep
-      // and then permit a verdict that ends the drive (docomply-review, PR
-      // #4067). `readPrState` only ever returns one of the three.
+      // An EXPLICIT closed set, in both directions. `OPEN` sweeps; `CLOSED` and
+      // `MERGED` are the only values that positively mean finished. Everything
+      // else — a failed read, a malformed answer, a state GitHub adds later —
+      // is unreadable, not finished: treating "not exactly OPEN" as a confirmed
+      // terminal state let an unrecognised value skip the sweep and then permit
+      // a verdict that ends the drive. `readPrState` only ever returns one of
+      // the three.
       if (!live.ok) {
         const stop = await degrade(
           // Named as the transient failure it is, in `evaluate()`'s own
@@ -1374,7 +1351,7 @@ async function main(): Promise<number> {
         // is an outbound call, so an iteration that began with budget can
         // arrive here with none, and the floor below would then turn that
         // into a one-second helper spawn — the same "expired budget is not a
-        // small budget" defect one call later (coderabbitai, PR #4067).
+        // small budget" defect one call later.
         //
         // A SKIP, not a degrade, and deliberately so: this is the same
         // give-way rule as the loop top. The sweep is not what the caller is
@@ -1392,8 +1369,8 @@ async function main(): Promise<number> {
         // deadline down in `case 4` — so an unclamped sweep blocks for up to
         // `$DRIVE_PR_HELPER_TIMEOUT` (120s by default) before any deadline
         // check runs, and `--timeout 30` could sit for two minutes. Repeated
-        // sweeps near the deadline overshoot again (docomply-review, PR
-        // #4067). A caller that asked for 30s gets a sweep bounded by 30s.
+        // sweeps near the deadline overshoot again. A caller that asked for 30s
+        // gets a sweep bounded by 30s.
         //
         // Never below 1: `run` treats 0 as "no deadline", so flooring at 1
         // keeps a sub-second budget from silently becoming an unbounded call.
@@ -1410,8 +1387,7 @@ async function main(): Promise<number> {
         // and resolves threads ON GITHUB. Exit 13 was first raised at the
         // leased `bump-round` far below, so a second worktree reached this
         // point, resolved threads belonging to another resolver's round, and
-        // only afterwards learned it was not admitted
-        // (chatgpt-codex-connector, P2).
+        // only afterwards learned it was not admitted.
         //
         // Checked here instead, before anything leaves the machine. `admit`
         // takes no lease and mutates nothing, so this cannot itself become the
@@ -1474,7 +1450,7 @@ async function main(): Promise<number> {
           // polling but no longer trying to fix the thing it was waiting on,
           // which contradicted this skill's own docs and could leave answered
           // threads unresolved after a transient helper failure had already
-          // cleared (docomply-review, a reference-implementation pull request). The natural bound is the
+          // cleared. The natural bound is the
           // poll: one attempt per `--interval`, each deadlined by
           // `$DRIVE_PR_HELPER_TIMEOUT`, for at most `--timeout` — so a durably
           // failing sweep costs one short subprocess per poll on a run that is
@@ -1492,7 +1468,7 @@ async function main(): Promise<number> {
     // have consumed it: the liveness read carries its own `GH_CALL_TIMEOUT`
     // and the sweep is clamped to whatever was left, so an iteration that
     // began with budget can arrive here with none. The loop-top check is a
-    // stale answer by this point (docomply-review, a reference-implementation pull request round 20).
+    // stale answer by this point.
     //
     // Bounded to iterations PAST the first, and that boundary is the same
     // promise as above: the caller is owed one `evaluate()`, so iteration 1
@@ -1526,7 +1502,7 @@ async function main(): Promise<number> {
     // withdrawn rather than merely denied the licence to certify a stopper:
     // otherwise a reopened PR could be handed a ROUND_READY that never swept,
     // which contradicts this gate's own contract that reconciliation happens
-    // before any verdict at all (docomply-review, a reference-implementation pull request).
+    // before any verdict at all.
     //
     // BOUNDED BY A BUDGET, not by a latch, because this branch `continue`s
     // past the `switch` below and every budget in this loop lives inside it.
@@ -1535,13 +1511,12 @@ async function main(): Promise<number> {
     //
     //   A bare flag was no bound at all — it cleared here, but the next
     //   iteration's liveness read set it again, so an `evaluate()` that kept
-    //   returning INDETERMINATE looped forever, `--once` included
-    //   (chatgpt-codex-connector, a reference-implementation pull request).
+    //   returning INDETERMINATE looped forever, `--once` included.
     //
     //   A one-shot LATCH bounded the loop but reopened the hole the branch
     //   exists to close: after the first retraction, a second CLOSED probe
     //   followed by an open evaluation was let through, and ROUND_READY was
-    //   returned unswept (docomply-review, a reference-implementation pull request).
+    //   returned unswept.
     //
     // So the disagreement is retried on a budget and, when that runs out,
     // becomes INDETERMINATE — never an unswept verdict. `degrade()` is the
@@ -1554,11 +1529,11 @@ async function main(): Promise<number> {
     // is bounded and is the right answer for an unreadable read.
     //
     // Under `--once` it does not retract at all, it degrades on the first
-    // disagreement. Retracting means re-running `evaluate()`, and `--once` is
-    // a promise to evaluate once — a promise this branch was quietly breaking,
-    // since it is the only path that loops without sleeping (docomply-review,
-    // a reference-implementation pull request). Deferring is the same answer this gate gives everywhere else
-    // for `--once`: the caller comes back, and its next pass entry sweeps.
+    // disagreement. Retracting means re-running `evaluate()`, and `--once` is a
+    // promise to evaluate once — a promise this branch was quietly breaking,
+    // since it is the only path that loops without sleeping. Deferring is the
+    // same answer this gate gives everywhere else for `--once`: the caller
+    // comes back, and its next pass entry sweeps.
     if (skippedAsFinished && code !== 5 && code !== 1) {
       skippedAsFinished = false;
       if (once || skipRetractions >= MAX_QUERY_ERRORS) {
@@ -1606,13 +1581,12 @@ async function main(): Promise<number> {
     // `--json mergeable` can still serve the sweep's GraphQL calls.
     //
     // An earlier cut of this fix kept the exclusion and made it conditional on
-    // a `sweepSkippedForBudget` flag, which covered the sweep being SKIPPED
-    // and left the sweep having RUN AND FAILED — the same hole, other branch
-    // (docomply-review, a reference-implementation pull request). Membership needs no flag: a successful
-    // sweep sets `sweepReconciled`, so exit 2 still returns with the one
-    // message naming the actual fix in every case where `gh` can talk to
-    // GitHub at all. Only a genuinely unreconciled pass degrades, which is the
-    // criterion above applied without an exception.
+    // a `sweepSkippedForBudget` flag, which covered the sweep being SKIPPED and
+    // left the sweep having RUN AND FAILED — the same hole, other branch.
+    // Membership needs no flag: a successful sweep sets `sweepReconciled`, so
+    // exit 2 still returns with the one message naming the actual fix in every
+    // case where `gh` can talk to GitHub at all. Only a genuinely unreconciled
+    // pass degrades, which is the criterion above applied without an exception.
     //
     // CONVERGED (3) STAYS out of this set, and that took a false start to
     // learn: a first cut of this fix reasoned "3 needs zero unresolved
@@ -1627,8 +1601,7 @@ async function main(): Promise<number> {
     // call — folding 3 into this blanket set made CONVERGED permanently
     // unreachable through the one path built to reach it without a sweep. The
     // suite's own `announce-merge-ready.ts` describe block is what caught it:
-    // most of it failed, each test expecting a real exit code and getting `1`
-    // (chatgpt-codex-connector, a reference-implementation pull request).
+    // most of it failed, each test expecting a real exit code and getting `1`.
     //
     // The real gap CONVERGED has is narrower than "any failed sweep", and the
     // guard below covers PART of it without the `--no-count` cost above.
@@ -1648,22 +1621,21 @@ async function main(): Promise<number> {
     // CONVERGED, so only a sweep that genuinely ran withholds it. See the
     // dedicated guard below rather than `UNRECONCILED_STOPPERS` membership.
     //
-    // WHAT THIS ACTUALLY CLOSES, stated precisely rather than as "covered":
-    // for a SINGLE, `--once` invocation (the interactive gate, SKILL.md § 1)
-    // it is the whole fix — that pass reports INDETERMINATE, naming the
-    // stale key on stderr, instead of silently certifying over it. For a
-    // POLLING invocation (`drive.ts`'s own call, which never passes `--once`
-    //), `degrade` re-arms and retries the sweep
-    // on the next `--interval`; by then the thread has already left the
-    // unresolved listing this script enumerates, the sweep exits 0 cleanly
-    // with nothing left to do, and CONVERGED is certified one interval later
-    // with the stale entry still unrevisited — the guard only delays that
-    // certification, it does not make the cleanup durable. Closing the
-    // cross-invocation case needs the fix to live where the leak actually is
-    // (a retryable `release-held`, or a dedicated pass over `held` entries
-    // whose thread has since resolved) rather than in this gate, which can
-    // only ever refuse to CERTIFY, never resolve, anything on this side —
-    // tracked separately as an earlier change rather than folded into this fix.
+    // WHAT THIS ACTUALLY CLOSES, stated precisely rather than as "covered": for
+    // a SINGLE, `--once` invocation (the interactive gate, SKILL.md § 1) it is
+    // the whole fix — that pass reports INDETERMINATE, naming the stale key on
+    // stderr, instead of silently certifying over it. For a POLLING invocation
+    // (`drive.ts`'s own call, which never passes `--once`), `degrade` re-arms
+    // and retries the sweep on the next `--interval`; by then the thread has
+    // already left the unresolved listing this script enumerates, the sweep
+    // exits 0 cleanly with nothing left to do, and CONVERGED is certified one
+    // interval later with the stale entry still unrevisited — the guard only
+    // delays that certification, it does not make the cleanup durable. Closing
+    // the cross-invocation case needs the fix to live where the leak actually
+    // is (a retryable `release-held`, or a dedicated pass over `held` entries
+    // whose thread has since resolved) rather than in this gate, which can only
+    // ever refuse to CERTIFY, never resolve, anything on this side — tracked
+    // separately as an earlier change rather than folded into this fix.
     //
     //   5  PR_NOT_OPEN — nothing to reconcile on a finished PR.
     //   1  INDETERMINATE — already this branch's own output.
@@ -1674,28 +1646,27 @@ async function main(): Promise<number> {
     //      pass. Either way the next invocation's pass entry sweeps, which is
     //      the re-arm this criterion asks for.
     //
-    //      Note the retry story differs by mode, and an earlier version of
-    //      this comment claimed the polling one for both: without `--once` the
-    //      sweep is re-attempted on every poll, so a 4 returned after the
-    //      window has been retried throughout; WITH `--once` there is a single
-    //      iteration and no in-invocation retry at all (docomply-review, PR
-    //      #4067). That does not change the classification — the re-arm comes
-    //      from the caller in both modes — but the rationale must not rest on
-    //      a retry that only one of them performs.
+    //      Note the retry story differs by mode, and an earlier version of this
+    //      comment claimed the polling one for both: without `--once` the sweep
+    //      is re-attempted on every poll, so a 4 returned after the window has
+    //      been retried throughout; WITH `--once` there is a single iteration
+    //      and no in-invocation retry at all. That does not change the
+    //      classification — the re-arm comes from the caller in both modes —
+    //      but the rationale must not rest on a retry that only one of them
+    //      performs.
     //
     // CONVERGED's own gate, separate from set membership for the reason given
     // above: `!sweepReconciled` alone would ALSO be true on every SUPPRESSED
     // invocation, and `announce-merge-ready.ts`'s `--no-count` re-read has to
-    // stay able to certify CONVERGED through exactly that state. `!sweepReconciled
-    // && !sweepSuppressed` is not the fix either — both budget-skip paths above
-    // (the loop-top spent check, and "the liveness read just spent the
-    // budget") leave `sweepSuppressed` false too, since neither flag was
-    // passed, so that predicate is also true when the sweep merely never got
-    // a turn this iteration — which produced a false INDETERMINATE on a
-    // genuinely converged PR whose sweep was skipped, not run and failed
-    //. `sweepRanAndFailed` is the narrower fact:
-    // set ONLY where the sweep subprocess actually spawned and exited
-    // nonzero, never by a skip.
+    // stay able to certify CONVERGED through exactly that state.
+    // `!sweepReconciled && !sweepSuppressed` is not the fix either — both
+    // budget-skip paths above (the loop-top spent check, and "the liveness read
+    // just spent the budget") leave `sweepSuppressed` false too, since neither
+    // flag was passed, so that predicate is also true when the sweep merely
+    // never got a turn this iteration — which produced a false INDETERMINATE on
+    // a genuinely converged PR whose sweep was skipped, not run and failed.
+    // `sweepRanAndFailed` is the narrower fact: set ONLY where the sweep
+    // subprocess actually spawned and exited nonzero, never by a skip.
     const convergedUnswept =
       code === 3 && sweepRanAndFailed && !sweepReconciled;
     if (
@@ -1724,8 +1695,7 @@ async function main(): Promise<number> {
         // `intervalFits()` every other waiting site uses. This branch consulted
         // neither `deadline` nor anything derived from it, so it slept a full
         // interval past the advertised timeout and handed the next iteration a
-        // spent budget to spawn a reconciliation sweep with
-        // (chatgpt-codex-connector, a reference-implementation pull request).
+        // spent budget to spawn a reconciliation sweep with.
         queryErrors += 1;
         if (once || queryErrors >= MAX_QUERY_ERRORS || !intervalFits()) {
           await emit(1);
@@ -1750,7 +1720,7 @@ async function main(): Promise<number> {
         // clock has already passed the deadline. `Date.now() >= deadline` let
         // a full `--interval` be slept on top of whatever the iteration had
         // already spent, so `--timeout 30 --interval 30` returned at ~50s when
-        // a sweep took the first 20 (chatgpt-codex-connector, a reference-implementation pull request) — and
+        // a sweep took the first 20 — and
         // then handed the following iteration a spent budget. `intervalFits()`
         // is the shared predicate — `degrade()` and `case 1` stop on it too —
         // so no waiting site can answer this differently from another.
@@ -1840,17 +1810,16 @@ async function main(): Promise<number> {
         // above for the failure it closes.
         //
         // Skipped when `$DRIVE_PR_TARGET` is set: that env var is only ever
-        // present when `drive.ts` spawned this process as one round's pass,
-        // and `drive.ts` already recorded this exact pass's attempt itself
-        // (its own separate `bump-attempt` call, before spawning the pass)
-        // — bumping again here would double-count every real pass under the
-        // unattended driver, firing `reflectDue` after 2 passes instead of
-        // more than 3 and hitting `--max-rounds` around pass 5 instead of 10
-        // (chatgpt-codex-connector, a reference-implementation pull request). By the time this line runs,
-        // `$DRIVE_PR_TARGET` has already been checked equal to `pr` above (or
-        // this process exited) — no further comparison needed. `reflectDue`
-        // still reads correctly with the bump skipped: the durable counter
-        // already reflects drive.ts's own prior bump for this round.
+        // present when `drive.ts` spawned this process as one round's pass, and
+        // `drive.ts` already recorded this exact pass's attempt itself (its own
+        // separate `bump-attempt` call, before spawning the pass) — bumping
+        // again here would double-count every real pass under the unattended
+        // driver, firing `reflectDue` after 2 passes instead of more than 3 and
+        // hitting `--max-rounds` around pass 5 instead of 10. By the time this
+        // line runs, `$DRIVE_PR_TARGET` has already been checked equal to `pr`
+        // above (or this process exited) — no further comparison needed.
+        // `reflectDue` still reads correctly with the bump skipped: the durable
+        // counter already reflects drive.ts's own prior bump for this round.
         if (bumpAttempt && !process.env.DRIVE_PR_TARGET) {
           const bumpA = await run(
             tsArgv(ctx.driveStateScript, [

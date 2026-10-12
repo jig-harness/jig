@@ -36,7 +36,7 @@ describe("parseRoundCount", () => {
   // A bare digit test passes all of these. The first is the dangerous one:
   // parseInt returns Infinity, the script printed the literal `Infinity`, and
   // a `round >= 4` consumer armed the decline-only cutoff off corrupt state —
-  // the exact inversion of the fail-open contract (PR #4076).
+  // the exact inversion of the fail-open contract.
   it("refuses a non-canonical or unrepresentable ordinal", () => {
     expect(parseRoundCount("9".repeat(400))).toBe(0);
     expect(parseRoundCount(`${Number.MAX_SAFE_INTEGER + 2}`)).toBe(0);
@@ -207,7 +207,7 @@ describe("current-round.ts probes", () => {
   });
 
   // The round-3 fix tightened the counter FILE's parse and left this sibling
-  // input on a bare digit test — the same defect, one path over (PR #4076).
+  // input on a bare digit test — the same defect, one path over.
   it("refuses a non-canonical ordinal from drive-pr too, and says so", () => {
     for (const bad of ["9".repeat(400), "9007199254740992", "004", "-1"]) {
       const r = withStubbedDriveState(bad);
@@ -240,7 +240,7 @@ describe("current-round.ts probes", () => {
   // — so it must be established before the spawn. The executable is the
   // runtime, which always exists, so a missing entrypoint is just bun exiting
   // 1: indistinguishable from a script that ran and failed, which made the
-  // anomaly line print on every read for a standalone install (PR #4076).
+  // anomaly line print on every read for a standalone install.
   it("stays silent when the sibling drive-pr skill is not installed", () => {
     const solo = mkdtempSync(join(tmpdir(), "current-round-solo-"));
     try {

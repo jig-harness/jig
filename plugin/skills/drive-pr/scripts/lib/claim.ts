@@ -86,7 +86,7 @@ export function formatClaim(
  * an earlier change stand-down bug (the pass reads its own driver as a
  * rival and burns the whole round budget refusing). Both only need
  * `pr`/`worktree`/`log`/`started`, none of which a missing `account` key
- * should have cost them (docomply-review).
+ * should have cost them.
  */
 const PRE_DOC_7878_ACCOUNT: AccountIdentity = {
   account: null,
@@ -106,8 +106,8 @@ const PRE_DOC_7878_ACCOUNT: AccountIdentity = {
  * (`resolved`/`unresolved`) guarantee a RELATIONAL contract this must also
  * enforce, or a claim carrying `{account:"x",vendor:null,reason:"failed"}` —
  * type-valid per field, but a shape neither constructor ever produces — would
- * parse as a resolved identity with no vendor and a spurious reason
- * (docomply-review): a resolved identity (`account !== null`) always carries
+ * parse as a resolved identity with no vendor and a spurious reason:
+ * a resolved identity (`account !== null`) always carries
  * a real `vendor` and a `null` reason; an unresolved one (`account === null`)
  * always carries a non-null `reason` explaining the absence.
  *
@@ -116,8 +116,7 @@ const PRE_DOC_7878_ACCOUNT: AccountIdentity = {
  * value (a fingerprint, an email, a path, an explanation), never `''`. A
  * type-only check lets `{account:"",vendor:"claude",provenance:"",
  * reason:null}` and `{account:null,vendor:null,provenance:"",reason:""}`
- * both parse as legitimate identities no real resolver call ever produces
- * (chatgpt-codex-connector, a reference-implementation pull request round 5).
+ * both parse as legitimate identities no real resolver call ever produces.
  */
 function parseAccount(value: unknown): AccountIdentity | null {
   if (typeof value !== "object" || value === null) return null;
@@ -177,7 +176,7 @@ function parseDiag(rest: string): ClaimDiag | null {
  * The positivity check is load-bearing, not pedantry: no process has pid 0,
  * and `kill(0, sig)` addresses the CALLER's entire process group — so a
  * `0 <host>` claim read as live would let `drives.ts --stop` SIGTERM the
- * operator's own session (docomply-review, a reference-implementation pull request round 1). Refused here,
+ * operator's own session. Refused here,
  * at the one parse boundary every claim reader shares, so no liveness probe
  * or signal can ever be aimed at it.
  */
@@ -199,8 +198,8 @@ export function parseClaimText(text: string): ClaimRecord | null {
  *
  * This is the only portable answer to pid reuse — after a driver dies, the OS
  * can hand its pid to an unrelated long-lived process, `process.kill(pid, 0)`
- * then reports that stranger as alive, and every later start refuses forever
- * (docomply-review and chatgpt-codex-connector, a reference-implementation pull request). A real driver
+ * then reports that stranger as alive, and every later start refuses forever.
+ * A real driver
  * refreshes on `drive.ts`'s own heartbeat timer; a recycled pid never does.
  *
  * The default is deliberately far longer than any real round — the failure
@@ -240,14 +239,13 @@ export function claimLive(record: {
 
 /**
  * How long a staging directory may sit unpublished, on THIS host, before its
- * named owner counts as abandoned. Staging cannot fall back to a heartbeat
- * the way a held claim does — it is meant to exist for a few synchronous
- * syscalls and is never refreshed — so this is a short, syscall-scale window
- * rather than `heartbeatStaleMs()`'s multi-minute floor. Shared by
- * `drive.ts`'s own `sweepStaleStaging` and `migrate-state-dir.ts`'s
- * `lockClaim`, so both apply exactly one staging-liveness policy rather than
- * two independently maintained copies (docomply-review, a reference-implementation pull request round 4;
- * chatgpt-codex-connector, a reference-implementation pull request round 11).
+ * named owner counts as abandoned. Staging cannot fall back to a heartbeat the
+ * way a held claim does — it is meant to exist for a few synchronous syscalls
+ * and is never refreshed — so this is a short, syscall-scale window rather than
+ * `heartbeatStaleMs()`'s multi-minute floor. Shared by `drive.ts`'s own
+ * `sweepStaleStaging` and `migrate-state-dir.ts`'s `lockClaim`, so both apply
+ * exactly one staging-liveness policy rather than two independently maintained
+ * copies.
  */
 export const STAGING_STALE_MS = 5 * 60_000;
 

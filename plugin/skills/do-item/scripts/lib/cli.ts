@@ -3,7 +3,7 @@
  * resolve-review-comments' `scripts/lib/cli.ts`.
  *
  * Each entry script carried a byte-identical `isEntryPoint` plus its
- * explanatory comment, and each hand-rolled the same argv walk its own way (coderabbitai + docomply-review, a reference-implementation pull request round 2).
+ * explanatory comment, and each hand-rolled the same argv walk its own way.
  * One copy of each lives here.
  *
  * `node:` APIs only, erasable-syntax-only TypeScript: these run under Bun and
@@ -50,12 +50,12 @@ export interface ParsedArgs {
  * them took the FIRST non-flag argument and silently dropped unknown flags and
  * later positionals, while determine_agent.ts treated every unrecognised
  * token — flag or not — as the input path, last one winning. So
- * `get_issue.ts an earlier change --typo`, `get_issue.ts an earlier change an earlier change` and
+ * `get_issue.ts ENG-123 --typo`, `get_issue.ts ENG-123 ENG-124` and
  * `determine_agent.ts - --typo` each proceeded or failed as a generic runtime
- * error rather than as the usage error argparse gave them (docomply-review,
- * a reference-implementation pull request round 2). At most one positional is accepted because no script here
- * takes two; whether omitting it is legal comes from `spec.defaultPositional`,
- * mirroring each script's own argparse declaration.
+ * error rather than as the usage error argparse gave them. At most one
+ * positional is accepted because no script here takes two; whether omitting it
+ * is legal comes from `spec.defaultPositional`, mirroring each script's own
+ * argparse declaration.
  */
 export function parseArgs(
   argv: string[],
@@ -68,8 +68,8 @@ export function parseArgs(
      * predecessor declared one — `determine_agent.py` used
      * `nargs="?", default="-"`, so a bare invocation read stdin. Omit it and
      * the positional is required, as `get_issue.py` declared its own
-     * (docomply-review, a reference-implementation pull request round 8: requiring one everywhere silently
-     * narrowed determine_agent's public CLI contract).
+     * (requiring one everywhere silently narrowed determine_agent's public
+     * CLI contract).
      *
      * Mutually exclusive with `noPositional` — this is for a script that
      * takes an OPTIONAL positional (`nargs='?'`), not one that takes NONE.
@@ -82,7 +82,7 @@ export function parseArgs(
      * a single supplied positional (silently ignored, since nothing reads
      * `.positional`) and only the `positionals.length > 1` check below ever
      * rejects anything — so exactly one stray positional slipped through
-     * unrejected (chatgpt-codex-connector + docomply-review, a reference-implementation pull request). This
+     * unrejected. This
      * flag rejects any positional, including exactly one.
      */
     noPositional?: boolean;
@@ -101,8 +101,8 @@ export function parseArgs(
   // for `--` alone left single-dash tokens as ordinary values, so
   // `- --catalog -v` took `-v` as the catalog path, silently failed to load it
   // and let a catalog-only label fall through to the default agent, where
-  // argparse rejects the unknown option (docomply-review, a reference-implementation pull request round 7 —
-  // round 6 fixed the same hole one token class narrower).
+  // argparse rejects the unknown option (an earlier fix closed the same hole
+  // one token class narrower).
   const isOption = (t: string) => t.startsWith("-") && t !== "-";
 
   for (let i = 0; i < argv.length; i++) {
@@ -110,7 +110,7 @@ export function parseArgs(
     if (a === undefined) continue;
     // argparse's option TERMINATOR: everything after a bare `--` is a
     // positional, however it is spelled. This is how a caller passes a path
-    // that itself starts with a dash (docomply-review, a reference-implementation pull request round 9).
+    // that itself starts with a dash.
     //
     // MEASURED CAVEAT: only the Node entry point can use it. `bun script.ts --
     // -x` strips the `--` before argv reaches the script, while `node
@@ -149,8 +149,7 @@ export function parseArgs(
         }
         // A following OPTION token is a missing value, not the value. argparse
         // refused `--catalog --verbose` with exit 2; consuming `--verbose` as
-        // the catalog path had the same effect described above
-        // (chatgpt-codex-connector, a reference-implementation pull request round 6).
+        // the catalog path had the same effect described above.
         const value = i + 1 < argv.length ? argv[i + 1] : undefined;
         if (value === undefined || isOption(value) || value === "--") {
           return bad(`${a} requires a value`);

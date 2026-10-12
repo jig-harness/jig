@@ -50,8 +50,7 @@
  * costs nothing to stamp: HEAD already is the PR head, so the flag is
  * satisfied immediately.
  *
- * WHAT THIS SCRIPT DELIBERATELY DOES NOT TRY TO PROVE, and why (PR #4049
- * rounds 4-7, four threads from two independent reviewers):
+ * WHAT THIS SCRIPT DELIBERATELY DOES NOT TRY TO PROVE, and why:
  *
  * A fix applied ONLY to the PR description (`gh pr edit`) produces no commit,
  * so `--pushed-sha "$(git rev-parse HEAD)"` is satisfied whether or not that
@@ -64,19 +63,17 @@
  *
  *  - It proved a commit landed in the ROUND, never that the commit was this
  *    finding's. Two findings held in one round share a `heldAtSha`, so a code
- *    fix for one satisfied the check for the other, description-only or not
- *    (chatgpt-codex-connector, round 7).
+ *    fix for one satisfied the check for the other, description-only or not.
  *  - Its necessary escape hatch was forgeable. A marker already standing at
  *    the SHA was read as "an earlier commit-backed answer landed here", but
  *    `findExactMarkers` accepts any comment from a trusted association
  *    carrying the grammar, and markers posted before the gate existed satisfy
  *    it too — so the induction "the first marker could only have come through
- *    this gate" was simply false (docomply-review, rounds 6 and 7).
+ *    this gate" was simply false.
  *  - It refused a legitimate answer. A first-time `moot` whose removal
  *    predates the hold needs no commit by definition, and neither does a
  *    re-answer renewing a marker over a fix that landed rounds ago — both
- *    deadlock unless the driver manufactures an unrelated commit
- *    (chatgpt-codex-connector, rounds 4 and 7).
+ *    deadlock unless the driver manufactures an unrelated commit.
  *
  * The tie-break rule that settles those, and the one to apply if a future
  * round proposes reinstating some variant: NO LOCAL CHECK CAN BIND A COMMIT TO
@@ -94,7 +91,7 @@
  * winddown-deferred backlog entry — and is then re-asked.
  *
  * That is a bound on intermediate rounds only, and deliberately not claimed as
- * more (docomply-review, round 8). At the head a drive CONVERGES on, no later
+ * more. At the head a drive CONVERGES on, no later
  * reviewer pass ever runs, so nothing expires the marker and the answer stands
  * on the driver's word. That residual is accepted rather than closed, because
  * it is not specific to a description-only fix: a code commit that does not
@@ -111,8 +108,8 @@
  *
  * The reason comes from stdin — never as an argument. Reviewer-authored text
  * containing a backtick, `$(...)`, or `$VAR` gets shell-evaluated on the way
- * in otherwise, corrupting the audit trail before the API ever sees it
- *. Use a QUOTED heredoc (<<'EOF'), or pipe from `printf '%s'`.
+ * in otherwise, corrupting the audit trail before the API ever sees it.
+ * Use a QUOTED heredoc (<<'EOF'), or pipe from `printf '%s'`.
  */
 
 import { dirname, join } from "node:path";
@@ -131,8 +128,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 // `as const`, so `Outcome` is the closed vocabulary rather than `string`. As a
 // plain `string[]` the comparisons further down (`outcome === 'accepted'`) were
-// unchecked string literals, and a typo in one would have compiled
-// (coderabbitai, PR #4034 round 2).
+// unchecked string literals, and a typo in one would have compiled.
 const OUTCOMES = [
   "accepted",
   "rejected",
@@ -225,7 +221,7 @@ async function main(): Promise<number> {
   // The grammar is imported, not restated: `summary-findings.ts` owns
   // MARKER_SAFE_FINGERPRINT and reads the marker back with it, so a second copy
   // here drifting by one character produces markers that never round-trip and a
-  // drive that never converges (coderabbitai, PR #4034 round 2). The two
+  // drive that never converges. The two
   // messages stay separate because they diagnose different halves of it.
   for (const fp of fingerprints) {
     if (!/^[A-Za-z0-9]/.test(fp)) {
@@ -253,9 +249,9 @@ async function main(): Promise<number> {
   // `=== ''` rejected only a zero-byte stdin, so a lone newline or a run of
   // spaces posted `**accepted** — ` with nothing after it, and the marker went
   // up regardless: the finding then reads as answered by a reply that explains
-  // nothing, which is the exact case this guard exists to refuse (coderabbitai,
-  // PR #4034 round 2). Trim to decide, but keep `reason` itself verbatim — the
-  // trailing newlines are deliberately preserved for fenced reasons below.
+  // nothing, which is the exact case this guard exists to refuse. Trim to
+  // decide, but keep `reason` itself verbatim — the trailing newlines are
+  // deliberately preserved for fenced reasons below.
   if (reason.trim() === "") {
     fail(
       2,
@@ -270,13 +266,12 @@ async function main(): Promise<number> {
   // — and the marker posts anyway, so the finding reads as answered and no
   // later pass revisits it.
   //
-  // Measured, not hypothesised: it happened on this skill's own PR (#3995
-  // round 10). `drive-state.ts hold --kind finding` takes the reason on
-  // stdin, held between the fix and the push; writing that held reason the
-  // way a THREAD reply is written — token first, since that is what
-  // reply-to-thread.ts demands — is the natural mistake, and nothing caught
-  // it until four comments were already posted and had to be PATCHed. Refuse
-  // instead, naming the fix.
+  // Measured, not hypothesised: it happened on this skill's own PR.
+  // `drive-state.ts hold --kind finding` takes the reason on stdin, held
+  // between the fix and the push; writing that held reason the way a THREAD
+  // reply is written — token first, since that is what reply-to-thread.ts
+  // demands — is the natural mistake, and nothing caught it until four comments
+  // were already posted and had to be PATCHed. Refuse instead, naming the fix.
   //
   // Checked after stripping LEADING whitespace, not on the reason verbatim: a
   // reason can naturally start with indentation or a blank line (pasted from
@@ -438,15 +433,15 @@ async function main(): Promise<number> {
   // finding outside the reviewer's backlog blob; moving past it for any
   // finding), which answers "is this finding still open" — the wrong question
   // here, and routing this reconciliation through it reintroduced the exact
-  // duplicate-post bug this block exists to close (docomply-review round 2,
-  // a reference-implementation pull request): a driver reconciling moments after its OWN successful post, once
-  // the reviewer had simply caught up to that SHA, saw its own marker as expired
-  // and posted a second one. An exact fingerprint+sha match has no such expiry
-  // — whether the reviewer has read a marker is irrelevant to whether posting it
-  // again would duplicate it. It goes through the CLI rather than importing
-  // `findExactMarkers` and re-fetching the comments here, so there stays one
-  // fetch-and-trust-filter path over that world-writable stream rather than a
-  // second one to drift from it.
+  // duplicate-post bug this block exists to close: a driver reconciling moments
+  // after its OWN successful post, once the reviewer had simply caught up to
+  // that SHA, saw its own marker as expired and posted a second one. An exact
+  // fingerprint+sha match has no such expiry — whether the reviewer has read a
+  // marker is irrelevant to whether posting it again would duplicate it. It
+  // goes through the CLI rather than importing `findExactMarkers` and
+  // re-fetching the comments here, so there stays one fetch-and-trust-filter
+  // path over that world-writable stream rather than a second one to drift from
+  // it.
   //
   // This is a plain read-then-write, not an atomic check-and-post: it narrows
   // the window rather than eliminating it.
@@ -476,13 +471,13 @@ async function main(): Promise<number> {
   // "already posted" from "about to post" without reading the PR.
   //
   // The residual is not closed by a cheaper local fix. Matching ANY SHA here
-  // directly regresses the round-2 rule above (a later, legitimate re-answer of
-  // the same fingerprint under a new SHA would read as already-answered and be
-  // silently skipped, which is a live finding lost, not a re-asked one).
-  // Persisting the dispatched SHA before the POST only relocates the crash
-  // window one step earlier, since no ordering of a local state write and a
-  // remote POST is atomic. Same accepted-residual class as the
-  // in-flight-overlap route above, reached a third way — traded from a
+  // directly regresses the exact-match rule above (a later, legitimate
+  // re-answer of the same fingerprint under a new SHA would read as
+  // already-answered and be silently skipped, which is a live finding lost, not
+  // a re-asked one). Persisting the dispatched SHA before the POST only
+  // relocates the crash window one step earlier, since no ordering of a local
+  // state write and a remote POST is atomic. Same accepted-residual class as
+  // the in-flight-overlap route above, reached a third way — traded from a
   // permanent wrong comment on the PR to a stale local entry with a documented
   // one-command cleanup.
   const checkArgs = [pr, "--check-addressed", fingerprints.join(",")];
@@ -601,17 +596,17 @@ async function main(): Promise<number> {
           "answer-summary-finding.ts",
         );
   // Heartbeat starts the INSTANT `remoteLock` is acquired, not after
-  // `assertTreeMutationAllowed` below also succeeds (docomply-review, PR
-  // #4164 round 3 — the mechanically identical gap `guarded-push.ts` had):
-  // that call's own `acquire()` can itself wait up to `LOCK_ACQUIRE_MAX_SEC`
-  // (300s) under genuine contention on the TREE lock, and until this round
-  // `remoteLock` sat un-heartbeated for that whole wait. `treeLock` is
-  // declared here (not assigned) purely so this closure can reference it
-  // before it exists; `?.` makes touching a not-yet-acquired lock a no-op.
+  // `assertTreeMutationAllowed` below also succeeds (the mechanically identical
+  // gap `guarded-push.ts` closes): that call's own `acquire()` can itself wait
+  // up to `LOCK_ACQUIRE_MAX_SEC` (300s) under genuine contention on the TREE
+  // lock, and otherwise `remoteLock` would sit un-heartbeated for that whole
+  // wait. `treeLock` is declared here (not assigned) purely so this closure can
+  // reference it before it exists; `?.` makes touching a not-yet-acquired lock
+  // a no-op.
   let treeLock: Awaited<ReturnType<typeof assertTreeMutationAllowed>> | null =
     null;
-  // Heartbeat both held locks' mtimes for as long as this POST runs
-  // (docomply-review, a reference-implementation pull request round 2): `$GH_CALL_TIMEOUT` (30s by
+  // Heartbeat both held locks' mtimes for as long as this POST runs:
+  // `$GH_CALL_TIMEOUT` (30s by
   // default) is normally well under either lock's own default 10-minute
   // staleness window, but it is operator-configurable, and nothing else
   // touches these mtimes while the only thing running is the `ghCall`
@@ -629,13 +624,12 @@ async function main(): Promise<number> {
           remoteLock?.touch();
           treeLock?.touch();
         }, lockHeartbeatMs());
-  // The TREE-WIDE half, alongside the per-PR one above — and,
-  // unlike `assert-post-allowed.ts`'s own point-in-time check, HELD across
-  // the POST itself: the fence and the mutation are in the SAME process
-  // here, so a replacement session's takeover between the check and the
-  // `ghCall` below is a window this call can actually close, the identical
-  // fix `guarded-push.ts` already carries for `git push` (docomply-review
-  // round 10, PR #4131).
+  // The TREE-WIDE half, alongside the per-PR one above — and, unlike
+  // `assert-post-allowed.ts`'s own point-in-time check, HELD across the POST
+  // itself: the fence and the mutation are in the SAME process here, so a
+  // replacement session's takeover between the check and the `ghCall` below is
+  // a window this call can actually close, the identical fix `guarded-push.ts`
+  // already carries for `git push`.
   //
   // Wrapped for the identical reason `guarded-push.ts` wraps its own second
   // acquisition: a throw here

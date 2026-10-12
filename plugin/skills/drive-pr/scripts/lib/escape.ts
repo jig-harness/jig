@@ -13,7 +13,7 @@
  * ever posted and still merge after it, and counting that as a recurrence of the
  * decline inverts cause and effect on the one number the whole recall trade rests
  * on — it would report an escape rate built partly from findings raised before
- * there was anything to escape (docomply-review round 1, a reference-implementation pull request).
+ * there was anything to escape.
  *
  * So proximity is necessary and NOT sufficient. A recurrence must also have been
  * RAISED after the decline was settled, and a candidate whose timestamps cannot
@@ -43,14 +43,13 @@ export const PROXIMITY_LINES = 20;
  * A thread goes outdated — `line: null` — as soon as a later commit rewrites the
  * hunk it points at, which is to say precisely when somebody ACTED on it. So
  * `line` alone is blind to the threads most likely to be real fixes, and it is
- * blind to a large fraction of the population rather than a negligible one
- * (docomply-review round 2, a reference-implementation pull request).
+ * blind to a large fraction of the population rather than a negligible one.
  *
  * The measured proportions live in `review-loop-baseline.md` and deliberately
  * not here. They are a published RESULT — they move whenever the sample window
  * or the matcher changes — so a copy in this file is a second home that goes
  * stale silently, which is the same reasoning `defect-escape.ts`'s header
- * already states for its own totals (docomply-review round 9, a reference-implementation pull request). A
+ * already states for its own totals. A
  * one-off diagnostic about a specific commit is different and is kept inline;
  * a baseline result is not.
  *
@@ -136,7 +135,7 @@ export function declinedAtOf(decline: ThreadSample): string | null {
  * The baseline records that five of nine proximate cross-PR matches were
  * coincidences and concludes that proximity plus ordering is a FILTER and not a
  * decision — and this predicate is the identical heuristic, used as a definitive
- * identity check, silently (chatgpt-codex-connector round 4, a reference-implementation pull request).
+ * identity check, silently.
  *
  * Measured rather than argued, on the 30 candidates this flags over the baseline
  * week: of a random sample of the pairs, the decline and the "superseding"
@@ -187,7 +186,7 @@ export function refindsFor(
    * resolver that only ever sees the bare string cannot tell them apart —
    * whatever answer it computes for one occurrence would be applied to
    * every other occurrence of that string too, silently collapsing distinct
-   * identities (chatgpt-codex-connector round 4, a reference-implementation pull request). A caller that
+   * identities. A caller that
    * has traced renames locally (`defect-escape.ts`) can bound its git walk
    * to THIS specific candidate's own `createdAt` because the full thread is
    * available here.
@@ -198,7 +197,7 @@ export function refindsFor(
    * path-identity — and BWC concerns are explicitly deferred pre-GA (no
    * standing data this call must stay compatible with), so the corrected
    * contract requires every caller to state its own answer rather than
-   * inherit one it may not have considered (docomply-review, a reference-implementation pull request). Pass
+   * inherit one it may not have considered. Pass
    * `(candidate) => candidate.path === decline.path` explicitly for plain
    * equality.
    */

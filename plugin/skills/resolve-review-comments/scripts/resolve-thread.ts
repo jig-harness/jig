@@ -18,7 +18,7 @@ import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 // Gated behind isEntryPoint rather than run at module scope: this module's
 // side effect is a MUTATION, so importing it — the pattern the rest of this
 // family supports for its pure helpers — would resolve a thread for real.
-// See the sibling note in unresolve-thread.ts (coderabbitai, PR #4040).
+// See the sibling note in unresolve-thread.ts.
 async function main(): Promise<number> {
   const threadId = process.argv[2] ?? "";
   if (threadId === "") {

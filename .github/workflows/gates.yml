@@ -59,7 +59,8 @@ jobs:
       - name: Run this shard of the drive-pr suite
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
 
-  # Preserve the existing required status-check name while requiring every job.
+  # Branch protection requires a check named `gates`; this job reports it,
+  # passing only when every platform and every shard passed.
   gates:
     needs: [platform-gates, drive-pr-suite]
     if: always()

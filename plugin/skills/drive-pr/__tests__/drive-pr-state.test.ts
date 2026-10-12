@@ -80,8 +80,7 @@ describe("drive-state.ts durability", () => {
     // from a git hook, per this file's own gitCleanEnv doc comment) would
     // make it resolve a DIFFERENT actor than the module-level ACTOR the
     // tree-lease tests assert against — reading their own assertions as
-    // passing or failing for the wrong reason rather than the one under test
-    // (coderabbitai, PR #4131 round 3).
+    // passing or failing for the wrong reason rather than the one under test.
     const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
       env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: dir, ...env },
       stdin: stdin !== undefined ? "pipe" : undefined,
@@ -196,8 +195,7 @@ describe("drive-state.ts durability", () => {
    * asserts takeover/expiry behaviour has to wait for the pid to actually go
    * — not for a fixed interval. A fixed sleep is a load-dependent flake in
    * the direction that hides bugs: the lease still reads as LIVE, so the
-   * assertion measures the refusal path instead of the path under test
-   * (docomply-review round 14, a reference-implementation pull request).
+   * assertion measures the refusal path instead of the path under test.
    */
   async function awaitPidGone(pid: number, timeoutMs = 5000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
@@ -226,8 +224,7 @@ describe("drive-state.ts durability", () => {
    *
    * So this races the signal against the process: whichever resolves first
    * decides, and an exit-first result throws with the child's own exit code and
-   * stderr — the thing a reader of the failure actually needs
-   * (docomply-review, a reference-implementation pull request round 1).
+   * stderr — the thing a reader of the failure actually needs.
    *
    * The TIMEOUT branch kills the child before throwing, and that is not
    * tidiness. Reaching it means the process is still running and still holding
@@ -235,7 +232,7 @@ describe("drive-state.ts durability", () => {
    * the next probe in this file will build its own fixtures in, and it keeps
    * bun's test worker alive after the failure that abandoned it. Throwing while
    * leaving it there produces exactly the class of hang this helper exists to
-   * diagnose, one level up (docomply-review, a reference-implementation pull request round 2). The exit branch
+   * diagnose, one level up. The exit branch
    * needs no kill: that process is already gone, which is what it reported.
    */
   async function awaitLockedSection(
@@ -271,7 +268,7 @@ describe("drive-state.ts durability", () => {
     // the hang one layer down: a child that ignores SIGTERM, or wedges during
     // shutdown, leaves this promise unsettled and takes the whole test worker
     // with it, which is the exact failure this helper exists to convert into a
-    // diagnosis (codex, PR #4141 round 3). So each wait has a deadline, SIGTERM
+    // diagnosis. So each wait has a deadline, SIGTERM
     // escalates to SIGKILL, and the throw happens either way — reporting which
     // of the two it took, because "did not die even to SIGKILL" means something
     // very different (an uninterruptible wait, a zombie) than a slow shutdown.
@@ -304,12 +301,11 @@ describe("drive-state.ts durability", () => {
 
   describe("the /reflect duty tracks two counters, not one", () => {
     // `rounds` is cumulative; `attempts` resets to 1 on every new head. A
-    // single stamp is wrong in BOTH directions, and both were reported on
-    // PR #4031: stamping `.rounds` alone re-armed the duty immediately after a
-    // reflect discharged at attempt depth, and stamping `max(rounds, attempts)`
-    // suppressed it for the next several genuine rounds.
-    // The PRODUCTION predicate, not a restatement of it — a copy here would
-    // pass while both consumers used something else.
+    // single stamp is wrong in BOTH directions: stamping `.rounds` alone
+    // re-armed the duty immediately after a reflect discharged at attempt
+    // depth, and stamping `max(rounds, attempts)` suppressed it for the next
+    // several genuine rounds. The PRODUCTION predicate, not a restatement of it
+    // — a copy here would pass while both consumers used something else.
     async function due(dir: string): Promise<boolean> {
       const r = await state(dir, ["get", "999"]);
       return reflectDepthPastLast(JSON.parse(r.stdout)) > 3;
@@ -319,7 +315,7 @@ describe("drive-state.ts durability", () => {
       // `{"rounds":"x"}` PARSES, so no consumer's `catch` runs; the subtraction
       // yields NaN and every `depth > threshold` comparison is then false — the
       // duty silently OFF on the one input that cannot be trusted, against the
-      // documented fail-open (coderabbitai, PR #4031). The guard lives in the
+      // documented fail-open. The guard lives in the
       // shared predicate so both consumers get the same answer.
       expect(
         reflectDepthPastLast({ rounds: "x" } as unknown as { rounds?: number }),
@@ -368,9 +364,9 @@ describe("drive-state.ts durability", () => {
       await state(d, ["set-reflected", "999"]);
 
       // New heads bbb, ccc and ddd: rounds 2..4, `attempts` resetting to 1 on
-      // each. (Naming them rather than counting them — the comment said "four"
-      // against a loop of three, and this test is sensitive to exactly that
-      // number: coderabbitai, PR #4031, which is also an earlier change's own point.)
+      // each. (Naming them rather than counting them: a hand-written count
+      // drifts from the loop, and this test is sensitive to exactly that
+      // number.)
       for (const head of ["bbb", "ccc", "ddd"]) {
         await state(d, ["bump-round", "999", "--head", head]);
         await state(d, ["bump-attempt", "999", "--head", head]);
@@ -385,7 +381,7 @@ describe("drive-state.ts durability", () => {
       // at attempt 8, followed by a head where attempts restart at 1, left a
       // delta of -7 that the `max` prefers to ignore — so several real passes
       // on the new head produced no duty at all, and it did not re-arm until
-      // attempt 12 (docomply-review, a reference-implementation pull request round 7).
+      // attempt 12.
       const d = stateDirFor("reflect-rebase");
       await state(d, ["bump-round", "999", "--head", "aaa"]);
       for (let i = 0; i < 8; i++) {
@@ -428,8 +424,8 @@ describe("drive-state.ts durability", () => {
   it("a MALFORMED state file fails closed instead of resetting the drive", async () => {
     // The file is the ONLY record of the parked human decisions and the durable
     // round budget. Substituting fresh state silently grants a new budget and
-    // re-arms work a human deliberately parked — the #3933 loop, reached by the
-    // one path where the evidence it is happening has just been discarded.
+    // re-arms work a human deliberately parked — the re-arm loop, reached by
+    // the one path where the evidence it is happening has just been discarded.
     const d = stateDirFor("malformed");
     const f = join(d, "drive-pr-999.json");
     writeFileSync(f, '{"pr": 999, "rounds": 3, "parked": [{"key"');
@@ -490,7 +486,7 @@ describe("drive-state.ts durability", () => {
     // short of the thing the array exists for. `{"parked":[{}]}` passed;
     // `parked-keys` then emitted the literal `null`, drive-status.ts matched it
     // against no thread id and no fingerprint, and the drive re-armed work a
-    // human had parked — the #3933 loop, reached through the validator that
+    // human had parked — the re-arm loop, reached through the validator that
     // exists to protect the parked set.
     //
     // Each body below breaks exactly ONE field, so a probe cannot pass because
@@ -554,8 +550,8 @@ describe("drive-state.ts durability", () => {
   it("REFUSES a state file written before `attempts` and `held` existed", async () => {
     // This test used to assert the opposite, and the assertion was the defect:
     // tolerating an absent field meant one parser accepted both the old and the
-    // new shape, which is the accepts-both tolerance the project defers pre-GA
-    // (CLAUDE.md § Backward Compatibility; docomply-review, a reference-implementation pull request round 8).
+    // new shape, which is the accepts-both tolerance the project defers
+    // pre-GA.
     //
     // Refusing costs a `drive-state.ts reset` on a file that predates a field.
     // That is the sanctioned price — an explicit rejection a human clears,
@@ -1171,7 +1167,7 @@ describe("drive-state.ts durability", () => {
 
   it("`reset` is the deliberate way out of a malformed state", async () => {
     // An unparseable file with no raw-byte evidence of `ciHold` also cannot
-    // rule out a truncated-before-the-key transition (PR #4681 round 9), so
+    // rule out a truncated-before-the-key transition, so
     // `reset` now confirms against the live timeline too — this test's own
     // recovery path needs a `gh` on PATH that answers with an empty one,
     // where before it needed none at all.
@@ -1245,8 +1241,8 @@ describe("drive-state.ts durability", () => {
     // `releaseRecoveringGate()`'s. Asserting only the two entries planted
     // BEFORE this test's own `reset` call would still pass if
     // `sweepLockQuarantine` were called back INSIDE `store.locked()` (the
-    // exact ordering bug this call site's own comment guards against,
-    // docomply-review round 2 on PR #4156) — that fresh pair is created only
+    // exact ordering bug this call site's own comment guards against) — that
+    // fresh pair is created only
     // when `store.locked()` releases the lock AFTER its callback returns, so
     // a sweep run before that never sees them. Enumerate every entry this
     // PR's lock has produced and require ALL of them, not just the
@@ -1763,11 +1759,9 @@ describe("drive-state.ts durability", () => {
       // enforced it, so it drifted the moment a field was added —
       // `readyMarkedRound` was checked by the
       // predicate and absent from the message, so a file missing exactly that
-      // field got a diagnostic listing only the fields it *did* have. Measured
-      // while driving PR #4067 across the merge that introduced it. (The tally
-      // that used to stand in for "only the fields it did have" was itself the
-      // hand-maintained-count drift CLAUDE.md § No Hand-Maintained Derivable
-      // Counts forbids — docomply-review, a reference-implementation pull request.)
+      // field got a diagnostic listing only the fields it *did* have
+      // (measured). A hand-written tally standing in for "only the fields it
+      // did have" would itself be a hand-maintained count that drifts.
       //
       // Derived from BEHAVIOUR, not from a second hand-maintained list, which
       // would drift the same way: drop each field in turn from a known-good
@@ -1800,7 +1794,7 @@ describe("drive-state.ts durability", () => {
       // (the missing new field), the assertions only ever inspect the old
       // names, and the test stays green while proving nothing — the vacuity
       // this whole test exists to prevent, reached through its own fixture
-      // (docomply-review, a reference-implementation pull request). Asserting the untouched fixture is
+      //. Asserting the untouched fixture is
       // ACCEPTED is what turns that into a red: a new required field fails
       // here first, and names itself in the refusal it triggers.
       const baseDir = stateDirFor("msg-names-baseline");
@@ -1834,7 +1828,7 @@ describe("drive-state.ts durability", () => {
       // the top-level sweep above cannot reach them: it deletes whole
       // containers, so removing `commentUrl` or `outcome` from the message
       // left that test green while a file missing exactly those fields got a
-      // diagnostic that named neither (docomply-review, a reference-implementation pull request). Nested
+      // diagnostic that named neither. Nested
       // entries are where the message earns its keep — a state file whose
       // top-level keys all look fine is precisely the one a reader cannot
       // diagnose unaided.
@@ -1907,7 +1901,7 @@ describe("drive-state.ts durability", () => {
       // same reason: `base` is hand-written, so a newly required nested field
       // absent from BOTH it and the message would have every case below
       // rejected for that field instead of the one under test, with the
-      // assertions none the wiser (docomply-review, a reference-implementation pull request). A fixture that
+      // assertions none the wiser. A fixture that
       // is not itself accepted proves nothing about which deletion caused a
       // refusal.
       const baseDir = stateDirFor("msg-nested-baseline");
@@ -1942,13 +1936,12 @@ describe("drive-state.ts durability", () => {
     });
 
     it("re-checks the durable mark AFTER winning the lease, not only before", async () => {
-      // The read and the `claimCreate` are not one atomic step (docomply-review
-      // round 4). A caller can read `readyMarkedRound === 0`, be pre-empted for
-      // arbitrarily long, and resume only after some OTHER caller has committed
-      // the mark AND released its lease — at which point this caller's create
-      // succeeds against a now-vacant path and its driver fires a second
-      // `gh pr ready`, which is the duplicate paid review the lease exists to
-      // prevent.
+      // The read and the `claimCreate` are not one atomic step. A caller can
+      // read `readyMarkedRound === 0`, be pre-empted for arbitrarily long, and
+      // resume only after some OTHER caller has committed the mark AND released
+      // its lease — at which point this caller's create succeeds against a
+      // now-vacant path and its driver fires a second `gh pr ready`, which is
+      // the duplicate paid review the lease exists to prevent.
       //
       // The commit landing during the gap is what makes this deterministic:
       // it strictly happens-before the release that frees the path, which
@@ -2009,13 +2002,12 @@ describe("drive-state.ts durability", () => {
     });
 
     it("never destroys a ready-mark lease generation it does not own", async () => {
-      // The cross-generation delete (docomply-review round 4 / coderabbitai
-      // P2): an owner returning at the edge of the staleness window passes its
-      // own token check, and a DIFFERENT driver legitimately breaks that stale
-      // claim and writes a fresh one in the gap before the removal runs — so
-      // the removal deletes the successor's file, not the one this caller ever
-      // owned, and that successor (which has already read `readyMarkedRound
-      // === 0`) can proceed as a second winner.
+      // The cross-generation delete: an owner returning at the edge of the
+      // staleness window passes its own token check, and a DIFFERENT driver
+      // legitimately breaks that stale claim and writes a fresh one in the gap
+      // before the removal runs — so the removal deletes the successor's file,
+      // not the one this caller ever owned, and that successor (which has
+      // already read `readyMarkedRound === 0`) can proceed as a second winner.
       //
       // Under one lock hold the check and the removal cannot be interleaved,
       // so a token that no longer matches never reaches a removal at all. That
@@ -2076,7 +2068,7 @@ describe("drive-state.ts durability", () => {
       // The two knobs are independent and can contradict: a staleness window
       // shorter than one outbound call's deadline lets the lease become
       // reclaimable while the very `gh pr ready` it protects is still running
-      // (docomply-review round 5). A renewal cannot make the guarantee its own
+      //. A renewal cannot make the guarantee its own
       // comment claims under that configuration, so it refuses rather than
       // renewing into a window it cannot cover.
       const d = stateDirFor("ready-lease-window");
@@ -2100,7 +2092,7 @@ describe("drive-state.ts durability", () => {
       expect(ok.exitCode).toBe(0);
     });
 
-    it("accounts for the kill-escalation grace, not just $GH_CALL_TIMEOUT (docomply-review round 7, a reference-implementation pull request)", async () => {
+    it("accounts for the kill-escalation grace, not just $GH_CALL_TIMEOUT", async () => {
       // `ghCall` does not settle AT its deadline — it SIGTERMs there and waits
       // `KILL_ESCALATE_MS` (2000ms) more before force-killing and returning.
       // Comparing the staleness window only against the raw timeout let
@@ -2130,7 +2122,7 @@ describe("drive-state.ts durability", () => {
     it("reset clears the ready-mark lease, which no claim sweep covers", async () => {
       // The lease deliberately sits outside `claimPrefix` so the held-batch
       // sweep never sees it — which meant reset's sweep never did either
-      // (coderabbitai P2). An operator resetting to unwedge a drive would get
+      //. An operator resetting to unwedge a drive would get
       // a fresh JSON plus an orphaned lease that keeps reporting contention
       // for a full staleness window, with nothing left to explain why.
       const d = stateDirFor("reset-ready-lease");
@@ -2152,9 +2144,8 @@ describe("drive-state.ts durability", () => {
       // so every consumer reads it as "already marked" and the draft→Ready
       // transition is suppressed forever — while mark-ready.ts's own digits
       // check rejects the decimal point and exits 1, wedging the drive rather
-      // than the field. Found on `readyMarkedRound` (docomply-review rounds
-      // 2-3, PR #4057); fixed for the whole class, which is what this
-      // enumerates.
+      // than the field. Found on `readyMarkedRound`; fixed for the whole class,
+      // which is what this enumerates.
       const base = {
         pr: 999,
         rounds: 0,
@@ -2246,7 +2237,7 @@ describe("drive-state.ts durability", () => {
       expect(r.stdout.trim()).toBe("PRRT_unconfirmed");
     });
 
-    it("rejects a malformed NESTED round — parked[].round and the ordinary held[].round branch, not just the top-level counters (docomply-review round 9, a reference-implementation pull request)", async () => {
+    it("rejects a malformed NESTED round — parked[].round and the ordinary held[].round branch, not just the top-level counters", async () => {
       // The top-level-counter test above never injects into parked[].round or
       // the ordinary held[].round branch — only the held[].round === -1
       // sentinel test above it does, and that one asserts the OPPOSITE
@@ -2384,11 +2375,11 @@ describe("drive-state.ts durability", () => {
       expect((await state(d, ["held-keys", "999"])).exitCode).toBe(0);
     });
 
-    it("rejects a `thread` entry with an empty or missing commentUrl (docomply-review round 11)", async () => {
+    it("rejects a `thread` entry with an empty or missing commentUrl", async () => {
       // `hold` itself refuses to write a thread entry without --comment-url
-      // (either path, since round 10), so a state file with one that has an
+      // (either path), so a state file with one that has an
       // empty or absent commentUrl can only be hand-edited, corrupted, or
-      // written by a pre-round-10 version of this script — but the schema
+      // written by an older version of this script — but the schema
       // has to actually say so, or a provenance-free confirmed hold remains
       // claimable, bypassing the exact-comment protection this state adds.
       const d = stateDirFor("held-thread-empty-commenturl");
@@ -2597,7 +2588,7 @@ describe("drive-state.ts durability", () => {
       // succeeding proves nothing: the raw, un-checksummed "safe" prefix
       // already differs by case there, so a regression that deleted the
       // checksum suffix entirely would still pass this test green on CI —
-      // exactly the gap flagged on this PR (round 2). Folding both real
+      // exactly the gap to close. Folding both real
       // filenames to lowercase HERE, in the assertion, reproduces the
       // case-insensitive collision deterministically on any host: it is
       // true if and only if the checksum suffix (not the case-foldable
@@ -2898,7 +2889,7 @@ describe("drive-state.ts durability", () => {
       expect(stillLive.exitCode).toBe(1);
     });
 
-    it("a STALE owner calling unclaim-held never deletes a FRESH reclaimer's file (round-3 regression)", async () => {
+    it("a STALE owner calling unclaim-held never deletes a FRESH reclaimer's file", async () => {
       // `unclaim-held` used to check the token and remove the claim file as
       // two SEPARATE, unlocked steps. An owner returning right at the edge of
       // the staleness window could pass its token check against its own
@@ -2995,7 +2986,7 @@ describe("drive-state.ts durability", () => {
       // 90s since this test is 4x4.
     }, 45_000);
 
-    it("a claim racing release-held --all observes the CLEAR, never a stale pre-clear snapshot (round-5 regression)", async () => {
+    it("a claim racing release-held --all observes the CLEAR, never a stale pre-clear snapshot", async () => {
       // `release-held --all` checks every held key for a live claim, clears
       // `.held = []`, and deletes each key's claim file — all inside ONE lock
       // hold. Before this fix, claim-held's own post-create membership
@@ -3044,12 +3035,12 @@ describe("drive-state.ts durability", () => {
       );
     }, 15_000);
 
-    it("release-held --all's post-clear cleanup never deletes a RE-HELD key's fresh claim (round-12 regression)", async () => {
+    it("release-held --all's post-clear cleanup never deletes a RE-HELD key's fresh claim", async () => {
       // `claimPathFor` is a pure function of the key STRING — it encodes no
       // generation. Before this fix, `--all` released its lock and only THEN
       // removed each old key's claim file. A concurrent driver could, in that
       // unlocked window, legitimately `hold` the SAME key again and
-      // `claim-held` it (the round-5 lock only orders a claimant against
+      // `claim-held` it (the clear-ordering lock only orders a claimant against
       // `--all`'s CLEAR, not against `--all`'s CLEANUP — a claimant reading the
       // already-cleared `.held` sees its OWN fresh hold and correctly gets a
       // token) — and `--all`'s unconditional path-based removal would then
@@ -3181,7 +3172,7 @@ describe("drive-state.ts durability", () => {
       expect(second.stderr).toContain("is not a non-negative integer");
     });
 
-    it("DRIVE_PR_CLAIM_STALE_MIN rejects a digit-only value too large to compare exactly (round-5 regression)", async () => {
+    it("DRIVE_PR_CLAIM_STALE_MIN rejects a digit-only value too large to compare exactly", async () => {
       // A value that IS all-digits can still be far outside the range any
       // comparison handles exactly — this one parses to a float well past
       // `Number.MAX_SAFE_INTEGER`. The bash original's `[ "$v" -gt 1440 ]`
@@ -3314,10 +3305,10 @@ describe("drive-state.ts durability", () => {
       // claimCreate regresses to a check-then-write pair (see its comment:
       // the mutation was run, and passed). No schedule-based probe can pin a
       // µs-scale window deterministically, so the atomicity that the whole
-      // claim mechanism rests on is pinned the way document-scanning-gates
-      // rule 3 prescribes: verbatim. A legitimate refactor of claimCreate
-      // must update this pin consciously — that friction is the point, the
-      // same trade EXPECTED_RUN_LINES makes in ci-activation.test.ts.
+      // claim mechanism rests on is pinned verbatim (parse or pin). A
+      // legitimate refactor of claimCreate must update this pin consciously —
+      // that friction is the point, the same trade EXPECTED_RUN_LINES makes in
+      // ci-activation.test.ts.
       const src = readFileSync(
         join(SCRIPTS, "lib", "state", "claims.ts"),
         "utf8",
@@ -3337,7 +3328,7 @@ describe("drive-state.ts durability", () => {
       );
       // The pin above is a claim about the FILE. On its own it says nothing
       // about which function the `claimCreate` export is actually bound to
-      // (docomply-review rounds 1-2): the pinned text can sit in the file
+      //: the pinned text can sit in the file
       // untouched while the executable export is something else — declared in
       // another form, re-bound, or re-exported from elsewhere — and every
       // assertion so far still passes.
@@ -3423,7 +3414,7 @@ describe("drive-state.ts durability", () => {
     // thread` folds the whole predicate (kind, round, verifiedSha) and the
     // removal into ONE lock hold, so these probes exercise it directly —
     // including a forced concurrent overlap, since sequential calls prove
-    // nothing about the mutex itself (review round 3).
+    // nothing about the mutex itself.
 
     it("removes a matching held thread and returns it", async () => {
       const d = stateDirFor("claim-happy");
@@ -3479,14 +3470,13 @@ describe("drive-state.ts durability", () => {
       // Two calls merely launched close together race real process-scheduling
       // jitter — on a fast/idle machine the first can finish entirely before
       // the second even starts its own `mkdir`, so a bug that dropped the
-      // lock ENTIRELY would still pass a "launch both, await both" test (this
-      // is exactly the gap review round 3 flagged in the sequential-await
-      // version of this test). Proving the mutex itself needs a
-      // deterministically FORCED overlap: process A signals the instant it
-      // holds the lock, this test waits for that signal before starting
-      // process B, and A is told to hold the lock open for another 500ms —
-      // so B's `mkdir` is guaranteed to contend for a lock A still holds,
-      // not merely scheduled near it.
+      // lock ENTIRELY would still pass a "launch both, await both" test (the
+      // gap a sequential-await version of this test leaves). Proving the mutex
+      // itself needs a deterministically FORCED overlap: process A signals the
+      // instant it holds the lock, this test waits for that signal before
+      // starting process B, and A is told to hold the lock open for another
+      // 500ms — so B's `mkdir` is guaranteed to contend for a lock A still
+      // holds, not merely scheduled near it.
       const d = stateDirFor("claim-race");
       await state(d, ["bump-round", "999", "--head", "aaa"]);
       await state(d, [
@@ -3545,14 +3535,13 @@ describe("drive-state.ts durability", () => {
       expect(first.exitCode).toBe(0);
       // Exit 4, not 1: "no held item at all" is the snapshot going stale — B
       // lost the race, and A's claim is why the key is gone — not a property
-      // of B's own round/SHA the way exit 1 is reserved for (chatgpt-codex-
-      // connector, PR #4166).
+      // of B's own round/SHA the way exit 1 is reserved for.
       expect(second.exitCode).toBe(4);
       expect(second.stderr).toContain("no held item with key 'PRRT_a'");
     });
 
     it("refuses — without removing anything — when the pushed SHA is not the one recorded against this hold, even though the round matches", async () => {
-      // The exact bypass the review flagged: an unrelated push lands without
+      // The exact bypass: an unrelated push lands without
       // ever going through a counting drive-status.ts gate, so `.rounds` never
       // advances and a round-only comparison would read this as a match. The
       // stamp is written by exactly one call site (`stamp-held`, from a real
@@ -3691,7 +3680,7 @@ describe("drive-state.ts durability", () => {
       expect((await state(d, ["held-keys", "999"])).stdout).toBe("PRRT_a");
     });
 
-    it("preserves a held FINDING's stamp while its claim is outstanding — a later, unrelated push from the SAME actor must not risk a duplicate answer (docomply-review round 2, a reference-implementation pull request)", async () => {
+    it("preserves a held FINDING's stamp while its claim is outstanding — a later, unrelated push from the SAME actor must not risk a duplicate answer", async () => {
       // The interrupted-dispatch scenario the finding describes: this actor
       // claims a finding (right before dispatching `answer-summary-
       // finding.ts`, per SKILL.md § 6) — which locks it with a SEPARATE
@@ -3756,21 +3745,21 @@ describe("drive-state.ts durability", () => {
       ).toMatchObject([{ key: "f00dfeed", verifiedSha: SHA_OLD }]);
     });
 
-    it("advances an UNCLAIMED held item's stamp on a later push from the same actor — an ordinary pending hold must not wedge, on both a thread AND an unclaimed finding (docomply-review rounds 2-3, PR #4051)", async () => {
-      // The round-2 critique of the fix above: preserving EVERY held item's
+    it("advances an UNCLAIMED held item's stamp on a later push from the same actor — an ordinary pending hold must not wedge, on both a thread AND an unclaimed finding", async () => {
+      // The counterweight to the fix above: preserving EVERY held item's
       // stamp unconditionally would strand ordinary pending/restored holds
       // the moment their frozen SHA stops being the PR's live head, since a
       // later verified push is normally a descendant commit that still
       // contains the fix. Only a FINDING with an outstanding claim (the test
       // above) has a real duplicate-dispatch risk to protect against.
       //
-      // Round 3 caught that the first version of this test only constructed
-      // a THREAD — which never touches the finding-only `existsSync(
-      // claimPathFor(...))` branch at all (a thread's claim always removes
-      // it from `held` atomically, so this whole code path is unreachable
-      // for one), so it never actually proved an UNCLAIMED finding advances.
-      // A mutation that preserved every finding's old stamp unconditionally
-      // would have left this test green. Both kinds are constructed below.
+      // A version of this test that only constructed a THREAD — which never
+      // touches the finding-only `existsSync( claimPathFor(...))` branch at all
+      // (a thread's claim always removes it from `held` atomically, so this
+      // whole code path is unreachable for one), so it never actually proved an
+      // UNCLAIMED finding advances. A mutation that preserved every finding's
+      // old stamp unconditionally would have left this test green. Both kinds
+      // are constructed below.
       const SHA_OLD = "7777777777777777777777777777777777777777";
       const SHA_NEW = "8888888888888888888888888888888888888888";
       const d = stateDirFor("stamp-held-advances-unclaimed-hold");
@@ -3941,8 +3930,8 @@ describe("drive-state.ts durability", () => {
     // evidence.
     //
     // Tier 3 used to reach it by CONCURRENCY instead — no lease either side,
-    // so both trees simply mutated. That was the hole, not a licence
-    // (docomply-review's "two sessionless resolvers" finding), and closing it
+    // so both trees simply mutated. That was the hole (two sessionless
+    // resolvers), not a licence, and closing it
     // is what made these hand-overs necessary rather than incidental.
 
     const A_PUSH = "1111111111111111111111111111111111111111";
@@ -4383,8 +4372,8 @@ describe("drive-state.ts durability", () => {
       // A hand-edited or older file. An unattributable hold is one
       // `stamp-held` has no basis to skip, so tolerating it would mean
       // falling back to vouching for everything — the PR-global behaviour this
-      // closes. BWC is deferred pre-GA (CLAUDE.md), so the file is refused,
-      // never silently migrated.
+      // closes. Backward compatibility is deferred pre-GA, so the file is
+      // refused, never silently migrated.
       const d = stateDirFor("provenance-actorless-refused");
       writeFileSync(
         join(d, "drive-pr-999.json"),
@@ -4420,12 +4409,12 @@ describe("drive-state.ts durability", () => {
       expect(r.stdout).toBe("");
     });
 
-    it("re-holding a FINDING breaks its own STALE claim file, so the fresh record is stampable again (docomply-review round 6, a reference-implementation pull request)", async () => {
-      // The gap the finding named: `hold` inserts a fresh `.held` record
+    it("re-holding a FINDING breaks its own STALE claim file, so the fresh record is stampable again", async () => {
+      // The gap: `hold` inserts a fresh `.held` record
       // carrying no `verifiedSha`, but a finding's claim is a SEPARATE
       // filesystem file `hold` never touched — so a prior dispatch's claim
-      // file, left behind by the interrupted-dispatch scenario the round-2
-      // test above covers, would make `stamp-held`'s own
+      // file, left behind by the interrupted-dispatch scenario the test above
+      // covers, would make `stamp-held`'s own
       // `existsSync(claimPathFor(...))` check refuse to stamp the fresh
       // record forever, defeating the "re-hold via SKILL.md § 3" recovery
       // this command exists to provide.
@@ -4569,7 +4558,7 @@ describe("drive-state.ts durability", () => {
       ).toMatchObject([{ key: "f00dlive", verifiedSha: SHA_OLD }]);
     });
 
-    it("stamp-held stamps an UNSTAMPED finding even while a concurrent (about-to-fail) claim-held attempt has a claim file open on it (docomply-review round 7, a reference-implementation pull request)", async () => {
+    it("stamp-held stamps an UNSTAMPED finding even while a concurrent (about-to-fail) claim-held attempt has a claim file open on it", async () => {
       // The race: `claimFinding` creates its claim file BEFORE acquiring the
       // state lock and validating anything (deliberate — see claims.ts's own
       // doc comment on why the claim precedes the check). If a driver's
@@ -4613,8 +4602,8 @@ describe("drive-state.ts durability", () => {
       ).toMatchObject([{ key: "f00drace", verifiedSha: SHA }]);
     });
 
-    it("hold's claim-check and held-record replacement happen under ONE lock hold — a REAL concurrent claim-held racing in never sees a torn state (docomply-review round 8, a reference-implementation pull request)", async () => {
-      // Round 6 fixed `hold --kind finding` to break a stale claim before
+    it("hold's claim-check and held-record replacement happen under ONE lock hold — a REAL concurrent claim-held racing in never sees a torn state", async () => {
+      // An earlier fix made `hold --kind finding` break a stale claim before
       // replacing the record, but did so as tryBreakStaleClaim() (its OWN
       // lock acquire/release) followed by a SEPARATE store.update() (a
       // second acquire/release) — leaving a real window between them for a
@@ -4637,8 +4626,7 @@ describe("drive-state.ts durability", () => {
       // having touched the record at all. The old record must therefore
       // survive completely untouched, and the claimant's own claim must
       // still validate against it successfully — the self-consistent
-      // outcome the round-8 finding says the old two-lock version could not
-      // guarantee.
+      // outcome the old two-lock version could not guarantee.
       const SHA_OLD = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
       const d = stateDirFor("hold-claim-check-and-replace-one-lock");
       await state(
@@ -4718,8 +4706,8 @@ describe("drive-state.ts durability", () => {
     // sessions in ONE tree both stamp the same actor: `hold` upserts by key and
     // the second silently REPLACES the first's record, `stamp-held` stamps
     // both sessions' holds, and nothing in the claim path can tell them apart.
-    // Measured on PR #4057 (2026-08-13): all seventeen threads one session had
-    // just replied to carried two `**accepted**` replies.
+    // Measured (2026-08-13): all seventeen threads one session had just
+    // replied to carried two `**accepted**` replies.
     //
     // Every probe below drives the identity through $DRIVE_PR_SESSION, which is
     // also the channel drive.ts itself uses (see the loop-control block), so a
@@ -5025,10 +5013,9 @@ describe("drive-state.ts durability", () => {
       // command's window and the fence caught it on the way out. It is now an
       // ORDERING test, because the race is gone: a takeover is a revocation,
       // and every revocation coordinates with the state mutex, so it can only
-      // land BETWEEN locked sections (docomply-review / chatgpt-codex-connector
-      // round 11). The window the fence was catching no longer opens, which is
-      // strictly better than catching it afterwards — the admitted command
-      // completes instead of being refused.
+      // land BETWEEN locked sections. The window the fence was catching no
+      // longer opens, which is strictly better than catching it afterwards —
+      // the admitted command completes instead of being refused.
       //
       // The fence still has its own coverage: `fences a command admitted before
       // its lease disappeared` exercises the branch for revocations that do not
@@ -5092,8 +5079,8 @@ describe("drive-state.ts durability", () => {
       // driven from more than ten trees pushed Node past its default
       // `maxListeners` and printed a leak warning on stderr — the same stream
       // `reset`'s preserved-lease report uses, so it landed in the middle of
-      // the diagnostic an operator has to read (coderabbitai, PR #4069; the
-      // threshold is 11 locks, not 4 — the three handlers are on three
+      // the diagnostic an operator has to read (the threshold is 11 locks, not
+      // 4 — the three handlers are on three
       // DIFFERENT events, so each lock adds one per event).
       //
       // Asserted as listener COUNT rather than as the warning text: the suite
@@ -5122,8 +5109,7 @@ describe("drive-state.ts durability", () => {
       }
       // All THREE events `createLock` registers, not just `exit`: the claim
       // is that disposal detaches everything it added, and a probe on one
-      // event stays green while a regression leaks the other two
-      // (docomply-review round 8).
+      // event stays green while a regression leaks the other two.
       const events = ["exit", "SIGINT", "SIGTERM"] as const;
       const before = events.map((e) => process.listenerCount(e));
       await clearAllLeases(d, "999", null);
@@ -5136,7 +5122,7 @@ describe("drive-state.ts durability", () => {
       // timestamp resolves to the millisecond, so a `clear-lease` plus a
       // same-session reclaim inside one millisecond can reproduce the exact
       // `(pid, host, startedAt)` tuple and would be waved through as "my lease,
-      // renewed" (docomply-review round 8). Asserted structurally rather than
+      // renewed". Asserted structurally rather than
       // by racing a millisecond: a renewal must PRESERVE the token, and a
       // clear-then-reclaim must MINT a new one even when every other field is
       // identical.
@@ -5181,7 +5167,7 @@ describe("drive-state.ts durability", () => {
       // `isMine` used to be the WHOLE story for `claimLease`'s renewal-vs-
       // takeover decision: match on (pid, host) and preserve the generation.
       // `$DRIVE_PR_SESSION_STARTED` closed that for `isMine` itself (the
-      // "session-started token" suite above, PR #4107 finding B) — but
+      // "session-started token" suite above) — but
       // `claimLease` also asks `leaseAlive`, and once the OS has handed a dead
       // predecessor's exact pid to THIS session, `leaseAlive`'s pid half is
       // asking whether the CALLER is running, which is tautologically true.
@@ -5266,7 +5252,7 @@ describe("drive-state.ts durability", () => {
         expect((threw as ExitError).code).toBe(11);
       });
 
-      it("a STALE pass carrying an OLDER inherited token must not take back a genuinely newer driver's lease (alternation hazard, PR #4128)", async () => {
+      it("a STALE pass carrying an OLDER inherited token must not take back a genuinely newer driver's lease (alternation hazard)", async () => {
         // Without an ordering check, `isRecycledPid` fires symmetrically: a
         // pass detached from a killed driver keeps identifying with that
         // driver's (pid, token) forever, and if the OS later recycles the
@@ -5302,24 +5288,21 @@ describe("drive-state.ts durability", () => {
         expect(after.sessionStarted).toBe(NEWER_SESSION_TOKEN);
       });
 
-      it("a TOKENLESS caller gets NO fast-path takeover of a FRESH token-bearing lease — no timestamp on its own side means no proof (PR #4128 round 5, final)", async () => {
-        // Five rounds on this exact predicate (round 2 through this one)
-        // converged on one criterion: `isRecycledPid` proves `l`'s writer is
-        // dead only via a TEMPORAL argument, and a temporal argument needs
-        // BOTH pid claims timestamped. A tokenless (`$DRIVE_PR_SESSION`-only,
-        // no `$DRIVE_PR_SESSION_STARTED`) caller carries no timestamp of its
-        // own, so — even though `l` here DOES carry one — there is no pair to
-        // order, and no proof that `l`'s token-bearing writer is dead rather
-        // than a live rival this caller's pid merely coincides with. This
-        // reverses round 2's fix, which is now understood to have been
-        // UNSOUND: the identity argument it relied on ("a tokenless caller
-        // can never have written a token-bearing lease, so the disk record
-        // must be a dead predecessor") proves only that the two CLAIMS
-        // differ, never that the caller's own claim is the newer, live one
-        // — `Session.pid` is an inherited value, not proof of the caller's
-        // own actual OS pid (chatgpt-codex-connector, a reference-implementation pull request round 4,
-        // thread PRRT_kwDOO7knac6apwqU, generalizing round 3's mirror-image
-        // finding to this side).
+      it("a TOKENLESS caller gets NO fast-path takeover of a FRESH token-bearing lease — no timestamp on its own side means no proof", async () => {
+        // One criterion governs this predicate: `isRecycledPid` proves `l`'s
+        // writer is dead only via a TEMPORAL argument, and a temporal argument
+        // needs BOTH pid claims timestamped. A tokenless
+        // (`$DRIVE_PR_SESSION`-only, no `$DRIVE_PR_SESSION_STARTED`) caller
+        // carries no timestamp of its own, so — even though `l` here DOES carry
+        // one — there is no pair to order, and no proof that `l`'s
+        // token-bearing writer is dead rather than a live rival this caller's
+        // pid merely coincides with. An identity-based fix is UNSOUND: the
+        // argument it relies on ("a tokenless caller can never have written a
+        // token-bearing lease, so the disk record must be a dead predecessor")
+        // proves only that the two CLAIMS differ, never that the caller's own
+        // claim is the newer, live one — `Session.pid` is an inherited value,
+        // not proof of the caller's own actual OS pid (the mirror image of the
+        // same flaw on the other side).
         //
         // This is not a dead end: see the companion probe below, where the
         // SAME fixture is admitted once it is genuinely stale — recognition
@@ -5341,11 +5324,11 @@ describe("drive-state.ts durability", () => {
         expect(after.sessionStarted).toBe(OLDER_SESSION_TOKEN);
       });
 
-      it("...but the SAME tokenless caller IS admitted once that lease is genuinely STALE — the fallback this predicate defers to, not a dead end (PR #4128 round 5, final)", async () => {
+      it("...but the SAME tokenless caller IS admitted once that lease is genuinely STALE — the fallback this predicate defers to, not a dead end", async () => {
         // Mirrors the probe immediately above with one field changed:
         // `lastSeen` is past `leaseStaleFloorMs()` rather than fresh. With no
         // token-based fast path available, `claimLease`'s own `!leaseAlive`
-        // check is what admits this caller — proving the round-5 fix is a
+        // check is what admits this caller — proving the criterion is a
         // downgrade to the older staleness wait for this combination,
         // not a permanent refusal.
         const d = stateDirFor("pid-reuse-tokenless-caller-admitted-once-stale");
@@ -5383,10 +5366,9 @@ describe("drive-state.ts durability", () => {
         expect(after.sessionStarted).toBe("");
       });
 
-      it("a malformed (non-ISO, or ISO-looking but non-round-tripping) CALLER token fails isRecycledPid CLOSED, not open (PR #4128 round 2)", async () => {
+      it("a malformed (non-ISO, or ISO-looking but non-round-tripping) CALLER token fails isRecycledPid CLOSED, not open", async () => {
         // `resolveSession` accepts `$DRIVE_PR_SESSION_STARTED` from the
-        // environment with no format validation (chatgpt-codex-connector,
-        // a reference-implementation pull request round 2, thread PRRT_kwDOO7knac6apDDF) — a broken or
+        // environment with no format validation — a broken or
         // hostile harness could set anything. A predicate that authorizes a
         // takeover must not trust an unparseable ordering; it must refuse,
         // the same as it would for a genuinely live rival.
@@ -5404,7 +5386,7 @@ describe("drive-state.ts durability", () => {
         expect(after.sessionStarted).toBe(OLDER_SESSION_TOKEN);
       });
 
-      it("a malformed (non-ISO) ON-DISK LEASE token fails isRecycledPid CLOSED, not open (PR #4128 round 2)", async () => {
+      it("a malformed (non-ISO) ON-DISK LEASE token fails isRecycledPid CLOSED, not open", async () => {
         // The mirror of the probe above: the token that fails to parse can be
         // on either side. A tampered or pre-validation lease file with a
         // garbage `sessionStarted` must not be trusted as "provably older"
@@ -5447,10 +5429,10 @@ describe("drive-state.ts durability", () => {
         expect(after.sessionStarted).toBe("1999-01-01");
       });
 
-      it("a TOKEN-BEARING caller gets NO fast-path takeover of a FRESH tokenless lease either — the mirror direction (PR #4128 round 5, final)", async () => {
+      it("a TOKEN-BEARING caller gets NO fast-path takeover of a FRESH tokenless lease either — the mirror direction", async () => {
         // The mirror of the probe far above ("no timestamp on its own side
         // means no proof"): there `l` carried a token and `s` did not, here
-        // it is reversed. Under the round-5 criterion the two are governed by
+        // it is reversed. Under that criterion the two are governed by
         // the IDENTICAL code path — `isRecycledPid` returns `false` whenever
         // EITHER side is empty, with no direction-dependent case split — so
         // this is the same invariant demonstrated from the other side, not a
@@ -5459,9 +5441,8 @@ describe("drive-state.ts durability", () => {
         // Historically this went through an intermediate "D2 (tokenless)
         // legitimately takes over from a token-bearing dead predecessor, THEN
         // a stale token-bearing pass tries to reclaim D2's fresh lease"
-        // narrative (PR #4128 round 3, threads PRRT_kwDOO7knac6apaEL /
-        // PRRT_kwDOO7knac6apalY) — that story no longer applies as written,
-        // because round 5 also closed the FORWARD direction (a tokenless
+        // narrative — that story no longer applies as written, because the
+        // same criterion also closes the FORWARD direction (a tokenless
         // caller's own fast-path takeover of a token-bearing lease, see the
         // probe far above), so there is no longer an instant "D2 takes over"
         // step to build on. The fresh, tokenless lease is constructed
@@ -5518,7 +5499,7 @@ describe("drive-state.ts durability", () => {
         // driven" `fail(11)` refusal (`leaseAlive(held) && !isRecycledPid(...)`,
         // a few lines above `mintsNewGeneration`) rather than by a generation
         // mismatch. Either mechanism makes this probe correctly redden under
-        // that regression (coderabbitai, PR #4128 round 6).
+        // that regression.
         const d = stateDirFor("pid-reuse-genuine-renewal");
         const path = leasePathFor(d, "999", ACTOR);
 
@@ -5544,7 +5525,7 @@ describe("drive-state.ts durability", () => {
       // that needs only the LEASE mutex: clearing between the two let the
       // admitted command write anyway, and a successor could then claim the
       // absent lease and write under the same actor — the same corruption, in
-      // a narrower window (docomply-review round 8).
+      // a narrower window.
       //
       // `clear-lease` therefore takes the state mutex too, so it can only land
       // BETWEEN locked sections. Asserted as ordering: while a mutation holds
@@ -5585,7 +5566,7 @@ describe("drive-state.ts durability", () => {
       // The refusal promises a check the operator can execute, so the command
       // must match the machine the pid lives on. Inferring it from the local
       // platform handed a Windows holder `ssh <host> ps -p <pid>`, which that
-      // host has no `ps` for (docomply-review round 9). The lease records
+      // host has no `ps` for. The lease records
       // `platform`, and this reads it back.
       const other = `${hostname()}-elsewhere`;
       expect(pidCheckCommand(42, other, "win32")).toBe(
@@ -5608,7 +5589,7 @@ describe("drive-state.ts durability", () => {
       // the PR's state mutex across the whole sweep, and each lease lock's
       // `acquire()` may wait up to the configured timeout — so a sweep that
       // waits per-lock costs N × that, growing with the number of trees that
-      // have ever driven the PR (docomply-review round 9). The sweep therefore
+      // have ever driven the PR. The sweep therefore
       // hands each `acquire()` the time REMAINING in one shared deadline.
       //
       // Tested here rather than end-to-end through `reset`, deliberately: the
@@ -5637,7 +5618,7 @@ describe("drive-state.ts durability", () => {
         // Tight enough to actually guard the contract. A loose bound (the
         // first version allowed 15s against a 30s timeout) would stay green if
         // production turned a 1s cap into 10s — it would only have caught the
-        // cap being ignored ENTIRELY (docomply-review round 16). 4s leaves room
+        // cap being ignored ENTIRELY. 4s leaves room
         // for spawn and poll granularity on a loaded machine without admitting
         // any plausible wrong multiplier.
         expect(elapsed).toBeLessThan(4_000);
@@ -5654,8 +5635,7 @@ describe("drive-state.ts durability", () => {
       // never fired for it — and it is the path where that costs most: a
       // revoked session would validate the held record, return a claim token,
       // and dispatch a NON-idempotent summary answer beside its successor's,
-      // leaving a duplicate standing claim on the PR (chatgpt-codex-connector,
-      // a reference-implementation pull request).
+      // leaving a duplicate standing claim on the PR.
       const d = stateDirFor("fence-claim-finding");
       const S = { DRIVE_PR_SESSION: String(process.pid) };
       await state(
@@ -5720,7 +5700,7 @@ describe("drive-state.ts durability", () => {
       // written under a dead pid is takeover-able the instant it exists — it
       // reports an exclusion that excludes nobody. Reached when `drive.ts` is
       // killed and a detached pass outlives it still carrying the dead
-      // driver's pid (chatgpt-codex-connector, a reference-implementation pull request).
+      // driver's pid.
       const d = stateDirFor("dead-session-pid");
       const gone = await deadPid();
       const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
@@ -5738,7 +5718,7 @@ describe("drive-state.ts durability", () => {
       // `reset` used to delete the state file, handoff, orphan marker and claim
       // files and only then sweep the leases — so a sweep that threw left
       // everything already gone, a prefix of leases swept, and a non-zero exit
-      // indistinguishable from "changed nothing" (docomply-review round 10).
+      // indistinguishable from "changed nothing".
       //
       // Modelled with a lease whose lock can never be taken, which makes the
       // sweep throw: the state file must survive, so the retry a caller
@@ -5785,8 +5765,7 @@ describe("drive-state.ts durability", () => {
       // Ordering the sweep before `reset`'s state deletions made the state half
       // of "a non-zero exit means no change" true and left the LEASE half
       // false: the loop deleted each stale lease as it went, so a lock failure
-      // partway through had already removed the earlier ones
-      // (docomply-review round 11, a reference-implementation pull request).
+      // partway through had already removed the earlier ones.
       //
       // Two sweepable leases either side of one whose lock cannot be taken —
       // the middle file's lock proves acquisition reaches it, and the last
@@ -5841,8 +5820,7 @@ describe("drive-state.ts durability", () => {
       // CLAIM files are shared across trees. A live session mid-dispatch has
       // already created its claim file and may not have posted yet — deleting
       // it lets this tree rebuild state, see the finding as unaddressed, and
-      // dispatch the same non-idempotent answer again
-      // (chatgpt-codex-connector round 12, a reference-implementation pull request).
+      // dispatch the same non-idempotent answer again.
       //
       // Still exit 9 after an earlier change's PR-wide admission gate, and WHY is worth
       // stating: this tree took its lease at the `bump-round` below, before the
@@ -5898,7 +5876,7 @@ describe("drive-state.ts durability", () => {
       // `createLock` installs its exit/SIGINT/SIGTERM handlers at CONSTRUCTION,
       // so a lock registered only after a successful `acquire` leaks three
       // listeners on every failed attempt — the exact leak disposal was added
-      // to stop, reintroduced on the failure path (docomply-review round 12).
+      // to stop, reintroduced on the failure path.
       const d = stateDirFor("dispose-on-acquire-fail");
       const f = leasePathFor(d, "999", "wt-00000000000000ab");
       writeFileSync(
@@ -5944,7 +5922,7 @@ describe("drive-state.ts durability", () => {
       // `force: true` only makes a MISSING target harmless — deletion can still
       // fail (EACCES, EPERM, EROFS, I/O). The two-phase split makes a phase-1
       // failure mean "nothing changed"; a phase-2 failure genuinely is partial,
-      // and claiming otherwise is what round 12 caught. It must SAY so.
+      // and claiming otherwise would be false. It must SAY so.
       //
       // A directory named like a lease file is the portable way to make
       // `rmSync(f, { force: true })` throw: `leaseFilesFor` matches on name,
@@ -5989,7 +5967,7 @@ describe("drive-state.ts durability", () => {
       // `reset`'s exit-9 diagnostic promises nothing was deleted. That was
       // false while phase 2 ran before the caller could refuse: a set holding
       // both stale leases and one live foreign lease swept the stale ones and
-      // THEN returned the refusal (docomply-review round 13, a reference-implementation pull request). The
+      // THEN returned the refusal. The
       // sweep now returns before deleting, so the promise holds and the
       // function's own contract is simply "everything, or nothing".
       const d = stateDirFor("sweep-mixed-refuses");
@@ -6049,12 +6027,12 @@ describe("drive-state.ts durability", () => {
     });
 
     it("CREATING a lease takes the state mutex, not just taking one over", async () => {
-      // Round 11 scoped the state mutex to TAKEOVERS. That left `reset` exposed
+      // Scoping the state mutex to TAKEOVERS alone leaves `reset` exposed
       // to a tree it had never seen: a new actor's first claim writes its lease
       // AFTER `clearAllLeases` enumerated, so the sweep reports no live foreign
       // lease, reset deletes the shared state and claim files, and the freshly
       // admitted command then runs against reset state with its own lease
-      // intact (docomply-review round 13, a reference-implementation pull request). The rule is now "any write
+      // intact. The rule is now "any write
       // that MINTS a new generation takes the state mutex", which covers
       // creation as well as takeover.
       //
@@ -6136,8 +6114,7 @@ describe("drive-state.ts durability", () => {
       // `actor === selfActor`. It was therefore treated as "mine, not news",
       // and reset deleted the shared state and claim files out from under a
       // live driver whose generation is unchanged — so its fence still passes
-      // and its in-flight finding dispatch can be duplicated
-      // (chatgpt-codex-connector round 15, a reference-implementation pull request).
+      // and its in-flight finding dispatch can be duplicated.
       const d = stateDirFor("reset-unidentified");
       const driver = liveSession();
       try {
@@ -6180,8 +6157,7 @@ describe("drive-state.ts durability", () => {
       // 15's ownership test says "mine, not blocking" — while its dispatch has
       // not landed. Deleting the claim there lets any later command see the
       // finding as unaddressed and answer it again, which is the duplicate
-      // top-level comment the claim protocol exists to prevent
-      // (chatgpt-codex-connector round 16, a reference-implementation pull request).
+      // top-level comment the claim protocol exists to prevent.
       //
       // Keyed on the CLAIM rather than on ownership, precisely because
       // ownership is what fails to discriminate here: this reset runs under the
@@ -6213,8 +6189,7 @@ describe("drive-state.ts durability", () => {
       // leases unconditionally on its non-refusing path, so a reset that goes
       // on to refuse on a live claim can still have mutated the lease set.
       // The old unconditional "Nothing has been deleted" wording was false
-      // whenever that happened (docomply-review rounds 17-18,
-      // chatgpt-codex-connector, a reference-implementation pull request).
+      // whenever that happened.
       const d = stateDirFor("reset-live-claim-mixed-lease");
       const S = { DRIVE_PR_SESSION: String(process.pid) };
       await state(d, ["bump-round", "999", "--head", "aaa"], S);
@@ -6320,8 +6295,8 @@ describe("drive-state.ts durability", () => {
       // both trees TRIAGE: nothing stopped two worktrees enumerating the same
       // unresolved threads and each replying with its own outcome, so every
       // thread both reached carried two outcome replies — the identical damage
-      // an earlier change measured within one tree (seventeen doubled `**accepted**`
-      // replies on PR #4057), reached across trees instead.
+      // measured within one tree (seventeen doubled `**accepted**` replies),
+      // reached across trees instead.
       //
       // Two REAL worktrees, because the actor is derived and deliberately not
       // overridable: a stand-in would prove the refusal fires on a value the
@@ -6392,7 +6367,7 @@ describe("drive-state.ts durability", () => {
       // Ladder tier 3 returned before the PR-wide gate ever ran, so a runtime
       // that identifies no session mutated straight through it — and two such
       // resolvers in two worktrees still produced the doubled outcome replies
-      // this module exists to prevent (docomply-review, high). Taking a lease
+      // this module exists to prevent. Taking a lease
       // and reading someone else's are different capabilities, and only the
       // first needs an identity.
       const { a, b, env } = twoDrivers("lease-cross-tree-sessionless");
@@ -6444,7 +6419,7 @@ describe("drive-state.ts durability", () => {
     });
 
     it("refuses the SECOND of two SESSIONLESS trees — neither has a pid, both have a tree", async () => {
-      // The residual an earlier change left and #4108 could not close: the refusal is
+      // The residual lease-derived refusal cannot close: the refusal is
       // derived from lease files, so it needed ONE SIDE to have left one, and
       // two sessionless resolvers left none between them. Both passed the gate
       // and could then put two outcome replies on every thread they both
@@ -6469,7 +6444,7 @@ describe("drive-state.ts durability", () => {
       // `leaseStaleFloorMs` (LOCK_ACQUIRE_MAX_SEC + RENEW_AFTER_MAX_MS, ~5.5m)
       // — which is exactly why it is safe in BOTH directions here: far above
       // the seconds-old record the refusal below turns on, and far below the
-      // age applied later (docomply-review, a reference-implementation pull request round 1).
+      // age applied later.
       const sessionless = {
         ...env,
         DRIVE_PR_SESSION: "",
@@ -6539,8 +6514,8 @@ describe("drive-state.ts durability", () => {
         (n) => n.startsWith("pr-drive-lease-999-") && n.endsWith(".json"),
       );
       // Asserted, not assumed: an empty glob here would age NOTHING and the
-      // admission below would then pass for the wrong reason entirely
-      // (`.claude/rules/document-scanning-gates.md` § 1).
+      // admission below would then pass for the wrong reason entirely (a check
+      // that inspected nothing must fail, not pass).
       expect(own).toHaveLength(1);
       const path = join(stateDir, own[0] as string);
       const rec = JSON.parse(readFileSync(path, "utf8"));
@@ -6624,7 +6599,7 @@ describe("drive-state.ts durability", () => {
       // The upgrade preserves `generation` — it is the same tree, continuously
       // present, so no new admission epoch is minted. That looks like a hole
       // and is not one, and this probe is here because the reading that makes
-      // it look like one is easy to arrive at (codex, PR #4141 round 3): a
+      // it look like one is easy to arrive at: a
       // sessionless command admitted on the tree-held record, paused before its
       // mutation while a session upgrades, would pass a generation-only fence
       // and mutate beside it.
@@ -6683,7 +6658,7 @@ describe("drive-state.ts durability", () => {
       // of the protocol it guards: an identified resolver can take the state
       // mutex and write its lease the instant after the preflight passes, and
       // the sessionless command then takes the same mutex and mutates beside it
-      // (docomply-review round 2, high). The fence is what makes admission and
+      //. The fence is what makes admission and
       // mutation one continuous decision.
       //
       // Probed where the race actually lives rather than by racing two
@@ -6695,7 +6670,7 @@ describe("drive-state.ts durability", () => {
       // after an earlier change: this tree already holds a live SESSION lease, so it is
       // represented in the PR-wide gate already and the sessionless caller
       // deliberately leaves it alone (overwriting it would be a takeover it
-      // cannot justify — `clearAllLeases`'s round-15 finding). That is exactly
+      // cannot justify — see `clearAllLeases`). That is exactly
       // the case with no lease of its own to fence on, so
       // `assertNoForeignDriveNow` remains its fence and this probe remains its
       // regression test. The tier-3 path that DOES claim now is fenced by
@@ -6836,8 +6811,7 @@ describe("drive-state.ts durability", () => {
       // "not mine" but `leaseAlive` kept saying "and it's still out there"
       // (it's asking whether this process is running, which is trivially
       // true), blocking every PR in the checkout until the stale lease aged
-      // out instead of recognizing the takeover it actually was
-      // (docomply-review round 9 / chatgpt-codex-connector round 8).
+      // out instead of recognizing the takeover it actually was.
       //
       // A DIFFERENT pr than the seeded lease's own (777 vs 999) is what
       // proves this is a genuine TAKEOVER rather than the same-pr fast path:
@@ -6878,7 +6852,7 @@ describe("drive-state.ts durability", () => {
       // Asserted independently, not as one `not.toEqual` — that would pass
       // on a one-line regression that writes the requested pr but leaves the
       // dead predecessor's OWN generation in place, which is not a genuine
-      // takeover (docomply-review round 10, a reference-implementation pull request).
+      // takeover.
       expect(written.pr).toBe("999");
       expect(written.generation).not.toBe("g-dead-predecessor");
     });
@@ -6888,14 +6862,14 @@ describe("drive-state.ts durability", () => {
       // right where it was written and wrong for an admission decision: a lease
       // file exists because some tree wrote one, so skipping the ones that fail
       // to parse makes "no live foreign lease" a claim about the subset that
-      // happened to parse (docomply-review, medium).
-      // `.claude/rules/document-scanning-gates.md` § 1 is the general form.
+      // happened to parse. The general form: a check that cannot read part of
+      // its input fails closed.
       const d = stateDirFor("lease-unreadable-foreign");
       // Window pinned for the same reason its sibling above pins it: the ageing
       // step below is only meaningful against a KNOWN window, and a hardcoded
       // age silently stops proving anything under a larger configured one. Same
       // class as the finding raised on that probe, fixed here too rather than
-      // left as the next round's copy (docomply-review, a reference-implementation pull request round 1).
+      // left as the next round's copy.
       const me = {
         DRIVE_PR_SESSION: String(process.pid),
         DRIVE_PR_LEASE_STALE_MIN: "1",
@@ -6932,7 +6906,7 @@ describe("drive-state.ts durability", () => {
       // merely for symmetry: `stop()` is what reaps the `sleep 600` child, so
       // an assertion that throws before the inline stop leaves that process
       // alive for ten minutes — one orphan per failing run, contaminating the
-      // rest of the suite (coderabbitai). The stop stays in the body too, since
+      // rest of the suite. The stop stays in the body too, since
       // this probe needs the pid GONE mid-test; `stop()` is idempotent, so the
       // finally is a backstop rather than a second kill.
       try {
@@ -7303,8 +7277,7 @@ describe("drive-state.ts durability", () => {
       // guards against a second SESSION in the same tree. Left off
       // LEASED_COMMANDS, `release-ready-mark`'s tokenless recovery path let a
       // second session delete the first session's live ready-mark claim and
-      // take the transition itself, without ever reaching this refusal
-      // (chatgpt-codex-connector, a reference-implementation pull request).
+      // take the transition itself, without ever reaching this refusal.
       const d = stateDirFor("lease-ready-mark");
       const a = liveSession();
       try {
@@ -7329,7 +7302,7 @@ describe("drive-state.ts durability", () => {
       // still necessary but is not sufficient: the state file and the CLAIM
       // files are shared by every tree driving the PR, so continuing let this
       // tree delete a live session's in-flight claim and re-dispatch a
-      // non-idempotent answer it had already claimed (round 12). `reset` then
+      // non-idempotent answer it had already claimed. `reset` then
       // refused outright, deleting nothing.
       //
       // an earlier change moved WHERE that refusal comes from, not whether it happens.
@@ -7529,10 +7502,9 @@ describe("drive-state.ts durability", () => {
           ).exitCode,
         ).toBe(0);
         // The fast renewal path must report THIS call's pr, not the
-        // previous one it fast-pathed over without a write (PR #4131 round
-        // 1) — this call is well within `renewAfterMs()`, so without the
-        // `seen.pr === canonicalPr` check the tree lease would still say
-        // '999' here.
+        // previous one it fast-pathed over without a write — this call is well
+        // within `renewAfterMs()`, so without the `seen.pr === canonicalPr`
+        // check the tree lease would still say '999' here.
         expect(
           JSON.parse(readFileSync(treeLeasePathFor(d, ACTOR), "utf8")).pr,
         ).toBe("888");
@@ -8265,9 +8237,9 @@ describe("drive-state.ts durability", () => {
         lock.dispose();
       });
 
-      it("re-resolves the legacy-fallback directory LIVE before acquiring, catching a tree lease written after the snapshot decision (docomply-review, a reference-implementation pull request round 9)", async () => {
-        // The tree-fence counterpart of the round-7 TOCTOU fix and round-8's
-        // matching lock-ordering fix for `assertRemoteMutationAllowed`: a
+      it("re-resolves the legacy-fallback directory LIVE before acquiring, catching a tree lease written after the snapshot decision", async () => {
+        // The tree-fence counterpart of the TOCTOU fix and the matching
+        // lock-ordering fix for `assertRemoteMutationAllowed`: a
         // stale `ctx.stateDir` (as `resolveFenceContext` would have snapshot-
         // decided from a genuinely empty legacy directory) must not make
         // this fence lock and check the WRONG directory once a concurrent
@@ -8453,13 +8425,12 @@ describe("drive-state.ts durability", () => {
         // If an assertion above threw, `running`'s stalled child still holds
         // PR 999's state lock — leaving the promise unobserved surfaces its
         // eventual settlement as a second, misleading unhandled-rejection
-        // failure rather than just the original assertion (coderabbitai, PR
-        // #4131 round 3).
+        // failure rather than just the original assertion.
         await running?.catch(() => {});
       }
     });
 
-    it("refuses to treat an unreadable-but-fresh TREE lease as absent (PR #4131 round 1)", async () => {
+    it("refuses to treat an unreadable-but-fresh TREE lease as absent", async () => {
       // A file that EXISTS but cannot be parsed is evidence some session
       // wrote it — treating that as absent would mint a new generation over
       // a possibly-still-live foreign session on the strength of a record
@@ -8471,7 +8442,7 @@ describe("drive-state.ts durability", () => {
         DRIVE_PR_SESSION: String(process.pid),
       });
       // 11, not a generic 1 — the same exit this same check's own
-      // confirmed-live-foreign-session case uses (PR #4131 round 3).
+      // confirmed-live-foreign-session case uses.
       expect(r.exitCode).toBe(11);
       expect(r.stderr).toContain("could not be read as one");
       // Nothing was written over it.
@@ -8480,8 +8451,8 @@ describe("drive-state.ts durability", () => {
       );
     });
 
-    it("the SESSIONLESS tier also refuses to treat an unreadable-but-fresh TREE lease as absent (PR #4131 round 2)", async () => {
-      // Round 1 closed this for the identified claim path
+    it("the SESSIONLESS tier also refuses to treat an unreadable-but-fresh TREE lease as absent", async () => {
+      // The identified claim path closes this
       // (`claimTreeLease`'s own writer); the sessionless preflight and fence
       // read the SAME file through plain `readTreeLease`, which collapses
       // "absent" and "unreadable" to the identical `null` — so a sessionless
@@ -8493,7 +8464,7 @@ describe("drive-state.ts durability", () => {
         DRIVE_PR_SESSION: "",
         CLAUDE_PID: "",
       });
-      // 11, matching the identified path's own fix above (PR #4131 round 3).
+      // 11, matching the identified path's own fix above.
       expect(r.exitCode).toBe(11);
       expect(r.stderr).toContain("could not be read as one");
       expect(readFileSync(treeLeasePathFor(d, ACTOR), "utf8")).toBe(
@@ -8501,7 +8472,7 @@ describe("drive-state.ts durability", () => {
       );
     });
 
-    it("rolls back a freshly-created tree lease when the per-PR claim fails afterward (PR #4131 round 1)", async () => {
+    it("rolls back a freshly-created tree lease when the per-PR claim fails afterward", async () => {
       // `claimTreeLease` writes BEFORE `claimPrLease`'s own checks run — so a
       // failure there (a PR-wide an earlier change refusal from ANOTHER tree, in this
       // probe) must not leave the tree lease it just minted behind, wedging
@@ -8543,8 +8514,8 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("a sibling's failed claim does not destroy this session's own successful admission (PR #4131 round 2)", async () => {
-      // Round 1's rollback compared identity `(pid, host, generation)` alone
+    it("a sibling's failed claim does not destroy this session's own successful admission", async () => {
+      // A rollback comparing identity `(pid, host, generation)` alone
       // — which two commands from the SAME session share identically
       // whenever a renewal preserves the generation, DELIBERATELY, since
       // that is what lets one session juggle several PRs without refusing
@@ -8599,7 +8570,7 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("clear-lease reports the TREE lease it drops, not just the per-PR one (PR #4131 round 2)", async () => {
+    it("clear-lease reports the TREE lease it drops, not just the per-PR one", async () => {
       // The common real-world shape of this call: an operator follows a
       // cross-PR refusal's own `clear-lease <requested-pr>` suggestion,
       // where there is normally NO per-PR lease for that pr at all — round
@@ -8654,7 +8625,7 @@ describe("drive-state.ts durability", () => {
       // in the exact window between the check and `git push` (or the POST)
       // completing. Proven directly at the lock level, independent of
       // `guarded-push.ts`'s own subprocess plumbing — the same shape as the
-      // tree lock's own round 7-8 proof above: a second acquirer of the SAME
+      // tree lock's own proof above: a second acquirer of the SAME
       // PR-remote-mutation-lock path — via the identical `createLock(path,
       // ...)` call `prRemoteMutationLockPathFor` resolves to — must stay
       // BLOCKED for as long as the returned lock is held.
@@ -8714,7 +8685,7 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("re-resolves the legacy-fallback directory LIVE, catching a drive admitted after the snapshot decision (docomply-review, a reference-implementation pull request round 7, TOCTOU)", async () => {
+    it("re-resolves the legacy-fallback directory LIVE, catching a drive admitted after the snapshot decision (TOCTOU)", async () => {
       // The race this closes: `resolveFenceContext` decides `legacyDir` vs
       // its relocation ONCE, as a snapshot — an empty, unmarked
       // legacy directory at that instant resolves to `legacyDir`. If a
@@ -8722,7 +8693,7 @@ describe("drive-state.ts durability", () => {
       // directory (creates it, writes its lease) any time between that
       // snapshot and this fence's own check, a fence that trusted the stale
       // snapshot would enumerate the wrong directory and miss that lease
-      // entirely — the exact fail-open the round-7 review finding named.
+      // entirely — an exact fail-open.
       //
       // Reproduced directly at the `ctx` level, the same way the override
       // path's rename-and-recreate races are proven elsewhere in this file:
@@ -8742,10 +8713,8 @@ describe("drive-state.ts durability", () => {
       // `newDir` is a unique, never-otherwise-touched path (never collides
       // with the developer's own real drive-pr state), but it is still a
       // real write outside this test's own tmpdir and must be cleaned up
-      // explicitly — nothing removes it automatically (docomply-review via
-      // CodeRabbit, PR #4618 round 8: this test left one behind on every
-      // run, unbounded, the same class of accumulation an earlier change exists to
-      // fix in the first place).
+      // explicitly — nothing removes it automatically, and leaving one behind
+      // on every run accumulates without bound.
       const newDir = defaultStateDirFor(legacyDir);
       try {
         mkdirSync(newDir, { recursive: true });
@@ -8808,7 +8777,7 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("never mints a clone identity for a genuinely fresh legacy dir (docomply-review, a reference-implementation pull request round 8)", async () => {
+    it("never mints a clone identity for a genuinely fresh legacy dir", async () => {
       // This fence is documented as lightweight and read-only, but the
       // original `resolveLegacyFallbackDir` called `defaultStateDirFor`
       // unconditionally, which calls `cloneKey` — durably minting and
@@ -8845,13 +8814,12 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("prefers an empty, not-yet-created newDir over acquiring the PR-wide lock in legacyDir when legacyDir holds nothing (docomply-review, a reference-implementation pull request round 8)", async () => {
+    it("prefers an empty, not-yet-created newDir over acquiring the PR-wide lock in legacyDir when legacyDir holds nothing", async () => {
       // Two things proven together: the lock is acquired against the SAME
-      // directory `resolveLegacyFallbackDir` would resolve to fresh (closing
-      // the round-8 summary finding — the lock used to be built from the
-      // STALE `ctx.stateDir` before any live refresh ran), and that fresh
-      // resolution avoids `legacyDir` entirely when it holds no real
-      // footprint (closing the round-8 inline finding — every acquire/
+      // directory `resolveLegacyFallbackDir` would resolve to fresh (a lock
+      // built from the STALE `ctx.stateDir` before any live refresh ran would
+      // target the wrong directory), and that fresh resolution avoids
+      // `legacyDir` entirely when it holds no real footprint (every acquire/
       // release leaves a permanent quarantine tombstone in whatever
       // directory it targets, which `legacyFootprint()` then reads back as
       // "unmigrated state", manufacturing the very refusal an earlier change exists
@@ -8863,7 +8831,7 @@ describe("drive-state.ts durability", () => {
       // any kind — and `newDir` does not exist yet either. The stale `ctx`
       // handed to the fence still names `legacyDir` (as if resolved before
       // this state existed), mirroring the exact snapshot-then-check gap the
-      // round-7 TOCTOU fix closed for enumeration; this test is the same gap
+      // TOCTOU fix closed for enumeration; this test is the same gap
       // for the LOCK.
       //
       // Run as a SUBPROCESS, not in-process like the sibling tests above:
@@ -8876,7 +8844,7 @@ describe("drive-state.ts durability", () => {
       // Only a genuinely separate process picks up a faked `$HOME` cold, the
       // same reason `suiteHome`/`gitCleanEnv()` above route every
       // `homedir()`-sensitive probe in this file through a subprocess rather
-      // than an in-process env mutation (`.claude/rules/bun-test-fake-home.md`).
+      // than an in-process env mutation.
       const probeDir = mkdtempSync(
         join(tmpdir(), "drive-pr-empty-legacy-prefers-new-probe-"),
       );
@@ -8943,8 +8911,8 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("does NOT trust an existing newDir as migration proof when legacyDir still holds a live lease (docomply-review, a reference-implementation pull request round 9)", async () => {
-      // The gap round 8's "prefer empty newDir" fix left open: `newDir`
+    it("does NOT trust an existing newDir as migration proof when legacyDir still holds a live lease", async () => {
+      // The gap the "prefer empty newDir" rule leaves open: `newDir`
       // existing was still, on its own, sufficient to select it — and
       // `ensureMigratedFromLegacy`/`migrate-legacy-state.ts --apply` both
       // `mkdirSync(newDir)` BEFORE scanning `legacyDir` and possibly
@@ -9032,20 +9000,18 @@ describe("drive-state.ts durability", () => {
       // create-then-remove, fs.watch's OS-level delivery is best-effort and
       // can coalesce or drop events, and a listener-COUNT snapshot cannot
       // see a construct-then-DISPOSE, since `dispose()` removes the exact
-      // listener `createLock` added (docomply-review, a reference-implementation pull request rounds
-      // 7-10). The actual structural fix: spy on the GLOBAL seam
-      // `createLock` unconditionally calls at construction —
-      // `process.on('exit', ...)` — and record every CALL, not the net
-      // listener count afterward. This captures the ATTEMPT itself,
-      // synchronously, before any filesystem I/O, and survives any later
-      // `dispose()` un-registering it — there is no way to construct a
-      // `PathLock` without this call firing first, and no way for a
-      // subsequent `dispose()` to erase the fact that it fired.
-      // bun-types 1.4.0 regression: the process.on overloads
-      // collapse so `spyOn` infers the 'memoryPressure' signature, making
-      // `event === 'exit'` below a no-overlap type error. Spy through the
-      // EventEmitter view — same object, same seam, honest event type —
-      // matching the cast lib/state/lock.ts already carries for the
+      // listener `createLock` added. The actual structural fix: spy on the
+      // GLOBAL seam `createLock` unconditionally calls at construction —
+      // `process.on('exit', ...)` — and record every CALL, not the net listener
+      // count afterward. This captures the ATTEMPT itself, synchronously,
+      // before any filesystem I/O, and survives any later `dispose()`
+      // un-registering it — there is no way to construct a `PathLock` without
+      // this call firing first, and no way for a subsequent `dispose()` to
+      // erase the fact that it fired. bun-types 1.4.0 regression: the
+      // process.on overloads collapse so `spyOn` infers the 'memoryPressure'
+      // signature, making `event === 'exit'` below a no-overlap type error. Spy
+      // through the EventEmitter view — same object, same seam, honest event
+      // type — matching the cast lib/state/lock.ts already carries for the
       // mirror-image process.off collapse.
       const onSpy = spyOn(
         process as unknown as import("node:events").EventEmitter,
@@ -9131,9 +9097,8 @@ describe("drive-state.ts durability", () => {
       await holdLock.acquire();
       let released = false;
       // Hoisted above the `try` so the `finally` below can see and clean
-      // them up on EVERY exit path, not just the happy one (docomply-review,
-      // a reference-implementation pull request round 7) — a `const`/`let` declared inside the `try` block
-      // is out of scope in its own `finally`.
+      // them up on EVERY exit path, not just the happy one — a `const`/`let`
+      // declared inside the `try` block is out of scope in its own `finally`.
       let proc: ReturnType<typeof Bun.spawn> | undefined;
       let exitCode: number | null = null;
       let exitedPromise: Promise<number> | undefined;
@@ -9150,7 +9115,7 @@ describe("drive-state.ts durability", () => {
             "--outcome",
             "accepted",
             "--comment-url",
-            "https://example.invalid/issue-b-reply",
+            "https://example.invalid/thread-b-reply",
           ],
           {
             cwd: b,
@@ -9171,7 +9136,7 @@ describe("drive-state.ts durability", () => {
         holdLock.release();
         holdLock.dispose();
         released = true;
-        // Bounded, not a bare `await` (docomply-review, a reference-implementation pull request round 7):
+        // Bounded, not a bare `await`:
         // if the admission path regressed into an indefinite wait, an
         // unbounded await here would hang this ENTIRE test suite rather
         // than fail this one test — the `finally` below still kills the
@@ -9184,7 +9149,7 @@ describe("drive-state.ts durability", () => {
         // `setTimeout` that outlives the `Promise.race` it was created for
         // keeps its closure (and the timer itself) alive for the rest of
         // this timeout's duration even after the normal, fast path has
-        // already won (docomply-review, a reference-implementation pull request post-convergence).
+        // already won.
         let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
         const timedOut = await Promise.race([
           exitedPromise.then(() => false),
@@ -9224,7 +9189,7 @@ describe("drive-state.ts durability", () => {
           holdLock.dispose();
         }
         // Terminate and join the child on EVERY exit path, not just the
-        // happy one (docomply-review, a reference-implementation pull request round 7): an earlier
+        // happy one: an earlier
         // assertion throwing above (e.g. the `toBeNull()` check) left the
         // child running, unkilled and unjoined, in the original version of
         // this test. `exitCode` is only ever set by the `.then()` above, so
@@ -9307,7 +9272,7 @@ describe("drive-state.ts durability", () => {
             "--outcome",
             "accepted",
             "--comment-url",
-            "https://example.invalid/issue-b2-reply",
+            "https://example.invalid/thread-b2-reply",
           ],
         );
         // `lock.ts`'s own `acquire()` still prints ITS generic diagnostic to
@@ -9327,7 +9292,7 @@ describe("drive-state.ts durability", () => {
     });
   });
 
-  describe("hold --unconfirmed (docomply-review rounds 7-10, PR #4028)", () => {
+  describe("hold --unconfirmed", () => {
     // reconcile-replied-threads.ts re-holds a reply it found already POSTED,
     // not one it verified. The ordinary `hold` upsert stamps `round:.rounds`
     // unconditionally — sound for a live pass's own step 3, which only calls
@@ -9335,14 +9300,14 @@ describe("drive-state.ts durability", () => {
     // ability: round and .verifiedSha are both PR-global, not scoped to which
     // hold's fix a given push actually contains, so granting round-currency
     // on faith let a stale, never-verified reply ride an UNRELATED later
-    // push's set-verified to a false resolve (round 7). `--unconfirmed`
+    // push's set-verified to a false resolve. `--unconfirmed`
     // closes this by stamping round -1, which bump-round (always >= 0,
     // starting at 0) can never equal. Insert-if-absent keyed on outcome alone
-    // (round 8) still let a SUPERSEDING same-outcome reply inherit an earlier
+    // still let a SUPERSEDING same-outcome reply inherit an earlier
     // hold's round-currency, and tolerating an absent commentUrl on the
-    // ordinary (live-pass-confirmed) path (round 9) closed that only within a
+    // ordinary (live-pass-confirmed) path closed that only within a
     // chain of standalone re-holds, not for a confirmed hold. `--comment-url`
-    // is now REQUIRED and compared exactly on BOTH paths (round 10): insert-
+    // is now REQUIRED and compared exactly on BOTH paths: insert-
     // if-absent by (key, outcome, commentUrl), so any newer qualifying
     // comment — confirmed or not, same outcome word or not — invalidates a
     // stale hold rather than inheriting it.
@@ -9478,7 +9443,7 @@ describe("drive-state.ts durability", () => {
       expect(claim.exitCode).toBe(0);
     });
 
-    it("invalidates a stale hold whose OUTCOME differs — a superseding reply must not inherit round-currency (docomply-review round 8)", async () => {
+    it("invalidates a stale hold whose OUTCOME differs — a superseding reply must not inherit round-currency", async () => {
       const d = stateDirFor("unconfirmed-outcome-changed");
       // A live pass legitimately confirmed and held an `accepted` claim.
       await state(d, ["bump-round", "999", "--head", "first-head"]);
@@ -9566,16 +9531,16 @@ describe("drive-state.ts durability", () => {
       expect(claim.exitCode).not.toBe(0);
     });
 
-    it("invalidates a CONFIRMED (live-pass) hold when a superseding reply appears — the round 9 fix's own acknowledged residual (docomply-review round 10)", async () => {
-      // Round 9's fix left one case open: the ORDINARY (non --unconfirmed)
-      // hold path never recorded commentUrl at all, so an absent-vs-set
-      // comparison had to treat "no commentUrl on file" as trustworthy —
-      // otherwise every legitimately-confirmed hold would spuriously
-      // downgrade the first time reconcile ran afterward, changed or not.
-      // That leniency, though, meant a genuinely SUPERSEDING reply on a
-      // live-pass-confirmed thread was never caught either. Both `hold`
-      // paths now require --comment-url, so there is no more "absent" case
-      // to be lenient about — comparison is exact on both sides.
+    it("invalidates a CONFIRMED (live-pass) hold when a superseding reply appears — the absent-commentUrl tolerance's own acknowledged residual", async () => {
+      // Tolerating an absent commentUrl left one case open: the ORDINARY (non
+      // --unconfirmed) hold path never recorded commentUrl at all, so an
+      // absent-vs-set comparison had to treat "no commentUrl on file" as
+      // trustworthy — otherwise every legitimately-confirmed hold would
+      // spuriously downgrade the first time reconcile ran afterward, changed or
+      // not. That leniency, though, meant a genuinely SUPERSEDING reply on a
+      // live-pass-confirmed thread was never caught either. Both `hold` paths
+      // now require --comment-url, so there is no more "absent" case to be
+      // lenient about — comparison is exact on both sides.
       const d = stateDirFor("confirmed-hold-superseded");
       await state(d, ["bump-round", "999", "--head", "confirmed-head"]);
       await state(d, [
@@ -9665,12 +9630,12 @@ describe("drive-state.ts durability", () => {
       expect(claim.exitCode).not.toBe(0);
     });
 
-    it("a chain of standalone re-holds tracks the LATEST comment — a newer same-outcome comment replaces an older unconfirmed entry's provenance (docomply-review round 9)", async () => {
+    it("a chain of standalone re-holds tracks the LATEST comment — a newer same-outcome comment replaces an older unconfirmed entry's provenance", async () => {
       // Two reconcile passes, no live pass in between: the first pins
       // provenance to comment #1; a later run sees a DIFFERENT trusted
       // comment (same outcome word, different promise) and must not silently
-      // keep pointing at the stale one — outcome-only comparison (round 8's
-      // fix) would have read these as identical and left the OLD provenance
+      // keep pointing at the stale one — outcome-only comparison would have
+      // read these as identical and left the OLD provenance
       // standing.
       const d = stateDirFor("unconfirmed-chain-tracks-latest-comment");
       await state(d, [
@@ -9832,7 +9797,7 @@ describe("drive-state.ts durability", () => {
       // A successor session copy-pasting the literal rendered command must
       // get ONE runnable invocation, not `drive-state.ts` alone on one line
       // and `claim-held ...` as a bogus separate command on the next — the
-      // round-3 regression this asserts against. Each command has to sit
+      // regression this asserts against. Each command has to sit
       // fully inside its own line, script name and subcommand together —
       // including `--pushed-sha`, which the claim has required since an earlier change.
       expect(out).toContain(

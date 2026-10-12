@@ -3,8 +3,7 @@
  * Resolve a HELD thread — one replied to with `accepted`/`moot` and recorded
  * via `drive-state.ts hold`, now waiting on the push its reply promised
  * (SKILL.md § 6). `resolve-thread.ts`'s mutation is unconditional: given a
- * thread id, it resolves it, with no notion of WHICH push justifies that
- *.
+ * thread id, it resolves it, with no notion of WHICH push justifies that.
  *
  * `kind: finding` has a live-head/clean-HEAD check of its own
  * (`answer-summary-finding.ts --pushed-sha`), but that is a weaker property
@@ -18,8 +17,7 @@
  * anything in the held batch.
  *
  * "The current push carries the promised fix" is TWO checks, not one, and
- * both are enforced atomically by `drive-state.ts claim-held` (review round
- * 2):
+ * both are enforced atomically by `drive-state.ts claim-held`:
  *
  *   1. The ROUND `hold` recorded (SKILL.md § 3, at reply time) must still be
  *      the CURRENT round. `hold` always stamps `round: .rounds` — the round of
@@ -78,18 +76,17 @@
  * does before it may fail — every check ahead of it is read-only or
  * gh/git-only, and a failure there leaves the held item exactly where it was.
  *
- * From the claim onward the item IS gone from `held`, so review round 2/3
- * added two more layers: an api-head RECHECK immediately before the mutation
- * (narrowing, not closing, the window a push could land in — nothing local
- * can serialise against GitHub itself), and `drive-state.ts restore-held`
- * (never plain `hold`, and never swallowed) to put the item back — at its
- * EXACT original round, since a concurrent driver's `bump-round` may have
- * moved `.rounds` on while the network call was in flight — if the recheck or
- * the mutation itself fails. A restore that cannot persist is reported as
- * fatal, not silently absorbed; SKILL.md § 3's ordinary reconciliation (the
- * GitHub reply already exists; a killed pass or a failed restore just leaves
- * the thread unresolved for the next round to find) is what actually recovers
- * from there.
+ * From the claim onward the item IS gone from `held`, so two more layers guard
+ * it: an api-head RECHECK immediately before the mutation (narrowing, not
+ * closing, the window a push could land in — nothing local can serialise
+ * against GitHub itself), and `drive-state.ts restore-held` (never plain
+ * `hold`, and never swallowed) to put the item back — at its EXACT original
+ * round, since a concurrent driver's `bump-round` may have moved `.rounds` on
+ * while the network call was in flight — if the recheck or the mutation itself
+ * fails. A restore that cannot persist is reported as fatal, not silently
+ * absorbed; SKILL.md § 3's ordinary reconciliation (the GitHub reply already
+ * exists; a killed pass or a failed restore just leaves the thread unresolved
+ * for the next round to find) is what actually recovers from there.
  *
  * Usage:
  *   resolve-held-thread.ts --key THREAD_NODE_ID --pushed-sha SHA [PR]
@@ -108,23 +105,21 @@ interface LiveComment {
 }
 
 /**
- * A comment landing AFTER the held reply is compatible with that
- * reply only when it is a reviewer bot's own automated confirmation. The
- * strict "the held reply is the latest comment" check exists to catch a
- * human changing the outcome; reviewer bots post a confirming follow-up
- * within seconds of an outcome reply, and `finish-round.ts` reaches this
- * script only after a push and a reviewer wait, so every hold used to lose
- * that race (4–5 cycles, ~20 minutes, on PR #4618).
+ * A comment landing AFTER the held reply is compatible with that reply only
+ * when it is a reviewer bot's own automated confirmation. The strict "the held
+ * reply is the latest comment" check exists to catch a human changing the
+ * outcome; reviewer bots post a confirming follow-up within seconds of an
+ * outcome reply, and `finish-round.ts` reaches this script only after a push
+ * and a reviewer wait, so every hold used to lose that race (4–5 cycles, ~20
+ * minutes, on one measured PR).
  *
- * The identity+shape predicate itself now lives in
- * `./lib/bot-confirmation.ts` — shared with `finish-round.ts`'s own
- * pre-push untriaged-thread guard (review finding, PR #5000): that
+ * The identity+shape predicate itself now lives in `./lib/bot-confirmation.ts`
+ * — shared with `finish-round.ts`'s own pre-push untriaged-thread guard: that
  * guard used to judge strictly against the literal latest comment, so it
- * refused the round on the very confirmation this function exists to
- * tolerate, whenever CodeRabbit's confirmation landed before the push
- * rather than during this script's own post-push wait. One predicate for
- * both callers is what keeps them from drifting apart on the identical
- * question again.
+ * refused the round on the very confirmation this function exists to tolerate,
+ * whenever CodeRabbit's confirmation landed before the push rather than during
+ * this script's own post-push wait. One predicate for both callers is what
+ * keeps them from drifting apart on the identical question again.
  */
 function isTrustedBotConfirmation(c: LiveComment): boolean {
   return isTrustedBotConfirmationShared(
@@ -169,13 +164,12 @@ function prefixLines(prefix: string, text: string): string {
 
 async function main(): Promise<number> {
   // Bound every network call — mode 13 in references/terminal-states.md.
-  // Validated, not trusted verbatim (review round 2): an override of `0` — or
-  // any non-positive value — would silently reintroduce the exact unbounded
-  // hang this deadline exists to prevent, and a non-numeric override is
-  // refused for the same reason a malformed drive-state file is refused
-  // rather than coerced: guessing a fallback here would hide a
-  // misconfiguration behind a script that otherwise looks like it is bounding
-  // calls it is not.
+  // Validated, not trusted verbatim: an override of `0` — or any non-positive
+  // value — would silently reintroduce the exact unbounded hang this deadline
+  // exists to prevent, and a non-numeric override is refused for the same
+  // reason a malformed drive-state file is refused rather than coerced:
+  // guessing a fallback here would hide a misconfiguration behind a script that
+  // otherwise looks like it is bounding calls it is not.
   for (const name of ["GH_CALL_TIMEOUT", "DRIVE_PR_HELPER_TIMEOUT"]) {
     const read = readTimeoutEnv(name, 0);
     if (!read.ok) {
@@ -261,11 +255,11 @@ async function main(): Promise<number> {
     // Array-checked, not just syntax-checked: `JSON.parse` returning an object,
     // a string or null would sail through the catch and make `held.find` below
     // throw a TypeError, surfacing as an opaque runMain message instead of the
-    // diagnostic this precheck exists to give (coderabbitai, PR #4034 round 2).
+    // diagnostic this precheck exists to give.
     // ELEMENT-level, not just container-level. `[null]` passes
     // `Array.isArray` and then throws a TypeError at `held.find(h => h.key)` —
     // the same opaque failure the container check was added to prevent, one
-    // level in (coderabbitai, PR #4034 round 4). Valid JSON is not a valid
+    // level in. Valid JSON is not a valid
     // state record, so every field this function reads is checked.
     const parsed: unknown = JSON.parse(heldRes.stdout);
     held = Array.isArray(parsed)
@@ -301,7 +295,7 @@ async function main(): Promise<number> {
     // which matters here specifically because a genuinely vanished key (this
     // thread's own resolve landed via a concurrent driver since the caller's
     // batch read) is indistinguishable, from this precheck's point of view,
-    // from a typo (chatgpt-codex-connector, a reference-implementation pull request).
+    // from a typo.
     fail(
       4,
       `resolve-held-thread.ts: no held item with key '${key}' for PR #${pr}.`,
@@ -407,7 +401,7 @@ async function main(): Promise<number> {
     // Shape-checked for the same reason as the held payload above: `null` and
     // `{}` are valid JSON, and either would make the restore path below carry
     // an undefined round — restoring the item at `NaN` and permanently
-    // failing every later resolve of it (coderabbitai, PR #4034 round 4). An
+    // failing every later resolve of it. An
     // unusable payload takes the same route as an unparseable one.
     const p: unknown = JSON.parse(claimRes.stdout);
     if (
@@ -459,17 +453,16 @@ async function main(): Promise<number> {
     };
   }
 
-  // From here, the item is GONE from `held`. Every failure path below must
-  // put it back via `restore-held`, passing the claimed round — the item's
-  // OWN original round, not whatever `.rounds` reads at restore time — never
-  // `drive-state.ts hold` (which stamps "now"): `claim-held` released its
-  // lock before any of this ran, so a concurrent driver's `bump-round` could
-  // already have moved `.rounds` forward by the time a restore happens, and
-  // stamping "now" would silently launder that — the restored item would
-  // compare equal to a round it was never actually re-confirmed against.
-  // `restore-held` also has no swallowed-failure escape hatch (review round
-  // 2/3): a failure to persist the restore is fatal here too — see the
-  // fallback message below.
+  // From here, the item is GONE from `held`. Every failure path below must put
+  // it back via `restore-held`, passing the claimed round — the item's OWN
+  // original round, not whatever `.rounds` reads at restore time — never
+  // `drive-state.ts hold` (which stamps "now"): `claim-held` released its lock
+  // before any of this ran, so a concurrent driver's `bump-round` could already
+  // have moved `.rounds` forward by the time a restore happens, and stamping
+  // "now" would silently launder that — the restored item would compare equal
+  // to a round it was never actually re-confirmed against. `restore-held` also
+  // has no swallowed-failure escape hatch: a failure to persist the restore is
+  // fatal here too — see the fallback message below.
   async function restoreOrDie(why: string): Promise<void> {
     const r = await run(
       tsArgv(driveState, [
@@ -487,8 +480,7 @@ async function main(): Promise<number> {
         // its `commentUrl` reads as provenance-free to the next standalone
         // reconciliation, which then treats ANY qualifying comment — including
         // the exact same one this hold already represents — as a supersession
-        // and downgrades a hold that was never actually invalidated
-        // (docomply-review round 11, a reference-implementation pull request).
+        // and downgrades a hold that was never actually invalidated.
         "--comment-url",
         claimed.commentUrl,
         // Carried for the same reason, and with a sharper edge: the
@@ -544,73 +536,68 @@ async function main(): Promise<number> {
     console.error("noticing why this pass failed.");
   }
 
-  // Comment-staleness recheck (an earlier change finding, chatgpt-codex-
-  // connector): `finish-round.ts`'s own pre-push guard confirms a held
-  // thread's `commentUrl` matches its latest comment, but that check runs
-  // BEFORE `guarded-push.ts` — which SKILL.md documents as potentially
-  // taking tens of minutes through the pre-push hook. A reviewer or human
-  // reply landing on the thread during that window (or during the
-  // AWAITING_REVIEWER wait afterward) would otherwise reach this point
-  // unnoticed: `claim-held` only checks PUSH provenance (round + verified
-  // SHA), never the thread's own comment history, and `resolve-thread.ts`'s
-  // mutation is unconditional. Re-fetch the thread's live comments — the
-  // same single-thread-by-node-id GraphQL query `triage-thread.ts`'s own
-  // `fetchThread` uses, kept inline here rather than extracted into a shared
-  // module for this round's minimal-diff constraint — and refuse to resolve
-  // when the truncation flag is set (the visible tail is not confirmed to be
-  // the real latest, same posture as `finish-round.ts`'s `currentReplyOutcome`)
-  // or anything but a trusted reviewer bot's own confirmation has
-  // landed after the reply this hold promised.
+  // Comment-staleness recheck: `finish-round.ts`'s own pre-push guard confirms
+  // a held thread's `commentUrl` matches its latest comment, but that check
+  // runs BEFORE `guarded-push.ts` — which SKILL.md documents as potentially
+  // taking tens of minutes through the pre-push hook. A reviewer or human reply
+  // landing on the thread during that window (or during the AWAITING_REVIEWER
+  // wait afterward) would otherwise reach this point unnoticed: `claim-held`
+  // only checks PUSH provenance (round + verified SHA), never the thread's own
+  // comment history, and `resolve-thread.ts`'s mutation is unconditional.
+  // Re-fetch the thread's live comments — the same single-thread-by-node-id
+  // GraphQL query `triage-thread.ts`'s own `fetchThread` uses, kept inline here
+  // rather than extracted into a shared module for this round's minimal-diff
+  // constraint — and refuse to resolve when the truncation flag is set (the
+  // visible tail is not confirmed to be the real latest, same posture as
+  // `finish-round.ts`'s `currentReplyOutcome`) or anything but a trusted
+  // reviewer bot's own confirmation has landed after the reply this hold
+  // promised.
   //
-  // Deliberately BEFORE the head recheck below, not after (round 25 review
-  // finding, P1, chatgpt-codex-connector): this query can itself consume up
-  // to the full helper timeout, and an earlier revision ran the head recheck
-  // FIRST — so a push landing during THIS call's own latency would sail past
-  // an already-stale "head confirmed current" result, widening exactly the
-  // TOCTOU window the head recheck exists to narrow. Running the slower,
-  // less time-sensitive check first and the head recheck LAST — immediately
-  // before the mutation — keeps the head recheck's own guarantee as tight as
-  // it can be: only the mutation call's own latency stands between it and
-  // the irreversible act.
-  // Best-effort cleanup, not a correctness gate (review round 6): between
-  // `claim-held` removing this key and the thread reading resolved, a
-  // CONCURRENT driver's own pass can legitimately re-enumerate this
-  // still-open GitHub thread, see no held record for it, and — following
-  // SKILL.md § 3's documented "the reply already exists, re-hold it"
-  // reconciliation exactly as intended for a genuinely different scenario —
-  // recreate a `held` entry for a key that is, from this process's point of
-  // view, already resolved. Nothing else will ever clean that entry up: it
-  // isn't wrong yet, but a LATER pass reading it would either refuse it on a
-  // round mismatch before reaching real work, or attempt to resolve an
-  // already-closed thread against some future push. If the key has
-  // reappeared, drop it now, while we know for certain the underlying thread
-  // is resolved.
+  // Deliberately BEFORE the head recheck below, not after: this query can
+  // itself consume up to the full helper timeout, and an earlier revision ran
+  // the head recheck FIRST — so a push landing during THIS call's own latency
+  // would sail past an already-stale "head confirmed current" result, widening
+  // exactly the TOCTOU window the head recheck exists to narrow. Running the
+  // slower, less time-sensitive check first and the head recheck LAST —
+  // immediately before the mutation — keeps the head recheck's own guarantee as
+  // tight as it can be: only the mutation call's own latency stands between it
+  // and the irreversible act.
+  // Best-effort cleanup, not a correctness gate: between `claim-held` removing
+  // this key and the thread reading resolved, a CONCURRENT driver's own pass
+  // can legitimately re-enumerate this still-open GitHub thread, see no held
+  // record for it, and — following SKILL.md § 3's documented "the reply already
+  // exists, re-hold it" reconciliation exactly as intended for a genuinely
+  // different scenario — recreate a `held` entry for a key that is, from this
+  // process's point of view, already resolved. Nothing else will ever clean
+  // that entry up: it isn't wrong yet, but a LATER pass reading it would either
+  // refuse it on a round mismatch before reaching real work, or attempt to
+  // resolve an already-closed thread against some future push. If the key has
+  // reappeared, drop it now, while we know for certain the underlying thread is
+  // resolved.
   //
-  // Deleted by key, not matched against round/outcome (review round 9 tried
-  // matching, guarding against dropping a concurrent driver's "newer"
-  // re-hold of this key — reverted in round 10, see drive-state.ts's
-  // release-held comment: the only way a re-hold of THIS key can exist here
-  // is from a driver whose own step-2 enumeration (scoped to `isResolved ==
-  // false`) saw the thread open, which — for a thread that reads resolved —
-  // is only possible from a scan taken BEFORE that resolve landed. So any
-  // record found for this key at this point is provably stale regardless of
-  // its round/outcome, and matching against it is what leaves a stale record
-  // behind forever instead of cleaning it up.
+  // Deleted by key, not matched against round/outcome (matching, to guard
+  // against dropping a concurrent driver's "newer" re-hold of this key, was
+  // tried and reverted — see drive-state.ts's release-held comment: the only
+  // way a re-hold of THIS key can exist here is from a driver whose own step-2
+  // enumeration (scoped to `isResolved == false`) saw the thread open, which —
+  // for a thread that reads resolved — is only possible from a scan taken
+  // BEFORE that resolve landed. So any record found for this key at this point
+  // is provably stale regardless of its round/outcome, and matching against it
+  // is what leaves a stale record behind forever instead of cleaning it up.
   //
   // That argument assumes resolution is MONOTONIC — once resolved, always
-  // resolved — and GitHub does not actually guarantee that: any user with
-  // write access can UNRESOLVE a thread (the "unresolve conversation"
-  // action), the same mutation `resolve-thread.ts` uses in reverse (review
-  // finding, docomply-review, a reference-implementation pull request round 1). A thread this function's
-  // own CALLER read as resolved can therefore be reopened, and re-held by a concurrent
-  // driver's own step 2/3, in the window between that read and this
-  // function actually running — this is a whole earlier `staleCheck`
-  // GraphQL round trip PLUS two more subprocess spawns (`held-keys`,
-  // `release-held`) at the SLOWEST call site (line ~683, immediately after
-  // `staleCheck` itself), or the `resolveThread` mutation's own round trip
-  // at the other (line ~804). Deleting unconditionally on the strength of a
-  // read that is no longer current would wipe that concurrent driver's own
-  // legitimate hold, silently — not a leftover, a live pending disposition.
+  // resolved — and GitHub does not actually guarantee that: any user with write
+  // access can UNRESOLVE a thread (the "unresolve conversation" action), the
+  // same mutation `resolve-thread.ts` uses in reverse. A thread this function's
+  // own CALLER read as resolved can therefore be reopened, and re-held by a
+  // concurrent driver's own step 2/3, in the window between that read and this
+  // function actually running — this is a whole earlier `staleCheck` GraphQL
+  // round trip PLUS two more subprocess spawns (`held-keys`, `release-held`) at
+  // the SLOWEST call site (line ~683, immediately after `staleCheck` itself),
+  // or the `resolveThread` mutation's own round trip at the other (line ~804).
+  // Deleting unconditionally on the strength of a read that is no longer
+  // current would wipe that concurrent driver's own legitimate hold, silently —
+  // not a leftover, a live pending disposition.
   //
   // So: re-verify `isResolved` ONE more time, as close to the mutation as
   // this function can get it — the same "keeps the guarantee as tight as it
@@ -722,13 +709,13 @@ query($id:ID!){
     );
     return 1;
   }
-  // Already resolved on GitHub — a reviewer bot resolved it itself
-  // after confirming the reply (every CodeRabbit follow-up sampled on PR
-  // #4618 did), or a human did. The hold's goal is met: `claim-held` already
-  // drained it, so there is nothing to mutate and nothing to restore. Ahead
-  // of every comment check below, because those guard a mutation this path
-  // never makes — and a bot's follow-up on a resolved thread is exactly what
-  // would otherwise fail them.
+  // Already resolved on GitHub — a reviewer bot resolved it itself after
+  // confirming the reply (every CodeRabbit follow-up sampled on one measured PR
+  // did), or a human did. The hold's goal is met: `claim-held` already drained
+  // it, so there is nothing to mutate and nothing to restore. Ahead of every
+  // comment check below, because those guard a mutation this path never makes —
+  // and a bot's follow-up on a resolved thread is exactly what would otherwise
+  // fail them.
   if (threadNode.isResolved) {
     console.error(
       `resolve-held-thread.ts: thread '${key}' is already resolved on GitHub — hold drained without a mutation.`,
@@ -743,15 +730,14 @@ query($id:ID!){
     );
     return 2;
   }
-  // Every node's `url` is validated, none are dropped (an earlier change
-  // finding, round 6): `list-unresolved-threads.ts` treats comment fields as
-  // optional GraphQL input, so a malformed or missing `url` on some node
-  // OTHER than the true latest is a real possibility, not a hypothetical.
-  // Filtering such a node out — rather than refusing outright — would shift
-  // "the latest comment" to an OLDER comment's url, which can coincidentally
-  // still equal the hold's own `commentUrl` and let a thread whose real
-  // latest comment is unreadable resolve anyway. Per `.claude/rules/document-
-  // scanning-gates.md` rule 1, an undecodable entry must produce a finding
+  // Every node's `url` is validated, none are dropped:
+  // `list-unresolved-threads.ts` treats comment fields as optional GraphQL
+  // input, so a malformed or missing `url` on some node OTHER than the true
+  // latest is a real possibility, not a hypothetical. Filtering such a node out
+  // — rather than refusing outright — would shift "the latest comment" to an
+  // OLDER comment's url, which can coincidentally still equal the hold's own
+  // `commentUrl` and let a thread whose real latest comment is unreadable
+  // resolve anyway. Failing closed, an undecodable entry must produce a finding
   // (here: refuse and restore), never silently shrink the population it is
   // measured against.
   const hasMalformedNode = nodesRaw.some((n) => {
@@ -811,17 +797,16 @@ query($id:ID!){
     return 2;
   }
 
-  // TOCTOU tightening (review round 2; reordered to run LAST in round 25 —
-  // see the comment-staleness check's own header above for why): the api-
-  // head check that originally ran here used to run BEFORE claim-held and
-  // the comment-staleness network call above — both take real time, during
-  // which another push could land. Re-reading it here, immediately before
-  // the mutation, narrows that window to "the mutation call itself" — it
-  // cannot close it entirely, because nothing running locally can serialise
-  // against a push landing on GitHub's server; a push in the instant between
-  // THIS check and the mutation call is a risk no client-side check
-  // eliminates. What this catches is a push that already landed by the time
-  // we ask again.
+  // TOCTOU tightening (run LAST — see the comment-staleness check's own header
+  // above for why): the api-head check that originally ran here used to run
+  // BEFORE claim-held and the comment-staleness network call above — both take
+  // real time, during which another push could land. Re-reading it here,
+  // immediately before the mutation, narrows that window to "the mutation call
+  // itself" — it cannot close it entirely, because nothing running locally can
+  // serialise against a push landing on GitHub's server; a push in the instant
+  // between THIS check and the mutation call is a risk no client-side check
+  // eliminates. What this catches is a push that already landed by the time we
+  // ask again.
   const recheckRes = await ghCall(
     ["pr", "view", pr, "--json", "headRefOid", "-q", ".headRefOid"],
     { stderr: "pipe" },

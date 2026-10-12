@@ -25,7 +25,7 @@ suppression on the same line. The rule is a neutral example to adapt.
 
 | File | Role |
 |------|------|
-| `check-todo-has-issue.ts` | Scans `SRC_DIR` (default `src`) for bare TODOs |
+| `check-todo-has-issue.ts` | Scans `SRC_DIR` (default `src`) for bare TODOs; binary files are skipped, and a missing `SRC_DIR` passes because there is nothing to check |
 | `fixtures/clean/` | Issue-referenced TODOs pass |
 | `fixtures/bad/` | Bare TODOs and reason-less suppressions fail |
 | `fixtures/exempt/` | Justified suppressions pass |

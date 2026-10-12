@@ -54,13 +54,12 @@ import {
 function sessionsRoot(): string {
   const override = process.env.DRIVE_PR_CODEX_SESSIONS_DIR;
   if (override !== undefined && override !== "") return override;
-  // `CODEX_HOME` relocates the vendor's own state directory — provisioned
-  // per-slot outside the worktree in a factory execution plane (ADR-0078 §2:
-  // "CLAUDE_CONFIG_DIR=~/.forge/slots/<slot>/claude (and the CODEX_HOME /
-  // Cursor equivalents)"). Falling back to `~/.codex` unconditionally means
-  // this adapter never finds a rollout written under a provisioned home,
-  // degrading a real quota wall to a generic exit-1 failure (docomply-review,
-  // a reference-implementation pull request round 10).
+  // `CODEX_HOME` relocates the vendor's own state directory — an execution
+  // service that provisions a per-slot config home outside the worktree sets it
+  // the way it sets, for example, `CLAUDE_CONFIG_DIR=/srv/agents/<slot>/claude`
+  // (and the Cursor equivalent). Falling back to `~/.codex` unconditionally
+  // means this adapter never finds a rollout written under a provisioned home,
+  // degrading a real quota wall to a generic exit-1 failure.
   const codexHome = process.env.CODEX_HOME;
   return codexHome !== undefined && codexHome !== ""
     ? join(codexHome, "sessions")
@@ -98,19 +97,18 @@ function candidateFiles(sinceMs: number): CandidateScan {
   // `scanned` budget below gets to check even once, so a single Y/M/D
   // directory (or a root containing far more of them than the cap) with
   // enough entries still pays the full enumeration cost upfront — the
-  // exact failure the cap exists to prevent (docomply-review, a reference-implementation pull request
-  // round 26).
+  // exact failure the cap exists to prevent.
   const walk = (dir: string, depth: number): boolean => {
     let stoppedEarly = false;
     // `forEachDirEntry`'s own return distinguishes an I/O failure (EACCES, a
     // vanished mount, ...) from a clean walk — an outcome the budget check
     // below cannot see, since it never runs when the directory could not be
-    // read at all (chatgpt-codex-connector, a reference-implementation pull request round 3).
+    // read at all.
     const dirComplete = forEachDirEntry(dir, (entry) => {
       // A circuit breaker on the AGGREGATE enumeration/stat cost across the
       // whole tree, not on how many of its files turn out relevant — see
       // MAX_CANDIDATE_FILES_SCANNED's own doc comment for the residual gap
-      // this accepts (docomply-review, a reference-implementation pull request round 24).
+      // this accepts.
       if (
         scanBudgetExceeded(
           scanned,
@@ -147,9 +145,8 @@ function candidateFiles(sinceMs: number): CandidateScan {
         // own separate walk moments later, that walk would find the rollout,
         // it would be missing from `preexistingSessions` purely because THIS
         // walk's stat failed, and detect() would misattribute a pre-existing
-        // rollout to this pass — reopening an earlier change (docomply-review, PR
-        // #4718 round 4; same class as the Claude adapter's identical fix,
-        // this file's sibling).
+        // rollout to this pass (same class as the Claude adapter's identical
+        // fix, this file's sibling).
         if (!isConfirmedAbsence(err)) {
           statFailed = true;
         }
@@ -173,11 +170,10 @@ function readWindow(v: unknown): Window | null {
   if (typeof v !== "object" || v === null) return null;
   const o = v as Record<string, unknown>;
   // Finite and positive, not merely `typeof === 'number'`: `classify()` and
-  // the round-4 clear-on-healthy path both trust this value once a window
-  // reaches them, and NaN/Infinity/0 would otherwise slip through as a
-  // "valid" window that proves neither exhaustion nor recovery yet still
-  // clears a real earlier candidate as if it did (docomply-review, a reference-implementation pull request
-  // round 8).
+  // the clear-on-healthy path both trust this value once a window reaches
+  // them, and NaN/Infinity/0 would otherwise slip through as a "valid" window
+  // that proves neither exhaustion nor recovery yet still clears a real
+  // earlier candidate as if it did.
   if (
     typeof o.window_minutes !== "number" ||
     !Number.isFinite(o.window_minutes) ||
@@ -197,15 +193,15 @@ function readWindow(v: unknown): Window | null {
   // Defaulting a missing/malformed `used_percent` to 0 used to be a harmless
   // "no positive evidence" reading. It stopped being harmless once a healthy
   // reading could actively CLEAR an earlier exhausted candidate (the
-  // round-4 fix above): a malformed `used_percent` on a newer record would
-  // then read as proof of recovery it never actually provided. Reject the
+  // clear-on-healthy path above): a malformed `used_percent` on a newer record
+  // would then read as proof of recovery it never actually provided. Reject the
   // whole window instead — malformed telemetry proves nothing, in either
-  // direction (docomply-review, a reference-implementation pull request round 6).
+  // direction.
   // Finite alone still let a semantically impossible value (e.g. `-1`)
   // through as a "valid" window: it is never >= 100 (so `mostRestrictiveExhausted`
-  // never selects it), yet it also satisfies the round-4 healthy branch, so a
+  // never selects it), yet it also satisfies the healthy branch, so a
   // negative reading could clear a real exhausted candidate the same way an
-  // out-of-range positive one could (docomply-review, a reference-implementation pull request round 10).
+  // out-of-range positive one could.
   if (
     typeof o.used_percent !== "number" ||
     !Number.isFinite(o.used_percent) ||
@@ -251,7 +247,7 @@ function mostRestrictiveExhausted(
  * bound, the tail no longer contains byte offset 0 at all, so deriving the
  * head line from it (as an earlier revision did) would read some unrelated
  * mid-file line instead and silently reject every large rollout as
- * belonging to no worktree (docomply-review, a reference-implementation pull request round 17).
+ * belonging to no worktree.
  */
 function readHeadLine(path: string, maxBytes = 65536): string {
   const fd = openSync(path, "r");
@@ -263,9 +259,9 @@ function readHeadLine(path: string, maxBytes = 65536): string {
     // plausible on this actively-appended rollout) would otherwise decode
     // trailing NUL bytes as part of the head line, truncating it and making
     // `rolloutCwd()` return null — flattening a real quota wall to a
-    // generic pass failure (docomply-review, a reference-implementation pull request round 27; the
-    // sibling `readBoundedTail()` already used this loop, this call site
-    // was the one that had not been brought in line with it).
+    // generic pass failure (the sibling `readBoundedTail()` already used this
+    // loop, this call site was the one that had not been brought in line with
+    // it).
     const filled = readFullySync(fd, buf, 0);
     const text = buf.subarray(0, filled).toString("utf8");
     const firstNewline = text.indexOf("\n");
@@ -306,8 +302,8 @@ export const codexAdapter: QuotaAdapter = {
   // can. Pointing `CODEX_HOME` at a per-pass directory WOULD isolate this
   // vendor's rollouts exactly, and `sessionsRoot()` above already honours
   // that variable, but it relocates `auth.json` along with the sessions tree.
-  // Deferred until something measures the residual as worth that risk
-  //; until then this vendor relies on
+  // Deferred until something measures the residual as worth that risk;
+  // until then this vendor relies on
   // `DetectOpts.preexistingSessions`.
   detect(opts: DetectOpts): QuotaBlock | null {
     const sinceMs = opts.since.getTime();
@@ -315,8 +311,7 @@ export const codexAdapter: QuotaAdapter = {
     // identical comparison: `since` is millisecond-precise, and neither a
     // rollout's own `timestamp` field nor its filesystem mtime is guaranteed
     // to be. A genuine event in the same second the pass started must not be
-    // rejected as "older than the pass" over sub-second precision alone
-    // (docomply-review, a reference-implementation pull request round 5).
+    // rejected as "older than the pass" over sub-second precision alone.
     const sinceFloorMs = Math.floor(sinceMs / 1000) * 1000;
     const untilMs = opts.now.getTime() + MAX_CLOCK_SKEW_MS;
     let best: QuotaBlock | null = null;
@@ -326,8 +321,8 @@ export const codexAdapter: QuotaAdapter = {
     // event after the exhausted one; gating this only on hits (as an earlier
     // revision did) left `best` stuck on the stale exhausted block forever,
     // because a later healthy record never advanced anything and the skip
-    // guard below never got a chance to reject an even-later record either
-    // (docomply-review, a reference-implementation pull request round 4). Every record considered — healthy
+    // guard below never got a chance to reject an even-later record either.
+    // Every record considered — healthy
     // or not — both advances this and decides whether `best` still stands.
     let newestAt = -1;
     let newestPath = "";
@@ -337,9 +332,8 @@ export const codexAdapter: QuotaAdapter = {
     // leaves NOTHING to verify a candidate's absence against; every candidate
     // not found in the snapshot must be discarded rather than assumed new,
     // or a pre-existing rollout the snapshot's walk simply did not reach
-    // would be misattributed to this pass — reopening an earlier change below
-    // `MAX_CANDIDATE_FILES_SCANNED` via the wall-clock cap (docomply-review,
-    // a reference-implementation pull request).
+    // would be misattributed to this pass — the same misattribution, reached
+    // below `MAX_CANDIDATE_FILES_SCANNED` via the wall-clock cap.
     const snapshotUnreliable = opts.preexistingSessionsTruncated === true;
     let discardedByTruncatedSnapshot = 0;
 
@@ -351,7 +345,7 @@ export const codexAdapter: QuotaAdapter = {
     // comment describes for the other walk. Its own `.truncated` used to be
     // discarded here, which meant a rollout this walk never reached read as
     // "no wall" with nothing to say detection was incomplete rather than
-    // genuinely clean (docomply-review, a reference-implementation pull request round 3).
+    // genuinely clean.
     const scan = candidateFiles(sinceFloorMs);
     for (const path of scan.files) {
       // A rollout that already existed when the pass was spawned is another
@@ -416,8 +410,7 @@ export const codexAdapter: QuotaAdapter = {
         // permanently block that valid record via the `ts <= newestAt` guard
         // below. Advance only once this record reaches a CONCLUSIVE decision
         // (a hit, confirmed health, or a fail-closed unknown block) further
-        // down — never merely for having parsed far enough to be considered
-        // (docomply-review, a reference-implementation pull request rounds 7 and 12).
+        // down — never merely for having parsed far enough to be considered.
 
         // The OUTER discriminator: the documented shape is a `type:
         // "event_msg"` rollout line wrapping the `token_count` payload. Any
@@ -426,7 +419,7 @@ export const codexAdapter: QuotaAdapter = {
         // become authoritative account telemetry either — the inner
         // discriminators just below narrow WHICH payload inside an
         // already-recognised envelope, they do not stand in for recognising
-        // the envelope itself (docomply-review, a reference-implementation pull request round 15).
+        // the envelope itself.
         if (record.type !== "event_msg") continue;
         const payload = record.payload;
         if (typeof payload !== "object" || payload === null) continue;
@@ -435,7 +428,7 @@ export const codexAdapter: QuotaAdapter = {
         // `rate_limits` property (or a differently-sourced limit object)
         // becomes authoritative account telemetry — able to clear a real
         // exhausted block as healthy, or turn an unrelated pass failure into
-        // a sleep/QUOTA_PARKED (docomply-review, a reference-implementation pull request round 9).
+        // a sleep/QUOTA_PARKED.
         if ((payload as Record<string, unknown>).type !== "token_count") {
           continue;
         }
@@ -455,7 +448,7 @@ export const codexAdapter: QuotaAdapter = {
         // that field is even read discarded that positive signal entirely,
         // falling through to drive.ts's generic exit-1 pass failure instead
         // of the fail-closed unknown/QUOTA_PARKED block SKILL.md promises
-        // for an unclassifiable wall (docomply-review, a reference-implementation pull request round 13).
+        // for an unclassifiable wall.
         // A slot that is genuinely absent (`null`/missing) is a real signal —
         // this account tier has no secondary window at all — never a
         // validation failure. A slot that is PRESENT but failed to parse is
@@ -463,8 +456,7 @@ export const codexAdapter: QuotaAdapter = {
         // return, so without tracking presence separately, a malformed
         // secondary alongside a healthy primary would read as "no exhausted
         // window found" and let the healthy branch below clear a real
-        // exhausted block the unreadable slot might still represent
-        // (docomply-review, a reference-implementation pull request round 11).
+        // exhausted block the unreadable slot might still represent.
         const isPresent = (v: unknown): boolean =>
           v !== null && v !== undefined;
         const anyPresentSlotUnreadable =
@@ -489,24 +481,23 @@ export const codexAdapter: QuotaAdapter = {
         // or a number all satisfied the old `!limitReached` check the same
         // way `null` legitimately does, letting malformed telemetry clear a
         // real exhausted candidate as if the vendor had actually reported
-        // health (docomply-review, a reference-implementation pull request round 10).
+        // health.
         // Confirmed healthy requires ALL of: the vendor's exact `null`
         // sentinel; every present window slot having actually parsed — an
         // unreadable slot might have been the exhausted one, so its presence
         // must not be silently forgiven just because the readable sibling
-        // looks fine (round 11); and at least one window actually READ — a
-        // record with zero parseable windows at all proves nothing about
-        // health, it just means nothing was checked (round 13, now that
-        // `windows.length === 0` no longer bails out before this point).
+        // looks fine; and at least one window actually READ — a record with
+        // zero parseable windows at all proves nothing about health, it just
+        // means nothing was checked (now that `windows.length === 0` no
+        // longer bails out before this point).
         const confirmedHealthy =
           reached === null && !anyPresentSlotUnreadable && windows.length > 0;
         // A named slot is always a valid candidate — the vendor's own word
         // that IT closed, trusted regardless of what its usedPercent shows —
         // but it is not necessarily the MOST restrictive one: a weekly window
-        // can be exhausted too while a short slot is what got named (fresh
-        // finding after the earlier fix, docomply-review/chatgpt-codex-
-        // connector, PR #4431 round 7). Compare it against whichever window
-        // is actually most restrictive and keep the longer of the two.
+        // can be exhausted too while a short slot is what got named. Compare
+        // it against whichever window is actually most restrictive and keep
+        // the longer of the two.
         //
         // `exhaustedWindow` and `namedWindow` are withheld entirely
         // when a sibling slot is present-but-unreadable: a readable window —
@@ -515,9 +506,8 @@ export const codexAdapter: QuotaAdapter = {
         // MORE restrictive window we simply cannot see. Selecting the
         // readable one anyway is a guess dressed as a fact, and sleeping on
         // it can wake straight into the wall the unreadable slot actually
-        // represents. The round-12 fix withheld only `exhaustedWindow`;
-        // `namedWindow` needed the identical guard (docomply-review, PR
-        // #4431 round 13).
+        // represents. Withholding only `exhaustedWindow` is not enough;
+        // `namedWindow` needs the identical guard.
         const namedWindow =
           named && !anyPresentSlotUnreadable ? readWindow(l[reached]) : null;
         // Computed unconditionally (never suppressed): even when an
@@ -525,7 +515,7 @@ export const codexAdapter: QuotaAdapter = {
         // most restrictive wall, a readable window genuinely at 100% is
         // still positive evidence a wall exists — silently dropping it to
         // "no signal" (below) would be wrong in the opposite direction from
-        // the bug round 12 fixed (docomply-review, a reference-implementation pull request round 14).
+        // the bug the withholding fixes.
         const exhaustedAmongReadable = mostRestrictiveExhausted(windows);
         const exhaustedWindow = anyPresentSlotUnreadable
           ? undefined
@@ -546,7 +536,7 @@ export const codexAdapter: QuotaAdapter = {
         // arbitrary `readdirSync` file order, advancing on an inconclusive
         // record would let it permanently block a genuinely older-but-valid
         // record from another file the same way a wholly malformed one
-        // already could not (docomply-review, a reference-implementation pull request round 12).
+        // already could not.
         let decision:
           | { clearsBest: true }
           | { clearsBest: false; block: QuotaBlock }
@@ -598,16 +588,15 @@ export const codexAdapter: QuotaAdapter = {
           anyPresentSlotUnreadable &&
           exhaustedAmongReadable !== undefined
         ) {
-          // `reached === null` (no vendor name at all) but a READABLE window
-          // is genuinely exhausted while a sibling slot is
-          // present-but-unreadable: `hit` above deliberately withholds this
-          // as a confident answer (round 12/13's guard), but a window truly
-          // at 100% is still positive evidence a wall exists — silently
-          // falling through to "no signal" here would let the driver sleep
-          // or exit non-fail-closed on a real quota wall (docomply-review,
-          // a reference-implementation pull request round 14). This branch does not know which window is
-          // the true most-restrictive one either, so it does not guess a
-          // reset time.
+          // `reached === null` (no vendor name at all) but a READABLE window is
+          // genuinely exhausted while a sibling slot is present-but-unreadable:
+          // `hit` above deliberately withholds this as a confident answer (the
+          // unreadable-sibling guard), but a window truly at 100% is still
+          // positive evidence a wall exists — silently falling through to "no
+          // signal" here would let the driver sleep or exit non-fail-closed on
+          // a real quota wall. This branch does not know which window is the
+          // true most-restrictive one either, so it does not guess a reset
+          // time.
           decision = {
             clearsBest: false,
             block: {
@@ -633,7 +622,7 @@ export const codexAdapter: QuotaAdapter = {
         // genuinely distinct events (e.g. exhaustion immediately followed
         // by a healthy retry) can round to the identical value. A 100%
         // event followed by a same-timestamp healthy one then left the
-        // exhausted block standing (docomply-review, a reference-implementation pull request round 24).
+        // exhausted block standing.
         // This file's own append-only line order is real evidence for a
         // same-timestamp tie; a tie against a DIFFERENT file is not
         // reordered, since `readdirSync` order across files is not a

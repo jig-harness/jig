@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 // No-dark-instruments — every declared metric must be actually wired.
 //
-// The hard-won lesson from the reference implementation: an instrument that is
-// provisioned but fail-open (a metric on the dashboard whose source was never
-// connected, an API key that was never set) is WORSE than none — it makes the
+// The lesson it enforces: an instrument that is provisioned but fail-open (a
+// metric on the dashboard whose source was never connected, an API key that
+// was never set) is WORSE than none — it makes the
 // "measure" step look done while the number is silently dark, so process
 // decisions run on a gauge that reads zero because nothing feeds it. This gate
 // reads a metrics registry (see ../../templates/metrics-registry.yaml) and FAILS

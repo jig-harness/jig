@@ -81,8 +81,7 @@ describe("reply-to-thread.ts outcome grammar", () => {
     ["a digits-only reason", "**deferred** 4031"],
     ["free-form later lines", "**accepted** — fixed.\n\n```diff\n+ x\n```\n"],
     // A terminal \r is a line terminator, not content — routine when a reply
-    // is read from a CRLF file on Windows, which this script now runs on
-    // (chatgpt-codex-connector, a reference-implementation pull request round 4).
+    // is read from a CRLF file on Windows, which this script now runs on.
     ["a CRLF first line", "**accepted** — fixed.\r\nmore.\r\n"],
     ["a CRLF-terminated single line", "**accepted** — fixed.\r\n"],
   ];
@@ -106,7 +105,7 @@ describe("reply-to-thread.ts outcome grammar", () => {
     // U+2003 EM SPACE: the boundary is ASCII space/tab exactly — the bash
     // original's `[[:space:]]` matched this under a UTF-8 locale and not
     // under C, so the SAME body passed on one host and failed on another
-    // (docomply-review round 15). The port keeps the strict reading.
+    //. The port keeps the strict reading.
     ["a Unicode-space boundary", "**accepted** fixed."],
     ["an uppercase token", "**Accepted** — fixed."],
     ["a synonym", "**fixed** — done."],
@@ -155,8 +154,7 @@ function gitCleanEnv(): Record<string, string> {
     // once `assertNoDriveContext` landed, the standalone-install case ("skips
     // the fence only when /drive-pr is wholly ABSENT") passed from a plain
     // shell and FAILED under `DRIVE_PR_TARGET=999`, i.e. it would have failed
-    // in exactly the drive-spawned run that matters
-    // (chatgpt-codex-connector, a reference-implementation pull request).
+    // in exactly the drive-spawned run that matters.
     //
     // Scrubbed here rather than in the one fixture that broke, so no future
     // probe inherits an ambient drive either. Every test that wants one of
@@ -459,7 +457,7 @@ function writeFixture(opts: {
   if (opts.stateUnreadable) writeFileSync(join(dir, "state-unreadable"), "");
   writeFileSync(join(dir, "head"), `${opts.head ?? HEAD_A}\n`);
   const checks = opts.checks ?? [
-    check("AI review (majordomo)", "pass", "COMPLETED"),
+    check("AI review (shadow)", "pass", "COMPLETED"),
   ];
   if (Array.isArray(checks)) {
     writeFileSync(join(dir, "checks.json"), JSON.stringify(checks));
@@ -510,15 +508,14 @@ function runScript(
     GH_CALL_TIMEOUT: "20",
     ...opts.env,
   };
-  // Since PR #4107 round 16 the state-dir OVERRIDE requires its on-disk
-  // identity beside it: `$DRIVE_PR_STATE_DIR` without
-  // `$DRIVE_PR_STATE_DIR_IDENTITY` can only come from a driver predating that
-  // change, and the fence refuses it rather than keeping a compatibility path
-  // alive. Derived here, once, from whatever state dir the caller passed —
-  // rather than at each of the call sites — so a test that sets an override
-  // cannot forget it and then fail for a reason it is not about. A caller
-  // that wants a STALE or ABSENT identity sets one explicitly and wins, since
-  // `opts.env` is spread above.
+  // The state-dir OVERRIDE requires its on-disk identity beside it:
+  // `$DRIVE_PR_STATE_DIR` without `$DRIVE_PR_STATE_DIR_IDENTITY` can only come
+  // from a driver predating that change, and the fence refuses it rather than
+  // keeping a compatibility path alive. Derived here, once, from whatever state
+  // dir the caller passed — rather than at each of the call sites — so a test
+  // that sets an override cannot forget it and then fail for a reason it is not
+  // about. A caller that wants a STALE or ABSENT identity sets one explicitly
+  // and wins, since `opts.env` is spread above.
   //
   // Computed inline from `statSync` rather than imported from `/drive-pr`'s
   // `lease.ts`: this suite covers the skill in its STANDALONE shape, and a
@@ -590,7 +587,7 @@ describe.skipIf(process.platform === "win32")(
 
     it("exit 4 under --once: a pending check is not settled", () => {
       const fix = writeFixture({
-        checks: [check("AI review (majordomo)", "pending", "IN_PROGRESS")],
+        checks: [check("AI review (shadow)", "pending", "IN_PROGRESS")],
       });
       const r = runScript("await-round.ts", [fix.pr, "--once"], fix);
       expect(r.code).toBe(4);
@@ -603,7 +600,7 @@ describe.skipIf(process.platform === "win32")(
       expect(r.code).toBe(4);
     });
 
-    it("exit 1 under --once: an unreadable check set is never settled (#3995)", () => {
+    it("exit 1 under --once: an unreadable check set is never settled", () => {
       const fix = writeFixture({ checks: { exit: 1 } });
       const r = runScript("await-round.ts", [fix.pr, "--once"], fix);
       expect(r.code).toBe(1);
@@ -612,7 +609,7 @@ describe.skipIf(process.platform === "win32")(
 
     it("exit 7: a failed reviewer check may never have posted its findings", () => {
       const fix = writeFixture({
-        checks: [check("AI review (majordomo)", "fail", "COMPLETED")],
+        checks: [check("AI review (shadow)", "fail", "COMPLETED")],
       });
       const r = runScript("await-round.ts", [fix.pr, "--once"], fix);
       expect(r.code).toBe(7);
@@ -854,7 +851,7 @@ describe.skipIf(process.platform === "win32")(
       expect(result.stderr).toContain("excluded by --job-pattern");
     });
 
-    it("exit 4 under --once: checks exist but none is reviewer-shaped — not settled (#3880 class)", () => {
+    it("exit 4 under --once: checks exist but none is reviewer-shaped — not settled", () => {
       const fix = writeFixture({
         checks: [check("build", "pass", "COMPLETED")],
       });
@@ -877,7 +874,7 @@ describe.skipIf(process.platform === "win32")(
 
     it("a NEUTRAL reviewer conclusion is a completion state, not a failure to report", () => {
       const fix = writeFixture({
-        checks: [check("AI review (majordomo)", "fail", "NEUTRAL")],
+        checks: [check("AI review (shadow)", "fail", "NEUTRAL")],
       });
       const r = runScript("await-round.ts", [fix.pr, "--once"], fix);
       expect(r.code).toBe(3);
@@ -909,7 +906,7 @@ describe.skipIf(process.platform === "win32")(
         });
       }
 
-      describe("--once-budget-sec (round 5-9 findings — no test previously covered this flag)", () => {
+      describe("--once-budget-sec", () => {
         it("usage error: not digits-only", () => {
           const fix = convergedFixture();
           const r = runScript(
@@ -1159,7 +1156,7 @@ describe.skipIf(process.platform === "win32")(
     // which way an interruption between them falls. Head first: the round is
     // lost, which only delays the decline-only cutoff. Count first — the
     // previous order — left a valid count paired with a stale head, so the next
-    // call re-counted the SAME round and could arm the cutoff early (PR #4076).
+    // call re-counted the SAME round and could arm the cutoff early.
     //
     // Reproducing the intermediate state by hand proves nothing: the script
     // behaves identically given either state, and the fix changes which state is
@@ -1180,7 +1177,7 @@ describe.skipIf(process.platform === "win32")(
     // An unresolved head used to increment anyway AND leave `.head` unwritten,
     // so the dedup above could not fire and every retry counted again — a
     // retried round 3 arriving as round 4. Harmless for the advisory nudge,
-    // not harmless now that the ordinal decides disposition (PR #4076).
+    // not harmless now that the ordinal decides disposition.
     it("does not count a round when the head cannot be resolved", () => {
       const fix = writeFixture({ threads: [thread("PRRT_a")] });
       // One real round first, so the probe distinguishes "refused to bump" from
@@ -1199,7 +1196,7 @@ describe.skipIf(process.platform === "win32")(
       expect(existsSync(roundsFile(fix.pr))).toBe(false);
     });
 
-    it("nudges structural escalation on every counted round past the threshold (PR #4031)", () => {
+    it("nudges structural escalation on every counted round past the threshold", () => {
       const fix = writeFixture({ threads: [thread("PRRT_a")] });
       const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
         env: { REFLECT_THRESHOLD: "0" },
@@ -1211,7 +1208,7 @@ describe.skipIf(process.platform === "win32")(
     it("an empty REFLECT_THRESHOLD takes the documented default", () => {
       // `?? '3'` keeps `''`, which isDigits rejects — so a variable exported
       // empty by optional templating turned a documented default into a usage
-      // exit 2 in both entry points (chatgpt-codex-connector, a reference-implementation pull request round 2).
+      // exit 2 in both entry points.
       // Default 3 means one counted round must NOT nudge; '0' above proves the
       // nudge still fires when the threshold really is 0, so this is not merely
       // asserting silence.
@@ -1625,7 +1622,7 @@ describe.skipIf(process.platform === "win32")(
 
     // `self-inflicted.ts` reads `diffSide` off this stream to tell a LEFT-side
     // anchor (numbering the pre-image, not HEAD) from a RIGHT-side one — see
-    // that script's own header (chatgpt-codex-connector, a reference-implementation pull request). Propagated
+    // that script's own header. Propagated
     // through verbatim, same as `startLine`/`isOutdated`.
     it("propagates diffSide verbatim, including the null default", () => {
       const sides = (stdout: string) =>
@@ -1650,7 +1647,7 @@ describe.skipIf(process.platform === "win32")(
     // to tell a genuinely multi-line range whose start straddles a hunk
     // boundary (`startDiffSide` differing from `diffSide`) from one that does
     // not — GitHub allows the two to differ, and `diffSide` alone describes
-    // only the range's END (coderabbitai, PR #4441). Propagated through
+    // only the range's END. Propagated through
     // verbatim, same as `diffSide` itself.
     it("propagates startDiffSide verbatim, including the null default", () => {
       const startSides = (stdout: string) =>
@@ -1743,14 +1740,14 @@ describe.skipIf(process.platform === "win32")(
       // The OUTCOME reply is what the reversal check reads, and it is never the
       // thread's first comment — asserting comments[0] alone would pass while a
       // regression emitted only the finding and dropped the outcome
-      // (docomply-review, round 9). So the fixture carries a trusted outcome and
+      //. So the fixture carries a trusted outcome and
       // the shape asserts EVERY body, plus every reply-capable handle.
       const OUTCOME = "**accepted** — prior human decision on this construct";
       // The OPEN human thread carries a trusted outcome too, and the assertions
       // below check EVERY one of its bodies. Without it the fixture held only
       // the initial finding, so a regression emitting `comments.slice(0, 1)`
       // for unresolved history alone would drop the outcome the reversal check
-      // reads and still leave this test green (docomply-review, round 27).
+      // reads and still leave this test green.
       const OPEN_OUTCOME = "**wont-fix** — human decision, thread left open";
       const shape = (stdout: string) =>
         stdout
@@ -1889,7 +1886,7 @@ describe.skipIf(process.platform === "win32")(
     // is world-commentable — so every comment must carry the server-computed
     // `authorAssociation` the rubric gates on. Without it per comment, a
     // spoofed `**accepted**` from an outside author is indistinguishable from a
-    // real prior outcome (docomply-review, a reference-implementation pull request round 8).
+    // real prior outcome.
     it("carries authorAssociation on every comment of a resolved thread", () => {
       const fix = writeFixture({
         threads: [
@@ -2161,7 +2158,7 @@ describe.skipIf(process.platform === "win32")(
       expect(postedBodies(fix)).toEqual([]);
     });
 
-    it("--no-outcome is the explicit escape hatch for a clarifying question, and appends NO_OUTCOME_MARKER — the durable evidence isLeftOpenThread requires (chatgpt-codex-connector, a reference-implementation pull request)", () => {
+    it("--no-outcome is the explicit escape hatch for a clarifying question, and appends NO_OUTCOME_MARKER — the durable evidence isLeftOpenThread requires", () => {
       const fix = writeFixture({});
       const body = "Which schema version is this rule pinned to?";
       const r = runScript(
@@ -2204,7 +2201,7 @@ describe.skipIf(process.platform === "win32")(
         runScript("reply-to-thread.ts", ["PRRT_x"], fix, { stdin: "" }).code,
       ).toBe(2);
       // Arity, not emptiness: an explicitly empty second argument is the same
-      // stale two-argument form (PR #3571).
+      // stale two-argument form.
       expect(
         runScript("reply-to-thread.ts", ["PRRT_x", ""], fix, { stdin: "x" })
           .code,
@@ -2217,7 +2214,7 @@ describe.skipIf(process.platform === "win32")(
       expect(postedBodies(fix)).toEqual([]);
     });
 
-    it("refuses a body whose own trailing line already matches LEAVE_OPEN_MARKER, without the internal producer flag (Architect Agent review, 2026-08-21, Fix A, PR #4129)", () => {
+    it("refuses a body whose own trailing line already matches LEAVE_OPEN_MARKER, without the internal producer flag", () => {
       const fix = writeFixture({});
       const body =
         "**wont-fix** — declined; this reply happens to end with the exact marker line.\n\n<!-- triage-thread:leave-open -->";
@@ -2258,7 +2255,7 @@ describe.skipIf(process.platform === "win32")(
 describe("no script mutates anything at import time", () => {
   // `unresolve-thread.ts` ran its GraphQL mutation at module scope, so merely
   // IMPORTING it posted — and the sweep below, which spawns every script with
-  // `--help`, was safe only because it stubs `gh` (coderabbitai, PR #4040).
+  // `--help`, was safe only because it stubs `gh`.
   // The whole family gates side effects behind isEntryPoint; this asserts it
   // rather than trusting the harness.
   const entries = readdirSync(SCRIPTS).filter((f) => f.endsWith(".ts"));
@@ -2380,7 +2377,7 @@ describe("every script loads under node as well as bun", () => {
  * source-time forwarding, terminating `await-round.ts` / `converge.ts` /
  * `reply-to-thread.ts` leaves the in-flight `gh` running to completion and the
  * GraphQL mutation lands after the operator believes the operation was
- * cancelled (chatgpt-codex-connector, a reference-implementation pull request → TASK).
+ * cancelled.
  *
  * These are the only probes in this file that assert on a signal, so they are
  * end-to-end by necessity: the claim is about what a SEPARATE process does when
@@ -2406,8 +2403,8 @@ describe.skipIf(process.platform === "win32")(
 
     /**
      * Run one probe. `ownHandler` installs a caller handler in the fixture, so a
-     * single fixture covers both the forwarding claim and the #3997 guarantee
-     * that a caller's own handlers survive.
+     * single fixture covers both the forwarding claim and the guarantee that
+     * a caller's own handlers survive.
      */
     async function probe(opts: { ownHandler: boolean }): Promise<Probe> {
       const dir = mkdtempSync(join(tmpdir(), "rrc-cancel-"));
@@ -2486,7 +2483,7 @@ describe.skipIf(process.platform === "win32")(
         completed: false,
         ownHandlerRan: true,
         // The caller's handler owns the outcome once it exists — no re-raise, and
-        // its own exit code, not the signal's (the #3997 guarantee).
+        // its own exit code, not the signal's.
         code: 9,
       });
     });
@@ -2671,7 +2668,7 @@ describe.skipIf(process.platform === "win32")(
   },
 );
 
-// ── Buffer cap (TASK round 3) ───────────────────────────────────────────
+// ── Buffer cap ──────────────────────────────────────────────────────────────
 
 /**
  * `run()`'s `data` handlers used to accumulate stdout/stderr with no bound at
@@ -2685,9 +2682,8 @@ describe.skipIf(process.platform === "win32")(
  * captured/discarded record, not inferred from a captured byte-count bound —
  * a real OS pipe's read chunking varies enough in practice (a single burst
  * measured ~250 KiB here) that any fixed bound is either loose enough to miss
- * a partial regression or tight enough to flake on legitimate variance
- * (docomply-review round 3, coderabbitai's earlier round-2 pass had the same
- * gap under a different guise). Counting discarded chunks sidesteps both.
+ * a partial regression or tight enough to flake on legitimate variance.
+ * Counting discarded chunks sidesteps both.
  */
 describe.skipIf(process.platform === "win32")(
   "run()'s output cap kills a runaway child (TASK)",
@@ -2704,7 +2700,7 @@ describe.skipIf(process.platform === "win32")(
     /**
      * @param ignoreTerm When true, the child traps and swallows SIGTERM so only
      *   the escalation's SIGKILL two seconds later actually ends it — the exact
-     *   window in which unguarded capture used to keep growing (round 2).
+     *   window in which unguarded capture used to keep growing.
      */
     async function probeBufferCap(opts: {
       ignoreTerm: boolean;
@@ -2720,10 +2716,9 @@ describe.skipIf(process.platform === "win32")(
       // sufficiently fast machine completed 1,000,000 tight-loop iterations —
       // `completed` existed — inside the grace window, failing the assertion
       // that `ignoreTerm: true` is never allowed to finish on its own
-      // (measured in CI, not locally: PR #4054's own `code-quality-and-build`
-      // run). A count also high enough that `$(seq ...)` would materialise the
-      // whole number list before the loop's first write, which the `while`
-      // form avoids.
+      // (measured in CI, not locally). A count also high enough that
+      // `$(seq ...)` would materialise the whole number list before the loop's
+      // first write, which the `while` form avoids.
       const trap = opts.ignoreTerm ? "trap '' TERM; " : "";
       const script = `${trap}i=0; while [ "$i" -lt 100000000 ]; do printf '%01024d' 0; i=$((i + 1)); done; : > ${JSON.stringify(completed)}`;
       writeFileSync(
@@ -2800,8 +2795,7 @@ describe.skipIf(process.platform === "win32")(
       // The capture guard used to key only on `bufferExceeded`, so a child that
       // hits the DEADLINE first kept being captured for the whole two-second
       // deadline escalation — an 8 KiB cap stayed unenforced against a
-      // multi-megabyte post-timeout flood (chatgpt-codex-connector, a reference-implementation pull request
-      // round 4).
+      // multi-megabyte post-timeout flood.
       //
       // A THROTTLED writer, not the tight loop the buffer-cap probes above use:
       // an earlier version of this probe let that tight loop run unthrottled
@@ -2811,12 +2805,11 @@ describe.skipIf(process.platform === "win32")(
       // real memory pressure this suite doesn't need, and on a fast enough or
       // memory-constrained runner it could OOM, or cross even 1 GiB before the
       // 1-second deadline and flip `bufferExceeded` instead of `timedOut`,
-      // failing the very assertion below it (docomply-review, a reference-implementation pull request
-      // round 5). A small, slow, bounded write rate proves the exact same
-      // thing — chunks arriving during the deadline's escalation are
-      // discarded — without either risk: total captured output here is on the
-      // order of kilobytes, several orders of magnitude under any buffer cap
-      // this test would plausibly configure.
+      // failing the very assertion below it. A small, slow, bounded write
+      // rate proves the exact same thing — chunks arriving during the
+      // deadline's escalation are discarded — without either risk: total
+      // captured output here is on the order of kilobytes, several orders of
+      // magnitude under any buffer cap this test would plausibly configure.
       const dir = mkdtempSync(join(tmpdir(), "rrc-buffer-"));
       const completed = join(dir, "completed");
       // ~50 writes/sec of 64 bytes each — keeps going (SIGTERM trapped) through
@@ -2945,8 +2938,8 @@ describe.skipIf(process.platform === "win32")(
       return { done, kill: () => child.kill("SIGKILL") };
     }
 
-    const PENDING = [check("AI review (majordomo)", "pending", "IN_PROGRESS")];
-    const SETTLED = [check("AI review (majordomo)", "pass", "COMPLETED")];
+    const PENDING = [check("AI review (shadow)", "pending", "IN_PROGRESS")];
+    const SETTLED = [check("AI review (shadow)", "pass", "COMPLETED")];
 
     it("polls a numeric PR without a single `gh pr view` (state and head come over REST)", () => {
       const fix = writeFixture({ threads: [thread("PRRT_a")] });
@@ -3311,8 +3304,7 @@ it.skipIf(process.platform === "win32")(
     // `assertPostAllowed` actually acts on it. Without this, deleting the
     // `if (!skillsParentIsIntact())` branch outright left every predicate
     // test green while restoring the exact fail-open they exist to guard —
-    // a vacuous safety harness under .claude/rules/document-scanning-gates.md
-    // rule 5 (docomply-review, a reference-implementation pull request).
+    // a vacuous safety harness.
     //
     // The mid-run mutation is REAL here, not simulated: `main()` reads stdin
     // (line ~464) BEFORE it calls `assertPostAllowed` (~482), so a process
@@ -3330,9 +3322,8 @@ it.skipIf(process.platform === "win32")(
     // Readiness is HANDSHAKED, not timed. A fixed `setTimeout` was the first
     // cut and is unsound on a loaded worker: module loading has no upper
     // bound, so an early timer deletes the tree mid-import and the run fails
-    // on a module-load error instead of exercising the guard (docomply-review
-    // + chatgpt-codex-connector, a reference-implementation pull request). Acknowledging that in a comment,
-    // as the first cut did, is not preventing it.
+    // on a module-load error instead of exercising the guard. Acknowledging
+    // that in a comment, as the first cut did, is not preventing it.
     //
     // The marker is patched into the COPY, never into production: the copied
     // entrypoint writes it immediately before `readStdinAll()`, which is after
@@ -3415,14 +3406,14 @@ describe("skillsParentIsIntact — the other half of an ENOENT (TASK)", () => {
   // already-loaded process is a damaged tree that says nothing about whether
   // a drive exists. The ENOTDIR fix the round before closed only the
   // prefix-is-a-FILE half — ENOENT still carried the prefix-is-GONE half
-  // straight through the skip (docomply-review, a reference-implementation pull request).
+  // straight through the skip.
   //
   // These cover the DECISION table against real paths. They are deliberately
   // NOT the only coverage: on their own they stay green when the production
-  // branch that consults them is deleted, which is a vacuous harness under
-  // document-scanning-gates rule 5. The end-to-end probe directly above
-  // (`fails CLOSED when the SKILLS PARENT disappears mid-run`) is what pins
-  // the branch itself, and it reddens under exactly that mutation.
+  // branch that consults them is deleted, which is a vacuous harness. The
+  // end-to-end probe directly above
+  // (`fails CLOSED when the SKILLS PARENT disappears mid-run`) is what pins the
+  // branch itself, and it reddens under exactly that mutation.
   it("is true for a real directory — the ordinary install", () => {
     expect(skillsParentIsIntact(tmpRoot)).toBe(true);
   });

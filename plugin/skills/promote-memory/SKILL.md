@@ -14,9 +14,12 @@ allowed-tools:
 
 Lift an agent-private memory into the team's git-tracked docs. This is the
 [memory promotion](https://github.com/docomply/jig/blob/main/GLOSSARY.md) step of Groundwork's learning loop
-([M8](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/templates/FLYWHEEL.md), § Companion
-cycle: memory promotion), between the memory tiers that
-[M9](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/MEMORY-TIERS.md) defines.
+([M8](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/README.md); its
+[flywheel template](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/templates/FLYWHEEL.md),
+§ Companion cycle: memory promotion), between the memory tiers that
+[M9](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/MEMORY-TIERS.md) defines. The
+promoted page lands in the docs tree that Groundwork's docs-as-wiki governance module
+([M4](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/README.md)) lays out.
 
 ## Context
 
@@ -79,8 +82,8 @@ default:
 
 - `promote_memory.lint_command`: a command that checks one memory against the
   repository, with `{dir}` and `{file}` standing for the memory directory and
-  the memory's file name, for example
-  `bun tools/dev/memory-lint.ts --dir {dir} --file {file}`. Exit 0 means
+  the memory's file name: the repository's own memory lint, if it has one,
+  for example `<memory-lint command> --dir {dir} --file {file}`. Exit 0 means
   clean; anything else means stop. Default: none, and step 1b is done by hand.
 - `promote_memory.target_dir`: where promoted pages go. Default:
   `docs/retrospection` (the raw-sources layer of M4's three-layer model).

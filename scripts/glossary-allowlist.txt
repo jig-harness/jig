@@ -1,6 +1,6 @@
 # Acronym-shaped tokens that are NOT terms of art (file names, format names,
-# issue-tracker prefixes) and so don't belong in GLOSSARY.md.
-# One token per line; '#' starts a comment. See check-glossary-coverage.sh.
+# emphasis) and so don't belong in GLOSSARY.md.
+# One token per line; '#' starts a comment. See check-glossary-coverage.ts.
 README
 AGENTS
 CLAUDE
@@ -17,7 +17,6 @@ API
 URL
 CLI
 IDE
-DOC
 # emphasis-caps words, not acronyms
 MANDATORY
 NOT
@@ -26,6 +25,7 @@ DESCRIBE
 # conventional file names
 CONTRIBUTING
 CODEOWNERS
+CHANGELOG
 # file-name / schema-doc components (e.g. WIKI-SCHEMA.md, PR-LIFECYCLE.md,
 # HITL-REGISTRY.md, FLYWHEEL.md) and env-var names
 WIKI
@@ -43,6 +43,8 @@ ARCHITECTURE
 WORKTREE
 ERGONOMICS
 CONFIGURATION
+RECOMMENDED
+SKILLS
 # git refs / plumbing
 HEAD
 BASE
@@ -75,6 +77,8 @@ MR
 OSS
 ESM
 PID
+# licence identifiers
+MIT
 # vendor/product names
 PyYAML
 OpenAI

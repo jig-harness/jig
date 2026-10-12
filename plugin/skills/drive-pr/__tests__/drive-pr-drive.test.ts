@@ -72,7 +72,7 @@ import {
 useDrivePrSuite();
 
 // The draft→Ready transition. Repo policy births every PR as a draft;
-// `example-review` reviews drafts (measured on #4053/#4041, 2026-08-13) and
+// `example-review` reviews drafts (measured 2026-08-13) and
 // CodeRabbit refuses them ("Review skipped / Draft detected"), so marking the PR
 // Ready is how the paid reviewer's one pass gets spent on a head the drive has
 // already cleaned up. `gh pr ready` is an outward-facing, review-summoning
@@ -173,7 +173,7 @@ describe("mark-ready.ts", () => {
   });
 
   it("does NOT re-mark a PR a human converted back to draft", async () => {
-    // The #3933 shape aimed at a person: a transition re-derived from the live
+    // The re-arm loop aimed at a person: a transition re-derived from the live
     // `isDraft` would undo a deliberate human decision on the next round, and
     // the round after that, forever. The durable claim is read BEFORE the PR is
     // looked at, so the live flag cannot re-arm it.
@@ -193,7 +193,7 @@ describe("mark-ready.ts", () => {
     expect(calls(dir)).toEqual(["999"]);
   });
 
-  it("an unrecognized `state` value on the already-marked liveness check is INDETERMINATE, not not-open (docomply-review round 19, a reference-implementation pull request)", async () => {
+  it("an unrecognized `state` value on the already-marked liveness check is INDETERMINATE, not not-open", async () => {
     // readSnapshot() used to validate only that `state` was non-empty, so any
     // value other than the three real ones — a malformed response, or a future
     // GitHub enum value this script does not know about — passed straight
@@ -220,7 +220,7 @@ describe("mark-ready.ts", () => {
     expect(again.stderr).toContain("unrecognized 'state' value 'UNKNOWN'");
   });
 
-  it("--record-only NEVER dispatches, even when its own live read observes a draft (docomply-review + chatgpt-codex-connector, a reference-implementation pull request)", async () => {
+  it("--record-only NEVER dispatches, even when its own live read observes a draft", async () => {
     // A caller reaching for --record-only wants a durable record BEFORE a
     // draft flip can matter — the whole point is that it must be structurally
     // incapable of firing `gh pr ready` itself, since an ordinary call
@@ -252,7 +252,7 @@ describe("mark-ready.ts", () => {
     expect(await readyMarked(stateDir)).not.toBe("0");
   });
 
-  it("checks liveness even on the durable-marker fast path — a PR that closed after being marked reports not-open, not already-marked (docomply-review round 8, a reference-implementation pull request)", async () => {
+  it("checks liveness even on the durable-marker fast path — a PR that closed after being marked reports not-open, not already-marked", async () => {
     // The durable-marker branch is a fast path specifically because it skips
     // the network call in the common case — but skipping it entirely means a
     // PR that merged or closed AFTER the mark was written still reports
@@ -275,7 +275,7 @@ describe("mark-ready.ts", () => {
     expect(calls(dir)).toEqual(["999"]);
   });
 
-  it("checks the AUTHORITATIVE state, not just draftness, after a failed gh pr ready (docomply-review round 8, a reference-implementation pull request)", async () => {
+  it("checks the AUTHORITATIVE state, not just draftness, after a failed gh pr ready", async () => {
     // A lost-response reconciliation read used to decide purely from
     // `after.draft` — so a PR that concurrently merged or closed could read
     // back non-draft (wrongly committed and reported `marked`) or still-draft
@@ -341,7 +341,7 @@ describe("mark-ready.ts", () => {
     expect(await readyMarked(stateDir)).toBe("0");
   });
 
-  it("PRESERVES its claim when gh pr ready fails with the PR still an open draft — ambiguous, not proof it never applied (docomply-review round 13, a reference-implementation pull request)", async () => {
+  it("PRESERVES its claim when gh pr ready fails with the PR still an open draft — ambiguous, not proof it never applied", async () => {
     // A nonzero `gh pr ready` exit plus an OPEN-draft follow-up read is NOT
     // proof the request never applied: it applied server-side, the response
     // was lost, AND a human converted the PR back to draft before this read
@@ -391,8 +391,7 @@ describe("mark-ready.ts", () => {
   // exists for, and until now the one property no test could go red on: the
   // suite's own comment recorded that deleting the compare-and-set outright
   // left everything green, because every test ran ONE mark-ready.ts at a time
-  // and the window between claiming and firing is microseconds wide
-  // (docomply-review round 2, a reference-implementation pull request).
+  // and the window between claiming and firing is microseconds wide.
   //
   // `$DRIVE_PR_MARK_READY_TEST_SIGNAL` and `..._DELAY` make that window wide
   // and observable: the winner touches the signal file the instant it holds
@@ -438,7 +437,7 @@ describe("mark-ready.ts", () => {
     // between claiming and `gh pr ready` left the durable mark non-zero
     // forever, so every later invocation answered `already-marked` without
     // asking GitHub and the PR stayed a draft nothing would ever mark
-    // (docomply-review rounds 1-3, PR #4057). The lease has no failure branch
+    //. The lease has no failure branch
     // to skip — it expires — and the record is written only on confirmation,
     // so the recovery needs no reconciliation against a live flag that would
     // undo a human's own re-draft.
@@ -468,8 +467,7 @@ describe("mark-ready.ts", () => {
     // lost, exits non-zero with the PR already Ready. Releasing the lease on
     // that reading lets a later round fire `ready_for_review` a SECOND time —
     // the paid-review re-trigger this mechanism exists to prevent, and a way
-    // to undo a human who converted the PR back to draft in between
-    // (docomply-review round 3, a reference-implementation pull request).
+    // to undo a human who converted the PR back to draft in between.
     const { dir, stateDir } = writeFixture({ threads: [], isDraft: true });
     // The stub records the call, flips the view to Ready, and THEN fails —
     // exactly the lost-response shape.
@@ -493,7 +491,7 @@ describe("mark-ready.ts", () => {
     // arbitrarily long (a laptop sleeping is the ordinary case). Past the
     // staleness window another driver legitimately reclaims the lease and
     // fires the event itself; without a check at the dispatch point this
-    // process resumes and fires a SECOND `ready_for_review` (coderabbitai P2).
+    // process resumes and fires a SECOND `ready_for_review`.
     //
     // The suspension is modelled by the delay hook, and the reclaim by
     // replacing the lease file's token — which is exactly what a recovery
@@ -525,7 +523,7 @@ describe("mark-ready.ts", () => {
     expect(await readyMarked(stateDir)).toBe("0");
   });
 
-  it("treats a renewal CONFIGURATION error as this process's own failure, not another driver (docomply-review round 7, a reference-implementation pull request)", async () => {
+  it("treats a renewal CONFIGURATION error as this process's own failure, not another driver", async () => {
     // `renew-ready-mark` refuses with exit 2 BEFORE ever checking the token
     // when the staleness window cannot cover one outbound call's deadline —
     // that is this process's own bad environment, not evidence of
@@ -558,7 +556,7 @@ describe("mark-ready.ts", () => {
     // durable record this branch's own comment promises: the other holder may
     // die without ever writing `readyMarkedRound`, and if a human converts the
     // PR back to draft before some later round records it, the drive sees zero
-    // and undoes that decision (docomply-review round 4).
+    // and undoes that decision.
     const { dir, stateDir } = writeFixture({ threads: [] });
     writeFileSync(
       join(stateDir, "drive-pr-999.ready-claim"),
@@ -576,8 +574,7 @@ describe("mark-ready.ts", () => {
     // Leaving it at 0 is not the cost-only outcome it looks like: this drive
     // then owes no transition with no durable evidence of it, so a later round
     // — after a human converts the PR BACK to draft — reads 0, sees a draft,
-    // and re-marks it, undoing that decision (docomply-review rounds 1-2, PR
-    // #4057).
+    // and re-marks it, undoing that decision.
     const { dir, stateDir } = writeFixture({ threads: [] });
     // A READABLE state that cannot be WRITTEN — the shape that separates this
     // branch from the earlier unreadable-state refusal. The store writes a
@@ -675,7 +672,7 @@ describe("drive.ts loop control", () => {
         // set to begin with — i.e. every non-contaminated run, CI included.
         ...gitCleanEnv(),
         DRIVE_PR_STATE_DIR: stateDir,
-        // set-ci-hold is test-only fixture seeding (PR #4681 round 4) —
+        // set-ci-hold is test-only fixture seeding —
         // harmless to set unconditionally here since no other command
         // reads this variable.
         DRIVE_PR_ALLOW_TEST_CI_HOLD_SEED: "1",
@@ -881,13 +878,13 @@ describe("drive.ts loop control", () => {
     // `spawn()` call itself returning normally. `onSpawn` fires in the SAME
     // TICK `run()` is called in (never deferred to Node's async 'spawn'
     // event), gated on `child.pid !== undefined` checked immediately after
-    // `spawn()` returns (`lib/proc.ts`, review finding: it used to fire
+    // `spawn()` returns (`lib/proc.ts`: firing
     // unconditionally the moment `spawn()` returned without throwing, which
     // is not the same fact as the child actually having started), so it
     // still never fires here — but a claim that this depends on a
     // synchronous throw would be wrong for the case this test actually
-    // exercises. Asserting the negative closes the gap a reviewer named: the
-    // sibling test above only exercised the ordinary, successful-spawn path.
+    // exercises. Asserting the negative closes the gap: the
+    // sibling test above only exercises the ordinary, successful-spawn path.
     const { dir, stateDir } = writeFixture({
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
     });
@@ -903,8 +900,7 @@ describe("drive.ts loop control", () => {
       // reached, which made `lastProgressAt === ''` true for the wrong
       // reason (never attempted, not "attempted and correctly not stamped")
       // and left this test unable to catch a stamp fired unconditionally
-      // ahead of the spawn — the exact regression it exists to close
-      // (review finding).
+      // ahead of the spawn — the exact regression it exists to close.
       "/nonexistent/drive-pr-test-pass-999-xyz",
     ]);
     // Proves the mis-targeting guard did NOT short-circuit this run.
@@ -1047,10 +1043,9 @@ describe("drive.ts loop control", () => {
     // `parseDiag` degrades only the missing `account` key, precisely
     // because an already-running, pre-upgrade driver's claim must stay
     // readable for `drives.ts --stop` and for its own pass's `ownParentDriver`
-    // self-check (docomply-review finding: an earlier revision of this file
-    // nulled the WHOLE diag here, which would have made `--stop` refuse a
-    // live in-flight driver and reproduced the stand-down
-    // bug for its own pass).
+    // self-check (nulling the WHOLE diag here would make `--stop` refuse a
+    // live in-flight driver and reproduce the stand-down bug for its own
+    // pass).
     const { dir, stateDir } = writeFixture({ threads: [] });
     const lockDir = join(stateDir, await scratchLockName());
     mkdirSync(lockDir, { recursive: true });
@@ -1145,14 +1140,13 @@ describe("drive.ts loop control", () => {
     // unconditionally) suppresses the replied-thread reconciliation sweep
     // `UNRECONCILED_STOPPERS` requires before certifying a code in that set,
     // so the probe degrades to INDETERMINATE (1) instead, REGARDLESS of
-    // `--once` (review finding, an earlier change — the previous revision of
-    // this test asserted exactly that degraded exit as the intended
-    // behaviour, which silently made the preview below dead code and
-    // contradicted using-drive-pr.md's own "`--dry-run` reports what each
-    // round would do"). The fix reads the SAME condition `evaluate()` uses to
-    // decide PR_CONFLICTING — mergeable === 'CONFLICTING' and nothing LIVE
-    // left to work — directly off the already-fetched, non-mutating report,
-    // rather than waiting on a sweep dry-run deliberately never runs.
+    // `--once` (asserting that degraded exit as the intended behaviour would
+    // make the preview below dead code and contradict README.md's own
+    // "`--dry-run` reports what each round would do"). The fix reads the SAME
+    // condition `evaluate()` uses to decide PR_CONFLICTING — mergeable ===
+    // 'CONFLICTING' and nothing LIVE left to work — directly off the
+    // already-fetched, non-mutating report, rather than waiting on a sweep
+    // dry-run deliberately never runs.
     //
     // What this ALSO still pins is the earlier real bug found while testing
     // this message: without `--once`, drive-status.ts took its own internal
@@ -1212,7 +1206,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).not.toContain("RAN_THE_PASS");
   });
 
-  it("--dry-run does NOT preview a conflict-resolution pass when the repair budget is disabled (review finding, round 7)", async () => {
+  it("--dry-run does NOT preview a conflict-resolution pass when the repair budget is disabled", async () => {
     // The early --dry-run shortcut above recognises PR_CONFLICTING directly
     // off the status report, bypassing the real code-9 switch branch that
     // consults `conflictRepairRounds()` before deciding whether to preview a
@@ -1245,7 +1239,7 @@ describe("drive.ts loop control", () => {
   it("stops on a CONFLICTING PR WITHOUT running the pass, and names the fix", async () => {
     // THIS fixture has no findings, so handing the round over would spend it
     // reading an empty review — and the operator has to be told to merge, not
-    // that a reviewer is slow (#3952). The emptiness is a property of the
+    // that a reviewer is slow. The emptiness is a property of the
     // fixture, NOT of conflicting heads: the live reviewer is a poller with no
     // mergeability term in its eligibility predicate, so it can and does
     // publish findings on a conflicting head. The sibling test below pins that
@@ -1269,12 +1263,12 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("git merge origin/develop");
   });
 
-  it("reports the base as unavailable rather than guessing develop (#3995 review)", async () => {
-    // Review found the previous implementation defaulted an unreadable base
-    // name to `develop` (`${base:-develop}`) — a concrete, WRONG command for
-    // any release-branch or stacked PR. It also made a second, ungated `gh pr
-    // view` call to fetch it, which this fix removes entirely by reading the
-    // base name out of the status JSON drive-status.ts already produced.
+  it("reports the base as unavailable rather than guessing develop", async () => {
+    // An implementation that defaults an unreadable base
+    // name to `develop` (`${base:-develop}`) gives a concrete, WRONG command
+    // for any release-branch or stacked PR. It also makes a second, ungated
+    // `gh pr view` call to fetch it, which this fix removes entirely by reading
+    // the base name out of the status JSON drive-status.ts already produced.
     //
     // an earlier change gave this test a second job, which is why it runs with the
     // conflict-repair budget at its DEFAULT rather than disabled: an
@@ -1328,7 +1322,7 @@ describe("drive.ts loop control", () => {
     ).not.toBe("0");
   });
 
-  it("strips CLAUDECODE from the pass env — a nested spawn must not look like a nested Claude Code session (docomply-review round 7, a reference-implementation pull request)", async () => {
+  it("strips CLAUDECODE from the pass env — a nested spawn must not look like a nested Claude Code session", async () => {
     // do-item's "Arm the drive" step spawns drive.ts from INSIDE a live
     // Claude Code session, so drive.ts itself inherits CLAUDECODE=1. Passed
     // through unchanged to the `claude -p` pass command, that marker makes
@@ -1527,7 +1521,7 @@ describe("drive.ts loop control", () => {
     expect(readFileSync(join(dir, "ready-calls"), "utf8").trim()).toBe("999");
   });
 
-  it("--keep-draft still records an already-Ready PR via the round-loop pre-pass call (docomply-review round 14, a reference-implementation pull request)", async () => {
+  it("--keep-draft still records an already-Ready PR via the round-loop pre-pass call", async () => {
     // `--keep-draft` exists to suppress the outward draft→Ready DISPATCH, not
     // the harmless, side-effect-free record of an already-Ready observation.
     // Skipping the record under --keep-draft left readyMarkedRound at 0 for a
@@ -1567,10 +1561,10 @@ describe("drive.ts loop control", () => {
     // CONVERGED dispatches (`marked`, which always re-gates); the stub then
     // rewrites pr-view.json to isDraft:false and the durable claim is set, so
     // the SECOND CONVERGED takes the record-only path and gets
-    // `already-marked` — a STABLE outcome, which round 22's fix re-gates
-    // exactly once more (docomply-review round 22, a reference-implementation pull request: `already-ready`
-    // / `already-marked` used to fall straight through here without
-    // re-verifying the live head at all) before the THIRD CONVERGED, still
+    // `already-marked` — a STABLE outcome, which is re-gated exactly once
+    // more (`already-ready` / `already-marked` must not fall straight through
+    // here without re-verifying the live head at all) before the THIRD
+    // CONVERGED, still
     // `already-marked`, finally falls through to convergence. `ready-calls`
     // staying a single line below proves `gh pr ready` itself only fired
     // once despite the extra gate passes.
@@ -1893,8 +1887,8 @@ describe("drive.ts loop control", () => {
         },
       },
     );
-    // The complete echoed line, not merely `toContain('TASK=')` (review
-    // finding): that substring also matches `TASK=ci-repair`, so it cannot
+    // The complete echoed line, not merely `toContain('TASK=')`: that
+    // substring also matches `TASK=ci-repair`, so it cannot
     // tell a genuinely CLEARED pair from one the driver merely replaced with
     // some other non-empty noise — only pinning both variables empty proves
     // the leak is closed, not just that these two particular values didn't
@@ -2277,7 +2271,7 @@ describe("drive.ts loop control", () => {
     expect(failingNames([run("Schema gate", "failure")], [], false)).toEqual([
       "Schema gate",
     ]);
-    // The exact adversarial shape the review finding named: a check whose
+    // The exact adversarial shape: a check whose
     // OWN name contains the delimiter `ciVerdictOf` joins on. Returned
     // intact, never split.
     expect(
@@ -2334,8 +2328,8 @@ describe("drive.ts loop control", () => {
 
   it("treats a mixed verdict as actionable when only one failing name is a stale required check", async () => {
     // The general form of the cascade above, but with the required
-    // check ALSO failing rather than skipped — the exact shape the review
-    // finding named: `failing: Schema gate, detect-changes` with
+    // check ALSO failing rather than skipped — the exact shape
+    // `failing: Schema gate, detect-changes` with
     // `finalCi.code === 4`. The old `.some()` predicate read ANY required
     // name in the verdict as proof the WHOLE verdict was unreliable,
     // deferring `detect-changes` — a definitively fresh, non-required
@@ -2434,15 +2428,15 @@ describe("drive.ts loop control", () => {
   });
 
   it("drive-status.ts's --json output actually carries failingCheckNames/failingCheckRunNames/failingStatusNames", async () => {
-    // `evaluate()` has computed both fields on its internal report object
-    // since round 2, but the CLI's own `emit()` never included either in the
+    // `evaluate()` computed both fields on its internal report object, but
+    // the CLI's own `emit()` never included either in the
     // hand-built JSON payload — so every consumer reading
     // `finalStatus.failingCheckNames`/`failingCheckRunNames` (drive.ts) saw
     // `undefined` in production, no matter how carefully the predicate that
     // reads them was tuned. Pinned directly against the real subprocess
     // output rather than only through drive.ts's own end-to-end behavior, so
     // a future refactor of emit()'s payload cannot silently drop the field
-    // again without this failing. `failingStatusNames` (round 5) gets the
+    // again without this failing. `failingStatusNames` gets the
     // identical pin for the same reason — the provenance fix in drive.ts is
     // only real if this field actually reaches the CLI boundary.
     const { dir, stateDir } = writeFixture({
@@ -2679,7 +2673,7 @@ describe("drive.ts loop control", () => {
   }, 30000);
 
   it("does NOT defer a required-named failure that is BOTH an unconfirmed check-run AND a fresh legacy commit status under the same name", async () => {
-    // The exact provenance gap the round-5 finding named: `failingCheckNames`
+    // The exact provenance gap: `failingCheckNames`
     // merges check-run and commit-status names with no per-entry provenance,
     // so `finalFailingCheckRunNames.includes('Schema gate')` was true for
     // BOTH the check-run occurrence and the status occurrence once a legacy
@@ -2792,7 +2786,7 @@ describe("drive.ts loop control", () => {
   }, 30000);
 
   it("a CI-repair pass that hits its own deadline still stops cleanly, not crashing on the new witness check", async () => {
-    // Regression guard for the review finding's WITNESSED branch:
+    // Regression guard for the WITNESSED branch:
     // `runRepairPass` now captures the spawn's `RunHandle` and, on
     // `res.timedOut`, re-joins its termination witness before deciding
     // anything — mirroring the ordinary-pass path's own PASS_DEADLINE
@@ -2945,8 +2939,7 @@ describe("drive.ts loop control", () => {
     // owed" and fall through to exit 0 — reporting convergence, the signal an
     // operator merges on, about a PR that had already merged or closed. Exit 5
     // is a FRESHER observation of the same liveness fact the gate reports as
-    // PR_NOT_OPEN, so it wins over the gate's (docomply-review round 2, PR
-    // #4057).
+    // PR_NOT_OPEN, so it wins over the gate's.
     const { dir, stateDir } = writeFixture({
       threads: [],
       reviewedSha: scratchClean.head,
@@ -2972,11 +2965,11 @@ describe("drive.ts loop control", () => {
     // The post-round hook ignored mark-ready.ts's exit code entirely, so a
     // permanently failing transition — an unwritable store, a revoked token —
     // ran the whole round budget out with the PR still a draft and said
-    // nothing about why (docomply-review rounds 1-3, PR #4057).
+    // nothing about why.
     //
     // Round 1's `gh pr ready` failure is genuinely AMBIGUOUS (a nonzero exit
-    // plus an observed OPEN draft is not proof it never applied — docomply-
-    // review round 13, PR #4057), so mark-ready.ts now PRESERVES the lease
+    // plus an observed OPEN draft is not proof it never applied), so
+    // mark-ready.ts now PRESERVES the lease
     // rather than releasing it. `gh pr ready` is therefore only ever called
     // ONCE here: round 2's call finds that same still-live lease and reports
     // `claimed-by-other` without dispatching again. It is still the SECOND
@@ -3033,7 +3026,7 @@ describe("drive.ts loop control", () => {
     //
     // `--head` because the stall verdict needs a MEASURED local head, and the
     // scratch repo's own HEAD is not the fixture's: `--no-head-sync` alone
-    // leaves nothing measured and produces no fingerprint at all (PR #4106).
+    // leaves nothing measured and produces no fingerprint at all.
     const r = await runDrive(
       {
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
@@ -3078,7 +3071,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("--- round 3/3");
   });
 
-  it("has no --head to forward: a frozen head is not a measurement (all three reviewers, PR #4106)", async () => {
+  it("has no --head to forward: a frozen head is not a measurement", async () => {
     // Briefly forwarded, and wrong three ways at once: frozen at startup it
     // wedges the head-sync guard in HEAD_LAG the moment a pass pushes; being an
     // assertion about one instant it cannot attest sameness for the stall stop;
@@ -3143,8 +3136,7 @@ describe("drive.ts loop control", () => {
   // — what counts as evidence of sameness` asserts over directly. A
   // regression where that pipeline preserves the thread COUNT but emits
   // stale, missing or duplicated identities would pass both of those and
-  // still let the real driver stop on a false repeated fingerprint
-  // (docomply-review round 3, a reference-implementation pull request).
+  // still let the real driver stop on a false repeated fingerprint.
   it("does not stall-stop while a same-count set of unresolved threads keeps swapping identity", async () => {
     // Three real threads, none resolved yet at the first gate. Each pass
     // marks exactly ONE of them resolved and the other two unresolved — a
@@ -3283,7 +3275,7 @@ describe("drive.ts loop control", () => {
     expect(worst).toEqual([0, 0, 0, 0, 1]);
   });
 
-  it("stops after a SECOND consecutive claimed-by-other, not just a repeated hard failure (docomply-review round 6, a reference-implementation pull request)", async () => {
+  it("stops after a SECOND consecutive claimed-by-other, not just a repeated hard failure", async () => {
     // A permanently-orphaned lease (a killed helper's cleanup never ran, and
     // no live driver is actually holding it) reports `claimed-by-other` —
     // exit 0 — every round. Leaving `readyMarkFailures` merely UNCHANGED on
@@ -3324,7 +3316,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("converged");
   });
 
-  it("does NOT exit 0 when convergence leaves the Ready-mark lease to another driver (docomply-review round 6, a reference-implementation pull request)", async () => {
+  it("does NOT exit 0 when convergence leaves the Ready-mark lease to another driver", async () => {
     // The reviewer converged with no round to run, so this drive tries to
     // record the already-Ready-or-draft transition — but another driver
     // already holds the lease. Exit 0 here would claim full convergence over
@@ -3359,7 +3351,7 @@ describe("drive.ts loop control", () => {
     );
   });
 
-  it("does NOT exit 0 when convergence hits a still-draft record either, and does NOT auto-retry it (docomply-review rounds 13 and 22, PR #4057)", async () => {
+  it("does NOT exit 0 when convergence hits a still-draft record either, and does NOT auto-retry it", async () => {
     // The reviewer converged with the PR already Ready per THIS gate's own
     // snapshot (isDraft: false), so the converged-path call now uses
     // --record-only — but the owner converts the PR to draft in the window
@@ -3367,7 +3359,7 @@ describe("drive.ts loop control", () => {
     // nothing (still-draft). Exit 0 here would claim full convergence over a
     // PR that is genuinely a draft again by the owner's own action.
     //
-    // Exit 1, not 4 (round 22): nothing durable was written when this
+    // Exit 1, not 4: nothing durable was written when this
     // observation was made, so an unattended wrapper's plain retry would just
     // reach this exact branch again rather than resolve anything — this needs
     // a fresh top-level look, not mechanical repetition.
@@ -3393,10 +3385,10 @@ describe("drive.ts loop control", () => {
     );
   });
 
-  it("--keep-draft still records an already-Ready PR via the converged-path call (docomply-review round 14, a reference-implementation pull request)", async () => {
+  it("--keep-draft still records an already-Ready PR via the converged-path call", async () => {
     // Same fix as the round-loop pre-pass test above, at the OTHER call site
-    // the reviewer named ("The same !keepDraft gating on the converged path
-    // shares this root cause"): a drive that converges with no round to run
+    // (the same !keepDraft gating on the converged path shares this root
+    // cause): a drive that converges with no round to run
     // and finds the PR already Ready must still record that observation
     // under --keep-draft, even though it must not dispatch anything.
     const { dir, stateDir } = writeFixture({
@@ -3419,7 +3411,7 @@ describe("drive.ts loop control", () => {
     ).not.toBe("0");
   });
 
-  it("records an already-Ready PR BEFORE the pass runs, so a mid-pass draft flip is not undone (chatgpt-codex-connector, a reference-implementation pull request)", async () => {
+  it("records an already-Ready PR BEFORE the pass runs, so a mid-pass draft flip is not undone", async () => {
     // The PR is already Ready when the round starts (isDraft: false). Without
     // a pre-pass record, `readyMarkedRound` stays 0 for the whole pass; if the
     // owner converts the PR back to draft while it runs, the post-round call
@@ -3462,7 +3454,7 @@ describe("drive.ts loop control", () => {
     ).not.toBe("0");
   });
 
-  it("does NOT run the pass when the pre-pass record comes back claimed-by-other (docomply-review round 10, a reference-implementation pull request)", async () => {
+  it("does NOT run the pass when the pre-pass record comes back claimed-by-other", async () => {
     // `claimed-by-other` is a recognized, exit-0 outcome — but it means NO
     // durable record was established at all; another driver holds the lease
     // and may record it, or may die holding it. Treating it as sufficient
@@ -3495,7 +3487,7 @@ describe("drive.ts loop control", () => {
     );
   });
 
-  it("does NOT run the pass when the pre-pass record comes back still-draft either (docomply-review round 11, a reference-implementation pull request)", async () => {
+  it("does NOT run the pass when the pre-pass record comes back still-draft either", async () => {
     // An earlier version of this fix treated `still-draft` as sufficient
     // confirmation, on the reasoning that the race window had already
     // closed. That reasoning had a hole: the PR was Ready at drive-status.ts's
@@ -3594,7 +3586,7 @@ describe("drive.ts loop control", () => {
     );
   });
 
-  it("the converged clean-tree check refuses on a git TIMEOUT rather than hanging (chatgpt-codex-connector, #4046 round 2)", async () => {
+  it("the converged clean-tree check refuses on a git TIMEOUT rather than hanging", async () => {
     // Same gap as announce-merge-ready.ts's sibling check: the `git status
     // --porcelain` call here carried no deadline either. The stub hangs ONLY
     // on `status --porcelain`; every other git call this process or
@@ -3633,7 +3625,7 @@ describe("drive.ts loop control", () => {
     }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
   });
 
-  it("the converged clean-tree check still detects an untracked leftover under status.showUntrackedFiles=no (chatgpt-codex-connector, #4046 round 2)", async () => {
+  it("the converged clean-tree check still detects an untracked leftover under status.showUntrackedFiles=no", async () => {
     // Same gap, and same fix, as announce-merge-ready.ts's sibling check.
     const dirty = makeScratchRepo("scratch-drive-showuntracked-no");
     Bun.spawnSync(["git", "config", "status.showUntrackedFiles", "no"], {
@@ -3654,7 +3646,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("leftover-untracked.txt");
   });
 
-  it("the converged clean-tree check still detects a dirty submodule ignored via submodule.<name>.ignore=all (docomply-review, #4046 round 3)", async () => {
+  it("the converged clean-tree check still detects a dirty submodule ignored via submodule.<name>.ignore=all", async () => {
     // Same gap, and same fix, as announce-merge-ready.ts's sibling check.
     const src = makeScratchRepo("scratch-drive-submodule-src");
     const dirty = makeScratchRepo("scratch-drive-submodule-outer");
@@ -3699,7 +3691,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("uncommitted state");
   });
 
-  it("the converged clean-tree check refuses over an unconcluded merge even though porcelain status is empty (chatgpt-codex-connector, #4046 round 3)", async () => {
+  it("the converged clean-tree check refuses over an unconcluded merge even though porcelain status is empty", async () => {
     // Same gap, and same fix, as announce-merge-ready.ts's sibling check.
     const dirty = makeUnresolvedMergeRepo("scratch-drive-unconcluded-merge");
     const r = await runDrive(
@@ -3712,7 +3704,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("MERGE_HEAD");
   });
 
-  it("the converged clean-tree check refuses over a paused interactive rebase even though the tree is clean (docomply-review, #4046 round 4)", async () => {
+  it("the converged clean-tree check refuses over a paused interactive rebase even though the tree is clean", async () => {
     // Same gap as the merge case above, one state further: an `edit`-paused
     // rebase leaves the checked-out commit's tree fully clean (nothing
     // uncommitted) while `rebase-merge` sits in the git-dir because the
@@ -3728,7 +3720,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("rebase-merge");
   });
 
-  it("refuses over a local commit that landed after the reviewed head, even with an otherwise clean tree (chatgpt-codex-connector, #4046 round 4)", async () => {
+  it("refuses over a local commit that landed after the reviewed head, even with an otherwise clean tree", async () => {
     // A commit is fully committed — nothing uncommitted, no unconcluded op —
     // so every OTHER check in this function passes over it. Only comparing
     // local HEAD against the head drive-status.ts reported as reviewed
@@ -3882,7 +3874,7 @@ describe("drive.ts loop control", () => {
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
             DRIVE_PR_MAILBOX_DIR: mailboxDir,
             // Must outlast every synchronization wait below it, not just the
-            // pass itself (review finding): the first polling loop can spend
+            // pass itself: the first polling loop can spend
             // up to 100 * 100ms = 10s detecting "paused by mailbox" before
             // `resume` is even sent, plus up to 2s more for the driver's own
             // pause-checkpoint poll granularity (`Math.min(2, pauseMaxSec)`)
@@ -3911,7 +3903,7 @@ describe("drive.ts loop control", () => {
       }
       expect(existsSync(passStarted)).toBe(false);
 
-      // Review finding: a post-exit check that the lock is gone proves the
+      // A post-exit check that the lock is gone proves the
       // pause eventually LETS GO — it says nothing about whether the lock
       // stayed HELD and FRESH while the pause was still active. Releasing
       // it at pause entry would satisfy every assertion above and below
@@ -4029,8 +4021,7 @@ describe("drive.ts loop control", () => {
     // `run()` forwards this value to `setTimeout`, whose delay is a 32-bit
     // signed millisecond count: 2147483 is the last whole second under that
     // limit, 2147484 overflows it and fires immediately — so a caller asking
-    // for a MORE generous deadline would silently get a pass killed at once
-    // (docomply-review round 2, a reference-implementation pull request).
+    // for a MORE generous deadline would silently get a pass killed at once.
     it("accepts the largest representable timeout in whole seconds", () => {
       process.env.DRIVE_PR_PASS_TIMEOUT = "2147483";
       expect(passTimeoutSeconds()).toBe(2147483);
@@ -4098,7 +4089,7 @@ describe("drive.ts loop control", () => {
     // The env accessor `passTimeoutSeconds()` falls back to the default for
     // this value — correct for inherited noise, but a FLAG's typo must refuse
     // at the front door like every other bad flag, not silently substitute a
-    // shorter deadline than the one requested (docomply-review round 3).
+    // shorter deadline than the one requested.
     const r = await runDrive(
       { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
       ["--no-head-sync", "--pass-timeout", "2147484", "--", ...PASS_NOOP],
@@ -4121,14 +4112,13 @@ describe("drive.ts loop control", () => {
   });
 
   it("arms $DRIVE_PR_REFLECT_DUE past the third round, and not before", async () => {
-    // AGENTS.md § Addressing PR Comments puts the /reflect obligation past
-    // three rounds: repeat findings at that depth are a scaffolding gap, not
-    // reviewer noise. A shell script cannot invoke a slash command, so the
-    // exported flag IS the mechanism — if it never reaches the pass, the duty
-    // is back in session memory, which is what this skill exists to end.
-    // Unbraced `$VAR` on purpose: `${VAR:-default}` inside a plain JS string
-    // reads to biome as a mistyped template literal. An unset variable echoes
-    // as empty, which is the assertion below anyway.
+    // The /reflect obligation sits past three rounds: repeat findings at that
+    // depth are a scaffolding gap, not reviewer noise. A shell script cannot
+    // invoke a slash command, so the exported flag IS the mechanism — if it
+    // never reaches the pass, the duty is back in session memory, which is what
+    // this skill exists to end. Unbraced `$VAR` on purpose: `${VAR:-default}`
+    // inside a plain JS string reads to biome as a mistyped template literal.
+    // An unset variable echoes as empty, which is the assertion below anyway.
     const PASS_ECHO_FLAG = [
       "sh",
       "-c",
@@ -4331,7 +4321,7 @@ describe("drive.ts loop control", () => {
   });
 
   describe("single-instance lock", () => {
-    // The three failure modes reported on PR #4031, each modelled by planting
+    // Three failure modes, each modelled by planting
     // the exact directory state the racing driver would have left behind.
 
     // Both locks live in the state dir: one keyed by PR, one by the working
@@ -4432,7 +4422,7 @@ describe("drive.ts loop control", () => {
 
     it("refuses when a LIVE driver holds the worktree lock — whatever PR it drives", async () => {
       // Keyed by worktree, not by PR: two drivers in one worktree cross-ship
-      // each other's uncommitted edits regardless of target (PR #4019).
+      // each other's uncommitted edits regardless of target.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
       // This process is unquestionably alive, and on this host.
@@ -4521,9 +4511,9 @@ describe("drive.ts loop control", () => {
       // `process.kill(pid, 0)` answers "some process holds this pid", not "the
       // driver is still running". After a driver dies the OS can hand its pid
       // to any unrelated long-lived process, and every later start then refuses
-      // forever with no way out but a manual `rm` (docomply-review and
-      // chatgpt-codex-connector, a reference-implementation pull request). A real driver refreshes each round;
-      // a recycled pid never does, so an unrefreshed claim is recoverable.
+      // forever with no way out but a manual `rm`. A real driver refreshes each
+      // round; a recycled pid never does, so an unrefreshed claim is
+      // recoverable.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
       // This process is unquestionably alive and on this host — exactly the
@@ -4656,7 +4646,7 @@ describe("drive.ts loop control", () => {
       // lock, then replacing it with a foreign one before the drive exits —
       // the pass command is what does the replacing, mid-run.
       //
-      // This is also the round-8 interleaving at full strength: the releasing
+      // This is also the release interleaving at full strength: the releasing
       // process is arbitrarily behind, its own generation long retired, and it
       // still cannot reach the successor, because the only name it removes is
       // its own claim and the `rmdir` behind it refuses a directory that is
@@ -4777,9 +4767,9 @@ describe("drive.ts loop control", () => {
     // `mkfifo` is a POSIX utility with no Windows equivalent, and the skill's
     // own runtime contract states Windows support (SKILL.md's runtime
     // section) — so this one test, which needs a FIFO to force the
-    // round-7 interleaving deterministically, cannot run there without
-    // failing `pnpm drive-pr:test` before it exercises anything
-    // (docomply-review round 6, a reference-implementation pull request). Skipped rather than reimplemented
+    // rename interleaving deterministically, cannot run there without
+    // failing the suite before it exercises anything. Skipped rather than
+    // reimplemented
     // on a cross-platform primitive: every OTHER test in this file is
     // already portable, and the interleaving this one exists to force can
     // still be reasoned about from the code's own generation-naming
@@ -4787,15 +4777,14 @@ describe("drive.ts loop control", () => {
     (process.platform === "win32" ? it.skip : it)(
       "retires the generation it OBSERVED, never the path it sits at",
       async () => {
-        // The round-7 interleaving, made deterministic. Contender A quarantined
+        // The rename interleaving, made deterministic. Contender A quarantined
         // a stale lock by PATH and installed a live replacement; contender B,
         // still holding its observation of the same stale generation, renamed by
-        // path too — and what it moved was A's live lock, so both drove
-        // (docomply-review, a reference-implementation pull request round 7). Fencing the rename's DESTINATION
-        // closed that at the price of a tombstone nothing could reclaim
-        //. Naming the SOURCE closes it with nothing left over, and
-        // this is the property that makes it work: a retirement removes what the
-        // observation listed and NOTHING else.
+        // path too — and what it moved was A's live lock, so both drove.
+        // Fencing the rename's DESTINATION closes that at the price of a
+        // tombstone nothing can reclaim. Naming the SOURCE closes it with
+        // nothing left over, and this is the property that makes it work: a
+        // retirement removes what the observation listed and NOTHING else.
         //
         // Observing and retiring are normally two adjacent syscalls, which is
         // why the interleaving could not be hit from outside before. A FIFO in
@@ -4901,7 +4890,7 @@ describe("drive.ts loop control", () => {
       }
     });
 
-    it("reclaims a staging directory orphaned by a crash before the publishing rename (docomply-review #4048)", async () => {
+    it("reclaims a staging directory orphaned by a crash before the publishing rename", async () => {
       // `takeLock` publishes into `<lock>.<pid>.<host>.staging` before the
       // rename that installs it. A crash in that window used to be bounded
       // only by "that exact pid retries this exact lock" — on a long-lived
@@ -4953,7 +4942,7 @@ describe("drive.ts loop control", () => {
       expect(lockResidue(worktree)).toEqual([]);
     });
 
-    it("reclaims a staging directory crashed BEFORE its claim was ever written (docomply-review round 2, #4048)", async () => {
+    it("reclaims a staging directory crashed BEFORE its claim was ever written", async () => {
       // The narrower gap `sweepStaleStaging`'s claim-file read cannot answer
       // for: a crash between `mkdirSync(staging)` and `writeFileSync` leaves
       // an EMPTY staging directory, with no claim inside to read pid/host
@@ -4994,7 +4983,7 @@ describe("drive.ts loop control", () => {
       expect(lockResidue(worktree)).toEqual([]);
     });
 
-    it("reclaims a staging directory whose pid merely READS as alive — pid reuse cannot make it immortal (docomply-review round 4, #4048)", async () => {
+    it("reclaims a staging directory whose pid merely READS as alive — pid reuse cannot make it immortal", async () => {
       // `pidAlive` alone is not enough for staging the way it is for the main
       // lock: the main lock falls back to heartbeat staleness when a pid
       // answers but the OWNER never refreshes, closing the pid-reuse hazard
@@ -5130,7 +5119,7 @@ describe("drive.ts loop control", () => {
       expect(existsSync(foreignStaging)).toBe(true);
     });
 
-    it("leaves a MERELY-OLD FOREIGN-HOST staging directory alone — clock skew must not delete it (docomply-review round 5, #4048)", async () => {
+    it("leaves a MERELY-OLD FOREIGN-HOST staging directory alone — clock skew must not delete it", async () => {
       // `pidAlive` returns `true` for a foreign host as a fail-OPEN default
       // for an unanswerable question, not as confirmed evidence the age
       // fallback may then override. An earlier cut applied the age check to
@@ -5180,9 +5169,9 @@ describe("drive.ts loop control", () => {
       expect(existsSync(oldForeignStaging)).toBe(true);
     });
 
-    it("eventually reclaims a foreign-host staging directory — cross-host residue is bounded, not permanent (docomply-review round 6, #4048)", async () => {
-      // Leaving EVERY foreign-host entry unreclaimed forever (round 5's fix)
-      // closed the clock-skew guess but reopened the unboundedness this
+    it("eventually reclaims a foreign-host staging directory — cross-host residue is bounded, not permanent", async () => {
+      // Leaving EVERY foreign-host entry unreclaimed forever would close the
+      // clock-skew guess but reopen the unboundedness this
       // whole mechanism exists to close, just scoped to cross-host residue —
       // every crashed foreign publisher would leave a permanent directory,
       // contradicting the PR's own structural-bound claim. The fix reuses
@@ -5237,14 +5226,13 @@ describe("drive.ts loop control", () => {
       // wedge the slot for ever, since `rename` refuses a non-empty
       // destination. Retirement removes exactly the entries it observed, which
       // is what keeps a lock recoverable from ANY state a crash or an older
-      // version can leave it in. Unconditionally: BWC is deferred pre-GA
-      // (CLAUDE.md § Backward Compatibility), so this file owes the old
+      // version can leave it in. Unconditionally: backward compatibility is
+      // deferred pre-GA, so this file owes the old
       // format no liveness check either — a legacy `pid`/`heartbeat` pair is
       // debris whether its recorded pid is dead (999999, planted here) or, in
-      // principle, still running (docomply-review round 4, a reference-implementation pull request: a
-      // liveness check for this exact shape was tried in round 3 and
-      // reverted for adding a second lock-format parser BWC-deferred exists
-      // to avoid).
+      // principle, still running (a liveness check for this exact shape would
+      // add the second lock-format parser deferring backward compatibility
+      // exists to avoid).
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
       mkdirSync(worktree, { recursive: true });
@@ -5340,8 +5328,7 @@ describe("drive.ts loop control", () => {
       // A private destination is always free, so the rename always succeeded —
       // and a process suspended past the staleness window, its lock recovered
       // and the path now holding a SUCCESSOR's live lock, moved that successor
-      // aside and left the canonical path briefly empty for a third driver
-      // (chatgpt-codex-connector and docomply-review, a reference-implementation pull request rounds 7-8).
+      // aside and left the canonical path briefly empty for a third driver.
       //
       // The read-to-rename gap is two adjacent syscalls, so it cannot be hit
       // deterministically from outside the process — and it no longer has to
@@ -5401,7 +5388,7 @@ describe("drive.ts loop control", () => {
       // or one that set it and one that did not — therefore computed different
       // worktree locks, and their per-PR locks did not collide either when
       // they drove different PRs, so both ran and cross-shipped each other's
-      // uncommitted edits (chatgpt-codex-connector, a reference-implementation pull request round 8).
+      // uncommitted edits.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
       plantClaim(worktree, {
@@ -5446,7 +5433,7 @@ describe("drive.ts loop control", () => {
       // Refreshing once per round made a claim only as fresh as the round was
       // short — and a round runs an agent pass, the gates and sometimes a
       // Testbox. A pass that outlasts the window let another start quarantine
-      // a demonstrably live driver (docomply-review, a reference-implementation pull request round 7).
+      // a demonstrably live driver.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
@@ -5505,29 +5492,29 @@ describe("drive.ts loop control", () => {
         const second = statSync(beat).mtimeMs;
         expect(second).toBeGreaterThan(first);
       } finally {
-        // Same discipline as the sibling test below (round 4 fix): a failed
-        // poll or assertion above must not skip the kill and leave a live
-        // driver running past this test (chatgpt-codex-connector, a reference-implementation pull request
-        // round 8).
+        // Same discipline as the sibling test below: a failed poll or
+        // assertion above must not skip the kill and leave a live driver
+        // running past this test.
         proc.kill();
         await proc.exited;
       }
     });
 
-    it("holds a FILE-BACKED account identity steady for an ACTIVE pass, never overwriting it mid-pass with the account the next pass would use (docomply-review, a reference-implementation pull request round 3)", async () => {
+    it("holds a FILE-BACKED account identity steady for an ACTIVE pass, never overwriting it mid-pass with the account the next pass would use", async () => {
       // A resolved-once-at-arm-time account is correct for
       // CLAUDE_CODE_OAUTH_TOKEN (this process's own environment, fixed for
       // the drive's life) but wrong for oauthAccount/CODEX_HOME auth — LIVE
       // FILE CONTENT the pass re-reads on every fresh spawn. A login swap
-      // mid-drive (Hearth, or a manual /login) must not leave the claim
-      // reporting the OLD account for the rest of the drive's life — but an
-      // earlier revision fixed THAT by rewriting the claim unconditionally
-      // on every heartbeat tick, including while a pass was already running.
+      // mid-drive (an account-switching wrapper, or a manual /login) must not
+      // leave the claim reporting the OLD account for the rest of the drive's
+      // life — but an earlier revision fixed THAT by rewriting the claim
+      // unconditionally on every heartbeat tick, including while a pass was
+      // already running.
       // The already-running child inherited the OLD identity at its own
       // spawn and keeps billing to it regardless of what the file says now,
       // so that rewrite displayed the NEXT pass's account while the CURRENT
       // one was still active — wrong for that pass's entire remaining life
-      // (docomply-review, a reference-implementation pull request round 3). The claim must hold the
+      //. The claim must hold the
       // identity the running pass actually has.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
@@ -5646,7 +5633,7 @@ describe("drive.ts loop control", () => {
         // Not protected by `try/finally` before this fix: a failed poll or
         // assertion above skipped both the kill and the cleanup below,
         // leaving a live driver plus its temp dirs to contaminate later
-        // suite cases (docomply-review, a reference-implementation pull request round 4).
+        // suite cases.
         proc.kill();
         await proc.exited;
         rmSync(claudeStubDir, { recursive: true, force: true });
@@ -5654,7 +5641,7 @@ describe("drive.ts loop control", () => {
       }
     });
 
-    it("does not resurrect a recovered claim via the account-identity rewrite (docomply-review, a reference-implementation pull request round 3)", async () => {
+    it("does not resurrect a recovered claim via the account-identity rewrite", async () => {
       // An earlier revision called `refreshAccountIdentity` BEFORE
       // `touchLock` on each heartbeat tick. If a successor recovered this
       // generation's lock (deleted its claim file) in the same window a
@@ -5752,7 +5739,7 @@ describe("drive.ts loop control", () => {
         expect(claimsIn(worktree)).toEqual(["claim.successor01"]);
       } finally {
         // Not protected by `try/finally` before this fix — see the sibling
-        // test above (docomply-review, a reference-implementation pull request round 4).
+        // test above.
         proc.kill();
         await proc.exited;
         rmSync(claudeStubDir, { recursive: true, force: true });
@@ -5760,7 +5747,7 @@ describe("drive.ts loop control", () => {
       }
     });
 
-    it("refreshes a FILE-BACKED account identity synchronously the moment a pass exits, not only on the next heartbeat tick (docomply-review, a reference-implementation pull request round 4)", async () => {
+    it("refreshes a FILE-BACKED account identity synchronously the moment a pass exits, not only on the next heartbeat tick", async () => {
       // Clearing `activePass` reopens the exact window `refreshAccountIdentity`'s
       // own gate exists for, but an earlier revision only refreshed on the
       // heartbeat's OWN timer — so a credential file that changed mid-pass
@@ -5881,7 +5868,7 @@ describe("drive.ts loop control", () => {
       }
     });
 
-    it("refreshes a FILE-BACKED account identity after a CI-repair pass too, not only after an ordinary one (review finding, PR #4820)", async () => {
+    it("refreshes a FILE-BACKED account identity after a CI-repair pass too, not only after an ordinary one", async () => {
       // `runRepairPass` used to touch only the locks once its own spawned
       // pass exited, never `refreshAccountIdentity` — the exact post-pass
       // window the sibling test above closes for the ORDINARY pass path. The
@@ -5895,7 +5882,7 @@ describe("drive.ts loop control", () => {
       // Synchronized on the SECOND pass's own start marker rather than on
       // polling the claim file for the swapped value after the FIRST pass
       // exits: that race is exactly what an earlier revision of this test
-      // hit on the remote gates host (majordomo) — `runRepairPass` returning
+      // hit on a remote gates host — `runRepairPass` returning
       // is not the same instant as the driver's own subsequent lock release
       // on exit, and polling after the fact can lose that race under load
       // without the fix being wrong. `runRepairPass` calls
@@ -6110,17 +6097,16 @@ describe("drive.ts loop control", () => {
       // own 5s, not this file's `--timeout 30000`.
     }, 45000);
 
-    it("spawns the next pass anyway once every pre-spawn identity-rewrite retry is exhausted, warning about a possibly-stale display rather than blocking on a DISPLAY value (chatgpt-codex-connector, a reference-implementation pull request round 9)", async () => {
-      // Round 7 decided this deliberately (see the pre-spawn retry loop's own
+    it("spawns the next pass anyway once every pre-spawn identity-rewrite retry is exhausted, warning about a possibly-stale display rather than blocking on a DISPLAY value", async () => {
+      // This is deliberate (see the pre-spawn retry loop's own
       // comment in drive.ts): a filesystem stuck longer than the bounded
       // retries must not stop the drive from ever spawning another pass over
-      // what is only ever a DISPLAY value. What round 7 never got was a test
-      // for the fall-through that decision actually produces — every retry
-      // exhausted, and the pass spawns anyway with the stale-display warning
-      // on stderr. Simulate a stuck filesystem by chmod'ing both lock
-      // directories read-only from INSIDE round 1's own stub pass —
-      // deterministic, no timing race against a live process required — then
-      // confirm round 2 still spawns.
+      // what is only ever a DISPLAY value. This test covers the fall-through
+      // that decision actually produces — every retry exhausted, and the pass
+      // spawns anyway with the stale-display warning on stderr. Simulate a
+      // stuck filesystem by chmod'ing both lock directories read-only from
+      // INSIDE round 1's own stub pass — deterministic, no timing race against
+      // a live process required — then confirm round 2 still spawns.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
@@ -6227,17 +6213,16 @@ exit 0
       }
     });
 
-    it("heals a resurrected claim at the pass-exit rewrite instead of trusting `touchLock`'s own next tick, which cannot see it (docomply-review, a reference-implementation pull request round 4)", async () => {
-      // The round-3 fix narrowed the check-to-rename gap but could not close
-      // it, and the round-3 comment's claim that `touchLock`'s own next tick
-      // would backstop the remainder was wrong: a resurrected claim carries
-      // THIS generation's own name, so `touchLock`'s exact-name `utimesSync`
-      // check succeeds against it forever, permanently masking the takeover
-      // instead of catching it. Reproduce the state a resurrection race would
-      // leave behind directly — a second, unrelated claim already sitting in
-      // the same directory — instead of racing the exact microsecond gap by
-      // timing alone, and confirm the very next rewrite attempt notices and
-      // heals it.
+    it("heals a resurrected claim at the pass-exit rewrite instead of trusting `touchLock`'s own next tick, which cannot see it", async () => {
+      // Narrowing the check-to-rename gap cannot close it, and `touchLock`'s
+      // own next tick cannot backstop the remainder: a resurrected claim
+      // carries THIS generation's own name, so `touchLock`'s exact-name
+      // `utimesSync` check succeeds against it forever, permanently masking the
+      // takeover instead of catching it. Reproduce the state a resurrection
+      // race would leave behind directly — a second, unrelated claim already
+      // sitting in the same directory — instead of racing the exact microsecond
+      // gap by timing alone, and confirm the very next rewrite attempt notices
+      // and heals it.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
@@ -6338,7 +6323,7 @@ exit 0
       }
     });
 
-    it("retries every held lock independently, not just the first one to reach `fresh` (docomply-review, a reference-implementation pull request round 4)", async () => {
+    it("retries every held lock independently, not just the first one to reach `fresh`", async () => {
       // An earlier revision compared `fresh` against only the FIRST lock
       // with a diag (`locks.find(...)`) and returned once THAT ONE matched
       // — so once one lock's rewrite succeeded, a sibling lock's own
@@ -6427,7 +6412,7 @@ exit 0
         // permission entirely, which would let both claims catch up
         // immediately and leave every assertion past this point vacuously
         // true regardless of whether the per-lock retry fix below is even
-        // present (chatgpt-codex-connector, a reference-implementation pull request round 10).
+        // present.
         const writeProbe = join(pr, `write-probe.${process.pid}`);
         let probeBlocked = false;
         try {
@@ -6573,8 +6558,7 @@ exit 0
       // The loop reads `compromised` only at a round boundary, and a pass
       // already running does not pause at one — so a takeover detected mid-pass
       // let it go on editing, committing and pushing under a claim another
-      // driver held (docomply-review and chatgpt-codex-connector, a reference-implementation pull request
-      // round 11).
+      // driver held.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
@@ -6897,8 +6881,7 @@ exit 0
       // A standalone helper FILE, not an inline `sh -c`/`bun -e` one-liner:
       // the transcript record embeds a real apostrophe and a middle-dot
       // separator, and nesting those inside a shell-quoted argument is
-      // exactly the multi-layer-quoting hazard AGENTS.md's git/gh guidance
-      // warns about for the identical reason — a file has no delimiter to
+      // exactly the multi-layer-quoting hazard — a file has no delimiter to
       // collide with.
       const helperPath = join(dir, "write-quota-transcript.mjs");
       writeFileSync(
@@ -7027,8 +7010,8 @@ exit 0
      * The SAME quota-wall scenario as `attemptQuotaWallSleepInterrupt`, but
      * racing the takeover into the narrower, earlier window that sibling
      * function cannot reach at all: WHILE `recordQuotaPark`'s own subprocess
-     * is still in flight, before `quotaSleepAbort` even exists (review
-     * finding). `attemptQuotaWallSleepInterrupt`'s own comment records why
+     * is still in flight, before `quotaSleepAbort` even exists.
+     * `attemptQuotaWallSleepInterrupt`'s own comment records why
      * its trigger point — right as "SLEEPING" appears — lands AFTER that
      * subprocess has already resolved in practice: the controller it aborts
      * already exists by the time its takeover fires. That leaves the earlier
@@ -7281,7 +7264,7 @@ exit 0
         }
         // The "SLEEPING" lines print BEFORE `recordQuotaPark` is awaited
         // (drive.ts: the logs, then the record, then the sleep itself) — the
-        // opposite of what this comment used to claim (review finding) — so
+        // opposite of what one might assume — so
         // the record is still IN FLIGHT when this reader observes them: a
         // spawned `bun drive-state.ts quota-park` that must claim the
         // session lease and queue for the per-PR state mutex before it
@@ -7309,8 +7292,8 @@ exit 0
      * The SAME sleep-eligible quota-wall fixture as
      * {@link attemptQuotaWallSleepStart}, but with `--max-rounds 1` so THIS
      * round is already the last one allowed — the branch that returns exit
-     * `6` immediately instead of sleeping (review finding: that branch used
-     * to return before `recordQuotaPark` ever ran). Waits for the whole
+     * `6` immediately instead of sleeping (that branch must not return
+     * before `recordQuotaPark` runs). Waits for the whole
      * process to EXIT rather than stopping at "SLEEPING", since this path
      * never sleeps at all.
      */
@@ -7412,7 +7395,7 @@ exit 0
      * pass result, `recordQuotaPark`'s write lands first and the delayed
      * `pass-spawned` stamp then completes afterwards and clobbers
      * `quotaPark` back to `null` via `withProgress`'s own unconditional
-     * clear (review finding). The pass itself exits almost instantly (it
+     * clear. The pass itself exits almost instantly (it
      * only writes a transcript file and returns), so without the join there
      * is nothing else in this round to make `recordQuotaPark` wait for the
      * delayed stamp.
@@ -7551,7 +7534,7 @@ exit 0
       expect(attempt.allStderr).toContain("stop requested");
     }, 30000);
 
-    it("a takeover detected WHILE recordQuotaPark is still in flight ends the drive promptly, not after the full sleep (review finding)", async () => {
+    it("a takeover detected WHILE recordQuotaPark is still in flight ends the drive promptly, not after the full sleep", async () => {
       // Without the fix this reproduces: `quotaSleepAbort` did not exist
       // yet when `touchLock` observed the takeover, so the abort it fired
       // was a no-op, and `touchLock`'s own `if (compromised !== '') return;`
@@ -7573,9 +7556,8 @@ exit 0
         // pass ran and exited as expected, but the process went on to exit
         // without ever printing "SLEEPING", so `takeoverFired` never got a
         // chance to fire. Never reproduced locally (5/5 local runs pass). A
-        // single retry (the original an earlier change fix) itself missed twice in a
-        // row on two independent, unrelated CI runs of PR #4911
-        // (35567024396 and 35570932127, neither touching drive.ts's
+        // single retry itself missed twice in a row on two independent,
+        // unrelated CI runs (neither touching drive.ts's
         // quota-wall/takeover code at all) — direct measured evidence the
         // CI-runner's margin has tightened further, not a hypothesis. Two
         // retries with a COMPLETELY FRESH fixture each time absorb that
@@ -7626,7 +7608,7 @@ exit 0
       expect(park?.vendor).toBe("claude");
     }, 30000);
 
-    it("recordQuotaPark ALSO writes the park when the wall lands on the LAST allowed round, which never sleeps (review finding)", async () => {
+    it("recordQuotaPark ALSO writes the park when the wall lands on the LAST allowed round, which never sleeps", async () => {
       // This branch used to `return 6` before either `recordQuotaPark` call
       // could run — a normal exit, so `process.on('exit')` rmdirs the lock
       // slot on the way out, leaving `--doctor` a state-only row with no
@@ -7660,7 +7642,7 @@ exit 0
       expect(park?.vendor).toBe("claude");
     }, 30000);
 
-    it("a delayed pass-spawned progress stamp does not clobber recordQuotaPark, because drive.ts joins it first (review finding)", async () => {
+    it("a delayed pass-spawned progress stamp does not clobber recordQuotaPark, because drive.ts joins it first", async () => {
       // Without the join, this reproduces: the pass exits almost instantly
       // (it only writes the quota transcript), so `recordQuotaPark`'s write
       // lands well before the artificially delayed `pass-spawned` stamp
@@ -7686,7 +7668,7 @@ exit 0
       expect(park?.vendor).toBe("claude");
     }, 30000);
 
-    it("aborts a quota-wall sleep when refreshAccountIdentity notices a COEXISTING claim, not just the removal touchLock already catches (chatgpt-codex-connector, a reference-implementation pull request round 10)", async () => {
+    it("aborts a quota-wall sleep when refreshAccountIdentity notices a COEXISTING claim, not just the removal touchLock already catches", async () => {
       // an earlier change (the sibling test above) covers `touchLock`'s own takeover
       // signal aborting a quota-wall sleep — but that signal fires only when
       // OUR claim is REMOVED (`utimesSync` on our exact filename throws
@@ -7873,8 +7855,7 @@ exit 0
       // A signal delivered to the driver pid alone — a supervisor, `kill
       // <pid>`, a harness shutting a worker down — does not reach the pass. The
       // old handler released both locks and exited anyway, so the next driver
-      // acquired a free lock on a tree that was still being written
-      // (docomply-review, a reference-implementation pull request round 11).
+      // acquired a free lock on a tree that was still being written.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
@@ -7928,7 +7909,7 @@ exit 0
       // `settle` clears the stop's escalation timer, so a leader that exits on
       // the SIGTERM cancels the scheduled group SIGKILL — and a descendant that
       // IGNORES SIGTERM then survives while `exited` resolves, telling the
-      // driver the pass is gone (chatgpt-codex-connector, a reference-implementation pull request round 12).
+      // driver the pass is gone.
       // The leader here exits promptly; the grandchild traps TERM and would
       // write its marker four seconds later if only the timer stood behind it.
       const { dir, stateDir } = writeFixture({
@@ -7980,7 +7961,7 @@ exit 0
       // The forced-exit branch ran `process.exit()` with `held` still
       // populated, and Node then runs the 'exit' handler — `releaseAll` — so
       // the escape hatch released both locks under a pass it had explicitly
-      // declined to wait for (chatgpt-codex-connector, a reference-implementation pull request round 12).
+      // declined to wait for.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
@@ -8079,7 +8060,7 @@ exit 0
     // that is confirmed absent — but a `.git` DELETED or RENAMED after a drive
     // wrote its lease is a genuine ENOENT, indistinguishable from a tree that
     // never held a repository, and the POST would be permitted with that live
-    // lease unread (docomply-review high, PR #4107 round 4).
+    // lease unread.
     //
     // No probe closes that; durable knowledge does. The driver already
     // resolved the directory, so it hands it down — and because

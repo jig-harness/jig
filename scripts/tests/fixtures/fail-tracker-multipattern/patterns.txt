@@ -1,2 +1,2 @@
 DOC-[0-9]+\
-linear\.app/docomply/issue
+linear\.app/example/issue

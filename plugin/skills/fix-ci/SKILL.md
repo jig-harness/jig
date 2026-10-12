@@ -11,7 +11,9 @@ allowed-tools: "Read Edit Write Grep Glob Bash(gh run *) Bash(gh pr *) Bash(gh a
 Fix every error from a failed GitHub Actions run until the local checks pass,
 then commit and push. CI ([continuous integration](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) is
 the service that runs the repository's checks on every push; this skill turns
-its red run into a green one without guessing.
+its red run into a green one without guessing. The checks it repairs are the
+repository's quality gates, the subject of Groundwork module
+[M1 (gates & enforcement ladder)](https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md).
 
 Groundwork maintains this procedure and ships it in the `groundwork` plugin.
 Each repository supplies its own values in `.config/groundwork-overlay.yaml`
@@ -78,6 +80,7 @@ in fix-priority order.
 bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts"                # latest failure on the current branch
 bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" 12345678       # a specific run
 bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" --pr 318       # latest failure on a pull request
+bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" --branch feature/x  # latest failure on a branch
 bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" --log ci.log   # a saved log, no fetch
 ```
 
@@ -88,8 +91,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" --log ci.log   # a saved log, 
 | 2 | `drift_check` | Generated-file drift: API specs, type surfaces, error-code registries, generated API clients |
 | 3 | `typescript` | TypeScript compiler errors (`TS2xxx`, `TS7xxx`) |
 | 4 | `biome_lint` | Lint diagnostics (`lint/<group>/<rule>`, positioned `error` lines) |
-| 5 | `test_failure` | `FAIL <file>.test.ts`, assertion paths |
-| 6 | `gate_failure` | Catch-all for other failed checks that print an error annotation (`::error`, `##[error]`, `❌`, `error:`): grep gates, ratchets, self-tests |
+| 5 | `test_failure` | `FAIL <file>.test.ts` (or `.spec.ts`), assertion paths |
+| 6 | `gate_failure` | Catch-all for other failed checks that print an error annotation (`::error`, `##[error]`, `❌`, `✗`, `error:`, `failed:`): grep gates, ratchets, self-tests |
 | 7 | `process_exit` | The runner's generic `##[error]Process completed with exit code <n>.`: a step exited nonzero, for any reason |
 
 Output:
@@ -109,10 +112,12 @@ keeps one entry per step for a line repeated across steps. When there is
 nothing to parse it prints `{"error": "no_failed_runs", ...}`
 (`gh` listed no failed run) or `{"error": "PR #<n> not found", ...}` (`gh`
 reported no such pull request) with `errors_found: 0` and exits 0.
-Exit 1 means a lookup or the log could not be fetched, or `gh` answered with
-something unreadable (for example, an authentication failure, a timeout, or a
-run still in progress); `gh`'s message is on stderr. Report it and stop: it
-says nothing about whether CI failed.
+Exit 1 means a lookup or the log could not be fetched (or, with `--log`,
+read), or `gh` answered with something unreadable (for example, an
+authentication failure, a timeout, or a run still in progress); `gh`'s
+message is on stderr. Report it and stop: it says nothing about whether CI
+failed. Exit 2 is a usage error, including a detached `HEAD` with no run ID,
+`--pr` or `--branch` to say which run to read.
 
 ## Step 0: Parse the CI errors
 

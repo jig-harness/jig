@@ -16,6 +16,9 @@ Those words are a closed vocabulary that every reply must open with. They
 are parsed downstream to score the review bot, so they are a contract rather
 than a formatting habit — see [Reply format](#reply-format).
 
+This is the runnable form of the [comment-resolution loop](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in
+[M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md).
+
 Groundwork maintains this procedure and ships it as the `groundwork` plugin for
 Claude Code and Codex, installed once per machine. Each repository supplies its
 own values in `.config/groundwork-overlay.yaml`; consumer instructions supply
@@ -244,13 +247,14 @@ and **every reply opens with that outcome in bold** — see
 [Reply format](#reply-format) below. The vocabulary is closed: no other values,
 no synonyms. Materiality and scope calls follow the
 [triage rubric](references/triage-rubric.md); a thread the rubric does not
-decide goes to the **Review Arbiter** agent
-(the consumer's configured independent review agent), and only an arbiter escalation
+decide goes to the [**Review Arbiter**](https://github.com/docomply/jig/blob/main/GLOSSARY.md) agent
+(`groundwork:review-arbiter`, shipped with the plugin; in Codex, see the
+[Codex notes](../../README.md#codex-notes)), and only an arbiter escalation
 interrupts the user. When that escalation turns out to be an **architectural**
 question rather than a product/scope one — which pattern, which contract
-shape, which boundary — route it through the consumer's `/decide` procedure, when installed,
-before interrupting: it checks the question against existing ADRs and standing
-policy first, and a finding that contradicts settled policy is answered from
+shape, which boundary — route it through the `decide` skill (`/groundwork:decide`)
+before interrupting: it checks the question against the repository's
+architecture decision records ([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) and standing policy first, and a finding that contradicts settled policy is answered from
 the corpus rather than from the user's attention.
 
 **`**accepted**`** — the finding is real. Before fixing, run it through the
@@ -287,8 +291,8 @@ obligatory finding that fails the bar must come back `deferred`, not
 For a finding that clears the bar: make the *minimal* fix, then reply stating
 what changed and where. **Do not resolve the thread here** — accepted threads
 are held until step 5, after the gates pass. Apply the consumer's minimal-change, type-validation, and branch conventions.
-If no independent review agent is configured, preserve an undecided thread and
-batch genuine policy or scope questions for the human at round end.
+If no Review Arbiter is available in this harness, preserve an undecided thread
+and batch genuine policy or scope questions for the human at round end.
 
 > **Sweep the class, not the instance — and show the sweep.** A reviewer
 > reports the instance they happened to construct; its siblings are almost
@@ -624,9 +628,9 @@ put two outcome replies on every thread, which cannot be repaired once posted
  — so the refusal comes *before* the mutation rather than after it.
 It names the holder's pid, a command to check whether that process is still
 alive, and `drive-state.ts clear-lease <PR>`; the right response is almost
-always to **stop**, not to clear the lease. Nothing changes for standalone use:
-no `/drive-pr` installed, no lease file, or a lease whose owner is gone all
-post exactly as before — absence of a lease is never itself a refusal.
+always to **stop**, not to clear the lease. With no `/drive-pr`
+installed, no lease file, or a lease whose owner is gone, the reply posts
+normally — absence of a lease is never itself a refusal.
 
 Absence does have to be *established*, though. Anything the check cannot read
 refuses (exit 1) rather than passing as an all-clear: a lease file it can see
@@ -769,8 +773,9 @@ The distinctions it encodes have each burned real convergences:
   `await-round.ts` asks `/drive-pr`'s `summary-findings.ts` — the canonical
   parser of the reviewer's summary, which also tracks which findings were
   answered — and exits `8` when any is unaddressed. It is spawned
-  only when the repository has a `drive-pr` skill; without one the check is
-  skipped and says so, a documented residual of that setup.
+  only when a `drive-pr` skill is found (the repository's own, else the one
+  beside this skill in the plugin); without one the check is skipped and says
+  so, a documented residual of that setup.
   This workflow's thread-driven pass cannot answer those findings, so stop and
   read the summary: answer them with `/drive-pr`'s `answer-summary-finding.ts`,
   fix and push, or hand them to a human.
@@ -807,7 +812,7 @@ name a PR explicitly, the pass command must name the same PR (checked as a
 delimited token) so the pass cannot silently act on the current branch's PR
 while the loop waits on another.
 
-### Polling cost 
+### Polling cost
 
 Every `gh pr view`, `gh pr checks` and `gh repo view` is a GraphQL call, and one
 token's hourly GraphQL bucket backs every driver, worktree and agent on the
@@ -817,9 +822,9 @@ the checks verdict:
 
 - **State and head commit identifier ([SHA](https://github.com/docomply/jig/blob/main/GLOSSARY.md))** are read over conditional REST (`lib/gh-conditional.ts`).
   An unchanged PR answers `304 Not Modified`, which does not count against the
-  primary rate limit. The PR argument must be a number — a URL or branch name was
-  never accepted downstream (`list-unresolved-threads.ts` refuses it) and is now
-  refused up front with exit 2.
+  primary rate limit. The PR argument must be a number: a URL or branch name is
+  refused up front with exit 2, as `list-unresolved-threads.ts` would refuse it
+  later.
 - **`gh pr checks`** is skipped for a tick only when the previous read *in this
   process* was a keep-waiting one (`pending` or `no-reviewer`), is younger than
   `AWAIT_ROUND_CHECKS_MAX_AGE` seconds (default 300; `0` always reads), was for
@@ -838,8 +843,8 @@ lives in `$GROUNDWORK_GH_CACHE_DIR` (default `~/.cache/groundwork/gh-cache`), on
 overwritten file per request; check-signal ETags are process-local and never
 written to disk. `GROUNDWORK_GH_CACHE=off` disables the on-disk cache. Under `NODE_ENV=test` it is off unless a
 directory is given, so a suite that forgets to isolate itself runs uncached
-rather than reading another test's answer. The cache implementation ships with this skill; a sibling skill may retain
-its own implementation until it is extracted into a shared dependency.
+rather than reading another test's answer. The `drive-pr` skill carries its
+own copy of this cache code (`drive-pr/scripts/lib/gh-conditional.ts`).
 
 Diagnosing a spent bucket: read the `X-RateLimit-*` **response headers** of a
 real call (`gh api -i graphql -f query='{viewer{login}}'`). Do not use
@@ -850,7 +855,10 @@ showed one nearly exhausted.
 
 When a PR takes **more than three rounds** to converge, `await-round.ts` says so
 at **wind-down** — the moment it reports convergence, not during the loop — and
-asks for a `/reflect`. Tune the boundary with `REFLECT_THRESHOLD`.
+asks for a [reflection](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (`/reflect`, where the repository has one). Tune
+the boundary with `REFLECT_THRESHOLD` (default `3`). Separately, every round
+counted past that boundary prints a reminder of
+"Two rounds on one root cause" in step 3.
 
 Placement decisions that matter:
 
@@ -866,7 +874,7 @@ picture is incomplete, and a prompt then competes with the work. The nudge exist
 because that many rounds is rarely a noisy reviewer. It usually
 means the scaffolding under-served the change: an instruction that did not land,
 a rule the reviewer had to teach us more than once, a convention that should
-have been mechanised, or a `.config/ai-review.yaml` that let a known class
+have been mechanised, or a reviewer configuration that let a known class
 through. That signal is richest at the moment of convergence and decays fast
 once the session ends — which is exactly why it is emitted there rather than
 left for someone to reconstruct.
@@ -900,7 +908,8 @@ and it is why continuous mode targets bot threads.
   reads as silently dismissed.
 - **Never `REQUEST_CHANGES` or `APPROVE`.** This procedure replies and resolves;
   it does not gate merges.
-- **Never mark a PR ready for review.** That stays a human step.
+- **Never mark a PR ready for review.** A human does that, or `/drive-pr` at
+  the round the repository's `pull_requests.mark_ready` declares.
 - **Gates are mandatory** for any code you changed. A fix that breaks the build
   is worse than an open thread.
 - **`--dry-run` writes nothing.**

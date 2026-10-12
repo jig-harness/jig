@@ -19,8 +19,8 @@ Either of these, so a team can keep the trail wherever it prefers:
 
 | Where | What satisfies it |
 |-------|-------------------|
-| frontmatter | a `reviewed:` key whose value carries a reviewer plus an anchor — a date (`YYYY-MM-DD`), an issue/PR ref (`#123`), a URL, or a commit sha. A bare `reviewed: true` does not count |
-| body | a non-empty `## Review` section — a heading whose text starts with "Review", with at least one content line under it |
+| frontmatter | a `reviewed:` key whose value carries a reviewer plus an anchor — a date (`YYYY-MM-DD`), an issue/PR ref (`#123`), a URL, or a commit sha. A bare `reviewed: true` does not count, nor does an anchor with no reviewer, nor text after a `#` comment marker |
+| body | a non-empty `## Review` section — a heading whose text starts with "Review", with at least one content line under it. Content inside a fenced block counts; an empty fence or an HTML comment does not |
 
 The record is deliberately terse — a reviewer and an anchor, not the review
 dialogue. [De-scarring](../../../../GLOSSARY.md) (see
@@ -36,7 +36,7 @@ One artifact per run, via arg 1 or `ARTIFACT=`.
 | status not `accepted` (draft / proposed / absent) | pass — nothing to prove |
 | `accepted` with a review record | pass |
 | `accepted` with no record | fail (exit 1) |
-| frontmatter opened with `---` but never closed | error (exit 2) |
+| frontmatter opened with `---` but never closed, or a duplicated `status:` or `reviewed:` key | error (exit 2) |
 
 ```sh
 bun ./check-stage-accepted.ts prd.md
@@ -59,10 +59,18 @@ to `accepted` cannot merge until the record is present.
 | `fixtures/draft.md` | draft — must pass |
 | `fixtures/no-frontmatter.md` | no status — must pass |
 | `fixtures/accepted-reviewed.md` | accepted + `reviewed:` key — must pass |
+| `fixtures/accepted-reviewer-substring.md` | accepted, a reviewer whose name contains a boolean-looking word — must pass |
 | `fixtures/accepted-review-section.md` | accepted + `## Review` section — must pass |
+| `fixtures/accepted-fenced-content-review.md` | accepted, `## Review` content inside a fenced block — must pass |
 | `fixtures/accepted-no-review.md` | accepted, no record — must fail |
 | `fixtures/accepted-empty-review.md` | accepted, empty `## Review` — must fail |
+| `fixtures/accepted-empty-fence-review.md` | accepted, `## Review` holding only an empty fence — must fail |
+| `fixtures/accepted-html-comment-review.md` | accepted, `## Review` holding only an HTML comment — must fail |
 | `fixtures/accepted-reviewed-bare.md` | accepted, `reviewed: true` only — must fail |
+| `fixtures/accepted-comment-faked-review.md` | accepted, `reviewed: true` with the reviewer in a YAML comment — must fail |
+| `fixtures/accepted-anchor-only.md` | accepted, `reviewed:` with a date but no reviewer — must fail |
+| `fixtures/accepted-ref-only.md` | accepted, `reviewed:` with an issue ref but no reviewer — must fail |
+| `fixtures/accepted-duplicate-status.md` | two `status:` keys — must error (exit 2) |
 | `fixtures/malformed.md` | unterminated frontmatter — must error (exit 2) |
 
 Run the self-test with `bun test ./check-stage-accepted.test.ts` (and run the shared cases with

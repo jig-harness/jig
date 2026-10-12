@@ -11,21 +11,20 @@ place.
 
 Route agent work to one of three tiers, chosen so the marginal cost of a
 task matches the reasoning it actually needs. Tier names are roles, not
-vendor products — fill in whatever your vendor's current lineup is (the
-examples below are current as of mid-2026; verify against vendor docs and
-pricing before relying on them).
+vendor products — fill in whatever your vendor's current lineup is; the
+per-vendor examples are in [mappings.md](../mappings.md#model-tiers-per-vendor).
 
-| Tier | Role | Current examples | Handles | Marginal cost |
-|------|------|------------------|---------|---------------|
-| **Strategic** | Flagship reasoning model | Claude Opus-class, GPT-5-class flagship | Complex planning, architecture, decision records, novel problem-solving, multi-agent coordination, high-stakes review | Highest |
-| **Execution** | Mid-tier workhorse | Claude Sonnet-class, mid-tier GPT | Implementation, refactoring, multi-file changes, feature development, test writing, docs | Standard |
-| **Scout** | Small fast model | Claude Haiku-class, `*-mini` models | Read-only exploration, pattern/schema discovery, validation, link/constraint checks | Lowest (typically several × cheaper than the Execution tier) |
+| Tier | Role | Handles | Marginal cost |
+|------|------|---------|---------------|
+| **Strategic** | Flagship reasoning model | Complex planning, architecture, decision records, novel problem-solving, multi-agent coordination, high-stakes review | Highest |
+| **Execution** | Mid-tier workhorse | Implementation, refactoring, multi-file changes, feature development, test writing, docs | Standard |
+| **Scout** | Small fast model | Read-only exploration, pattern/schema discovery, validation, link/constraint checks | Lowest (typically several × cheaper than the Execution tier) |
 
 **Why the split pays off.** The majority of agent work is *discovery and
-validation*, not reasoning-hard implementation — in the reference
-implementation the observed task mix was roughly two-thirds Scout-shaped,
-with only ~5% genuinely Strategic-grade (treat those numbers as
-illustrative; re-derive them from your own cost telemetry). Routing the
+validation*, not reasoning-hard implementation — one observed task mix was
+roughly two-thirds Scout-shaped, with only ~5% genuinely Strategic-grade
+(treat those numbers as illustrative; re-derive them from your own cost
+telemetry). Routing the
 majority to the Scout tier — parallelizable, read-only, faster and cheaper
 — keeps the expensive tiers reserved for the small slice that genuinely
 needs flagship reasoning. Concretely: send scouts (see the
@@ -82,9 +81,9 @@ Execution or Strategic agent.
 
 ## Keep model-version strings in one place
 
-Prose that restates concrete model version strings drifts — the reference
-implementation found three documents disagreeing on which minor version a
-tier ran. The portable fix:
+Prose that restates concrete model version strings drifts: once three
+documents name a tier's model, they soon disagree on which minor version it
+runs. The portable fix:
 
 - The authoritative per-agent model assignment lives **only** in each
   agent definition's configuration (e.g. `model:` frontmatter) — the

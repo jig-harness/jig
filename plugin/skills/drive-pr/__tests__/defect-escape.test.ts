@@ -4,9 +4,9 @@
  * `loop-metrics.test.ts` pins `refindsFor`'s injected-predicate logic, but
  * that predicate is a hand-written stub there — it never exercises the actual
  * `renameHistoryOf`/`renameEquivalents` git walk this skill ships. Breaking
- * either of those entirely left that suite green (chatgpt-codex-connector
- * round 4, PR #4104). These tests close that gap by running the real
- * functions against a throwaway git repository built fresh per test.
+ * either of those entirely left that suite green. These tests close that gap
+ * by running the real functions against a throwaway git repository built
+ * fresh per test.
  *
  * The repo is built with an explicit `cwd` on every `git` invocation, both
  * the fixture-building ones and the functions under test (`renameHistoryOf`/
@@ -53,10 +53,9 @@ import { gitIdentityEnv } from "../scripts/lib/proc.ts";
 // stay hermetic, and a private copy — even one sharing the same list — had
 // already fallen behind once by re-deleting exact keys, which leaves an
 // inherited Windows case variant like `Git_Dir` in place and still able to
-// override `cwd` (chatgpt-codex-connector, a reference-implementation pull request; `GIT_NAMESPACE` was the
-// same class of drift). It is not a frozen oracle of the production
-// list: nothing here asserts its contents, so sharing it cannot make an
-// assertion vacuous.
+// override `cwd` (`GIT_NAMESPACE` was the same class of drift). It is not a
+// frozen oracle of the production list: nothing here asserts its contents, so
+// sharing it cannot make an assertion vacuous.
 function scrubbedGitEnv(
   extra: Record<string, string> = {},
 ): Record<string, string> {
@@ -147,15 +146,12 @@ describe("renameHistoryOf — a real --follow walk", () => {
   });
 
   it("stops at a delete/recreate boundary, even though bare --follow does not", async () => {
-    // The exact scenario chatgpt-codex-connector reproduced against real git
-    // (round 2, PR #4104): a.ts renamed to b.ts, b.ts deleted, then an
-    // unrelated file freshly added at b.ts. `--follow` ALONE walks straight
-    // through the delete and reports the ORIGINAL rename (verified earlier
-    // against real git, outside this suite) — this fixture proves the
-    // production code's own status-walk stops it, not a hand-written double
-    // of that logic (docomply-review round 6, a reference-implementation pull request: the title previously
-    // read "does not stop", describing the bug rather than the fix this test
-    // actually asserts against).
+    // The exact scenario reproduced against real git: a.ts renamed to b.ts,
+    // b.ts deleted, then an unrelated file freshly added at b.ts. `--follow`
+    // ALONE walks straight through the delete and reports the ORIGINAL rename
+    // (verified against real git, outside this suite) — this fixture proves
+    // the production code's own status-walk stops it, not a hand-written
+    // double of that logic.
     Bun.write(join(repo, "a.ts"), "original content\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
@@ -216,7 +212,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
     expect(unbounded).toEqual(["a.ts"]);
   });
 
-  it("traces a rename through a non-ASCII pathname (docomply-review round 7)", async () => {
+  it("traces a rename through a non-ASCII pathname", async () => {
     // Without -z, git C-quotes and octal-escapes a non-ASCII path
     // (`"b-\303\251.ts"` for `b-é.ts`), and a tab-split regex over that
     // output compares the quoted literal against the plain tracked name,
@@ -232,7 +228,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
     expect(names).toEqual(["a.ts"]);
   });
 
-  it("stops at a delete/recreate boundary that falls OUTSIDE the until window (chatgpt-codex-connector round 7)", async () => {
+  it("stops at a delete/recreate boundary that falls OUTSIDE the until window", async () => {
     // a.ts renamed to b.ts (within window); AFTER `until`, b.ts is deleted
     // and an unrelated file is freshly added at b.ts. If the delete/recreate
     // boundary records are skipped merely because they postdate `until`
@@ -258,7 +254,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
     expect(bounded).toEqual([]);
   });
 
-  it("does not stop early on a non-monotonic committer date (chatgpt-codex-connector round 7)", async () => {
+  it("does not stop early on a non-monotonic committer date", async () => {
     // Committer dates are author-controlled metadata, not a traversal-order
     // guarantee: git log --follow's own order can put an older-dated commit
     // BEFORE a younger-dated one. Here the newest commit in the DAG (the
@@ -332,9 +328,7 @@ describe("renameEquivalents — per-occurrence identity, never collapsed by path
     // exclude it (no match) while the LATER occurrence's window must
     // include it (a match) — from the exact same underlying `git log`
     // history, discriminated only by each candidate's own per-occurrence
-    // bound (docomply-review round 5, a reference-implementation pull request — the first version of this
-    // fixture accidentally supplied only one candidate and could not have
-    // caught this).
+    // bound (a fixture supplying only one candidate could not catch this).
     Bun.write(join(repo, "a.ts"), "original\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add original a.ts");
@@ -367,7 +361,7 @@ describe("renameEquivalents — per-occurrence identity, never collapsed by path
   });
 
   it("excludes a candidate whose own window predates the connecting rename", async () => {
-    // Codex's round-3/4 scenario: an unrelated ORIGINAL b.ts is accepted
+    // The scenario: an unrelated ORIGINAL b.ts is accepted
     // early, then deleted; a later, unrelated rename creates a second b.ts.
     // The candidate's own anchor (its accepted thread's createdAt) must stay
     // BEFORE that later rename for the match to be correctly excluded.
@@ -467,7 +461,7 @@ describe("renameHistoryFromRevision — ancestry-bounded walk, no date heuristic
 
   it("returns null (never a confirmed-empty false rename) for a headOid this clone cannot read", async () => {
     // null, not [] — an unreachable headOid is "cannot tell", not "confirmed
-    // no rename" (docomply-review, a reference-implementation pull request round 3).
+    // no rename".
     const hops = await renameHistoryFromRevision(
       "whatever.ts",
       "0".repeat(40),
@@ -557,8 +551,7 @@ describe("renameEquivalents — revision-based match preferred over committer da
 
     execGit(["mv", "a.ts", "b.ts"]);
     // Backdated to well BEFORE the decline's own commit, despite being its
-    // direct child — exactly the "author-controlled metadata" the reviewer
-    // flagged.
+    // direct child — committer dates are author-controlled metadata.
     commitAt("2020-01-01T00:00:00", "rename a to b, backdated committer date");
     const candidateHeadOid = revParse("HEAD");
     const candidateCreatedAt = "2026-06-02T00:00:00Z";
@@ -719,8 +712,8 @@ describe("renameEquivalents — ancestry direction under squash-merge topology",
   // a PR's own raw commits (what `reviewedHeadOid` names) never become an
   // ancestor of anything else — they are always a dead-end leaf off their
   // own fork point. These fixtures reproduce that shape explicitly, so a
-  // regression to the naive direction reddens the FIRST test below (an earlier change
-  // review round 1 — mutation-tested against exactly this class of fixture).
+  // regression to the naive direction reddens the FIRST test below
+  // (mutation-tested against exactly this class of fixture).
   //
   // The two tests are NOT symmetric in what they prove, and their names say
   // so: `isAncestor(rename, declineHeadOid) === true` is DECISIVE (the
@@ -729,10 +722,10 @@ describe("renameEquivalents — ancestry direction under squash-merge topology",
   // postdates and RELATES to the decline; it only means ancestry cannot rule
   // it out, which is equally true for a genuinely later, UNRELATED,
   // coincidentally-named rename on a branch the decline's own fork never
-  // touched (docomply-review, a reference-implementation pull request round 1 — see `revisionMatch`'s own
-  // doc). The "matches" test below exercises that non-excluded case, where
-  // this module's established WIDENS-never-NARROWS bias — not a proof of
-  // causal relevance — is what produces the match.
+  // touched (see `revisionMatch`'s own doc). The "matches" test below exercises
+  // that non-excluded case, where this module's established
+  // WIDENS-never-NARROWS bias — not a proof of causal relevance — is what
+  // produces the match.
 
   it("does not exclude (WIDENS-never-NARROWS default) when the rename lands on develop after the decline forked its own dead-end branch", async () => {
     Bun.write(join(repo, "unrelated.ts"), "base\n");
@@ -848,8 +841,7 @@ describe("renameEquivalents — squash-merge merged_at tiebreaker when ancestry 
   // The decline's own PR base ref for every test in this block — real
   // production code reads this from `PrSample.baseRefName`; here it is the
   // value `mergeCommitMergedAt` must see echoed back as `base.ref` in the
-  // stubbed `gh api .../pulls` response before it will trust a `merged_at`
-  // (docomply-review, a reference-implementation pull request round 2).
+  // stubbed `gh api .../pulls` response before it will trust a `merged_at`.
   const baseRefName = "develop";
 
   function stubGh(script: string): void {
@@ -973,7 +965,7 @@ exit 1
     });
   });
 
-  it("still WIDENS when the merge commit's PR targeted a DIFFERENT base ref than the decline's own — a matching merge_commit_sha alone must not decide (docomply-review, a reference-implementation pull request round 2)", async () => {
+  it("still WIDENS when the merge commit's PR targeted a DIFFERENT base ref than the decline's own — a matching merge_commit_sha alone must not decide", async () => {
     const { declineHeadOid, candidateHeadOid } = buildDivergedRenameFixture();
     // Identical to the "excludes" fixture above — same predating `merged_at`,
     // which WOULD decisively exclude if the base ref were ignored — except
@@ -1014,9 +1006,9 @@ exit 1
     });
   });
 
-  it("still WIDENS when the decline thread carries no readable createdAt, even though the sweep's own widened `since` (the containing PR's mergedAt) would have decided differently (docomply-review, a reference-implementation pull request round 2)", async () => {
+  it("still WIDENS when the decline thread carries no readable createdAt, even though the sweep's own widened `since` (the containing PR's mergedAt) would have decided differently", async () => {
     const { declineHeadOid, candidateHeadOid } = buildDivergedRenameFixture();
-    // The class the reviewer flagged: `renameEquivalents`'s own `since` is
+    // The class at issue: `renameEquivalents`'s own `since` is
     // permissive by design (`t.createdAt ?? merged`), so a decline thread
     // with no readable `createdAt` reaches this function with `since` set to
     // its containing PR's LATER `mergedAt` instead. The stubbed `merged_at`
@@ -1152,7 +1144,7 @@ exit 1
     });
   });
 
-  it("does not re-hit the network for a second candidate sharing the same failing hop (docomply-review + chatgpt-codex-connector, a reference-implementation pull request round 3)", async () => {
+  it("does not re-hit the network for a second candidate sharing the same failing hop", async () => {
     const { declineHeadOid, candidateHeadOid } = buildDivergedRenameFixture();
     // `stubGh` mints its own dir per test, so the counter file lives inside
     // the throwaway repo instead — created fresh by `beforeEach`, removed by
@@ -1199,7 +1191,7 @@ exit 1
     expect(calls.length).toBe(1);
   });
 
-  it('short-circuits a brand-new distinct hop once the sweep-wide failure budget is spent (chatgpt-codex-connector, a reference-implementation pull request round 3: "distinct hops necessarily do likewise")', async () => {
+  it("short-circuits a brand-new distinct hop once the sweep-wide failure budget is spent (distinct hops necessarily fail likewise)", async () => {
     const counterPath = join(repo, "gh-calls");
     stubGh(`#!/bin/sh
 echo call >> '${counterPath}'
@@ -1292,7 +1284,7 @@ exit 1
     });
   });
 
-  it("a conclusive response resets the failure budget instead of it accumulating toward a permanent trip (docomply-review, a reference-implementation pull request round 5)", async () => {
+  it("a conclusive response resets the failure budget instead of it accumulating toward a permanent trip", async () => {
     const counterPath = join(repo, "gh-calls");
     // Fails on every call except the `budget`-th, which returns a
     // well-formed (if empty) response — the "conclusive success" the fix
@@ -1402,7 +1394,7 @@ exit 1
 });
 
 describe("renameCandidateKey — headOid is part of candidate identity", () => {
-  it("is collision-safe against a path containing a space (docomply-review, a reference-implementation pull request round 3)", () => {
+  it("is collision-safe against a path containing a space", () => {
     // A plain `${path} ${anchor} ${headOid}` join is not collision-safe: a
     // git path CAN contain a space, so {path: "a", anchor:
     // "2026-01-01T00:00:00Z"} and {path: "a 2026-01-01T00:00:00Z", anchor:
@@ -1422,7 +1414,7 @@ describe("renameCandidateKey — headOid is part of candidate identity", () => {
     // far-fetched for a bot review posting several inline comments in one
     // batched submission — while carrying different originalCommit oids,
     // which changes whether revisionMatch accepts or excludes each one
-    // independently (docomply-review, a reference-implementation pull request round 2).
+    // independently.
     Bun.write(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
@@ -1467,8 +1459,7 @@ describe("renameEquivalents — falls back on a shallow clone", () => {
     // git can only diff against an EMPTY tree (no parent to compare), so
     // `--name-status` reports the boundary commit's own files as a plain
     // `A` (add), never an `R` (rename) — the rename that actually connects
-    // a.ts to b.ts becomes invisible, not an error (chatgpt-codex-connector,
-    // a reference-implementation pull request round 3).
+    // a.ts to b.ts becomes invisible, not an error.
     //
     // This is the real shape a CI checkout produces: `origin/develop` is
     // fetched at whatever depth the job configured (often full, or at least
@@ -1685,13 +1676,12 @@ describe("render — the per-decline category tag", () => {
 // `--ladder-only` matches a decline by its trailing public marker
 // line, which proves the reply ENDS WITH the marker, not that
 // `triage-ladder.ts` generated it. That residual is not closable by any
-// recognizer (rule 3, `.claude/rules/document-scanning-gates.md`), so it was
-// settled as an explicit scope decision instead — and rule 6 requires the
-// scope of a structural verdict to be stated in the GATE'S OWN OUTPUT, not
-// only in its source comments, because the reader who over-reads it is
+// recognizer, so it is settled as an explicit scope decision instead — and
+// the scope of a structural verdict must be stated in the GATE'S OWN OUTPUT,
+// not only in its source comments, because the reader who over-reads it is
 // reading the summary. These probes are what keeps that statement from being
 // dropped in a later render rewrite.
-describe("render — --ladder-only states the scope of its own verdict (rule 6)", () => {
+describe("render — --ladder-only states the scope of its own verdict", () => {
   function decline(over: Partial<Decline> = {}): Decline {
     return {
       pr: 42,
@@ -1758,9 +1748,9 @@ describe("render — --ladder-only states the scope of its own verdict (rule 6)"
   });
 
   it("names the owner of the truth question rather than stopping at the disclaimer", () => {
-    // Rule 6 explicitly refuses a scope statement that stands in for an
-    // owner: this one points at the monthly calibration read, which has a
-    // cadence and a place a polluted series would be noticed.
+    // A scope statement must not stand in for an owner: this one points at the
+    // monthly calibration read, which has a cadence and a place a polluted
+    // series would be noticed.
     expect(scoped()).toContain(".config/review-triage.yaml § calibration");
   });
 
@@ -1770,9 +1760,8 @@ describe("render — --ladder-only states the scope of its own verdict (rule 6)"
     // are reported as matching the TEMPLATE SHAPE, not as proof of clean
     // provenance — `LadderScope.macroShaped`'s own doc comment concedes a
     // hand-written decline that copies the whole macro clause counts here
-    // too, so equality can never license "no pollution visible" (
-    // docomply-review a reference-implementation pull request). Anything less than equality still sends the
-    // reader to the replies.
+    // too, so equality can never license "no pollution visible". Anything less
+    // than equality still sends the reader to the replies.
     expect(scoped({ macroShaped: 1 })).toContain(
       "1/1 carry triage-ladder.ts's rendered prose",
     );
@@ -1790,8 +1779,7 @@ describe("render — --ladder-only states the scope of its own verdict (rule 6)"
     // `--ladder-only` admitting zero declines makes both `macroShaped` and
     // `declines.length` zero, and `0 === 0` is true — without the explicit
     // `declines.length > 0` guard this reads as "(matches the rendered
-    // template shape)" for a sample that provides no evidence at all
-    // (docomply-review a reference-implementation pull request).
+    // template shape)" for a sample that provides no evidence at all.
     const out = scoped({ macroShaped: 0 }, 0);
     expect(out).toContain("0/0");
     expect(out).toContain("READ THE REMAINDER BY HAND");
@@ -1888,18 +1876,18 @@ describe("render — --ladder-only states the scope of its own verdict (rule 6)"
   });
 });
 
-// docomply-review, a reference-implementation pull request round 2: `render()`'s rule-6 scope disclosure for
-// `--ladder-only` was never reachable through `--json`, because `main()`
-// serialized `{ ladder, declines }` straight from the loop's own local
-// variables instead of going through `render()` or anything derived from it.
+// `render()`'s scope disclosure for `--ladder-only` is unreachable
+// through `--json` when `main()` serializes `{ ladder, declines }` straight
+// from the loop's own local variables instead of going through `render()` or
+// anything derived from it.
 // `.config/review-triage.yaml` § calibration invokes exactly
 // `--ladder-only --json` (triage-rubric.md § Calibrating the ladder), so the
-// monthly human reader consuming the JSON never saw the caveat at all — and
-// every prior probe here called `render()` directly, so none of them could
-// have failed on that CLI branch. `buildJsonPayload` is the function `main()`
+// monthly human reader consuming the JSON would never see the caveat at all —
+// and a probe that calls `render()` directly cannot fail on that CLI branch.
+// `buildJsonPayload` is the function `main()`
 // actually calls for `--json`, so calling it directly here tests the real
 // branch rather than a re-implementation of it.
-describe("buildJsonPayload — --json carries the same ladder disclosure render prints (rule 6, docomply-review a reference-implementation pull request round 2)", () => {
+describe("buildJsonPayload — --json carries the same ladder disclosure render prints", () => {
   function decline(over: Partial<Decline> = {}): Decline {
     return {
       pr: 42,
@@ -1960,8 +1948,8 @@ describe("buildJsonPayload — --json carries the same ladder disclosure render 
     expect(payload.ladder?.marker).toBe("review-triage ladder");
     expect(payload.ladder?.excluded).toBe(3);
     expect(payload.ladder?.macroShaped).toBe(1);
-    // The disclosure itself: the same three things rule 6 requires render()
-    // to state (scope, bias, owner) plus the per-run pollution ratio.
+    // The disclosure itself: the same three things render() is required to
+    // state (scope, bias, owner) plus the per-run pollution ratio.
     expect(payload.ladder?.disclosure.scopeCaveat).toContain(
       "MARKER PRESENCE, not ladder provenance",
     );
@@ -2050,7 +2038,7 @@ describe("buildJsonPayload — --json carries the same ladder disclosure render 
   });
 });
 
-describe("ladderDisclosureOf — the ratio never licenses a bound in either direction (docomply-review, a reference-implementation pull request round 2)", () => {
+describe("ladderDisclosureOf — the ratio never licenses a bound in either direction", () => {
   it("is diagnostic, never a claim of zero pollution, at 100% match", () => {
     const d = ladderDisclosureOf(
       { marker: "x", excluded: 0, macroShaped: 2 },

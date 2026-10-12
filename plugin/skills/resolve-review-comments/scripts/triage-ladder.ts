@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Resolve one otherwise-`accepted` review finding against the escalating
- * decline ladder (TASK) — the mechanical read behind the triage rubric's
+ * decline ladder — the mechanical read behind the triage rubric's
  * § The decline ladder.
  *
  * Usage:
@@ -22,17 +22,16 @@
  *                     accepted while category emission is still pending.
  *   --category        a `categories` token from the config, or `unknown` when
  *                     the reviewer emitted no category tag (the answer for
- *                     every finding until TASK/TASK ship emission and
- *                     parsing). REQUIRED — an omitted flag must not be
+ *                     every finding until the reviewer emits category
+ *                     tags and this skill parses them). REQUIRED — an omitted flag must not be
  *                     indistinguishable from the explicit `unknown` a caller
  *                     passes when the finding genuinely carries none; a
  *                     category can only ever ADMIT, so silently defaulting it
  *                     here can wrongly decline a finding whose real category
- *                     should have admitted it (chatgpt-codex-connector,
- *                     a reference-implementation pull request). Validated against the LOADED config's own
- *                     vocabulary once it is known — an unrecognised token is a
- *                     usage error, not a silent abstention that can decline a
- *                     finding on a typo.
+ *                     should have admitted it. Validated against the LOADED
+ *                     config's own vocabulary once it is known — an
+ *                     unrecognised token is a usage error, not a silent
+ *                     abstention that can decline a finding on a typo.
  *   --self-inflicted  self-inflicted.ts's answer for this finding's anchor.
  *                     REQUIRED — an omitted flag must not be indistinguishable
  *                     from the explicit `unknown` a caller passes when the
@@ -271,9 +270,7 @@ async function main(): Promise<number> {
       "triage-ladder.ts: --self-inflicted is required (true|false|unknown).",
       "Pass `unknown` explicitly when self-inflicted.ts did not measure this finding’s",
       "anchor — an omitted flag must not be indistinguishable from that explicit answer,",
-      "which is the one case the self_inflicted clause exists to protect (round 2 already",
-      "documented this as required without the CLI enforcing it: chatgpt-codex-connector,",
-      "PR #4501 round 5).",
+      "which is the one case the self_inflicted clause exists to protect.",
     );
   }
   if (
@@ -310,7 +307,7 @@ async function main(): Promise<number> {
       `Pass '${CATEGORY_UNKNOWN}' explicitly when the finding carries no category tag — an`,
       "omitted flag must not be indistinguishable from that explicit answer. A category can",
       "only ever ADMIT a finding, so silently defaulting it here can wrongly decline one whose",
-      "real category should have admitted it (chatgpt-codex-connector, a reference-implementation pull request).",
+      "real category should have admitted it.",
     );
   }
 

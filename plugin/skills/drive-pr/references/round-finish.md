@@ -1,7 +1,7 @@
 # Round-finish mechanics — what `finish-round.ts` sequences, and why each step is there
 
 `SKILL.md` § 6 is one command. This is the record of what that command does,
-what every check inside it proves, and the measured failure each one closes.
+what every check inside it proves, and the failure each one closes.
 You do not need it to run a clean round; you need it when a refusal names
 something you have to act on, when you are recovering by hand with the
 individual scripts, or when you are changing any of them.
@@ -24,21 +24,21 @@ unconcluded git operation (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
 `rebase-merge`, `rebase-apply`) whose porcelain status still reads clean,
 makes every later check's premise false while every one of them still
 passes: everything below treats a successful push as evidence that the
-validated tree is now on the PR.
+validated tree is on the PR.
 
 **The untriaged-thread refusal.** SKILL.md's documented round loop
 is gate → enumerate → triage *each* thread via `triage-thread.ts` → validate →
-commit → `finish-round.ts`. Measured across multiple PRs, a driver instead fixes
-every finding's underlying code and goes straight from "fixes applied" to
-`finish-round.ts`, never once calling `triage-thread.ts`. Nothing refused
-that before this guard existed: no thread was ever held either way, so the
-round pushes, stamps, and reports "0 held item(s) drained" — a report
+commit → `finish-round.ts`. A driver commonly fixes every finding's
+underlying code instead and goes straight from "fixes applied" to
+`finish-round.ts`, never once calling `triage-thread.ts`. Without this guard
+nothing refuses that: no thread is held either way, so the round pushes,
+stamps, and reports "0 held item(s) drained" — a report
 **indistinguishable**
 from the legitimate case (a round that genuinely rejected/wont-fixed
 everything, which also drains 0 held items). The reviewer bot's threads stay
-open with zero driver reply, silently, and used to be caught only when a
-*later* round's gate reported a stale unresolved-thread count and someone
-checked each thread's reply history by hand.
+open with zero driver reply, silently, until a *later* round's gate reports a
+stale unresolved-thread count and someone checks each thread's reply history
+by hand.
 
 The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
 **all** of:
@@ -278,7 +278,7 @@ own round check ever runs — so the round `hold` recorded at reply time (this
 round) would already be stale by the time the resolve call reads it back,
 failing the round verification on every single pass, not only a
 crash-recovered one. The head still gets counted exactly once: step 1's gate
-does it at the top of the *next* round, the same way it always has.
+does it at the top of the *next* round.
 
 ## 4. The held batch
 
@@ -353,16 +353,16 @@ needed.
 ## Concurrency: who may drive, and who may finish a hold
 
 **The provenance model, and what it does about a second driver.**
-`verifiedSha` used to be one PR-global field, and this state file is shared by
-every driver of the PR — `drive-state.ts` puts it in the clone-wide git dir
-precisely so two linked worktrees see one round budget and one held batch.
-So whichever driver pushed last moved that one pointer, and it then vouched for
+This state file is shared by every driver of the PR — `drive-state.ts` keeps
+it in the per-clone state directory precisely so two linked worktrees see one
+round budget and one held batch. A single PR-global `verifiedSha` would
+therefore be moved by whichever driver pushed last, and would then vouch for
 every held item on the PR: driver A holds a thread and stalls before pushing
 its own fix; driver B does unrelated work and calls `stamp-held` without ever
 bumping the round; A's worktree later syncs to B's head and retries, and every
 check passes against a push that never contained A's promised fix.
 
-Provenance is now recorded **per hold**, and reads as these facts on the item
+So provenance is recorded **per hold**, and reads as these facts on the item
 itself:
 
 - **`actor`** — which working tree made the promise, stamped by `hold`. It is
@@ -392,7 +392,7 @@ lock covers `drive.ts`, nothing else. An interactive pass (an agent walking
 these steps by hand) takes no lock, so two agent sessions in one tree derive the
 **same** actor: `hold` upserts by key, so the second session's hold silently
 replaces the first's; `stamp-held` stamps both; the claim path cannot tell
-them apart. Measured on PR #4057: all seventeen threads one session had just
+them apart. Measured: all seventeen threads one session had just
 replied to carried **two** `**accepted**` replies, which corrupts the
 reviewer-scoring sample and cannot be repaired once posted.
 
@@ -433,11 +433,12 @@ interactive sessions drive two *different* PRs: each resolves its own
 per-(tree, PR) lease file, neither sees the other's, and both are admitted
 into the *same* checkout, which they can then edit, commit, and push over one
 another. This is not a milder variant of the same-PR hazard — it is the
-identical damage (measured on PR #4031: two `drive.ts` processes in
+identical damage (measured: two `drive.ts` processes in
 one checkout, different PRs, cross-shipped each other's uncommitted edits).
 `drive.ts`'s worktree-wide single-instance lock already closes it for the
-*unattended* path; an interactive pass takes no lock of any kind, so this gap
-was open for exactly the sessions this whole mechanism exists to protect.
+*unattended* path; an interactive pass takes no lock of any kind, so without
+a second lease this gap stays open for exactly the sessions this whole
+mechanism exists to protect.
 
 So a *second* lease exists alongside the per-PR one, keyed by the working tree
 *alone* — every state-mutating command from an identified session claims both.
@@ -449,7 +450,7 @@ rather than on a pid there is none of: same pr is a renewal, any other pr — or
 session-held record, whichever pr it names — is foreign. Either check
 **exits 11** on a
 conflicting holder — with the identical `clear-lease [PR]` remedy (which
-now drops both this tree's per-PR lease *and* its tree lease in one call, since
+drops both this tree's per-PR lease *and* its tree lease in one call, since
 a refusal whose suggested fix leaves the tree still locked is not a remedy).
 A single session driving several PRs from one tree renews its *own* tree lease
 on every one of them without ever refusing itself — only a *different*
@@ -459,17 +460,15 @@ moves straight to PR Y is refused like a rival would be, and `clear-lease [PR]`
 (or completion, above) is the way on.
 
 **Two drivers in two trees: PR-wide admission.** The lease above is
-scoped to *(working tree, PR)*, and that scoping used to be the whole story —
-two linked worktrees were two leases, on the reasoning that the topology is
-supported and is the whole reason the actor is the tree. Both halves are still
-true, and neither was ever a reason to let both trees *triage*: nothing stopped
-two worktrees enumerating the same unresolved threads and each replying with its
-own outcome, which is the identical damage measured within one tree, reached
-across trees instead. The clone-wide state file gave them one round budget and
-one held batch, but no admission gate.
+scoped to *(working tree, PR)*, so two linked worktrees are two leases — the
+topology is supported, and is the whole reason the actor is the tree. That is
+no reason to let both trees *triage*: two worktrees enumerating the same
+unresolved threads and each replying with its own outcome is the identical
+damage measured within one tree, reached across trees instead. The clone-wide
+state file gives them one round budget and one held batch; PR-wide admission
+is the gate.
 
-So a claim now answers more than the one question it used to, and a refusal
-tells you which it is:
+So a claim answers two questions, and a refusal tells you which it is:
 
 | Exit | Means | What to do |
 |---|---|---|
@@ -499,15 +498,15 @@ tells you which it is:
   `state: "DRIVE_HELD_BY_OTHER_WORKTREE"` — kept distinct from `11` all the way
   out, because a driver told `SESSION_LEASE_HELD` goes looking in its own tree
   for a session that is not there.
-- **A runtime that identifies no session is covered too**. This used
-  to be the gap: the refusal is read off lease files, so it needed *one* side to
-  have left one, and ladder tier 3 left none — two sessionless resolvers in two
-  trees were both admitted and both replied. Tier 3 now writes a record whose
+- **A runtime that identifies no session is covered too**. The refusal is
+  read off lease files, so it needs *one* side to have left one; a ladder
+  tier 3 that left none would admit two sessionless resolvers in two trees,
+  and both would reply. So tier 3 writes a record whose
   **holder is the working tree** instead of a session. No pid is invented for
   it: the cross-tree question is one `actor.ts` already answers without one, and
   inventing a per-invocation identity is the thing tier 3 exists to refuse (it
   would make two concurrent calls from *one* agent refuse each other). So the
-  intra-tree behaviour is unchanged in both directions — a sessionless caller
+  intra-tree behaviour is the same in both directions — a sessionless caller
   still never refuses its own sibling call, and an identified session upgrades
   its own tree's record rather than being refused over it.
 - **What it costs, since it has no pid to test.** A tree-held record cannot be
@@ -519,10 +518,10 @@ tells you which it is:
   exist. Exporting `DRIVE_PR_SESSION=<agent pid>` where the harness makes it
   stick is still strictly better: a session lease clears the instant its pid
   does. In `lease [PR] --all`, `holder` tells the two apart.
-- **A resolver that finishes no longer pays that window**. Staleness
-  used to be the only way a tree-held record cleared, which made the asymmetry
-  worse than it had to be: an identified session got its release for free the
-  moment its pid died, while a sessionless one that completed cleanly kept every
+- **A resolver that finishes does not pay that window**. If staleness were
+  the only way a tree-held record cleared, the asymmetry would be worse than it
+  has to be: an identified session gets its release for free the moment its
+  pid dies, while a sessionless one that completed cleanly would keep every
   other tree out for six hours. `scripts/release-sessionless-lease.ts` is the
   release, and `resolve-review-comments`'s `converge.ts` — the loop that spawns
   each sessionless pass, and the only process that knows when it will spawn no
@@ -550,14 +549,14 @@ tells you which it is:
     "which return was reached", and not the exit code either: a run that claimed
     nothing can only be holding a *sibling* resolver's record, and dropping that
     admits another worktree — the hazard, reintroduced by a cleanup
-    step. Measured on this feature's own earlier shapes, which gated on
-    placement and then on the exit code, and left those routes open in turn.
+    step. Gating on where the call is placed, or on the exit code, leaves
+    those routes open.
   - **Best effort, never a gate.** A `drive-pr` not installed beside that skill,
     a failed spawn, a contended state mutex — each leaves the record to expire by
-    staleness exactly as before, and none changes `converge.ts`'s exit code.
-    Safe in that direction precisely because the release authorises nothing: the
-    worst outcome is the behaviour that existed before it.
-  - The residual it leaves is tier 3's own identity floor, unchanged: two
+    staleness, and none changes `converge.ts`'s exit code. Safe in that
+    direction precisely because the release authorises nothing: the worst
+    outcome is the staleness bound alone.
+  - The residual it leaves is tier 3's own identity floor: two
     sessionless resolvers in *one* tree on one PR are indistinguishable, so one
     finishing releases a record the other also relies on. Bounded — that record
     never excluded a caller in its own tree anyway, and the sibling's next
@@ -573,17 +572,17 @@ to `$DRIVE_PR_SESSION`. When they match, that "driver" is your own parent: you
 are the pass `drive.ts` spawned to work this round, and the lock you found is
 held *for* you. Standing down here is not caution — it is the whole unattended
 drive silently doing nothing while the driver counts each refusal as a
-completed round (measured: five wasted rounds on PR #4089, ten on PR #4102;
-PR #4089 then merged over six live findings because the log read as driven).
+completed round (measured: up to ten wasted rounds on one PR, and a PR merged
+over live findings because the log read as driven).
 `drives.ts` answers it on **every** surface a pass can read, so the fact is in
 the census output itself rather than only here: a `self:` line on the holder in
 the text listing, `"self": true` on the row in `--json`, and a `--here` banner
 that names your own parent driver instead of warning about a rival. Each reads
 one predicate, and each withholds the `--stop` hint for that holder — bystander
-advice, and a command that would end the drive you are a round of. They did not
-agree: the label was derived at the text print site alone, and a pass that
-censused with `--json` got no signal, stood down against its own parent and
-burned two rounds — measured on PR #4106, by that PR's own drive. The predicate
+advice, and a command that would end the drive you are a round of. Every
+surface must agree: a label derived at the text print site alone leaves a pass
+that censuses with `--json` with no signal, to stand down against its own
+parent and burn rounds. The predicate
 compares `$DRIVE_PR_SESSION` to the holder's pid, and, whenever the *caller*'s
 own environment carries `$DRIVE_PR_SESSION_STARTED`, requires the claim's own
 acquisition token to match it too — refusing outright if the claim carries no
@@ -606,11 +605,11 @@ observable — see `references/terminal-states.md` § the stall stop.
 
 **The lease also fences the `POST`, not only the state write.**
 Everything above guards what this clone *believes*. The act that cannot be
-taken back is the comment. `reply-to-thread.ts` and `answer-summary-finding.ts`
-used to meet the lease only *afterwards*, at the `hold` that records what they
-had already posted — so a pass whose driver had died, and whose lease a
-replacement had taken over, still got its `**accepted**` onto the thread first.
-These scripts now consult `scripts/assert-post-allowed.ts` immediately before
+taken back is the comment. If `reply-to-thread.ts` and `answer-summary-finding.ts`
+met the lease only *afterwards*, at the `hold` that records what they had
+already posted, a pass whose driver had died, and whose lease a replacement had
+taken over, would still get its `**accepted**` onto the thread first. So these
+scripts consult `scripts/assert-post-allowed.ts` immediately before
 their mutation and refuse with the same exit `11` and the same diagnostic. You
 do not invoke it; it is wired in already. The following points apply:
 
@@ -621,8 +620,7 @@ do not invoke it; it is wired in already. The following points apply:
 - **But absence has to be established, not assumed.** Anything the fence cannot
   read is a refusal, not an all-clear: a lease file it can enumerate but not
   parse or open, a failed `git` probe in a tree that *is* a repository, or a
-  `drive-pr` installed with its fence script missing. Each of those used to
-  post. "Is this a repository" is answered from the filesystem, never from
+  `drive-pr` installed with its fence script missing. "Is this a repository" is answered from the filesystem, never from
   git's exit status — `128` is git's generic fatal and also covers dubious
   ownership and corruption, where a live lease may well already exist.
 - **A pass carrying a dead `$DRIVE_PR_SESSION` is refused outright**, before
@@ -776,7 +774,7 @@ claim back immediately rather than leaving it to expire on its own:
 
 so a retry — this round or the next — is not blocked behind the staleness
 window. The retry itself must still start with a fresh `claim-held`: the
-token above is now dead, and dispatching without one defeats the whole guard.
+token above is dead, and dispatching without one defeats the whole guard.
 A genuine crash needs no explicit `unclaim-held` call at all: an abandoned
 claim is self-recovering, exactly like the per-PR lock it mirrors.
 
@@ -796,7 +794,7 @@ remainder. `--all` still exists for the ordinary case where nothing failed and
 the whole batch just resolved cleanly — but it refuses outright while any
 held item still carries a live claim (another driver may be mid-dispatch on
 it), so reach for it only once every item you claimed this round is already
-released. The ordering rule is unchanged either way — release **after** the
+released. The ordering rule holds either way — release **after** the
 resolve, never before: a batch released early is a batch lost, just as
 silently as never recording it. If the state lists a key you do not
 recognise, it is yours — you replied to it in an earlier, interrupted pass and

@@ -14,7 +14,8 @@
 // What it measures. Two independent freshness signals for the pointer:
 //   * BEHIND        — how many commits the verified pointer trails the
 //                     default-branch tip (its commit distance).
-//   * AGE_SECONDS   — how long since the verified pointer last advanced.
+//   * AGE_SECONDS   — how long the oldest change the pointer has not yet
+//                     verified has waited; 0 when the pointer is at the tip.
 // You may supply either or both. The pointer is STALLED (fail) if EITHER signal
 // exceeds its threshold; it is FRESH (pass) only if every supplied signal is at
 // or under its threshold. At-threshold is fresh; only strictly-greater stalls.
@@ -29,7 +30,8 @@
 // each at most once; blank lines and `# comments` ignored). Compute them from
 // git, e.g.
 //   BEHIND=$(git rev-list --count verified..origin/main)
-//   AGE_SECONDS=$(( $(date +%s) - $(git log -1 --format=%ct verified) ))
+//   OLDEST=$(git log --reverse --format=%ct verified..origin/main | head -n 1)
+//   NOW=$(date +%s); AGE_SECONDS=$(( NOW - ${OLDEST:-$NOW} ))
 // (recipes per forge in ../../mappings.md).
 //
 // Native Bun/TypeScript. Conventions: exit 0 fresh, 1 stalled (page/heal),
@@ -92,7 +94,7 @@ export function main(args = process.argv.slice(2), env = process.env): number {
     BigInt(observations.AGE_SECONDS) > BigInt(thresholds.AGE_SECONDS)
   )
     reasons.push(
-      `verified pointer last advanced ${observations.AGE_SECONDS}s ago (max ${thresholds.AGE_SECONDS}s)`,
+      `oldest unverified change has waited ${observations.AGE_SECONDS}s (max ${thresholds.AGE_SECONDS}s)`,
     );
   if (reasons.length) {
     console.log(

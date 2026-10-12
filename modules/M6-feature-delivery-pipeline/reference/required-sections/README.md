@@ -27,8 +27,9 @@ Two inputs: the artifact, and the required heading labels.
 Labels are plain heading text (`Success metrics`), not `## Success metrics`. A
 label matches any Markdown heading (a `#`-prefixed line) in the artifact whose
 text is equal after trimming whitespace, dropping the `#` markers and a trailing
-colon, and lowercasing;
-headings inside fenced code blocks are ignored. The match is deliberately
+colon, and lowercasing.
+A heading counts only where it renders as a section: headings inside fenced or
+indented code blocks, HTML comments and the frontmatter block are ignored. The match is deliberately
 forgiving on formatting so the gate flags a genuinely absent section, not a
 capitalisation difference.
 
@@ -55,7 +56,14 @@ PR that touches `docs/prd/*.md` runs the PRD manifest against it.
 | `fixtures/sections.txt` | a PRD sections manifest |
 | `fixtures/good-prd.md` | all required sections — must pass |
 | `fixtures/bad-prd.md` | missing `## Success metrics` — must fail |
+| `fixtures/frontmatter-heading.md` | `## Success metrics` only inside a frontmatter block scalar — must fail |
+| `fixtures/html-comment-heading.md` | `## Success metrics` only inside an HTML comment — must fail |
+| `fixtures/indented-heading.md` | `## Success metrics` only in an indented code block — must fail |
 | `fixtures/empty-sections.txt` | comments only — must error (exit 2) |
+
+Exit codes: 0 every required heading present, 1 a heading missing (the output
+names it), 2 a usage or input error (no artifact, file not found, no required
+headings given).
 
 Run the self-test with `bun test ./check-required-sections.test.ts` (and run the shared cases with
 `bun test ../../../../lib/module-gates.test.ts` from this directory).

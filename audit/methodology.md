@@ -70,7 +70,8 @@ target's shape makes inapplicable (mark it "expected-absent"). Also record
 **drift findings** — places
 where the repo's stated practices contradict its actual state (stale
 instruction files, docs describing retired tools, dangling paths). Drift is a
-first-class result: the founding audit's most actionable findings were drift.
+first-class result, and often the most actionable one: a contradiction is
+cheap to fix and misleads every agent session until it is.
 
 ## 4. Synthesize the report
 

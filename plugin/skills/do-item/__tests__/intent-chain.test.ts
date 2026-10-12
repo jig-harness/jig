@@ -170,8 +170,8 @@ describe("extraction", () => {
   // The template is the producer this extractor exists for; reading it here
   // means a template edit that renames or restructures the section fails this
   // test instead of silently leaving new issues boundary-less. Skills also ship
-  // standalone (docomply/engineering-standards) without `.claude/commands/`,
-  // so there the test reports as skipped — visibly, not as a pass.
+  // standalone, without `.claude/commands/`, so there the test reports as
+  // skipped — visibly, not as a pass.
   const TEMPLATE = join(import.meta.dir, "../../../commands/linear-issue.md");
   it.skipIf(!existsSync(TEMPLATE))(
     "extracts the Scope and acceptance sections from the live /linear-issue Phase 3 template",
@@ -204,7 +204,7 @@ describe("extraction", () => {
     // unless it closed the enclosing level, so `### Non-goals` was folded as
     // literal text into whatever bullet preceded it (`listItems` has no
     // heading syntax) and never visited as its own match, silently losing
-    // "b" as a distinct boundary (docomply-review, a reference-implementation pull request round 2).
+    // "b" as a distinct boundary.
     const headingMd = "## Out of scope\n\n- a\n\n### Non-goals\n\n- b\n";
     expect(extractScope(headingMd).excluded).toEqual(["a", "b"]);
 
@@ -216,11 +216,9 @@ describe("extraction", () => {
   it("recognizes an ATX heading indented by 1-3 spaces (CommonMark-legal), not just column zero", () => {
     // `HEADING_RE` anchored at column zero, so a legally-indented
     // `## Acceptance Criteria` was invisible to it and got absorbed as body
-    // text of whatever section/bold-label preceded it instead of ending it —
-    // exactly the class `document-scanning-gates.md` § 1 names ("Markdown
-    // allows 1–3 leading spaces; anchoring every pattern at column zero drops
-    // whole rows from the comparison") (docomply-review/CodeRabbit, PR #5058
-    // round 2).
+    // text of whatever section/bold-label preceded it instead of ending it.
+    // Markdown allows 1–3 leading spaces; anchoring every pattern at column
+    // zero drops whole rows from the comparison.
     const md =
       "**Excluded**\n\n- Nothing adjacent.\n\n ## Acceptance Criteria\n\n- [ ] Works.";
     expect(extractSection(md, ["excluded"])).toBe("- Nothing adjacent.");
@@ -251,7 +249,7 @@ describe("extraction", () => {
 
   it("treats a marker before the current item’s content column as a sibling, even when it is indented more than the first marker", () => {
     // ` - a` has content column 3; `  - b` sits at column 2 — before it — so
-    // it is a sibling, not a continuation (docomply-review, a reference-implementation pull request).
+    // it is a sibling, not a continuation.
     expect(listItems(" - a\n  - b")).toEqual(["a", "b"]);
     // The mirror shape: a later marker indented LESS than the first.
     expect(listItems("  - a\n - b")).toEqual(["a", "b"]);
@@ -272,7 +270,7 @@ describe("extraction", () => {
 
   it("keeps nested content together across a single blank line (a loose list), as CommonMark does", () => {
     // `- a\n\n  - b`: the child is still inside a's content column, so the
-    // blank line does not end the item (docomply-review, a reference-implementation pull request).
+    // blank line does not end the item.
     expect(listItems("- a\n\n  - b")).toEqual(["a b"]);
     expect(listItems("- a\n\n  - b\n\n- c")).toEqual(["a b", "c"]);
     // A paragraph continuation indented to the content column stays too.
@@ -284,7 +282,7 @@ describe("extraction", () => {
   it("does not read four or more columns of indentation as a bullet marker that starts an item", () => {
     // Indented code, not a list item: kept whole as text — marker included,
     // never dropped from the population — rather than recognized as a marker
-    // and emitted as an out-of-scope bullet (docomply-review, a reference-implementation pull request).
+    // and emitted as an out-of-scope bullet.
     expect(listItems("    - example command")).toEqual(["- example command"]);
     // A tab is a 4-column stop, so a leading tab is the same indented code.
     expect(listItems("\t- tabbed")).toEqual(["- tabbed"]);
@@ -484,8 +482,7 @@ describe("renderIntentChain — ordinary input", () => {
     // "Issue acceptance criteria (…)" or "Sub-issue scope (…)" used to make
     // the header-plus-headings alone exceed BUDGET before the loop ever ran,
     // so the final prefix-slice backstop fired for real and dropped every
-    // section after it — including this protected boundary (docomply-review,
-    // a reference-implementation pull request round 2).
+    // section after it — including this protected boundary.
     const oos = ["A real boundary that must survive."];
     const r = renderIntentChain(
       {
@@ -1109,7 +1106,7 @@ describe("main", () => {
     }
   });
 
-  it("removes the previous session scope when the primary snapshot or the input fails (docomply-review, a reference-implementation pull request)", () => {
+  it("removes the previous session scope when the primary snapshot or the input fails", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-session-early-"));
     try {
       const env = { CODEX_THREAD_ID: "early-session" };
@@ -1179,7 +1176,7 @@ describe("main", () => {
     }
   });
 
-  it("also writes the snapshot under every batch item and the selected sub-issue, so a branch named after either resolves it (docomply-review, a reference-implementation pull request)", () => {
+  it("also writes the snapshot under every batch item and the selected sub-issue, so a branch named after either resolves it", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-alias-"));
     try {
       const writer = runWriter(repo, {
@@ -1207,7 +1204,7 @@ describe("main", () => {
     }
   });
 
-  it("ignores `items` outside batch mode, so a malformed single-issue input cannot overwrite another item’s chain (docomply-review, a reference-implementation pull request)", () => {
+  it("ignores `items` outside batch mode, so a malformed single-issue input cannot overwrite another item’s chain", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-nobatch-"));
     try {
       const writer = runWriter(repo, {
@@ -1231,7 +1228,7 @@ describe("main", () => {
     }
   });
 
-  it("keys the session snapshot on CODEX_THREAD_ID under Codex, and prefers CLAUDE_CODE_SESSION_ID when both are set (chatgpt-codex-connector, a reference-implementation pull request)", () => {
+  it("keys the session snapshot on CODEX_THREAD_ID under Codex, and prefers CLAUDE_CODE_SESSION_ID when both are set", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-codex-"));
     try {
       const stateDir = join(realpathSync(repo), ".context", "refocus-state");
@@ -1367,7 +1364,7 @@ describe("main", () => {
     }
   });
 
-  it("exits 1, names the failure and lists it in pointerErrors when the content landed but a pointer write failed, leaving no tmp debris (docomply-review, a reference-implementation pull request)", () => {
+  it("exits 1, names the failure and lists it in pointerErrors when the content landed but a pointer write failed, leaving no tmp debris", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-partial-"));
     try {
       // A directory where `.current` belongs makes the pointer's rename fail

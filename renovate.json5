@@ -61,9 +61,10 @@
   // window, so they override both settings above.
   //
   // Caveat: this only fires when GitHub raises a vulnerability alert, and
-  // Dependabot does not raise alerts for SHA-pinned Actions (which covers the workflow actions). An Action security fix follows the weekly
-  // schedule unless a maintainer triggers it from the Dependency Dashboard. The
-  // package dependencies also use this vulnerability-alert policy.
+  // Dependabot does not raise alerts for SHA-pinned Actions, which every
+  // workflow action here is. An Action security fix follows the weekly
+  // schedule unless a maintainer triggers it from the Dependency Dashboard.
+  // The package dependencies also use this vulnerability-alert policy.
   vulnerabilityAlerts: {
     schedule: ["at any time"],
     minimumReleaseAge: null,

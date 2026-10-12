@@ -19,16 +19,14 @@ export function tempSuffix(): string {
 
 /**
  * Write the entirety of `content` to `fd`, looping on `writeSync`'s return
- * value rather than trusting a single call wrote everything. `write(2)`
- * makes no promise to consume the whole buffer in one call — a short
- * write that goes unnoticed would let a caller fsync and rename/report
- * success over silently truncated content (docomply-review, a reference-implementation pull request
- * round 15). A ZERO-byte result is distinct from a short-but-positive
- * one: trusting it was always positive turns `offset += 0` into an
- * unbounded synchronous spin rather than a corruption (docomply-review,
- * a reference-implementation pull request round 16) — treated as a failure, not retried, since nothing
- * in this loop's contract says a THIRD call would behave any differently
- * from the second.
+ * value rather than trusting a single call wrote everything. `write(2)` makes
+ * no promise to consume the whole buffer in one call — a short write that goes
+ * unnoticed would let a caller fsync and rename/report success over silently
+ * truncated content. A ZERO-byte result is distinct from a short-but-positive
+ * one: trusting it was always positive turns `offset += 0` into an unbounded
+ * synchronous spin rather than a corruption — treated as a failure, not
+ * retried, since nothing in this loop's contract says a THIRD call would behave
+ * any differently from the second.
  *
  * `content` accepts raw bytes as well as a string: every caller until
  * `migrate-legacy-state.ts` wrote its own JSON/text, so a `utf8`-encoded
@@ -65,28 +63,25 @@ export function writeAllSync(fd: number, content: string | Uint8Array): void {
  * ever reaching the error-code allowlist below, and by the time this runs
  * the write it is protecting has ALREADY landed, so failing here would
  * report every caller as broken on Windows despite a successful write
- * (chatgpt-codex-connector, a reference-implementation pull request round 15) — a real platform
+ * — a real platform
  * carve-out, not a swallowed error, since NTFS does not share the
  * page-cache-vs-directory-entry durability gap this exists to close on
  * POSIX filesystems in the first place.
  *
- * `openSync` is deliberately OUTSIDE the ENOTSUP/EOPNOTSUPP/EINVAL
- * allowlist below: that allowlist exists for "fsync is not possible on
- * this fd", a statement about `fsyncSync`, not about `open(2)`. Wrapping
- * both in one catch classified by error code alone would swallow an
- * EINVAL from the OPEN as though fsync had been attempted and found
- * unsupported — a false classification an earlier version of this
- * module's own test suite blessed without noticing (docomply-review,
- * a reference-implementation pull request round 16).
+ * `openSync` is deliberately OUTSIDE the ENOTSUP/EOPNOTSUPP/EINVAL allowlist
+ * below: that allowlist exists for "fsync is not possible on this fd", a
+ * statement about `fsyncSync`, not about `open(2)`. Wrapping both in one catch
+ * classified by error code alone would swallow an EINVAL from the OPEN as
+ * though fsync had been attempted and found unsupported — a false
+ * classification an earlier version of this module's own test suite blessed
+ * without noticing.
  *
- * Capture-then-rethrow OUTSIDE a `finally`, not
- * `try { ... } finally { closeSync(dirFd) }`: a `throw` inside `finally`
- * silently overwrites whatever the `try` was already propagating —
- * standard JS semantics (and biome's own `noUnsafeFinally` flags the
- * shape directly) — which would hide the actual ENOSPC/EIO/durability
- * failure behind an unrelated close error (docomply-review, a reference-implementation pull request
- * round 16). The primary error, when there is one, is always the one
- * that surfaces.
+ * Capture-then-rethrow OUTSIDE a `finally`, not `try { ... } finally {
+ * closeSync(dirFd) }`: a `throw` inside `finally` silently overwrites whatever
+ * the `try` was already propagating — standard JS semantics (and biome's own
+ * `noUnsafeFinally` flags the shape directly) — which would hide the actual
+ * ENOSPC/EIO/durability failure behind an unrelated close error. The primary
+ * error, when there is one, is always the one that surfaces.
  */
 export function fsyncDirectoryBestEffort(dirPath: string): void {
   if (process.platform === "win32") return;
@@ -99,14 +94,14 @@ export function fsyncDirectoryBestEffort(dirPath: string): void {
     // "Best-effort" means "some platforms/filesystems genuinely don't
     // support fsync-ing a directory", not "swallow every error" — a
     // blanket catch also hides genuine durability failures (EIO, ENOSPC)
-    // behind the same silent success as an unsupported operation
-    // (chatgpt-codex-connector, a reference-implementation pull request round 12). The canonical "not
+    // behind the same silent success as an unsupported operation.
+    // The canonical "not
     // supported" codes are swallowed; everything else propagates. POSIX
     // also specifies EINVAL for "fsync is not possible on this fd", which
     // some filesystems return for a directory descriptor instead of
     // ENOTSUP/EOPNOTSUPP — omitting it would report a valid write as
     // failed on exactly the platforms this best-effort clause exists to
-    // tolerate (docomply-review, a reference-implementation pull request round 13).
+    // tolerate.
     const code = (e as NodeJS.ErrnoException)?.code;
     if (code !== "ENOTSUP" && code !== "EOPNOTSUPP" && code !== "EINVAL") {
       primaryFailed = true;
@@ -177,8 +172,7 @@ export function fsyncFileSync(path: string): void {
  * write or the link itself failed) or, if it somehow was, this call cannot
  * vouch for it — and a caller that re-reads and adopts it anyway cannot tell
  * either apart from a winning racer's committed value, silently accepting
- * corrupt or non-durable content instead of surfacing the failure
- * (docomply-review, a reference-implementation pull request round 3).
+ * corrupt or non-durable content instead of surfacing the failure.
  *
  * Reported via a dedicated error type rather than inferring ownership from
  * the raw error's `.code` (e.g. "non-EEXIST means this call owned it"):
@@ -210,7 +204,7 @@ export class ExclusiveWriteOwnFailure extends Error {
  * A caller cannot safely fold this into the "didn't touch it, re-read and
  * adopt whatever's there" path the way it does for a genuine `EEXIST` race —
  * doing so mistakes this call's own unconfirmed publish for a racing
- * winner's committed one (docomply-review, a reference-implementation pull request round 4). Nor is it a
+ * winner's committed one. Nor is it a
  * clean success: a crash before the directory entry is actually durable can
  * still lose the very content this call just wrote. A caller must treat this
  * as its own outcome — typically refusing rather than trusting the value —
@@ -232,14 +226,14 @@ export class ExclusiveDurabilityUnconfirmed extends Error {
  * apparently successful write.
  *
  * NOT a direct `wx` open on `path` itself, despite an earlier version of
- * this function doing exactly that (docomply-review, a reference-implementation pull request round 2): a
+ * this function doing exactly that: a
  * direct open creates the FINAL-path directory entry before any content is
  * written, so a concurrent reader that loses its own `wx` attempt in that
  * window sees `path` exist but empty (or, mid-write, non-empty but
  * truncated) — indistinguishable from a genuinely complete value without a
  * retry-and-hope loop. Publishing that way makes the loser's re-read a race
  * against the winner's own write, not just against the winner's *decision*
- * to write (chatgpt-codex-connector, a reference-implementation pull request round 3). Instead: write
+ * to write. Instead: write
  * `content` to a UNIQUE temp file beside `path` (so a same-suffix collision
  * with a concurrent writer only steals a name, never live data — same
  * property `atomicWrite` depends on, see its own doc), fsync it, and
@@ -342,34 +336,30 @@ export function createExclusiveDurable(path: string, content: string): void {
  * itself; this function's remaining concern is temp-file OWNERSHIP and
  * cleanup.
  *
- * The ENTIRE create-through-rename sequence is one cleanup region: if any
- * step fails AFTER this invocation is confirmed to own `tmp`, it is
- * unlinked rather than left orphaned — nothing else in this module ever
- * cleans up a temp file that never made it to `rename`, and every caller
- * of this shared helper (mailbox repair, leases, handoff, state storage)
- * would otherwise accumulate one per failed write. Round 8 covered only
- * the fsync step; a partial write (e.g. ENOSPC mid-write, after the
- * exclusive create already landed) or a failed `renameSync` were both
- * still uncovered (docomply-review, a reference-implementation pull request round 9). Ownership
- * (`created`) is tracked separately from completion (`renamed`), and is
- * set the INSTANT `openSync(tmp, 'wx')` itself returns — not inferred
- * from an error code on some later step. The unique suffix is only 24
- * bits, so a same-suffix collision with a concurrent writer is possible,
- * and `EEXIST` from the exclusive open is the one outcome where this
- * invocation never created `tmp` at all; unlinking in that case would
- * delete the COLLIDING writer's live temp file out from under its own
- * in-flight write/fsync/rename (round 13). A round-13 fix that inferred
- * ownership from "the error code from `writeFileSync` wasn't EEXIST" was
- * itself still wrong: `writeFileSync` wraps open+write+close, so a
- * non-EEXIST failure (ENOSPC, EDQUOT, EACCES, EROFS, ...) can occur
- * before the OPEN step ever created a directory entry, in which case
- * ownership was never established either, and a same-suffix collision
- * during the gap before this `finally` runs is unlinked incorrectly all
- * over again. Opening `tmp` directly (rather than through
- * `writeFileSync`) makes the open-succeeded moment observable, so
- * `created` is only ever true when this invocation's own `open(2)`
- * genuinely won the exclusive create (docomply-review, a reference-implementation pull request
- * round 14).
+ * The ENTIRE create-through-rename sequence is one cleanup region: if any step
+ * fails AFTER this invocation is confirmed to own `tmp`, it is unlinked rather
+ * than left orphaned — nothing else in this module ever cleans up a temp file
+ * that never made it to `rename`, and every caller of this shared helper
+ * (mailbox repair, leases, handoff, state storage) would otherwise accumulate
+ * one per failed write — not only after a failed fsync, but after a partial
+ * write (e.g. ENOSPC mid-write, after the exclusive create already landed) or a
+ * failed `renameSync` too. Ownership (`created`) is tracked separately from
+ * completion (`renamed`), and is set the INSTANT `openSync(tmp, 'wx')` itself
+ * returns — not inferred from an error code on some later step. The unique
+ * suffix is only 24 bits, so a same-suffix collision with a concurrent writer
+ * is possible, and `EEXIST` from the exclusive open is the one outcome where
+ * this invocation never created `tmp` at all; unlinking in that case would
+ * delete the COLLIDING writer's live temp file out from under its own in-flight
+ * write/fsync/rename. An earlier fix that inferred ownership from "the error
+ * code from `writeFileSync` wasn't EEXIST" was itself still wrong:
+ * `writeFileSync` wraps open+write+close, so a non-EEXIST failure (ENOSPC,
+ * EDQUOT, EACCES, EROFS, ...) can occur before the OPEN step ever created a
+ * directory entry, in which case ownership was never established either, and a
+ * same-suffix collision during the gap before this `finally` runs is unlinked
+ * incorrectly all over again. Opening `tmp` directly (rather than through
+ * `writeFileSync`) makes the open-succeeded moment observable, so `created` is
+ * only ever true when this invocation's own `open(2)` genuinely won the
+ * exclusive create.
  *
  * The `renameSync(tmp, target)` publish step is also what makes this the
  * canonical way to write to a `target` this process does not hold
@@ -378,7 +368,7 @@ export function createExclusiveDurable(path: string, content: string): void {
  * symlink — without ever opening or following it, unlike a direct
  * `writeFileSync`/`copyFileSync` onto `target`, both of which follow a
  * symlink there and write through to its external destination.
- * `migrate-legacy-state.ts` round 20 is the worked case: two of its own
+ * `migrate-legacy-state.ts` is the worked case: two of its own
  * writes went straight to `copyFileSync`/`writeFileSync` on a path it did
  * not hold exclusively between check and write, each independently
  * vulnerable to exactly that substitution — closed by routing both
@@ -402,7 +392,7 @@ export function atomicWrite(
     // plain write does not enforce it: 24 bits of suffix is small enough to
     // collide, and a truncating write onto a concurrent writer's temp file
     // produces exactly the interleaved-then-renamed mixture this design
-    // exists to prevent — silently (coderabbitai, PR #4034 round 2). `wx`
+    // exists to prevent — silently. `wx`
     // turns that into a throw instead. Opened directly (not via
     // `writeFileSync`) so `created` can be set the instant `open(2)`
     // succeeds, rather than inferred from a later error's code.
@@ -410,7 +400,7 @@ export function atomicWrite(
     created = true;
     // Capture-then-rethrow OUTSIDE a `finally` — see `writeAllSync`'s own
     // doc for why a plain `try { ... } finally { closeSync(fd) }` is wrong
-    // here (docomply-review, a reference-implementation pull request round 16).
+    // here.
     let primaryError: unknown;
     let primaryFailed = false;
     try {

@@ -17,16 +17,15 @@ import { siblingSkill } from "./lib/consumer.ts";
  *               -- <command to run ONE pass> [args...]
  *
  *   The pass command is given as ARGV after `--`, and is executed directly —
- *   never through a shell. The bash predecessor took an opaque
- *   `--agent '<string>'` for `sh -c` and then had to prove, by walking that
- *   string character by character tracking quote state, that every
- *   `;`/`&&`/`||`/`|`-separated segment named the right PR — because a pass
- *   that silently targets the current branch's PR edits and resolves threads
- *   on the wrong pull request. Taking argv removes the shell layer, so there
- *   are no segments to prove anything about and the guard below is an exact
- *   token test — and there is no `sh` to depend on, which is what lets this
- *   run on Windows. (Same reasoning, and same interface, as drive-pr's
- *   drive.ts.)
+ *   never through a shell. An opaque command string run through `sh -c` would
+ *   have to be proven, by walking it character by character tracking quote
+ *   state, to name the right PR in every `;`/`&&`/`||`/`|`-separated segment —
+ *   because a pass that silently targets the current branch's PR edits and
+ *   resolves threads on the wrong pull request. Taking argv removes the shell
+ *   layer, so there are no segments to prove anything about and the guard below
+ *   is an exact token test — and there is no `sh` to depend on, which is what
+ *   lets this run on Windows. (Same reasoning, and same interface, as
+ *   drive-pr's drive.ts.)
  *
  *     converge.ts 123 --bots-only -- codex exec "/resolve-review-comments --bots-only 123"
  *     converge.ts 123 --bots-only -- claude -p "/resolve-review-comments --bots-only 123"
@@ -60,7 +59,7 @@ import { siblingSkill } from "./lib/consumer.ts";
  *   6  hit --max-rounds without converging
  *   7  a reviewer check FAILED (propagated verbatim from await-round.ts)
  *   8  zero threads, but summary-only findings are outstanding on the head
- *      (propagated verbatim from await-round.ts, TASK)
+ *      (propagated verbatim from await-round.ts)
  */
 
 import { lstatSync } from "node:fs";
@@ -97,7 +96,7 @@ const RELEASE_SESSIONLESS_LEASE = join(
 
 /**
  * Hand this tree's tier-3 lease back, because this loop will spawn no further
- * pass (TASK).
+ * pass.
  *
  * WHY HERE. A pass run under a runtime that identifies no session — a `codex
  * exec` pass, the documented invocation in this script's own header — cannot
@@ -148,8 +147,8 @@ const RELEASE_SESSIONLESS_LEASE = join(
  * The victim is always a SIBLING process in this same tree — the records are
  * actor-scoped, so nothing else can be reached — but the damage is cross-tree:
  * strip a live sessionless resolver's record and another worktree is admitted
- * (13 → 0), which is the duplicate-`**accepted**`-reply corruption TASK and
- * TASK exist to prevent. This is NOT the documented "two sessionless
+ * (13 → 0), which is the duplicate-`**accepted**`-reply corruption the lease
+ * fences exist to prevent. This is NOT the documented "two sessionless
  * resolvers in one tree" residual below; that one is about a resolver
  * FINISHING, while these fire when this invocation started nothing at all.
  *
@@ -329,7 +328,7 @@ async function main(): Promise<number> {
   // question: `codex exec "/resolve-review-comments 999" --label 123`
   // satisfies the delimited-token test for 123 while targeting 999, and
   // `claude -p "... do not use --bots-only"` satisfies the scope test while
-  // asking for the opposite (docomply-review round 1, a reference-implementation pull request). Every pass
+  // asking for the opposite. Every pass
   // reaches list-unresolved-threads.ts — it is the only way to obtain a
   // threadId, which reply-to-thread.ts and resolve-thread.ts both require —
   // so that script is the chokepoint where these stop being inferences from
@@ -442,8 +441,8 @@ async function main(): Promise<number> {
     // code — the claim is taken during it, so failing afterwards does not undo
     // one. A pass that never SPAWNED holds nothing, and the two are not
     // distinguishable from `code`: `run()` reports a failed spawn as 127
-    // because every bash call site read a missing command and a failed one
-    // alike, and a real child may exit 127 too. `spawnFailed` is the field that
+    // (the shell's code for a command that could not be found), and a real
+    // child may exit 127 too. `spawnFailed` is the field that
     // separates them (see `RunResult`), and reading it here is what keeps a
     // `codex`/`claude` binary missing from `PATH` — the first run on a fresh
     // machine — from releasing a record this invocation never took.

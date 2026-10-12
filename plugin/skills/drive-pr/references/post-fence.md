@@ -3,7 +3,8 @@
 **Where the fence is installed**, no **outcome reply or summary-finding answer**
 reaches GitHub without first meeting the lease, so a pass whose lease another
 live session has taken over cannot get an irreversible `**accepted**` onto a
-thread (`SKILL.md` § The lease also fences the `POST`).
+thread ([round-finish.md](round-finish.md) § Concurrency: who may drive, and
+who may finish a hold).
 
 Stating that precondition is the point of this page rather than a hedge on it.
 Where the fence is **not** installed the reply posts without any lease being
@@ -31,8 +32,7 @@ whole subject of this page:
 
 The spawned path is the one that can be missing. `resolve-review-comments` is
 usable on its own: a repository can run a copy of it without `drive-pr`
-beside it, and the two skills were distributed separately before both moved
-into the `groundwork` plugin. So the caller probes for the sibling skill root and skips the fence
+beside it. So the caller probes for the sibling skill root and skips the fence
 when — and only when — the probe positively confirms it absent.
 
 **Decision: the boundary stays inferred from the sibling skill's
@@ -67,7 +67,7 @@ that gets missed.
 
    Not `$DRIVE_PR_SESSION`, which `drive.ts` also exports: that one is
    *additionally* documented as a hand-set opt-in for unidentifiable harnesses
-   (`SKILL.md` § 6), so a standalone install may hold one with no drive in
+   ([round-finish.md](round-finish.md) § Concurrency), so a standalone install may hold one with no drive in
    existence. Refusing on it would deny the very posts this skip is for.
 
 2. **The dependency is on code, not on a data format.** The fence is a *spawn of
@@ -122,9 +122,8 @@ tolerated old path; it would remove a supported install.
 ## Why the fence is not vendored into `resolve-review-comments`
 
 Every part of `lib/state/lease.ts` that a reader would have to reproduce was
-hardened (in the reference implementation, PR #4107) against: state-dir swap-and-recreate
-races straddling the enumeration, PR
-canonicalization for leading zeros and for values past
+hardened against: state-dir swap-and-recreate races straddling the
+enumeration, PR canonicalization for leading zeros and for values past
 `Number.MAX_SAFE_INTEGER`, dangling symlinks, and lease records that enumerate
 but cannot be opened. A "small read-only lease reader" at that specification
 does not exist.
@@ -217,8 +216,8 @@ Everything above about *failure* inverts for it, and that is the part not to
 carry across by analogy. This page argues at length that the `POST` fence must be
 established before it may be skipped, because the act behind it is
 irreversible. The release authorises no act at all: not releasing simply leaves
-the record to expire by staleness (`$DRIVE_PR_LEASE_STALE_MIN`), which is the
-behaviour that existed before it. So its probe skips on *any* unreadable answer
+the record to expire by staleness (`$DRIVE_PR_LEASE_STALE_MIN`), the same
+bound that applies with no release at all. So its probe skips on *any* unreadable answer
 rather than only a confirmed `ENOENT`, its non-zero exits are swallowed, and it
 needs no `assertNoDriveContext` counterpart — there is no state it could reach
 in which skipping costs anything. Read `references/terminal-states.md`
@@ -230,17 +229,15 @@ nothing in this page's decision changes, and no new gate is owed.
 Recorded because it is the cost any future vendoring would inherit. `scripts/lib/cli.ts` and `scripts/lib/proc.ts`
 exist in both skills as deliberate parity copies — supersets of each other rather
 than byte-identical, since each skill's own needs have grown them apart — and
-**no gate fails when they drift**. A measured fix landing in one is ported to the
+**no gate fails when they drift**. A fix landing in one is ported to the
 other by hand; the file headers name each other so the search is one grep.
 
-That is not a theoretical exposure. Checking it while taking this decision found
-`ghCall` — the deadline chokepoint both files exist for — already diverged in
-contract: `drive-pr`'s copy accepts a caller-supplied `timeoutSec` and clamps it
-against the env deadline, while `resolve-review-comments`' takes
-`Omit<RunOptions, 'timeoutSec'>`, so a caller there structurally cannot ask for a
-tighter one. The clamp landed on one side only. A byte-comparison gate cannot
-work here (the copies are *meant* to differ), so a drift check would have to
-compare the *shared* export set symbol by symbol; none exists yet.
+That is not a theoretical exposure: `ghCall` — the deadline chokepoint both
+files exist for — has diverged in contract before, with a caller-supplied
+`timeoutSec` clamp present in one copy and structurally impossible in the
+other, until the clamp was ported by hand. A byte-comparison gate cannot work
+here (the copies are *meant* to differ), so a drift check would have to
+compare the *shared* export set symbol by symbol; none exists.
 
 None of that changes the decision above — it argues for it. The reason to keep
 the lease reader out of `resolve-review-comments` is precisely that a hand-ported

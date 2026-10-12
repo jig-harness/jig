@@ -1,6 +1,26 @@
-# Issue-tracker keys that must not appear in repository content.
-# One extended regular expression per line; see check-no-tracker-refs.sh.
+# References that must not appear in repository content: the original
+# repository's issue-tracker keys and its organization's name. One extended
+# regular expression per line; `(?i)` makes a line case-insensitive. See
+# check-no-tracker-refs.ts.
 #
-# The reference implementation's tracker: keys, and links to its issues.
+# This file is the one place those patterns are spelled out, which is why the
+# gate does not scan it.
 \bDOC-[0-9]+\b
-linear\.app/docomply/issue
+(?i)docomply
+#
+# Allowed: the text an allow pattern (`!`) matches, tested against
+# `<relative path>:<line>`. Only the matched text is exempt, so a pattern
+# covers the permitted occurrence itself, not the line it sits on.
+#
+# The repository's own address, until it moves, as a whole URL: it starts at
+# `https://` with nothing joined on before it, so a host such as
+# `notgithub.com` stays rejected, and the name ends there (optionally as
+# `.git`) with no further name character after it, so a sibling such as
+# `groundwork-other` or `groundwork..private` stays rejected while a sentence
+# may still end on the address.
+!(?<![-+.\w])https://github\.com/docomply/jig(\.git)?(?![-\w])(?!\.[-.\w])
+# The publisher fields of the plugin and marketplace manifests.
+!^(plugin/\.(claude|codex)-plugin/plugin|\.claude-plugin/marketplace)\.json:\s*"(author|owner|developerName)":\s*(\{\s*"name":\s*)?"Docomply"
+# This repository's own values as a consumer of its skills: real account,
+# team and repository names, which is what configuration is for.
+!^\.config/groundwork-overlay\.yaml:.*

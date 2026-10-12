@@ -1,14 +1,12 @@
 /**
- * docomply-review + chatgpt-codex-connector (PR #4612 round 4): a relative
- * `$DRIVE_PR_STATE_DIR` resolves against `process.cwd()`, both in
+ * A relative `$DRIVE_PR_STATE_DIR` resolves against `process.cwd()`, both in
  * `resolveStateDir()` (store.ts) and in `resolveFenceContext()`'s own,
- * independent read of the raw env var (lease.ts) — two participants
- * launched from different working directories (the base checkout and a
- * linked worktree, in particular) would silently resolve the identical
- * override string to two different directories, recreating exactly the
- * split state/lease hazard `$DRIVE_PR_STATE_DIR` exists to let an operator
- * opt OUT of. Both readers now fail closed on a relative override rather
- * than resolving it silently.
+ * independent read of the raw env var (lease.ts) — two participants launched
+ * from different working directories (the base checkout and a linked worktree,
+ * in particular) would silently resolve the identical override string to two
+ * different directories, recreating exactly the split state/lease hazard
+ * `$DRIVE_PR_STATE_DIR` exists to let an operator opt OUT of. Both readers now
+ * fail closed on a relative override rather than resolving it silently.
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
@@ -29,8 +27,7 @@ const LEASE_TS = new URL("../scripts/lib/state/lease.ts", import.meta.url)
 // with it already inherited, and other test files sharing this worker
 // process depend on that inherited value surviving — unconditionally
 // deleting it here (rather than restoring whatever was actually present)
-// would silently strip it out from under them for the rest of the run
-// (docomply-review, a reference-implementation pull request round 6).
+// would silently strip it out from under them for the rest of the run.
 const ORIGINAL_STATE_DIR = process.env.DRIVE_PR_STATE_DIR;
 
 const dirs: string[] = [];
@@ -64,20 +61,19 @@ describe("resolveStateDir — relative $DRIVE_PR_STATE_DIR fails closed", () => 
 
 describe("resolveFenceContext — relative $DRIVE_PR_STATE_DIR fails closed", () => {
   it("refuses a relative override before ever reading git or a lease", async () => {
-    // Run in a REAL SUBPROCESS launched from a fresh, non-repository cwd —
-    // not merely `process.chdir()` in this test process. This matters here,
-    // not just belt-and-suspenders, for two reasons: (1) `worktreeRoot()`
+    // Run in a REAL SUBPROCESS launched from a fresh, non-repository cwd — not
+    // merely `process.chdir()` in this test process. This matters here, not
+    // just belt-and-suspenders, for two reasons: (1) `worktreeRoot()`
     // (actor.ts) memoises its git resolution PER PROCESS — once this test
     // file's own process has resolved it against the real repo (which any
     // earlier test, in this file or one bun batches alongside it, may have
     // already triggered), every later call in that same process replays the
     // cached, real-repo answer regardless of `process.chdir()`. (2) Without
-    // this, the assertion below would still pass even if the guard were
-    // moved to AFTER `resolveActor()`/git — the exact ordering regression
-    // this test exists to catch — because a real repo cwd makes that later
-    // git call succeed too, and the same ExitError would still surface
-    // moments later from the (now misplaced) guard (docomply-review, PR
-    // #4612 round 5).
+    // this, the assertion below would still pass even if the guard were moved
+    // to AFTER `resolveActor()`/git — the exact ordering regression this test
+    // exists to catch — because a real repo cwd makes that later git call
+    // succeed too, and the same ExitError would still surface moments later
+    // from the (now misplaced) guard.
     const cwd = mkdtempSync(join(tmpdir(), "state-dir-abs-non-repo-"));
     dirs.push(cwd);
     // Shape alone (relative vs. absolute) is what the guard tests — it runs
@@ -104,10 +100,9 @@ describe("resolveFenceContext — relative $DRIVE_PR_STATE_DIR fails closed", ()
 
     // gitIdentityEnv(), not a raw `...process.env` spread — an inherited
     // GIT_DIR/GIT_WORK_TREE would let `resolveActor()` resolve against the
-    // PARENT repo despite this non-repository cwd, so the probe could pass
-    // even with the guard moved to after `resolveActor()` (coderabbitai, PR
-    // #4612 round 12) — silently defeating the exact ordering regression
-    // this test exists to catch.
+    // PARENT repo despite this non-repository cwd, so the probe could pass even
+    // with the guard moved to after `resolveActor()` — silently defeating the
+    // exact ordering regression this test exists to catch.
     const result = Bun.spawnSync(["bun", probe], {
       cwd,
       env: { ...gitIdentityEnv(), DRIVE_PR_STATE_DIR: relOverride },

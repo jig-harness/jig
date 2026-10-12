@@ -97,29 +97,26 @@ async function resolvePrArg(pr: string): Promise<string> {
     );
   }
   // Same `isDigits` guard `guarded-push.ts` applies to its own `pr` argument
-  // (lib/cli.ts): `resolvePr` returns explicit input verbatim, so
-  // `mailbox.ts send abc ...` would otherwise succeed and write a record no
-  // numeric-PR consumer (`foldGateState`, `isPushHeld`, …) ever reads. `'0'`
-  // is REJECTED here too, not just non-digits: `isDigits` alone accepts it,
-  // but `lib/state/mailbox.ts`'s own `isCanonicalPr` (round 25) explicitly
-  // treats `'0'` as unidentifiable — no GitHub PR is ever numbered `0`.
-  // Without this, `mailbox.ts send 0 --kind directive --command hold-push`
-  // would succeed at the CLI and write a `pr: "0"` directive that
-  // `foldGateState` then poisons EVERY OTHER PR's fold with (a malformed
-  // record with no identifiable PR still fails closed for every reader),
-  // silently blocking every guarded push in this worktree until an
-  // operator manually repairs the inbox (docomply-review, a reference-implementation pull request
-  // round 26).
+  // (lib/cli.ts): `resolvePr` returns explicit input verbatim, so `mailbox.ts
+  // send abc ...` would otherwise succeed and write a record no numeric-PR
+  // consumer (`foldGateState`, `isPushHeld`, …) ever reads. `'0'` is REJECTED
+  // here too, not just non-digits: `isDigits` alone accepts it, but
+  // `lib/state/mailbox.ts`'s own `isCanonicalPr` explicitly treats `'0'` as
+  // unidentifiable — no GitHub PR is ever numbered `0`. Without this,
+  // `mailbox.ts send 0 --kind directive --command hold-push` would succeed at
+  // the CLI and write a `pr: "0"` directive that `foldGateState` then poisons
+  // EVERY OTHER PR's fold with (a malformed record with no identifiable PR
+  // still fails closed for every reader), silently blocking every guarded push
+  // in this worktree until an operator manually repairs the inbox.
   if (!isDigits(resolved) || BigInt(resolved) === 0n) {
     fail(2, `mailbox.ts: PR must be numeric and non-zero (got '${resolved}')`);
   }
-  // Canonicalized (leading zeros stripped), not just validated as digits:
-  // every mailbox comparison (`msg.pr !== pr` in `foldGateState`, the ack
-  // cursor's `r.pr === pr`) is a plain STRING equality, so `mailbox.ts send
-  // 0999 ...` would otherwise stamp `pr: "0999"` — silently invisible to
+  // Canonicalized (leading zeros stripped), not just validated as digits: every
+  // mailbox comparison (`msg.pr !== pr` in `foldGateState`, the ack cursor's
+  // `r.pr === pr`) is a plain STRING equality, so `mailbox.ts send 0999 ...`
+  // would otherwise stamp `pr: "0999"` — silently invisible to
   // `foldGateState(dir, '999')`, meaning an apparently successful hold-push
-  // would never actually block a push (chatgpt-codex-connector,
-  // a reference-implementation pull request round 8).
+  // would never actually block a push.
   return BigInt(resolved).toString();
 }
 
@@ -177,8 +174,7 @@ async function cmdSend(argv: string[]): Promise<number> {
     // them on a note send let a contradictory invocation
     // (`--kind note --command hold-push`) write a plain note and exit 0 —
     // an operator could believe a hold was installed while
-    // `guarded-push.ts` stays clear and proceeds to push
-    // (chatgpt-codex-connector, a reference-implementation pull request round 28).
+    // `guarded-push.ts` stays clear and proceeds to push.
     if (command !== "")
       fail(
         2,
@@ -221,22 +217,20 @@ async function cmdCheck(argv: string[]): Promise<number> {
 }
 
 /**
- * Explicitly acknowledges message ids — the ONLY way an inbox message is
- * ever marked seen. `check` used to do this itself, automatically, right
- * after printing the messages — but "the stdout write returned" is not
- * "the caller received and safely processed the payload": `write()`'s own
- * return value only confirms the data was handed to the OS, and a delayed
- * failure (a reader that closes the pipe after reading only part of it,
- * `EPIPE` surfacing after the write already "succeeded") can leave every
- * message acked with the caller never having durably captured them —
- * silent, unrecoverable loss on this channel's one delivery path. Splitting
- * ack into its own explicit step moves that judgment to the only party that
- * can actually make it: the caller, which acks only once IT has confirmed
- * its own successful handling — a durable log write, a completed hand-off,
- * whatever "safe" means for that specific caller (docomply-review /
- * chatgpt-codex-connector, a reference-implementation pull request rounds 5, 6, and 7 — three
- * successively narrower attempts at confirming delivery from THIS side of
- * the pipe, when the real fix was to stop trying to infer it at all).
+ * Explicitly acknowledges message ids — the ONLY way an inbox message is ever
+ * marked seen. `check` used to do this itself, automatically, right after
+ * printing the messages — but "the stdout write returned" is not "the caller
+ * received and safely processed the payload": `write()`'s own return value only
+ * confirms the data was handed to the OS, and a delayed failure (a reader that
+ * closes the pipe after reading only part of it, `EPIPE` surfacing after the
+ * write already "succeeded") can leave every message acked with the caller
+ * never having durably captured them — silent, unrecoverable loss on this
+ * channel's one delivery path. Splitting ack into its own explicit step moves
+ * that judgment to the only party that can actually make it: the caller, which
+ * acks only once IT has confirmed its own successful handling — a durable log
+ * write, a completed hand-off, whatever "safe" means for that specific caller
+ * (successively narrower attempts at confirming delivery from THIS side of the
+ * pipe all failed; the real fix was to stop trying to infer it at all).
  */
 async function cmdAck(argv: string[]): Promise<number> {
   let pr = "";
@@ -254,8 +248,8 @@ async function cmdAck(argv: string[]): Promise<number> {
   // reach `appendOutboxRecord` and write a `received` record `parseOutbox
   // Record` later rejects for having a non-empty-string id — the command
   // reports success (exit 0) while the ack never actually took effect, and
-  // the next `check` reports the message again despite it
-  // (chatgpt-codex-connector, a reference-implementation pull request round 19). Validated BEFORE any
+  // the next `check` reports the message again despite it.
+  // Validated BEFORE any
   // record is written, not per-id inside the loop below, so a bad id
   // later in the list can't leave an earlier one already durably
   // acknowledged from a call that overall failed.
@@ -267,8 +261,8 @@ async function cmdAck(argv: string[]): Promise<number> {
   // A typo'd id, or a following flag mistakenly consumed as an id's
   // value, would otherwise durably write an outbox record for an id
   // that names NO real inbox message — the command reports success
-  // while the message actually intended stays unseen forever
-  // (docomply-review, a reference-implementation pull request round 20). Validated against every known
+  // while the message actually intended stays unseen forever.
+  // Validated against every known
   // inbox message for this PR — not just the currently-UNSEEN subset,
   // since re-acking an already-acked id (or acking one already
   // `respond`ed to) is legitimate and must not be refused as though it
@@ -318,7 +312,7 @@ async function cmdRespond(argv: string[]): Promise<number> {
   const dir = await resolveMailboxDir();
   // Same validation as `ack`, and the identical reasoning: a typo'd id
   // would otherwise durably write an answer nobody polling for the real
-  // message will ever see (docomply-review, a reference-implementation pull request round 20).
+  // message will ever see.
   const inbox = readInboxMessages(dir, pr);
   if (inbox.file.kind === "unreadable") {
     fail(2, `respond: could not read the inbox (${inbox.file.why})`);

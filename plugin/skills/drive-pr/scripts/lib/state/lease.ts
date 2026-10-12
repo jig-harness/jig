@@ -16,11 +16,11 @@
  *     sessions' holds;
  *   - `claim-held` has nothing to compare, so neither claim is refused.
  *
- * Measured on PR #4057 (2026-08-13): all seventeen threads one session had just
- * replied to carried TWO `**accepted**` replies, its own and a concurrent
- * session's minutes later — which corrupts the reviewer-scoring sample the
- * outcome vocabulary feeds (AGENTS.md § Addressing PR Comments), and is not
- * repairable after the fact because the comments are posted.
+ * Measured: all seventeen threads one session had just replied to carried TWO
+ * `**accepted**` replies, its own and a concurrent session's minutes later —
+ * which corrupts the reviewer-scoring sample the outcome vocabulary
+ * (`outcome.ts`) feeds, and is not repairable after the fact because the
+ * comments are posted.
  *
  * So this module adds the component the actor is missing: a SESSION. The lease
  * is scoped to (working tree, PR) — the same universe the actor already covers.
@@ -80,11 +80,11 @@
  * then edit, commit, and push over one another. This is not a variant of the
  * (working tree, PR)-scoped hazard above; it is the hazard `drive.ts`'s
  * worktree-wide single-instance lock (`store.ts`'s `worktreeLockName`) already
- * closes for the UNATTENDED path (measured on PR #4031 round 8: two `drive.ts`
- * processes in one checkout, different PRs, cross-shipped each other's
- * uncommitted edits) — this header used to attribute that same guarantee to
- * interactive passes too, which was never true: that lock excludes at most one
- * `drive.ts` PROCESS, and an interactive pass takes no lock of any kind.
+ * closes for the UNATTENDED path (measured: two `drive.ts` processes in one
+ * checkout, different PRs, cross-shipped each other's uncommitted edits) —
+ * this header used to attribute that same guarantee to interactive passes too,
+ * which was never true: that lock excludes at most one `drive.ts` PROCESS, and
+ * an interactive pass takes no lock of any kind.
  *
  * `TreeLease` is what actually closes it for the interactive path: a SECOND
  * lease, alongside the per-PR one, keyed by ACTOR ALONE rather than (actor,
@@ -202,15 +202,13 @@
  * sibling script, so a doubled call leaves nothing behind to repair. Fencing
  * them would spend a subprocess per thread to prevent nothing.
  *
- * EVERY OTHER OUTCOME REFUSES, which is the correction round 1 of PR #4107
- * forced and the rule to apply to any later addition here: this fence may
- * allow only on a POSITIVELY ESTABLISHED absence, never on a failure to look.
- * Separate paths read a failure as "no lease" and posted — an
- * enumerable-but-unreadable lease record, a `git` probe that never ran, and a
- * sibling skill installed with its fence script missing — and independent
- * reviewers found several of them in one round, one with a reproduction. They
- * were the same defect wearing different faces, so they are fixed as a class
- * and each carries its own probe.
+ * EVERY OTHER OUTCOME REFUSES, which is the rule to apply to any later
+ * addition here: this fence may allow only on a POSITIVELY ESTABLISHED
+ * absence, never on a failure to look. Separate paths read a failure as "no
+ * lease" and posted — an enumerable-but-unreadable lease record, a `git` probe
+ * that never ran, and a sibling skill installed with its fence script missing.
+ * They were the same defect wearing different faces, so they are fixed as a
+ * class and each carries its own probe.
  *
  * THE RESIDUALS it does not close, stated rather than implied:
  *
@@ -229,15 +227,14 @@
  *      to "one in-flight comment may", which is the same class of residual
  *      `answer-summary-finding.ts` already documents for its reconciliation.
  *      The state-DIRECTORY identity checks `assertRemoteMutationAllowed` and
- *      `resolveFenceContext` perform together (PR #4107 findings A and C —
- *      a rename-and-recreate that let an enumerated lease read back as
- *      `absent`, closed at two different windows: the driver-established
- *      `$DRIVE_PR_STATE_DIR_IDENTITY` baseline for a swap that predates the
- *      pass, and the enumeration-time identity re-confirmed at every `absent`
- *      read for one landing during the fence) narrow a DIFFERENT gap but are
- *      bound by this exact same limit: they can prove the directory's
- *      identity up to the instant this function returns, never through the
- *      POST that follows.
+ *      `resolveFenceContext` perform together (a rename-and-recreate that
+ *      let an enumerated lease read back as `absent`, closed at two different
+ *      windows: the driver-established `$DRIVE_PR_STATE_DIR_IDENTITY` baseline
+ *      for a swap that predates the pass, and the enumeration-time identity
+ *      re-confirmed at every `absent` read for one landing during the fence)
+ *      narrow a DIFFERENT gap but are bound by this exact same limit: they can
+ *      prove the directory's identity up to the instant this function returns,
+ *      never through the POST that follows.
  *
  *   2. A LEASE THAT WAS REVOKED AND NOT RECLAIMED READS AS ABSENT. `reset`
  *      sweeps this PR's leases, and a `clear-lease` with no successor leaves
@@ -261,18 +258,16 @@
  *      token needs a process start time no `node:`-only API exposes for
  *      another pid. Bounded by requiring a same-host pid reuse inside one
  *      staleness window, between two sessions that both identify themselves
- *      only by pid (chatgpt-codex-connector, a reference-implementation pull request round 17).
+ *      only by pid.
  *
- *      an earlier change closes the ADMISSION-side counterpart of this same hazard —
- *      `claimLease` (per-tree) and `assertNoForeignDrive` / `clearAllLeases`
- *      (PR-wide) — for the one case it can PROVE: BOTH sides carry a
- *      token, so `isMine`'s mismatch is backed by a timestamp `isRecycledPid`
- *      can order (see that function's own doc for the full criterion and the
- *      proof — several review rounds of this PR, #4128, were needed to arrive
- *      at "both sides timestamped" as the exact, final boundary; earlier
- *      revisions tried narrower carve-outs for a tokenless side and each was
- *      defeated).
- *      Before an earlier change, those three asked `leaseAlive` whether a
+ *      `isRecycledPid` closes the ADMISSION-side counterpart of this same
+ *      hazard — `claimLease` (per-tree) and `assertNoForeignDrive` /
+ *      `clearAllLeases` (PR-wide) — for the one case it can PROVE: BOTH sides
+ *      carry a token, so `isMine`'s mismatch is backed by a timestamp
+ *      `isRecycledPid` can order (see that function's own doc for the full
+ *      criterion and the proof that "both sides timestamped" is the exact
+ *      boundary; narrower carve-outs for a tokenless side were each defeated).
+ *      Without it, those three asked `leaseAlive` whether a
  *      foreign-by-`isMine` lease's owner was still running, and once a
  *      recycled pid is the CALLING session's own, that question is
  *      tautologically "yes" — so a per-tree claim stayed refused (not
@@ -297,10 +292,9 @@
  *      ctx.session, ctx.actor) || !leaseAlive(held)` check. It guards a POST
  *      with no undo rather than an admission with a cheap retry, so it keeps
  *      refusing on ANY non-mine live pid, `isRecycledPid`-provable or not;
- *      the "session-started token (PR #4107 finding B — pid recycling)"
- *      suite locks that in and would have caught an `isRecycledPid` carve-out
- *      added there in error (it was, once, in an earlier iteration of this
- *      change).
+ *      the "session-started token" suite (pid recycling) locks that in and
+ *      would have caught an `isRecycledPid` carve-out added there in error (it
+ *      was, once, in an earlier iteration of this change).
  */
 
 import { randomBytes } from "node:crypto";
@@ -369,7 +363,7 @@ export interface Lease {
    *
    * Recorded rather than inferred: the reader's platform says nothing about the
    * writer's, and inferring it handed a Windows holder an `ssh <host> ps -p`
-   * that cannot run there (docomply-review round 9, a reference-implementation pull request).
+   * that cannot run there.
    */
   platform: string;
   /** The working tree the lease is scoped to (`actor.ts`'s id), for readers. */
@@ -402,8 +396,8 @@ export interface Lease {
    * candidate and is wrong: ISO text has millisecond resolution, so a
    * `clear-lease` plus a same-session reclaim inside one millisecond produces
    * an identical `(pid, host, startedAt)` tuple and the fence would accept a
-   * lease that had genuinely been revoked and recreated (docomply-review round
-   * 8, PR #4069). An identity must not be derived from a clock it can tie on.
+   * lease that had genuinely been revoked and recreated. An identity must not
+   * be derived from a clock it can tie on.
    */
   generation: string;
   /**
@@ -419,12 +413,11 @@ export interface Lease {
    * dies and the OS later hands its exact pid to an unrelated NEW drive-pr
    * session, that session's fresh lease matches (pid, host) alone and reads
    * as "ours" — skipping the `leaseAlive` check that would otherwise have
-   * refused a live, genuinely foreign session (chatgpt-codex-connector,
-   * a reference-implementation pull request round 8, finding B). `sessionStarted` is the identical
-   * instance-token correlation `drives.ts`'s `ownParentDriver` already uses
-   * for the same hazard on `claims.ts`'s admission locks — ported here, not
-   * reimplemented; see that function's doc comment for the exact fallback
-   * semantics `isMine` mirrors.
+   * refused a live, genuinely foreign session. `sessionStarted` is the
+   * identical instance-token correlation `drives.ts`'s `ownParentDriver`
+   * already uses for the same hazard on `claims.ts`'s admission locks —
+   * ported here, not reimplemented; see that function's doc comment for the
+   * exact fallback semantics `isMine` mirrors.
    *
    * REQUIRED in `readLease` like every other field — the KEY must be present
    * and a string. The VALUE `''` is legal and is what a session carrying no
@@ -432,12 +425,11 @@ export interface Lease {
    *
    * An earlier revision read this leniently (missing → `''`) to keep
    * pre-field leases parsing. That is an accepts-both-shapes parser and the
-   * pre-GA BWC stance rules it out (`CLAUDE.md` § Backward Compatibility);
+   * pre-release stance against backward-compatibility shims rules it out;
    * worse, it quietly kept the weaker pid/host-only ownership decision alive
    * for exactly the records that omitted the key. Lease state is ephemeral —
    * it expires on its own and `clear-lease` drops it — so a superseded record
-   * failing to parse is a rollout detail, not a migration
-   * (chatgpt-codex-connector, a reference-implementation pull request round 15).
+   * failing to parse is a rollout detail, not a migration.
    */
   sessionStarted: string;
 }
@@ -481,7 +473,7 @@ export interface TreeLease extends Lease {
    * comparison silently stopped working the moment two such writes collide,
    * letting one sibling's rollback revert or delete a LATER, successful
    * sibling admission that merely happened to serialize identically
-   * (docomply-review, a reference-implementation pull request round 4). `rollbackTreeLease` now compares
+   *. `rollbackTreeLease` now compares
    * THIS field specifically rather than relying on whole-record byte
    * equality.
    */
@@ -538,8 +530,7 @@ const RENEW_AFTER_MAX_MS = 30_000;
  * It is not sound. 128 is git's GENERIC fatal status — dubious ownership, a
  * permissions failure, a corrupt object store all produce it — so reading 128
  * as "no repository, therefore no lease" authorises the POST on a tree that may
- * hold a live one (chatgpt-codex-connector P2 and docomply-review high, PR
- * #4107 round 2, independently).
+ * hold a live one.
  *
  * The first version of this argued the exposure was bounded by construction: a
  * driver in an unreadable tree could not have written a lease either, because
@@ -560,8 +551,8 @@ const RENEW_AFTER_MAX_MS = 30_000;
  * `lstat` rather than `existsSync`, because `existsSync` answers a DIFFERENT
  * question than the one this fence has to ask. It reports `false` for confirmed
  * absence and for every indeterminate failure alike, and the indeterminate ones
- * below are each reachable here AFTER a live lease has been written (measured,
- * PR #4107 round 4 — `existsSync` reports `false` for every one of them):
+ * below are each reachable here AFTER a live lease has been written (measured:
+ * `existsSync` reports `false` for every one of them):
  *
  *   - a `.git` that is a BROKEN SYMLINK — `existsSync` follows the link and
  *     reports false, though the marker entry plainly exists (`lstat` succeeds);
@@ -571,11 +562,9 @@ const RENEW_AFTER_MAX_MS = 30_000;
  *
  * Either one turns `resolveFenceContext` into `null` — post permitted, lease
  * never read — which is the same fail-open as the exit-128 check this replaced,
- * one step further in (chatgpt-codex-connector P2 and docomply-review high, PR
- * #4107 round 4, independently). So only ENOENT/ENOTDIR — a POSITIVE answer
- * that this directory holds no marker — continues the walk; any other error
- * means the filesystem could not answer, and an unanswered question fails
- * CLOSED, per `.claude/rules/document-scanning-gates.md` § 1.
+ * one step further in. So only ENOENT/ENOTDIR — a POSITIVE answer that this
+ * directory holds no marker — continues the walk; any other error means the
+ * filesystem could not answer, and an unanswered question fails CLOSED.
  *
  * An asserted-but-broken environment (`GIT_DIR` naming something unusable)
  * returns `true` here, so the caller demands a working git and refuses when it
@@ -662,10 +651,10 @@ const LEASE_PREFIX = "pr-drive-lease-";
  * `drive-state.ts` accepts it on `isDigits` alone, so an explicit `0999`
  * wrote `pr-drive-lease-0999-*` while a posting caller canonicalized its own
  * target to `999` and filtered on that prefix — missing the live lease
- * entirely and authorizing an irreversible reply (chatgpt-codex-connector,
- * a reference-implementation pull request round 16, as fresh evidence after the earlier reader-only
- * leading-zero fix). Normalizing at the shared boundary is what makes the two
- * sides agree by construction rather than by both remembering to.
+ * entirely and authorizing an irreversible reply (fresh evidence after the
+ * earlier reader-only leading-zero fix). Normalizing at the shared boundary
+ * is what makes the two sides agree by construction rather than by both
+ * remembering to.
  *
  * `BigInt`, matching `assertRemoteMutationAllowed`: `Number` is lossy past
  * `MAX_SAFE_INTEGER` and `Infinity` past `MAX_VALUE`, either of which would
@@ -771,8 +760,7 @@ export function resolveSession(label = "drive-state.ts"): Session {
     // this command an exclusion that excludes nobody — while it believes it is
     // protected. Reached when `drive.ts` is killed and a detached pass outlives
     // it still carrying the dead driver's pid: a replacement driver takes the
-    // lease over as abandoned, and both passes go on working
-    // (chatgpt-codex-connector, a reference-implementation pull request).
+    // lease over as abandoned, and both passes go on working.
     //
     // Refused rather than downgraded to tier 3, for the same reason a
     // non-numeric value is: the caller named this session deliberately, so a
@@ -872,8 +860,7 @@ export function readLease(path: string): Lease | null {
  * between the two reads and replaced with one that looks owned-by-this-session
  * or dead is accepted by the second read, `isMine`/`leaseAlive` waves it
  * through, and no directory-identity check can see it — the directory never
- * changed, only the file inside it did (chatgpt-codex-connector, a reference-implementation pull request
- * round 15). One snapshot in, one decision out.
+ * changed, only the file inside it did. One snapshot in, one decision out.
  */
 /**
  * The field-by-field shape check `parseLease` and `parseTreeLease` both build
@@ -915,7 +902,7 @@ function parseLeaseShape(v: Record<string, unknown>): Lease | null {
   // An earlier version of this comment argued the opposite — that failing
   // closed here would wedge the PR forever, because a corrupt file carries
   // no liveness — and then the gate was built to fail closed anyway, leaving
-  // the two contradicting each other (chatgpt-codex-connector). The argument
+  // the two contradicting each other. The argument
   // was right about the hazard and wrong about it being unavoidable: mtime
   // is the liveness a corrupt file still has, so failing closed is bounded
   // by the same window everything else here uses, not permanent.
@@ -935,9 +922,8 @@ function parseLeaseShape(v: Record<string, unknown>): Lease | null {
   // REQUIRED, exactly like every check above. An earlier revision accepted a
   // missing or non-string value and normalized it to '', to keep leases
   // written before the field existed parsing — which is an accepts-both-
-  // shapes parser, i.e. precisely the deprecated-field tolerance the pre-GA
-  // BWC stance rules out (`CLAUDE.md` § Backward Compatibility; and
-  // chatgpt-codex-connector, a reference-implementation pull request round 15, which named it). It also
+  // shapes parser, i.e. precisely the deprecated-field tolerance the
+  // pre-release stance against backward-compatibility shims rules out. It also
   // silently retained the weaker pid/host-only ownership decision for any
   // record that omitted the key.
   //
@@ -982,8 +968,9 @@ export function parseTreeLease(raw: string): TreeLease | null {
     // REQUIRED, exactly like every other field this module treats as debris
     // when absent (see `sessionStarted`'s own comment on why a partial record
     // does not parse rather than defaulting leniently) — a tree lease written
-    // by pre-round-4 code has no per-write identity a rollback CAS can trust,
-    // so it is debris here precisely as an unparseable file already is.
+    // before `revision` existed has no per-write identity a rollback CAS can
+    // trust, so it is debris here precisely as an unparseable file already
+    // is.
     if (typeof v.revision !== "string" || v.revision === "") return null;
     return { ...base, pr: v.pr, revision: v.revision };
   } catch {
@@ -1019,8 +1006,7 @@ export function readTreeLease(path: string): TreeLease | null {
  * `leaseFilesForActor` has just enumerated the filename, so the file existed a
  * moment ago, and reading `null` as "no lease" lets a file-level `EACCES`,
  * malformed JSON, or a torn partial record permit the irreversible POST while a
- * live foreign driver holds that very lease (docomply-review, a reference-implementation pull request round 1,
- * high).
+ * live foreign driver holds that very lease.
  *
  * The polarities differ for the same reason they differ over ladder tier 3:
  * claiming must not take an exclusion it cannot justify, while checking must
@@ -1044,8 +1030,7 @@ function readLeaseForFence(path: string): FenceLeaseRead {
   // TARGET, indistinguishable from the errno for an entry that is not there
   // at all. `lstat` does not follow the link, so it is the one call that
   // tells "gone" apart from "here, but broken" (the same reasoning
-  // `repositoryIsInPlay` applies to `.git`; docomply-review, a reference-implementation pull request round
-  // 4, and chatgpt-codex-connector, round 6, on this exact function).
+  // `repositoryIsInPlay` applies to `.git`).
   try {
     lstatSync(path);
   } catch (e) {
@@ -1085,12 +1070,11 @@ function readLeaseForFence(path: string): FenceLeaseRead {
  * creating an EMPTY one at the same pathname raises no `ENOENT` anywhere a
  * later, per-file `lstatSync` could see — the enumerated name simply is not
  * there anymore, and `readLeaseForFence` reports `absent` for a lease that is
- * still live in the directory that moved (chatgpt-codex-connector, a reference-implementation pull request
- * round 13, and round 14 on the gap that fix itself left: freezing the NAME
- * LIST does not free the per-candidate CONTENT read from being a second,
- * genuine filesystem touch). Device+inode is what actually changes when the
- * directory is swapped, so it is what `assertStateDirIdentityUnchanged` below
- * re-confirms before trusting a read taken through it.
+ * still live in the directory that moved (and freezing the NAME LIST does not
+ * free the per-candidate CONTENT read from being a second, genuine filesystem
+ * touch). Device+inode is what actually changes when the directory is
+ * swapped, so it is what `assertStateDirIdentityUnchanged` below re-confirms
+ * before trusting a read taken through it.
  */
 /**
  * `bigint`, not `number`. Node's numeric `stat` fields round 64-bit device and
@@ -1098,7 +1082,7 @@ function readLeaseForFence(path: string): FenceLeaseRead {
  * values above it — on such a filesystem a decimal round-trip either compares
  * two ROUNDED identities as equal (a swap the fence should have caught) or
  * fails the safe-integer check and refuses every child fence even though the
- * directory never changed (chatgpt-codex-connector, a reference-implementation pull request round 17).
+ * directory never changed.
  * `statSync(..., { bigint: true })` is exact, and BigInt survives the decimal
  * transport through the environment without loss.
  */
@@ -1120,9 +1104,8 @@ interface DirIdentity {
  * leaves completely untouched: the baseline and the closing check would both
  * match while the enumeration ran against the replacement, and the fence
  * would authorize the POST with the live lease still in the moved target
- * (chatgpt-codex-connector, a reference-implementation pull request round 16 — this helper had reintroduced
- * the `lstat` that an earlier round of this same PR removed for exactly this
- * reason).
+ * (this helper once reintroduced the `lstat` an earlier fix had removed for
+ * exactly this reason).
  *
  * A dangling link now yields `null` here rather than a link-inode identity,
  * which every caller already treats as "identity could not be established"
@@ -1181,8 +1164,7 @@ export function stateDirIdentityToken(dir: string): string {
  * ordinary case for an interactive session and for any older driver,
  * and must not refuse. A value that is PRESENT but unparseable is a different
  * thing entirely — something set this variable and this process cannot tell
- * what it meant — so it returns `null` and the caller fails closed, per
- * `.claude/rules/document-scanning-gates.md` § 1.
+ * what it meant — so it returns `null` and the caller fails closed.
  */
 export function parseDirIdentityToken(
   token: string,
@@ -1193,9 +1175,8 @@ export function parseDirIdentityToken(
   // `BigInt`, with no safe-integer ceiling: a 64-bit device or inode above
   // `Number.MAX_SAFE_INTEGER` is a legitimate value on some filesystems, and
   // rejecting it here would refuse every child fence on such a machine even
-  // though the directory never changed (chatgpt-codex-connector, a reference-implementation pull request
-  // round 17). The regex has already established both groups are digits, so
-  // this cannot throw.
+  // though the directory never changed. The regex has already established
+  // both groups are digits, so this cannot throw.
   return {
     kind: "ok",
     id: { dev: BigInt(m[1] as string), ino: BigInt(m[2] as string) },
@@ -1204,11 +1185,11 @@ export function parseDirIdentityToken(
 
 /**
  * Re-confirm the state directory is still the one an earlier enumeration
- * read, or fail closed — the primitive that closes the class of races PR
- * #4107 spent three rounds narrowing (statSync-then-later-read ordering,
- * then an `ENOENT`-only indeterminate flag on the later read, both defeated
- * by a rename-and-recreate that raises no `ENOENT` anywhere) instead of
- * patching the next specific window a reviewer finds.
+ * read, or fail closed — the primitive that closes the class of races earlier
+ * fixes only narrowed (statSync-then-later-read ordering, then an
+ * `ENOENT`-only indeterminate flag on the later read, both defeated by a
+ * rename-and-recreate that raises no `ENOENT` anywhere) instead of patching
+ * the next specific window a reviewer finds.
  *
  * `expected === null` means the enumeration this identity would defend found
  * no directory at all — the ordinary un-driven-tree case for the non-override
@@ -1220,7 +1201,7 @@ export function parseDirIdentityToken(
  * foreign lease exists (that would be exit 11/13), only that the question
  * "was the `absent` read just taken actually true?" went unanswered — and an
  * outcome reply has no undo, so an unanswered question in front of it must
- * refuse rather than assume (`.claude/rules/document-scanning-gates.md` § 1).
+ * refuse rather than assume.
  */
 function assertStateDirIdentityUnchanged(
   label: string,
@@ -1242,8 +1223,8 @@ function assertStateDirIdentityUnchanged(
     "",
     "Refusing to post. A directory swap here is exactly how a lease file this",
     "check enumerated can read back as `absent` while it is still live in the",
-    "directory that moved — the file never raises ENOENT, only this path does",
-    "(PR #4107). An outcome reply has no undo, so this refuses rather than trust",
+    "directory that moved — the file never raises ENOENT, only this path does.",
+    "An outcome reply has no undo, so this refuses rather than trust",
     'a read that cannot tell "nobody is driving" from "the directory moved".',
   );
 }
@@ -1305,9 +1286,8 @@ export function liveLeasesFor(stateDir: string, pr: string): Lease[] {
  * right ruling where it was written (a record that cannot name a holder cannot
  * produce an actionable refusal) and the wrong one for an ADMISSION decision:
  * there, an unreadable file is evidence that some tree wrote something, and
- * skipping it widens admission on exactly the input the gate understands least
- * (docomply-review, medium). `.claude/rules/document-scanning-gates.md` § 1
- * states the general form — a scanning gate that cannot read its input has
+ * skipping it widens admission on exactly the input the gate understands
+ * least. The general form: a scanning gate that cannot read its input has
  * verified nothing, and must never report an empty population.
  *
  * Bounded by MTIME so failing closed cannot wedge the PR forever. An unreadable
@@ -1347,7 +1327,7 @@ export function unreadableLeaseFilesFor(
  * `git worktree list` is not an exact existence predicate for the directory a
  * tree lease names: its registration can be pruned or lost by a git operation
  * elsewhere while the checkout, and a process still holding the lease, remain
- * (docomply-review, reap-state.ts PR #4197). This is the veto that lets a
+ *. This is the veto that lets a
  * retirement decision keyed on that list still fail closed against a lease a
  * live process is actively renewing, the same way `liveLeasesFor` does for
  * the per-PR case.
@@ -1367,8 +1347,7 @@ export function liveTreeLeaseFor(stateDir: string, actor: string): boolean {
  * lease at all" (both read `null` off `readTreeLease`), so a temporarily
  * malformed or partially-written lease from a genuinely live process would
  * fall straight through to the mtime age gate instead of failing closed the
- * way the per-PR predicate already does with `unreadableLeaseFilesFor`
- * (docomply-review, a reference-implementation pull request round 2).
+ * way the per-PR predicate already does with `unreadableLeaseFilesFor`.
  */
 export function treeLeaseUnreadableAndFreshFor(
   stateDir: string,
@@ -1521,10 +1500,10 @@ function treeLeaseLock(path: string) {
  * section — including the state mutex, `leaseLock`, and the admission
  * write — not merely a brief acquire-then-release gate (that was this
  * fix's own first cut; nesting the lock INSIDE the state mutex meant a new
- * claimant waiting out an in-flight push held the state mutex for the
- * whole wait, blocking every other mutation on the PR — docomply-review,
- * a reference-implementation pull request round 5). Acquiring it first, outside the state mutex, is what
- * keeps that wait from blocking anything else.
+ * claimant waiting out an in-flight push held the state mutex for the whole
+ * wait, blocking every other mutation on the PR). Acquiring it first,
+ * outside the state mutex, is what keeps that wait from blocking anything
+ * else.
  *
  * Nothing anywhere takes `prRemoteMutationLock` after `treeLeaseLock`:
  * `claimPrLease`'s own touch of it happens AFTER `claimTreeLease` has
@@ -1547,7 +1526,7 @@ function prRemoteMutationLock(stateDir: string, pr: string) {
  * neither side can prove more — a pid is RECYCLABLE, so once `s` carries its
  * own acquisition token the on-disk lease must carry the SAME one, mirroring
  * `drives.ts`'s `ownParentDriver` exactly (see `Lease.sessionStarted` for the
- * hazard this closes and PR #4107 finding B for the reproduction):
+ * hazard this closes):
  *
  *   - `s` carries a token → `l` must carry the SAME token. A pid+host match
  *     alone is no longer sufficient once a token is available to check,
@@ -1562,7 +1541,7 @@ function prRemoteMutationLock(stateDir: string, pr: string) {
  *     process and must not fall back to trusting pid+host over that evidence.
  *
  * KNOWN RESIDUAL, stated here rather than left as an implication of the two
- * bullets above (chatgpt-codex-connector, a reference-implementation pull request round 17). For the SECOND
+ * bullets above. For the SECOND
  * bullet — both sides tokenless — pid+host IS the ownership test, and a pid is
  * recyclable: if a tokenless session dies and the OS hands its pid to a new
  * tokenless session on the same host, that successor's live lease satisfies
@@ -1628,9 +1607,7 @@ function isMine(l: Lease, s: Session, actor: string): boolean {
  * predicate is never reached for it, which is correct: there is no token
  * evidence here to strip a false liveness reading from.)
  *
- * THE CRITERION (PR #4128 round 5, final — chatgpt-codex-connector +
- * docomply-review, threads PRRT_kwDOO7knac6apDDF / apaEL / apaEN / apalY /
- * apwqU, all four prior rounds' findings resolving to one root cause): this
+ * THE CRITERION (the one root cause behind every narrower attempt): this
  * predicate must PROVE `l`'s writer is dead. The only available proof is
  * TEMPORAL — the OS hands a pid onward only to a session that starts AFTER
  * the pid's previous holder dies — and using a temporal proof requires BOTH
@@ -1643,7 +1620,7 @@ function isMine(l: Lease, s: Session, actor: string): boolean {
  * both strictly ISO-valid, `l` strictly earlier.
  *
  * The proof for that one surviving case, spelled out because it is what makes
- * a round-6 finding on this exact mechanism answerable by citation rather
+ * a later challenge to this exact mechanism answerable by citation rather
  * than another investigation: suppose the ordering passes (`T_l < T_s`) and
  * yet `l`'s writer W is alive holding pid P. Tokens differ (`!isMine`), so
  * `s`'s claim was minted by some session M ≠ W that held P. Two processes
@@ -1846,8 +1823,7 @@ export const DRIVE_HELD_ELSEWHERE_EXIT = outOfBandExitCode(
  * nothing to compare and the ordinary fence cannot run. Installed by
  * `drive-state.ts` on the sessionless path, where it fires inside every locked
  * section with the state mutex held, which is what turns the preflight in
- * `claimLease` from a racy check into one continuous admission protocol
- * (docomply-review round 2).
+ * `claimLease` from a racy check into one continuous admission protocol.
  */
 export async function assertNoForeignDriveNow(
   stateDir: string,
@@ -1876,7 +1852,7 @@ function assertNoForeignDrive(
     // Nothing READABLE is driving. Before admitting, account for the files this
     // gate could not read at all — otherwise "no live foreign lease" is a claim
     // about the subset that happened to parse, and a corrupted or
-    // mixed-version live lease reads as an empty PR (docomply-review, medium).
+    // mixed-version live lease reads as an empty PR.
     //
     // This tree's OWN unreadable lease is excluded: `claimLease`'s locked path
     // is about to overwrite it, and refusing there would wedge a tree out of
@@ -1978,11 +1954,10 @@ export type LeaseAdmission =
  * gets.
  *
  * Fails closed on an unreadable-but-fresh file the identical way
- * `claimTreeLease`'s own writer path does (`treeLeaseUnreadableAndFresh`,
- * PR #4131 round 1): a record that exists but cannot be parsed is evidence
- * SOME session wrote it, and `readTreeLease` collapsing that to `null` must
- * not read as "nobody is here" for a sessionless caller either
- * (chatgpt-codex-connector, a reference-implementation pull request round 2).
+ * `claimTreeLease`'s own writer path does (`treeLeaseUnreadableAndFresh`): a
+ * record that exists but cannot be parsed is evidence SOME session wrote it,
+ * and `readTreeLease` collapsing that to `null` must not read as "nobody is
+ * here" for a sessionless caller either.
  */
 function checkNoForeignSessionInTree(path: string): void {
   if (treeLeaseUnreadableAndFresh(path)) {
@@ -1992,10 +1967,7 @@ function checkNoForeignSessionInTree(path: string): void {
     // names the PR-wide gate's cross-TREE refusal, a different question from
     // this tree-wide, within-this-tree one — using it here would trade one
     // inconsistency (an unnamed 1) for a worse one (11 and 13 both meaning
-    // "another session already holds THIS tree" in the same function)
-    // (coderabbitai, PR #4131 round 3; exit 13 was its literal suggestion,
-    // corrected to 11 to match this function's own sibling case rather than
-    // the differently-scoped PR-wide gate).
+    // "another session already holds THIS tree" in the same function).
     fail(
       11,
       `drive-state.ts: this working tree's TREE lease exists but could not be read as one:`,
@@ -2050,11 +2022,10 @@ function checkNoForeignSessionInTree(path: string): void {
 }
 
 /**
- * The FENCE half of the DEFERRED sessionless case (PR #4131 round
- * 2): acquires `treeLeaseLock` and runs `checkNoForeignSessionInTree` UNDER
- * it, then returns the lock STILL HELD for the caller to hand to
- * `store.setExtraLock` — which keeps it held through the mutation the fence
- * guards, not merely through the check.
+ * The FENCE half of the DEFERRED sessionless case: acquires `treeLeaseLock`
+ * and runs `checkNoForeignSessionInTree` UNDER it, then returns the lock
+ * STILL HELD for the caller to hand to `store.setExtraLock` — which keeps it
+ * held through the mutation the fence guards, not merely through the check.
  *
  * Reached only when `claimLease` deferred (this tree's own per-PR lease
  * already belongs to a live identified session, so tier 3 claimed no tree
@@ -2074,12 +2045,11 @@ function checkNoForeignSessionInTree(path: string): void {
  * one — before reaching for `treeLeaseLock`. So a foreign claim can land in
  * the instant between "the fence said clear" and "the mutation actually
  * ran", and both proceed in the same checkout regardless of how carefully
- * the check itself was synchronized (docomply-review + chatgpt-codex-
- * connector, PR #4131 round 2, reported independently). Holding
- * `treeLeaseLock` across that whole window is what closes it: any
- * `claimTreeLease` call for ANY pr in this tree needs the SAME lock before
- * it can write, so it queues behind this command's entire critical section
- * instead of slipping into the gap after the check.
+ * the check itself was synchronized. Holding `treeLeaseLock` across that
+ * whole window is what closes it: any `claimTreeLease` call for ANY pr in
+ * this tree needs the SAME lock before it can write, so it queues behind
+ * this command's entire critical section instead of slipping into the gap
+ * after the check.
  *
  * Lock order is state-mutex(thisPr) → `treeLeaseLock` — `locked` has
  * already acquired the state mutex before `runFence` ever runs, and this
@@ -2094,13 +2064,13 @@ export async function acquireSessionlessTreeGuardNow(
   const actor = await resolveActor();
   const path = treeLeasePathFor(stateDir, actor);
   const lock = treeLeaseLock(path);
-  // EXPLICIT bound, not the bare default — see this function's own comment
-  // on why "no caller-settable deadline" (chatgpt-codex-connector, a reference-implementation pull request
-  // round 5) is a real, if narrow, concern: `acquire()`'s implicit default
-  // reads `$DRIVE_PR_LOCK_TIMEOUT`, a PROCESS-WIDE env var that can be raised
-  // for an unrelated outer acquisition and would then silently inflate this
-  // NESTED one too, called while the PR's own state mutex is already held —
-  // compounding the wait every OTHER command on that PR queues behind.
+  // EXPLICIT bound, not the bare default — see this function's own comment on
+  // why "no caller-settable deadline" is a real, if narrow, concern:
+  // `acquire()`'s implicit default reads `$DRIVE_PR_LOCK_TIMEOUT`, a
+  // PROCESS-WIDE env var that can be raised for an unrelated outer
+  // acquisition and would then silently inflate this NESTED one too, called
+  // while the PR's own state mutex is already held — compounding the wait
+  // every OTHER command on that PR queues behind.
   // Pinning it to `LOCK_ACQUIRE_MAX_SEC` — the same hard ceiling every lock
   // in this module is already bounded by — keeps this acquisition's worst
   // case fixed regardless of that env var. True cooperative cancellation
@@ -2124,8 +2094,7 @@ export async function acquireSessionlessTreeGuardNow(
  * acquires `treeLeaseLock`, runs `assertTreeLeaseUnchanged` UNDER it, then
  * returns the lock STILL HELD for the caller to hand to
  * `store.setExtraLock` — the identical "through the mutation, not just the
- * check" fix round 2 gave the sessionless branch, which this branch never
- * received (chatgpt-codex-connector, a reference-implementation pull request round 3).
+ * check" fix the sessionless branch got, which this branch never received.
  *
  * Originally reached only for an IDENTIFIED session — hence the name — and
  * now, since an earlier change, for tier 3's own `holder: 'worktree'` claim too
@@ -2137,7 +2106,7 @@ export async function acquireSessionlessTreeGuardNow(
  * DIFFERENT pr's claim (`claimTreeLease` or `claimSessionlessTreeLease`)
  * takes only THAT pr's state mutex before reaching for `treeLeaseLock`, so
  * it can land between "the fence found no takeover" and "the mutation
- * actually ran" exactly as it could before round 2 closed this for the
+ * actually ran" exactly as it could before that fix closed this for the
  * deferred sessionless caller. Holding the lock across that whole window
  * closes it here too, by the same reasoning — for either ladder tier.
  *
@@ -2213,8 +2182,8 @@ export async function acquireIdentifiedTreeGuardNow(
  */
 /**
  * What `claimTreeLease` returns: the lease itself, plus the raw bytes a
- * ROLLBACK needs — NOT the parsed identity
- * (pid, host, generation) round 1's `rollbackTreeLease` compared.
+ * ROLLBACK needs — NOT the parsed identity (pid, host, generation) the first
+ * `rollbackTreeLease` compared.
  *
  * Two concurrent commands from the SAME session share (pid, host,
  * generation) identically whenever a renewal preserves the generation —
@@ -2225,16 +2194,16 @@ export async function acquireIdentifiedTreeGuardNow(
  * or outright delete, a sibling's successful admission (measured: two
  * siblings racing a tree lease's CREATION can both capture `before: null`
  * from the same pre-write instant, and the loser's rollback then deletes the
- * winner's lease entirely). Round 2's fix was a compare-and-swap on the
+ * winner's lease entirely). The next fix was a compare-and-swap on the
  * EXACT BYTES this call wrote, captured and compared while holding the SAME
  * lock the write itself used — never derived from a snapshot read outside
  * it.
  *
- * Round 4 narrowed that comparison further: `lastSeen`'s millisecond
+ * A later fix narrowed that comparison further: `lastSeen`'s millisecond
  * resolution lets two writes from the same session, same pr, same command
  * tie, producing byte-for-byte identical JSON — which made the raw-bytes CAS
  * itself ambiguous between "still my write" and "a sibling's later write
- * that happens to match" (docomply-review, a reference-implementation pull request round 4). `wroteRaw` is
+ * that happens to match". `wroteRaw` is
  * kept for the actual write/restore, but `rollbackTreeLease` now identifies
  * "the write THIS call made" by the fresh, per-write-only `revision` field
  * embedded in it, parsed and compared explicitly rather than assumed unique
@@ -2274,7 +2243,7 @@ interface TreeLeaseClaim {
  * diagnostic, a LIVE sessionless resolver's tree-wide claim on PR 999 in
  * the same tree — the exact cross-shipping hazard this whole mechanism
  * exists to close, reopened by treating the new record shape as
- * automatically "mine" (found in review, before this shipped).
+ * automatically "mine".
  *
  * The fix mirrors `claimSessionlessTreeLease`'s own `samePr` reasoning: a
  * `holder: 'worktree'` record names a SPECIFIC pr, so ownership of it turns
@@ -2327,7 +2296,7 @@ async function claimTreeLease(
   // criterion), and the fast path returns `seen` UNCHANGED with no write, so
   // skipping this check would report the PREVIOUS pr in every diagnostic and
   // refusal until the lease next goes through the locked path for some other
-  // reason (chatgpt-codex-connector / docomply-review, a reference-implementation pull request round 1).
+  // reason.
   //
   // `seen.holder === 'session'` is ALSO required, and is not implied by
   // `treeIsMine` — that predicate answers "mine" for a `holder: 'worktree'`
@@ -2337,8 +2306,8 @@ async function claimTreeLease(
   // `pid: 0` forever — this session's own admission would then compare
   // (0, host, generation) against itself in every later fence, and the
   // record would never actually reflect that an identified session is now
-  // driving (found in review: the SAME-pr upgrade test failed exactly this
-  // way before this guard existed). An upgrade always takes the locked path
+  // driving (the SAME-pr upgrade test failed exactly this way before this
+  // guard existed). An upgrade always takes the locked path
   // below, which writes the converted record — see `mine`'s own comment.
   const seen = readTreeLease(path);
   if (
@@ -2356,8 +2325,7 @@ async function claimTreeLease(
   // predecessor's exact pid to this new session, `leaseAlive`'s pid check is
   // asking whether THIS process is running — tautologically yes — and says
   // nothing about the dead predecessor `isMine` has already proven wrote
-  // `seen` (docomply-review round 9 / chatgpt-codex-connector round 8, PR
-  // #4131: the tree-lease claim omitted this, blocking every PR in the
+  // `seen` (the tree-lease claim once omitted this, blocking every PR in the
   // checkout until the stale lease aged out instead of recognizing the
   // takeover it actually was). Never true for a `holder: 'worktree'` `seen`
   // — `isRecycledPid` fails its own pid-match guard against pid 0 — so it is
@@ -2391,8 +2359,7 @@ async function claimTreeLease(
       // session wrote it — treating that as absent would mint a new
       // generation over a possibly-still-live foreign session on the
       // strength of a record nobody could actually read, mirroring the exact
-      // gap `unreadableLeaseFilesFor` closes for the PR-wide gate
-      // (chatgpt-codex-connector / docomply-review, a reference-implementation pull request round 1).
+      // gap `unreadableLeaseFilesFor` closes for the PR-wide gate.
       // Bounded by mtime for the identical reason that check is: an
       // unreadable file has no `lastSeen` a liveness test can read, so age is
       // the only signal left, and a genuinely old one is debris, not a live
@@ -2401,8 +2368,7 @@ async function claimTreeLease(
         // Exit 11, matching this function's OWN confirmed-live-foreign-
         // session case below, not `DRIVE_HELD_ELSEWHERE_EXIT` (13) — see
         // `checkNoForeignSessionInTree`'s identical fix for why 13 would be
-        // the wrong precedent to follow here (coderabbitai, PR #4131 round
-        // 3).
+        // the wrong precedent to follow here.
         fail(
           11,
           `drive-state.ts: this working tree's TREE lease exists but could not be read as one:`,
@@ -2421,7 +2387,7 @@ async function claimTreeLease(
       // The rollback preimage — read as RAW BYTES, under this exact lock,
       // immediately before this call's own write. Reading it any earlier (a
       // snapshot taken by the caller before ever reaching this lock) is
-      // precisely the round-1 bug: a concurrent sibling from the same
+      // precisely the first version's bug: a concurrent sibling from the same
       // session can write in between, and the outer snapshot would then be
       // stale by the time a rollback compares against it.
       let beforeRaw: string | null;
@@ -2546,21 +2512,21 @@ async function claimTreeLease(
  *
  * That compare-and-swap is load-bearing, not decoration — see
  * `TreeLeaseClaim`'s own comment for the concurrent-sibling hazard it closes
- * that an identity-based check (round 1's `(pid, host, generation)`
+ * that an identity-based check (the first version's `(pid, host, generation)`
  * comparison) could not: two writes from the same session are
- * indistinguishable by identity alone. Round 1/2 compared raw serialized
- * BYTES instead, reasoning that every write stamps a fresh `lastSeen` — true,
- * but `lastSeen` only has millisecond resolution, so two writes from the same
- * session, same pr, same command, with `generation` preserved by a renewal,
- * CAN tie on it and produce byte-for-byte identical JSON. A rollback keyed on
- * raw bytes then can't tell "the write THIS call made" apart from a sibling's
- * later, coincidentally identical one, and can revert or delete a
- * successfully admitted sibling (docomply-review, a reference-implementation pull request round 4). The
- * comparison is therefore on `revision` — a fresh random token stamped on
- * EVERY write, never preserved across a renewal, whose only job is telling
- * writes apart — parsed from both sides rather than compared as bytes, so an
- * incidental whitespace/key-order difference could never make two DIFFERENT
- * writes look unequal either.
+ * indistinguishable by identity alone. Earlier versions compared raw
+ * serialized BYTES instead, reasoning that every write stamps a fresh
+ * `lastSeen` — true, but `lastSeen` only has millisecond resolution, so two
+ * writes from the same session, same pr, same command, with `generation`
+ * preserved by a renewal, CAN tie on it and produce byte-for-byte identical
+ * JSON. A rollback keyed on raw bytes then can't tell "the write THIS call
+ * made" apart from a sibling's later, coincidentally identical one, and can
+ * revert or delete a successfully admitted sibling. The comparison is
+ * therefore on `revision` — a fresh random token stamped on EVERY write,
+ * never preserved across a renewal, whose only job is telling writes apart —
+ * parsed from both sides rather than compared as bytes, so an incidental
+ * whitespace/key-order difference could never make two DIFFERENT writes look
+ * unequal either.
  */
 async function rollbackTreeLease(
   path: string,
@@ -2604,8 +2570,8 @@ async function rollbackTreeLease(
  * durable record at the SAME path an identified session's `claimTreeLease`
  * writes to (`treeLeasePathFor`), so a second sessionless resolver in this
  * tree — even one driving a DIFFERENT pr — now finds something to read,
- * closing the gap chatgpt-codex-connector's PR #4131 review named and
- * `claimLease`'s own tier-3 comment used to leave as a stated residual.
+ * closing the gap `claimLease`'s own tier-3 comment used to leave as a
+ * stated residual.
  *
  * `isMine` cannot decide ownership here, and that is why this is a separate
  * function rather than a `claimTreeLease` branch: `isMine`'s `holder ===
@@ -2937,17 +2903,17 @@ export async function claimLease(
     // rather than exiting the process, so without this the tree lease is
     // left durably on disk pointing at a PR that was never actually
     // admitted, wedging this tree for any OTHER identified session until the
-    // staleness window passes (chatgpt-codex-connector / docomply-review,
-    // a reference-implementation pull request round 1). Roll it back to what THIS call wrote — never on the
-    // fast path, where nothing was written and there is nothing to undo.
+    // staleness window passes. Roll it back to what THIS call wrote — never
+    // on the fast path, where nothing was written and there is nothing to
+    // undo.
     //
     // The rollback itself is wrapped: `rollbackTreeLease` can throw (a lock
     // timeout, an fs error), and letting THAT propagate unguarded would
     // replace `err` — the caller's actual admission failure, which is what
     // they asked this command for in the first place — with a diagnostic
-    // about tree-lease bookkeeping instead (docomply-review, a reference-implementation pull request round
-    // 6). The rollback failure is still surfaced, on stderr, with its own
-    // remedy, but `err` is always what gets rethrown.
+    // about tree-lease bookkeeping instead. The rollback failure is still
+    // surfaced, on stderr, with its own remedy, but `err` is always what
+    // gets rethrown.
     if (treeClaim.wroteRaw !== null) {
       try {
         await rollbackTreeLease(
@@ -3011,14 +2977,13 @@ export async function claimLease(
 
     // A TAKEOVER — overwriting another session's lease because its owner is dead
     // or has stopped renewing — is a REVOCATION, and every other revocation on
-    // this PR coordinates with the state mutex: `clear-lease` takes it (round 8),
-    // `reset` holds it across `clearAllLeases`. This path did not, which left the
-    // one window the admission fence cannot see: the owner dies AFTER its child
+    // this PR coordinates with the state mutex: `clear-lease` takes it, `reset`
+    // holds it across `clearAllLeases`. This path did not, which left the one
+    // window the admission fence cannot see: the owner dies AFTER its child
     // passed `runFence()`, a replacement takes the lease over holding only the
     // lease mutex, and the old child then completes its mutation while the
     // replacement queues behind it — both writing under one actor, and for
-    // `claim-held` both dispatching a non-idempotent answer (docomply-review and
-    // chatgpt-codex-connector, round 11, PR #4069).
+    // `claim-held` both dispatching a non-idempotent answer.
     //
     // Taking the state mutex here closes it: a takeover can no longer land while
     // any command holds that mutex, which is exactly the interval between the
@@ -3044,16 +3009,15 @@ export async function claimLease(
     // invalidates an outstanding admission.
     //
     //   - takeover  (`held` exists, is foreign, and is not alive) — the original
-    //     round-11 case;
-    //   - CREATION  (`held` is absent) — round 13's. Scoping the mutex to
-    //     takeovers alone left `reset` exposed to a tree it had never seen: a new
-    //     actor's first claim writes a lease AFTER `clearAllLeases` enumerated,
-    //     so the sweep reports no live foreign lease, `reset` deletes the shared
-    //     state and claim files, and the freshly admitted command then runs
-    //     against reset state seeing its own lease intact (docomply-review round
-    //     13, PR #4069). Taking the mutex for creation makes enumeration and
-    //     reset atomic with respect to new admissions, which is what that finding
-    //     asks for.
+    //     case;
+    //   - CREATION  (`held` is absent) — the later one. Scoping the mutex to
+    //     takeovers alone left `reset` exposed to a tree it had never seen: a
+    //     new actor's first claim writes a lease AFTER `clearAllLeases`
+    //     enumerated, so the sweep reports no live foreign lease, `reset`
+    //     deletes the shared state and claim files, and the freshly admitted
+    //     command then runs against reset state seeing its own lease intact.
+    //     Taking the mutex for creation makes enumeration and reset atomic with
+    //     respect to new admissions, which is what that case needs.
     //
     // A RENEWAL preserves the generation, so it invalidates nothing and keeps the
     // cheap single-lock path — which is what matters for `claim-held`'s per-key
@@ -3094,7 +3058,7 @@ export async function claimLease(
 
     async function withLeaseLock(holdState: boolean): Promise<Lease> {
       // Acquired BEFORE the state mutex, not nested inside it
-      // (docomply-review, a reference-implementation pull request round 5): the first cut of this fix
+      //: the first cut of this fix
       // nested the acquisition inside `underLocks`, below the state mutex
       // and `leaseLock` — so a NEW claimant waiting out an in-flight push
       // held the state mutex for the ENTIRE wait (up to
@@ -3146,21 +3110,19 @@ export async function claimLease(
           // Never acquired, so nothing for `release()` to give back — but
           // `createLock` registers this handle's process-exit/signal
           // listeners unconditionally at construction, not on a successful
-          // acquire, so `dispose()` still has real cleanup to do here
-          // (docomply-review, a reference-implementation pull request round 1).
+          // acquire, so `dispose()` still has real cleanup to do here.
           remoteLock.dispose();
           // `LockAcquireTimeoutError` specifically, NOT the broader
-          // `ExitError` every `acquire()` failure is (docomply-review, PR
-          // #4164 round 3): `acquire()` also throws a plain `ExitError(1)`
-          // when it wins the `mkdir` but then fails to create its
-          // ownership marker (`EACCES`, `ENOSPC`, a read-only filesystem)
-          // — an infrastructure failure with no rival holder involved at
-          // all. Relabeling THAT as "another worktree has a mutation in
-          // flight" would tell a human or an orchestrator to wait it out
-          // instead of surfacing the broken state directory. Only the
-          // deadline-exceeded case this lock genuinely waited out gets
-          // converted to the live-contention exit 11 below; anything else
-          // keeps its own exit code and message untouched.
+          // `ExitError` every `acquire()` failure is: `acquire()` also
+          // throws a plain `ExitError(1)` when it wins the `mkdir` but then
+          // fails to create its ownership marker (`EACCES`, `ENOSPC`, a
+          // read-only filesystem) — an infrastructure failure with no rival
+          // holder involved at all. Relabeling THAT as "another worktree has
+          // a mutation in flight" would tell a human or an orchestrator to
+          // wait it out instead of surfacing the broken state directory.
+          // Only the deadline-exceeded case this lock genuinely waited out
+          // gets converted to the live-contention exit 11 below; anything
+          // else keeps its own exit code and message untouched.
           if (!(e instanceof LockAcquireTimeoutError)) throw e;
           fail(
             11,
@@ -3177,14 +3139,14 @@ export async function claimLease(
       }
       // Heartbeat `remoteLock`'s mtime for as long as it is held, starting
       // the instant it is acquired — including through `stateLock.acquire()`
-      // and the whole of `underLocks()` below (docomply-review, a reference-implementation pull request
-      // round 7): if `$DRIVE_PR_LOCK_STALE_MIN` is shorter than the time
-      // those two genuinely take — an operator-shortened staleness window,
-      // or ordinary contention on `stateLock`/`leaseLock` from a `claim-held`
-      // fan-out — a contending `acquire()` elsewhere could otherwise treat
-      // this still-live hold as abandoned and break it before the admission
-      // write ever runs, reopening the exact overlap this lock exists to
-      // prevent. The two remote-mutation callers (`guarded-push.ts`,
+      // and the whole of `underLocks()` below: if `$DRIVE_PR_LOCK_STALE_MIN`
+      // is shorter than the time those two genuinely take — an
+      // operator-shortened staleness window, or ordinary contention on
+      // `stateLock`/`leaseLock` from a `claim-held` fan-out — a contending
+      // `acquire()` elsewhere could otherwise treat this still-live hold as
+      // abandoned and break it before the admission write ever runs,
+      // reopening the exact overlap this lock exists to prevent. The two
+      // remote-mutation callers (`guarded-push.ts`,
       // `answer-summary-finding.ts`) already heartbeat for the identical
       // reason across their own, longer-running mutation.
       const remoteLockHeartbeat =
@@ -3207,7 +3169,7 @@ export async function claimLease(
       // loop (and therefore the whole CLI process) alive indefinitely,
       // continuing to heartbeat a lock that guards every later claim,
       // push, or POST for this PR until something external kills the
-      // process (docomply-review, a reference-implementation pull request round 8).
+      // process.
       if (stateLock) {
         try {
           await stateLock.acquire();
@@ -3319,7 +3281,7 @@ export async function claimLease(
         // function's own state mutex and holds it through this entire
         // call, so the write below is protected without anything further
         // needed here. See that function's own comment for why it moved
-        // there (docomply-review, a reference-implementation pull request round 5) and what it closes.
+        // there and what it closes.
         const now = new Date().toISOString();
         const lease: Lease = {
           holder,
@@ -3390,7 +3352,7 @@ export async function claimLease(
  * NOT `startedAt`, which this first used: ISO text resolves to the millisecond,
  * so a `clear-lease` and a same-session reclaim inside one millisecond produce
  * an identical tuple and the fence would wave through a lease that had actually
- * been revoked and recreated (docomply-review round 8).
+ * been revoked and recreated.
  *
  * One window this deliberately does NOT close: the check and the write are not
  * themselves atomic against revocation, because `clearLease` takes only the
@@ -3475,7 +3437,7 @@ export function assertTreeLeaseUnchanged(
     // documented remedy for unreadable debris), and a same-session
     // rollback can delete it too.
     // Naming a SPECIFIC cause this fence cannot actually verify would mislead
-    // more than it helps (docomply-review, a reference-implementation pull request round 6).
+    // more than it helps.
     held === null
       ? "The lease this command was admitted on is gone."
       : `It now belongs to ${leaseHolderLabel(held)} (since ${held.startedAt}, PR #${held.pr}).`,
@@ -3502,7 +3464,7 @@ export function assertTreeLeaseUnchanged(
  * A `git` that TIMES OUT is not that answer, and it is the one input this
  * cannot read: it throws (exit 1) rather than returning `null`, because a
  * fence that silently allows on a blind read has verified nothing while
- * reporting that it has (`.claude/rules/document-scanning-gates.md` rule 1).
+ * reporting that it has.
  * The mutation this guards is unwithdrawable, so the cost of failing closed is
  * a re-run and the cost of failing open is a duplicate outcome reply on a live
  * thread.
@@ -3558,8 +3520,7 @@ export async function resolveFenceContext(label: string): Promise<
   // relative override reaching THIS fence would resolve against whichever
   // directory this process happened to launch from — the base checkout and
   // a linked worktree launching from different cwds would silently fence
-  // against two different directories (docomply-review + chatgpt-codex-
-  // connector, PR #4612 round 4).
+  // against two different directories.
   if (override !== "" && !isAbsolute(override)) {
     fail(
       2,
@@ -3586,16 +3547,15 @@ export async function resolveFenceContext(label: string): Promise<
     //
     // ENUMERATED here, not merely `statSync`'d — and the RESULT carried
     // forward for `assertRemoteMutationAllowed` to filter in-memory, rather
-    // than re-ENUMERATING the directory later. Two rounds of narrowing a
-    // check-then-later-use gap (statSync ordering, then an `ENOENT`-only
-    // indeterminate flag on the later read) both left a real window open:
-    // renaming this directory away and creating an EMPTY one at the same
-    // pathname raises no `ENOENT` anywhere, so an `ENOENT`-keyed check cannot
-    // see it — the enumeration would simply, and wrongly, read as confirmed
-    // empty (chatgpt-codex-connector, a reference-implementation pull request round 13). Freezing the NAME
-    // LIST here closes that half: a rename-and-recreate cannot inject or hide
-    // a name this fence reasons about, because the list was already fixed
-    // before it could land.
+    // than re-ENUMERATING the directory later. Two earlier attempts at
+    // narrowing a check-then-later-use gap (statSync ordering, then an
+    // `ENOENT`-only indeterminate flag on the later read) both left a real
+    // window open: renaming this directory away and creating an EMPTY one at
+    // the same pathname raises no `ENOENT` anywhere, so an `ENOENT`-keyed
+    // check cannot see it — the enumeration would simply, and wrongly, read
+    // as confirmed empty. Freezing the NAME LIST here closes that half: a
+    // rename-and-recreate cannot inject or hide a name this fence reasons
+    // about, because the list was already fixed before it could land.
     //
     // It does NOT close the CONTENT half, and an earlier version of this
     // comment overclaimed that it did ("there is no later moment left for it
@@ -3604,10 +3564,10 @@ export async function resolveFenceContext(label: string): Promise<
     // unavoidably a second, genuine filesystem touch against this same path —
     // the file this enumeration saw may no longer be reachable there if the
     // directory itself was swapped, and `readLeaseForFence` would then report
-    // `absent` for a lease that is still live in the directory that moved
-    // (docomply-review, a reference-implementation pull request round 14, finding A — a swap landing DURING
-    // this fence; finding C's before-the-pass swap is a different window,
-    // closed by the inherited driver baseline further below, not by this).
+    // `absent` for a lease that is still live in the directory that moved (a
+    // swap landing DURING this fence; a swap before the pass started is a
+    // different window, closed by the inherited driver baseline further
+    // below, not by this).
     // `stateDirIdentity` below is what closes THAT:
     // captured in the same breath as this enumeration, and re-confirmed by
     // `assertStateDirIdentityUnchanged` before any later `absent` read is
@@ -3621,7 +3581,7 @@ export async function resolveFenceContext(label: string): Promise<
     // afterwards would describe whatever directory is at this path by then, so
     // a swap landing between the listing and that capture would be measured
     // against the replacement rather than against what was actually
-    // enumerated (chatgpt-codex-connector, a reference-implementation pull request round 15). This matters
+    // enumerated. This matters
     // here even when a driver baseline IS inherited, and it is the ONLY
     // protection for this window when one is not.
     const beforeEnumeration = statDirIdentity(stateDir);
@@ -3657,7 +3617,7 @@ export async function resolveFenceContext(label: string): Promise<
         "Refusing to post. This directory was just enumerated successfully, so an",
         "identity check failing immediately afterwards means it is being torn down",
         "or replaced right now — exactly the moment a live lease inside it must not",
-        "be read as absent (PR #4107).",
+        "be read as absent.",
       );
     }
     // Closing bracket: the listing above is only trustworthy if it was taken
@@ -3672,7 +3632,7 @@ export async function resolveFenceContext(label: string): Promise<
         "",
         "Refusing to post. The name list this fence would judge from was not taken",
         "from a single, stable directory, so a lease it did not see may still be live",
-        "in the directory that moved (PR #4107).",
+        "in the directory that moved.",
       );
     }
     // The baseline the DRIVER observed, before this pass existed. Everything
@@ -3680,18 +3640,16 @@ export async function resolveFenceContext(label: string): Promise<
     // can prove it did not change BEFORE it — a rename-and-recreate that
     // completed before the pass started leaves a replacement whose identity
     // is perfectly stable from here on, so a fence that only watches itself
-    // reads it as an all-clear (chatgpt-codex-connector, a reference-implementation pull request round 14,
-    // finding C).
+    // reads it as an all-clear.
     //
     // REQUIRED on this path, not optional. This branch is reached only when
     // `$DRIVE_PR_STATE_DIR` is set, and `drive.ts` is the only thing that sets
-    // it — and since round 16 it either exports the identity beside it or
-    // refuses to start. So a state-dir override arriving WITHOUT an identity
-    // can only come from a driver predating that change, and treating it as
-    // "no baseline, carry on" is a compatibility path for superseded code
-    // that permanently preserves the unfenced pre-baseline behaviour — which
-    // the pre-GA stance rules out (`CLAUDE.md` § Backward Compatibility;
-    // docomply-review and chatgpt-codex-connector, a reference-implementation pull request round 16).
+    // it — and it either exports the identity beside it or refuses to start.
+    // So a state-dir override arriving WITHOUT an identity can only come from
+    // a driver predating that change, and treating it as "no baseline, carry
+    // on" is a compatibility path for superseded code that permanently
+    // preserves the unfenced pre-baseline behaviour — which the pre-release
+    // stance against backward-compatibility shims rules out.
     //
     // An earlier revision justified the absent case with "an interactive
     // session". That was simply wrong: an interactive session sets no
@@ -3715,7 +3673,7 @@ export async function resolveFenceContext(label: string): Promise<
         "path, and every current driver exports the directory identity beside it —",
         "so an override arriving without one means this pass cannot tell whether the",
         "directory was already swapped before it started. Re-run through a current",
-        "drive.ts, or unset $DRIVE_PR_STATE_DIR to use the ordinary path (PR #4107).",
+        "drive.ts, or unset $DRIVE_PR_STATE_DIR to use the ordinary path.",
       );
     }
     if (inherited.kind === "bad") {
@@ -3726,8 +3684,7 @@ export async function resolveFenceContext(label: string): Promise<
         "",
         "Refusing to post. This variable is the driver-established baseline that",
         "proves the inherited state directory was not swapped before this pass",
-        "started; an unreadable one is that proof going missing, not an all-clear",
-        "(PR #4107).",
+        "started; an unreadable one is that proof going missing, not an all-clear.",
       );
     }
     if (
@@ -3746,8 +3703,7 @@ export async function resolveFenceContext(label: string): Promise<
         "Refusing to post. Its on-disk identity differs from the baseline the driver",
         "exported, so the directory at this path was replaced at some point before",
         "this check ran — the leases this pass would read are not the leases the",
-        "drive wrote, and a live one may still sit in the directory that moved",
-        "(PR #4107).",
+        "drive wrote, and a live one may still sit in the directory that moved.",
       );
     }
     return {
@@ -3771,7 +3727,7 @@ export async function resolveFenceContext(label: string): Promise<
     //
     // Reading a failure as "no drive state" is a fail-open, and a reproduced
     // one: `PATH=/nonexistent` made the spawn fail and this permitted the POST
-    // with no lease checked (chatgpt-codex-connector, a reference-implementation pull request round 1).
+    // with no lease checked.
     // Reading git's exit 128 as "no repository" is the SAME fail-open one step
     // narrower, because 128 is git's generic fatal status — see
     // `repositoryIsInPlay`, which is why that question is now answered from the
@@ -3787,7 +3743,7 @@ export async function resolveFenceContext(label: string): Promise<
       // and the gap is the reachable one: a marker DELETED or RENAMED after a
       // drive wrote its lease produces a genuine `ENOENT`, which no filesystem
       // probe can tell apart from a tree that never held a repository
-      // (docomply-review high, PR #4107 round 4). `repositoryIsInPlay` closes
+      //. `repositoryIsInPlay` closes
       // the cases where the marker is still THERE but unreadable — a broken
       // symlink, an unsearchable ancestor — and cannot close these.
       //
@@ -3824,8 +3780,7 @@ export async function resolveFenceContext(label: string): Promise<
     // consumer (including this same process's own lease writes) reads and
     // writes `~/.local/state/groundwork/drive-pr/<cloneKey>/`. A standalone command run
     // without `$DRIVE_PR_STATE_DIR` would then authorize a mutation without
-    // ever seeing a live lease that exists only in the relocated directory
-    // (docomply-review, a reference-implementation pull request round 6).
+    // ever seeing a live lease that exists only in the relocated directory.
     //
     // NOT routed through `resolveStateDir()`'s own `ensureMigratedFromLegacy`
     // guard, on purpose: that guard is a HARD refusal for a clone with real
@@ -3850,7 +3805,7 @@ export async function resolveFenceContext(label: string): Promise<
     // otherwise-clean resolution. A drive admitted that way writes its lease
     // into `newDir` while the marker stays absent, and a marker-only check
     // here would still fall back to `legacyDir` and miss it entirely
-    // (docomply-review, a reference-implementation pull request round 7). `newDir` existing at all is the
+    //. `newDir` existing at all is the
     // other half of the signal: `ensureMigratedFromLegacy` always `mkdirSync`s
     // it before doing anything else, so its presence means at least one
     // caller reached this point — checking there too, not the marker alone,
@@ -3904,7 +3859,7 @@ const MAX_DIR_REFRESH_ATTEMPTS = 3;
  * Extracted so `assertRemoteMutationAllowed` can re-run this SAME decision
  * live, right before its enumeration trusts it — see the call site's own
  * comment for why a single snapshot decision here is not enough on its own
- * (docomply-review, a reference-implementation pull request round 7, TOCTOU finding).
+ * (a time-of-check-to-time-of-use race).
  *
  * `newDir` existing at all — not just its migration marker — counts as
  * "current-code drive has been admitted here": `ensureMigratedFromLegacy`
@@ -3918,13 +3873,13 @@ function resolveLegacyFallbackDir(legacyDir: string): string {
   // documented (see the call site below) as lightweight and read-only, and
   // `defaultStateDirFor` calls `cloneKey`, which MINTS and durably persists
   // a fresh clone identity the first time it runs on a clone that has none
-  // yet — a real, on-disk side effect a read-only check must not have
-  // (docomply-review, a reference-implementation pull request round 8; the same argument `peekCloneKey`'s
-  // own doc already makes for `migrate-legacy-state.ts`'s dry-run path). `null`
-  // means no identity has ever been minted for this clone — which means
-  // nothing could possibly have been admitted into `newDir` either, since
-  // admission is what mints the identity in the first place — so the
-  // fallback to `legacyDir` below is exact, not a guess.
+  // yet — a real, on-disk side effect a read-only check must not have (the
+  // same argument `peekCloneKey`'s own doc already makes for
+  // `migrate-legacy-state.ts`'s dry-run path). `null` means no identity has
+  // ever been minted for this clone — which means nothing could possibly
+  // have been admitted into `newDir` either, since admission is what mints
+  // the identity in the first place — so the fallback to `legacyDir` below
+  // is exact, not a guess.
   const newDir = peekDefaultStateDirFor(legacyDir);
   if (newDir === null) return legacyDir;
   // The migration marker is the ONLY unconditional proof: it is published
@@ -3941,9 +3896,9 @@ function resolveLegacyFallbackDir(legacyDir: string): string {
   // was refused moments ago and never wrote anything". Trusting the bare
   // `existsSync(newDir)` in that second case would select the empty
   // directory and never look at `legacyDir` at all, missing a genuine
-  // old-code (or newly-refused) lease sitting there (docomply-review, PR
-  // #4618 round 9 — round 8's "prefer empty newDir" refinement fixed the
-  // symmetric case but left this unconditional check itself unfixed).
+  // old-code (or newly-refused) lease sitting there (an earlier "prefer empty
+  // newDir" refinement fixed the symmetric case but left this unconditional
+  // check itself unfixed).
   //
   // The one signal that tells the two apart without checking both
   // directories on every call: whether `legacyDir` itself still holds real
@@ -3996,15 +3951,14 @@ function resolveLegacyFallbackDir(legacyDir: string): string {
  *     matches on a different basis entirely — its record names a TREE, so
  *     `isMine` compares actors and never consults the session fields (*     and see that function for why the two cases must not share a test).
  *
- *     CLOSED for the common case (PR #4107 finding B): `$DRIVE_PR_SESSION`
- *     names a pid inherited at spawn time, with nothing on its own to prove
- *     that pid still means what it did then. If this pass's own driver dies
- *     and the OS later recycles its exact pid for an unrelated replacement
- *     driver, a bare (pid, host) match would read the replacement's fresh
- *     lease as "ours" — skipping past it without ever reaching the
- *     `leaseAlive` check that would otherwise have refused a live, genuinely
- *     foreign session (chatgpt-codex-connector, a reference-implementation pull request round 8, originally
- *     reproduced). `isMine` now also requires `sessionStarted` to match
+ *     CLOSED for the common case: `$DRIVE_PR_SESSION` names a pid inherited
+ *     at spawn time, with nothing on its own to prove that pid still means
+ *     what it did then. If this pass's own driver dies and the OS later
+ *     recycles its exact pid for an unrelated replacement driver, a bare
+ *     (pid, host) match would read the replacement's fresh lease as "ours" —
+ *     skipping past it without ever reaching the `leaseAlive` check that
+ *     would otherwise have refused a live, genuinely foreign session
+ *     (reproduced). `isMine` now also requires `sessionStarted` to match
  *     whenever THIS caller carries one, and `drive.ts` always exports
  *     `$DRIVE_PR_SESSION_STARTED` alongside `$DRIVE_PR_SESSION` — so every
  *     pass it spawns carries a token a recycled pid cannot reproduce, and the
@@ -4034,7 +3988,7 @@ function resolveLegacyFallbackDir(legacyDir: string): string {
  * actor-wide search below is blind to every OTHER tree's leases by
  * construction, so a detached pass finds only its own dead driver's lease,
  * refuses nothing, and posts alongside whoever is actually driving the PR now
- * (chatgpt-codex-connector, a reference-implementation pull request round 8). With no PR it checks every
+ *. With no PR it checks every
  * lease THIS WORKING TREE holds instead — PR-wide is not answerable without a
  * network round-trip this hot-path fence does not spend — which is sound for
  * the reason `actor.ts` gives: at most one drive runs per tree, so a live
@@ -4053,7 +4007,7 @@ function resolveLegacyFallbackDir(legacyDir: string): string {
  * The same argument one level down is why the per-file read goes through
  * `readLeaseForFence` rather than `readLease`: an unreadable DIRECTORY was
  * fenced while an unreadable FILE inside it still read as "no lease" and
- * permitted the post (docomply-review, a reference-implementation pull request round 1). Fixing the
+ * permitted the post. Fixing the
  * enumeration and leaving the record was the instance, not the class.
  */
 /**
@@ -4062,14 +4016,14 @@ function resolveLegacyFallbackDir(legacyDir: string): string {
  *.
  *
  * `ctx.overrideEntries` is captured once by `resolveFenceContext`, called by
- * the CALLER before this function ever runs — sound when `checkAllowed`
- * used it essentially back-to-back, which is what every round-13/14/15 fix
- * above assumed. This PR's own `remoteLock.acquire` breaks that assumption:
- * it can wait up to `LOCK_ACQUIRE_MAX_SEC` for a REPLACEMENT claimant to
- * finish writing its own lease and release the lock, and trusting the
- * pre-wait snapshot after that wait reads the replacement's freshly-written
- * lease as `absent` — the exact handoff race this whole lock exists to
- * close, reopened one level up by the wait itself.
+ * the CALLER before this function ever runs — sound when `checkAllowed` used
+ * it essentially back-to-back, which is what every directory-swap fix above
+ * assumed. `remoteLock.acquire` breaks that assumption: it can wait up to
+ * `LOCK_ACQUIRE_MAX_SEC` for a REPLACEMENT claimant to finish writing its
+ * own lease and release the lock, and trusting the pre-wait snapshot after
+ * that wait reads the replacement's freshly-written lease as `absent` — the
+ * exact handoff race this whole lock exists to close, reopened one level up
+ * by the wait itself.
  *
  * The non-override path needs no equivalent fix: its own enumeration
  * (`leaseFilesForActor` / `leaseFilesFor`) runs LIVE, inside `checkAllowed`
@@ -4157,27 +4111,26 @@ export async function assertRemoteMutationAllowed(
   // route treats identically to "999", but neither a strict `===` nor
   // `leaseFilesFor`'s own filename PREFIX match would find a lease stored
   // under the canonical form otherwise — silently narrowing an explicit
-  // `--pr 0999` to zero candidates and authorizing the POST past a live one
-  // (chatgpt-codex-connector, a reference-implementation pull request round 7).
+  // `--pr 0999` to zero candidates and authorizing the POST past a live one.
   //
   // `BigInt`, not `Number`: `isDigits` only guarantees an all-digit string,
   // not one that fits a float's 53-bit mantissa — `String(Number(pr))` is
   // LOSSY past `Number.MAX_SAFE_INTEGER` (silently rounds to a neighboring
   // integer) and outright wrong past `Number.MAX_VALUE` (`Infinity`), either
   // of which enumerates the wrong — often empty — lease set and authorizes a
-  // POST past a live lease for the real identifier (docomply-review, a reference-implementation pull request
-  // round 10). `BigInt` has no such ceiling and canonicalizes leading zeros
-  // the same way `.toString()` always has.
+  // POST past a live lease for the real identifier. `BigInt` has no such
+  // ceiling and canonicalizes leading zeros the same way `.toString()`
+  // always has.
   const canonicalPr = pr === null ? null : BigInt(pr).toString();
   // Resolved FRESH, before `remoteLock` below is even constructed — not
   // reused from `resolveFenceContext`'s original snapshot decision. The lock
   // path is keyed by `ctx.stateDir`, so a stale snapshot does not just make
-  // `checkAllowed`'s enumeration read the wrong directory (the round-7 fix,
-  // below): it makes THIS lock guard the wrong directory too, and a fresh
+  // `checkAllowed`'s enumeration read the wrong directory (the fix for that
+  // is below): it makes THIS lock guard the wrong directory too, and a fresh
   // admission via `claimPrLease` — which resolves its OWN lock path live —
   // would then acquire a DIFFERENT lock file than this call holds, so the
   // two never contend at all despite both naming the identical PR
-  // (docomply-review, a reference-implementation pull request round 8, summary finding). The loop below
+  //. The loop below
   // additionally re-checks after `acquire()` itself, which can wait up to
   // `LOCK_ACQUIRE_MAX_SEC` — long enough for the choice to move again.
   if (!ctx.fromOverride) {
@@ -4191,15 +4144,15 @@ export async function assertRemoteMutationAllowed(
   // Acquired FIRST, before this function's own enumeration even
   // runs, and returned to the caller STILL HELD: the identical "through the
   // mutation, not just the check" shape `assertTreeMutationAllowed` already
-  // carries for the TREE axis (round 7-8), applied here to the PR axis this
-  // function was deferred on when PR #4131 shipped that fix. Before this,
-  // the function below returned `void` having taken no lock at all — a
-  // point-in-time read of the per-PR lease set, with nothing held once it
-  // returned, left the exact window a replacement worktree's admission needs
-  // to land in: `guarded-push.ts` starts a `git push` that can legitimately
-  // run for the whole of `$DRIVE_PR_PUSH_TIMEOUT` (an hour, by default), and
-  // nothing stopped a DIFFERENT worktree from claiming this PR's per-PR lease
-  // and mutating it while that push was still in flight.
+  // carries for the TREE axis, applied here to the PR axis this function was
+  // deferred on when that fix first shipped. Before this, the function below
+  // returned `void` having taken no lock at all — a point-in-time read of the
+  // per-PR lease set, with nothing held once it returned, left the exact
+  // window a replacement worktree's admission needs to land in:
+  // `guarded-push.ts` starts a `git push` that can legitimately run for the
+  // whole of `$DRIVE_PR_PUSH_TIMEOUT` (an hour, by default), and nothing
+  // stopped a DIFFERENT worktree from claiming this PR's per-PR lease and
+  // mutating it while that push was still in flight.
   //
   // Keyed by PR ALONE — `prRemoteMutationLockPathFor`, one file for every
   // worktree driving this PR — mirroring how `treeLeasePathFor` is keyed by
@@ -4214,29 +4167,28 @@ export async function assertRemoteMutationAllowed(
   // `pr === null` case documents for `treeIsMine`.
   //
   // `claimPrLease` (this module's admission WRITE path) takes the SAME lock
-  // — and, since PR #4164 round 1, HOLDS it through its own admission write
-  // rather than releasing right after acquiring, for the identical reason
-  // this function holds it through the caller's mutation: a release-then-
-  // write gap is itself a window a DIFFERENT acquirer can land in — so a
-  // takeover attempt waits out an in-flight hold here, bounded the same way
-  // every acquisition in this module is (`LOCK_ACQUIRE_MAX_SEC` at most,
-  // `$DRIVE_PR_LOCK_TIMEOUT` if smaller), refusing with exit 11 rather than
-  // racing past a check that saw nothing because nothing had renewed yet —
-  // see its own comment for why that bound, not the true worst case, is
-  // what a single `acquire()` may wait. See the lock-ordering note beside
-  // `treeLeaseLock`'s own definition for where this sits relative to the
-  // other locks in this module.
+  // — and HOLDS it through its own admission write rather than releasing
+  // right after acquiring, for the identical reason this function holds it
+  // through the caller's mutation: a release-then-write gap is itself a
+  // window a DIFFERENT acquirer can land in — so a takeover attempt waits
+  // out an in-flight hold here, bounded the same way every acquisition in
+  // this module is (`LOCK_ACQUIRE_MAX_SEC` at most, `$DRIVE_PR_LOCK_TIMEOUT`
+  // if smaller), refusing with exit 11 rather than racing past a check that
+  // saw nothing because nothing had renewed yet — see its own comment for
+  // why that bound, not the true worst case, is what a single `acquire()`
+  // may wait. See the lock-ordering note beside `treeLeaseLock`'s own
+  // definition for where this sits relative to the other locks in this
+  // module.
   // Bounded retry: `ctx.stateDir` was already refreshed once above, but the
   // choice can move AGAIN while `acquire()` itself waits — up to
   // `LOCK_ACQUIRE_MAX_SEC` — for a rival to release it, and that wait is
   // exactly a window a concurrent admission can land in. Re-checking only
   // after acquiring, and releasing-and-retrying against the fresher
-  // directory when it moved, closes that second window too rather than
-  // just narrowing the first one (docomply-review, a reference-implementation pull request round 8,
-  // summary finding). `MAX_DIR_REFRESH_ATTEMPTS` bounds it defensively —
-  // the decision is monotonic (legacyDir → newDir, never back), so a real
-  // clone converges in one extra iteration at most; this only guards
-  // against a defect turning that into a spin.
+  // directory when it moved, closes that second window too rather than just
+  // narrowing the first one. `MAX_DIR_REFRESH_ATTEMPTS` bounds it
+  // defensively — the decision is monotonic (legacyDir → newDir, never
+  // back), so a real clone converges in one extra iteration at most; this
+  // only guards against a defect turning that into a spin.
   let remoteLock: PathLock | null = null;
   for (let attempt = 0; ; attempt++) {
     remoteLock =
@@ -4251,20 +4203,19 @@ export async function assertRemoteMutationAllowed(
         // `createLock` registers this handle's process-exit/signal listeners
         // unconditionally at construction, not on a successful acquire, so
         // `dispose()` still has real cleanup to do here, mirroring
-        // `claimPrLease`'s own identical fix (docomply-review, a reference-implementation pull request
-        // round 4 — this acquisition sat outside the `try` below entirely,
-        // so a caller that catches the rejection and continues — a test, or
-        // a future caller that retries — accumulated live listeners on every
-        // failed attempt).
+        // `claimPrLease`'s own identical fix (this acquisition once sat
+        // outside the `try` below entirely, so a caller that catches the
+        // rejection and continues — a test, or a future caller that retries
+        // — accumulated live listeners on every failed attempt).
         remoteLock.dispose();
         // `LockAcquireTimeoutError`, converted to the SAME exit 11 every
         // other live-foreign-driver refusal in this module uses — not
-        // `acquire()`'s own generic exit 1 "or the lock is wedged" (docomply-
-        // review, PR #4164 round 5): this is `guarded-push.ts`'s and
-        // `answer-summary-finding.ts`'s OWN fence, the one caller class this
-        // lock exists for, so misreporting an ordinary in-flight rival
-        // mutation as a possibly-wedged lock here would be the exact
-        // misdiagnosis `claimPrLease`'s identical conversion already avoids.
+        // `acquire()`'s own generic exit 1 "or the lock is wedged": this is
+        // `guarded-push.ts`'s and `answer-summary-finding.ts`'s OWN fence,
+        // the one caller class this lock exists for, so misreporting an
+        // ordinary in-flight rival mutation as a possibly-wedged lock here
+        // would be the exact misdiagnosis `claimPrLease`'s identical
+        // conversion already avoids.
         // Any OTHER `ExitError` (the ownership-marker infrastructure failure)
         // keeps its own exit code and message, unchanged.
         if (!(e instanceof LockAcquireTimeoutError)) throw e;
@@ -4304,7 +4255,7 @@ export async function assertRemoteMutationAllowed(
     ctx = { ...ctx, stateDir: freshStateDir };
   }
   // Re-enumerate the override snapshot AFTER the wait above, not before
-  // (docomply-review, a reference-implementation pull request round 11): `ctx.overrideEntries` was
+  //: `ctx.overrideEntries` was
   // captured by the CALLER's own `resolveFenceContext`, before this
   // function — and its `remoteLock.acquire()` above — ever ran. Refreshing
   // unconditionally (not only when the acquire visibly blocked) because
@@ -4318,7 +4269,7 @@ export async function assertRemoteMutationAllowed(
   // different enumeration target. Nothing further to do for it here.
   //
   // Inside the SAME try/catch as `checkAllowed()`, not before it
-  // (docomply-review, a reference-implementation pull request round 12): `refreshOverrideEntries` can
+  //: `refreshOverrideEntries` can
   // itself `fail()` (a read error, or a directory-identity mismatch), and
   // sitting outside the cleanup below meant that throw escaped without
   // ever releasing or disposing `remoteLock` — a caller that catches the
@@ -4353,7 +4304,7 @@ export async function assertRemoteMutationAllowed(
     // tree's leases by construction, so a detached pass there finds only its
     // own (dead) driver's lease — not-alive, not-mine, refuses nothing — and
     // posts alongside the session actually driving the PR right now
-    // (chatgpt-codex-connector, a reference-implementation pull request round 8). `leaseFilesFor` is the
+    //. `leaseFilesFor` is the
     // PR-wide mirror of `leaseFilesForActor` an earlier change already built for
     // `assertNoForeignDrive`'s claim-time version of this same question — reused
     // here, not reimplemented, but still read through `readLeaseForFence`
@@ -4371,19 +4322,17 @@ export async function assertRemoteMutationAllowed(
     // `ctx.overrideEntries` is the one and only directory LISTING
     // `resolveFenceContext` already performed, and this filters that in-memory
     // snapshot instead of asking the filesystem for the name list again. That
-    // closes the NAME-LIST half of the class of races three rounds of narrower
-    // fixes kept leaving a corner open (statSync-then-later-read ordering, then
-    // an `ENOENT`-only indeterminate flag on the later read, both defeated by
+    // closes the NAME-LIST half of the class of races narrower fixes kept
+    // leaving a corner open (statSync-then-later-read ordering, then an
+    // `ENOENT`-only indeterminate flag on the later read, both defeated by
     // renaming the directory away and creating an EMPTY one at the same
-    // pathname — chatgpt-codex-connector, a reference-implementation pull request round 13): a rename-and-
-    // recreate cannot inject or hide a NAME this fence reasons about, because
-    // the list was already fixed before it could land.
+    // pathname): a rename-and-recreate cannot inject or hide a NAME this fence
+    // reasons about, because the list was already fixed before it could land.
     //
     // It does not close the CONTENT half — each candidate's lease still has to
     // be OPENED fresh, below, and that per-file read is a genuine later moment
-    // a rename-and-recreate can still land in front of (docomply-review,
-    // a reference-implementation pull request round 14, finding A): the file
-    // this enumeration saw may no longer be reachable at this path if the
+    // a rename-and-recreate can still land in front of: the file this
+    // enumeration saw may no longer be reachable at this path if the
     // directory itself was swapped, and `readLeaseForFence` would then report
     // `absent` for a lease that is still live in the directory that moved.
     // `enumerationIdentity` below is what closes that: for the override path it
@@ -4421,7 +4370,7 @@ export async function assertRemoteMutationAllowed(
     // identity of the REPLACEMENT, and both `assertStateDirIdentityUnchanged`
     // calls below then compare the replacement with itself, agree, and
     // authorize the POST while the live lease sits in the directory that moved
-    // (chatgpt-codex-connector, a reference-implementation pull request round 15). The `before` reading is
+    //. The `before` reading is
     // taken ahead of the enumeration and the `after` reading immediately
     // following it; they must agree, or the listing this function is about to
     // trust was not taken from a stable directory and nothing downstream can
@@ -4444,7 +4393,7 @@ export async function assertRemoteMutationAllowed(
           "",
           "Refusing to post. The listing this check would judge from was not taken",
           "from a single, stable directory, so a lease it did not see may still be",
-          "live in the directory that moved (PR #4107).",
+          "live in the directory that moved.",
         );
       }
     }
@@ -4488,10 +4437,10 @@ export async function assertRemoteMutationAllowed(
       // is the standing rule for exactly that asymmetry: it may allow only on
       // a positively established absence of ANY live rival, `isMine` or not —
       // never on a proof that the rival is merely a DIFFERENT one, however
-      // sound that proof is. Locked in by the "session-started token (PR #4107
-      // finding B — pid recycling)" suite below, which asserts exit 11 for
-      // this identical fixture shape; an `isRecycledPid` carve-out here was
-      // tried and reverted for exactly that conflict.
+      // sound that proof is. Locked in by the "session-started token" suite
+      // (pid recycling), which asserts exit 11 for this identical fixture
+      // shape; an `isRecycledPid` carve-out here was tried and reverted for
+      // exactly that conflict.
       if (isMine(held, ctx.session, ctx.actor) || !leaseAlive(held)) continue;
       const sameTree = held.actor === ctx.actor;
       const where = sameTree
@@ -4550,9 +4499,8 @@ export async function assertRemoteMutationAllowed(
  * orphaned pass (its own session dead, the tree already taken over by a
  * replacement session working a different PR) could push straight through,
  * cross-shipping uncommitted work between two PRs in the same checkout —
- * exactly the hazard an earlier change exists to close, reached through the one
- * script that had never been wired to any lease fence (docomply-review, PR
- * #4131 round 6).
+ * exactly the hazard the tree lease exists to close, reached through the one
+ * script that had never been wired to any lease fence.
  *
  * Takes the SAME resolved `ctx` `assertRemoteMutationAllowed` does — callers
  * should invoke both from one `resolveFenceContext` call, not resolve twice
@@ -4578,9 +4526,8 @@ export async function assertRemoteMutationAllowed(
  * safe direction: a caller that cannot NAME the pr it is posting for cannot
  * claim ownership of a specific-pr sessionless resolver's record either.
  */
-// ACQUIRES `treeLeaseLock` and returns it STILL HELD (docomply-review /
-// chatgpt-codex-connector, a reference-implementation pull request round 7-8): the identical "through the
-// mutation, not just the check" fix `acquireIdentifiedTreeGuardNow` and
+// ACQUIRES `treeLeaseLock` and returns it STILL HELD: the identical "through
+// the mutation, not just the check" fix `acquireIdentifiedTreeGuardNow` and
 // `acquireSessionlessTreeGuardNow` already give every STATE-mutating path.
 // An earlier revision of this function checked and returned `void`,
 // releasing nothing because it had acquired nothing — a point-in-time read
@@ -4616,14 +4563,12 @@ export async function assertTreeMutationAllowed(
   // made, possibly a while before this call. Refreshed HERE, before `path` is
   // even computed, so the lock this function takes is on the directory the
   // caller would ACTUALLY be checked against, not a stale pre-admission one
-  // (docomply-review, a reference-implementation pull request round 7, TOCTOU finding — same root cause,
-  // different consumer of the same fence context). The loop below closes the
-  // SAME gap `assertRemoteMutationAllowed`'s own loop does — the choice can
-  // still move again while `lock.acquire()` itself waits, which is exactly
-  // the residual an earlier revision of this comment accepted rather than
-  // closed (docomply-review, a reference-implementation pull request round 9: "the adjacent comment
-  // explicitly acknowledges this reachable residual"). Mirrored here now
-  // rather than left asymmetric with the sibling fence.
+  // (the same time-of-check-to-time-of-use root cause, a different consumer of
+  // the same fence context). The loop below closes the SAME gap
+  // `assertRemoteMutationAllowed`'s own loop does — the choice can still move
+  // again while `lock.acquire()` itself waits, which is exactly the residual
+  // an earlier revision of this comment accepted rather than closed. Mirrored
+  // here now rather than left asymmetric with the sibling fence.
   let stateDir = ctx.fromOverride
     ? ctx.stateDir
     : resolveLegacyFallbackDir(ctx.legacyStateDirForFallback);
@@ -4740,11 +4685,11 @@ export async function assertTreeMutationAllowed(
  *
  * Returns what was there for BOTH leases — the per-PR one and the tree one
  * — so a caller can report the tree lease it silently dropped too. Returning
- * only the per-PR record (round 1's shape) let an operator follow a
+ * only the per-PR record (the first version's shape) let an operator follow a
  * cross-PR refusal's own `clear-lease <requested-pr>` suggestion — where
  * there is normally no PER-PR lease for that pr at all — and see "nothing to
  * clear" while the live TREE lease they were actually overriding vanished
- * unreported (chatgpt-codex-connector, a reference-implementation pull request round 2).
+ * unreported.
  */
 export async function clearLease(
   stateDir: string,
@@ -4831,12 +4776,12 @@ export async function clearLease(
  *
  * Deliberately the OPPOSITE of every fence in this module, and that inversion is
  * the whole reason a "best effort" posture is legitimate here rather than a
- * violation of `.claude/rules/document-scanning-gates.md` rule 1. A fence that
- * cannot read its input must refuse, because failing the other way PERMITS an
- * irreversible act. This one authorises nothing: not releasing simply leaves the
- * record to expire by staleness, which is precisely the behaviour that existed
- * before an earlier change. So an unreadable record is LEFT ALONE (`readLease` /
- * `readTreeLease` answer `null` for absent and for unparseable alike, and only a
+ * violation of the fail-closed rule for gates. A fence that cannot read its
+ * input must refuse, because failing the other way PERMITS an irreversible act.
+ * This one authorises nothing: not releasing simply leaves the record to expire
+ * by staleness, which is precisely the behaviour that existed before an earlier
+ * change. So an unreadable record is LEFT ALONE (`readLease` / `readTreeLease`
+ * answer `null` for absent and for unparseable alike, and only a
  * positively-read `holder: 'worktree'` is removed), and a caller may invoke this
  * speculatively, repeatedly, and against a PR it never drove.
  *
@@ -4905,7 +4850,7 @@ export async function releaseSessionlessLease(
     // The `pr` test is what keeps this from stripping a DIFFERENT, still-live
     // drive's protection — see this function's doc comment. Compared through
     // `canonicalLeasePr` on both sides, matching every other reader/writer pair
-    // in this module (PR #4107 round 16's leading-zero mismatch).
+    // in this module (a leading-zero mismatch once slipped through here).
     if (
       treeHeld !== null &&
       treeHeld.holder === "worktree" &&
@@ -4927,12 +4872,11 @@ export async function releaseSessionlessLease(
  * Extracted so a caller that has ALREADY read a directory once — the
  * external-mutation fence's override path, which cannot afford a SECOND read
  * of the same directory without reopening the exact race it exists to close
- * (chatgpt-codex-connector, a reference-implementation pull request round 13: renaming the directory away and
- * recreating an empty one at the same path defeats an `ENOENT`-keyed check,
- * since neither operation raises `ENOENT`) — can filter its own snapshot
- * in-memory instead of asking the filesystem again. `leaseFilesFor` below is
- * this plus the directory read, for every OTHER caller, which has no such
- * snapshot to reuse.
+ * (renaming the directory away and recreating an empty one at the same path
+ * defeats an `ENOENT`-keyed check, since neither operation raises `ENOENT`)
+ * — can filter its own snapshot in-memory instead of asking the filesystem
+ * again. `leaseFilesFor` below is this plus the directory read, for every
+ * OTHER caller, which has no such snapshot to reuse.
  */
 function filterLeaseFilesFor(
   names: string[],
@@ -4941,7 +4885,7 @@ function filterLeaseFilesFor(
 ): string[] {
   // Through the same canonicalizer the WRITER uses, so the two agree by
   // construction rather than by each caller remembering to normalize first
-  // (PR #4107 round 16). Already-canonical input is unchanged, so this is a
+  //. Already-canonical input is unchanged, so this is a
   // no-op for every caller that did normalize.
   const prefix = `${LEASE_PREFIX}${canonicalLeasePr(pr)}-`;
   return names
@@ -5071,7 +5015,7 @@ export function leaseFilesForActor(
  * "Own" is matched by `ownLease` — the lease `claimLease` actually returned —
  * and by nothing else. This used to take the caller's ACTOR as well, which was
  * dead weight in the signature and misleading beside a comment naming it:
- * actor equality is a claim about the TREE, and round 15 on PR #4069 measured
+ * actor equality is a claim about the TREE, and a measured case showed
  * exactly why that is not ownership (see the `isOwn` comment below).
  *
  * `removed` names what phase 2 actually deleted — empty whenever nothing was
@@ -5082,8 +5026,7 @@ export function leaseFilesForActor(
  * about them — so a caller that refuses on its own account after a
  * successful, non-empty `removed` must not repeat this function's "nothing
  * deleted" framing verbatim: leases were deleted, even though the state file,
- * claim files, and handoff were not (docomply-review rounds 17-18,
- * chatgpt-codex-connector, a reference-implementation pull request).
+ * claim files, and handoff were not.
  *
  * `preserveLive: false` turns every one of those preservations off, and is the
  * ONE deliberate override: `clear-lease --all`, the way a human takes a PR back
@@ -5106,7 +5049,7 @@ export async function clearAllLeases(
   // Deleting inside the acquire loop meant a lock that could not be taken threw
   // with EARLIER lease files already gone — a prefix swept, and `reset`'s own
   // diagnostic promising the caller that a non-zero exit means "no change"
-  // (docomply-review round 11, a reference-implementation pull request). Ordering the sweep before the state
+  //. Ordering the sweep before the state
   // deletions fixed the state half of that claim and left the lease half false.
   //
   // Staged this way the claim is true of both: the only fallible step is
@@ -5116,10 +5059,10 @@ export async function clearAllLeases(
   // wall-clock is not monotonic. An NTP step or an administrator adjustment
   // moving the clock BACKWARD inflates the remaining allowance handed to each
   // later `acquire()`, so a contended sweep can hold the shared state mutex far
-  // past the single 300s budget this is supposed to cap (docomply-review round
-  // 16, PR #4069). `lock.ts`'s own `acquireDeadline` switched to the monotonic
-  // clock for exactly this reason (round 6 on #4050); the aggregate deadline
-  // layered on top of it has to use the same one or it silently undoes that.
+  // past the single 300s budget this is supposed to cap. `lock.ts`'s own
+  // `acquireDeadline` switched to the monotonic clock for exactly this reason;
+  // the aggregate deadline layered on top of it has to use the same one or it
+  // silently undoes that.
   const sweepDeadline = performance.now() + LOCK_ACQUIRE_MAX_SEC * 1000;
   const taken: PathLock[] = [];
   const preservedForeign: Lease[] = [];
@@ -5131,7 +5074,7 @@ export async function clearAllLeases(
     // `reset` holds the PR's state mutex throughout: each `acquire()` may wait
     // up to `LOCK_ACQUIRE_MAX_SEC`, so N contended locks would otherwise block
     // every other state mutation for N × 300s, growing with the number of trees
-    // that have ever driven the PR (docomply-review round 9). The budget only
+    // that have ever driven the PR. The budget only
     // ever LOWERS a per-lock bound; it never asks for longer than the clamp.
     const doomed: string[] = [];
     // Only resolved when a live lease could actually be PRESERVED by it:
@@ -5147,7 +5090,7 @@ export async function clearAllLeases(
       // whose `acquire` rejects had already added three listeners while never
       // reaching `taken` — and the `finally` below then skipped its `dispose`.
       // Repeated failed resets leaked exactly the listeners that disposal was
-      // added to stop (docomply-review round 12, a reference-implementation pull request). Releasing a lock
+      // added to stop. Releasing a lock
       // that was never acquired is a no-op, so the early push is safe.
       taken.push(lock);
       await lock.acquire(
@@ -5182,7 +5125,7 @@ export async function clearAllLeases(
         // reported success and deleted the shared state and claim files out
         // from under a live driver, whose generation is unchanged so its fence
         // still passes — and whose in-flight finding dispatch can then be
-        // duplicated (chatgpt-codex-connector round 15, a reference-implementation pull request).
+        // duplicated.
         //
         // With `ownLease` null, every live lease blocks, which is the right
         // answer for a caller that holds none.
@@ -5200,16 +5143,16 @@ export async function clearAllLeases(
     // A live FOREIGN lease stops the sweep here, having deleted NOTHING.
     //
     // `reset` refuses on this result and tells the operator nothing was
-    // deleted (round 12). That was false while phase 2 ran first: a MIXED set
-    // — some stale leases plus one live foreign one — swept the stale ones and
-    // then returned the refusal anyway (docomply-review round 13, a reference-implementation pull request).
+    // deleted. That was false while phase 2 ran first: a MIXED set — some
+    // stale leases plus one live foreign one — swept the stale ones and then
+    // returned the refusal anyway.
     // Returning before phase 2 makes the caller's diagnostic true, and makes
     // this function's own contract simply "sweeps everything, or nothing".
     if (preservedForeign.length > 0) return { preservedForeign, removed: [] };
     // Phase 2 — delete. `force: true` only makes a MISSING target harmless; it
     // does not make deletion infallible (EACCES, EPERM, EROFS, an I/O error).
     // An earlier version of this comment claimed it did, and `reset`'s contract
-    // was written on that claim (docomply-review round 12, a reference-implementation pull request).
+    // was written on that claim.
     //
     // So the two failure classes are separated rather than conflated. A phase-1
     // failure really is "nothing changed" — that is what the staging buys. A

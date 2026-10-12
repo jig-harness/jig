@@ -60,8 +60,8 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    distinct roles. The shadow reviewer is a *harness*, not a static analyzer:
    a repo-agnostic **core** (a tool registry, the **verify-tool invariant**,
    containment guards) plus a repo-specific **config** of numbered, additive
-   [review lenses](../../GLOSSARY.md). The core/config split is what let the
-   reference implementation reuse the same harness across repos. The config
+   [review lenses](../../GLOSSARY.md). The core/config split is what lets one
+   harness serve many repositories without forking its engine. The config
    shape is [`review-config.yaml`](templates/review-config.yaml).
 4. **Comment-only until proven** — a new automated reviewer posts comments and
    blocks nothing. Flipping any lens to blocking requires clearing a
@@ -221,78 +221,87 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    ([reference](../../plugin/CONFIGURATION.md#pull_requests)); per-tool
    options are in [mappings.md](mappings.md#stacked-pull-requests).
 
-## Port status
+## Status
 
-The operated [review-resolution skill](../../plugin/skills/resolve-review-comments/README.md)
-now ships as runnable TypeScript in the `groundwork` plugin, installed once per
-machine for Claude Code and Codex ([plugin/README.md](../../plugin/README.md)).
-It reads each repository's own configuration for tracker taxonomy, reviewers
-and gate commands at run time. The same plugin ships the
-[PR drive loop](../../GLOSSARY.md) that wraps it for unattended work on one
-pull request ([`drive-pr`](../../plugin/skills/drive-pr/README.md)), the
-issue-pickup skill that starts a drive (`do-item`, which applies the
-declared pull-request shape through its `pr-plan.ts`), and the
-[Review Arbiter](../../plugin/agents/review-arbiter.md) agent that rules on
-contested findings
+### Runnable form
+
+The practice runs as skills in Groundwork's
+[`groundwork` plugin](../../plugin/README.md), installed once per machine for
+Claude Code and Codex. Each reads the repository's own reviewers, tracker
+values and gate commands from its configuration at run time
 ([setup](../../plugin/README.md#the-drive-loop-and-issue-pickup)).
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| `docs/development/pr-lifecycle.md` (C2) — draft→review→resolve→merge narrative | [`templates/PR-LIFECYCLE.md`](templates/PR-LIFECYCLE.md) — copyable lifecycle contract with HITL boundaries |
-| Shadow-reviewer harness core/config split (tool registry, verify-tool invariant, containment guards, `review-config.yaml` schema) | [`templates/review-config.yaml`](templates/review-config.yaml) + [`reference/pr-target-safety/`](reference/pr-target-safety/) — the config schema, and the security invariant as a runnable lint |
-| `resolve-review-comments` skill + GraphQL resolve scripts (address/reject/defer loop) | [`reference/comment-resolution/`](reference/comment-resolution/) — the loop as a mechanical merge gate, plus the verdict **export adapter** that decodes a declared reply into its states; both with self-tests + fixtures. The loop *contract* is in `PR-LIFECYCLE.md` |
-| the same skill's round loop (re-review after each push, stop when clean) | [`reference/review-convergence/`](reference/review-convergence/) — the stop condition as a portable check: waits for reviewers to settle, aborts on a PR that stopped being open |
-| `docs/development/hitl-decision-registry.md` (C6) — human-only decision classes | [`templates/HITL-REGISTRY.md`](templates/HITL-REGISTRY.md) — generic decision registry (shared with [M0](../M0-instruction-architecture/)) |
+| Skill or agent | The part of this practice it runs |
+|----------------|-----------------------------------|
+| [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/README.md) | The comment-resolution loop (core pieces 5 and 6): walks every unresolved thread to a declared outcome, and its `reply-to-thread.ts` validates the verdict as the reply is written (`--no-outcome` is the opt-out for a reply that is not a verdict) |
+| [`drive-pr`](../../plugin/skills/drive-pr/README.md) | The [PR drive loop](../../GLOSSARY.md) (core piece 7) run unattended: waits for reviewers to settle, stops on a named end state, marks a draft Ready at the point `pull_requests.mark_ready` declares, and never merges |
+| [`do-item`](../../plugin/skills/do-item/SKILL.md) | Opens the pull request under the declared shape policy (core piece 11) through its `pr-plan.ts`, and refuses one that breaks it |
+| [`review`](../../plugin/skills/review/SKILL.md) | The author-side tiered review before pushing (the agent-runtime reviewer in core piece 3) |
+| [Review Arbiter](../../plugin/agents/review-arbiter.md) | Rules on contested findings the triage rubric cannot settle |
+| [`resolve-conflicts`](../../plugin/skills/resolve-conflicts/SKILL.md) | Brings a conflicting pull request up to date with its base: records each conflict decision in the merge commit for reviewers and refuses a resolution that silently drops either side's change |
 
-Also landed: [`mappings.md`](mappings.md) (forges, review bots, agent-runtime
-reviewers, CI providers, trackers) and [`maturity.yaml`](maturity.yaml).
+### What the module provides
 
-**Backflow, 2026-07-24.** A live extraction of a reviewer into its own
-versioned repository exposed a security property that the earlier fork-safety
-wording did not state strongly enough: the change under review must not control
-the reviewer code or policy that judges it. The invariant, config contract,
-mapping guidance, audit prompt, and maturity criteria now state that property
-directly.
+| Piece | What it is |
+|-------|------------|
+| [`templates/PR-LIFECYCLE.md`](templates/PR-LIFECYCLE.md) | The copyable lifecycle contract, draft to merge, with its human-in-the-loop boundaries |
+| [`templates/HITL-REGISTRY.md`](templates/HITL-REGISTRY.md) | The human-only decision classes, each with its trigger (shared with [M0](../M0-instruction-architecture/)) |
+| [`templates/review-config.yaml`](templates/review-config.yaml) | The config half of the review-harness core/config split: tool registry, postures, reviewer source, verify tool, containment guards, precision bar, numbered lenses |
+| [`reference/comment-resolution/`](reference/comment-resolution/) | The unresolved-threads merge gate, and the verdict export adapter that decodes a declared reply into the gate's states |
+| [`reference/review-convergence/`](reference/review-convergence/) | The round stop condition: waits for reviewers to settle, aborts on a PR that stopped being open |
+| [`reference/pr-target-safety/`](reference/pr-target-safety/) | The fork-safe wiring lint |
+| [`mappings.md`](mappings.md) | Forges, stacked-PR tools, review bots, agent-runtime reviewers, CI providers, trackers |
+| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
 
-**Newly adopted upstream, not yet proven by cycles.** The *invariant* that a
-verdict is declared rather than inferred (core piece 6) is evidence-backed
-independently of any one implementation: on a real corpus, treating
-resolved-with-a-reply as rejection classified **all** of a reviewer's threads as
-rejections when roughly half were acceptances, and a later prose classifier over
-the same corpus still lost or misfiled a majority of *declared* outcomes. The
-`moot` state is likewise evidenced — those threads were observed in the wild
-being scored as push-back.
+Each reference gate ships with a self-test and fixtures, and delegates to the
+shared implementation in [`lib/module-gates.ts`](../../lib/module-gates.ts);
+keep the module and `lib/` together when you vendor them.
 
-The reference implementation's specific *choice* of encoding — a bold leading
-token — landed recently and has not run through enough review cycles to be
-called settled. Two layers carry it differently, and the line between them is
-the line "don't port the unproven" turns on:
+### The verdict encoding
+
+The invariant that a verdict is declared rather than inferred (core piece 6)
+rests on evidence that does not depend on any one encoding: on a real corpus,
+treating resolved-with-a-reply as rejection classified **all** of a reviewer's
+threads as rejections when roughly half were acceptances, and a later prose
+classifier over the same corpus still lost or misfiled a majority of
+*declared* outcomes. The `moot` state rests on the same kind of evidence: such
+threads were observed being scored as push-back.
+
+Which encoding should carry the verdict is less settled. The bold leading
+token has not yet run through enough review cycles to be called the answer, so
+two layers treat it differently:
 
 | Layer | Treatment of the bold-token encoding |
 |-------|--------------------------------------|
-| The [operated skill](../../plugin/skills/resolve-review-comments/README.md) and its `reply-to-thread.ts` | Moved as operated source, so it ships the bold leading token and enforces it at reply time. The skill is one mechanism, moved whole rather than rewritten into an encoding-neutral variant that would become a fork |
-| This module's practice references: [mappings.md](mappings.md), the [export adapter](reference/comment-resolution/normalize-thread-states.ts), the lifecycle contract | Encoding-**agnostic**. The invariant (a verdict is declared, in an anchored form, at reply time) is what they assert. [mappings.md](mappings.md) presents a leading token and a trailing trailer as alternatives and states no preference; adopter vocabulary lives in the adapter's `canon()`, and the token is its default only because a default is required |
+| The [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/README.md) skill and its `reply-to-thread.ts` | Uses the bold leading token and enforces it at reply time. The skill is one operated mechanism, kept whole rather than rewritten into an encoding-neutral variant that would become a fork |
+| This module's practice references: [mappings.md](mappings.md), the [export adapter](reference/comment-resolution/normalize-thread-states.ts), the lifecycle contract | Encoding-**agnostic**. What they assert is the invariant: a verdict is declared, in an anchored form, at reply time. [mappings.md](mappings.md) presents a leading token and a trailing trailer as alternatives and states no preference; adopter vocabulary lives in the adapter's `canon()`, and the token is its default only because a default is required |
 
-An adopter that does not run the operated skill is free to choose the trailer
-form; one that does inherits the token. Either way, write-time enforcement is
-the top rung of the enforcement ladder for this obligation, as it is for every
-other ([M1](../M1-gates-enforcement-ladder/)).
+An adopter that does not run the skill is free to choose the trailer form; one
+that does inherits the token. The obligation sits on two rungs of the
+enforcement ladder ([M1](../M1-gates-enforcement-ladder/)): declaring in an
+anchored encoding is a **Standard** convention, while validating the verdict
+at write time, which needs a reply-posting tool to hang it on, is **Strict**.
+When the encoding question settles, only the skill's token vocabulary would
+change; the practice references above would not.
 
-So the obligation is split across two rungs rather than asserted at one:
-declaring in an anchored encoding is a **standard** convention, while validating
-the verdict at write time — which needs a reply-posting tool to hang it on — is
-**strict**. Revisit the encoding question once the reference implementation has
-cycles behind it; the practice references above do not change when it settles,
-and only the operated skill's token vocabulary would.
+### Left out by design
 
-**Not ported** (per "don't port the unproven" / IP scrub): the shadow
-reviewer's actual lens catalogue (44 product-specific lenses) and its
-model-routing tiers are the reference implementation's tuned content, not a
-portable mechanism — groundwork ports the *harness shape* (registry + posture +
-numbered additive lenses) and leaves the catalogue to be grown locally through
-[M8](../M8-learning-loop/). The TypeScript reviewer runtime itself is not
-transcribed to bash: a review harness is an agent/LLM job in whatever language
-the target uses, so groundwork specifies the config contract and lands only the
-two pieces that *are* genuinely portable gates (the fork-safe wiring lint and
-the resolution gate). The precision-bar *values* and the measurement wiring
-belong with [M8](../M8-learning-loop/) and [M11](../M11-process-observability/).
+- **The lens catalogue.** A shadow reviewer's actual lenses and its
+  model-routing tiers are one repository's tuned content, not a portable
+  mechanism. The module specifies the *harness shape* (registry, posture,
+  numbered additive lenses) and leaves the catalogue, including the
+  higher-tier semantic lenses that need full model reasoning, to be grown
+  locally through [M8](../M8-learning-loop/).
+- **A reviewer runtime.** A review harness is an agent job in whatever
+  language the repository uses, so the module specifies its config contract
+  and ships only the pieces that are portable gates: the fork-safe wiring
+  lint, the resolution gate and its exporter, and the convergence check.
+- **Precision-bar values and their measurement wiring.** They belong with
+  [M8](../M8-learning-loop/) (the measurement) and
+  [M11](../M11-process-observability/) (the emission).
+
+### Future
+
+- **Delegated merge.** Letting a converged drive arm the forge's auto-merge
+  for the exact head it certified relaxes "a human merges", so it waits on
+  its own decision; it is open work in the [roadmap](../../ROADMAP.md).

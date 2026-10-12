@@ -7,7 +7,7 @@
  * threads and summary findings whose disposition now waits on a human. Without
  * somewhere durable to record that, an autonomous loop wakes, re-enumerates the
  * same undeferrable threads, discovers nothing it may act on, and burns turns
- * forever; that is exactly what happened on #3933.
+ * forever.
  *
  * And the HELD batch — the items replied to with a fix-dependent outcome
  * (`accepted`, `moot`) and deliberately NOT yet resolved, because the fix that
@@ -42,7 +42,7 @@
  *                                     # existing stamp instead of advancing to
  *                                     # this push, closing an interrupted-dispatch
  *                                     # duplicate-answer risk without wedging
- *                                     # every other pending hold (round 2).
+ *                                     # every other pending hold.
  *   drive-state.ts set-verified [PR] --sha SHA       # record final full-CI proof
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
@@ -75,8 +75,8 @@
  *                                     # ITEM's own verifiedSha == SHA, in one lock hold:
  *                                     # two concurrent claims on the same key can never
  *                                     # both succeed, and neither reads a round/SHA
- *                                     # pair the other has since changed (an earlier change
- *                                     # review round 2). Used by resolve-held-thread.ts.
+ *                                     # pair the other has since changed. Used by
+ *                                     # resolve-held-thread.ts.
  *                                     # Exit 1 = a round or verifiedSha mismatch — a
  *                                     # property of THIS item; 3 = state unreadable;
  *                                     # 4 = the key is no longer held at all (already
@@ -166,8 +166,7 @@
  *
  *   exit 11 — another live SESSION in THIS working tree holds it. The actor a
  *     hold records is the working TREE, so two agent sessions in one tree
- *     silently overwrite each other's holds and double-reply every thread
- *.
+ *     silently overwrite each other's holds and double-reply every thread.
  *   exit 13 — another live WORKING TREE is driving this PR. Same damage,
  *     reached across trees rather than within one: nothing used to stop two
  *     worktrees enumerating the same unresolved threads and each replying with
@@ -576,27 +575,24 @@ function parseArgs(argv: string[]): Args {
  * Does an otherwise-unparseable JSON text still contain a string-literal
  * property KEY that DECODES to `target`, anywhere in the text?
  *
- * A raw byte-substring check (`text.includes('"' + target + '"')`) is
- * defeated the moment the key is escaped: JSON permits `ciHold` as a
- * byte-for-byte different spelling of the identical `ciHold` property name,
- * so a corrupt-but-escaped file names the key without ever containing the
- * literal bytes `"ciHold"` (chatgpt-codex-connector, a reference-implementation pull request round 7). Per
- * this repo's own "parse the construct, don't pattern-match it" rule
- * (`.claude/rules/document-scanning-gates.md` §3), this scans the text as a
- * sequence of JSON STRING LITERALS — respecting `\`-escapes so a `"` or `\`
- * inside an escape sequence is never mistaken for the literal's own
- * boundary — and hands each complete candidate to `JSON.parse` itself to
- * decode, rather than hand-rolling escape decoding. The whole surrounding
- * document need not be valid JSON; only the one string-literal construct
- * that matters here is parsed, precisely.
+ * A raw byte-substring check (`text.includes('"' + target + '"')`) is defeated
+ * the moment the key is escaped: JSON permits `ciHold` as a byte-for-byte
+ * different spelling of the identical `ciHold` property name, so a
+ * corrupt-but-escaped file names the key without ever containing the literal
+ * bytes `"ciHold"`. Following the "parse the construct, don't pattern-match it"
+ * rule, this scans the text as a sequence of JSON STRING LITERALS — respecting
+ * `\`-escapes so a `"` or `\` inside an escape sequence is never mistaken for
+ * the literal's own boundary — and hands each complete candidate to
+ * `JSON.parse` itself to decode, rather than hand-rolling escape decoding. The
+ * whole surrounding document need not be valid JSON; only the one
+ * string-literal construct that matters here is parsed, precisely.
  *
- * A literal matching `target` in VALUE position — `{"reason":"ciHold"}` —
- * is not evidence of a `ciHold` property at all; only a literal immediately
+ * A literal matching `target` in VALUE position — `{"reason":"ciHold"}` — is
+ * not evidence of a `ciHold` property at all; only a literal immediately
  * followed by (optional whitespace, then) `:` is a property key. Treating
- * either position as a match refuses `reset` over corruption that never
- * named the key, over-blocking the exact recovery path this function exists
- * to preserve (chatgpt-codex-connector, a reference-implementation pull request round 9, on top of round
- * 7's fix to this same function).
+ * either position as a match refuses `reset` over corruption that never named
+ * the key, over-blocking the exact recovery path this function exists to
+ * preserve.
  */
 function rawTextMentionsJsonKey(text: string, target: string): boolean {
   let i = 0;
@@ -654,17 +650,16 @@ function holdLabelName(): string {
 }
 
 /**
- * The PR's CI-hold label-transition timeline, straight from GitHub — the
- * live source of truth a local state file can only ever cache. Shared by
- * `set-verified` (freshness proof) and `reset` (destructive-recovery guard):
- * a local file's raw bytes can be truncated before the `ciHold` key was ever
- * serialized — `freshState()` emits it after several other fields — so
- * scanning only those bytes for evidence produces a false "no evidence" on a
- * transition that is very much live on GitHub (chatgpt-codex-connector, PR
- * #4681 round 9). Unreadable (`null`) for a repository without a hold label:
- * an older drive may have held under a label the configuration no longer
- * names, and no timeline read can rule that out. `set-verified` does not
- * read it in that mode.
+ * The PR's CI-hold label-transition timeline, straight from GitHub — the live
+ * source of truth a local state file can only ever cache. Shared by
+ * `set-verified` (freshness proof) and `reset` (destructive-recovery guard): a
+ * local file's raw bytes can be truncated before the `ciHold` key was ever
+ * serialized — `freshState()` emits it after several other fields — so scanning
+ * only those bytes for evidence produces a false "no evidence" on a transition
+ * that is very much live on GitHub. Unreadable (`null`) for a repository
+ * without a hold label: an older drive may have held under a label the
+ * configuration no longer names, and no timeline read can rule that out.
+ * `set-verified` does not read it in that mode.
  */
 async function readCiHoldTimeline(
   pr: string,
@@ -735,8 +730,7 @@ async function main(): Promise<number> {
    * off this list, `release-ready-mark`'s tokenless recovery path let a second
    * session delete the first session's live ready-mark claim and take the
    * transition itself without ever reaching the refusal above — the exact
-   * "new mutator that forgot to be gated" this comment already warned about
-   * (chatgpt-codex-connector, a reference-implementation pull request).
+   * "new mutator that forgot to be gated" this comment already warned about.
    */
   const LEASED_COMMANDS = new Set([
     "bump-round",
@@ -779,10 +773,10 @@ async function main(): Promise<number> {
   if (LEASED_COMMANDS.has(a.cmd)) {
     const admission = await claimLease(store.stateDir, pr, a.cmd);
     admittedLease = admission.lease;
-    // Admission is not the mutation. Between here and the locked section
-    // below, another process can sweep or take over either lease — and would
-    // then run beside this command under one actor or one tree
-    //. Re-checked inside every locked section instead of trusted.
+    // Admission is not the mutation. Between here and the locked section below,
+    // another process can sweep or take over either lease — and would then run
+    // beside this command under one actor or one tree. Re-checked inside every
+    // locked section instead of trusted.
     if (admission.lease !== null && admission.treeLease !== null) {
       // `admission.lease`/`admission.treeLease` are narrowed together HERE —
       // every admission that claims one now claims the other in the same
@@ -791,18 +785,16 @@ async function main(): Promise<number> {
       // comment). The `{ lease: null, treeLease: null }` alternative, the
       // narrower defer-to-a-live-session case, is the `else` branch below.
       const { lease: admitted, treeLease: admittedTree } = admission;
-      // A plain re-check here (round 1-3's shape) still leaves the identical
-      // gap round 2 closed for the deferred branch below: a DIFFERENT pr's
-      // `claimTreeLease` takes only THAT pr's state mutex before reaching for
-      // `treeLeaseLock`, so it can land between "the fence found no takeover"
-      // and "the mutation actually ran" (chatgpt-codex-connector, a reference-implementation pull request
-      // round 3). `acquireIdentifiedTreeGuardNow` holds `treeLeaseLock`
-      // through the mutation itself, the same fix `acquireSessionlessTreeGuardNow`
-      // gives the deferred no-claim tier below — and now applies here
-      // regardless of which ladder tier wrote `admittedTree`, since
+      // A plain re-check here still leaves the identical gap already closed for
+      // the deferred branch below: a DIFFERENT pr's `claimTreeLease` takes only
+      // THAT pr's state mutex before reaching for `treeLeaseLock`, so it can
+      // land between "the fence found no takeover" and "the mutation actually
+      // ran". `acquireIdentifiedTreeGuardNow` holds `treeLeaseLock` through the
+      // mutation itself, the same fix `acquireSessionlessTreeGuardNow` gives
+      // the deferred no-claim tier below — and now applies here regardless of
+      // which ladder tier wrote `admittedTree`, since
       // `assertTreeLeaseUnchanged` compares only the (pid, host, generation)
-      // identity tuple every tree lease carries, `holder: 'worktree'`
-      // included.
+      // identity tuple every tree lease carries, `holder: 'worktree'` included.
       store.setFence(async () => {
         assertLeaseUnchanged(store.stateDir, pr, admitted);
         store.setExtraLock(
@@ -824,7 +816,7 @@ async function main(): Promise<number> {
       // immediately after the check passed, and this command would then
       // take the same mutex and mutate beside it — the serialisation the
       // gate claims, defeated by a check that is not part of the admission
-      // protocol it guards (docomply-review round 2, high). Every OTHER
+      // protocol it guards. Every OTHER
       // tier-3 admission now claims a genuine `TreeLease` of its own
       // (`claimSessionlessTreeLease`) and is fenced by the branch above
       // instead, via `assertLeaseUnchanged`/`assertTreeLeaseUnchanged` —
@@ -842,10 +834,9 @@ async function main(): Promise<number> {
       // after `fn()`), not merely at the moment the fence runs, because a
       // DIFFERENT pr's claim (`claimTreeLease` or `claimSessionlessTreeLease`)
       // takes only THAT pr's state mutex — never this one — before it ever
-      // reaches for `treeLeaseLock`, so a check-then-release fence still
-      // leaves the gap between "the fence said clear" and "the mutation
-      // actually ran" open (docomply-review + chatgpt-codex-connector, PR
-      // #4131 round 2, reported independently).
+      // reaches for `treeLeaseLock`, so a check-then-release fence still leaves
+      // the gap between "the fence said clear" and "the mutation actually ran"
+      // open.
       //
       // Not `assertLeaseUnchanged`/`assertTreeLeaseUnchanged`, which need an
       // admitted lease to compare — this branch holds none by construction
@@ -962,8 +953,7 @@ async function main(): Promise<number> {
       // matters more on this path than on any other: a revoked session would
       // go on to validate the held record, return a claim token, and dispatch
       // a NON-idempotent summary answer beside its successor's, which is a
-      // duplicate standing claim on the PR that no later round undoes
-      // (chatgpt-codex-connector, a reference-implementation pull request).
+      // duplicate standing claim on the PR that no later round undoes.
       //
       // The claim file is removed before the refusal propagates: it was
       // created lock-free moments ago, and leaving it behind would wedge the
@@ -1154,8 +1144,8 @@ async function main(): Promise<number> {
     // reads the derived duty, one discharges it. The predicate itself lives in
     // `lib/state/schema.ts` and is SHARED with drive-status.ts's report field,
     // for the reason `reflectDepthPastLast` gives for living there: three
-    // divergent formulations of one duty is what PR #4031 rounds 1-3 were
-    // spent on, and this signal has the same two consumers.
+    // divergent formulations of one duty drift apart, and this signal has the
+    // same two consumers.
     case "record-paths": {
       // Keyed to the CURRENT round rather than to a `--round` argument, and
       // read inside the same locked update that writes it. A caller-supplied
@@ -1181,13 +1171,13 @@ async function main(): Promise<number> {
         fail(2, "record-paths takes --path or --stdin, not both");
       }
       // Round 0 is not a counted round — `freshState` starts there and
-      // `bump-round`/`bump-attempt` is what advances past it. Recording
-      // anchors under it would store a `{round: 0, ...}` entry that becomes
-      // adjacent to round 1's real entry the moment counting begins, letting
+      // `bump-round`/`bump-attempt` is what advances past it. Recording anchors
+      // under it would store a `{round: 0, ...}` entry that becomes adjacent to
+      // round 1's real entry the moment counting begins, letting
       // `structuralEscalationArmed` treat a pre-counting call and the actual
-      // first round as a false two-round recurrence on any shared path
-      // (docomply-review, a reference-implementation pull request). `drive-status.ts`'s own path here always
-      // bumps first, so this only ever refuses a direct, out-of-order call.
+      // first round as a false two-round recurrence on any shared path.
+      // `drive-status.ts`'s own path here always bumps first, so this only ever
+      // refuses a direct, out-of-order call.
       if (store.read().state.rounds < 1) {
         fail(
           2,
@@ -1266,7 +1256,7 @@ async function main(): Promise<number> {
       // instead of refusing it, let an over-cap value that is mostly
       // surrounding whitespace slip under the cap, and silently drop
       // leading/trailing spaces the verbatim-echo contract above promises to
-      // preserve (docomply-review finding).
+      // preserve.
       //
       // Newline-free too, like every other short free-text field this schema
       // treats as single-line (`hold.actor`) — "one sentence" is the
@@ -1292,14 +1282,12 @@ async function main(): Promise<number> {
       // the time the write happens: a concurrent `reset` landing in between
       // would let this write through against a fresh `rounds === 0` state,
       // persisting an unattributable invariant at the exact sentinel round
-      // (0) `freshState` starts from — indistinguishable from "never
-      // escalated" to every other reader of that field (docomply-review
-      // finding). And a counted round alone is not evidence of a
-      // real recurrence: without the armed check, acknowledging on a round
-      // that never armed persists `lastEscalatedInvariant` under a
-      // `lastEscalatedRound` that a LATER, genuine arming then echoes back
-      // as though it were that arming's own acknowledgment (docomply-review
-      // finding).
+      // (0) `freshState` starts from — indistinguishable from "never escalated"
+      // to every other reader of that field. And a counted round alone is not
+      // evidence of a real recurrence: without the armed check, acknowledging
+      // on a round that never armed persists `lastEscalatedInvariant` under a
+      // `lastEscalatedRound` that a LATER, genuine arming then echoes back as
+      // though it were that arming's own acknowledgment.
       //
       // `roundPaths` is re-pruned in this SAME update — see
       // `set-reflected`'s identical comment and `pruneRoundPaths`'s header.
@@ -1347,7 +1335,7 @@ async function main(): Promise<number> {
       // restart at 1, leaves a delta of -7 that the `max` in
       // `reflectDepthPastLast` prefers to ignore — so the duty stays off
       // through several genuine passes on the new head and does not re-arm
-      // until it reaches attempt 12 (docomply-review, a reference-implementation pull request round 7). The
+      // until it reaches attempt 12. The
       // rounds baseline is cumulative and needs no such treatment; this is the
       // per-head counter paying for being per-head.
       await store.update((s) =>
@@ -1376,17 +1364,15 @@ async function main(): Promise<number> {
 
     case "set-ci-hold": {
       // This command persists CALLER-SUPPLIED ci:hold ownership/freshness
-      // evidence with no validation against GitHub — `release()` later
-      // trusts the persisted event id against the live timeline, and
-      // `finalReady()` trusts the persisted watermark/timestamp for CI
-      // freshness. Fabricating either is exactly what a real driver must
-      // never be able to do (a caller could record a human-owned labeled
-      // event as its own `held`, then have `release()` remove a label that
-      // belongs to someone else). No production script calls this — only
-      // tests, as a fixture-seeding helper — so gate it behind an explicit
-      // opt-in only the test harness sets, rather than trusting "nothing
-      // calls it today" to stay true (chatgpt-codex-connector, a reference-implementation pull request
-      // round 4).
+      // evidence with no validation against GitHub — `release()` later trusts
+      // the persisted event id against the live timeline, and `finalReady()`
+      // trusts the persisted watermark/timestamp for CI freshness. Fabricating
+      // either is exactly what a real driver must never be able to do (a caller
+      // could record a human-owned labeled event as its own `held`, then have
+      // `release()` remove a label that belongs to someone else). No production
+      // script calls this — only tests, as a fixture-seeding helper — so gate
+      // it behind an explicit opt-in only the test harness sets, rather than
+      // trusting "nothing calls it today" to stay true.
       if (process.env.DRIVE_PR_ALLOW_TEST_CI_HOLD_SEED !== "1") {
         fail(
           2,
@@ -1486,20 +1472,18 @@ async function main(): Promise<number> {
     // `existsSync` check alone can't tell "in-flight, unvalidated claim"
     // apart from "already dispatched"), and B's own claim attempt fails and
     // cleans up its file right after — leaving A's item permanently
-    // unstamped even though nothing was ever actually dispatched against it
-    // (docomply-review round 7, a reference-implementation pull request).
+    // unstamped even though nothing was ever actually dispatched against it.
     //
     // Every OTHER held item — a thread (whose claim removes it from `held`
-    // outright, so it is never around to see a second `stamp-held`; a
-    // failed resolve mutation restores it with its EXACT original stamp
-    // rather than leaving it exposed here) or a finding that was never
-    // claimed, or whose claim was cleanly released/unclaimed — has none of
-    // that risk and MUST advance normally: in the ordinary (non-crash) case a
-    // later verified push is a descendant commit that still contains the
-    // fix, and freezing its stamp instead would leave it refusing every
-    // future claim the moment its own SHA stops being the PR's live head —
-    // permanently wedging an item nothing dispatched yet (docomply-review
-    // round 2, PR #4051).
+    // outright, so it is never around to see a second `stamp-held`; a failed
+    // resolve mutation restores it with its EXACT original stamp rather than
+    // leaving it exposed here) or a finding that was never claimed, or whose
+    // claim was cleanly released/unclaimed — has none of that risk and MUST
+    // advance normally: in the ordinary (non-crash) case a later verified push
+    // is a descendant commit that still contains the fix, and freezing its
+    // stamp instead would leave it refusing every future claim the moment its
+    // own SHA stops being the PR's live head — permanently wedging an item
+    // nothing dispatched yet.
     case "stamp-held": {
       if (a.sha === "") fail(2, "stamp-held requires --sha SHA");
       if (!isGitSha(a.sha)) {
@@ -1626,21 +1610,18 @@ async function main(): Promise<number> {
           );
         }
         // ONE predicate for "does CI genuinely prove this head is done and
-        // green" — called for the INITIAL proof below AND, unchanged, for
-        // every later re-check `stillFullyCurrent()` performs. Two rounds
-        // running, a re-check implemented as a SEPARATE, cheaper
-        // approximation of this same question fell out of sync with it: a
-        // aggregate-only `ciVerdictOf` re-check treats `skipped` as
-        // passing, so a newer skipped run for a required check could
-        // supersede the successful post-unlabel run without either
-        // refresh noticing, even though `completedRequiredCi` — the
-        // INITIAL proof's own predicate —
-        // would reject it (chatgpt-codex-connector, a reference-implementation pull request round 7, on
-        // top of round 6's fix to this same function). Sharing one
-        // implementation for "prove CI green" makes that class of drift
-        // impossible rather than merely unlikely, the same reasoning
-        // `stillFullyCurrent()` itself already applies to state/head/held/
-        // timeline.
+        // green" — called for the INITIAL proof below AND, unchanged, for every
+        // later re-check `stillFullyCurrent()` performs. Two rounds running, a
+        // re-check implemented as a SEPARATE, cheaper approximation of this
+        // same question fell out of sync with it: a aggregate-only
+        // `ciVerdictOf` re-check treats `skipped` as passing, so a newer
+        // skipped run for a required check could supersede the successful
+        // post-unlabel run without either refresh noticing, even though
+        // `completedRequiredCi` — the INITIAL proof's own predicate — would
+        // reject it. Sharing one implementation for "prove CI green" makes that
+        // class of drift impossible rather than merely unlikely, the same
+        // reasoning `stillFullyCurrent()` itself already applies to
+        // state/head/held/ timeline.
         async function proveCiGreen(): Promise<
           { ok: true } | { ok: false; reason: string }
         > {
@@ -1744,22 +1725,20 @@ async function main(): Promise<number> {
         if (!initialCi.ok) {
           fail(4, `set-verified: ${initialCi.reason}`);
         }
-        // ONE predicate for "is the PR still exactly what we verified",
-        // called identically before AND after the write below — a
-        // compensating post-write check that asked a NARROWER question than
-        // its pre-write counterpart (state/head/held only, no timeline
-        // re-check) let a human remove/re-add/remove `ci:hold` between
-        // `readTimeline()` and the write leave `verifiedSha` set over a
-        // superseded transition that `ci-hold.ts final-ready` would now
-        // reject (chatgpt-codex-connector, a reference-implementation pull request round 3). Sharing one
-        // implementation makes that drift impossible rather than merely
-        // unlikely. Delegates CI freshness to `proveCiGreen()` above for the
-        // same reason (round 7).
+        // ONE predicate for "is the PR still exactly what we verified", called
+        // identically before AND after the write below — a compensating
+        // post-write check that asked a NARROWER question than its pre-write
+        // counterpart (state/head/held only, no timeline re-check) let a human
+        // remove/re-add/remove `ci:hold` between `readTimeline()` and the write
+        // leave `verifiedSha` set over a superseded transition that `ci-hold.ts
+        // final-ready` would now reject. Sharing one implementation makes that
+        // drift impossible rather than merely unlikely. Delegates CI freshness
+        // to `proveCiGreen()` above for the same reason.
         //
         // CI proof FIRST, PR/timeline snapshot LAST — the opposite order
         // this function used before, matching the reorder `ci-hold.ts`'s
         // `stillCurrentForFinalReady()` already applies for the identical
-        // reason (chatgpt-codex-connector, a reference-implementation pull request round 19). Narrower
+        // reason. Narrower
         // benefit here than there, and worth stating precisely rather than
         // overclaiming: the POST-write call already has nothing checking
         // it, so for THAT call this only avoids a doomed extra network
@@ -1835,8 +1814,7 @@ async function main(): Promise<number> {
         // `verifiedSha` certifying a head or transition that is no longer
         // current, invisible to every later reader of this pointer
         // (round-plan.ts's Testbox decay, the handoff header). Close it with
-        // a compensating check-and-clear immediately after the write instead
-        // (chatgpt-codex-connector, a reference-implementation pull request round 2).
+        // a compensating check-and-clear immediately after the write instead.
         const postWrite = await stillFullyCurrent();
         if (!postWrite.ok) {
           await store.update((s) =>
@@ -1847,18 +1825,17 @@ async function main(): Promise<number> {
             `set-verified: ${postWrite.reason} immediately after the verification commit; certificate cleared`,
           );
         }
-        // Global CI verification landed — stamped only here,
-        // AFTER both the pre-write and post-write `stillFullyCurrent()`
-        // checks passed, never on the earlier `verifiedSha` write above: that
-        // write is provisional (the compensating clear a few lines up can
-        // still undo it), and a stamp made before the outcome is known would
-        // record "progress" for a certificate this same call goes on to
-        // revoke. Phased `'ci-verified'`, NOT `'push-landed'` — this call
-        // proves an ALREADY-pushed SHA is globally green; it pushes nothing
-        // itself, unlike `stamp-held`'s use of `'push-landed'` above, which
-        // genuinely does run strictly after a real push (an earlier change
-        // round 2 minor finding: the two calls were sharing one label that
-        // was only accurate for one of them).
+        // Global CI verification landed — stamped only here, AFTER both the
+        // pre-write and post-write `stillFullyCurrent()` checks passed, never
+        // on the earlier `verifiedSha` write above: that write is provisional
+        // (the compensating clear a few lines up can still undo it), and a
+        // stamp made before the outcome is known would record "progress" for a
+        // certificate this same call goes on to revoke. Phased `'ci-verified'`,
+        // NOT `'push-landed'` — this call proves an ALREADY-pushed SHA is
+        // globally green; it pushes nothing itself, unlike `stamp-held`'s use
+        // of `'push-landed'` above, which genuinely does run strictly after a
+        // real push (the two calls shared one label that was only accurate for
+        // one of them).
         await store.update((s) => withProgress(s, "ci-verified", new Date()));
         return 0;
       } finally {
@@ -1880,13 +1857,12 @@ async function main(): Promise<number> {
     // The collapsed version set `readyMarkedRound` before `gh pr ready` and
     // cleared it on an ordinary failure. Against a second driver that order is
     // right — two drivers must not both fire `ready_for_review`, which is what
-    // re-triggers paid external review of a head that already had it. Against
-    // a CRASH it is wrong in the worst available direction: a process killed
+    // re-triggers paid external review of a head that already had it. Against a
+    // CRASH it is wrong in the worst available direction: a process killed
     // between the claim and the call left the field non-zero forever, so every
     // future invocation answered `already-marked` without ever asking GitHub,
-    // and the PR stayed a draft nothing would ever mark (docomply-review
-    // rounds 1-3, PR #4057). An ordinary-failure release does not help — a
-    // crash runs no failure branch by definition.
+    // and the PR stayed a draft nothing would ever mark. An ordinary-failure
+    // release does not help — a crash runs no failure branch by definition.
     //
     // So the claim is a LEASE on the filesystem (`readyClaimPath`, the same
     // primitive and the same staleness window as the held-batch claims) and
@@ -1955,7 +1931,7 @@ async function main(): Promise<number> {
           `claim-ready-mark: broke an abandoned ready-mark claim (>${claimStaleMin()}m old) on PR #${pr} — its driver died before 'gh pr ready' landed.`,
         );
       }
-      // RE-CHECK after winning the lease (docomply-review round 4, a reference-implementation pull request).
+      // RE-CHECK after winning the lease.
       // The read above and `claimCreate` are not one atomic step: a caller can
       // read `readyMarkedRound === 0`, be pre-empted for arbitrarily long, and
       // only resume after some OTHER caller has fully committed AND removed
@@ -1967,15 +1943,14 @@ async function main(): Promise<number> {
       // plain re-read of `readyMarkedRound` here is guaranteed to observe it —
       // no lock required for THAT half.
       //
-      // The cleanup that follows is a second half, and IS lock-protected
-      // (docomply-review round 5): this caller can itself be suspended
-      // between winning the lease above and reaching this point, long enough
-      // for its own claim to go stale and be replaced by a THIRD caller's
-      // fresh generation. An unconditional `removeClaimFile` here would then
-      // delete that generation, not the one this caller ever owned — the
-      // exact cross-generation delete `commit-ready-mark`/`release-ready-mark`
-      // already guard against, reached through the one cleanup path that
-      // hadn't been.
+      // The cleanup that follows is a second half, and IS lock-protected: this
+      // caller can itself be suspended between winning the lease above and
+      // reaching this point, long enough for its own claim to go stale and be
+      // replaced by a THIRD caller's fresh generation. An unconditional
+      // `removeClaimFile` here would then delete that generation, not the one
+      // this caller ever owned — the exact cross-generation delete
+      // `commit-ready-mark`/`release-ready-mark` already guard against, reached
+      // through the one cleanup path that hadn't been.
       if (store.read().state.readyMarkedRound !== 0) {
         await store.locked(async () => {
           if (claimTokenMatches(path, tok)) removeClaimFile(path);
@@ -1988,7 +1963,7 @@ async function main(): Promise<number> {
     }
 
     // Prove the lease is STILL ours, and reset its clock, immediately before
-    // the outbound `gh pr ready` (coderabbitai P2, PR #4057).
+    // the outbound `gh pr ready`.
     //
     // Winning a lease and firing the event are two moments, and everything
     // between them is this process's own runtime — which can be suspended for
@@ -2006,7 +1981,7 @@ async function main(): Promise<number> {
     // bounded inside it, so the reclaim cannot land mid-dispatch.
     //
     // "Bounded inside it" is a RELATION BETWEEN TWO INDEPENDENT KNOBS, so it
-    // is checked rather than assumed (docomply-review round 5, a reference-implementation pull request).
+    // is checked rather than assumed.
     // `DRIVE_PR_CLAIM_STALE_MIN=1` with `GH_CALL_TIMEOUT=120` lets the lease
     // become reclaimable while the very call it is protecting is still
     // running — a second driver reclaims, fires, and the first request may
@@ -2022,11 +1997,11 @@ async function main(): Promise<number> {
       if (a.token === "") fail(2, "renew-ready-mark requires --token T");
       const staleMs = claimStaleMin() * 60_000;
       // `ghCall` does not settle AT `$GH_CALL_TIMEOUT` — it SIGTERMs there and
-      // waits `KILL_ESCALATE_MS` more before force-killing and returning
-      // (docomply-review round 7, a reference-implementation pull request). Comparing the staleness window
-      // only against the timeout let `DRIVE_PR_CLAIM_STALE_MIN=1` /
-      // `GH_CALL_TIMEOUT=59` pass (`60 > 59`) while the protected call could
-      // still be in flight for ~61s — reclaimable and running at once.
+      // waits `KILL_ESCALATE_MS` more before force-killing and returning.
+      // Comparing the staleness window only against the timeout let
+      // `DRIVE_PR_CLAIM_STALE_MIN=1` / `GH_CALL_TIMEOUT=59` pass (`60 > 59`)
+      // while the protected call could still be in flight for ~61s —
+      // reclaimable and running at once.
       const callMs = ghCallTimeoutSeconds() * 1000 + KILL_ESCALATE_MS;
       if (staleMs <= callMs) {
         fail(
@@ -2075,16 +2050,15 @@ async function main(): Promise<number> {
       if (a.token === "") fail(2, "commit-ready-mark requires --token T");
       const path = readyClaimPath(store.stateDir, pr);
       // The token CHECK, the durable WRITE, and the lease REMOVAL are one
-      // atomic step under the per-PR lock (docomply-review round 4, PR
-      // #4057) — the same reasoning `unclaim-held` already documents for its
-      // own check-then-remove: without the lock, an owner returning right at
-      // the edge of the staleness window can pass the token check against its
-      // own still-on-disk (but now stale) file, then have a DIFFERENT driver
-      // legitimately break that same stale claim and create a fresh one for
-      // itself in the gap before this call's own removal runs — which then
-      // deletes the FRESH claimant's file, not the one this caller ever
-      // owned, corrupting that claimant's bookkeeping even though nothing it
-      // did was wrong. `store.locked` also serialises this against
+      // atomic step under the per-PR lock — the same reasoning `unclaim-held`
+      // already documents for its own check-then-remove: without the lock, an
+      // owner returning right at the edge of the staleness window can pass the
+      // token check against its own still-on-disk (but now stale) file, then
+      // have a DIFFERENT driver legitimately break that same stale claim and
+      // create a fresh one for itself in the gap before this call's own removal
+      // runs — which then deletes the FRESH claimant's file, not the one this
+      // caller ever owned, corrupting that claimant's bookkeeping even though
+      // nothing it did was wrong. `store.locked` also serialises this against
       // `tryBreakStaleClaim`'s own lock hold, so no reclaim can land mid-way
       // through this sequence.
       return store.locked(async () => {
@@ -2120,10 +2094,9 @@ async function main(): Promise<number> {
       // which is what makes this usable as the by-hand escape for a lease
       // whose owner is gone.
       //
-      // Lock-protected for the same reason `commit-ready-mark` is (docomply-
-      // review round 4, PR #4057): an unlocked check-then-remove can delete a
-      // DIFFERENT driver's fresh reclaim of a lease that went stale between
-      // this call's own check and its removal.
+      // Lock-protected for the same reason `commit-ready-mark` is: an unlocked
+      // check-then-remove can delete a DIFFERENT driver's fresh reclaim of a
+      // lease that went stale between this call's own check and its removal.
       const path = readyClaimPath(store.stateDir, pr);
       return store.locked(async () => {
         if (a.token !== "" && !claimTokenMatches(path, a.token)) {
@@ -2200,7 +2173,7 @@ async function main(): Promise<number> {
       // The SAME newline ban `park` applies, and for the same mechanical
       // reason: `held-keys` is a line-delimited channel too, so an embedded LF
       // holds ONE item and emits TWO tokens, the second of which resolves a
-      // thread nobody held (coderabbitai, PR #4034 round 2). The validator in
+      // thread nobody held. The validator in
       // schema.ts restates this rather than inventing a weaker one.
       if (/[\n\r]/.test(a.key)) {
         fail(
@@ -2332,7 +2305,7 @@ async function main(): Promise<number> {
       // `**accepted**` reply ride an UNRELATED later push's `stamp-held` to
       // a false resolve — round and `.verifiedSha` both matched, because
       // neither is scoped to which specific hold's fix that push actually
-      // contained (docomply-review round 7, a reference-implementation pull request). `round: -1` can never
+      // contained. `round: -1` can never
       // equal a real `.rounds` (bump-round only ever increments from 0), so
       // `claim-held`'s round-equality check refuses it deterministically until
       // a live pass's step 3 finds the same qualifying reply and re-holds it
@@ -2340,20 +2313,19 @@ async function main(): Promise<number> {
       // go through.
       //
       // Insert-if-absent BY (key, outcome, commentUrl) — EXACT equality, no
-      // leniency for a missing commentUrl on either side: if the key is
-      // already held representing the SAME comment, its existing round is left
+      // leniency for a missing commentUrl on either side: if the key is already
+      // held representing the SAME comment, its existing round is left
       // untouched — a held item midway through a real pass's own confirmed
       // workflow must not be quietly downgraded by a standalone sweep running
-      // concurrently. If a NEWER comment now qualifies — whether it changed
-      // the outcome word or merely restates a different promise under the SAME
-      // one — the stale entry (confirmed OR unconfirmed) is replaced with a
-      // fresh unconfirmed one at round -1 rather than left standing.
-      // Outcome-only comparison (round 8) left this open for a superseding
-      // same-outcome reply; treating an absent commentUrl as an automatic
-      // match (an earlier version of this round-9 fix) left it open
-      // specifically for a LIVE-PASS-CONFIRMED hold, since the ordinary path
-      // never recorded one — closed now that BOTH paths require and record it
-      // (docomply-review round 10, a reference-implementation pull request).
+      // concurrently. If a NEWER comment now qualifies — whether it changed the
+      // outcome word or merely restates a different promise under the SAME one
+      // — the stale entry (confirmed OR unconfirmed) is replaced with a fresh
+      // unconfirmed one at round -1 rather than left standing. Outcome-only
+      // comparison left this open for a superseding same-outcome reply;
+      // treating an absent commentUrl as an automatic match (an earlier version
+      // of this fix) left it open specifically for a LIVE-PASS-CONFIRMED hold,
+      // since the ordinary path never recorded one — closed now that BOTH paths
+      // require and record it.
       if (a.unconfirmed) {
         await store.update((s) =>
           (s.held ?? []).some(
@@ -2387,7 +2359,7 @@ async function main(): Promise<number> {
       // item while its claim file exists (see that case's own comment) — so an
       // un-cleared stale one would make the fresh record permanently
       // unstampable, defeating the exact "re-hold via § 3" recovery this
-      // command exists to provide (docomply-review round 6, a reference-implementation pull request).
+      // command exists to provide.
       //
       // Only a STALE claim is broken, via the same DECISION `claim-held`
       // itself uses — never a LIVE one: a live claim means another driver is
@@ -2412,7 +2384,7 @@ async function main(): Promise<number> {
       // unstamped record nothing would ever re-surface (`summary-
       // findings.ts`'s `unaddressed` already excludes the now-answered
       // fingerprint), a permanently orphaned entry silently blocking
-      // convergence (docomply-review round 8, a reference-implementation pull request). Use
+      // convergence. Use
       // `breakStaleClaimLocked`, not `tryBreakStaleClaim`, inside this hold:
       // the per-PR lock is not reentrant (`lock.ts`'s `acquire` retries its
       // own `mkdir` until it wins or times out), so the acquiring variant
@@ -2478,16 +2450,15 @@ async function main(): Promise<number> {
     // `verifiedSha` — and differ only in what else they do with the
     // batch.
     //
-    // `--kind thread` is a compare-and-delete: the check and the
-    // removal in one lock hold. `--kind finding` is a per-key
-    // filesystem mutex that does NOT remove the item, because a finding's
-    // dispatch and its release are separate steps. Exclusivity is what
-    // findings needed on top of provenance: two concurrent drivers reading the
-    // same `held` snapshot could both decide to dispatch the same finding, and
-    // `answer-summary-finding.ts` posts a NEW top-level comment on every call
-    // — not idempotent like a thread's resolve (surfaced by docomply-review
-    // round 4 on PR #3998). `release-held` removes a claimed finding
-    // afterward, once the dispatch actually succeeded.
+    // `--kind thread` is a compare-and-delete: the check and the removal in one
+    // lock hold. `--kind finding` is a per-key filesystem mutex that does NOT
+    // remove the item, because a finding's dispatch and its release are
+    // separate steps. Exclusivity is what findings needed on top of provenance:
+    // two concurrent drivers reading the same `held` snapshot could both decide
+    // to dispatch the same finding, and `answer-summary-finding.ts` posts a NEW
+    // top-level comment on every call — not idempotent like a thread's resolve.
+    // `release-held` removes a claimed finding afterward, once the dispatch
+    // actually succeeded.
     //
     // The finding branch did NOT always make the provenance check, and the
     // reasoning that left it out is worth naming so it is not reinstated:
@@ -2583,11 +2554,11 @@ async function main(): Promise<number> {
         // window in which it must wait rather than merely might.
         //
         // These hooks are live in the shipped script, not stripped for
-        // production (review round 4) — `testDelaySeconds` owns the validation
-        // and the hard cap every one of them shares, and validates BEFORE the
-        // signal fires: a rejected delay must never let a waiting test believe
-        // this process is holding the lock and about to sleep, when it is
-        // actually about to exit without either.
+        // production — `testDelaySeconds` owns the validation and the hard cap
+        // every one of them shares, and validates BEFORE the signal fires: a
+        // rejected delay must never let a waiting test believe this process is
+        // holding the lock and about to sleep, when it is actually about to
+        // exit without either.
         const delaySec = testDelaySeconds(
           "DRIVE_PR_CLAIM_HELD_TEST_DELAY",
           "claim-held",
@@ -2607,7 +2578,7 @@ async function main(): Promise<number> {
           // thread's own resolve, removed the item after finish-round.ts's
           // batch read), never a property of THIS item's own round or SHA —
           // so it is the one case worth re-reading the batch over rather than
-          // recording a permanent refusal (chatgpt-codex-connector, a reference-implementation pull request).
+          // recording a permanent refusal.
           fail(
             4,
             `claim-held: no held item with key '${a.key}' for PR #${pr}.`,
@@ -2656,16 +2627,15 @@ async function main(): Promise<number> {
           held: state.held.filter((h) => h.key !== a.key),
         };
         store.write(next);
-        // Best-effort: the state mutation above is what makes this claim real
-        // — an unwritable/full `$DRIVE_PR_HANDOFF_DIR` failing the
-        // regeneration AFTER that rename has already succeeded must not turn
-        // a genuine claim into a reported failure. The caller
-        // (resolve-held-thread.ts) reads a claim failure as "nothing was
-        // removed, safe to just stop", which is exactly wrong the one time
-        // the removal already happened (review round 5). The handoff file is
-        // a best-effort orientation artifact by its own design; it must never
-        // be what decides whether a destructive state mutation is reported as
-        // having succeeded.
+        // Best-effort: the state mutation above is what makes this claim real —
+        // an unwritable/full `$DRIVE_PR_HANDOFF_DIR` failing the regeneration
+        // AFTER that rename has already succeeded must not turn a genuine claim
+        // into a reported failure. The caller (resolve-held-thread.ts) reads a
+        // claim failure as "nothing was removed, safe to just stop", which is
+        // exactly wrong the one time the removal already happened. The handoff
+        // file is a best-effort orientation artifact by its own design; it must
+        // never be what decides whether a destructive state mutation is
+        // reported as having succeeded.
         await store.renderHandoff(next);
         process.stdout.write(`${JSON.stringify(item)}\n`);
         return 0;
@@ -2740,10 +2710,9 @@ async function main(): Promise<number> {
       // `held`, so it needs the writer's invariant: without it a direct
       // `restore-held --key` call persists an entry `isUsableState` rejects on
       // the next read, and the store's refusal is fail-closed — so the drive
-      // stops entirely until a human edits the state file by hand
-      // (coderabbitai, PR #4034 round 4). Round 2 fixed `hold` and missed its
-      // sibling; every writer into a line-delimited channel needs this, not
-      // just the one that was reported.
+      // stops entirely until a human edits the state file by hand. Fixing
+      // `hold` alone missed this sibling; every writer into a line-delimited
+      // channel needs this, not just the one that was reported.
       if (/[\n\r]/.test(a.key)) {
         fail(
           2,
@@ -2774,7 +2743,7 @@ async function main(): Promise<number> {
       // reconciliation reads as "a different comment" and downgrades to an
       // unconfirmed round -1 — stranding a hold that was never actually
       // superseded, purely because the mutation that follows a claim happened
-      // to fail (docomply-review round 11, a reference-implementation pull request). The caller
+      // to fail. The caller
       // (resolve-held-thread.ts) always has it: it read the claimed entry back
       // from `claim-held`'s own stdout before ever attempting the mutation.
       if (a.commentUrl === "") {
@@ -2871,12 +2840,12 @@ async function main(): Promise<number> {
           ],
         };
         store.write(next);
-        // Best-effort for the same reason claim-held's is (review round 5):
-        // the restore already succeeded once this rename lands, so a
-        // handoff-rendering failure afterward must not report the restore
-        // itself as failed — the caller (resolve-held-thread.ts's
-        // restoreOrDie) would print the "LOST from local state" message for
-        // an item that is, in fact, sitting safely back in `held`.
+        // Best-effort for the same reason claim-held's is: the restore already
+        // succeeded once this rename lands, so a handoff-rendering failure
+        // afterward must not report the restore itself as failed — the caller
+        // (resolve-held-thread.ts's restoreOrDie) would print the "LOST from
+        // local state" message for an item that is, in fact, sitting safely
+        // back in `held`.
         await store.renderHandoff(next);
         return 0;
       });
@@ -2904,13 +2873,13 @@ async function main(): Promise<number> {
         return store.locked(async () => {
           const { state } = store.read();
           const heldKeys = state.held.map((h) => h.key);
-          // An already-empty batch is a no-op, not a drain: nothing changed,
-          // so stamping progress here would let a caller retrying
-          // `release-held --all` after it already drained the batch — or
-          // simply calling it on a PR with nothing held — manufacture
-          // GENUINE-looking progress that never happened, concealing a real
-          // stall from `--doctor` (review finding). Checked before the
-          // contended-claim scan below since there is nothing to scan.
+          // An already-empty batch is a no-op, not a drain: nothing changed, so
+          // stamping progress here would let a caller retrying `release-held
+          // --all` after it already drained the batch — or simply calling it on
+          // a PR with nothing held — manufacture GENUINE-looking progress that
+          // never happened, concealing a real stall from `--doctor`. Checked
+          // before the contended-claim scan below since there is nothing to
+          // scan.
           if (heldKeys.length === 0) return 0;
           const contended = heldKeys.filter((k) =>
             claimIsLive(claimPathFor(store.stateDir, pr, k)),
@@ -2962,7 +2931,7 @@ async function main(): Promise<number> {
           // `.held` is cleared and the lock released, a concurrent `hold` can
           // legitimately re-add the same key and a concurrent `claim-held` can
           // legitimately confirm a claim on it (its membership re-check now
-          // passes against the NEW `.held`, which the round-5 lock orders
+          // passes against the NEW `.held`, which the existing lock orders
           // correctly and says nothing about — it only orders a claimant
           // against this CLEAR, not against this CLEANUP). An unlocked cleanup
           // then deletes that live claim, and a third driver claims a key
@@ -3006,19 +2975,17 @@ async function main(): Promise<number> {
         // `--if-comment-url` is the compare-and-delete this caller needs:
         // reconcile-replied-threads.ts's merit-cleanup observes a thread's
         // comments ONCE per PR (not per-thread), then — after its OWN
-        // resolveThread mutation succeeds — releases whatever hold sits at
-        // this key. Between that read and this release, a concurrent driver
-        // can legitimately create/replace the hold with a NEWER one (a
-        // different accepted/moot reply this process never saw). Checked
-        // INSIDE this same lock hold, against the LIVE state, not the
-        // caller's own earlier snapshot — a stale value here refuses exactly
-        // like a missing key does, leaving the newer entry untouched
-        // (docomply-review round 16, a reference-implementation pull request). Deliberately narrower than
-        // the round-9/10 round+outcome match that was reverted for the
-        // UNCONDITIONAL caller (resolve-held-thread.ts's own cleanup, whose
-        // own comment above explains why ANY entry it finds is provably
-        // stale) — this flag is opt-in, so that caller's behavior is
-        // unchanged.
+        // resolveThread mutation succeeds — releases whatever hold sits at this
+        // key. Between that read and this release, a concurrent driver can
+        // legitimately create/replace the hold with a NEWER one (a different
+        // accepted/moot reply this process never saw). Checked INSIDE this same
+        // lock hold, against the LIVE state, not the caller's own earlier
+        // snapshot — a stale value here refuses exactly like a missing key
+        // does, leaving the newer entry untouched. Deliberately narrower than
+        // the round+outcome match that was reverted for the UNCONDITIONAL
+        // caller (resolve-held-thread.ts's own cleanup, whose own comment above
+        // explains why ANY entry it finds is provably stale) — this flag is
+        // opt-in, so that caller's behavior is unchanged.
         if (
           a.ifCommentUrl !== "" &&
           current !== undefined &&
@@ -3036,7 +3003,7 @@ async function main(): Promise<number> {
           // had a stale hold at all, so "missing" is the ordinary case, not an
           // error — and doing the presence check as a SEPARATE locked call
           // before this one reopens the exact TOCTOU the single-call design
-          // above exists to close (docomply-review round 9, a reference-implementation pull request): a
+          // above exists to close: a
           // concurrent driver could create or replace the key in the window
           // between the two calls. `--if-present` collapses "check, then
           // release" into this one already-locked operation instead.
@@ -3067,24 +3034,23 @@ async function main(): Promise<number> {
             "double-dispatch this check exists to prevent.",
           );
         }
-        // Unconditional-by-key otherwise, not matched against round/outcome
-        // (review round 9 tried a conditional match here, guarding against a
-        // concurrent driver's "newer" re-hold of this key — reverted in round
-        // 10 for resolve-held-thread.ts's own post-resolve cleanup call,
-        // which reaches here strictly AFTER its own resolveThread mutation
-        // has already succeeded: a re-hold of this key can only exist there
-        // if SOME driver's own step-2 enumeration (list-unresolved-
-        // threads.ts, scoped to `isResolved == false`) still saw this thread
-        // open — which, for the thread THIS process just resolved, is only
-        // possible from a scan taken BEFORE that resolve landed. So for THAT
-        // caller, any leftover record is provably stale regardless of its
-        // round/outcome, and matching against it would leave exactly that
-        // stale record behind forever (round 9 review). reconcile-replied-
-        // threads.ts's own merit-cleanup does NOT get that same guarantee for
-        // free — its comment enumeration runs once per PR, long before any
-        // individual thread's resolve — so it opts into the narrower
-        // `--if-comment-url` guard above instead of relying on this
-        // unconditional path (round 16 review).
+        // Unconditional-by-key otherwise, not matched against round/outcome (a
+        // conditional match here, guarding against a concurrent driver's
+        // "newer" re-hold of this key, was tried and reverted for
+        // resolve-held-thread.ts's own post-resolve cleanup call, which reaches
+        // here strictly AFTER its own resolveThread mutation has already
+        // succeeded: a re-hold of this key can only exist there if SOME
+        // driver's own step-2 enumeration (list-unresolved- threads.ts, scoped
+        // to `isResolved == false`) still saw this thread open — which, for the
+        // thread THIS process just resolved, is only possible from a scan taken
+        // BEFORE that resolve landed. So for THAT caller, any leftover record
+        // is provably stale regardless of its round/outcome, and matching
+        // against it would leave exactly that stale record behind forever.
+        // reconcile-replied- threads.ts's own merit-cleanup does NOT get that
+        // same guarantee for free — its comment enumeration runs once per PR,
+        // long before any individual thread's resolve — so it opts into the
+        // narrower `--if-comment-url` guard above instead of relying on this
+        // unconditional path.
         //
         // A held batch drained — reached only past every early
         // no-op `return 0` above (`--if-comment-url` mismatch, a missing key
@@ -3120,11 +3086,11 @@ async function main(): Promise<number> {
       if (a.phaseArg === "") fail(2, "progress requires --phase NAME");
       // Validated against the CLOSED set every other named event is stamped
       // with internally (`bump-round`, `stamp-held`, `set-verified`,
-      // `release-held`) — this is the one CLI-exposed entry point that takes
-      // an arbitrary caller-supplied string, and only emptiness was checked
-      // before. A misspelled or unauthorized `--phase` would otherwise
-      // persist as an indistinguishable stand-in for the real event it was
-      // meant to name (review finding).
+      // `release-held`) — this is the one CLI-exposed entry point that takes an
+      // arbitrary caller-supplied string, and only emptiness was checked
+      // before. A misspelled or unauthorized `--phase` would otherwise persist
+      // as an indistinguishable stand-in for the real event it was meant to
+      // name.
       if (!(PROGRESS_PHASES as readonly string[]).includes(a.phaseArg)) {
         fail(
           2,
@@ -3134,14 +3100,14 @@ async function main(): Promise<number> {
       // Test-only hook, unset (no-op) by default — same shape as
       // `DRIVE_PR_QUOTA_PARK_TEST_DELAY`. `drive.ts` fires the `pass-spawned`
       // stamp fire-and-forget from `onSpawn` and now `await`s this exact
-      // subprocess before interpreting the pass result or writing state
-      // again (review finding): a delayed stamp that completed AFTER a
-      // later `recordQuotaPark()` write used to clobber `quotaPark` back to
-      // `null` via `withProgress`'s own unconditional clear, since neither
-      // write knew about the other. Proving the join actually orders them —
-      // rather than hoping real subprocess-spawn jitter happens to resolve
-      // this stamp first — needs a way to hold this write open
-      // deterministically while a quota wall lands on the same round.
+      // subprocess before interpreting the pass result or writing state again:
+      // a delayed stamp that completed AFTER a later `recordQuotaPark()` write
+      // used to clobber `quotaPark` back to `null` via `withProgress`'s own
+      // unconditional clear, since neither write knew about the other. Proving
+      // the join actually orders them — rather than hoping real
+      // subprocess-spawn jitter happens to resolve this stamp first — needs a
+      // way to hold this write open deterministically while a quota wall lands
+      // on the same round.
       const delaySec = testDelaySeconds(
         "DRIVE_PR_PROGRESS_TEST_DELAY",
         "progress",
@@ -3245,7 +3211,7 @@ async function main(): Promise<number> {
         // immediately after an exit-13 refusal that one of these caused —
         // telling an operator nobody holds the PR at the exact moment they
         // were refused for the opposite reason, which is worse than no
-        // diagnostic (chatgpt-codex-connector, P2).
+        // diagnostic.
         //
         // Same shape as a lease (`actor`, `worktree`, `self`) so one consumer
         // reads both, with `unreadable: true` as the discriminant and no
@@ -3285,7 +3251,7 @@ async function main(): Promise<number> {
       // `resolve-thread.ts`, which resolves threads ON GITHUB, and it runs
       // well before the leased `bump-round` where exit 13 was previously first
       // raised — so a second worktree could resolve threads and only then be
-      // told it was not admitted (chatgpt-codex-connector, P2).
+      // told it was not admitted.
       //
       // Honestly a PREFLIGHT, not a fence, and the difference is worth stating
       // because this file is careful about it elsewhere: a GitHub mutation
@@ -3311,7 +3277,7 @@ async function main(): Promise<number> {
       // between the check and the write let the admitted command write anyway,
       // after which a successor could claim the absent lease and write under
       // the same actor — the corruption the fence exists to exclude, in a
-      // narrower window (docomply-review round 8, a reference-implementation pull request). Holding the state
+      // narrower window. Holding the state
       // mutex here means a clear can only land between locked sections, never
       // inside one, which is what makes the fence hold through the mutation
       // rather than merely at its start.
@@ -3371,12 +3337,11 @@ async function main(): Promise<number> {
         });
       }
       const gone = await store.locked(() => clearLease(store.stateDir, pr));
-      // Reported independently — `clearLease` always drops BOTH,
-      // and a report naming only the per-PR half left the tree lease's
-      // removal invisible on the exact call an operator makes most often:
-      // `clear-lease <requested-pr>`, where there is normally no PER-PR
-      // record for that pr at all (chatgpt-codex-connector, a reference-implementation pull request round
-      // 2).
+      // Reported independently — `clearLease` always drops BOTH, and a report
+      // naming only the per-PR half left the tree lease's removal invisible on
+      // the exact call an operator makes most often: `clear-lease
+      // <requested-pr>`, where there is normally no PER-PR record for that pr
+      // at all.
       if (gone.lease === null && gone.treeLease === null) {
         console.error(
           `drive-state.ts: no drive lease on PR #${pr} from this working tree — nothing to clear.`,
@@ -3413,31 +3378,28 @@ async function main(): Promise<number> {
       const resetResult = await store.locked(async () => {
         let ownsCiHold = false;
         // `released` is deliberately included, not just the in-flight
-        // held/acquiring/releasing phases: GitHub's label timeline is
-        // immutable and cumulative, so once any ci:hold transition has ever
-        // happened for this PR, the remote timeline can never go back to
-        // empty. `finalReady()`'s no-persisted-hold branch only accepts a
-        // null `ciHold` when that timeline IS empty (`timeline.length !==
-        // 0 → return 4`) — so erasing a `released` record here would make
-        // it return 4 forever, with no way to reconstruct which transition
-        // was current (chatgpt-codex-connector, a reference-implementation pull request round 3, same root
-        // cause as the now-removed `clear-ci-hold` command).
+        // held/acquiring/releasing phases: GitHub's label timeline is immutable
+        // and cumulative, so once any ci:hold transition has ever happened for
+        // this PR, the remote timeline can never go back to empty.
+        // `finalReady()`'s no-persisted-hold branch only accepts a null
+        // `ciHold` when that timeline IS empty (`timeline.length !== 0 → return
+        // 4`) — so erasing a `released` record here would make it return 4
+        // forever, with no way to reconstruct which transition was current (the
+        // same root cause as the now-removed `clear-ci-hold` command).
         let hasCiHoldEvidence = false;
-        // Structural rule, not a per-shape enumeration (chatgpt-codex-
-        // connector, PR #4681 rounds 6/7/9/11 each found the previous round's
-        // version of this check too narrow — an unparseable file, then an
-        // escaped key, then a truncated-before-the-key file, then a
-        // perfectly PARSEABLE file whose `ciHold` is simply missing or
-        // malformed, each slipped through the version before it in turn):
-        // local state can only ever PROVE a hold's presence (a recognized
-        // `phase`) or its CONFIRMED absence — `freshState()`'s own explicit
-        // `ciHold: null`, written by this tool's own schema and nothing
-        // else. Every other local shape — unparseable text, a missing
-        // `ciHold` key, a malformed or unrecognized-phase value — is
-        // INCONCLUSIVE, not evidence of absence, and only GitHub's live
-        // timeline can settle it. A truncated write can cut off before
-        // `ciHold` was ever serialized (`freshState()` emits it after
-        // several other fields) — indistinguishable, from local bytes
+        // Structural rule, not a per-shape enumeration (each earlier version of
+        // this check proved too narrow — an unparseable file, then an escaped
+        // key, then a truncated-before-the-key file, then a perfectly PARSEABLE
+        // file whose `ciHold` is simply missing or malformed, each slipped
+        // through the version before it in turn): local state can only ever
+        // PROVE a hold's presence (a recognized `phase`) or its CONFIRMED
+        // absence — `freshState()`'s own explicit `ciHold: null`, written by
+        // this tool's own schema and nothing else. Every other local shape —
+        // unparseable text, a missing `ciHold` key, a malformed or
+        // unrecognized-phase value — is INCONCLUSIVE, not evidence of absence,
+        // and only GitHub's live timeline can settle it. A truncated write can
+        // cut off before `ciHold` was ever serialized (`freshState()` emits it
+        // after several other fields) — indistinguishable, from local bytes
         // alone, from a file that never held one; an inconclusive live read
         // (network/auth failure) is refused for the identical reason an
         // inconclusive parse already is.
@@ -3503,7 +3465,7 @@ async function main(): Promise<number> {
         // already gone, with only a PREFIX of the leases swept, and exited
         // non-zero. A caller cannot tell that apart from a reset that changed
         // nothing, so a retry is reasoning from a false transactional
-        // assumption (docomply-review round 10, a reference-implementation pull request).
+        // assumption.
         //
         // Ordered this way the failure is clean instead: nothing of THIS
         // command's has been deleted yet, so the retry a caller reaches for is
@@ -3513,17 +3475,17 @@ async function main(): Promise<number> {
         // the same problem.
         //
         // NOT "a non-zero exit means no change", which an earlier version of
-        // this comment claimed and round 12 then falsified: `clearAllLeases`
-        // can itself throw `PARTIAL sweep` when a lease deletion fails on
+        // this comment claimed and turned out false: `clearAllLeases` can
+        // itself throw `PARTIAL sweep` when a lease deletion fails on
         // EACCES/EPERM/EROFS, having removed some leases. That error names both
         // halves precisely so this case is distinguishable. The three non-zero
-        // outcomes are distinct and a caller must read which it got: exit 9
-        // (a live foreign lease) and an acquisition failure both leave
-        // everything untouched; a `PARTIAL sweep` has changed the lease set.
-        // Every session lease for this PR, from EVERY working tree — not just
-        // this one's. `reset` is the command a human reaches for to unwedge a
-        // drive, and the tree holding the wedged lease need not be the tree
-        // they are standing in.
+        // outcomes are distinct and a caller must read which it got: exit 9 (a
+        // live foreign lease) and an acquisition failure both leave everything
+        // untouched; a `PARTIAL sweep` has changed the lease set. Every session
+        // lease for this PR, from EVERY working tree — not just this one's.
+        // `reset` is the command a human reaches for to unwedge a drive, and
+        // the tree holding the wedged lease need not be the tree they are
+        // standing in.
         //
         // Except one that is still LIVE, in ANY tree including this one, which
         // is preserved and returned. A live lease is by definition not the
@@ -3544,8 +3506,7 @@ async function main(): Promise<number> {
         // file and may not have posted yet — deleting it lets this tree rebuild
         // fresh state, see the finding as unaddressed, and dispatch the same
         // non-idempotent answer a second time, which is a duplicate standing
-        // claim on the PR that no later round undoes
-        // (chatgpt-codex-connector round 12, a reference-implementation pull request).
+        // claim on the PR that no later round undoes.
         //
         // Refusing is the right default because `reset` exists to unwedge a
         // drive, and a lease that is demonstrably live is not the wedge: its
@@ -3578,8 +3539,7 @@ async function main(): Promise<number> {
         // reset may be the very same one — and yet its in-flight POST has not
         // landed. Deleting the claim file there lets any later command see the
         // finding as unaddressed and answer it again, which is the duplicate
-        // top-level comment the claim protocol exists to prevent
-        // (chatgpt-codex-connector round 16, a reference-implementation pull request).
+        // top-level comment the claim protocol exists to prevent.
         //
         // Keyed on the CLAIM, not on who holds it: ownership is exactly what
         // fails to discriminate here, and a live claim means a dispatch may be
@@ -3595,9 +3555,7 @@ async function main(): Promise<number> {
           // phase 2 whenever it did not refuse outright, so a refusal reached
           // here can follow a real, completed lease sweep. Claiming otherwise
           // was accurate for the lease-refusal branch above (which returns
-          // before phase 2 ever runs) but false for this one — reported
-          // independently by docomply-review (rounds 17, 18) and
-          // chatgpt-codex-connector, a reference-implementation pull request.
+          // before phase 2 ever runs) but false for this one.
           const leaseNote =
             removedLeases.length > 0
               ? `${removedLeases.length} stale session lease(s) were already swept as part of this attempt (they were not live, so nothing driving was lost) — but the state file and the claim files were NOT.`
@@ -3626,7 +3584,7 @@ async function main(): Promise<number> {
           rmSync(f, { force: true });
         // The ready-mark lease is NOT one of those: it deliberately sits
         // outside `claimPrefix` so the held-batch sweep never sees it, which
-        // means this sweep never saw it either (coderabbitai P2, PR #4057).
+        // means this sweep never saw it either.
         // Same lie, same duration, same operator: `reset` recreates the JSON
         // with `readyMarkedRound: 0` while an orphaned lease keeps
         // `claim-ready-mark` reporting contention for a full staleness window
@@ -3656,8 +3614,7 @@ async function main(): Promise<number> {
         // uncompacted until some LATER reset happened to run — this way,
         // reaching `resetResult === 0` (this reset actually completed, not
         // refused) means the release has already happened, and this call
-        // compacts everything, including its own reset's trailing pair
-        // (docomply-review, a reference-implementation pull request round 1).
+        // compacts everything, including its own reset's trailing pair.
         sweepLockQuarantine(store.file);
       }
       return resetResult;

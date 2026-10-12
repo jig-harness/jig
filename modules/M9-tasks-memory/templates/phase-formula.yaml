@@ -1,9 +1,9 @@
 # TEMPLATE — copy to your repo (e.g. phase-formula.yaml) per class of recurring
 # multi-phase work, and prune to the phases YOU actually run. A "formula" encodes
 # the phases a whole class of work must move through, and marks which ones are
-# REQUIRED before an item may close. It is validated at close by the
-# required-phases gate (../reference/required-phases/): an item cannot reach a
-# done state with a `required: true` phase unrecorded.
+# REQUIRED before an item may close. It is validated at close by Groundwork's
+# required-phases gate (modules/M9-tasks-memory/reference/required-phases/): an
+# item cannot reach a done state with a `required: true` phase unrecorded.
 #
 # Why a formula and not a per-issue checklist: the required phases live in ONE
 # place, so "we always verify on staging before production" is a property of the

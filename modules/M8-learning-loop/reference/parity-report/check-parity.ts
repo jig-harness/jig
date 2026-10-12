@@ -10,12 +10,12 @@
 //   * precision        — of a reviewer's findings, the share that were real
 //                        (TP / (TP + FP)). Reported per reviewer with a
 //                        promotable? marker against MIN_PRECISION — this is the
-//                        evidence M7 needs before flipping comment -> block.
+//                        evidence M7 needs before flipping comment -> blocking.
 //
 // Input: a tallies file, one reviewer per line, whitespace-separated:
 //     <reviewer> <true_positives> <false_positives> <missed_blockers>
 // Blank lines and `# comments` are ignored. Produce it from your telemetry /
-// weekly parity snapshot (see ../mappings.md).
+// weekly parity snapshot (see ../../mappings.md).
 //
 // Portable: Bun + TypeScript. Conventions: exit 0 pass, 1 when a reviewer missed a
 // blocker, 2 on a usage / format error. TALLIES via arg/env, MIN_PRECISION via

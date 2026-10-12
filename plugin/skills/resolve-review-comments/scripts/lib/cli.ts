@@ -66,10 +66,10 @@ export function isDigits(s: string): boolean {
  * `current-round.ts` learned this the hard way (`'9'.repeat(400)` parses to
  * `Infinity`, which a `round >= N` cutoff then arms off) and fixed its own
  * `isRoundOrdinal` with this exact pairing, without exporting it — so the
- * next script accepting a bare ordinal (`triage-ladder.ts --round`, PR #4501
- * round 5) re-invented the narrower, unsafe `isDigits`-only check instead of
- * reusing it. Exported here, the one shared primitives module, so a third
- * script has this to reach for instead of a third variant.
+ * next script accepting a bare ordinal (`triage-ladder.ts --round`) re-invented
+ * the narrower, unsafe `isDigits`-only check instead of reusing it. Exported
+ * here, the one shared primitives module, so a third script has this to reach
+ * for instead of a third variant.
  */
 export function isSafeDigits(s: string): boolean {
   return isDigits(s) && Number.isSafeInteger(Number(s));
@@ -80,10 +80,10 @@ export function isSafeDigits(s: string): boolean {
  * read it: UNSET and EMPTY both take the default. `?? def` does not — it keeps
  * `''`, which every consumer here then rejects as non-numeric, so a variable
  * exported empty by optional templating (`REFLECT_THRESHOLD="$SOMETHING"` with
- * `SOMETHING` unset) turned a documented default into a usage exit 2
- * (chatgpt-codex-connector, a reference-implementation pull request round 2). Same semantics `readTimeoutEnv`
- * in lib/proc.ts already applies to GH_CALL_TIMEOUT — those were the only two
- * `${VAR:-…}` reads in the ported surface, and this is now the other one.
+ * `SOMETHING` unset) turned a documented default into a usage exit 2. Same
+ * semantics `readTimeoutEnv` in lib/proc.ts already applies to GH_CALL_TIMEOUT
+ * — those were the only two `${VAR:-…}` reads in the ported surface, and this
+ * is now the other one.
  */
 export function envOrDefault(name: string, def: string): string {
   const raw = process.env[name];
@@ -98,8 +98,7 @@ export function envOrDefault(name: string, def: string): string {
  * NOT `import.meta.main`: that is a Bun global Node did not gain until v24.2,
  * so on the Node versions this skill documents it reads `undefined`, main()
  * never runs, and the script exits 0 having printed nothing — which a caller
- * reads as an answer, not a failure (the drive-pr copy of this trap:
- * chatgpt-codex-connector, a reference-implementation pull request round 2).
+ * reads as an answer, not a failure (the drive-pr copy hit this trap).
  *
  * Both sides are REALPATHS. Both runtimes resolve the entry module's
  * `import.meta.url` through symlinks (measured: bun 1.3, node 24 — direct and

@@ -24,7 +24,11 @@ next session can find it.
 
 This skill is that contract. Its most valuable outcome is the cheapest one:
 **discovering the question was already settled** and citing the ADR
-(architecture decision record) that settled it.
+([architecture decision record](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) that settled it. The
+records themselves follow Groundwork's ADR practice module
+([M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)):
+this skill checks a new question against them first, and hands a ruling
+that clears the [ADR bar](#phase-4--route-the-outcome) to `/groundwork:adr`.
 
 > **This skill rules and routes. It does not implement.** The decision it
 > produces is an input to `/groundwork:do-item`, to the repository's own

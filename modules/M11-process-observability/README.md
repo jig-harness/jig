@@ -40,9 +40,8 @@ concrete per-backend wiring lives in [mappings.md](mappings.md).
 2. **A metric registry with no dark instruments** — every process metric lives
    in [`templates/metrics-registry.yaml`](templates/metrics-registry.yaml) with
    a **wired `source`** and an **owner**. The [no-dark-instruments gate](reference/no-dark-instruments/)
-   fails the build if any source is missing, empty, or a placeholder — porting
-   the reference implementation's hard-won lesson that a silently-dark
-   instrument makes the "measure" step aspirational.
+   fails the build if any source is missing, empty, or a placeholder, because
+   a silently-dark instrument makes the "measure" step aspirational.
 3. **Parity measurement — reused from [M8](../M8-learning-loop/), not
    duplicated.** *What* a reviewer's recall/precision/`missed_blockers` numbers
    mean and how they gate promotion is [M8](../M8-learning-loop/)'s
@@ -100,22 +99,47 @@ The model as a copyable narrative is [`templates/TELEMETRY.md`](templates/TELEME
    [M8](../M8-learning-loop/) on a measurement from a **live** instrument —
    never a dark one.
 
-## Port status
+## Status
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| per-review telemetry events (review outcome + cost) and the process-event shape | [`templates/event-schema.yaml`](templates/event-schema.yaml) + [`reference/event-schema-lint/`](reference/event-schema-lint/) — a generic typed-event schema and its validation gate + self-test |
-| the review-measurement provisioning gap (fail-open keys, a `TODO` adoption-rate metric) | [`reference/no-dark-instruments/`](reference/no-dark-instruments/) — the "no dark instruments" lesson as a runnable gate + self-test, plus [`templates/metrics-registry.yaml`](templates/metrics-registry.yaml) |
-| weekly vendor-parity snapshots + reviewer cost accounting | referenced, not re-landed — the parity/precision computation is [M8](../M8-learning-loop/)'s [parity report](../M8-learning-loop/reference/parity-report/); M11 owns the emission + registry + dashboard side |
-| process-observability narrative (events → metrics → promote/demote) | [`templates/TELEMETRY.md`](templates/TELEMETRY.md) — the copyable model, cross-linking [M7](../M7-pr-lifecycle-review/)'s precision bar and [M8](../M8-learning-loop/)'s measure step |
+### Runnable form
 
-Also landed: [`mappings.md`](mappings.md) (telemetry/analytics backends, where
-events are emitted from, dashboard homes) and [`maturity.yaml`](maturity.yaml).
+Groundwork's [`drive-pr`](../../plugin/skills/drive-pr/README.md) skill measures
+the review process it runs, as scripts a repository can call on its own:
 
-**Not ported** (per "don't port the unproven" / IP scrub): the actual dashboard
-**product** (the specific charts, layout, and backend wiring) and the specific
-**metric threshold/alert values** stay with the target repo — groundwork ships
-the mechanism (typed events, a wired registry, the two gates) and the decision
-rules, not the numbers or a particular vendor's dashboard. Telemetry backends
-(product-analytics tools, data warehouses, CI-native metrics) appear only as
-options in [mappings.md](mappings.md), never as a requirement.
+| Script | What it measures |
+|--------|------------------|
+| `loop-metrics.ts` | One pull request's review-loop cost: rounds, threads, the outcome mix, and how much of the final change landed after review began. A drive prints it when it stops |
+| `defect-escape.ts` | Whether findings the loop declined to fix (`wont-fix`, `deferred`) came back as defects |
+| `fractal-metrics.ts` | The cross-PR scoreboard: those figures over a window, each judged against a recorded baseline whose source document must still contain it, so a stale baseline is caught |
+| `fleet-health.ts` | Ceremony against progress: review rounds and follow-ups weighed against merged product work, with the thresholds in the repository's own fleet-health file |
+
+Their configuration is `fleet_health` and `drive.escape_baseline_doc` in the
+[configuration reference](../../plugin/CONFIGURATION.md#fleet_health).
+
+### What the module provides
+
+| Piece | What it is |
+|-------|------------|
+| [`templates/TELEMETRY.md`](templates/TELEMETRY.md) | The copyable model: events → metrics → promote/demote, linked to [M7](../M7-pr-lifecycle-review/)'s precision bar and [M8](../M8-learning-loop/)'s measure step |
+| [`templates/event-schema.yaml`](templates/event-schema.yaml) | A generic schema of typed process events |
+| [`templates/metrics-registry.yaml`](templates/metrics-registry.yaml) | The registry of process metrics, each with a wired source and an owner |
+| [`reference/event-schema-lint/`](reference/event-schema-lint/) | Validates an emitted event stream against the schema |
+| [`reference/no-dark-instruments/`](reference/no-dark-instruments/) | Fails when a registered metric's source is missing, empty or a placeholder |
+| [`mappings.md`](mappings.md) | Telemetry and analytics backends, where events are emitted from, dashboard homes |
+| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+
+Each reference gate is a standalone Bun script with a self-test and fixtures.
+The parity and precision computation is not repeated here: it is
+[M8](../M8-learning-loop/)'s [parity report](../M8-learning-loop/reference/parity-report/),
+and M11 owns the emission, registry and dashboard side.
+
+### Left out by design
+
+- **A dashboard product and threshold values.** The specific charts, layout,
+  backend wiring, metric thresholds and alert values belong to each
+  repository. The module provides the mechanism (typed events, a wired
+  registry, the two gates) and the decision rules, not the numbers or a
+  particular vendor's dashboard.
+- **A required backend.** Telemetry backends (product-analytics tools, data
+  warehouses, CI-native metrics) appear only as options in
+  [mappings.md](mappings.md).

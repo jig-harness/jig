@@ -267,12 +267,11 @@ process.stdout.write(JSON.stringify({ validation: { localChecks: ['echo stub-che
 
   // The claim is "an unreadable probe fails closed" (round-plan.ts's own
   // comment above `unconcludedGitOpMarker`) — a DIFFERENT branch than every
-  // test above, which all exercise the probe running successfully and
-  // reporting either no marker or a real one. This is the probe itself
-  // failing to run at all (review finding, PR #5000 round 8): a stub `git`
-  // on PATH answers `rev-parse --show-toplevel` normally — round-plan.ts's
-  // own earlier, unrelated call — but fails `rev-parse --git-dir`, the first
-  // call `unconcludedGitOpMarker` itself makes.
+  // test above, which all exercise the probe running successfully and reporting
+  // either no marker or a real one. This is the probe itself failing to run at
+  // all: a stub `git` on PATH answers `rev-parse --show-toplevel` normally —
+  // round-plan.ts's own earlier, unrelated call — but fails `rev-parse
+  // --git-dir`, the first call `unconcludedGitOpMarker` itself makes.
   it("fails closed when the git-dir probe itself cannot run", () => {
     const binDir = mkdtempSync(join(tmpdir(), "round-plan-op-guard-bin-"));
     const gitStub = join(binDir, "git");

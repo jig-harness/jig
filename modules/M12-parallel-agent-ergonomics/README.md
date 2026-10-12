@@ -37,8 +37,9 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    (`allocate-port.ts` + self-test); the collision caveat and range-sizing
    guidance are in its README.
 2. **A cross-worktree heavy-run mutex** — full build/test passes run one-at-a-time
-   machine-wide instead of thrashing, via an atomic process-id symlink lock at a shared path
-   with a wait timeout and dead-holder reclaim:
+   machine-wide instead of thrashing, via an atomic process-id lock at a shared
+   path (a symlink, or a hard link on Windows) with a wait timeout and
+   dead-holder reclaim:
    [`reference/resource-lock/`](reference/resource-lock/) (`with-resource-lock.ts`
    + self-test). It **bypasses under [CI](../../GLOSSARY.md)** because a CI runner
    is an already-isolated machine — serializing there would be pure latency. This
@@ -64,7 +65,7 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    nudge, never a blocker. Skeletons for both create and remove hooks are
    [`templates/worktree-hooks.md`](templates/worktree-hooks.md).
 
-The whole copyable model — all five rules in one place, ready to drop into a docs
+The whole copyable model — all its rules in one place, ready to drop into a docs
 tree — is [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md).
 The branch-discipline block is written to be **imported into an agent instruction
 file** (the [M0 instruction-architecture](../M0-instruction-architecture/) module
@@ -100,24 +101,35 @@ governs how those files layer), so every agent inherits the rules.
    agent.
 5. Add the two self-tests to CI so the utilities can't rot silently.
 
-## Port status
+## Status
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| Worktree-create hook allocating a deterministic port slot | [`reference/port-allocator/`](reference/port-allocator/) (portable allocator + self-test) and the create-hook skeleton in [`templates/worktree-hooks.md`](templates/worktree-hooks.md) |
-| `with-resource-lock.ts` cross-worktree mutex (atomic process-id symlink, process-id liveness, stale reclaim, CI bypass) | [`reference/resource-lock/`](reference/resource-lock/) (transcribed and self-tested; shared with [M1](../M1-gates-enforcement-ladder/)) |
-| Branch reuse-before-create discipline + footgun bans | [`templates/branch-discipline.md`](templates/branch-discipline.md) and the model doc [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md) |
-| Worktree-remove hook nudging reflection | remove-hook skeleton in [`templates/worktree-hooks.md`](templates/worktree-hooks.md), cross-linked to [M8](../M8-learning-loop/) |
+### What the module provides
 
-Also landed: [`mappings.md`](mappings.md) (worktree managers / agent runners,
-package managers, CI providers) and [`maturity.yaml`](maturity.yaml).
+| Piece | What it is |
+|-------|------------|
+| [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md) | The copyable model: every rule, with the footgun table |
+| [`templates/branch-discipline.md`](templates/branch-discipline.md) | The branch reuse-before-create rule and the footgun bans, written to be imported into an agent instruction file |
+| [`templates/worktree-hooks.md`](templates/worktree-hooks.md) | Create-hook (allocate and print the port slot) and remove-hook (nudge reflection) skeletons |
+| [`reference/port-allocator/`](reference/port-allocator/) | The deterministic per-worktree port allocator |
+| [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree mutex for heavy runs, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
+| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers |
+| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
 
-**Not ported** (per "don't port the unproven" / IP scrub): the reference
-implementation's specific port ranges, lock names, and hook-manager wiring are
-its local values, not a portable mechanism — groundwork ships the two scripts
-with neutral defaults and leaves the values to each repo. The probe-for-free port
-fallback (walk to the next open port on a detected clash) is noted as **future**
-in the port-allocator README, not shipped, to keep the allocator stateless and
-dependency-free. This module is **expected-absent** for repos that never run
-parallel agents on one machine: with a single checkout there is nothing to
-partition, so scoring it "absent" is correct, not a gap.
+Each reference utility is a standalone Bun script with a self-test.
+
+### Left out by design
+
+- **Local values.** Port ranges, lock names and hook-manager wiring are each
+  repository's own; the two scripts ship with neutral defaults.
+- **Repositories without parallel agents.** The module is **expected-absent**
+  for a repository that never runs parallel agents on one machine: with a
+  single checkout there is nothing to partition, so scoring it "absent" is
+  correct, not a gap.
+
+### Future
+
+- **Probe-for-free port fallback** (walk to the next open port on a detected
+  clash), described in the [port-allocator README](reference/port-allocator/);
+  it is not shipped, to keep the allocator stateless and dependency-free.
+- **A runnable workspace lifecycle**, and cross-worktree locks as shared
+  tooling, are later work in the [roadmap](../../ROADMAP.md).

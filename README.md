@@ -37,27 +37,26 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 |------|---------------|
 | [GLOSSARY.md](GLOSSARY.md) | Plain-language definitions of every term of art |
 | [PLAYBOOK.md](PLAYBOOK.md) | The end-to-end delivery narrative (feature pipeline + PR loop) |
-| [ROADMAP.md](ROADMAP.md) | Build-out phases and current status |
+| [ROADMAP.md](ROADMAP.md) | Open work, in priority order |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 | [principles/](principles/) | The seven design principles behind everything here |
 | [modules/](modules/) | The 13 practice modules (M0–M12), each independently adoptable |
 | [audit/](audit/) | The auditor: methodology, survey prompts, report template |
 | [profiles/](profiles/) | Module compositions: Solo/Lite, Team/Standard, Regulated/Strict |
 | [adoption/](adoption/) | Greenfield and brownfield adoption paths |
-| [seeds/](seeds/) | Imported source material awaiting integration |
-| [docs/](docs/) | Founding charter and background analysis |
-| [plugin/](plugin/README.md) | The `groundwork` plugin: agent skills (`drive-pr`, `do-item`, `resolve-review-comments`) for Claude Code and Codex, and the `review-arbiter` agent for Claude Code ([Codex setup](plugin/README.md#codex-notes)) |
+| [seeds/](seeds/) | Imported source material, kept as-imported for provenance |
+| [plugin/](plugin/README.md) | The `groundwork` plugin: agent skills for Claude Code and Codex (the pull-request drive loop, issue pickup, review resolution, conflict resolution, and procedure skills), the `review-arbiter` agent, and [recommended third-party skills](plugin/RECOMMENDED-SKILLS.md) |
 | [tools/](tools/README.md) | Runnable development tools |
 
 ## Status
 
-**Standing backflow — the module map is complete.** All 13 modules (M0–M12)
-carry the full module contract, and the auditor scores the complete map.
-[ROADMAP.md](ROADMAP.md) is the sole continuation anchor for what is done,
-what was deliberately deferred, and what comes next.
+Every module (M0–M12) carries the full module contract, and the auditor scores
+the complete map. The plugin's version and what each release changed are in
+[CHANGELOG.md](CHANGELOG.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
-Groundwork is distilled from a production reference implementation (the
-docomply monorepo — private), which remains "instance #1": lessons learned
-there flow back here (see [principles/05-learning-loop.md](principles/05-learning-loop.md)).
+Groundwork is distilled from a production codebase built with AI agents, and
+the repositories that use it keep feeding lessons back
+(see [principles/05-learning-loop.md](principles/05-learning-loop.md)).
 
 Private repo; publishing (whole or per-module) is a deferred decision. No
 license granted while private.
@@ -73,7 +72,8 @@ mise exec -- bun run gates
 ```
 
 The gate command checks formatting, lint, types, all gate self-tests, the build,
-Markdown links/tables/glossary coverage, and tracker-reference exclusions.
+Markdown links/tables/glossary coverage, origin-reference exclusions, and a
+changelog entry for the current plugin version.
 GitHub Actions runs the same command on Linux, macOS and Windows; there the
 long drive-pr suite runs in its own job, split into four parallel
 [test shards](GLOSSARY.md) on Linux and macOS, and Windows leaves out the

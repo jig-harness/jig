@@ -39,7 +39,7 @@ Before an artifact is handed to the next stage:
    review scars — finding lists, reviewer dialogue, "addressed" annotations. The
    finished artifact reads as if it were right the first time; the history lives
    in the review threads, issues, and git (see
-   [M4](../../M4-docs-governance/)).
+   [M4](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/README.md)).
 3. **Mark accepted.** Set the artifact's `status: accepted` and record the
    review (a `reviewed:` frontmatter key with a reviewer + date/ref, or a
    non-empty `## Review` section). Only now may the next stage consume it.
@@ -54,12 +54,12 @@ When a stage would otherwise proceed on a guess — an unknown feasibility, an
 unclear trade-off, a "which approach?" — open a **research spike** first.
 
 - **Artifact:** a dated **research note**, from
-  [`research-note-template.md`](research-note-template.md): context, options,
+  [`research-note-template.md`](https://github.com/docomply/jig/blob/main/modules/M6-feature-delivery-pipeline/templates/research-note-template.md): context, options,
   evidence, recommendation.
 - **Adversarial review:** challenge the evidence and whether the recommendation
   follows from it, not just the conclusion.
 - **Graduation:** a research note that *changes a decision* graduates into an
-  [ADR](../../GLOSSARY.md) (see [M5](../../M5-adr-practice/)). The note captures
+  [ADR](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (see [M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)). The note captures
   the exploration; the ADR captures the decision the project now lives by.
 
 **Exit:** a dated research note with a recommendation; any decision it settles
@@ -67,14 +67,14 @@ is written as an ADR.
 
 ## 2. Requirements — the PRD
 
-- **Artifact:** a **[PRD](../../GLOSSARY.md)** (product requirements document),
-  from [`prd-template.md`](prd-template.md).
+- **Artifact:** a **[PRD](https://github.com/docomply/jig/blob/main/GLOSSARY.md)** (product requirements document),
+  from [`prd-template.md`](https://github.com/docomply/jig/blob/main/modules/M6-feature-delivery-pipeline/templates/prd-template.md).
 - **Content:** *what* the feature does for users and why — personas,
   requirements, success metrics, scope. **No stack talk** here: databases,
   frameworks, and infrastructure belong to the architecture stage. Keeping
   *what* separate from *how* is what lets each be reviewed on its own terms.
 - **Required sections** are enforced by the
-  [required-sections gate](../reference/required-sections/) so "use the
+  [required-sections gate](https://github.com/docomply/jig/blob/main/modules/M6-feature-delivery-pipeline/reference/required-sections/README.md) so "use the
   template" is mechanical, not a habit.
 - **Adversarial review:** a red-team pass for gaps, vague requirements,
   unmeasurable success metrics, and scope that has quietly crept.
@@ -84,14 +84,14 @@ is written as an ADR.
 ## 3. Architecture
 
 - **Artifact:** an **architecture doc**, from
-  [`architecture-template.md`](architecture-template.md).
+  [`architecture-template.md`](https://github.com/docomply/jig/blob/main/modules/M6-feature-delivery-pipeline/templates/architecture-template.md).
 - **Content:** *how* the PRD's requirements are met — components, data model,
   interfaces, security, scale. Trace decisions back to the requirements they
   satisfy.
-- **Significant decisions become [ADRs](../../GLOSSARY.md).** The architecture
+- **Significant decisions become [ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md).** The architecture
   doc describes the shape; each weighty, hard-to-reverse choice (a storage
   engine, an auth model, a boundary) is captured as its own numbered ADR (see
-  [M5](../../M5-adr-practice/)) so the decision and its consequences outlive the
+  [M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)) so the decision and its consequences outlive the
   doc.
 - **Adversarial review:** a red-team pass for scalability, security, cost, and
   single points of failure — ideally from a fresh reviewer who has not seen the
@@ -132,14 +132,14 @@ revisions it forced are themselves re-reviewed and re-accepted.
 - **Artifact:** an **epic** decomposed into sub-issues, each carrying a clear,
   tactical execution plan.
 - **Flag labels drive downstream gates.** Tag each sub-issue with the
-  [flag labels](../../GLOSSARY.md) that describe what it touches — for example
+  [flag labels](https://github.com/docomply/jig/blob/main/GLOSSARY.md) that describe what it touches — for example
   `has-migration`, `api-change`, `ui`, `hitl` — so the labels *drive process*:
   they select which reviews and gates fire when the work reaches a pull request.
   The label taxonomy and its process effects live in
-  [M9](../../M9-tasks-memory/) (tasks & memory) and
-  [M3](../../M3-change-area-catalog/) (change-area catalog).
+  [M9](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/README.md) (tasks & memory) and
+  [M3](https://github.com/docomply/jig/blob/main/modules/M3-change-area-catalog/README.md) (change-area catalog).
 - **This is where the pipeline hands off** to the PR loop
-  ([M7](../../M7-pr-lifecycle-review/)): each sub-issue becomes one or more pull
+  ([M7](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md)): each sub-issue becomes one or more pull
   requests, and the flag labels set there decide the mandatory reviewers and
   gates.
 
@@ -156,7 +156,7 @@ fill the `<...>` placeholders with your project's concrete tools:
 | Research spike | research note | `research-note-template.md` | the stage that was blocked; decisions → ADRs (M5) |
 | Requirements | PRD | `prd-template.md` | architecture, design, epic |
 | Architecture | architecture doc + ADRs | `architecture-template.md` | design, epic |
-| Design-prototype loop | accepted prototype | `<design-brief-template>` + your `<design-prototype>` skill/tool | back into PRD / architecture; then epic |
+| Design-prototype loop | accepted prototype | `<design-brief>` (e.g. the Groundwork `/groundwork:design-brief-builder` skill) + your `<design-prototype>` skill/tool | back into PRD / architecture; then epic |
 | Epic decomposition | epic + flag-labelled sub-issues | M9 `ISSUE-TEMPLATES.md` (epic + sub-issue skeletons), filed via `<tracker>` | the PR loop (M7), via labels (M9 / M3) |
 
 ## Where this is not a straight line

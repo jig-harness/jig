@@ -32,7 +32,7 @@ import { ghCall, run, tsArgv } from "../proc.ts";
 // Which of that app's checks is the finding-posting one. The app slug alone is
 // not an identity: an app may publish several checks on a SHA, and a sibling's
 // verdict must not stand in for the reviewer's. Matched as a case-insensitive
-// regex so the "(majordomo)" suffix — and any future arm suffix — is tolerated.
+// regex so a parenthesised arm suffix such as "(shadow)" is tolerated.
 //
 // ANCHORED, and the tolerated suffix is only a parenthesised arm. Unanchored,
 // the pattern is a substring match: a sibling named "AI review telemetry" from
@@ -54,7 +54,7 @@ function posixToJs(pattern: string): string {
 export const REVIEWER_CHECK = new RegExp(posixToJs(REVIEWER_CHECK_RAW), "i");
 
 // The reviewer stamps the SHA it reviewed into its own sticky comment. That is
-// a second, independent witness to the check-run: measured on #3938, the marker
+// a second, independent witness to the check-run: measured live, the marker
 // still named the PREVIOUS commit while the aggregate checks view read settled.
 export const SHA_MARKER = reviewedShaMarker();
 // Which of the reviewer's comments is the sticky. The reviewer also posts
@@ -328,7 +328,7 @@ export function isReviewerCheck(run: CheckRun): boolean {
 /**
  * The newest run per (app, name) pair. One SHA carries MULTIPLE check-runs
  * under the same name whenever a job was re-run or a first attempt was
- * cancelled — measured on this skill's own PR (#3952), where `Parse
+ * cancelled — measured on this skill's own PR, where `Parse
  * ops-followups block` had a `cancelled` attempt alongside the `success` that
  * superseded it. Reducing to the newest per name matters in both directions:
  * keeping the stale one marks CI failing forever (so announce-merge-ready
@@ -442,13 +442,12 @@ export function ciVerdictOf(
  * establishes freshness for: that predicate reads `CheckRunLite[]` alone and
  * has no notion of a commit status at all, so the freshness ambiguity
  * `finalCi.code === 4` encodes (a required check-run whose watermark/timing
- * could not be confirmed fresh) can only ever apply to a name in THIS array.
- * A caller deciding whether a required-named failure is merely "possibly
- * stale" — rather than a real, actionable failure — must intersect against
- * this set, not `failingNames`'s merged one (review finding
- * round 4): a legacy commit-status context happening to share a required
- * check's name carries no such ambiguity and is fresh evidence regardless of
- * `finalCi.code`.
+ * could not be confirmed fresh) can only ever apply to a name in THIS array. A
+ * caller deciding whether a required-named failure is merely "possibly stale" —
+ * rather than a real, actionable failure — must intersect against this set, not
+ * `failingNames`'s merged one: a legacy commit-status context happening to
+ * share a required check's name carries no such ambiguity and is fresh evidence
+ * regardless of `finalCi.code`.
  *
  * `null` mirrors `failingNames`'s own `runsUnreadable` case: the query
  * failed, so there is nothing to enumerate.
@@ -471,21 +470,20 @@ export function failingCheckRunNames(
 
 /**
  * The failing names sourced from legacy COMMIT STATUSES only — never
- * check-runs. The complement of `failingCheckRunNames`, and needed for the
- * same reason: a caller that must tell whether a required-named failure is
- * ONLY a possibly-stale check-run, or ALSO a fresh, unambiguous commit-status
- * failure sharing that name, cannot answer that from `failingNames`'s
- * merged, provenance-free output — a name-only membership test there cannot
- * distinguish "this occurrence came from the check-run list" from "this
- * occurrence came from the status list", so a required check failing in BOTH
- * sources under one name reads as wholly check-run-sourced (review finding,
- * Measured with `failingCheckNames: ['Schema gate',
- * 'Schema gate']` from one failing check-run plus one failing legacy status,
- * both named `Schema gate`; `failingCheckRunNames.includes('Schema gate')`
- * was true, so EVERY merged entry — including the status-sourced one —
- * satisfied `drive.ts`'s `staleRequiredFailure` predicate, which then
- * deferred a fresh, actionable legacy-status failure to the witness wait
- * instead of dispatching CI repair).
+ * check-runs. The complement of `failingCheckRunNames`, and needed for the same
+ * reason: a caller that must tell whether a required-named failure is ONLY a
+ * possibly-stale check-run, or ALSO a fresh, unambiguous commit-status failure
+ * sharing that name, cannot answer that from `failingNames`'s merged,
+ * provenance-free output — a name-only membership test there cannot distinguish
+ * "this occurrence came from the check-run list" from "this occurrence came
+ * from the status list", so a required check failing in BOTH sources under one
+ * name reads as wholly check-run-sourced (measured with `failingCheckNames:
+ * ['Schema gate', 'Schema gate']` from one failing check-run plus one failing
+ * legacy status, both named `Schema gate`;
+ * `failingCheckRunNames.includes('Schema gate')` was true, so EVERY merged
+ * entry — including the status-sourced one — satisfied `drive.ts`'s
+ * `staleRequiredFailure` predicate, which then deferred a fresh, actionable
+ * legacy-status failure to the witness wait instead of dispatching CI repair).
  *
  * `null` mirrors `failingNames`'s own `statuses === null` case: the query
  * failed, so there is nothing to enumerate.
@@ -502,13 +500,12 @@ export function failingStatusNames(
 /**
  * The individual failing check-run and commit-status names, unparsed — the
  * structured counterpart to `ciVerdictOf`'s rendered string. A caller that
- * needs to test one of these names for exact membership (the required
- * checks, say) must use this rather than re-splitting `ciVerdictOf`'s output
- * on `,`/`;`: a name that itself contains either delimiter cannot round-trip
- * through that split — e.g. a non-required check literally named
- * `Schema gate, shard 1` would split into `['Schema gate', 'shard 1']` and
- * falsely satisfy an exact-match check against the required `Schema gate`
- * (review finding).
+ * needs to test one of these names for exact membership (the required checks,
+ * say) must use this rather than re-splitting `ciVerdictOf`'s output on
+ * `,`/`;`: a name that itself contains either delimiter cannot round-trip
+ * through that split — e.g. a non-required check literally named `Schema gate,
+ * shard 1` would split into `['Schema gate', 'shard 1']` and falsely satisfy an
+ * exact-match check against the required `Schema gate`.
  *
  * This MERGES check-run and commit-status names, and deliberately carries no
  * provenance of which source a given name came from — a caller that needs to
@@ -594,42 +591,40 @@ export interface ReviewerSticky {
   /**
    * That SAME comment's own `updated_at`, or `''` when there is no sticky.
    *
-   * The reviewer edits its one sticky in place each round rather than posting
-   * a new one, so this is when the marker content above was last written —
-   * the only readable proxy for "when did this evidence come into being".
-   * The stranded-check-run bypass needs precisely that: the check-run's own
+   * The reviewer edits its one sticky in place each round rather than posting a
+   * new one, so this is when the marker content above was last written — the
+   * only readable proxy for "when did this evidence come into being". The
+   * stranded-check-run bypass needs precisely that: the check-run's own
    * `started_at` says when the RUN began, which is a different quantity and
-   * cannot distinguish a sticky written moments ago mid-run from one written
-   * by an earlier, already-completed run on the same head (an earlier change
-   * rounds 2-3).
+   * cannot distinguish a sticky written moments ago mid-run from one written by
+   * an earlier, already-completed run on the same head.
    */
   updatedAt: string;
 }
 
 /**
- * The reviewer's SHA, round and last-updated markers read TOGETHER off the
- * same newest STICKY comment `reviewedShaFromComments` reads — added for the
- * stranded-check-run bypass, which needs every field off the SAME
- * comment: pairing a fresh round from one comment with a stale SHA from
- * another would misreport what the reviewer actually witnessed. The fields
- * are therefore assigned TOGETHER, from the same matching comment, never
- * independently — a comment carrying no SHA marker updates none of them, so a
- * later sticky-marked reply with no `ai-reviewed-sha` (an auxiliary comment,
- * say) cannot pair its own round against an EARLIER comment's SHA
- * (docomply-review's own review of this change, round 1). `updatedAt` joins
- * that same assignment for the same reason: a timestamp taken off a different
- * comment than the SHA would date evidence that comment never carried.
+ * The reviewer's SHA, round and last-updated markers read TOGETHER off the same
+ * newest STICKY comment `reviewedShaFromComments` reads — added for the
+ * stranded-check-run bypass, which needs every field off the SAME comment:
+ * pairing a fresh round from one comment with a stale SHA from another would
+ * misreport what the reviewer actually witnessed. The fields are therefore
+ * assigned TOGETHER, from the same matching comment, never independently — a
+ * comment carrying no SHA marker updates none of them, so a later sticky-marked
+ * reply with no `ai-reviewed-sha` (an auxiliary comment, say) cannot pair its
+ * own round against an EARLIER comment's SHA. `updatedAt` joins that same
+ * assignment for the same reason: a timestamp taken off a different comment
+ * than the SHA would date evidence that comment never carried.
  *
  * The SHA extraction mirrors `reviewedShaFromComments`'s own regex and
  * last-match-wins semantics exactly (matchAll, not `.match`), rather than
- * importing `summary-findings.ts`'s `reviewedShaFrom` (first-match-wins) —
- * two functions in this file must not disagree with each other about which
- * marker occurrence wins within one body, even though a body carries at most
- * one in practice today. `parseReviewRound` IS imported: unlike the SHA
- * regex, this file has no round-parsing precedent of its own to stay
- * consistent with, so reusing `summary-findings.ts`'s parser avoids
- * re-deriving that grammar a second time
- * (`.claude/rules/document-scanning-gates.md` § 3).
+ * importing `summary-findings.ts`'s `reviewedShaFrom` (first-match-wins) — two
+ * functions in this file must not disagree with each other about which marker
+ * occurrence wins within one body, even though a body carries at most one in
+ * practice today. `parseReviewRound` IS imported: unlike the SHA regex, this
+ * file has no round-parsing precedent of its own to stay consistent with, so
+ * reusing `summary-findings.ts`'s parser avoids re-deriving that grammar a
+ * second time (parse with one parser, or pin the shape — never a second
+ * hand-rolled recognizer).
  *
  * `null` when the query itself failed — fail closed, same distinction
  * `reviewedShaFromComments` makes. `{ sha: '', round: null, updatedAt: '' }`
@@ -712,7 +707,7 @@ export async function unresolvedThreads(
       // line that is valid JSON but not a thread — `null`, `5`, `"x"` — became
       // a COUNTED thread, and evaluate.ts derives threadsOpen/liveThreads from
       // this length: a stray line changed the convergence verdict instead of
-      // failing the read (coderabbitai, PR #4034 round 2). summaryFindings
+      // failing the read. summaryFindings
       // below already shape-checks its payload.
       const parsed: unknown = JSON.parse(line);
       if (
@@ -731,11 +726,11 @@ export async function unresolvedThreads(
 
 export interface SummaryReportLite {
   total: number;
-  // `path` feeds `structuralEscalationDue` alongside `fingerprint`
-  // — a summary-only finding creates no thread, so the recurrence signal
-  // needs its own anchor file just as much as a thread's does (docomply-
-  // review, PR #4441). Shape-checked below on the same "checked, not merely
-  // parsed" basis `listUnresolvedThreads` above states for its own payload.
+  // `path` feeds `structuralEscalationDue` alongside `fingerprint` — a
+  // summary-only finding creates no thread, so the recurrence signal needs its
+  // own anchor file just as much as a thread's does. Shape-checked below on the
+  // same "checked, not merely parsed" basis `listUnresolvedThreads` above
+  // states for its own payload.
   unaddressed: Array<{ fingerprint: string; path: string }>;
 }
 

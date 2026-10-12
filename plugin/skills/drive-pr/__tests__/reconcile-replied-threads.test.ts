@@ -2,13 +2,13 @@
  * reconcile-replied-threads.test.ts
  *
  * `reconcile-replied-threads.ts` extracts SKILL.md § 3's crash-recovery
- * reconciliation — "a thread already carrying a trusted outcome-token reply
- * is not live work, settle it" — into a script that runs WITHOUT passing
+ * reconciliation — "a thread already carrying a trusted outcome-token reply is
+ * not live work, settle it" — into a script that runs WITHOUT passing
  * `drive-status.ts`'s round-readiness gate. That gate answers "is there new
- * reviewer work"; reconciling an already-posted reply is a different
- * question, and coupling the two is what let a reply sit unresolved
- * indefinitely on a PR that never gets a reviewer check-run at all (a
- * CONFLICTING PR, per this ticket's evidence on #3974).
+ * reviewer work"; reconciling an already-posted reply is a different question,
+ * and coupling the two is what let a reply sit unresolved indefinitely on a PR
+ * that never gets a reviewer check-run at all (a CONFLICTING PR, as measured on
+ * a live drive).
  *
  * These are subprocess integration tests against a stubbed `gh`, mirroring
  * drive-pr.test.ts's own convention (the real script, spawned for real,
@@ -39,7 +39,7 @@ let scratchWorktree: string; // git-init'd cwd for every spawned script — see 
 /**
  * `process.env` minus every git-repo-location variable, for EVERY spawn in
  * this file — the `git init` below, `runTs`, `heldKeys`, and the direct
- * `drive-state.ts hold` calls (coderabbitai, PR #4114).
+ * `drive-state.ts hold` calls.
  *
  * Scrubbing only the `git init` call was the gap: this suite runs under the
  * `drive-pr-selftest` pre-commit hook, which EXPORTS GIT_DIR/GIT_WORK_TREE
@@ -293,7 +293,7 @@ function threadsPayload(threads: ThreadFixture[]) {
                 // Each comment gets its OWN url (thread id + index), not one
                 // shared per thread — reconcile-replied-threads.ts keys its
                 // provenance tracking on the INDIVIDUAL qualifying comment's
-                // permalink (docomply-review round 9, a reference-implementation pull request), so a fixture
+                // permalink, so a fixture
                 // where every comment shared one url couldn't distinguish
                 // "the same reply" from "a different one" any better than the
                 // bug it exists to catch.
@@ -395,8 +395,8 @@ function run(
 }
 
 /**
- * A regression class no text scan over this script's source can rule out
- * (docomply-review round 3, a reference-implementation pull request): a consumer that builds its OWN Set
+ * A regression class no text scan over this script's source can rule out:
+ * a consumer that builds its OWN Set
  * with the same initial members as `TRUSTED_ASSOCIATIONS` — `const trusted =
  * new Set(['OWNER', 'MEMBER', 'COLLABORATOR'])` — passes every import check,
  * every "no local const TRUSTED_ASSOCIATIONS" check, and every call-site
@@ -629,7 +629,7 @@ describe("reconcile-replied-threads.ts", () => {
     expect(resolved).toBe("PRRT_rejected");
   });
 
-  it("skips a merit reply carrying the --leave-open marker instead of resolving it — the other reader of the same durable choice (docomply-review, a reference-implementation pull request round 10)", () => {
+  it("skips a merit reply carrying the --leave-open marker instead of resolving it — the other reader of the same durable choice", () => {
     const { dir, stateDir } = writeFixture([
       {
         id: "PRRT_leaveopen_marked",
@@ -660,7 +660,7 @@ describe("reconcile-replied-threads.ts", () => {
     expect(existsSync(join(dir, "resolved-threads.jsonl"))).toBe(false);
   });
 
-  it("a marked reply whose outcome is `moot` is ALSO left open, not re-held — this file has no --moot-pending-push equivalent, so the marker alone must decide (docomply-review, a reference-implementation pull request round 11)", () => {
+  it("a marked reply whose outcome is `moot` is ALSO left open, not re-held — this file has no --moot-pending-push equivalent, so the marker alone must decide", () => {
     const { dir, stateDir } = writeFixture([
       {
         id: "PRRT_leaveopen_marked_moot",
@@ -686,7 +686,7 @@ describe("reconcile-replied-threads.ts", () => {
     expect(heldKeys(stateDir)).toBe("");
   });
 
-  it("an ACCEPTED reply that happens to contain the marker text is NOT treated as left-open, and its own hold is NOT released — the marker only means something for a merit outcome or moot (docomply-review, a reference-implementation pull request round 14)", () => {
+  it("an ACCEPTED reply that happens to contain the marker text is NOT treated as left-open, and its own hold is NOT released — the marker only means something for a merit outcome or moot", () => {
     const { dir, stateDir } = writeFixture([
       {
         id: "PRRT_accepted_with_marker_text",
@@ -741,7 +741,7 @@ describe("reconcile-replied-threads.ts", () => {
     expect(heldKeys(stateDir)).toBe("PRRT_accepted_with_marker_text");
   });
 
-  it("a marked left-open reply STILL releases a stale prior hold on the same key — leaving a thread open is orthogonal to an earlier hold going stale (docomply-review, a reference-implementation pull request round 11)", () => {
+  it("a marked left-open reply STILL releases a stale prior hold on the same key — leaving a thread open is orthogonal to an earlier hold going stale", () => {
     const { dir, stateDir } = writeFixture([
       {
         id: "PRRT_leaveopen_stale_hold",
@@ -1058,7 +1058,7 @@ describe("reconcile-replied-threads.ts", () => {
     expect(existsSync(join(dir, "resolved-threads.jsonl"))).toBe(false);
   });
 
-  it("releases a STALE prior held entry when a superseding reply merit-resolves the thread (docomply-review round 8)", () => {
+  it("releases a STALE prior held entry when a superseding reply merit-resolves the thread", () => {
     const { dir, stateDir } = writeFixture([
       {
         id: "PRRT_flip_to_rejected",
@@ -1066,10 +1066,9 @@ describe("reconcile-replied-threads.ts", () => {
           // The EARLIER accepted reply the hold below represents. A real,
           // non-truncated GraphQL thread listing returns the FULL comment
           // history, not just the latest reply — so this pass's own
-          // `thread.comments` genuinely includes it (docomply-review round
-          // 19, PR #4028: identity, not read timing, is what makes a held
-          // entry safe to delete — its commentUrl must be one of the
-          // comments THIS listing actually read).
+          // `thread.comments` genuinely includes it (identity, not read timing,
+          // is what makes a held entry safe to delete — its commentUrl must be
+          // one of the comments THIS listing actually read).
           {
             author: "example-user",
             authorAssociation: "MEMBER",
@@ -1125,7 +1124,7 @@ describe("reconcile-replied-threads.ts", () => {
     expect(heldKeys(stateDir)).toBe("");
   });
 
-  it("does NOT delete a held entry whose commentUrl is not among the comments this pass read (docomply-review round 19)", () => {
+  it("does NOT delete a held entry whose commentUrl is not among the comments this pass read", () => {
     // Models a concurrent driver's hold for a reply that is genuinely NOT
     // part of what this pass's own listing saw — a URL this fixture never
     // generates for this thread at all. Three straight rounds (16-18) tried

@@ -48,7 +48,7 @@ tags: [backend, performance, database]
 
 `INDEX.md` is regenerated from the tree (see `reference/index/`); never edit it
 by hand. A freshness gate fails when the committed index no longer matches the
-tree. Pages with no incoming links are reported as orphans.
+tree. Pages with no incoming links are orphans; the wiki lint reports them.
 
 ## De-scarring rule
 
@@ -57,7 +57,7 @@ correction traces — *scars* — do not belong in it:
 
 - strikethrough (`~~removed text~~`) showing what was corrected,
 - resolution phrasing in the body ("addressed", "fixed as suggested", "good
-  catch", "as per review"),
+  catch", "as per review", "as requested"),
 - reviewer-dialogue or attribution blocks naming a reviewer or review bot.
 
 A doc may not move to (or remain at) `status: approved` while carrying scars.
@@ -94,8 +94,9 @@ append findings to `log.md`:
 | Contradictions | conflicting claims across docs (manual) | critical |
 | Retrospection backlog | raw entries not yet promoted | info |
 
-Index drift, orphans, and missing frontmatter are automated by the generator
-and checker; the rest are a documented cadence until mechanized.
+Index drift and missing frontmatter are automated by the generator and
+checker; the rest, orphans included, are a documented cadence until
+mechanized.
 
 ## Naming conventions
 

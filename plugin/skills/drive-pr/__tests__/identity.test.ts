@@ -1,6 +1,5 @@
 /**
- * identity.test.ts — the billing-account identity resolver (`scripts/lib/identity.ts`,
- *).
+ * identity.test.ts — the billing-account identity resolver (`scripts/lib/identity.ts`).
  *
  * FIXTURES, NOT THE MACHINE'S REAL STATE. Same discipline as `quota.test.ts`:
  * every resolver reads a real on-disk credential file, so pointing it at the
@@ -132,15 +131,13 @@ describe("resolveAccountIdentity — claude vendor", () => {
   });
 
   it("reports a TOKEN FINGERPRINT, not oauthAccount, when CLAUDE_CODE_OAUTH_TOKEN is set — the two can name different accounts", () => {
-    // docs/development/ai-tools/claude-in-chrome-connectivity.md §2: the
-    // token, when set, "is the account actually in effect", and
-    // oauthAccount can go STALE relative to it (the exact Hearth scenario
-    // this module's header comment opens with — a token minted for account
-    // B while ~/.claude.json still names account A). Reporting oauthAccount
-    // AS the token's account here would silently misattribute billing the
-    // moment the two diverge — this pins that they are treated as two
-    // different reads, never conflated (docomply-review finding on an
-    // earlier revision of this function).
+    // The token, when set, is the account actually in effect, and oauthAccount
+    // can go STALE relative to it (the exact account-switching scenario this
+    // module's header comment opens with — a token minted for account B while
+    // ~/.claude.json still names account A). Reporting oauthAccount AS the
+    // token's account here would silently misattribute billing the moment the
+    // two diverge — this pins that they are treated as two different reads,
+    // never conflated.
     writeClaudeJson({ emailAddress: "stale-account@example.com" });
     const token = "sk-ant-oat01-fake-token-value";
     process.env.CLAUDE_CODE_OAUTH_TOKEN = token;
@@ -175,8 +172,7 @@ describe("resolveAccountIdentity — claude vendor", () => {
     // API-key billing is pay-per-token against whichever Anthropic Console
     // account owns the key — tracked by Anthropic entirely separately from
     // a .claude.json OAuth session. Reporting oauthAccount here would
-    // attribute API-billed work to an unrelated subscription
-    // (chatgpt-codex-connector and coderabbitai, PR #4678 round 9).
+    // attribute API-billed work to an unrelated subscription.
     writeClaudeJson({ emailAddress: "unrelated-subscription@example.com" });
     const apiKey = "sk-ant-api03-fake-key-value";
     process.env.ANTHROPIC_API_KEY = apiKey;
@@ -233,10 +229,11 @@ describe("resolveAccountIdentity — claude vendor", () => {
   });
 
   it("honours $CLAUDE_CONFIG_DIR/.claude.json, not ~/.claude.json", () => {
-    // The effective path is the whole point of ADR-0078's per-slot
-    // provisioning (`CLAUDE_CONFIG_DIR=~/.forge/slots/<slot>/claude`) — a
-    // resolver that fell back to the real home directory would read a
-    // DIFFERENT account than the one the pass will actually use.
+    // The effective path is the whole point of an execution service that
+    // provisions a per-slot config home (for example
+    // `CLAUDE_CONFIG_DIR=/srv/agents/<slot>/claude`) — a resolver that fell
+    // back to the real home directory would read a DIFFERENT account than the
+    // one the pass will actually use.
     writeClaudeJson({ emailAddress: "slot-account@example.com" });
     const identity = resolveAccountIdentity(["claude", "-p", "x"]);
     expect(identity.account).toBe("slot-account@example.com");
@@ -316,11 +313,10 @@ describe("resolveAccountIdentity — codex vendor", () => {
 
   it("reports an API-KEY FINGERPRINT, not auth.json, when OPENAI_API_KEY is set — Codex sibling to the Claude ANTHROPIC_API_KEY branch", () => {
     // passEnv() forwards this process's environment unchanged to a `codex`
-    // pass, so a key-authenticated pass bills against the Console account
-    // that owns the key, never against whatever auth.json happens to hold —
-    // reading auth.json regardless would attribute API-billed work to an
-    // unrelated leftover ChatGPT identity (chatgpt-codex-connector, PR
-    // #4678 round 5).
+    // pass, so a key-authenticated pass bills against the Console account that
+    // owns the key, never against whatever auth.json happens to hold — reading
+    // auth.json regardless would attribute API-billed work to an unrelated
+    // leftover ChatGPT identity.
     writeCodexAuth({ id_token: makeJwt({ email: "unrelated@example.com" }) });
     const apiKey = "sk-fake-openai-key-value";
     process.env.OPENAI_API_KEY = apiKey;
@@ -332,7 +328,7 @@ describe("resolveAccountIdentity — codex vendor", () => {
     expect(identity.reason).toBeNull();
   });
 
-  it('reads a persisted `codex login --with-api-key` key when no env var is set — the CLI writes {auth_mode:"apikey",OPENAI_API_KEY:"<key>"} at the top level, no tokens at all (chatgpt-codex-connector, a reference-implementation pull request round 8; shape verified against a real login run into an isolated $CODEX_HOME)', () => {
+  it('reads a persisted `codex login --with-api-key` key when no env var is set — the CLI writes {auth_mode:"apikey",OPENAI_API_KEY:"<key>"} at the top level, no tokens at all (shape verified against a real login run into an isolated $CODEX_HOME)', () => {
     const dir = process.env.CODEX_HOME as string;
     mkdirSync(dir, { recursive: true });
     const persistedKey = "sk-fake-persisted-key-value";
@@ -393,7 +389,7 @@ describe("resolveAccountIdentity — unrecognized vendor", () => {
     // its own arguments (`env VAR=secret claude -p ...`) — the reason must
     // name only argv[0]'s basename, never argv[1:], or that secret would be
     // written to disk and re-printed by every `drives.ts` listing and
-    // exit-11 refusal for the life of the drive (docomply-review).
+    // exit-11 refusal for the life of the drive.
     const identity = resolveAccountIdentity([
       "env",
       "SECRET_TOKEN=do-not-leak-me",
@@ -407,13 +403,11 @@ describe("resolveAccountIdentity — unrecognized vendor", () => {
 
   it("does not touch the filesystem for an unrecognized vendor — a real credential file is left completely unread", () => {
     // A vacuous fixture (pointing both config roots at a directory that does
-    // not exist) would pass identically whether or not the vendor gate is
-    // even present, since a missing-file read already degrades to null on
-    // its own (.claude/rules/document-scanning-gates.md §5's "reviewer-
-    // supplied decoy that already fails closed" trap). Plant a REAL,
-    // resolvable credential file instead, so removing the `if (vendor ===
-    // 'claude')` gate would make this test start returning that email
-    // instead of null.
+    // not exist) would pass identically whether or not the vendor gate is even
+    // present, since a missing-file read already degrades to null on its own
+    // (the "decoy that already fails closed" trap). Plant a REAL, resolvable
+    // credential file instead, so removing the `if (vendor === 'claude')` gate
+    // would make this test start returning that email instead of null.
     writeClaudeJson({ emailAddress: "leaked@example.com" });
     writeCodexAuth({ id_token: makeJwt({ email: "also-leaked@example.com" }) });
     const identity = resolveAccountIdentity(["sh", "-c", "echo hi"]);

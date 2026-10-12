@@ -1,0 +1,5 @@
+# Fixture patterns: a neutral key and organization name, so the fixtures
+# exercise the gate without spelling out the real patterns.
+\bEXAMPLE-[0-9]+\b
+(?i)acme-corp
+!(?i)^allowed\.md:.*acme-corp\.example/home

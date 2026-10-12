@@ -14,8 +14,9 @@
  * stale or unsafe one.
  *
  * Exit codes: 0 ok · 1 usage, invalid input or a figure that cannot be
- * embedded · 3 `--require-fresh` and a cited file changed since
- * `verifiedAt.commit` (nothing written).
+ * embedded · 3 `--require-fresh` and the freshness check failed, a cited file
+ * changed since `verifiedAt.commit`, or a cited path does not exist at that
+ * commit (nothing written).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";

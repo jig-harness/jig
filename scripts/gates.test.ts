@@ -32,6 +32,9 @@ function safeSpawn(
 
 const root = resolve(import.meta.dir, "..");
 const fixtures = join(import.meta.dir, "tests/fixtures");
+// The fixtures use neutral patterns; the real ones are tested at run time
+// below, so no fixture has to spell out what the gate forbids.
+const trackerPatterns = join(fixtures, "tracker-key-patterns.txt");
 const temporary: string[] = [];
 function temp(): string {
   const path = mkdtempSync(join(tmpdir(), "groundwork-gates-"));
@@ -59,7 +62,8 @@ const cases: [string, string, string[], number][] = [
     [".", "GLOSSARY.md", "allowlist.txt"],
     1,
   ],
-  ["check-no-tracker-refs", "pass", ["."], 0],
+  ["check-no-tracker-refs", "pass", [".", trackerPatterns], 0],
+  ["check-no-tracker-refs", "pass-tracker-allow", [".", trackerPatterns], 0],
   ...[
     "fail-tracker",
     "fail-tracker-link",
@@ -68,7 +72,7 @@ const cases: [string, string, string[], number][] = [
   ].map((name): [string, string, string[], number] => [
     "check-no-tracker-refs",
     name,
-    ["."],
+    [".", trackerPatterns],
     1,
   ]),
   ["check-no-tracker-refs", "fail-tracker-badregex", [".", "patterns.txt"], 2],
@@ -227,6 +231,60 @@ test.skipIf(!unixPermissions)(
   },
 );
 
+test("the real patterns reject the original tracker keys and organization name, outside the allowed places", () => {
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  const name = ["Doc", "omply"].join("");
+  const write = (path: string, content: string) => {
+    mkdirSync(join(dir, path, ".."), { recursive: true });
+    writeFileSync(join(dir, path), content);
+    expectSpawnExit(safeSpawn(["git", "-C", dir, "add", path]), 0);
+  };
+  const check = () => run("check-no-tracker-refs", [dir]);
+  write(
+    "README.md",
+    [
+      `Install from https://github.com/${name.toLowerCase()}/groundwork.git`,
+      `See https://github.com/${name.toLowerCase()}/groundwork/blob/main/README.md`,
+      `Hosted at https://github.com/${name.toLowerCase()}/groundwork.`,
+      "",
+    ].join("\n"),
+  );
+  write(
+    "plugin/.claude-plugin/plugin.json",
+    `{\n  "author": { "name": "${name}" }\n}\n`,
+  );
+  write(".config/groundwork-overlay.yaml", `team: ${name}\n`);
+  expectSpawnExit(check(), 0);
+  for (const content of [
+    `See ${["DOC", "1234"].join("-")}.\n`,
+    `Built at ${name}.\n`,
+    `export const STATE = "~/.${name.toLowerCase()}/state";\n`,
+    `See https://github.com/${name.toLowerCase()}/other-repo.\n`,
+    // The exemption ends at the repository name, not at a word boundary.
+    `See https://github.com/${name.toLowerCase()}/groundwork-other.\n`,
+    `See https://github.com/${name.toLowerCase()}/groundwork.github.io.\n`,
+    `See https://github.com/${name.toLowerCase()}/groundwork_x.\n`,
+    `See https://github.com/${name.toLowerCase()}/groundwork..private.\n`,
+    // The exemption starts at the whole address, not inside another host.
+    `See https://notgithub.com/${name.toLowerCase()}/groundwork.\n`,
+    `See https://evil.github.com/${name.toLowerCase()}/groundwork.\n`,
+    // An allowed occurrence exempts itself, not the line it sits on.
+    `https://github.com/${name.toLowerCase()}/groundwork, built at ${name}.\n`,
+  ]) {
+    write("notes.md", content);
+    expectSpawnExit(check(), 1);
+  }
+  write("notes.md", "Nothing to see.\n");
+  for (const content of [
+    `{\n  "author": { "name": "${name}" }, "see": "${["DOC", "1"].join("-")}"\n}\n`,
+    `{\n  "homepage": "${name}"\n}\n`,
+  ]) {
+    write("plugin/.claude-plugin/plugin.json", content);
+    expectSpawnExit(check(), 1);
+  }
+});
+
 test("POSIX regex classes retain tracker pattern matching", async () => {
   const { ere } = await import("../lib/cli.ts");
   expect(ere("[[:punct:]]").test("!")).toBe(true);
@@ -287,4 +345,35 @@ test("every suite the gate job leaves out runs in its own CI job", async () => {
   ).toBe(true);
   // The required status check `gates` must wait for the separate job too.
   expect(jobs.gates?.needs).toEqual(["platform-gates", "drive-pr-suite"]);
+});
+
+test("the changelog must carry the current plugin version", async () => {
+  const { checkChangelog, changelogVersions } = await import(
+    "./check-changelog.ts"
+  );
+  expect(
+    changelogVersions(
+      "# Changelog\n\n## [Unreleased]\n\n## [1.2.0] - 2026-01-01\n",
+    ),
+  ).toEqual(["Unreleased", "1.2.0"]);
+  expect(
+    changelogVersions("# Changelog\n\n```markdown\n## [1.2.0]\n```\n"),
+  ).toEqual([]);
+  const dir = temp();
+  const manifest = (tool: string, version: string) => {
+    mkdirSync(join(dir, "plugin", `.${tool}-plugin`), { recursive: true });
+    writeFileSync(
+      join(dir, "plugin", `.${tool}-plugin`, "plugin.json"),
+      JSON.stringify({ version }),
+    );
+  };
+  manifest("claude", "1.2.0");
+  manifest("codex", "1.2.0");
+  writeFileSync(join(dir, "CHANGELOG.md"), "## [1.1.0] - 2026-01-01\n");
+  expect(checkChangelog(dir)).toBe(1);
+  writeFileSync(join(dir, "CHANGELOG.md"), "## [1.2.0] - 2026-01-02\n");
+  expect(checkChangelog(dir)).toBe(0);
+  manifest("codex", "1.3.0");
+  expect(checkChangelog(dir)).toBe(1);
+  expect(checkChangelog(root)).toBe(0);
 });

@@ -38,7 +38,8 @@ PORT=$(bun reference/port-allocator/allocate-port.ts "$(git branch --show-curren
 
 Give related services separate ranges (app on `PORT_BASE=20000`, database on
 `21000`, …) so the only possible clash is within a service, and keep the span
-well above your worktree count. Full caveats: `reference/port-allocator/README.md`.
+well above your worktree count. Full caveats: the
+[port allocator's README](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/reference/port-allocator/README.md).
 
 ### 2. A cross-worktree mutex for heavy runs
 
@@ -83,7 +84,7 @@ When a worktree is removed, the work is freshest in memory — the ideal moment 
 capture what was learned. The remove hook prints a short prompt to run your
 reflection step (a `/reflect`-style command) so a session's lessons flow into
 the learning loop rather than evaporating. This closes the loop with the
-**[M8 learning loop](../../M8-learning-loop/)**: teardown is a reflection
+**[M8 learning loop](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop)**: teardown is a reflection
 trigger, and reflection feedback becomes durable improvements. Hook skeletons:
 `worktree-hooks.md`.
 
@@ -92,7 +93,7 @@ trigger, and reflection feedback becomes durable improvements. Hook skeletons:
 1. Vendor `reference/port-allocator/` and `reference/resource-lock/` (or copy the
    two scripts) and wire them per `worktree-hooks.md`.
 2. Import the `branch-discipline.md` checklist into your agent instruction file
-   (see the **[M0 instruction architecture](../../M0-instruction-architecture/)**
+   (see the **[M0 instruction architecture](https://github.com/docomply/jig/tree/main/modules/M0-instruction-architecture)**
    module) so every agent inherits it.
 3. Wrap your heavy gate commands with `with-resource-lock.ts` locally; leave CI
    unwrapped (the bypass handles it).

@@ -295,7 +295,7 @@ describe("anchorOf — lock.ts’s suffix grammar", () => {
     // carries a `.stale.<generation>` suffix. A foreign
     // `.compacting.<anchor>.lock.<24-hex>` wraps what LOOKS like a bare live
     // lock path, which this protocol never produces, and must not resolve to
-    // a real anchor (chatgpt-codex-connector, a reference-implementation pull request round 16).
+    // a real anchor.
     expect(
       anchorOf(".compacting.drive-pr-1.json.lock.0123456789abcdef01234567"),
     ).toBeNull();
@@ -313,22 +313,21 @@ describe("anchorOf — lock.ts’s suffix grammar", () => {
   });
 
   it("backtracks past a `.lock` occurrence whose tail is not one of the documented shapes", () => {
-    // `a.lock.b.lock`'s FIRST `.lock` has tail `.b.lock`, which matches none
-    // of the documented suffix shapes — the fixed grammar (round 13)
-    // requires the WHOLE remainder to be empty, `.recovering`, `.stale.<gen>`,
-    // or `.recovering.stale.<gen>`, so this split point is rejected and the
-    // engine backtracks to the LAST `.lock`, whose (empty) tail is the plain
+    // `a.lock.b.lock`'s FIRST `.lock` has tail `.b.lock`, which matches none of
+    // the documented suffix shapes — the fixed grammar requires the WHOLE
+    // remainder to be empty, `.recovering`, `.stale.<gen>`, or
+    // `.recovering.stale.<gen>`, so this split point is rejected and the engine
+    // backtracks to the LAST `.lock`, whose (empty) tail is the plain
     // `<anchor>.lock` shape. Anchor "a.lock.b", not "a".
     expect(anchorOf("a.lock.b.lock")).toBe("a.lock.b");
   });
 
   it("rejects a suffix the lock protocol never produces, even though it starts with `.lock`", () => {
-    // The bug round 13's review caught: the OLD grammar's `(?:\..*)?` tail
-    // accepted ANY dotted suffix, so a foreign file like this — never written
-    // by createLock/compactQuarantineEntry — was silently attributed to the
-    // PR family and would be deleted the moment that family retired,
-    // contradicting "this script only ever removes entries it can name the
-    // owner of."
+    // The bug this pins: the OLD grammar's `(?:\..*)?` tail accepted ANY dotted
+    // suffix, so a foreign file like this — never written by
+    // createLock/compactQuarantineEntry — was silently attributed to the PR
+    // family and would be deleted the moment that family retired, contradicting
+    // "this script only ever removes entries it can name the owner of."
     expect(anchorOf("drive-pr-1.json.lock.manual-backup")).toBeNull();
   });
 
@@ -376,13 +375,13 @@ describe("classify — which entries this script will and will not touch", () =>
     // git's own, and a store this script does not own
     "packed-refs",
     "HEAD",
-    "docomply-skill-suite-green",
+    "skill-suite-green",
     "worktrees",
     // this reaper's own growth-rate snapshot, and its atomic-write temp-file
-    // shape — round-3's finding: neither is a backlog entry
+    // shape — neither is a backlog entry
     ".reap-state-snapshot.json",
     ".reap-state-snapshot.json.a1b2c3",
-    // legacy-state.ts's migration marker — round-13's finding: present in
+    // legacy-state.ts's migration marker — present in
     // every healthy migrated clone, not backlog either
     MIGRATED_MARKER_FILENAME,
   ];
@@ -449,7 +448,7 @@ describe("classify — which entries this script will and will not touch", () =>
   it("leaves everything it cannot name an owner for unrecognised", () => {
     const { unrecognised } = classify(CORPUS);
     expect(unrecognised.sort()).toEqual(
-      ["HEAD", "docomply-skill-suite-green", "packed-refs", "worktrees"].sort(),
+      ["HEAD", "skill-suite-green", "packed-refs", "worktrees"].sort(),
     );
   });
 
@@ -457,8 +456,7 @@ describe("classify — which entries this script will and will not touch", () =>
     // A bare `=== SNAPSHOT_FILENAME` check let `.reap-state-snapshot.json.<6-
     // hex>` — the `atomicWrite` staging leftover from a crash before its
     // rename, or a concurrent read racing an in-flight write — fall into
-    // `unrecognised`, inflating the reported entry count and growth rate
-    // (docomply-review, a reference-implementation pull request round 3).
+    // `unrecognised`, inflating the reported entry count and growth rate.
     const { families, foreign, unrecognised } = classify(CORPUS);
     expect(unrecognised).not.toContain(".reap-state-snapshot.json");
     expect(unrecognised).not.toContain(".reap-state-snapshot.json.a1b2c3");
@@ -471,10 +469,10 @@ describe("classify — which entries this script will and will not touch", () =>
   });
 
   it("treats legacy-state.ts’s migration marker as neither a family member nor unrecognised", () => {
-    // chatgpt-codex-connector, a reference-implementation pull request round 13: without excluding it,
-    // `classify` had no way to tell this marker — permanently present in
-    // every migrated default state directory — apart from real backlog, so
-    // every healthy migrated clone reported an "unrecognised" entry.
+    // Without excluding it, `classify` had no way to tell this marker —
+    // permanently present in every migrated default state directory — apart
+    // from real backlog, so every healthy migrated clone reported an
+    // "unrecognised" entry.
     const { families, foreign, unrecognised } = classify(CORPUS);
     expect(unrecognised).not.toContain(MIGRATED_MARKER_FILENAME);
     expect(foreign).not.toContain(MIGRATED_MARKER_FILENAME);
@@ -509,7 +507,7 @@ describe("classify — which entries this script will and will not touch", () =>
     // a name like `held-claim.notes`, with nothing hex-like after it, was
     // never produced by this protocol. Accepting it anyway silently
     // attributed a foreign file to the family and deleted it when that
-    // family retired (chatgpt-codex-connector, a reference-implementation pull request round 18).
+    // family retired.
     const { families, unrecognised } = classify([
       "drive-pr-4172.json",
       "drive-pr-4172.held-claim.notes",
@@ -537,23 +535,21 @@ describe("classify — which entries this script will and will not touch", () =>
 
 describe("retirementStillSafe — the immediate-before-delete revalidation", () => {
   // A retirement decision is computed once for the WHOLE batch before any
-  // deletion starts, and compaction alone can take minutes on a large
-  // backlog — so `main`'s deletion loop re-checks this immediately before
-  // each family's own `rmSync`, rather than trusting the earlier verdict.
-  // These are unit tests of that predicate directly (not a full CLI round
-  // trip): a genuine race requires a SECOND process writing mid-run, which a
-  // single synchronous invocation cannot manufacture, so the predicate's
-  // correctness is what is verified here, in isolation — the same pattern
-  // `classify` and `anchorOf` already use above (docomply-review +
-  // chatgpt-codex-connector, a reference-implementation pull request rounds 3-4).
+  // deletion starts, and compaction alone can take minutes on a large backlog —
+  // so `main`'s deletion loop re-checks this immediately before each family's
+  // own `rmSync`, rather than trusting the earlier verdict. These are unit
+  // tests of that predicate directly (not a full CLI round trip): a genuine
+  // race requires a SECOND process writing mid-run, which a single synchronous
+  // invocation cannot manufacture, so the predicate's correctness is what is
+  // verified here, in isolation — the same pattern `classify` and `anchorOf`
+  // already use above.
   //
   // Every "safe" fixture WRITES its family member(s) and backdates them past
   // `RS_MIN_AGE_MS`, and every single-clause "unsafe" fixture is checked
-  // against an otherwise-safe family — per
-  // .claude/rules/document-scanning-gates.md § 5's fail-closed-conjunction
-  // rule, a fixture that also trips an EARLIER clause (an unwritten file
-  // reading as "could not stat", a fresh mtime reading as "not yet idle")
-  // would pass vacuously regardless of whether the clause under test works.
+  // against an otherwise-safe family — per the fail-closed-conjunction rule, a
+  // fixture that also trips an EARLIER clause (an unwritten file reading as
+  // "could not stat", a fresh mtime reading as "not yet idle") would pass
+  // vacuously regardless of whether the clause under test works.
 
   const RS_MIN_AGE_MS = 60_000;
   /** A worktree census naming some OTHER actor — never this test's subject. */
@@ -733,16 +729,15 @@ describe("retirementStillSafe — the immediate-before-delete revalidation", () 
 });
 
 describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually did something", () => {
-  // `sweepLockQuarantine` is `void` and swallows every internal write
-  // failure (a read-only state dir, EACCES, ENOSPC), so the caller cannot
-  // tell "compacted" from "silently did nothing" from its return alone —
-  // this predicate re-checks the filesystem directly (docomply-review, PR
-  // #4197 round 9). Unit-tested directly rather than via a genuinely
-  // read-only fixture: `lock.test.ts` already documents why `chmodSync` is
-  // not a reliable way to induce EACCES here — running as root (the
-  // reviewer's own sandbox, and plenty of CI/dev containers) bypasses
-  // directory permission checks entirely, so a chmod-based fixture would
-  // pass vacuously without exercising the failure path at all.
+  // `sweepLockQuarantine` is `void` and swallows every internal write failure
+  // (a read-only state dir, EACCES, ENOSPC), so the caller cannot tell
+  // "compacted" from "silently did nothing" from its return alone — this
+  // predicate re-checks the filesystem directly. Unit-tested directly rather
+  // than via a genuinely read-only fixture: `lock.test.ts` already documents
+  // why `chmodSync` is not a reliable way to induce EACCES here — running as
+  // root (the reviewer's own sandbox, and plenty of CI/dev containers) bypasses
+  // directory permission checks entirely, so a chmod-based fixture would pass
+  // vacuously without exercising the failure path at all.
 
   it("reports still-needing-compaction for an uncompacted (directory) entry", () => {
     const d = freshStateDir();
@@ -798,14 +793,14 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
   });
 
   it("still reports work left when recovery only restores a fence (canonical did not pre-exist)", () => {
-    // The exact case round 11's review caught: when the canonical path
-    // named by a `.compacting.*` staging leftover did NOT already exist,
-    // `sweepLockQuarantine`'s recovery CREATES one — a tombstoned
-    // DIRECTORY, restoring a fence rather than compacting anything — and
-    // that path was never in `family.names` (it did not exist when
-    // `classify()` ran). Checking only the vanished staging name (round
-    // 10's fix) reported success for a generation that is still, in fact,
-    // an uncompacted multi-inode directory.
+    // The exact case this pins: when the canonical path named by a
+    // `.compacting.*` staging leftover did NOT already exist,
+    // `sweepLockQuarantine`'s recovery CREATES one — a tombstoned DIRECTORY,
+    // restoring a fence rather than compacting anything — and that path was
+    // never in `family.names` (it did not exist when `classify()` ran).
+    // Checking only the vanished staging name (an earlier fix) reported success
+    // for a generation that is still, in fact, an uncompacted multi-inode
+    // directory.
     const d = freshStateDir();
     const staging = `.compacting.drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa.${"0".repeat(24)}`;
     plantQuarantine(d, staging); // orphaned staging leftover; canonical NOT pre-existing
@@ -828,14 +823,14 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
 
   it("reports no work left once a genuinely successful sweep consumes a planted .compacting.* leftover whose canonical entry was already compacted", () => {
     // A successful sweep of a `.compacting.*` staging leftover CONSUMES it
-    // (confirms the fence at the canonical path it names already stands,
-    // then deletes the staging copy outright), so checking the staging
-    // name's own directory-ness the same way as every other sweepable
-    // shape reads that success as "still needs work" — `statSync` throws
-    // ENOENT on the (correctly) vanished staging name, and round 9's code
-    // treated that as failure (round 10's fix). Here the canonical entry
-    // DOES already exist, and already as a compacted single file, so this
-    // is the case where the answer genuinely is "no work left".
+    // (confirms the fence at the canonical path it names already stands, then
+    // deletes the staging copy outright), so checking the staging name's own
+    // directory-ness the same way as every other sweepable shape reads that
+    // success as "still needs work" — `statSync` throws ENOENT on the
+    // (correctly) vanished staging name, and an earlier version treated that as
+    // failure. Here the canonical entry DOES already exist, and already as a
+    // compacted single file, so this is the case where the answer genuinely is
+    // "no work left".
     const d = freshStateDir();
     const canonical =
       "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa";
@@ -916,8 +911,7 @@ describe("the retirement predicate fails closed", () => {
   it("keeps a CLOSED (not merged) PR’s family, however old — it is reopenable", async () => {
     // Unlike MERGED, GitHub lets a closed PR be reopened with no time limit,
     // so retiring it outright could delete a parked human decision a future
-    // reopen would need. Compaction still runs; deletion never does
-    // (docomply-review, a reference-implementation pull request).
+    // reopen would need. Compaction still runs; deletion never does.
     const d = plantRetirableFamily();
     const before = readdirSync(d).sort();
     const r = await reapJson(["--delete"], {
@@ -996,7 +990,7 @@ describe("the retirement predicate fails closed", () => {
   it("refuses a --min-age-days value long enough to overflow to Infinity", async () => {
     // `isDigits` alone does not bound magnitude, and `Infinity < 1` is false
     // — a naive lower-bound-only check would silently accept this and make
-    // the idle guard never fire again (docomply-review, a reference-implementation pull request round 3).
+    // the idle guard never fire again.
     const d = freshStateDir();
     const r = await runReap(["--min-age-days", "9".repeat(400)], {
       stateDir: d,
@@ -1046,7 +1040,7 @@ describe("the worktree predicate", () => {
     // `git worktree list` losing the registration is exactly the case
     // `liveTreeLeaseFor` exists for — a live process can still be behind the
     // lease even though the worktree predicate above would otherwise retire
-    // it (docomply-review, a reference-implementation pull request round 2).
+    // it.
     const d = freshStateDir();
     const dead = "wt-00112233445566aa";
     writeFileSync(join(d, `drive-tree-lease-${dead}.json`), "{}");
@@ -1105,10 +1099,9 @@ describe("the worktree predicate", () => {
     // this parser recognises nothing in yields an EMPTY key set, and an empty
     // set means "no tree exists anywhere" — which would retire every lease on
     // the machine in a single run. A repository always has at least one
-    // worktree, so empty is a parse failure, not an answer, and is refused
-    // like any other unreadable input (.claude/rules/document-scanning-gates.md
-    // § 1: a scan that cannot read its input must never report an empty
-    // population).
+    // worktree, so empty is a parse failure, not an answer, and is refused like
+    // any other unreadable input (a scan that cannot read its input must never
+    // report an empty population).
     const d = freshStateDir();
     const dead = "wt-00112233445566aa";
     writeFileSync(join(d, `drive-tree-lease-${dead}.json`), "{}");
@@ -1265,7 +1258,7 @@ describe("computeAlreadyRelocated", () => {
     ).toBe(false);
   });
 
-  it("is false when drive.ts re-exports its own resolved default (docomply-review, a reference-implementation pull request round 2)", () => {
+  it("is false when drive.ts re-exports its own resolved default", () => {
     // The exact scenario the finding named: `drive.ts` sets
     // $DRIVE_PR_STATE_DIR to the default it resolved, so a spawned child's
     // env var is "set" even though no operator override exists. stateDir is
@@ -1275,7 +1268,7 @@ describe("computeAlreadyRelocated", () => {
     ).toBe(false);
   });
 
-  it("is false when the override points AT the legacy git-common-dir (chatgpt-codex-connector, a reference-implementation pull request round 2)", () => {
+  it("is false when the override points AT the legacy git-common-dir", () => {
     // An override that resolves right back to the older location is
     // not a relocation — it is the one state this whole mechanism exists to
     // move away from.
@@ -1303,7 +1296,7 @@ describe("computeAlreadyRelocated", () => {
     expect(computeAlreadyRelocated(override, legacyDir, null)).toBe(true);
   });
 
-  it("is false when the override is NESTED beneath the legacy dir, not just equal to it (chatgpt-codex-connector, a reference-implementation pull request round 8)", () => {
+  it("is false when the override is NESTED beneath the legacy dir, not just equal to it", () => {
     // /repo/.git/drive-pr-state is neither equal to legacyDir nor to
     // computedDefault, but it is still physically inside `.git` — the exact
     // IDE/backup/git-metadata blast radius an earlier change exists to escape.
@@ -1324,7 +1317,7 @@ describe("computeAlreadyRelocated", () => {
     ).toBe(true);
   });
 
-  it("is false when the override is nested beneath the DEFAULT dir, not just the legacy one (chatgpt-codex-connector, a reference-implementation pull request round 8)", () => {
+  it("is false when the override is nested beneath the DEFAULT dir, not just the legacy one", () => {
     // A subdirectory of the ordinary an earlier change default still sits under the
     // tree an IDE or backup tool watching ~/.local/state/groundwork already pays the
     // recursive-enumeration cost for — not a genuine relocation either.
@@ -1338,7 +1331,7 @@ describe("computeAlreadyRelocated", () => {
   });
 });
 
-describe("resolveRealPathBestEffort (docomply-review, a reference-implementation pull request round 5)", () => {
+describe("resolveRealPathBestEffort", () => {
   // The mechanism `computeAlreadyRelocatedForStateDir` relies on: a
   // `$DRIVE_PR_STATE_DIR` override that is an absolute SYMLINK pointing back
   // at the legacy or default location is still the SAME physical directory,
@@ -1431,11 +1424,10 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
     expect(w).toContain("Relocate further");
   });
 
-  // chatgpt-codex-connector, a reference-implementation pull request round 10: the already-relocated remedy
-  // used to say the count "only falls as ... worktrees are actually torn
-  // down", directing an operator away from `--delete` on a merged/closed
-  // PR's own retirable family — a real, applicable remedy the message
-  // wrongly implied did not exist.
+  // The already-relocated remedy used to say the count "only falls as ...
+  // worktrees are actually torn down", directing an operator away from
+  // `--delete` on a merged/closed PR's own retirable family — a real,
+  // applicable remedy the message wrongly implied did not exist.
   it("does not claim worktree teardown is the ONLY way to shrink an already-relocated dir — RETIRE on a retirable family also helps", () => {
     const w = entryCountWarningFor(382_524, true) ?? "";
     expect(w).toContain("--delete");
@@ -1455,7 +1447,7 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
     expect(r.entryCountWarning).toBeNull();
   });
 
-  it("is based on what THIS run leaves behind, not the pre-cleanup census — a retire crossing the threshold must not still warn (docomply-review, a reference-implementation pull request)", async () => {
+  it("is based on what THIS run leaves behind, not the pre-cleanup census — a retire crossing the threshold must not still warn", async () => {
     const d = freshStateDir();
     const pr = "9001";
     writeFileSync(join(d, `drive-pr-${pr}.json`), "{}");
@@ -1486,7 +1478,7 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
     expect(r.entryCountWarning).toBeNull();
   }, 30_000);
 
-  it("classifies a not-a-git-repo run with an explicit override as already relocated, not unrelocated (chatgpt-codex-connector, a reference-implementation pull request)", async () => {
+  it("classifies a not-a-git-repo run with an explicit override as already relocated, not unrelocated", async () => {
     // Run from `root` (a plain tmpdir, not a git repo at all) with an
     // explicit `$DRIVE_PR_STATE_DIR` override — `resolveLegacyStateDir()`
     // fails with its "not a git repo" exit 2 here, which used to be
@@ -1509,7 +1501,7 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
     expect(r.entryCountWarning).not.toContain("Relocate further");
   }, 30_000);
 
-  it("does not read a git TIMEOUT as proof the state dir is not a git repo (chatgpt-codex-connector, a reference-implementation pull request round 8)", async () => {
+  it("does not read a git TIMEOUT as proof the state dir is not a git repo", async () => {
     // `resolveLegacyStateDir()` collapses EVERY nonzero git result into the
     // identical generic failure, including a deadline-kill — a transient
     // stall proves nothing about whether `stateDir` came from an override,
@@ -1631,8 +1623,8 @@ describe("growth-rate reporting", () => {
 
     // The claim this test is named for is about the NEXT run's delta, not
     // just this run's persisted count — assert it directly rather than
-    // trusting that a zero snapshot implies a correct future comparison
-    // (docomply-review, a reference-implementation pull request). Backdate the just-written snapshot so the
+    // trusting that a zero snapshot implies a correct future comparison.
+    // Backdate the just-written snapshot so the
     // elapsed-time divisor is a real, positive number, add exactly one
     // family's worth of genuine accumulation, and confirm the SECOND run
     // reports that accumulation exactly — not `-1` (what a pre-cleanup
@@ -1652,7 +1644,7 @@ describe("growth-rate reporting", () => {
     expect(r2.growthPerDay).toBeCloseTo(1, 1);
   });
 
-  it("surfaces a snapshot write failure through `failures` and a nonzero exit, rather than swallowing it (docomply-review, a reference-implementation pull request round 4)", async () => {
+  it("surfaces a snapshot write failure through `failures` and a nonzero exit, rather than swallowing it", async () => {
     const d = freshStateDir();
     writeFileSync(join(d, "drive-pr-4172.json"), "{}");
     // A directory at the snapshot's own path makes `atomicWrite`'s final
@@ -1674,7 +1666,7 @@ describe("growth-rate reporting", () => {
   });
 });
 
-describe("the delete-run lock — serialising the sweep and final snapshot publication (coderabbitai, PR #4516 round 6)", () => {
+describe("the delete-run lock — serialising the sweep and final snapshot publication", () => {
   it("refuses to run while another --delete run’s lock is live, and publishes nothing", async () => {
     const d = freshStateDir();
     writeFileSync(join(d, "drive-pr-4172.json"), "{}");
@@ -1744,7 +1736,7 @@ describe("the delete-run lock — serialising the sweep and final snapshot publi
     expect(existsSync(lockDir)).toBe(true);
   });
 
-  it("the heartbeat interval keeps the lock’s mtime fresh while a single slow gh call is in flight — deleting the interval or its touchLock() calls would leave nothing to advance it (chatgpt-codex-connector, a reference-implementation pull request)", async () => {
+  it("the heartbeat interval keeps the lock’s mtime fresh while a single slow gh call is in flight — deleting the interval or its touchLock() calls would leave nothing to advance it", async () => {
     const d = freshStateDir();
     writeFileSync(join(d, "drive-pr-4172.json"), "{}");
     const lockDir = join(d, ".reap-state-delete.lock");
@@ -1801,15 +1793,14 @@ describe("the delete-run lock — serialising the sweep and final snapshot publi
 });
 
 describe("an absent state directory ($DRIVE_PR_STATE_DIR pointed at a location nothing has written to yet)", () => {
-  // coderabbitai, PR #4618 round 6: `resolveStateDir()` deliberately leaves
-  // an override directory unmaterialised (`store.ts`'s own doc comment), but
-  // `deleteLock(stateDir)` used to be called against it unconditionally.
-  // `createLock`'s `acquire()` cannot tell "the lock is contended" apart from
-  // "the lock's own parent directory does not exist" — both are a bare
-  // `mkdirSync` throw — so it retried for `DELETE_LOCK_MAX_WAIT_SEC` and then
-  // reported a misleading lock-acquire-timeout error. `freshStateDir()`
-  // eagerly `mkdirSync`s its directory; this suite deliberately does NOT, to
-  // reproduce exactly the gap.
+  // `resolveStateDir()` deliberately leaves an override directory
+  // unmaterialised (`store.ts`'s own doc comment), but `deleteLock(stateDir)`
+  // used to be called against it unconditionally. `createLock`'s `acquire()`
+  // cannot tell "the lock is contended" apart from "the lock's own parent
+  // directory does not exist" — both are a bare `mkdirSync` throw — so it
+  // retried for `DELETE_LOCK_MAX_WAIT_SEC` and then reported a misleading
+  // lock-acquire-timeout error. `freshStateDir()` eagerly `mkdirSync`s its
+  // directory; this suite deliberately does NOT, to reproduce exactly the gap.
   function unmaterializedStateDir(): string {
     return join(root, `state-absent-${n++}`);
   }
@@ -1866,15 +1857,15 @@ describe("dry run", () => {
   });
 
   it("does not COMPACT either, on a family it would keep", async () => {
-    // Deliberately a separate fixture from the one above, and the reason is
-    // rule 5 of .claude/rules/document-scanning-gates.md: in the retire case
-    // the quarantine survives because RETIREMENT was skipped, so asserting it
-    // there proves nothing about the compaction branch — mutation testing
-    // confirmed that probe stayed green with the dry-run guard on compaction
-    // deleted outright. Compaction is a mutation too, and a `--delete`-less
-    // run that quietly rewrote 112k entries would be the most surprising
-    // possible reading of "dry". `GH_OPEN` is what forces the KEEP verdict,
-    // making the compaction guard the sole decider.
+    // Deliberately a separate fixture from the one above, and the reason is the
+    // fail-closed-conjunction rule: in the retire case the quarantine survives
+    // because RETIREMENT was skipped, so asserting it there proves nothing
+    // about the compaction branch — mutation testing confirmed that probe
+    // stayed green with the dry-run guard on compaction deleted outright.
+    // Compaction is a mutation too, and a `--delete`-less run that quietly
+    // rewrote 112k entries would be the most surprising possible reading of
+    // "dry". `GH_OPEN` is what forces the KEEP verdict, making the compaction
+    // guard the sole decider.
     const d = freshStateDir();
     writeFileSync(join(d, "drive-pr-4172.json"), "{}");
     const q = plantQuarantine(
@@ -1904,17 +1895,16 @@ describe("dry run", () => {
 });
 
 describe("dry run against the DEFAULT (no $DRIVE_PR_STATE_DIR) resolution path", () => {
-  // docomply-review, a reference-implementation pull request round 14: every OTHER test in this suite routes
-  // through `DRIVE_PR_STATE_DIR`, so none of them exercise `resolveStateDir()`'s
-  // own default-path side effects at all. On a clone with no persisted clone
-  // identity yet, those side effects (minting `drive-pr-clone-id`, creating the
-  // new state directory, possibly writing the migration marker) fired even on
-  // a bare (no `--delete`) run, merely to answer "where does state live" —
-  // violating this reaper's own "DRY RUN — nothing changed" contract. Needs a
-  // REAL repo and a REAL, isolated $HOME (never the shared `repo`/other
-  // tests' fixtures, which route around this path entirely): the function
-  // under test IS `git rev-parse --git-common-dir` plus the filesystem side
-  // effects that follow it.
+  // Every OTHER test in this suite routes through `DRIVE_PR_STATE_DIR`, so none
+  // of them exercise `resolveStateDir()`'s own default-path side effects at
+  // all. On a clone with no persisted clone identity yet, those side effects
+  // (minting `drive-pr-clone-id`, creating the new state directory, possibly
+  // writing the migration marker) fired even on a bare (no `--delete`) run,
+  // merely to answer "where does state live" — violating this reaper's own "DRY
+  // RUN — nothing changed" contract. Needs a REAL repo and a REAL, isolated
+  // $HOME (never the shared `repo`/other tests' fixtures, which route around
+  // this path entirely): the function under test IS `git rev-parse
+  // --git-common-dir` plus the filesystem side effects that follow it.
   function makeIsolatedRepo(name: string): string {
     const dir = join(root, `default-path-repo-${name}`);
     mkdirSync(dir, { recursive: true });
@@ -1973,8 +1963,8 @@ describe("the CLI entry-point guard survives a symlinked invocation path", () =>
   // symlink (verbatim as invoked), while `fileURLToPath(import.meta.url)` is
   // already canonical — a symlinked checkout (routine for a cron job's
   // working copy) made the guard compare unequal and silently skip `main()`,
-  // so the scheduled reaper did nothing while still exiting 0
-  // (coderabbitai, PR #4197 round 17). Measured that Bun itself already
+  // so the scheduled reaper did nothing while still exiting 0.
+  // Measured that Bun itself already
   // canonicalizes `argv[1]` (so this never fires under the production cron
   // invocation, which always uses bun) — but Node compatibility is this
   // skill's own explicit, tested requirement, so both runtimes are checked

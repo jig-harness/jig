@@ -24,30 +24,26 @@
  *
  * ── Why every append IS lock-guarded, despite the name of this section ──
  *
- * Originally (round 1): a plain `write(2)` in `a`-mode, no lock — the kernel
- * does not interleave two `write` calls on an append-mode fd against the
- * same file, so concurrent appends from independent processes were safe
- * without one, and a lock file per append (`lib/state/lock.ts`'s mutex)
- * would have bought correctness this channel did not need. That reasoning
- * held only as long as an append WAS a single `write(2)` call with no
- * decision attached to it.
+ * Originally: a plain `write(2)` in `a`-mode, no lock — the kernel does not
+ * interleave two `write` calls on an append-mode fd against the same file, so
+ * concurrent appends from independent processes were safe without one, and a
+ * lock file per append (`lib/state/lock.ts`'s mutex) would have bought
+ * correctness this channel did not need. That reasoning held only as long as an
+ * append WAS a single `write(2)` call with no decision attached to it.
  *
- * Round 4's self-healing fix (below) broke that premise: healing a prior
- * interrupted write means READING the file, DECIDING whether to prepend a
- * delimiter, and THEN writing — a multi-step span, not one atomic syscall.
- * Two concurrent appenders can interleave across that span (sender A's read
- * observes a clean file; sender B's own interrupted write leaves an
- * undelimited tail before A's write lands; A's healthy record ends up glued
- * to B's garbage anyway), and `repairInbox` then drops the combined,
- * unparsable line WHOLESALE — permanently losing A's record, not merely
- * poisoning the fold (docomply-review, a reference-implementation pull request round 8, sharpening round
- * 6's original finding on this same span). `MAILBOX_LINE_MAX_BYTES` closes
- * a DIFFERENT gap (a high-level `writeFileSync` is not contractually one
- * `write(2)` syscall even for content under the cap — chatgpt-codex-
- * connector, PR #4446 round 8) that this same lock also closes as a side
- * effect: while it is held, no other process's append can even begin, so a
- * short-write retry inside `writeFileSync` can never have another writer's
- * bytes land in the gap.
+ * The self-healing fix (below) broke that premise: healing a prior interrupted
+ * write means READING the file, DECIDING whether to prepend a delimiter, and
+ * THEN writing — a multi-step span, not one atomic syscall. Two concurrent
+ * appenders can interleave across that span (sender A's read observes a clean
+ * file; sender B's own interrupted write leaves an undelimited tail before A's
+ * write lands; A's healthy record ends up glued to B's garbage anyway), and
+ * `repairInbox` then drops the combined, unparsable line WHOLESALE —
+ * permanently losing A's record, not merely poisoning the fold.
+ * `MAILBOX_LINE_MAX_BYTES` closes a DIFFERENT gap (a high-level `writeFileSync`
+ * is not contractually one `write(2)` syscall even for content under the cap)
+ * that this same lock also closes as a side effect: while it is held, no other
+ * process's append can even begin, so a short-write retry inside
+ * `writeFileSync` can never have another writer's bytes land in the gap.
  *
  * So every append (`appendLine`, below) and every `repairInbox` run now
  * holds the SAME per-file lock (`lib/state/lock.ts`'s `createLock`, keyed
@@ -60,18 +56,17 @@
  * ── Absent vs unreadable, and which callers may treat them alike ───────
  *
  * `readMailboxFile` mirrors `lease.ts`'s `readLeaseForFence` (though it has
- * since diverged on one point — see below): a file that does not exist
- * (ENOENT) is `absent`, and everything else the filesystem could not answer
- * (EACCES, a directory where a file was expected, ENOTDIR from a broken
- * path component, …) is `unreadable`. The two must not collapse into one
- * `null` here, because they mean opposite things for a mechanism whose
- * whole job is to be checked before an irreversible action: no `inbox.jsonl` is the
- * overwhelmingly common case — nobody has ever sent a directive — and must
- * read as CLEAR, or every push on every drive would be gated by a file that
- * was never created. A file that exists but cannot be read is the opposite:
- * something is there and this process cannot see what, so a gate consulting
- * it must fail CLOSED (`document-scanning-gates.md` § 1) rather than guess
- * "no hold".
+ * since diverged on one point — see below): a file that does not exist (ENOENT)
+ * is `absent`, and everything else the filesystem could not answer (EACCES, a
+ * directory where a file was expected, ENOTDIR from a broken path component, …)
+ * is `unreadable`. The two must not collapse into one `null` here, because they
+ * mean opposite things for a mechanism whose whole job is to be checked before
+ * an irreversible action: no `inbox.jsonl` is the overwhelmingly common case —
+ * nobody has ever sent a directive — and must read as CLEAR, or every push on
+ * every drive would be gated by a file that was never created. A file that
+ * exists but cannot be read is the opposite: something is there and this
+ * process cannot see what, so a gate consulting it must fail CLOSED rather than
+ * guess "no hold".
  *
  * That polarity applies ONLY to directives, deliberately. A NOTE that fails
  * to parse is dropped with a warning and never blocks anything — it carries
@@ -84,41 +79,38 @@
  * directive this module WRITES from ever reaching that state; the poisoning
  * rule exists for the file this module did not write itself.
  *
- * A line that fails to parse as JSON AT ALL (not merely shape validation) is
- * a DIFFERENT case, and — after three review rounds narrowing a classifier
- * for it — is handled by NOT classifying it at all: it always poisons,
- * unconditionally. `foldGateState` cannot invoke the strict per-kind parser
- * on unparsable text, so there is no reliable way to tell "a truncated NOTE"
- * apart from "a truncated DIRECTIVE" from the raw bytes alone — every attempt
- * at a heuristic (substring markers, field-order proofs) was a hand-rolled
- * text-matching classifier over adversarial input, exactly what
- * `document-scanning-gates.md` §3 warns is "defeated indefinitely, one
- * reviewer decoy per round" (and was: round 2 found an early-truncation
- * counterexample, round 5 found a conflicting/decoy-marker construction that
- * defeated the round-2 fix in turn — see `foldGateState`'s own inline
- * comment for the specifics, and an earlier change for the pattern this class is
- * tracked under). Unconditional poisoning has no classifier left to defeat.
- * This is safe against round 2's original complaint (a malformed NOTE
+ * A line that fails to parse as JSON AT ALL (not merely shape validation) is a
+ * DIFFERENT case, and — after several attempts at narrowing a classifier for it
+ * — is handled by NOT classifying it at all: it always poisons,
+ * unconditionally. `foldGateState` cannot invoke the strict per-kind parser on
+ * unparsable text, so there is no reliable way to tell "a truncated NOTE" apart
+ * from "a truncated DIRECTIVE" from the raw bytes alone — every attempt at a
+ * heuristic (substring markers, field-order proofs) was a hand-rolled
+ * text-matching classifier over adversarial input, which can be defeated
+ * indefinitely, one decoy at a time (and was: an early-truncation
+ * counterexample defeated the first, then a conflicting/decoy-marker
+ * construction defeated its replacement in turn — see `foldGateState`'s own
+ * inline comment for the specifics). Unconditional poisoning has no classifier
+ * left to defeat. This is safe against the original concern (a malformed NOTE
  * blocking pushes) only because of the `appendLine` self-healing fix below:
  * once every append is guaranteed to start its own delimited line, an
- * unparsable line can only ever be a genuine, ISOLATED interrupted-write
- * tail or deliberate hand-editing — never glued to later complete records —
- * and `repairInbox` is the explicit, human-invoked recovery for it.
+ * unparsable line can only ever be a genuine, ISOLATED interrupted-write tail
+ * or deliberate hand-editing — never glued to later complete records — and
+ * `repairInbox` is the explicit, human-invoked recovery for it.
  *
  * ── Self-healing a prior interrupted write ──────────────────────────────
  *
  * `appendLine` checks, before every append, whether the file already has
- * content that does not end in a newline — the exact signature of a
- * truncated tail from a crash mid-`write(2)` — and prepends one if so. Only
- * one extra read of a small, human-rate-traffic file, but this decide-then-
- * write span is exactly why appends are now lock-guarded (see "Why every
- * append IS lock-guarded" above) — without the lock, TWO concurrent
- * senders could still interleave across it. Without self-healing at all, a
- * later complete record appended directly onto an undelimited truncated
- * tail would combine into ONE unparsable line carrying both — which no
- * classifier of the corrupted text could safely pull apart, and which
- * unconditional poisoning alone could not make safe either (docomply-review
- * / chatgpt-codex-connector, a reference-implementation pull request round 4).
+ * content that does not end in a newline — the exact signature of a truncated
+ * tail from a crash mid-`write(2)` — and prepends one if so. Only one extra
+ * read of a small, human-rate-traffic file, but this decide-then- write span is
+ * exactly why appends are now lock-guarded (see "Why every append IS
+ * lock-guarded" above) — without the lock, TWO concurrent senders could still
+ * interleave across it. Without self-healing at all, a later complete record
+ * appended directly onto an undelimited truncated tail would combine into ONE
+ * unparsable line carrying both — which no classifier of the corrupted text
+ * could safely pull apart, and which unconditional poisoning alone could not
+ * make safe either.
  *
  * ── Recovering from a poisoned inbox ────────────────────────────────────
  *
@@ -240,12 +232,11 @@ export function outboxPath(dir: string): string {
 }
 
 // 8 bytes (64 bits), not 4 (32): `unseenMessages` builds its acknowledgement
-// cursor from `(pr, id)` alone, so a same-PR collision would let acking
-// EITHER message silently hide both. 32 bits made that a real (if
-// low-probability) risk at this traffic level; 64 bits pushes the
-// birthday-bound collision point to billions of messages per PR — well
-// past anything this human-rate channel will ever see (chatgpt-codex-
-// connector / docomply-review, a reference-implementation pull request round 17).
+// cursor from `(pr, id)` alone, so a same-PR collision would let acking EITHER
+// message silently hide both. 32 bits made that a real (if low-probability)
+// risk at this traffic level; 64 bits pushes the birthday-bound collision point
+// to billions of messages per PR — well past anything this human-rate channel
+// will ever see.
 function newId(): string {
   return `m-${randomBytes(8).toString("hex")}`;
 }
@@ -269,15 +260,13 @@ export function readMailboxFile(path: string): MailboxFileRead {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException)?.code;
     // ENOENT alone, not ENOTDIR too: POSIX only raises ENOTDIR when a path
-    // COMPONENT that traversal needs to descend through exists but is the
-    // WRONG type (a regular file sitting where a directory belongs) — it
-    // can never mean "genuinely nothing there", which is what ENOENT
-    // already covers on its own. Treating ENOTDIR as `absent` folded a
-    // broken mailbox location (e.g. `.context/drive-mailbox` existing as
-    // a FILE, not a directory) as CLEAR: `foldGateState` would report
-    // every gate open and `guarded-push.ts` could push with an active
-    // hold-push never actually inspected (chatgpt-codex-connector,
-    // a reference-implementation pull request round 21).
+    // COMPONENT that traversal needs to descend through exists but is the WRONG
+    // type (a regular file sitting where a directory belongs) — it can never
+    // mean "genuinely nothing there", which is what ENOENT already covers on
+    // its own. Treating ENOTDIR as `absent` folded a broken mailbox location
+    // (e.g. `.context/drive-mailbox` existing as a FILE, not a directory) as
+    // CLEAR: `foldGateState` would report every gate open and `guarded-push.ts`
+    // could push with an active hold-push never actually inspected.
     if (code === "ENOENT") return { kind: "absent" };
     return { kind: "unreadable", why: code ?? String(e) };
   }
@@ -294,33 +283,29 @@ function isNonEmptyString(v: unknown): v is string {
 }
 
 /**
- * A PR string in the ONE canonical form every writer in this module
- * produces (`resolvePrArg`'s own `BigInt(...).toString()`), not merely
- * digits: `isDigits` alone still accepts a leading-zero form like
- * `'0999'`, which is a DIFFERENT string from the canonical `'999'` this
- * module compares against everywhere with plain `===`. Treating `'0999'`
- * as "a valid PR that just happens to differ" let a corrupt or
- * hand-edited directive naming that non-canonical form be skipped as
- * out-of-scope instead of poisoning — identical malformed-PR risk to an
- * empty or non-numeric string, just with a subtler counterexample
- * (docomply-review, a reference-implementation pull request round 24). `s !== '0'` closes the sibling
- * gap in that same fix: `'0'` is both `isDigits` AND its own canonical
- * form (`BigInt('0').toString() === '0'`), but GitHub PR numbers are
- * never `0` — a directive naming it identifies no REAL PR any more than
- * `'0999'` does, and was still being treated as a valid-but-different PR
- * to skip rather than poisoning (docomply-review, a reference-implementation pull request round 25).
+ * A PR string in the ONE canonical form every writer in this module produces
+ * (`resolvePrArg`'s own `BigInt(...).toString()`), not merely digits:
+ * `isDigits` alone still accepts a leading-zero form like `'0999'`, which is a
+ * DIFFERENT string from the canonical `'999'` this module compares against
+ * everywhere with plain `===`. Treating `'0999'` as "a valid PR that just
+ * happens to differ" let a corrupt or hand-edited directive naming that
+ * non-canonical form be skipped as out-of-scope instead of poisoning —
+ * identical malformed-PR risk to an empty or non-numeric string, just with a
+ * subtler counterexample. `s !== '0'` closes the sibling gap in that same fix:
+ * `'0'` is both `isDigits` AND its own canonical form (`BigInt('0').toString()
+ * === '0'`), but GitHub PR numbers are never `0` — a directive naming it
+ * identifies no REAL PR any more than `'0999'` does, and was still being
+ * treated as a valid-but-different PR to skip rather than poisoning.
  */
 function isCanonicalPr(s: string): boolean {
   return isDigits(s) && s !== "0" && BigInt(s).toString() === s;
 }
 
 /**
- * Shape-validate one already-parsed JSON value as an `InboxMessage`, or
- * `null` if it is not one — the per-LINE counterpart to
- * `readMailboxFile`'s per-FILE distinction. Every field is required, per the
- * project's standing rule against accepts-both-shapes leniency
- * (`CLAUDE.md` § Backward Compatibility): a partial record here is debris,
- * not a legacy shape to tolerate.
+ * Shape-validate one already-parsed JSON value as an `InboxMessage`, or `null`
+ * if it is not one — the per-LINE counterpart to `readMailboxFile`'s per-FILE
+ * distinction. Every field is required, with no accepts-both-shapes leniency: a
+ * partial record here is debris, not a legacy shape to tolerate.
  */
 export function parseInboxMessage(v: unknown): InboxMessage | null {
   if (typeof v !== "object" || v === null) return null;
@@ -378,15 +363,14 @@ export function parseOutboxRecord(v: unknown): OutboxRecord | null {
     return null;
   if (!isNonEmptyString(r.pr)) return null;
   if (r.status !== "received" && r.status !== "done") return null;
-  // A discriminated shape, not "response, if present, must be a string":
-  // a malformed writer or a hand-edited recovery line could otherwise
-  // produce `status: 'done'` with a missing or empty `response`, which
-  // `mailbox.ts outbox` would then report as a completed answer with
-  // nothing IN it, while `unseenMessages` treats the id as acknowledged
-  // and suppresses redelivery — leaving the original sender with neither
-  // a response nor a warning (chatgpt-codex-connector, a reference-implementation pull request
-  // round 16). `done` REQUIRES a non-empty response; `received` must NOT
-  // carry one, since it is not an answer yet.
+  // A discriminated shape, not "response, if present, must be a string": a
+  // malformed writer or a hand-edited recovery line could otherwise produce
+  // `status: 'done'` with a missing or empty `response`, which `mailbox.ts
+  // outbox` would then report as a completed answer with nothing IN it, while
+  // `unseenMessages` treats the id as acknowledged and suppresses redelivery —
+  // leaving the original sender with neither a response nor a warning. `done`
+  // REQUIRES a non-empty response; `received` must NOT carry one, since it is
+  // not an answer yet.
   if (r.status === "done") {
     if (!isNonEmptyString(r.response)) return null;
   } else if (r.response !== undefined) {
@@ -404,21 +388,19 @@ function splitJsonl(raw: string): string[] {
 
 /**
  * Self-healing (see the module header) reads the file, decides whether to
- * prepend a delimiting newline, and THEN writes — a decide-then-act span
- * that is no longer a single atomic syscall, unlike an ordinary append. Two
- * concurrent senders can interleave across that span: A's read observes a
- * clean file, B's own interrupted write leaves an undelimited tail before
- * A's write lands, and A's healthy record ends up glued to B's garbage
- * anyway — which `repairInbox` then drops WHOLESALE, permanently losing
- * A's record rather than merely poisoning the fold (docomply-review,
- * a reference-implementation pull request round 8, sharpening round 6's original finding on this same
- * span). A lock around the whole decide-then-write span is what actually
- * closes it, not a smaller read-write gap: this is the one place in the
- * module where the header's "no lock needed" append-atomicity argument no
- * longer holds, because self-healing turned a single write(2) into a
- * read-then-write. Scoped per FILE (the lock key is `path` itself, inbox
- * and outbox locked independently) so an inbox sender is never blocked by
- * outbox traffic or vice versa.
+ * prepend a delimiting newline, and THEN writes — a decide-then-act span that
+ * is no longer a single atomic syscall, unlike an ordinary append. Two
+ * concurrent senders can interleave across that span: A's read observes a clean
+ * file, B's own interrupted write leaves an undelimited tail before A's write
+ * lands, and A's healthy record ends up glued to B's garbage anyway — which
+ * `repairInbox` then drops WHOLESALE, permanently losing A's record rather than
+ * merely poisoning the fold. A lock around the whole decide-then-write span is
+ * what actually closes it, not a smaller read-write gap: this is the one place
+ * in the module where the header's "no lock needed" append-atomicity argument
+ * no longer holds, because self-healing turned a single write(2) into a
+ * read-then-write. Scoped per FILE (the lock key is `path` itself, inbox and
+ * outbox locked independently) so an inbox sender is never blocked by outbox
+ * traffic or vice versa.
  */
 async function appendLine(path: string, line: string): Promise<void> {
   // `recursive: true` returns the SHALLOWEST directory it had to create
@@ -426,21 +408,20 @@ async function appendLine(path: string, line: string): Promise<void> {
   // EXTEND the fixed 2-level walk below for a `$DRIVE_PR_MAILBOX_DIR`
   // override deeper than the default layout — see that walk's own doc
   // for why it is not, on its own, a safe basis for deciding whether to
-  // fsync at all (chatgpt-codex-connector, a reference-implementation pull request round 25).
+  // fsync at all.
   const firstCreatedDir = mkdirSync(dirname(path), { recursive: true });
   const lock = createLock(path, "mailbox.ts (append)", "mailbox");
   await lock.acquire();
   try {
     const existing = readMailboxFile(path);
     if (existing.kind === "unreadable") {
-      // An unreadable-but-appendable file (write-only permissions, a
-      // transient read error, ...) is NOT the same as absent-or-clean —
-      // this predicate cannot see whether the existing tail already ends
-      // with a newline, so appending blind risks gluing this record onto
-      // a truncated or non-delimited line. `repairInbox` then drops that
-      // COMBINED line wholesale, permanently losing this record instead
-      // of merely poisoning the fold it would have poisoned on its own
-      // (docomply-review, a reference-implementation pull request round 14). Fail closed rather than
+      // An unreadable-but-appendable file (write-only permissions, a transient
+      // read error, ...) is NOT the same as absent-or-clean — this predicate
+      // cannot see whether the existing tail already ends with a newline, so
+      // appending blind risks gluing this record onto a truncated or
+      // non-delimited line. `repairInbox` then drops that COMBINED line
+      // wholesale, permanently losing this record instead of merely poisoning
+      // the fold it would have poisoned on its own. Fail closed rather than
       // guess.
       fail(
         2,
@@ -457,12 +438,11 @@ async function appendLine(path: string, line: string): Promise<void> {
       existing.raw.length > 0 &&
       !existing.raw.endsWith("\n");
     const content = needsLeadingNewline ? `\n${line}` : line;
-    // Checked against the FINAL content actually written, not just `line` —
-    // a record already at the cap would otherwise pass this check and then
-    // grow past it once the healing newline above is prepended, breaking
-    // the single-write atomicity bound precisely during the recovery case
-    // this fix exists for (docomply-review / chatgpt-codex-connector,
-    // a reference-implementation pull request round 7).
+    // Checked against the FINAL content actually written, not just `line` — a
+    // record already at the cap would otherwise pass this check and then grow
+    // past it once the healing newline above is prepended, breaking the
+    // single-write atomicity bound precisely during the recovery case this fix
+    // exists for.
     const bytes = Buffer.byteLength(content, "utf8");
     if (bytes > MAILBOX_LINE_MAX_BYTES) {
       fail(
@@ -479,7 +459,7 @@ async function appendLine(path: string, line: string): Promise<void> {
     // could be lost (or, for the FIRST record in a new file, the
     // directory entry itself could be lost) while `foldGateState` reads
     // the resulting absent/empty file as CLEAR and lets a push through it
-    // should have blocked (chatgpt-codex-connector, a reference-implementation pull request round 18).
+    // should have blocked.
     // Explicit open+write+fsync+close instead, mirroring `atomicWrite`'s
     // own hardening in `fsutil.ts`.
     const fileIsNew = existing.kind === "absent";
@@ -502,22 +482,20 @@ async function appendLine(path: string, line: string): Promise<void> {
       closeError = e;
     }
     if (primaryFailed || closeFailed) {
-      // Lock-guarded, so `fileIsNew` (computed above, under the SAME
-      // lock) is a race-free signal for "did THIS call create `path`":
-      // no other `appendLine` caller can be concurrently touching the
-      // same path while this lock is held. If this call is the one that
-      // created the file and the write/fsync/close then failed, the
-      // empty-or-partial file left behind would make a SUBSEQUENT retry
-      // observe `existing.kind === 'ok'` — not `absent` — setting
-      // `fileIsNew` false and skipping the ancestor-directory fsyncs
-      // below entirely, even though nobody has ever run them. A power
-      // loss after that later, otherwise-successful retry could then
-      // discard the directory entry (including a successfully retried
-      // `hold-push`) despite the retry's own file content being durable
-      // (chatgpt-codex-connector, a reference-implementation pull request round 23). Unlinking here
-      // restores the `absent` state for the next attempt to correctly
-      // re-observe, mirroring `atomicWrite`'s own established
-      // cleanup-on-failure pattern in `fsutil.ts`.
+      // Lock-guarded, so `fileIsNew` (computed above, under the SAME lock) is a
+      // race-free signal for "did THIS call create `path`": no other
+      // `appendLine` caller can be concurrently touching the same path while
+      // this lock is held. If this call is the one that created the file and
+      // the write/fsync/close then failed, the empty-or-partial file left
+      // behind would make a SUBSEQUENT retry observe `existing.kind === 'ok'` —
+      // not `absent` — setting `fileIsNew` false and skipping the
+      // ancestor-directory fsyncs below entirely, even though nobody has ever
+      // run them. A power loss after that later, otherwise-successful retry
+      // could then discard the directory entry (including a successfully
+      // retried `hold-push`) despite the retry's own file content being
+      // durable. Unlinking here restores the `absent` state for the next
+      // attempt to correctly re-observe, mirroring `atomicWrite`'s own
+      // established cleanup-on-failure pattern in `fsutil.ts`.
       if (fileIsNew) {
         try {
           unlinkSync(path);
@@ -536,37 +514,33 @@ async function appendLine(path: string, line: string): Promise<void> {
       // also what created `dirname(path)` (or its own parent, e.g.
       // `.context` not existing yet either), that directory has the
       // identical problem one level up: its own entry lives in ITS
-      // parent (chatgpt-codex-connector, a reference-implementation pull request round 20).
+      // parent.
       //
-      // Round 20's fix walked exactly as far as THIS call's own
-      // `mkdirSync(..., {recursive:true})` reported creating — which is
-      // racy: concurrent first-senders on a fresh worktree can interleave
-      // so that whichever one actually created `.context` is not the one
-      // whose `existing.kind` observes `absent` (and so never reaches
-      // this branch at all), while the one that DOES reach it sees its
-      // own `mkdirSync` return `undefined` (the chain already existed by
-      // the time it ran) and has no way to know a sibling level was
-      // created moments ago by someone else (chatgpt-codex-connector,
-      // a reference-implementation pull request round 22). Round 22's fix closed that by not depending
-      // on per-process "who created what" at all: `mailboxDir()` fixes
-      // this module's own directory nesting at exactly two levels below
-      // the worktree root (`.context/drive-mailbox`), so every sender
-      // that observes `fileIsNew` unconditionally fsyncs three FIXED
-      // candidate levels regardless of who created any of them.
+      // An earlier fix walked exactly as far as THIS call's own `mkdirSync(...,
+      // {recursive:true})` reported creating — which is racy: concurrent
+      // first-senders on a fresh worktree can interleave so that whichever one
+      // actually created `.context` is not the one whose `existing.kind`
+      // observes `absent` (and so never reaches this branch at all), while the
+      // one that DOES reach it sees its own `mkdirSync` return `undefined` (the
+      // chain already existed by the time it ran) and has no way to know a
+      // sibling level was created moments ago by someone else. The fixed floor
+      // below closes that by not depending on per-process "who created what" at
+      // all: `mailboxDir()` fixes this module's own directory nesting at
+      // exactly two levels below the worktree root (`.context/drive-mailbox`),
+      // so every sender that observes `fileIsNew` unconditionally fsyncs three
+      // FIXED candidate levels regardless of who created any of them.
       //
-      // That fixed depth is itself a gap under `$DRIVE_PR_MAILBOX_DIR`:
-      // the override permits an ARBITRARILY deep path, and `mkdirSync`'s
-      // own recursive create walks as far up as it needs to — a chain
-      // missing MORE than two levels would leave the higher, still-new
-      // ancestors unfsynced (chatgpt-codex-connector, a reference-implementation pull request round 25).
-      // `firstCreatedDir` (this call's own `mkdirSync` report) extends
-      // the walk past the fixed floor whenever it reports something
-      // shallower than three levels up — safe to use for EXTENDING
-      // (never for deciding whether to fsync at all, which is exactly
-      // the race round 22 closed): the two mechanisms are independent,
-      // so even if this call's own `mkdirSync` under-reports depth due to
-      // a race, the fixed three-level floor below still fires
-      // unconditionally.
+      // That fixed depth is itself a gap under `$DRIVE_PR_MAILBOX_DIR`: the
+      // override permits an ARBITRARILY deep path, and `mkdirSync`'s own
+      // recursive create walks as far up as it needs to — a chain missing MORE
+      // than two levels would leave the higher, still-new ancestors unfsynced.
+      // `firstCreatedDir` (this call's own `mkdirSync` report) extends the walk
+      // past the fixed floor whenever it reports something shallower than three
+      // levels up — safe to use for EXTENDING (never for deciding whether to
+      // fsync at all, which is exactly the race the fixed floor closes): the
+      // two mechanisms are independent, so even if this call's own `mkdirSync`
+      // under-reports depth due to a race, the fixed three-level floor below
+      // still fires unconditionally.
       const fixedFloor = dirname(dirname(dirname(path)));
       const mkdirBound =
         firstCreatedDir === undefined
@@ -599,8 +573,7 @@ async function appendLine(path: string, line: string): Promise<void> {
         // silently abandoning the still-unflushed directory entry rather
         // than redoing it. Unlinking restores the `absent` state so the
         // retry re-observes `fileIsNew = true` and redoes the full walk,
-        // mirroring the primary write/fsync/close cleanup above
-        // (chatgpt-codex-connector, a reference-implementation pull request round 30).
+        // mirroring the primary write/fsync/close cleanup above.
         try {
           unlinkSync(path);
         } catch {
@@ -711,8 +684,7 @@ export function readInboxMessages(
  * module's delivery ordering elsewhere), and a corrupted `done` response
  * looking like "no response" leaves a polling sender waiting on one that
  * actually exists but is damaged — neither is dangerous, but both were
- * previously silent, with no diagnostic anywhere a human could act on
- * (docomply-review, a reference-implementation pull request round 6).
+ * previously silent, with no diagnostic anywhere a human could act on.
  */
 function readOutboxRecords(dir: string): {
   file: MailboxFileRead;
@@ -752,7 +724,7 @@ export type OutboxRecordsResult =
  * this). An UNREADABLE outbox is an explicit `ok: false`, never a silent
  * empty list — the earlier version discarded `readOutboxRecords`'s own
  * `file` status entirely, so an EACCES/I/O failure looked identical to "no
- * responses yet" to a polling sender (docomply-review, a reference-implementation pull request round 4). An
+ * responses yet" to a polling sender. An
  * ABSENT outbox is a genuine `ok: true, records: []` — nobody has responded
  * yet, the overwhelmingly common case.
  */
@@ -793,8 +765,7 @@ export type UnseenMessagesResult =
  * relying on `check` to see a `hold-push` others sent) and, worse, treated
  * an unreadable OUTBOX as an empty ack cursor, which would re-report every
  * historical inbox message as unseen — breaking the "acknowledged messages
- * are not re-reported" guarantee this function's own docs promise
- * (docomply-review, a reference-implementation pull request round 4).
+ * are not re-reported" guarantee this function's own docs promise.
  */
 export function unseenMessages(dir: string, pr: string): UnseenMessagesResult {
   const inbox = readInboxMessages(dir, pr);
@@ -857,36 +828,33 @@ export type GateStateResult =
  * even when a line fails to parse as JSON AT ALL" section for why this
  * exists and what each branch means.
  *
- * Round 1 tried classifying an unparsable line as "safe to drop" purely by
- * whether a directive marker appeared in it — defeated the next round by a
- * truncation before `kind` was even reached (round 2). Round 2's fix
- * required POSITIVE evidence of a note (a complete `"kind":"note"` token,
- * plus a readable-different-PR carve-out) — defeated the round after that
- * by an adversarial construction with a conflicting or decoy marker
- * (`{"pr":"999","kind":"directive" garbage "kind":"note"}` matches the note
- * regex despite visibly attempting a directive; a decoy `pr` token ahead of
- * the real one defeats the different-PR carve-out the same way) — round 5,
- * PR #4446. Three rounds of narrowing the same regex-over-raw-text
- * classifier is `document-scanning-gates.md` §3's exact "a hand-rolled
- * text-matching model stays one counterexample behind" warning playing out
- * in miniature (tracked at the pattern level, not per-instance, as
- * `narrow-fix-per-round`; see).
+ * A first version classified an unparsable line as "safe to drop" purely by
+ * whether a directive marker appeared in it — defeated by a truncation before
+ * `kind` was even reached. Its replacement required POSITIVE evidence of a note
+ * (a complete `"kind":"note"` token, plus a readable-different-PR carve-out) —
+ * defeated in turn by an adversarial construction with a conflicting or decoy
+ * marker (`{"pr":"999","kind":"directive" garbage "kind":"note"}` matches the
+ * note regex despite visibly attempting a directive; a decoy `pr` token ahead
+ * of the real one defeats the different-PR carve-out the same way). Repeated
+ * narrowing of the same regex-over-raw-text classifier shows the general hazard
+ * in miniature: a hand-rolled text-matching model stays one counterexample
+ * behind.
  *
  * So there is no classifier here anymore: a line JSON.parse itself rejects
  * ALWAYS poisons, unconditionally — no leniency, no substring matching, no
- * regex to defeat. This is safe to do without reopening round 2's original
- * complaint (a malformed NOTE blocking pushes) because round 4's
- * `appendLine` self-healing fix changed what "unparsable" can even mean
- * going forward: every append now checks whether the file already ends in a
- * newline and inserts one first if not, so an interrupted write's truncated
- * tail can never again be glued to a LATER complete record — it stays
- * isolated as its own line. The only way an unparsable line can now exist at
- * all is a genuine, isolated interrupted-write tail, or deliberate hand-
- * editing — and `mailbox.ts repair <pr>` (below) is the explicit, auditable,
- * human-invoked recovery for exactly that case. A record that DOES parse but
- * doesn't classify as either message type is a separate, SAFE check further
- * down — exact structural equality on a properly parsed object's `kind`
- * field, not regex-over-text, and not subject to this class of bug at all.
+ * regex to defeat. This is safe to do without reopening the original concern (a
+ * malformed NOTE blocking pushes) because the `appendLine` self-healing fix
+ * changed what "unparsable" can even mean going forward: every append now
+ * checks whether the file already ends in a newline and inserts one first if
+ * not, so an interrupted write's truncated tail can never again be glued to a
+ * LATER complete record — it stays isolated as its own line. The only way an
+ * unparsable line can now exist at all is a genuine, isolated interrupted-write
+ * tail, or deliberate hand- editing — and `mailbox.ts repair <pr>` (below) is
+ * the explicit, auditable, human-invoked recovery for exactly that case. A
+ * record that DOES parse but doesn't classify as either message type is a
+ * separate, SAFE check further down — exact structural equality on a properly
+ * parsed object's `kind` field, not regex-over-text, and not subject to this
+ * class of bug at all.
  */
 
 /**
@@ -932,30 +900,27 @@ export function foldGateState(dir: string, pr: string): GateStateResult {
         ? (parsed as Record<string, unknown>)
         : null;
     if (asRecord === null) {
-      // Valid JSON, but not a plain object at all — `null`, an array, a
-      // bare string or number. Cannot be classified as either a note or a
-      // directive, so — like an unparsable line with no positive note
-      // evidence — this is ambiguous and must poison, not silently vanish
-      // from the scanned population (`document-scanning-gates.md` §1;
-      // docomply-review round 3, a reference-implementation pull request).
+      // Valid JSON, but not a plain object at all — `null`, an array, a bare
+      // string or number. Cannot be classified as either a note or a directive,
+      // so — like an unparsable line with no positive note evidence — this is
+      // ambiguous and must poison, not silently vanish from the scanned
+      // population (unreadable input fails closed).
       return {
         ok: false,
         why: `malformed inbox line: ${line.slice(0, 120)}`,
       };
     }
-    // PR-scope BEFORE the strict shape/kind validation below, so a
-    // malformed record stamped for a DIFFERENT PR (a stale leftover in a
-    // worktree reused across PRs, most plausibly) is skipped like any other
-    // out-of-scope line rather than poisoning every OTHER PR's fold. Only a
-    // record naming a VALID, CANONICAL PR that differs from this one is
-    // skipped this way — `isCanonicalPr`, not merely `typeof === 'string'`
-    // or bare `isDigits`: a malformed `pr` field (`""`, `"abc"`, or a
-    // leading-zero non-canonical form like `"0999"`) does not name ANY
-    // identifiable other PR, so it is exactly as ambiguous as a record
-    // naming no PR at all and must fall through to the classification
-    // below rather than be silently skipped as out-of-scope
-    // (chatgpt-codex-connector, a reference-implementation pull request round 23; docomply-review,
-    // a reference-implementation pull request round 24, on the leading-zero gap `isDigits` alone missed).
+    // PR-scope BEFORE the strict shape/kind validation below, so a malformed
+    // record stamped for a DIFFERENT PR (a stale leftover in a worktree reused
+    // across PRs, most plausibly) is skipped like any other out-of-scope line
+    // rather than poisoning every OTHER PR's fold. Only a record naming a
+    // VALID, CANONICAL PR that differs from this one is skipped this way —
+    // `isCanonicalPr`, not merely `typeof === 'string'` or bare `isDigits`: a
+    // malformed `pr` field (`""`, `"abc"`, or a leading-zero non-canonical form
+    // like `"0999"`) does not name ANY identifiable other PR, so it is exactly
+    // as ambiguous as a record naming no PR at all and must fall through to the
+    // classification below rather than be silently skipped as out-of-scope
+    // (`isDigits` alone misses the leading-zero form).
     if (
       typeof asRecord.pr === "string" &&
       isCanonicalPr(asRecord.pr) &&
@@ -968,7 +933,7 @@ export function foldGateState(dir: string, pr: string): GateStateResult {
     // invalid one, and it carries no gate). It IS reported in `warnings`
     // when malformed, though: silently dropping it with no diagnostic
     // anywhere contradicted this module's own "dropped with a warning"
-    // promise (docomply-review, a reference-implementation pull request round 6). A genuinely well-formed
+    // promise. A genuinely well-formed
     // note produces no warning — nothing was actually dropped.
     if (asRecord.kind === "note") {
       // A record with `kind: 'note'` that ALSO carries a directive-only
@@ -981,8 +946,7 @@ export function foldGateState(dir: string, pr: string): GateStateResult {
       // fail to parse as JSON at all, and this one parses fine. Checked
       // BEFORE the note carve-out decides to skip gating, so this poisons
       // the fold the same way any other ambiguous shape does, rather than
-      // being waved through as a merely-malformed note
-      // (docomply-review, a reference-implementation pull request round 30).
+      // being waved through as a merely-malformed note.
       if (asRecord.command !== undefined || asRecord.target !== undefined) {
         return {
           ok: false,
@@ -995,11 +959,10 @@ export function foldGateState(dir: string, pr: string): GateStateResult {
       continue;
     }
     if (asRecord.kind !== "directive") {
-      // `kind` is missing, misspelled, or the wrong type — this is the
-      // narrower gap round 3 found: NEITHER a recognized note NOR a
-      // recognized directive is not "safe to ignore", it is ambiguous
-      // (could have been an interrupted or corrupted directive), so it
-      // poisons like the unclassifiable case above.
+      // `kind` is missing, misspelled, or the wrong type — this is the narrower
+      // gap: NEITHER a recognized note NOR a recognized directive is not "safe
+      // to ignore", it is ambiguous (could have been an interrupted or
+      // corrupted directive), so it poisons like the unclassifiable case above.
       return {
         ok: false,
         why: `malformed inbox line: ${line.slice(0, 120)}`,
@@ -1013,15 +976,13 @@ export function foldGateState(dir: string, pr: string): GateStateResult {
       };
     }
     // `parseInboxMessage` only validates `pr` as a non-empty STRING (it is
-    // shape validation, not business-logic PR matching), so a directive
-    // with a malformed `pr` (`""`, `"abc"`, `"0999"`) can reach here
-    // successfully parsed. The SAME sibling bug as the early `asRecord.pr`
-    // check above: only a valid canonical PR that differs from this one is
-    // genuinely out-of-scope and safe to skip; anything else does not
-    // identify ANY PR and must poison, not be silently treated as scoped
-    // to THIS PR by falling through (chatgpt-codex-connector, a reference-implementation pull request
-    // round 23; docomply-review, a reference-implementation pull request round 24, on the leading-zero
-    // gap the round-23 fix's own `isDigits`-only check missed).
+    // shape validation, not business-logic PR matching), so a directive with a
+    // malformed `pr` (`""`, `"abc"`, `"0999"`) can reach here successfully
+    // parsed. The SAME sibling bug as the early `asRecord.pr` check above: only
+    // a valid canonical PR that differs from this one is genuinely out-of-scope
+    // and safe to skip; anything else does not identify ANY PR and must poison,
+    // not be silently treated as scoped to THIS PR by falling through (an
+    // `isDigits`-only check misses the leading-zero form).
     if (!isCanonicalPr(msg.pr)) {
       return {
         ok: false,
@@ -1094,13 +1055,13 @@ export function holdAbortUnmarkedSentinel(nonce: string): string {
  * its own read-decide-write span, and released again before returning.
  *
  * The lock is held for the READ only, never across the push. Holding it across
- * `git push` (as PR #4446 round 30 did) blocked every `mailbox.ts send` for as
- * long as the pre-push hook ran — a `hold-push` sent during those minutes
- * could not land at all, which is the opposite of what a hold is for
- *. Coordination with an in-flight push is done at the other end
- * instead: `push-hold-recheck.ts` re-reads this as the LAST pre-push hook
- * step, so a hold that landed at any point during validation aborts the push
- * before git transfers anything.
+ * `git push` (as an earlier fix did) blocked every `mailbox.ts send` for as
+ * long as the pre-push hook ran — a `hold-push` sent during those minutes could
+ * not land at all, which is the opposite of what a hold is for. Coordination
+ * with an in-flight push is done at the other end instead:
+ * `push-hold-recheck.ts` re-reads this as the LAST pre-push hook step, so a
+ * hold that landed at any point during validation aborts the push before git
+ * transfers anything.
  *
  * Reading under the lock still matters: `appendLine` writes a directive as
  * one delimited append under it, so a read here observes either the whole
@@ -1160,24 +1121,19 @@ export type RepairResult =
  * that quietly reported "0 dropped" for both would read as "your inbox is
  * clean" to an operator on a run where the inbox was never even inspected,
  * while `foldGateState`/`isPushHeld` keep failing closed on the very same
- * unreadable file underneath them (docomply-review round 2, a reference-implementation pull request).
+ * unreadable file underneath them.
  *
- * The rewrite IS coordinated with `appendLine` — both hold the SAME
- * per-file lock (see the module header's "Why every append IS lock-guarded"
- * section) for their entire read-decide-write span, making repair and every
- * append fully mutually exclusive. That was NOT always true: through
- * round 7 this module's own comment here said the opposite — "not
- * coordinated... a real, unclosed race" — describing an earlier design
- * where only a re-read-before-write reconciliation (`appendedSince`, below)
- * narrowed the window without closing it. Round 8 replaced that with the
- * lock after a sharper finding on the SAME residual (a glued line
- * `repairInbox` would then drop wholesale, permanently losing a valid
- * directive, not merely poisoning the fold) — this comment went stale at
- * that point and stayed wrong for two more rounds before being caught
- * (docomply-review, a reference-implementation pull request round 10). `appendedSince` remains as
- * defense-in-depth for a writer that somehow does not go through this
- * module's own lock at all — there is none today — not as the primary
- * guarantee it was before round 8.
+ * The rewrite IS coordinated with `appendLine` — both hold the SAME per-file
+ * lock (see the module header's "Why every append IS lock-guarded" section) for
+ * their entire read-decide-write span, making repair and every append fully
+ * mutually exclusive. An earlier design relied only on a re-read-before-write
+ * reconciliation (`appendedSince`, below), which narrowed the window without
+ * closing it; the lock replaced it because the SAME residual could produce a
+ * glued line `repairInbox` would then drop wholesale, permanently losing a
+ * valid directive, not merely poisoning the fold. `appendedSince` remains as
+ * defense-in-depth for a writer that somehow does not go through this module's
+ * own lock at all — there is none today — not as the primary guarantee it once
+ * was.
  */
 /**
  * The pure part of the concurrent-append guard described on `repairInbox`'s
@@ -1237,40 +1193,36 @@ export async function repairInbox(
   dryRun: boolean,
 ): Promise<RepairResult> {
   const path = inboxPath(dir);
-  // If the mailbox directory doesn't exist at all, the inbox is
-  // unambiguously absent — report that without ever touching the
-  // filesystem. This is not just an optimization: unconditionally
-  // `mkdirSync`-ing the directory here (round 9's first attempt at fixing
-  // `createLock`'s own non-recursive `mkdirSync(lock)` needing the parent
-  // to exist) made `repairInbox(dir, true)` — `--dry-run`, documented as
-  // "reports without writing" — silently CREATE the mailbox directory on a
-  // fresh worktree, contradicting its own contract (docomply-review,
-  // a reference-implementation pull request round 10). Short-circuiting before any filesystem write closes
-  // both problems at once: dry-run never mutates anything, and a real
-  // repair against a directory that doesn't exist never reaches
-  // `lock.acquire()` at all, so there is nothing for its own non-recursive
-  // `mkdirSync(lock)` to fail against.
+  // If the mailbox directory doesn't exist at all, the inbox is unambiguously
+  // absent — report that without ever touching the filesystem. This is not just
+  // an optimization: unconditionally `mkdirSync`-ing the directory here (a
+  // first attempt at fixing `createLock`'s own non-recursive `mkdirSync(lock)`
+  // needing the parent to exist) made `repairInbox(dir, true)` — `--dry-run`,
+  // documented as "reports without writing" — silently CREATE the mailbox
+  // directory on a fresh worktree, contradicting its own contract.
+  // Short-circuiting before any filesystem write closes both problems at once:
+  // dry-run never mutates anything, and a real repair against a directory that
+  // doesn't exist never reaches `lock.acquire()` at all, so there is nothing
+  // for its own non-recursive `mkdirSync(lock)` to fail against.
   //
-  // `existsSync` collapses EVERY lookup error to `false` — not just
-  // `ENOENT`, but also an inaccessible directory (e.g. its own parent
-  // lacking search permission). That reads a genuinely unreachable inbox
-  // as "confirmed absent, zero lines, nothing to repair" instead of
-  // "never inspected", while `gate-state` (which goes through
-  // `readMailboxFile`'s own error-preserving `lstatSync`) still correctly
-  // reports the same path as unreadable and stays blocked — making this
-  // command's advertised recovery path silently lie about having run
-  // (docomply-review, a reference-implementation pull request round 14). `lstatSync` here mirrors
-  // `readMailboxFile`'s own absent/unreadable split so the two agree.
+  // `existsSync` collapses EVERY lookup error to `false` — not just `ENOENT`,
+  // but also an inaccessible directory (e.g. its own parent lacking search
+  // permission). That reads a genuinely unreachable inbox as "confirmed absent,
+  // zero lines, nothing to repair" instead of "never inspected", while
+  // `gate-state` (which goes through `readMailboxFile`'s own error-preserving
+  // `lstatSync`) still correctly reports the same path as unreadable and stays
+  // blocked — making this command's advertised recovery path silently lie about
+  // having run. `lstatSync` here mirrors `readMailboxFile`'s own
+  // absent/unreadable split so the two agree.
   try {
     lstatSync(dir);
   } catch (e) {
     const code = (e as NodeJS.ErrnoException)?.code;
-    // ENOENT alone, matching `readMailboxFile`'s own round-21 narrowing:
-    // ENOTDIR means a path component exists but is the WRONG type (e.g.
-    // `.context` existing as a file, not a directory) — a broken location,
-    // not a genuinely absent one — so it must stay `unreadable`/`ok: false`
-    // to keep agreeing with `readMailboxFile` the way this comment already
-    // claims it does.
+    // ENOENT alone, matching `readMailboxFile`'s own narrowing: ENOTDIR means a
+    // path component exists but is the WRONG type (e.g. `.context` existing as
+    // a file, not a directory) — a broken location, not a genuinely absent one
+    // — so it must stay `unreadable`/`ok: false` to keep agreeing with
+    // `readMailboxFile` the way this comment already claims it does.
     if (code === "ENOENT") {
       return { ok: true, path, totalLines: 0, droppedLines: 0, dropped: [] };
     }
@@ -1290,7 +1242,7 @@ export async function repairInbox(
   // sends an operator chasing a nonexistent rival driver instead of the
   // actual broken path. Caught here, before either the dry-run or the
   // locking branch, so both report the same `ok: false` a broken location
-  // deserves (chatgpt-codex-connector, a reference-implementation pull request round 29).
+  // deserves.
   //
   // The type check itself uses `statSync`, not `dirStat` (the earlier
   // `lstatSync`): `lstat` does not follow a symlink, so a mailbox
@@ -1299,8 +1251,7 @@ export async function repairInbox(
   // `readFileSync` calls read straight through it. `lstatSync` above still
   // owns the absent/unreadable split (a dangling symlink must not be
   // misread as a readable location by following it), and this second call
-  // owns only the type question, which does want the followed target
-  // (coderabbitai, PR #4446).
+  // owns only the type question, which does want the followed target.
   let isDir: boolean;
   try {
     isDir = statSync(dir).isDirectory();
@@ -1328,7 +1279,7 @@ export async function repairInbox(
     // without writing" contract: it creates
     // .lock.stale.*/.lock.recovering.stale.* tombstone directories as a
     // side effect and fails outright against a genuinely read-only
-    // mailbox directory (chatgpt-codex-connector, a reference-implementation pull request round 18).
+    // mailbox directory.
     const r = readAndClassifyInbox(path);
     if (!r.ok) return { ok: false, path, why: r.why };
     return {
@@ -1355,17 +1306,16 @@ export async function repairInbox(
     if (!before.ok) return { ok: false, path, why: before.why };
     const { lines, kept, dropped } = before;
     if (dropped.length > 0) {
-      // Preserve anything appended between the read above and this write —
-      // now only possible from a writer that does NOT go through this
-      // module's lock at all (there is none), so this is defense-in-depth
-      // rather than the primary guarantee it was before the lock above.
-      // Coercing a non-`ok` second read to an empty string and proceeding
-      // anyway would let a file that turned unreadable (or vanished)
-      // between the two reads overwrite from the stale first snapshot,
-      // discarding whatever changed — or throw out of `writeFileSync`
-      // entirely, outside this function's declared `RepairResult` contract
-      // (docomply-review, a reference-implementation pull request round 4). Abort with an explicit
-      // `ok: false` instead; nothing was written.
+      // Preserve anything appended between the read above and this write — now
+      // only possible from a writer that does NOT go through this module's lock
+      // at all (there is none), so this is defense-in-depth rather than the
+      // primary guarantee it was before the lock above. Coercing a non-`ok`
+      // second read to an empty string and proceeding anyway would let a file
+      // that turned unreadable (or vanished) between the two reads overwrite
+      // from the stale first snapshot, discarding whatever changed — or throw
+      // out of `writeFileSync` entirely, outside this function's declared
+      // `RepairResult` contract. Abort with an explicit `ok: false` instead;
+      // nothing was written.
       const after = readMailboxFile(path);
       if (after.kind !== "ok") {
         return {
@@ -1379,16 +1329,14 @@ export async function repairInbox(
       }
       const suffix = appendedSince(before.before.raw, after.raw);
       // `atomicWrite` (temp-file-then-rename), not a plain `writeFileSync`,
-      // which truncates the live file in place before writing the new
-      // content: a kill, power loss, or write failure between truncation
-      // and completion would leave the inbox empty (or partial) — and an
-      // EMPTY file folds as CLEAR, so an active hold-push directive
-      // `repair` was in the middle of rewriting could vanish and let a
-      // push through that should have been blocked (docomply-review /
-      // chatgpt-codex-connector, a reference-implementation pull request round 6). `renameSync` is atomic
-      // on every filesystem this runs on: the target either has the OLD
-      // complete content or the NEW complete content, never a partial
-      // mixture.
+      // which truncates the live file in place before writing the new content:
+      // a kill, power loss, or write failure between truncation and completion
+      // would leave the inbox empty (or partial) — and an EMPTY file folds as
+      // CLEAR, so an active hold-push directive `repair` was in the middle of
+      // rewriting could vanish and let a push through that should have been
+      // blocked. `renameSync` is atomic on every filesystem this runs on: the
+      // target either has the OLD complete content or the NEW complete content,
+      // never a partial mixture.
       atomicWrite(path, kept.map((l) => `${l}\n`).join("") + suffix);
     }
     return {

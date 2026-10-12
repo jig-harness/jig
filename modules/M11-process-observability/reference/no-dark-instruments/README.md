@@ -1,14 +1,14 @@
 # No dark instruments
 
-The hard-won lesson this gate ports: **an instrument that is provisioned but
+The lesson this gate enforces: **an instrument that is provisioned but
 fail-open is worse than none.** A metric that sits on the dashboard with a
 `source` that was never connected — an unset key, a `TODO` query — reads as a
 real measurement while it is silently dark, so the "measure" step *looks* done
 and process decisions run on a gauge that reads zero because nothing feeds it.
-In the reference implementation this showed up as an adoption-rate metric left
-as a `TODO` and several review-measurement keys never set: the flywheel's
-[measure step](../../../M8-learning-loop/) was partly aspirational, and nobody
-could see it. This gate makes "claimed but not wired" a mechanical failure.
+In practice it looks like an adoption-rate metric left as a `TODO` and several
+review-measurement keys never set: the flywheel's
+[measure step](../../../M8-learning-loop/) is then partly aspirational, and
+nobody can see it. This gate makes "claimed but not wired" a mechanical failure.
 
 ## What it enforces
 
@@ -23,9 +23,10 @@ if **any metric's `source` is missing, empty, or a placeholder**:
 
 A dark instrument **fails the gate** (exit 1). A registry with no `metrics:`
 collection at all, or one whose content is not a block list of `- ` items (a
-bare mapping, or a stray key between or after items), is a **format error** (exit 2), kept distinct so a
-misspelled key or a malformed block never reads as a clean, metric-free run. A present-but-empty `metrics:`
-collection is a legitimate "nothing registered yet" state and passes.
+bare mapping, or a stray key between or after items), is a **format error**
+(exit 2), kept distinct so a misspelled key or a malformed block never reads as
+a clean, metric-free run. A present-but-empty `metrics:` collection is a
+legitimate "nothing registered yet" state and passes.
 
 The gate deliberately checks only `source` — the one field that decides whether
 a number is real. A registry also carries an `owner` per metric (so a dark
@@ -34,8 +35,9 @@ not this low-false-positive gate's job.
 
 ## Mechanism
 
-Native Bun/TypeScript (no shell utilities). It parses each metric's own `id` and
-`source` keys (nested content under other keys is ignored) and matches the source against the placeholder set above.
+Native Bun/TypeScript (no shell utilities). It parses each metric's own `id`
+and `source` keys (nested content under other keys is ignored) and matches the
+source against the placeholder set above.
 
 ```sh
 REGISTRY=metrics-registry.yaml bun ./check-metrics-wired.ts
@@ -55,12 +57,16 @@ a metric to the registry, but not with an unwired source.
 | `check-metrics-wired.ts` | the gate; `REGISTRY` arg/env selects the input |
 | `check-metrics-wired.test.ts` | paired self-test (exit codes + the named dark metric) |
 | `fixtures/good/metrics-registry.yaml` | every source wired — must pass |
+| `fixtures/good/commented-header.yaml` | a comment after the `metrics:` header — must pass |
 | `fixtures/empty-registry.yaml` | present-but-empty collection — must pass |
 | `fixtures/bad/todo-source.yaml` | a `TODO` source — must fail |
 | `fixtures/bad/empty-source.yaml` | a blank source — must fail |
 | `fixtures/bad/missing-source.yaml` | no source key — must fail |
 | `fixtures/bad/placeholder-variants.yaml` | mixed-case placeholders — must fail |
+| `fixtures/bad/empty-list-source.yaml` | a source that is an empty list (`[]`) — must fail |
+| `fixtures/bad/commented-header-todo-source.yaml` | a commented `metrics:` header must not hide a dark metric — must fail |
 | `fixtures/bad/no-metrics-key.yaml` | no `metrics:` collection — must error |
+| `fixtures/bad/scalar-metrics.yaml` | `metrics:` is a scalar, not a collection — must error |
 | `fixtures/bad/mapping-metrics.yaml` | block mapping instead of a list — must error |
 | `fixtures/bad/stray-after-item.yaml` | stray key after a valid item — must error |
 | `fixtures/good/nested-list.yaml` | a list nested inside an item — must pass as one metric |

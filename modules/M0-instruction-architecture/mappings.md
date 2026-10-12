@@ -42,15 +42,18 @@ Skills — packaged, named procedures an agent can invoke (see the
 [glossary](../../GLOSSARY.md)) — are the one layer where runtimes scan
 *different directories* for the *same kind of content*, so a pointer line
 doesn't work — the runtime
-needs real files in its scan path. The portable mechanism (proven in the
-reference implementation):
+needs real files in its scan path. The portable mechanism:
 
 - Author skills once in a canonical directory (`.claude/skills/`).
 - Maintain the other runtime's directory (`.agents/skills/`) as a
   **gitignored symlink farm** pointing back at the canonical one,
   regenerated on every dependency install and drift-checked from a
   pre-push hook.
-- Script + full recipe: [reference/sync-skills-mirror.ts](reference/sync-skills-mirror.ts).
+- Script, usage and recipe (in its header comment):
+  [reference/sync-skills-mirror.ts](reference/sync-skills-mirror.ts). Run it
+  with no argument to create, repair and prune the links; `--check` only
+  reports drift and exits 1. `CANONICAL_DIR` and `MIRROR_DIR` override the two
+  directories.
 
 Fallback for runtimes with no skill discovery at all: reference the skill
 by path in the instruction file ("read `.claude/skills/<name>/SKILL.md`
@@ -60,3 +63,15 @@ The skill mirror command runs under the pinned Bun runtime; see
 [tools/README.md](../../tools/README.md) for the source-checkout layout.
 Windows requires Developer Mode or permission to create symlinks for this
 optional discovery mirror; it never substitutes copies for the canonical skills.
+
+## Model tiers per vendor
+
+The tiers of the [model routing policy](reference/model-routing-policy.md)
+are roles; these are the model families that filled them in mid-2026. Verify
+against the vendor's current lineup and pricing before relying on them.
+
+| Tier | Anthropic | OpenAI |
+|------|-----------|--------|
+| **Strategic** | Claude Opus-class | GPT-5-class flagship |
+| **Execution** | Claude Sonnet-class | mid-tier GPT |
+| **Scout** | Claude Haiku-class | `*-mini` models |

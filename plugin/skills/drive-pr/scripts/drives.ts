@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 /**
  * drives.ts — the operator's answer to "who is driving what, from where?"
- *.
  *
  * A drive is routinely armed as a background child of a session that ends
  * long before the drive does (do-item's "Arm the drive" step), so the
@@ -29,12 +28,10 @@
  *                            process is alive, not that it is progressing
  *   drives.ts --json         the same LOCK rows, as JSON — every PR-kind row
  *                            also carries `doctor: {verdict, reason,
- *                            recovery}`, the same classification
- *                            `--doctor` prints in human form. Same
- *                            POPULATION as the plain listing: lock
- *                            directories only, which is what
- *                            `tools/dev/herdr-status-board.ts` consumes this
- *                            mode for.
+ *                            recovery}`, the same classification `--doctor`
+ *                            prints in human form. Same POPULATION as the plain
+ *                            listing: lock directories only, which is what a
+ *                            status board polling this mode consumes.
  *   drives.ts --doctor       one classified verdict per drive in the state
  *                            universe — HEALTHY, WEDGED,
  *                            DEAD_WITH_LEFTOVERS, QUOTA_PARKED, NEEDS_HUMAN
@@ -150,10 +147,9 @@ const WORKTREE_LOCK = /^pr-drive-worktree-([0-9a-f]+)\.lock$/;
  * driver.
  *
  * Defence in depth only: argv can prove "a drive.ts process", never "the
- * process that wrote THIS claim" — a pid recycled onto a different live
- * driver passes it (both reviewers, PR #4083 round 3). The authoritative
- * identity check is the claim binding in `stop()`: the pid's start time
- * must not postdate the claim's acquisition timestamp.
+ * process that wrote THIS claim" — a pid recycled onto a different live driver
+ * passes it. The authoritative identity check is the claim binding in `stop()`:
+ * the pid's start time must not postdate the claim's acquisition timestamp.
  */
 const DRIVER_CMD = /(^|[\s/])drive\.ts(\s|$)/;
 
@@ -191,10 +187,10 @@ interface LockRow {
   dir: string;
   /**
    * `live`/`stale` are the two verdicts a readable single claim gets, by
-   * `claimLive`. The rest are the fail-closed shapes: a lock this listing
-   * could not positively interpret is REPORTED, never silently dropped — a
-   * dropped row reads as "not held", which is the one thing an unreadable
-   * lock never established (.claude/rules/document-scanning-gates.md § 1).
+   * `claimLive`. The rest are the fail-closed shapes: a lock this listing could
+   * not positively interpret is REPORTED, never silently dropped — a dropped
+   * row reads as "not held", which is the one thing an unreadable lock never
+   * established.
    */
   state: "live" | "stale" | "empty" | "contested" | "unreadable";
   pid: number | null;
@@ -207,9 +203,9 @@ interface LockRow {
    * site so every surface answers the question identically: the text listing's
    * `self:` line, `--json`, and the `--here` banner. It was derived inline at
    * the text site alone, and a pass that censused with `--json` — the natural
-   * machine-readable choice — got no self signal at all, stood down against
-   * its own parent and burned two no-op rounds (measured on PR #4106, by that
-   * PR's own drive; the same shape an earlier change fixed for the label).
+   * machine-readable choice — got no self signal at all, stood down against its
+   * own parent and burned two no-op rounds (measured; the same shape was
+   * already fixed for the label).
    */
   self: boolean;
   /**
@@ -238,43 +234,41 @@ interface LockRow {
  * (a foreign driver), never toward "proceed". An unset $DRIVE_PR_SESSION means
  * the reader is not a pass at all, which answers false for the same reason.
  *
- * A pid is REUSED, though, and that is the gap this function closes second
- * (docomply-review, a reference-implementation pull request): a dead driver's still-fresh claim whose pid the
- * OS handed to this pass's own parent reads live to `claimLive` and matches
- * $DRIVE_PR_SESSION, so pid+host alone would grant `self` over a lock the
- * parent never took. `drive.ts` therefore exports its claim's own acquisition
- * token as $DRIVE_PR_SESSION_STARTED, and when the claim carries a `started`
- * of its own the two must be EQUAL — the same instance-token correlation this
- * file already uses to tie a worktree lock to a PR lock.
+ * A pid is REUSED, though, and that is the gap this function closes second: a
+ * dead driver's still-fresh claim whose pid the OS handed to this pass's own
+ * parent reads live to `claimLive` and matches $DRIVE_PR_SESSION, so pid+host
+ * alone would grant `self` over a lock the parent never took. `drive.ts`
+ * therefore exports its claim's own acquisition token as
+ * $DRIVE_PR_SESSION_STARTED, and when the claim carries a `started` of its own
+ * the two must be EQUAL — the same instance-token correlation this file already
+ * uses to tie a worktree lock to a PR lock.
  *
- * The token is required whenever THIS process's environment supplies one —
- * not only when the on-disk claim also happens to carry one. `drive.ts`
- * always exports both together, so a pass holding
- * $DRIVE_PR_SESSION_STARTED is necessarily a pass whose own parent writes
- * diagnostics into every claim it takes; a live claim matching pid+host but
- * carrying no `started` at all is therefore proven to be a DIFFERENT
- * process's claim — the exact pid-recycling case this token exists to catch
- * — and must answer false, not fall back to the legacy heuristic
- * (chatgpt-codex-connector, a reference-implementation pull request: the prior `token !== '' && diag !==
- * null` guard let a diagnostics-free claim ride pid+host to `self` even with
- * a token present). Only a harness opting in by hand
- * (`DRIVE_PR_SESSION=<agent pid>`, SKILL.md § 6), which exports no token at
- * all, still falls back to pid+host — demanding a token there would answer
- * false for every pass under that configuration, which is the stand-down bug
- * this whole mechanism exists to prevent, in the one direction that is
- * silent.
+ * The token is required whenever THIS process's environment supplies one — not
+ * only when the on-disk claim also happens to carry one. `drive.ts` always
+ * exports both together, so a pass holding $DRIVE_PR_SESSION_STARTED is
+ * necessarily a pass whose own parent writes diagnostics into every claim it
+ * takes; a live claim matching pid+host but carrying no `started` at all is
+ * therefore proven to be a DIFFERENT process's claim — the exact pid-recycling
+ * case this token exists to catch — and must answer false, not fall back to the
+ * legacy heuristic (the prior `token !== '' && diag !== null` guard let a
+ * diagnostics-free claim ride pid+host to `self` even with a token present).
+ * Only a harness opting in by hand (`DRIVE_PR_SESSION=<agent pid>`, SKILL.md §
+ * 6), which exports no token at all, still falls back to pid+host — demanding a
+ * token there would answer false for every pass under that configuration, which
+ * is the stand-down bug this whole mechanism exists to prevent, in the one
+ * direction that is silent.
  *
- * That fallback is narrower than "no token on our side", though (docomply-
- * review, PR #4106): it is sanctioned ONLY for the genuine older
- * legacy case, which by construction writes a diagnostics-free claim of its
- * own — so the fallback must additionally require `diag === null`. A claim
- * that DOES carry diagnostics can never be that harness's own write (only
- * `drive.ts`'s `acquire` stamps diagnostics, and it always exports the
- * token alongside them), so a diagnostics-bearing claim matching pid+host
- * while OUR OWN env carries no token is proof of an unrelated process — most
- * plausibly a modern, still-diagnosed claim from a dead driver whose pid got
- * recycled — and must answer false rather than silently trusting pid+host
- * over evidence that contradicts it.
+ * That fallback is narrower than "no token on our side", though: it is
+ * sanctioned ONLY for the genuine older legacy case, which by construction
+ * writes a diagnostics-free claim of its own — so the fallback must
+ * additionally require `diag === null`. A claim that DOES carry diagnostics can
+ * never be that harness's own write (only `drive.ts`'s `acquire` stamps
+ * diagnostics, and it always exports the token alongside them), so a
+ * diagnostics-bearing claim matching pid+host while OUR OWN env carries no
+ * token is proof of an unrelated process — most plausibly a modern,
+ * still-diagnosed claim from a dead driver whose pid got recycled — and must
+ * answer false rather than silently trusting pid+host over evidence that
+ * contradicts it.
  */
 function ownParentDriver(
   pid: number | null,
@@ -364,8 +358,8 @@ function listRows(stateDir: string): LockRow[] {
   try {
     entries = readdirSync(stateDir);
   } catch {
-    // A state dir that cannot be read has verified nothing — say so rather
-    // than return an empty fleet (document-scanning-gates § 1).
+    // A state dir that cannot be read has verified nothing — say so rather than
+    // return an empty fleet.
     fail(1, `drives.ts: cannot read the state dir ${stateDir}`);
   }
   const rows: LockRow[] = [];
@@ -408,15 +402,15 @@ const STATE_FILE = /^drive-pr-(\d+)\.json$/;
  * park, `NEEDS_HUMAN` once every remaining item is parked) this feature was
  * built to answer.
  *
- * Deliberately scoped to `--doctor` (and `--doctor --json`) only, NOT the
- * plain listing or plain `--json` — a considered choice, not an oversight:
- * the plain listing's own stated purpose is "list every drive LOCK" (see the
- * module header), and a state-file-only row has no lock to report — showing
- * one there would be new information arriving through a surface that never
- * promised to carry it, and `tools/dev/herdr-status-board.ts`'s plain-`--json`
- * poll has no use for a row it would immediately filter out (it only reads
- * `state === 'live'`). `--doctor` is a state-derived health judgment, so it is
- * the one surface whose whole job is exactly this kind of row.
+ * Deliberately scoped to `--doctor` (and `--doctor --json`) only, NOT the plain
+ * listing or plain `--json` — a considered choice, not an oversight: the plain
+ * listing's own stated purpose is "list every drive LOCK" (see the module
+ * header), and a state-file-only row has no lock to report — showing one there
+ * would be new information arriving through a surface that never promised to
+ * carry it, and a status board polling plain `--json` has no use for a row it
+ * would immediately filter out (it only reads `state === 'live'`). `--doctor`
+ * is a state-derived health judgment, so it is the one surface whose whole job
+ * is exactly this kind of row.
  *
  * Returns ONLY the rows `listRows` did not already report — a PR with a live
  * (or stale, or contested…) lock is represented by `listRows`'s own row, not
@@ -441,18 +435,17 @@ export function listStateOnlyRows(
   try {
     entries = readdirSync(stateDir);
   } catch (e) {
-    // `listRows` above already read (or fatally failed on) this exact
-    // directory moments ago, so ENOENT here means it vanished in the
-    // narrow TOCTOU window between that read and this one — positively
-    // benign, matching `readLock`'s own ENOENT-is-not-an-error stance, and
-    // "no extra rows" is the correct answer for a directory that is
-    // genuinely gone. Anything else (a transient permission, descriptor, or
-    // I/O error) is NOT that case, and treating it identically would
-    // silently convert a read failure into an empty population — hiding
-    // exactly the quota-parked and human-parked drives whose normal exit
-    // already removed their lock directories, which is the entire reason
-    // this second census exists (review finding; document-scanning-gates.md
-    // § 1: fail closed on input the gate cannot read).
+    // `listRows` above already read (or fatally failed on) this exact directory
+    // moments ago, so ENOENT here means it vanished in the narrow TOCTOU window
+    // between that read and this one — positively benign, matching `readLock`'s
+    // own ENOENT-is-not-an-error stance, and "no extra rows" is the correct
+    // answer for a directory that is genuinely gone. Anything else (a transient
+    // permission, descriptor, or I/O error) is NOT that case, and treating it
+    // identically would silently convert a read failure into an empty
+    // population — hiding exactly the quota-parked and human-parked drives
+    // whose normal exit already removed their lock directories, which is the
+    // entire reason this second census exists (fail closed on input the gate
+    // cannot read).
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
     fail(
       1,
@@ -476,19 +469,18 @@ export function listStateOnlyRows(
     // lifecycle pass, so this is a STEADY-STATE property, not a one-off from
     // the older files that happen to dominate the count today.
     //
-    // The filter is not a fail-open. Rule 1 of
-    // `.claude/rules/document-scanning-gates.md` is about input the gate
-    // CANNOT READ, and an UNREADABLE state file is still reported — that is
-    // the `!snapshot.ok` arm below, and it is exactly the "your state dir is
-    // full of files this version refuses" signal an operator needs. What is
-    // dropped is the opposite case: a file read SUCCESSFULLY, which
-    // positively says there is no park and nothing parked. Those are the only
-    // two verdicts a lock-less row can ever carry — `DEAD_WITH_LEFTOVERS`
-    // needs a worktree path, and a row with no claim has no `diag` to supply
-    // one — so a readable, park-free, nothing-parked state file has no
-    // reachable finding to hide. Reporting it as `UNKNOWN` would not be
-    // caution; it would be noise asserted with the same word this classifier
-    // uses for genuine uncertainty.
+    // The filter is not a fail-open. Failing closed is about input the gate
+    // CANNOT READ, and an UNREADABLE state file is still reported — that is the
+    // `!snapshot.ok` arm below, and it is exactly the "your state dir is full
+    // of files this version refuses" signal an operator needs. What is dropped
+    // is the opposite case: a file read SUCCESSFULLY, which positively says
+    // there is no park and nothing parked. Those are the only two verdicts a
+    // lock-less row can ever carry — `DEAD_WITH_LEFTOVERS` needs a worktree
+    // path, and a row with no claim has no `diag` to supply one — so a
+    // readable, park-free, nothing-parked state file has no reachable finding
+    // to hide. Reporting it as `UNKNOWN` would not be caution; it would be
+    // noise asserted with the same word this classifier uses for genuine
+    // uncertainty.
     const snapshot = readStateSnapshot(stateDir, pr);
     if (
       snapshot.ok &&
@@ -519,26 +511,24 @@ export function listStateOnlyRows(
   return rows;
 }
 
-// Absolute, so the copied command resolves from any cwd — a repo-relative
-// hint breaks for an operator standing in a subdirectory (coderabbitai,
-// PR #4083 round 5) — and shell-quoted, so it survives a repository path
-// containing whitespace (chatgpt-codex-connector, round 6). Delegates to
-// `lib/doctor.ts`'s `formatStopCommand` so this listing's own
-// stop hint and a WEDGED row's `recovery` command are the SAME format,
-// produced by the same function, rather than two hand-maintained copies of
-// `bun <self> --stop <pr>` that could drift.
+// Absolute, so the copied command resolves from any cwd — a repo-relative hint
+// breaks for an operator standing in a subdirectory — and shell-quoted, so it
+// survives a repository path containing whitespace. Delegates to
+// `lib/doctor.ts`'s `formatStopCommand` so this listing's own stop hint and a
+// WEDGED row's `recovery` command are the SAME format, produced by the same
+// function, rather than two hand-maintained copies of `bun <self> --stop <pr>`
+// that could drift.
 const SELF = fileURLToPath(import.meta.url);
 const stopHint = (pr: string): string => formatStopCommand(SELF, pr);
 
 /**
- * `--stop` binds the pid to the claim via a POSIX `ps` probe and refuses
- * every live claim where that probe cannot run — so on a `ps`-less host the
- * command can never succeed, and advertising it would hand the operator a
- * hint guaranteed to refuse (chatgpt-codex-connector, a reference-implementation pull request round 9).
- * Detected by looking for an executable `ps` on PATH rather than assumed
- * from the platform: a POSIX host can lack `ps` too (docomply-review,
- * round 10). The probe itself still runs and fails closed either way —
- * this only governs whether hints advertise the command.
+ * `--stop` binds the pid to the claim via a POSIX `ps` probe and refuses every
+ * live claim where that probe cannot run — so on a `ps`-less host the command
+ * can never succeed, and advertising it would hand the operator a hint
+ * guaranteed to refuse. Detected by looking for an executable `ps` on PATH
+ * rather than assumed from the platform: a POSIX host can lack `ps` too. The
+ * probe itself still runs and fails closed either way — this only governs
+ * whether hints advertise the command.
  */
 const STOP_WORKS_HERE =
   process.platform !== "win32" &&
@@ -556,9 +546,8 @@ const STOP_WORKS_HERE =
 //
 // This is the I/O half of `--doctor` — `lib/doctor.ts`'s `classifyDrive` is
 // pure and does none of it. Every read below degrades to the `null`/`false`
-// that drives `classifyDrive` toward `UNKNOWN` rather than throwing or
-// silently treating a failed read as "nothing to report"
-// (.claude/rules/document-scanning-gates.md § 1).
+// that drives `classifyDrive` toward `UNKNOWN` rather than throwing or silently
+// treating a failed read as "nothing to report".
 
 /**
  * Read `drive-pr-<pr>.json` DIRECTLY — no `openStore`, no lock. This command
@@ -588,9 +577,9 @@ function readStateSnapshot(
  * What a driven worktree still holds, for `classifyDrive`'s
  * `DEAD_WITH_LEFTOVERS` check. `null` on ANY probe failure — including a
  * resolvable-but-empty upstream — rather than reporting a partial answer:
- * `DoctorLeftovers` has no per-field "unknown", so a probe this function
- * cannot complete must fail the WHOLE record rather than guess a boolean for
- * the field it could not determine (document-scanning-gates § 1).
+ * `DoctorLeftovers` has no per-field "unknown", so a probe this function cannot
+ * complete must fail the WHOLE record rather than guess a boolean for the field
+ * it could not determine.
  *
  * Three SEPARATE probes, deliberately not folded into `drive.ts`'s own
  * `leftoverReport`: that function has no notion of "unpushed" at all (a
@@ -632,10 +621,10 @@ export async function gatherWorktreeLeftovers(
   if (!op.ok) return null;
   // A missing upstream is not "0 unpushed commits" and not "some unpushed
   // commits" — it is a DIFFERENT question this probe cannot answer, checked
-  // STRUCTURALLY (does `@{u}` resolve at all) before ever asking `rev-list`
-  // to count against it, rather than inferring the cause from `rev-list`'s
-  // own exit code or stderr text (document-scanning-gates § 3: parse or pin,
-  // never pattern-match a failure's cause).
+  // STRUCTURALLY (does `@{u}` resolve at all) before ever asking `rev-list` to
+  // count against it, rather than inferring the cause from `rev-list`'s own
+  // exit code or stderr text (parse or pin, never pattern-match a failure's
+  // cause).
   const upstream = await git(
     ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
     { stderr: "ignore", timeoutSec, cwd: worktree, env },
@@ -690,45 +679,42 @@ async function gatherDoctorInput(
   // A FUTURE `lastProgressAt` (clock skew between the machine that stamped it
   // and this one, or a corrupted/hand-edited state file) makes the subtraction
   // go negative, which reads as "definitely not stale" and — combined with a
-  // `passChild` this machine has no way to confirm — reaches `HEALTHY`
-  //. `null` is the honest answer: this
-  // classifier has no basis for believing progress is fresher than "now"
-  // permits, so it is treated exactly like "never recorded" rather than like
-  // the freshest possible stamp.
+  // `passChild` this machine has no way to confirm — reaches `HEALTHY`. `null`
+  // is the honest answer: this classifier has no basis for believing progress
+  // is fresher than "now" permits, so it is treated exactly like "never
+  // recorded" rather than like the freshest possible stamp.
   const progressAgeMs =
     rawProgressAgeMs !== null && rawProgressAgeMs < 0 ? null : rawProgressAgeMs;
-  // `''` is a LEGAL `ClaimDiag.worktree` (`claim.ts` only checks
-  // `typeof === 'string'`) — `drive.ts` writes it when `git rev-parse
-  // --show-toplevel` itself failed at acquisition time. Read as `null`, not
-  // as a worktree path: `''` handed to `git -C '' …` resolves to THIS
-  // process's own cwd, not "no worktree", which turned an unrelated dirty
-  // operator cwd into a stranger's reported leftovers (an earlier change
-  // round 2 M5).
+  // `''` is a LEGAL `ClaimDiag.worktree` (`claim.ts` only checks `typeof ===
+  // 'string'`) — `drive.ts` writes it when `git rev-parse --show-toplevel`
+  // itself failed at acquisition time. Read as `null`, not as a worktree path:
+  // `''` handed to `git -C '' …` resolves to THIS process's own cwd, not "no
+  // worktree", which turned an unrelated dirty operator cwd into a stranger's
+  // reported leftovers.
   const worktreePath =
     row.diag?.worktree === undefined || row.diag.worktree === ""
       ? null
       : row.diag.worktree;
   const isLocal = hostIsLocal(row.host);
   // `passChild` is a pure walk over the shared snapshot — no subprocess of its
-  // own, so it costs nothing to compute for every row. Gated on `isLocal`
-  //: a foreign-host claim's `pid` is a number in
-  // a DIFFERENT machine's process table, and walking it against THIS
-  // machine's `procs` snapshot would either find nothing (a false `false`,
-  // manufacturing a WEDGED alarm `--stop` cannot act on) or — worse — find a
-  // LOCAL process that happens to share the same pid number and has children
-  // of its own (a false `true`, reporting a drive that isn't even on this
-  // machine as `HEALTHY`).
+  // own, so it costs nothing to compute for every row. Gated on `isLocal`: a
+  // foreign-host claim's `pid` is a number in a DIFFERENT machine's process
+  // table, and walking it against THIS machine's `procs` snapshot would either
+  // find nothing (a false `false`, manufacturing a WEDGED alarm `--stop` cannot
+  // act on) or — worse — find a LOCAL process that happens to share the same
+  // pid number and has children of its own (a false `true`, reporting a drive
+  // that isn't even on this machine as `HEALTHY`).
   const passChild: PassChildAnswer =
     isLocal && procs !== null && row.pid !== null
       ? findPassChild(row.pid, procs)
       : null;
   // The leftovers probe is FOUR `git` subprocesses, and `classifyDrive` reads
   // it on exactly one branch — the one `noLiveDriver` guards. Skipping it
-  // elsewhere keeps the cost of the plain listing (which
-  // `tools/dev/herdr-status-board.ts` polls) proportional to the drives whose
-  // verdict can actually turn on it, rather than to the whole fleet. The
-  // predicate is IMPORTED from the classifier rather than restated here, so
-  // there is no second copy to drift out of step with its precedence order.
+  // elsewhere keeps the cost of the plain listing (which a status board polls)
+  // proportional to the drives whose verdict can actually turn on it, rather
+  // than to the whole fleet. The predicate is IMPORTED from the classifier
+  // rather than restated here, so there is no second copy to drift out of step
+  // with its precedence order.
   const leftovers =
     worktreePath !== null && noLiveDriver(row.state)
       ? await gatherWorktreeLeftovers(worktreePath)
@@ -785,12 +771,11 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
   }
   // A live driver holds two locks (worktree first, then PR) with one pid —
   // present each such pair as ONE drive, keyed by owner, with any unpaired or
-  // non-live rows listed individually after it. The key carries the
-  // acquisition timestamp too: one acquisition writes one diag to both
-  // locks, so `started` distinguishes two acquisitions that collide on
-  // host/pid via pid reuse — merging them would correlate an abandoned
-  // claim with another driver's PR lock (chatgpt-codex-connector, a reference-implementation pull request
-  // round 5).
+  // non-live rows listed individually after it. The key carries the acquisition
+  // timestamp too: one acquisition writes one diag to both locks, so `started`
+  // distinguishes two acquisitions that collide on host/pid via pid reuse —
+  // merging them would correlate an abandoned claim with another driver's PR
+  // lock.
   const liveByOwner = new Map<string, LockRow[]>();
   const rest: LockRow[] = [];
   for (const row of rows) {
@@ -798,7 +783,7 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
       // A diag-less legacy claim has NO acquisition token, so it may never
       // merge with anything — mapping every missing `started` to one value
       // would group two unrelated legacy claims sharing a recycled pid as
-      // one driver (coderabbitai, PR #4083 round 9). Key it by its own lock
+      // one driver. Key it by its own lock
       // instead, so it always lists alone.
       const owner =
         row.diag !== null
@@ -814,14 +799,13 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
   for (const group of liveByOwner.values()) {
     const pid = group[0]?.pid;
     const prRows = group.filter((r) => r.kind === "pr");
-    // The lock NAME is authoritative for what this owner drives; the
-    // advisory diagnostics may only LABEL, never aim — a corrupt or stale
-    // diagnostics line must not point the stop command at a different PR's
-    // driver (docomply-review, a reference-implementation pull request round 1). So the stop hint exists
-    // only when EXACTLY ONE live PR lock is in the group — two naming the
-    // same owner is lock debris or a corrupt claim, and directory order
-    // must not pick which PR the hint targets (round 2) — and a diagnostics
-    // line that disagrees with the held PR lock is called out, not trusted.
+    // The lock NAME is authoritative for what this owner drives; the advisory
+    // diagnostics may only LABEL, never aim — a corrupt or stale diagnostics
+    // line must not point the stop command at a different PR's driver. So the
+    // stop hint exists only when EXACTLY ONE live PR lock is in the group — two
+    // naming the same owner is lock debris or a corrupt claim, and directory
+    // order must not pick which PR the hint targets — and a diagnostics line
+    // that disagrees with the held PR lock is called out, not trusted.
     const prRow = prRows.length === 1 ? prRows[0] : undefined;
     const diag = group.find((r) => r.diag !== null)?.diag ?? null;
     const drivenPr = prRow?.key ?? null;
@@ -838,8 +822,7 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
     console.log(
       // Host from the ROW, not parsed out of the grouping key — the key is
       // an internal composite (`legacy:` prefix, acquisition timestamp) and
-      // splitting it displayed "legacy" as a hostname
-      // (chatgpt-codex-connector, a reference-implementation pull request round 11).
+      // splitting it displayed "legacy" as a hostname.
       `● ${label} — LIVE, driver pid ${pid} (${group[0]?.host || "this host"}), claim refreshed ${age ?? "?"}s ago`,
     );
     if (diag !== null) {
@@ -867,11 +850,11 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
     // The one reader this line exists for is a PASS: without it the pass
     // applies the second-driver rule to the driver that spawned it and stands
     // down every round while the driver counts each refusal as a completed
-    // round (five wasted rounds on PR #4089, ten on PR #4102 —
-    //). The predicate is `ownParentDriver`, read off the row
-    // rather than re-derived here: this line and `--json`'s `self` field
-    // answer one question, and the copy that used to live at this site was the
-    // only one that existed — leaving `--json` silent (PR #4106).
+    // round (measured: up to ten wasted rounds on one PR). The predicate is
+    // `ownParentDriver`, read off the row rather than re-derived here: this
+    // line and `--json`'s `self` field answer one question, and the copy that
+    // used to live at this site was the only one that existed — leaving
+    // `--json` silent.
     if (group[0]?.self === true) {
       console.log(
         `    self:     pid ${pid} is $DRIVE_PR_SESSION — this is YOUR OWN parent driver, and you are the pass it spawned. The second-driver rule does not apply: proceed with the round; do not stand down, do not clear the lease.`,
@@ -891,11 +874,11 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
       );
     }
     if (drivenPr !== null) {
-      // Suppressed for one's own parent, exactly as the `--here` banner does
-      // (chatgpt-codex-connector, a reference-implementation pull request): printing a usable `--stop` under
-      // a line that just said "proceed, this driver is yours" hands the pass a
-      // command that kills the drive it exists to serve. The rest of the group
-      // still prints — only the aimed weapon is withheld.
+      // Suppressed for one's own parent, exactly as the `--here` banner does:
+      // printing a usable `--stop` under a line that just said "proceed, this
+      // driver is yours" hands the pass a command that kills the drive it
+      // exists to serve. The rest of the group still prints — only the aimed
+      // weapon is withheld.
       if (group[0]?.self === true) {
         console.log(
           "    stop:     withheld — this is your own parent driver; stopping it would end the drive you are a round of.",
@@ -998,10 +981,9 @@ function printDoctor(stateDir: string, rows: readonly LockRow[]): void {
  */
 async function here(stateDir: string): Promise<number> {
   // Deadlined: under SessionStart a hung git would otherwise run until the
-  // outer hook kills the banner, which reads as "checked, and clear" — the
-  // one thing a failed check must never look like (docomply-review,
-  // a reference-implementation pull request round 6). On expiry `root.code` is non-zero and the warning
-  // path below fires as promised.
+  // outer hook kills the banner, which reads as "checked, and clear" — the one
+  // thing a failed check must never look like. On expiry `root.code` is
+  // non-zero and the warning path below fires as promised.
   const root = await git(["rev-parse", "--show-toplevel"], {
     stderr: "ignore",
     timeoutSec: gitCallTimeoutSeconds(),
@@ -1024,23 +1006,22 @@ async function here(stateDir: string): Promise<number> {
     );
     return 0;
   }
-  // The stop hint must come from an AUTHORITATIVE source — a live per-PR
-  // lock whose NAME this same owner holds — never from the advisory
-  // diagnostics alone: a stale or corrupt diagnostics line would otherwise
-  // aim --stop at a different PR's driver (docomply-review, a reference-implementation pull request
-  // round 1). Best-effort: a correlation that cannot be read degrades to the
-  // unverified wording, never to a loud failure — this is still the banner.
-  // And it must be UNIQUE: two live PR locks naming this same owner is lock
-  // debris or a corrupt claim, and directory order must not pick which PR
-  // the stop command targets (docomply-review, a reference-implementation pull request round 2) — several
-  // matches degrade to the ambiguous wording, with no stop hint.
+  // The stop hint must come from an AUTHORITATIVE source — a live per-PR lock
+  // whose NAME this same owner holds — never from the advisory diagnostics
+  // alone: a stale or corrupt diagnostics line would otherwise aim --stop at a
+  // different PR's driver. Best-effort: a correlation that cannot be read
+  // degrades to the unverified wording, never to a loud failure — this is still
+  // the banner. And it must be UNIQUE: two live PR locks naming this same owner
+  // is lock debris or a corrupt claim, and directory order must not pick which
+  // PR the stop command targets — several matches degrade to the ambiguous
+  // wording, with no stop hint.
   let verifiedPr: string | null = null;
   let ambiguousPrs: string[] = [];
   try {
     // host/pid alone can collide ACROSS acquisitions: a driver killed
     // between its two lock writes leaves a live worktree claim whose pid,
     // recycled onto a different driver, would correlate with that driver's
-    // PR lock (chatgpt-codex-connector, a reference-implementation pull request round 5). One acquisition
+    // PR lock. One acquisition
     // writes ONE diag object to both locks, so `diag.started` is a free
     // instance token — require it to match, and degrade legacy diag-less
     // claims to the unverified wording rather than correlating them.
@@ -1067,14 +1048,14 @@ async function here(stateDir: string): Promise<number> {
         : row.diag !== null
           ? `claiming PR #${row.diag.pr} in its diagnostics (no matching live PR lock found)`
           : "driving an unknown PR (claim predates diagnostics)";
-  // A PASS's own SessionStart hook runs this banner, and the holder it finds
-  // is its own parent driver — so the unqualified warning below is the first
-  // thing that tells a pass to treat its driver as a rival, before it censuses
-  // anything (PR #4106: two no-op rounds, the shape reaching the pass
-  // through a surface the label never covered). Say so instead, and stop:
-  // every line after this one — "interactive edits here will race it", the
-  // stop command — is advice for a bystander, and is exactly wrong for the
-  // pass this tree is being driven FOR.
+  // A PASS's own SessionStart hook runs this banner, and the holder it finds is
+  // its own parent driver — so the unqualified warning below is the first thing
+  // that tells a pass to treat its driver as a rival, before it censuses
+  // anything (measured: two no-op rounds, the shape reaching the pass through a
+  // surface the label never covered). Say so instead, and stop: every line
+  // after this one — "interactive edits here will race it", the stop command —
+  // is advice for a bystander, and is exactly wrong for the pass this tree is
+  // being driven FOR.
   if (row.self) {
     console.log(
       `drive-pr: the live drive loop working THIS worktree is pid ${row.pid} — $DRIVE_PR_SESSION, i.e. YOUR OWN parent driver, ${driving}. You are the pass it spawned: proceed with the round. Do not stand down, do not stop it, do not clear its lease.`,
@@ -1095,10 +1076,9 @@ async function here(stateDir: string): Promise<number> {
   );
   if (row.diag !== null) console.log(`  Log: ${row.diag.log}`);
   // Never recommend a raw `kill <pid>` here: the claim proves liveness, not
-  // identity — --stop's process-table check exists precisely because a
-  // recycled pid can wear a fresh claim, and a banner bypassing that check
-  // would aim the operator at a possibly unrelated process (both reviewers,
-  // PR #4083 round 2).
+  // identity — --stop's process-table check exists precisely because a recycled
+  // pid can wear a fresh claim, and a banner bypassing that check would aim the
+  // operator at a possibly unrelated process.
   console.log(
     verifiedPr !== null && STOP_WORKS_HERE
       ? `  Stop it: ${stopHint(verifiedPr)}   (or leave the tree to it until it converges)`
@@ -1135,33 +1115,29 @@ async function stop(stateDir: string, pr: string): Promise<number> {
     return 1;
   }
   // A pid alone cannot prove the process is still THE driver: within the
-  // staleness window, a crashed driver's recycled pid answers kill(pid, 0)
-  // and its claim still reads live (chatgpt-codex-connector, a reference-implementation pull request
-  // round 1). Ask the process table, and FAIL CLOSED when it cannot
-  // answer: claim freshness proves liveness, never identity, so "could not
-  // verify" refuses rather than signals (both reviewers, round 2). Where
-  // `ps` cannot answer at all (e.g. Windows), --stop is unavailable by
-  // design; stop the driver with a tool that can name the process.
+  // staleness window, a crashed driver's recycled pid answers kill(pid, 0) and
+  // its claim still reads live. Ask the process table, and FAIL CLOSED when it
+  // cannot answer: claim freshness proves liveness, never identity, so "could
+  // not verify" refuses rather than signals. Where `ps` cannot answer at all
+  // (e.g. Windows), --stop is unavailable by design; stop the driver with a
+  // tool that can name the process.
   //
   // And argv alone cannot prove identity either — it verifies "a drive.ts
-  // process", never "the process that wrote THIS claim", so a pid recycled
-  // onto a DIFFERENT live driver would still pass it (both reviewers,
-  // round 3). Bind the pid to the claim itself: the claim records its
-  // acquisition time (`diag.started`, written by the driver AFTER it
-  // started), the process table reports the pid's elapsed time, and a
-  // process that started AFTER the claim was written cannot be the process
-  // that wrote it — the canonical (pid, start-time) process identity,
+  // process", never "the process that wrote THIS claim", so a pid recycled onto
+  // a DIFFERENT live driver would still pass it. Bind the pid to the claim
+  // itself: the claim records its acquisition time (`diag.started`, written by
+  // the driver AFTER it started), the process table reports the pid's elapsed
+  // time, and a process that started AFTER the claim was written cannot be the
+  // process that wrote it — the canonical (pid, start-time) process identity,
   // same-clock because a foreign host was already refused above. Every
   // unreadable input refuses: a legacy claim with no diagnostics line, an
   // unparsable timestamp, or an unparsable etime is inspected by hand, not
-  // signaled. The instant between a verified probe and `process.kill`
-  // remains the irreducible TOCTOU of POSIX kill-by-pid (this runtime
-  // exposes no pidfd equivalent); the binding narrows the exposure from
-  // the whole staleness window to that instant.
-  // Deadlined so a hung `ps` (OS/process-table trouble) cannot block --stop
-  // indefinitely: on expiry `run()` reports a non-zero code, which lands in
-  // the same fail-closed "could not verify" refusal below (docomply-review,
-  // a reference-implementation pull request round 4).
+  // signaled. The instant between a verified probe and `process.kill` remains
+  // the irreducible TOCTOU of POSIX kill-by-pid (this runtime exposes no pidfd
+  // equivalent); the binding narrows the exposure from the whole staleness
+  // window to that instant. Deadlined so a hung `ps` (OS/process-table trouble)
+  // cannot block --stop indefinitely: on expiry `run()` reports a non-zero
+  // code, which lands in the same fail-closed "could not verify" refusal below.
   const probe = await run(
     ["ps", "-o", "etime=", "-o", "command=", "-p", String(pid)],
     { stderr: "ignore", timeoutSec: 10 },
@@ -1207,11 +1183,10 @@ async function stop(stateDir: string, pr: string): Promise<number> {
     console.log(`Inspect the claim by hand before acting: ${row.dir}`);
     return 1;
   }
-  // A FUTURE acquisition time defeats the whole binding: `procStart >
-  // future + slack` is false for every process, so a recycled pid wearing a
-  // clock-skewed or corrupt claim would pass (docomply-review, a reference-implementation pull request
-  // round 11). A claim can never be legitimately acquired after "now", so
-  // materially-future is refused, not compared.
+  // A FUTURE acquisition time defeats the whole binding: `procStart > future +
+  // slack` is false for every process, so a recycled pid wearing a clock-skewed
+  // or corrupt claim would pass. A claim can never be legitimately acquired
+  // after "now", so materially-future is refused, not compared.
   if (claimStartedMs > Date.now() + START_SLACK_MS) {
     console.log(
       `refusing to signal pid ${pid}: the claim's acquisition time (${row.diag.started}) is in the future — clock skew or a corrupt claim, and a future bound accepts every process.`,
@@ -1231,10 +1206,9 @@ async function stop(stateDir: string, pr: string): Promise<number> {
   try {
     process.kill(pid, "SIGTERM");
   } catch (e) {
-    // Only ESRCH means "already stopped". EPERM means the driver is alive
-    // but owned by another user — reporting that as success would leave the
-    // drive running behind a green exit (chatgpt-codex-connector, a reference-implementation pull request
-    // round 10; same distinction pidAlive draws).
+    // Only ESRCH means "already stopped". EPERM means the driver is alive but
+    // owned by another user — reporting that as success would leave the drive
+    // running behind a green exit (same distinction pidAlive draws).
     if ((e as NodeJS.ErrnoException).code === "EPERM") {
       console.log(
         `cannot signal driver pid ${pid}: permission denied — it runs as another user on this host. Stop it from that user's session.`,
@@ -1312,7 +1286,7 @@ async function main(): Promise<number> {
   // runs on every session's own SessionStart hook, so merely opening an
   // otherwise-unused repository was minting a clone identity, creating the
   // state directory, and writing the migration marker purely to answer a
-  // read-only banner check (chatgpt-codex-connector, a reference-implementation pull request round 15).
+  // read-only banner check.
   if (hereMode) {
     let stateDir: string;
     try {
@@ -1334,18 +1308,18 @@ async function main(): Promise<number> {
     // actually lets that scenario be recovered from — without it, `--stop`
     // is unusable for the one case it is most needed, the same live-driver
     // scenario `migrate-legacy-state.ts`'s own refusal message points users at
-    // this command to resolve (docomply-review, a reference-implementation pull request round 7).
+    // this command to resolve.
     let stateDir: string;
     try {
       stateDir = await resolveStateDir();
     } catch (e) {
       // Narrowed to the migration-guard shape specifically, not every
       // `resolveStateDir()` failure — a relative-override or no-git-repo
-      // refusal is a different, genuine problem that silently falling back
-      // to the legacy directory would mask rather than surface (docomply-
-      // review via CodeRabbit, PR #4618 round 8). `ensureMigratedFromLegacy`
-      // only ever refuses when `legacyFootprint` found something, so an
-      // empty footprint here means this was NOT that refusal — re-throw.
+      // refusal is a different, genuine problem that silently falling back to
+      // the legacy directory would mask rather than surface.
+      // `ensureMigratedFromLegacy` only ever refuses when `legacyFootprint`
+      // found something, so an empty footprint here means this was NOT that
+      // refusal — re-throw.
       const legacyDir = await resolveLegacyStateDir().catch(() => null);
       if (legacyDir === null || legacyFootprint(legacyDir).length === 0) {
         throw e;

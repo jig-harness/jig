@@ -12,13 +12,13 @@
  * That gate exists to answer "is there a NEW round of reviewer work", which is
  * a different question from "does an EXISTING reply already answer this
  * thread". Coupling the second question to the first is what let a reply
- * survive unresolved indefinitely on PR #3974: the PR was
- * CONFLICTING, GitHub runs zero `pull_request` CI on a CONFLICTING PR, the
- * posting reviewer's check-run therefore never appeared, drive-status.ts sat in
+ * survive unresolved indefinitely on one measured PR: the PR was CONFLICTING,
+ * GitHub runs zero `pull_request` CI on a CONFLICTING PR, the posting
+ * reviewer's check-run therefore never appeared, drive-status.ts sat in
  * AWAITING_REVIEWER forever, and `drive.ts` never invoked a pass to run this
- * reconciliation at all — not because the reconciliation itself needed
- * anything the PR didn't have, but because it was only ever reachable through
- * a gate that was answering an unrelated question. This script answers the
+ * reconciliation at all — not because the reconciliation itself needed anything
+ * the PR didn't have, but because it was only ever reachable through a gate
+ * that was answering an unrelated question. This script answers the
  * reconciliation question directly, from GitHub's own state, independent of
  * whatever `drive-status.ts` would currently say.
  *
@@ -34,7 +34,7 @@
  *               to the `list-unresolved-threads.ts` enumeration below.
  *
  *               Not a performance knob — it is the social boundary
- *               `AGENTS.md` § Addressing PR Comments draws, and this script
+ *               `/groundwork:resolve-review-comments` § Human threads draws, and this script
  *               resolves threads unattended, which is exactly the act that
  *               boundary governs: "a **human** thread you replied to but
  *               chose not to close on the author's behalf" is a DELIBERATE
@@ -44,12 +44,11 @@
  *               that state — the reply is the "replied to", the still-open
  *               thread is the "chose not to close" — so sweeping it closed
  *               would use the author's own triage as the warrant for
- *               overriding their decision not to act on it (chatgpt-codex-
- *               connector, PR #4067). `drive-status.ts` forwards its own
- *               `--bots-only` here for that reason, and a SCHEDULED
+ *               overriding their decision not to act on it. `drive-status.ts`
+ *               forwards its own `--bots-only` here for that reason, and a SCHEDULED
  *               `--all-open` sweep passes it for the same one: the rule is
  *               about running unattended, which a schedule is regardless of
- *               how wide its scope (docomply-review, a reference-implementation pull request). Only an
+ *               how wide its scope. Only an
  *               unscoped, human-attended one-shot keeps the wider scope.
  *
  * For each unresolved, non-truncated thread whose LAST QUALIFYING comment from
@@ -68,14 +67,13 @@
  *                                      `lib/outcome.ts`'s `LEAVE_OPEN_MARKER`
  *                                      (`triage-thread.ts --leave-open`,
  *                                      usually a human thread deliberately left
- *                                      open per AGENTS.md § Addressing PR
- *                                      Comments): skipped instead, action
+ *                                      open, see resolve-review-comments
+ *                                      § Human threads): skipped instead, action
  *                                      `left-open` — this sweep is the OTHER
  *                                      reader of that same durable choice, and
  *                                      resolving it here would reverse what the
  *                                      marker's own writer deliberately chose
- *                                      not to do (docomply-review, a reference-implementation pull request
- *                                      round 10).
+ *                                      not to do.
  *   accepted / moot                 -> re-held via `drive-state.ts hold
  *                                      --unconfirmed --comment-url <url>`
  *                                      (insert-if-absent by (key, outcome,
@@ -97,17 +95,15 @@
  *                                      unconfirmed entry carries none — so
  *                                      granting round-currency would still be
  *                                      vouching for a fix nothing here read.
- *                                      An unconditional upsert here
- *                                      let a stale, never-verified reply ride
- *                                      an UNRELATED later push to a false
- *                                      resolve (docomply-review round 7, PR
- *                                      #4028); keying only on outcome, and then
+ *                                      An unconditional upsert here let a
+ *                                      stale, never-verified reply ride an
+ *                                      UNRELATED later push to a false resolve;
+ *                                      keying only on outcome, and then
  *                                      tolerating an absent commentUrl on the
  *                                      ordinary (live-pass-confirmed) path,
  *                                      still let a SUPERSEDING reply — same
- *                                      outcome word or not — inherit an
- *                                      earlier hold's round, confirmed or not
- *                                      (docomply-review rounds 8-10). Both
+ *                                      outcome word or not — inherit an earlier
+ *                                      hold's round, confirmed or not. Both
  *                                      `hold` paths now require and record
  *                                      `--comment-url`, compared exactly, which
  *                                      closes it.
@@ -171,7 +167,7 @@ interface Thread {
  * script that decides whether to re-hold a thread. Divergence in this direction
  * means re-triaging a thread that already carries an outcome token, putting a
  * SECOND one on it and corrupting the reviewer-scoring sample the vocabulary
- * exists to feed (docomply-review round 3, a reference-implementation pull request).
+ * exists to feed.
  */
 function qualifyingOutcome(body: string): string {
   return sharedQualifyingOutcome(body)?.outcome ?? "";
@@ -243,8 +239,7 @@ function emit(record: Record<string, unknown>): void {
  * hold sitting in `held`, where step 6's `resolve-held-thread.ts` would later
  * resolve the very thread the marker deliberately left open — especially
  * reachable after a crash between `triage-thread.ts` posting the marked
- * reply and completing its own cleanup, followed by this standalone sweep
- * (docomply-review, a reference-implementation pull request round 11).
+ * reply and completing its own cleanup, followed by this standalone sweep.
  *
  * Returns `false` only on a genuine read/write failure — `true` covers both
  * "nothing to clean up" and "cleaned up successfully", same convention
@@ -515,14 +510,13 @@ async function main(): Promise<number> {
       let action: string;
       // `triage-thread.ts --leave-open` embeds LEAVE_OPEN_MARKER on a
       // deliberate choice not to resolve — usually a human thread, per
-      // AGENTS.md § Addressing PR Comments. This sweep is the OTHER reader of
+      // `/groundwork:resolve-review-comments` § Human threads. This sweep is the OTHER reader of
       // that same durable text (this file's own header: "the standalone-sweep
       // COUNTERPART... free to process the identical unresolved thread
       // later"), so without this check it would resolve a thread the other
       // reader had just deliberately left open, on its very next run —
       // reversing that choice regardless of `--bots-only` scope, since the
-      // marker can appear on a bot thread too (docomply-review, a reference-implementation pull request
-      // round 10).
+      // marker can appear on a bot thread too.
       //
       // Checked on the marker PLUS an outcome the marker can actually mean
       // something for — `MERIT_OUTCOMES.has(outcome) || outcome === 'moot'`
@@ -534,23 +528,20 @@ async function main(): Promise<number> {
       // `triage-thread.ts` only ever appends the marker to a reply whose
       // outcome is genuinely non-hold at post time (its own comment on
       // `postBody`), so the marker's presence on a `moot` reply already
-      // proves "this was a merit reply left open" (docomply-review, PR
-      // #4129 round 11: the previous marker-only gate — no outcome
-      // restriction at all — re-held a plain-moot-left-open reply instead of
+      // proves "this was a merit reply left open" (a gate restricted to merit
+      // outcomes alone re-held a plain-moot-left-open reply instead of
       // leaving it, since it never reached this branch for `moot` at all).
       //
       // But `accepted` gets NO such benefit of the doubt, and dropping the
-      // restriction entirely (the round-11 fix) overshot: the producer's
-      // "non-hold at post time" guarantee says nothing about a reply this
-      // script never produced. The documented supersession path lets a
-      // trusted author post ANY reply directly via `reply-to-thread.ts`,
-      // bypassing `triage-thread.ts` entirely — an `**accepted**` reply that
-      // happens to contain this exact marker text (typo, confusion, a
-      // quoted example) would otherwise be treated as `left-open` and its
-      // stale-hold cleanup could then DELETE the accepted hold for an
-      // unverified fix, the exact false-convergence class round 6's
-      // `confirmedMeritSupersession` gate exists to prevent (docomply-review,
-      // a reference-implementation pull request round 14).
+      // restriction entirely overshoots: the producer's "non-hold at post time"
+      // guarantee says nothing about a reply this script never produced. The
+      // documented supersession path lets a trusted author post ANY reply
+      // directly via `reply-to-thread.ts`, bypassing `triage-thread.ts`
+      // entirely — an `**accepted**` reply that happens to contain this exact
+      // marker text (typo, confusion, a quoted example) would otherwise be
+      // treated as `left-open` and its stale-hold cleanup could then DELETE the
+      // accepted hold for an unverified fix, the exact false-convergence class
+      // the `confirmedMeritSupersession` gate exists to prevent.
       if (
         hasLeaveOpenMarker(qualifyingBody) &&
         (MERIT_OUTCOMES.has(outcome) || outcome === "moot")
@@ -579,19 +570,19 @@ async function main(): Promise<number> {
             // rejected"). The thread is genuinely resolved now, but a PRIOR
             // confirmed hold for this same key — created before the superseding
             // reply — would otherwise sit in state forever: step 6 would later
-            // try to resolve-held-thread.ts an already-resolved thread
-            // (docomply-review round 8, a reference-implementation pull request). The compare-and-delete
+            // try to resolve-held-thread.ts an already-resolved thread.
+            // The compare-and-delete
             // below is ONE atomic locked call rather than a separate
             // held-keys check followed by release-held — two calls would
             // leave a window for a concurrent driver to create or replace
-            // the key in between (docomply-review round 9, a reference-implementation pull request) — and
+            // the key in between — and
             // exits 0 either way, present or not.
             //
             // Whether it is safe to delete a held entry found here is decided
             // by IDENTITY, not by WHEN it was read — three straight rounds
             // (16-18) tried timing a snapshot relative to the comment listing
             // and each attempt only moved the race to the other side of that
-            // timing boundary (docomply-review round 19, a reference-implementation pull request): reading
+            // timing boundary: reading
             // late let a hold this pass never saw "match itself" and get
             // deleted; reading early left a hold this pass's OWN listing DID
             // account for (because the reply that created it is right there
@@ -617,11 +608,12 @@ async function main(): Promise<number> {
       } else if (commentUrl === null || commentUrl === "") {
         // `hold --kind thread` REQUIRES the qualifying comment's permalink, and
         // this is the only place it can come from. A record without one cannot
-        // be re-held without recreating exactly the provenance-free entry
-        // rounds 9-11 closed, so it is reported for a human rather than held on
-        // a guess. Checked BEFORE the dry-run branch below: a proposed hold
-        // that cannot execute must report the same `failed-hold` either way,
-        // not a false `would-hold` success that the real run then contradicts.
+        // be re-held without recreating exactly the provenance-free entry the
+        // permalink requirement closes, so it is reported for a human rather
+        // than held on a guess. Checked BEFORE the dry-run branch below: a
+        // proposed hold that cannot execute must report the same `failed-hold`
+        // either way, not a false `would-hold` success that the real run then
+        // contradicts.
         console.error(
           `reconcile-replied-threads.ts: #${pr} thread ${thread.threadId} has a qualifying '${outcome}' reply with no comment url — cannot re-hold it without one, continuing`,
         );

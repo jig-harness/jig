@@ -7,7 +7,7 @@ nothing drifts into invented types or statuses. Native Bun + TypeScript keeps th
 
 ## What it checks
 
-Per doc (see the header comment of [`frontmatter-check.ts`](frontmatter-check.ts)):
+Per doc, in [`frontmatter-check.ts`](frontmatter-check.ts):
 
 1. frontmatter present — opens with `---`, closes within the first 60 lines;
 2. every required field present;
@@ -25,6 +25,12 @@ The script uses the shared [`../docs.ts`](../docs.ts) reader. When adopting
 these files, keep that helper in the parent directory and run them with Bun.
 
 ## Usage
+
+`SCHEMA` names the schema file (default `docs/.frontmatter-schema.yaml`),
+`DOCS_DIR` the tree to scan when no files are given (default `docs`), and
+`NEW_DOCS` a space-separated list of files that also need `description`. Exit
+codes: 0 all docs valid, 1 at least one violation, 2 a missing schema or an
+unreadable file.
 
 ```sh
 # explicit files (what hooks/CI pass)
@@ -55,7 +61,7 @@ Run the self-test any time with `bun test frontmatter-check.test.ts`.
 
 ## The stale-`last_updated` gate (future/strict)
 
-The reference implementation adds a diff-aware gate: if a doc's *body* changes,
+A diff-aware gate completes the picture: if a doc's *body* changes,
 `last_updated` must advance in the same diff. That needs the diff, not just the
 file, so it lives in CI wiring rather than this file check — the Strict-level
 criterion in [`../../maturity.yaml`](../../maturity.yaml) names it. Sketch:

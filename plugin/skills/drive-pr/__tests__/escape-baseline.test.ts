@@ -169,9 +169,8 @@ describe("parseRecordedEscapeBaseline", () => {
   });
 
   it("returns null when two candidate rate lines exist in the same window (an obsolete line left behind by a correction)", () => {
-    // The finding this guards against (docomply-review, chatgpt-codex-connector,
-    // a reference-implementation pull request round 2): `.at(0)` on the raw match list silently prefers
-    // whichever rate line sorts first — which can be the STALE one a
+    // The failure this guards against: `.at(0)` on the raw match list silently
+    // prefers whichever rate line sorts first — which can be the STALE one a
     // correction left in place rather than the live figure. Ambiguous must
     // degrade to null, never guess between the two.
     const doc = [
@@ -200,7 +199,7 @@ describe("parseRecordedEscapeBaseline", () => {
     });
   });
 
-  it("does not read a rate line that lives ENTIRELY inside an HTML comment as a real measurement (docomply-review, a reference-implementation pull request round 3)", () => {
+  it("does not read a rate line that lives ENTIRELY inside an HTML comment as a real measurement", () => {
     // The exact scenario the finding gave: no live rate line at all for this
     // window, only a commented-out one. Pre-fix, `rateMatches.length` was 1
     // and the parser returned 4/155 as authoritative.
@@ -215,7 +214,7 @@ describe("parseRecordedEscapeBaseline", () => {
     // The decoy sits WITHIN this window's own block (no intervening `## `
     // heading before it) — without an unrelated heading to exclude it via
     // afterWindow's own bounding, this genuinely exercises fence stripping
-    // rather than passing for the wrong reason (coderabbitai, PR #4674).
+    // rather than passing for the wrong reason.
     const doc = [
       "## Baseline window: 2026-08-06 → 2026-08-13",
       "**Escape rate: 4 of 155 declined findings, ≈2.6%, over one week.**",
@@ -233,7 +232,7 @@ describe("parseRecordedEscapeBaseline", () => {
     });
   });
 
-  it("does not read a fenced-example window heading as a newer window (docomply-review, a reference-implementation pull request round 3)", () => {
+  it("does not read a fenced-example window heading as a newer window", () => {
     // The window census runs over the same raw text as the rate scan, so a
     // baseline-shaped `##` line inside a fenced example after the real
     // heading must not become `windows.at(-1)` — it would either suppress
@@ -258,7 +257,7 @@ describe("parseRecordedEscapeBaseline", () => {
     });
   });
 
-  it("does not let a fence-shaped line inside a multiline HTML comment suppress everything after it (docomply-review, a reference-implementation pull request round 5)", () => {
+  it("does not let a fence-shaped line inside a multiline HTML comment suppress everything after it", () => {
     // Fence recognition used to run before checking comment state, so this
     // `<!--\n```\n-->` sequence mis-entered fence mode on the middle line and
     // never left it, blanking the real heading and rate line through EOF.
@@ -295,7 +294,7 @@ describe("parseRecordedEscapeBaseline", () => {
     });
   });
 
-  it("does not read a rate-shaped substring embedded in ordinary prose as the real measurement (docomply-review, a reference-implementation pull request round 5)", () => {
+  it("does not read a rate-shaped substring embedded in ordinary prose as the real measurement", () => {
     const doc = [
       "## Baseline window: 2026-08-06 → 2026-08-13",
       "Illustration: **Escape rate: 4 of 155 declined findings, ≈2.6%, over one week.**",
@@ -338,7 +337,7 @@ describe("parseRecordedEscapeBaseline", () => {
     });
   });
 
-  it("degrades to unmeasured rather than falling back to a stale window when a newer heading is malformed (docomply-review, a reference-implementation pull request round 5)", () => {
+  it("degrades to unmeasured rather than falling back to a stale window when a newer heading is malformed", () => {
     // A single-digit month makes the newer heading invisible to the precise
     // WINDOW_RE, so `.at(-1)` used to silently select the OLDER, valid
     // window and publish its stale figure as current.
@@ -368,7 +367,7 @@ describe("parseRecordedEscapeBaseline", () => {
     });
   });
 
-  it("does not treat a `<!--` rendered as inline code as the start of a real comment (chatgpt-codex-connector, a reference-implementation pull request round 8)", () => {
+  it("does not treat a `<!--` rendered as inline code as the start of a real comment", () => {
     // Markdown renders `` `<!--` `` as literal code, not a comment opener.
     // Reading it as a real comment start blanks everything after it through
     // EOF (no closing `-->` in sight), suppressing the real window below.
@@ -389,7 +388,7 @@ describe("parseRecordedEscapeBaseline", () => {
     });
   });
 
-  it("shields a `<!--` inside a TWO-backtick inline code span, not just single-backtick (docomply-review, a reference-implementation pull request round 7)", () => {
+  it("shields a `<!--` inside a TWO-backtick inline code span, not just single-backtick", () => {
     // CommonMark: a code span opens on a maximal backtick run and closes on
     // the next run of the exact same length. `` ``<!--`` `` is a valid
     // two-backtick span; a single-backtick-only recognizer left it
@@ -413,11 +412,10 @@ describe("parseRecordedEscapeBaseline", () => {
 
   it("still recognizes a genuine HTML comment after a two-backtick span containing an unrelated backtick", () => {
     // The decoy rate line sits on its OWN line, inside the comment: `RATE_RE`
-    // matches complete lines, so a decoy sharing a line with other text
-    // could never match regardless of whether comment-stripping works at
-    // all — this shape ensures the test actually exercises it (coderabbitai,
-    // PR #4674): if comment recognition ever breaks, this returns 9/9
-    // instead of null.
+    // matches complete lines, so a decoy sharing a line with other text could
+    // never match regardless of whether comment-stripping works at all — this
+    // shape ensures the test actually exercises it: if comment recognition ever
+    // breaks, this returns 9/9 instead of null.
     const doc = [
       "## Baseline window: 2026-08-06 → 2026-08-13",
       "**Escape rate: 4 of 155 declined findings, ≈2.6%, over one week.**",
@@ -441,7 +439,7 @@ describe("parseRecordedEscapeBaseline", () => {
     expect(parseRecordedEscapeBaseline(doc)).toBeNull();
   });
 
-  it("does not accept a window heading with trailing content after a valid date pair (docomply-review, a reference-implementation pull request round 6)", () => {
+  it("does not accept a window heading with trailing content after a valid date pair", () => {
     // `WINDOW_RE` used to match only the prefix, so a heading like
     // "... 2026-09-08 (draft)" still parsed as a genuine window instead of
     // failing closed on the doc's own exact-shape contract. Composes with
@@ -458,7 +456,7 @@ describe("parseRecordedEscapeBaseline", () => {
     expect(parseRecordedEscapeBaseline(doc)).toBeNull();
   });
 
-  it("bounds the rate-line search at a bare, EMPTY `##` heading (coderabbitai, PR #4674)", () => {
+  it("bounds the rate-line search at a bare, EMPTY `##` heading", () => {
     // CommonMark: an ATX heading marker needs no trailing whitespace when
     // the heading itself is empty, so a bare `##` on its own line is a
     // valid (empty) level-2 heading. A boundary requiring `[ \t]` after the
@@ -474,7 +472,7 @@ describe("parseRecordedEscapeBaseline", () => {
     expect(parseRecordedEscapeBaseline(doc)).toBeNull();
   });
 
-  it("bounds the rate-line search at a TAB-delimited next heading, not just a space-delimited one (chatgpt-codex-connector, a reference-implementation pull request)", () => {
+  it("bounds the rate-line search at a TAB-delimited next heading, not just a space-delimited one", () => {
     // `##\tHeading` is legal CommonMark ATX-heading whitespace. A boundary
     // that only recognized a literal space would let the search run past
     // this heading into the unrelated section's own decoy rate line.

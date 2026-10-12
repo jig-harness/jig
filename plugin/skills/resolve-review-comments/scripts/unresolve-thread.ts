@@ -25,7 +25,7 @@ import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 // which this one reads as a thread id — that spawn is safe only because the
 // sweep stubs `gh`, an accident of the harness rather than a property of the
 // script. Importing it (the pure-helper pattern the rest of the family
-// supports) would fire the mutation for real (coderabbitai, PR #4040).
+// supports) would fire the mutation for real.
 async function main(): Promise<number> {
   const threadId = process.argv[2] ?? "";
   if (threadId === "") {

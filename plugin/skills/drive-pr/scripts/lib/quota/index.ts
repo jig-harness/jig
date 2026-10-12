@@ -12,7 +12,7 @@
  * reset further out than the bound, an adapter that threw. A reset already
  * in the past is the one exception, and deliberately not this asymmetry's
  * uncertainty case at all: the window is open RIGHT NOW, which is certain,
- * not ambiguous — see `planFor()`'s own `Math.max(rawMs, 0)` (round 26).
+ * not ambiguous — see `planFor()`'s own `Math.max(rawMs, 0)`.
  *
  * Runs under Bun and Node >= 22.18: `node:` APIs only, erasable syntax only.
  */
@@ -73,14 +73,13 @@ export function maxSleepMs(): number {
 }
 
 /**
- * Which of two EQUALLY-recent blocks to keep. The adapters normalize
- * evidence to whole-second precision, so a genuine tie across vendors is
- * reachable — e.g. a Claude short-window wall and a Codex weekly wall
- * observed in the same second — and array order in `ADAPTERS` is not a
- * signal about which one actually still blocks the account. Resolved by
- * asking `planFor` itself: whichever block it would refuse to sleep through
- * wins, and between two sleepable blocks the longer wait wins (chatgpt-
- * codex-connector, PR #4431 round 8).
+ * Which of two EQUALLY-recent blocks to keep. The adapters normalize evidence
+ * to whole-second precision, so a genuine tie across vendors is reachable —
+ * e.g. a Claude short-window wall and a Codex weekly wall observed in the same
+ * second — and array order in `ADAPTERS` is not a signal about which one
+ * actually still blocks the account. Resolved by asking `planFor` itself:
+ * whichever block it would refuse to sleep through wins, and between two
+ * sleepable blocks the longer wait wins.
  */
 function moreRestrictive(a: QuotaBlock, b: QuotaBlock, now: Date): QuotaBlock {
   const planA = planFor(a, now);
@@ -153,7 +152,7 @@ export interface QuotaSnapshot {
    * this flag exists to signal, not a complete empty one. `detectQuotaBlock`
    * reads each adapter's own entry rather than a blanket OR: an aggregate
    * flag let one vendor's truncated walk degrade a DIFFERENT, fully-completed
-   * vendor's detection too (docomply-review, a reference-implementation pull request round 3).
+   * vendor's detection too.
    */
   truncatedByVendor: ReadonlyMap<string, boolean>;
 }
@@ -199,7 +198,7 @@ export function snapshotQuotaSessions(): QuotaSnapshot {
       // NOTHING verifiable — that is the unreliable case this map exists to
       // signal, not a clean empty one, so this vendor's candidates must
       // degrade exactly as they would after a cut-short walk rather than
-      // being trusted as "nothing here" (docomply-review, a reference-implementation pull request round 3).
+      // being trusted as "nothing here".
       truncatedByVendor.set(adapter.vendor, true);
     }
   }
@@ -272,13 +271,12 @@ export function planFor(block: QuotaBlock, now: Date): QuotaPlan {
   }
   const rawMs = block.resetAt.getTime() - now.getTime();
   // A reset that has already passed — the window reopened between the pass
-  // dying and this check, OR `nextWallClock()`'s own minute-granularity "at
-  // or after" comparison (round 22) resolved to the CURRENT minute, whose
-  // second-0 instant can sit a few seconds behind `now` — is treated as
-  // `sleep(0)`, not `stop`: the window is open RIGHT NOW, and there is
-  // nothing to wait for. Requiring an operator to re-arm the drive by hand
-  // for a wall that has already cleared defeats the whole point of sleeping
-  // through a short window unattended (docomply-review, a reference-implementation pull request round 26).
+  // dying and this check, OR `nextWallClock()`'s own minute-granularity "at or
+  // after" comparison resolved to the CURRENT minute, whose second-0 instant
+  // can sit a few seconds behind `now` — is treated as `sleep(0)`, not `stop`:
+  // the window is open RIGHT NOW, and there is nothing to wait for. Requiring
+  // an operator to re-arm the drive by hand for a wall that has already cleared
+  // defeats the whole point of sleeping through a short window unattended.
   const ms = Math.max(rawMs, 0);
   const cap = maxSleepMs();
   if (ms > cap) {

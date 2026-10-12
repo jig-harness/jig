@@ -115,5 +115,5 @@ one-off charts that drift from it.
 | A generated report | a scheduled job renders the registry's metrics into a markdown/HTML summary posted to a channel — the lowest-infra dashboard |
 
 The specific charts, thresholds, and alert values are **yours** and stay with
-your repo (see [README](README.md) § Not ported); groundwork ships the registry
+your repo (see the [README](README.md#left-out-by-design)); Groundwork ships the registry
 contract and the two gates, not a particular board.

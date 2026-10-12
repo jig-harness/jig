@@ -6,7 +6,7 @@
     {
       "name": "groundwork",
       "source": "./plugin",
-      "description": "Groundwork's shared agent skills (drive-pr, do-item, resolve-review-comments) and the review-arbiter agent."
+      "description": "Groundwork's shared agent skills (drive-pr, do-item, resolve-review-comments, resolve-conflicts and procedure skills) and the review-arbiter agent."
     }
   ]
 }

@@ -6,6 +6,7 @@ import { checkLinks } from "./check-md-links.ts";
 import { checkTables } from "./check-md-tables.ts";
 import { checkGlossary } from "./check-glossary-coverage.ts";
 import { checkTracker } from "./check-no-tracker-refs.ts";
+import { checkChangelog } from "./check-changelog.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -80,7 +81,13 @@ async function gates(): Promise<number> {
     const status = await child.exited;
     if (status) return status;
   }
-  for (const check of [checkLinks, checkTables, checkGlossary, checkTracker]) {
+  for (const check of [
+    checkLinks,
+    checkTables,
+    checkGlossary,
+    checkTracker,
+    checkChangelog,
+  ]) {
     const status = check(root);
     if (status) return status;
   }

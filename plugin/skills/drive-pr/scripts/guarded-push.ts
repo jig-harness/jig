@@ -26,7 +26,7 @@
  * subprocess, independently of whatever HEAD a caller read before invoking
  * it — a commit landing in the shared worktree between the caller's own
  * read and this call would otherwise be pushed even though nothing validated
- * it (docomply-review, a reference-implementation pull request round 5). A caller that already read a
+ * it. A caller that already read a
  * validated SHA (`finish-round.ts`'s own `report.head`) should pass it here;
  * a mismatch refuses (exit 2) before any fence or lock is acquired.
  *
@@ -55,8 +55,7 @@
  *      under the stale belief that table topped out at `14`, directly
  *      colliding with the ALREADY-assigned `PASS_DEADLINE` and making an
  *      exit `15` from this script ambiguous with one from `drive.ts`
- *      itself (docomply-review / chatgpt-codex-connector, a reference-implementation pull request
- *      round 15). `17` is the first code past that table's current top;
+ *      itself. `17` is the first code past that table's current top;
  *      this is a LOCAL, recoverable refusal a mailbox `resume
  *      --target hold-push` clears, not a drive-ending state —
  *      `finish-round.ts` does not special-case it and reports it through
@@ -200,7 +199,7 @@ async function main(): Promise<number> {
   // entirely; a caller that passes it with a malformed value (an empty or
   // interpolated-away variable, the most likely real cause) almost certainly
   // has a bug worth surfacing immediately, not a request to skip the race
-  // this flag exists to close (chatgpt-codex-connector, a reference-implementation pull request round 9).
+  // this flag exists to close.
   if (sawExpectHead && !isGitSha(expectHead)) {
     fail(
       2,
@@ -220,14 +219,13 @@ async function main(): Promise<number> {
   // irreversibly. The two channels disagreeing is an operator error, not a
   // precedence question, so it is refused.
   const target = process.env.DRIVE_PR_TARGET ?? "";
-  // Canonicalized (leading zeros stripped) before comparing, not compared
-  // raw: `DRIVE_PR_TARGET=0999` and an explicit `guarded-push.ts 999` name
-  // the SAME PR, but a raw string comparison here would refuse them as a
-  // mismatch — the identical class of bug the later `BigInt(pr).toString()`
-  // canonicalization already exists to prevent for the mailbox comparison,
-  // just not yet applied at this earlier check (coderabbitai, PR #4446
-  // round 16). Non-digit input is left as-is: it fails validation just
-  // below regardless of what this comparison decides.
+  // Canonicalized (leading zeros stripped) before comparing, not compared raw:
+  // `DRIVE_PR_TARGET=0999` and an explicit `guarded-push.ts 999` name the SAME
+  // PR, but a raw string comparison here would refuse them as a mismatch — the
+  // identical class of bug the later `BigInt(pr).toString()` canonicalization
+  // already exists to prevent for the mailbox comparison, just not yet applied
+  // at this earlier check. Non-digit input is left as-is: it fails validation
+  // just below regardless of what this comparison decides.
   const canonPrArg = (s: string): string =>
     isDigits(s) ? BigInt(s).toString() : s;
   if (target !== "" && pr !== "" && canonPrArg(pr) !== canonPrArg(target)) {
@@ -244,12 +242,11 @@ async function main(): Promise<number> {
     fail(2, `guarded-push: could not resolve a numeric PR (got '${pr}')`);
   }
   // Canonicalized, not just validated as digits — the mailbox's own PR
-  // comparisons are plain string equality, so an unstripped leading zero
-  // here would make `isPushHeld` compare against a `pr` a
-  // correctly-canonical `mailbox.ts send 999 ...` never wrote, silently
-  // admitting a push a live hold-push directive should have blocked
-  // (chatgpt-codex-connector, a reference-implementation pull request round 8 — same class as
-  // mailbox.ts's own `resolvePrArg`).
+  // comparisons are plain string equality, so an unstripped leading zero here
+  // would make `isPushHeld` compare against a `pr` a correctly-canonical
+  // `mailbox.ts send 999 ...` never wrote, silently admitting a push a live
+  // hold-push directive should have blocked (same class as mailbox.ts's own
+  // `resolvePrArg`).
   pr = BigInt(pr).toString();
 
   // Materialise the query, then split it: an unreadable read must stay exit 1
@@ -323,11 +320,10 @@ async function main(): Promise<number> {
   // `remote.origin.pushurl` and expands `url.*.pushInsteadOf` / `insteadOf`,
   // i.e. every rewrite git will apply.
   //
-  // We still push by the NAME `origin` rather than by the resolved URL,
-  // because a URL push updates no remote-tracking ref —
-  // `refs/remotes/origin/<branch>` would silently stop tracking the branch
-  // this driver just advanced, which is the phantom-"N commits ahead" failure
-  // .claude/rules/git-workflow.md documents.
+  // We still push by the NAME `origin` rather than by the resolved URL, because
+  // a URL push updates no remote-tracking ref — `refs/remotes/origin/<branch>`
+  // would silently stop tracking the branch this driver just advanced, which is
+  // the phantom-"N commits ahead" failure.
   //
   // Both identities must be READ before the comparison means anything.
   // Defaulting either to empty and skipping the comparison turns a transient
@@ -401,7 +397,7 @@ async function main(): Promise<number> {
   // subprocess, independently of whatever HEAD the caller (finish-round.ts)
   // read before invoking this script at all — a commit landing in the shared
   // worktree in the gap between the caller's own read and this call still
-  // slips through an unpinned invocation (docomply-review, a reference-implementation pull request round 5).
+  // slips through an unpinned invocation.
   // Checked here, before any fence or lock is acquired, so a mismatch costs
   // nothing beyond the two `rev-parse` calls already spent — cheaper than
   // discovering it only after the push, the way the OLD literal-`HEAD`
@@ -425,8 +421,8 @@ async function main(): Promise<number> {
   // update cannot be undone. Naming the target removes the ambiguity instead
   // of policing it.
   //
-  // The SOURCE side names `localSha`, not the literal `HEAD` token
-  // (chatgpt-codex-connector, a reference-implementation pull request round 4). Everything between here and
+  // The SOURCE side names `localSha`, not the literal `HEAD` token.
+  // Everything between here and
   // the actual `git push` call below — the fence checks, the lock waits, the
   // heartbeat setup — takes real time in a worktree this skill does not own
   // exclusively, so a literal `HEAD:refs/heads/${headRef}` refspec would let
@@ -441,18 +437,17 @@ async function main(): Promise<number> {
   // that talks to a remote, so it is the only one that can be accepted and
   // never complete — mode 13 in references/terminal-states.md, and the whole
   // reason `lib/proc.ts` deadlines `gh`. An unattended driver otherwise waits
-  // on it forever, past every advertised deadline (docomply-review, a reference-implementation pull request
-  // round 1).
+  // on it forever, past every advertised deadline.
   //
-  // The default is an HOUR rather than gh's thirty seconds because a
-  // legitimate push here is not a network round trip: it runs the pre-push
-  // hook, whose heavy phase waits on a machine-wide mutex for up to
-  // $DOCOMPLY_TEST_LOCK_TIMEOUT (30m by default, CLAUDE.md §
-  // Change-Proportional Validation) and only then runs the build and test
-  // suites. A deadline tight enough to feel prompt would kill the gates this
-  // push exists to run — and a killed gate reads downstream as "the fix landed
-  // and passed", the exact confusion the allowlist above refuses `--no-verify`
-  // to prevent. It bounds the hang; it does not police the duration.
+  // The default is an HOUR rather than gh's thirty seconds because a legitimate
+  // push here is not a network round trip: it runs the pre-push hook, whose
+  // heavy phase may wait on a machine-wide mutex for up to the repository's own
+  // test-lock timeout (30 minutes is typical) and only then runs the build and
+  // test suites. A deadline tight enough to feel prompt would kill the gates
+  // this push exists to run — and a killed gate reads downstream as "the fix
+  // landed and passed", the exact confusion the allowlist above refuses
+  // `--no-verify` to prevent. It bounds the hang; it does not police the
+  // duration.
   const pushTimeout = readTimeoutEnv("DRIVE_PR_PUSH_TIMEOUT", 3600);
   if (!pushTimeout.ok) {
     fail(
@@ -467,7 +462,7 @@ async function main(): Promise<number> {
   // fence until now: an orphaned pass (its own session dead, this tree's
   // lease already taken over by a replacement session working a DIFFERENT
   // PR) could push straight through, cross-shipping this pass's uncommitted
-  // work onto that other session's PR (docomply-review, a reference-implementation pull request round 6).
+  // work onto that other session's PR.
   // Placed immediately before the push, not earlier in this function,
   // for the identical reason `assert-post-allowed.ts`'s callers check right
   // before their own POST: the smaller the gap between the check and the
@@ -479,7 +474,7 @@ async function main(): Promise<number> {
   // to guard and nothing to cross-ship. Checking anyway made a rehearsal fail
   // with exit 11 purely because another session owns the lease, contradicting
   // this function's own "`--dry-run` returns on the push command's own
-  // status" doc comment (docomply-review, a reference-implementation pull request).
+  // status" doc comment.
   const dryRun = extra.includes("--dry-run");
   const fenceCtx = dryRun ? null : await resolveFenceContext("guarded-push.ts");
   // `null` means either a dry run (nothing to guard) or no repository is in
@@ -494,7 +489,7 @@ async function main(): Promise<number> {
   // followed by a replacement session claiming the SAME pr from a DIFFERENT
   // worktree, left that exact takeover invisible to the tree-only check —
   // the tree lease this pass still (locally) believes it holds says nothing
-  // about who now owns the PR (chatgpt-codex-connector round 11, a reference-implementation pull request).
+  // about who now owns the PR.
   //
   // HELD across the push itself, like `treeLock` below: before
   // this, `assertRemoteMutationAllowed` returned `void` having taken no lock
@@ -504,28 +499,24 @@ async function main(): Promise<number> {
   // of `$DRIVE_PR_PUSH_TIMEOUT` (an hour by default), and nothing stopped a
   // second worktree from claiming this PR's per-PR lease and mutating it
   // while this push was still in flight — the identical cross-shipping
-  // hazard an earlier change (`treeLock`, below) closed for the TREE axis, still open
-  // here on the PR axis until now (chatgpt-codex-connector, a reference-implementation pull request review,
-  // deferred to).
+  // hazard `treeLock` (below) closes for the TREE axis, on the PR axis.
   const remoteLock =
     fenceCtx === null
       ? null
       : await assertRemoteMutationAllowed(fenceCtx, pr, "guarded-push.ts");
   // Heartbeat starts the INSTANT `remoteLock` is acquired, not after
-  // `assertTreeMutationAllowed` below also succeeds (docomply-review, PR
-  // #4164 round 3): that call's own `acquire()` can itself wait up to
-  // `LOCK_ACQUIRE_MAX_SEC` (300s) under genuine contention on the TREE
-  // lock, and until this round `remoteLock` sat un-heartbeated for that
-  // whole wait — long enough, under an operator-shortened
-  // `$DRIVE_PR_LOCK_STALE_MIN`, for a rival to treat it as abandoned and
-  // break it before this process ever reaches its own push. `treeLock` is
-  // declared here (not assigned) purely so this closure can reference it
-  // before it exists; the `?.` makes touching a not-yet-acquired lock a
-  // no-op rather than a crash.
+  // `assertTreeMutationAllowed` below also succeeds: that call's own
+  // `acquire()` can itself wait up to `LOCK_ACQUIRE_MAX_SEC` (300s) under
+  // genuine contention on the TREE lock, and otherwise `remoteLock` would sit
+  // un-heartbeated for that whole wait — long enough, under an
+  // operator-shortened `$DRIVE_PR_LOCK_STALE_MIN`, for a rival to treat it as
+  // abandoned and break it before this process ever reaches its own push.
+  // `treeLock` is declared here (not assigned) purely so this closure can
+  // reference it before it exists; the `?.` makes touching a not-yet-acquired
+  // lock a no-op rather than a crash.
   let treeLock: Awaited<ReturnType<typeof assertTreeMutationAllowed>> | null =
     null;
-  // Heartbeat both held locks' mtimes for as long as they are held
-  // (chatgpt-codex-connector, a reference-implementation pull request; an earlier change for `remoteLock`): `git push`
+  // Heartbeat both held locks' mtimes for as long as they are held: `git push`
   // here can legitimately run for the whole of `$DRIVE_PR_PUSH_TIMEOUT` (an
   // hour by default, pre-push hooks included), far longer than either lock's
   // own default 10-minute staleness window, and nothing else touches their
@@ -578,7 +569,7 @@ async function main(): Promise<number> {
   // can fire well before the push (and therefore this whole process) would
   // otherwise end, and a rival worktree waiting on `remoteLock` has no
   // reason to keep waiting once THIS worktree has already refused to
-  // proceed (docomply-review, a reference-implementation pull request round 1).
+  // proceed.
   try {
     treeLock =
       fenceCtx === null
@@ -607,7 +598,7 @@ async function main(): Promise<number> {
   // `push-hold-recheck.ts`, the pre-push chain's last step, which this script
   // arms by exporting the PR and mailbox directory to the push below. The
   // mailbox lock is therefore held for the read only: holding it across the
-  // push (PR #4446 round 30) made a concurrent `send` block for the hook's
+  // push made a concurrent `send` block for the hook's
   // whole duration instead of landing, which delayed the hold rather than
   // honouring it. The one window left is git's own hook-exit-to-transfer gap.
   let holdRecheckDir: string | null = null;
@@ -737,9 +728,8 @@ async function main(): Promise<number> {
   // waits for the PR to report the SHA we pushed, can only ever time out and
   // report a push that "may not be on the pull request". That turned the one
   // allowlisted option whose whole purpose is a no-op rehearsal into a
-  // guaranteed exit 1 after the full verification budget (docomply-review,
-  // a reference-implementation pull request round 1). The push command's own status is the entire answer
-  // here; there is no remote state to confirm.
+  // guaranteed exit 1 after the full verification budget. The push command's
+  // own status is the entire answer here; there is no remote state to confirm.
   if (dryRun) {
     console.error(
       `guarded-push: --dry-run — PR #${pr}'s head branch (${headRef}) was NOT updated`,

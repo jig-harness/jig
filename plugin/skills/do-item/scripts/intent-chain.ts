@@ -1,11 +1,10 @@
 #!/usr/bin/env bun
 /**
- * Write the Refocus intent-chain snapshot (plan W1 step 1;
- * re-keyed by).
+ * Write the Refocus intent-chain snapshot.
  *
  * Type: Writer
  * Input: JSON on stdin (or `--input <path>`) — the Linear data `/do-item`
- *   (or `/work-batch`) already fetched; see `IntentChainInput`.
+ *   already fetched; see `IntentChainInput`.
  * Output: `<worktree>/.context/intent-chain/<identifier>.md` (or
  *   `--out <path>` to override the content file directly — which writes NO
  *   alias or pointer files at all), plus, on the default path, the worktree
@@ -35,9 +34,8 @@
  * the same precedence, then its payload session_id. No session identity means
  * no session copy; the hook goes quiet until this session makes a pickup.
  *
- * Budget and truncation are specified in
- * docs/plans/active/2026-09-27-agent-fleet-coherence-plan.md § W1 step 1 and
- * implemented once, here, in `renderIntentChain`:
+ * Budget and truncation are specified and implemented once, here, in
+ * `renderIntentChain`:
  *   - the whole file stays within BUDGET characters;
  *   - sections are cut lowest-priority first;
  *   - the issue's scope, the out-of-scope group and the sub-issue's scope each
@@ -179,9 +177,8 @@ export function normalizeMarkdown(md: string): string {
 // indentation before it stops being a heading at all (4+ becomes an indented
 // code block); anchoring at column zero missed a legally-indented `##
 // Acceptance Criteria` and swallowed it as body text of whatever section
-// preceded it (document-scanning-gates.md § 1: "a construct at a
-// legal-but-unexpected indentation… Markdown allows 1–3 leading spaces";
-// docomply-review/CodeRabbit, PR #5058 round 2).
+// preceded it (a construct at a legal-but-unexpected indentation must still
+// be recognised: Markdown allows 1–3 leading spaces).
 const HEADING_RE = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
 /** A bold label on its own line: `**Acceptance Criteria:**`, `**Excluded**`. */
 const BOLD_LABEL_RE = /^\*\*([^*]+?)\*\*:?\s*$/;
@@ -208,7 +205,7 @@ export function extractSection(md: string, names: readonly string[]): string {
  * to both merge it into the last list item of the enclosing body (`listItems`
  * has no heading syntax, so `### Non-goals` became trailing text on whatever
  * bullet preceded it) and skip past it entirely, so it was never reported at
- * all (docomply-review, a reference-implementation pull request round 2). A nested block that does NOT
+ * all. A nested block that does NOT
  * itself match `wanted` is unaffected and stays folded into the enclosing
  * body, same as before.
  */
@@ -485,7 +482,7 @@ function linesWithinFloor(lines: string[]): string[] {
  * BUDGET before that loop ever runs — at which point the final backstop cap
  * fires for real and prefix-slices away whatever protected content comes
  * after it, exactly the failure `SOURCE_FIELD_CAP` was introduced to prevent
- * for the header (docomply-review, a reference-implementation pull request round 2).
+ * for the header.
  */
 function capId(identifier: string): string {
   return capWithMarker(identifier, SOURCE_FIELD_CAP);
@@ -552,10 +549,10 @@ export function renderIntentChain(
     },
     // `epicScope.included` was computed above but never rendered anywhere —
     // an epic's own `## Scope` boundary was silently dropped in every arm,
-    // not just the epic-labeled sub-issue one (docomply-review, a reference-implementation pull request
-    // round 4): when the selected sub-issue is passed as `issue` and the
-    // epic as `epic`, "Issue scope" shows only the child's boundary and the
-    // epic's own included scope had nowhere to render at all.
+    // not just the epic-labeled sub-issue one: when the selected sub-issue
+    // is passed as `issue` and the epic as `epic`, "Issue scope" shows only
+    // the child's boundary and the epic's own included scope had nowhere to
+    // render at all.
     {
       kind: "text",
       key: "epic-scope",
@@ -880,7 +877,7 @@ export function aliasIdentifiers(
   // `items` is a batch-only field (`/do-item` Step 3.5 sends it only from
   // `/work-batch`): honoured for aliasing only in batch mode, so a malformed
   // single-issue input carrying `items` cannot overwrite another item's stored
-  // chain (docomply-review, a reference-implementation pull request).
+  // chain.
   const ids = [
     input.subIssue?.identifier,
     ...(input.mode === "batch" ? (input.items ?? []) : []).map(

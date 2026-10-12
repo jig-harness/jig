@@ -12,8 +12,9 @@
  *   bun decision-sheet.ts template <sheet.html>
  *   bun decision-sheet.ts stale-attachments --keep <attachment-id> < issue.json
  *
- * Exit codes: 0 ok · 1 usage or invalid input · 3 `--require-fresh` and a
- * cited file changed since `verifiedAt.commit` (nothing written).
+ * Exit codes: 0 ok · 1 usage or invalid input · 3 `--require-fresh` and the
+ * freshness check failed, a cited file changed since `verifiedAt.commit`, or a
+ * cited path does not exist at that commit (nothing written).
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";

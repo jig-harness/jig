@@ -55,20 +55,56 @@ ladder from convention to hard gate, without collapsing into bureaucracy.
   conditions with dates; cross-worktree resource mutex where parallel agents
   share a machine (see M12).
 
-## Port status
+## Adoption steps
 
-| Source (docomply `develop`) | Landed as |
-|-----------------------------|-----------|
-| `lefthook.yml` (shape) | [`templates/lefthook.yml`](templates/lefthook.yml) — copyable hook skeleton; husky / pre-commit equivalents in [`mappings.md`](mappings.md) |
-| `scripts/check-*` + paired `test-*` convention | [`reference/grep-gate/`](reference/grep-gate/) — framework skeleton with one worked example gate (TODO-without-issue), its self-test, and fixtures |
-| `.github/workflows/pr-quality-gates.yml` (shape) | [`templates/ci-pr-gates.yml`](templates/ci-pr-gates.yml) — GitHub Actions skeleton; GitLab CI mapping in [`mappings.md`](mappings.md) |
-| Immutable Action references + Renovate updates (shape) | Pin-and-update invariant, provider mappings, and an observable Standard criterion |
-| `docs/development/suppression-token-registry.md` (C7) | [`templates/suppression-registry.md`](templates/suppression-registry.md) — copyable registry skeleton |
-| Commit-msg review-marker gate | [`reference/commit-msg-marker/`](reference/commit-msg-marker/) — portable script + design notes |
+1. Write the ordered gate set once in the universal instruction file
+   ([M0](../M0-instruction-architecture/)), make one command run all of it,
+   and run that command in CI on every pull request as a required check
+   (skeleton: [`templates/ci-pr-gates.yml`](templates/ci-pr-gates.yml)). This
+   is **Lite**.
+2. Add the hook layer from [`templates/lefthook.yml`](templates/lefthook.yml)
+   (husky and pre-commit equivalents in [`mappings.md`](mappings.md)); turn
+   your top codebase rules into grep gates with self-tests, following
+   [`reference/grep-gate/`](reference/grep-gate/), and run them in both the
+   pre-push hook and CI; document the `--no-verify` escape hatch next to the
+   hooks; pin third-party CI automation to immutable revisions and configure
+   an updater for the pins. This is **Standard**.
+3. Copy [`templates/suppression-registry.md`](templates/suppression-registry.md)
+   and register every suppression token; add commit-msg markers for mandatory
+   reviews with [`reference/commit-msg-marker/`](reference/commit-msg-marker/);
+   run every gate's self-test in CI; give each advisory gate a promotion
+   condition and a date. This is **Strict**.
 
-Also landed: [`mappings.md`](mappings.md) (hook managers + CI providers) and
-[`maturity.yaml`](maturity.yaml) (auditor criteria for the levels above).
+## Status
 
-Groundwork's own dogfooded mini-gate set (this repo running M1 on itself) is
-a separate work item at the repo root — see ROADMAP Phase 2 remainder item 2;
-it is deliberately not part of this module directory.
+What this module provides:
+
+- [`templates/lefthook.yml`](templates/lefthook.yml) — the hook layer's shape:
+  fix-and-stage pre-commit, pre-push grep gates then the heavy phase,
+  commit-msg markers.
+- [`templates/ci-pr-gates.yml`](templates/ci-pr-gates.yml) — a GitHub Actions
+  pull-request workflow: grep gates with their self-tests first, a
+  detect-changes step, the gate set, tests on a parallel runner.
+- [`templates/suppression-registry.md`](templates/suppression-registry.md) —
+  the registry page for suppression tokens and process markers.
+- [`reference/grep-gate/`](reference/grep-gate/) — the grep-gate convention
+  with one worked gate (a TODO must cite an issue) and its fixtures.
+- [`reference/commit-msg-marker/`](reference/commit-msg-marker/) — the
+  commit-msg hook script for review markers, with its design notes.
+- [`mappings.md`](mappings.md) — hook managers (lefthook, husky, pre-commit),
+  CI providers (GitHub Actions, GitLab CI) and pin-and-update providers; and
+  [`maturity.yaml`](maturity.yaml).
+
+The self-tests for both reference gates are in
+[`scripts/freshness.test.ts`](../../scripts/freshness.test.ts). Groundwork runs
+this module on itself: `bun run gates` runs the repository's gate set in order,
+CI runs the same command on every pull request, and the order is stated in the
+root [`AGENTS.md`](../../AGENTS.md). The
+[`/groundwork:github-actions`](../../plugin/skills/github-actions/SKILL.md)
+skill checks workflow changes against this module's pin-and-update invariant,
+and [`/groundwork:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) repairs a red
+gate run from its log and verifies the fix locally before pushing.
+
+Third-party automation integrity (core piece 7) is stated as the invariant,
+the provider table in [`mappings.md`](mappings.md#immutable-third-party-automation-and-updates)
+and a Standard criterion; it has no reference script.

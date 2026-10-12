@@ -9,9 +9,21 @@ commit-message body once the review is done, checked by a commit-msg hook
 whenever protected files are staged — and re-checked by a later gate (CI)
 so the local hook is a convenience, not the authority.
 
-`check-review-marker.ts` is the native Bun/TypeScript hook script. Wire it into your hook manager's `commit-msg` hook — see
-`../../templates/lefthook.yml` for placement and `../../mappings.md` for
-husky / pre-commit-framework equivalents.
+`check-review-marker.ts` is the native Bun/TypeScript hook script. Wire it
+into your hook manager's `commit-msg` hook — see
+[`../../templates/lefthook.yml`](../../templates/lefthook.yml) for placement and
+[`../../mappings.md`](../../mappings.md) for husky / pre-commit-framework
+equivalents.
+
+| Input | Default |
+|-------|---------|
+| argument 1: the commit-message file | required |
+| `REVIEW_PATHS_RE`: protected paths, an extended regular expression matched against each staged path (added, copied or modified) | `^db/migrations/.*\.sql$` |
+| `REVIEW_MARKER`: the literal tag the message must contain | `[reviewed:db-migration]` |
+
+Exit codes: 0 when no protected file is staged or the marker is present, 1
+when it is missing, 2 when the message file is missing or unreadable. The
+self-test is in [`scripts/freshness.test.ts`](../../../../scripts/freshness.test.ts).
 
 ## Design notes (why it is built this way)
 
@@ -37,7 +49,7 @@ husky / pre-commit-framework equivalents.
   meaning "reviewed".
 
 Markers are suppression-adjacent: each marker tag deserves a row in your
-suppression-token registry (`../../templates/suppression-registry.md`) so
+suppression-token registry ([`../../templates/suppression-registry.md`](../../templates/suppression-registry.md)) so
 its syntax, consuming gate, and justification requirement are discoverable.
 
 ## Trying it locally
