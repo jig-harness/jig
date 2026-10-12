@@ -19,6 +19,12 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ## [Unreleased]
 
+### Changed
+
+- The roadmap queues the rename to jig, the licence, skill assets in the
+  plugin, the kickoff family of skills and a changelog skill ahead of the
+  auditor skill.
+
 ## [0.11.0] - 2026-10-12
 
 ### Added

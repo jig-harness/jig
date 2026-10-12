@@ -148,6 +148,10 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Integration branch** — the branch pull requests land on (often `main`),
   where everyone's changes meet. Groundwork's tools read it from the
   repository's default branch unless configuration names another.
+- **Developer Certificate of Origin (DCO)** — a short statement a
+  contributor agrees to by adding a `Signed-off-by:` line to each commit,
+  certifying that they wrote the change or otherwise have the right to submit
+  it under the project's licence.
 - **Forge** — the service that hosts a repository and its pull requests,
   reviews and checks (GitHub, GitLab, …).
 - **Stacked pull request** — a pull request based on another open pull
