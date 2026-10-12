@@ -131,7 +131,7 @@ practice:
 | [`reference/label-taxonomy-lint/`](reference/label-taxonomy-lint/) | The taxonomy's invariants as a gate: closed lists, and no flag that fires nothing |
 | [`reference/required-phases/`](reference/required-phases/) | The close-time gate: an item may not reach a done state with a required phase unrecorded |
 | [`mappings.md`](mappings.md) | Issue trackers, persistent-memory homes, CI providers |
-| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+| [maturity criteria](../../plugin/skills/audit/criteria/M9-tasks-memory.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference gate ships with a self-test and fixtures, and delegates to the
 shared implementation in [`lib/module-gates.ts`](../../lib/module-gates.ts);

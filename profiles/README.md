@@ -2,16 +2,17 @@
 
 A profile is a recommended composition: which modules, at which maturity
 level, for a project shape. Profiles are starting points, not contracts — the
-[audit](../audit/) report's recommendations override generic profile advice
+[audit](../plugin/skills/audit/README.md) report's recommendations override generic profile advice
 for brownfield projects.
 
-Every module (M0–M12) carries a `maturity.yaml`, so a profile's target
-resolves to concrete criteria: "M1 Lite" means passing every `level: lite` criterion in
-[`modules/M1-gates-enforcement-ladder/maturity.yaml`](../modules/M1-gates-enforcement-ladder/maturity.yaml),
+Every module (M0–M12) carries machine-readable maturity criteria, so a
+profile's target resolves to concrete criteria: "M1 Lite" means passing every
+`level: lite` criterion in
+[`M1-gates-enforcement-ladder.yaml`](../plugin/skills/audit/criteria/M1-gates-enforcement-ladder.yaml),
 and likewise per module — the criteria live only there (single source of
 truth), so profiles name levels, never restate criteria. The
-[auditor](../audit/) reads the same criteria to score a target repo (run
-[`audit/score-modules.ts`](../audit/score-modules.ts) for the checklist).
+[audit skill](../plugin/skills/audit/README.md) reads the same criteria to
+score a repository and reports the level each module attains.
 
 ## Choosing
 

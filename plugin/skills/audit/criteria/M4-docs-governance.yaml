@@ -1,0 +1,86 @@
+# Machine-evaluable criteria for M4 (docs-as-wiki governance).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M4
+name: docs-governance
+criteria:
+  - id: governance-model-written
+    level: lite
+    requires: convention
+    statement: >-
+      A written governance model names the frontmatter fields, the
+      status/lifecycle vocabulary, the de-scarring rule, and the authority
+      hierarchy for resolving conflicts between docs.
+    observe:
+      - "a schema/governance doc lists required frontmatter fields and their enum vocabularies"
+      - "the de-scarring rule and an authority hierarchy are stated in prose"
+
+  - id: docs-start-from-template
+    level: lite
+    requires: convention
+    statement: >-
+      New docs start from a schema-conformant template rather than a copied
+      neighbor.
+    observe:
+      - "a doc template with valid frontmatter exists and is referenced by the instructions"
+
+  - id: frontmatter-machine-validated
+    level: standard
+    requires: mechanical
+    statement: >-
+      A check validates every doc's frontmatter against the schema (required
+      fields present, enum membership, date format) and runs in CI.
+    observe:
+      - "a frontmatter checker validates required fields, enums, and last_updated format"
+      - "a CI job runs it on changed docs and fails on violations"
+
+  - id: index-generated-and-freshness-gated
+    level: standard
+    requires: mechanical
+    statement: >-
+      The navigation index is generated from the tree and a CI drift gate
+      fails when the committed index no longer matches what the generator
+      produces.
+    observe:
+      - "a generator produces the index from doc frontmatter"
+      - "a CI check regenerates and fails on a stale committed index"
+
+  - id: authority-hierarchy-written
+    level: standard
+    requires: convention
+    statement: >-
+      A single-valued authority hierarchy is written down so contradictions
+      between docs resolve without a judgment call.
+    observe:
+      - "the governance doc states an ordered precedence for conflicting sources"
+
+  - id: descarring-lint-blocks-approval
+    level: strict
+    requires: mechanical
+    statement: >-
+      A scar lint prevents a doc from reaching status approved while carrying
+      review scars (strikethroughs, resolution phrasing, reviewer dialogue),
+      with a self-test proving the lint still catches scars.
+    observe:
+      - "a scar lint scans approved docs and fails on scar markers"
+      - "a blocking self-test proves the lint catches known scars"
+
+  - id: stale-doc-gate
+    level: strict
+    requires: mechanical
+    statement: >-
+      A CI check requires last_updated to advance in the same diff when a
+      doc's body changes, so freshness metadata cannot silently lie.
+    observe:
+      - "a diff-aware check fails when a body change does not bump last_updated"
+
+  - id: wiki-lint-cadence-and-promotion
+    level: strict
+    requires: mechanical
+    statement: >-
+      A scheduled wiki-lint runs the health checks (stale, broken links,
+      orphans, retrospection backlog) and posts findings, and raw-to-compiled
+      promotion (retrospection backlog) is tracked.
+    observe:
+      - "a scheduled job runs the wiki-lint table and records findings (e.g. to an activity log)"
+      - "the retrospection/raw-notes backlog awaiting promotion is tracked"

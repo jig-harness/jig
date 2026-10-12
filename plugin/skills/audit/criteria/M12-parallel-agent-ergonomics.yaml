@@ -1,0 +1,89 @@
+# Machine-evaluable criteria for M12 (parallel-agent ergonomics).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# Expected-absent: a repo that never runs parallel agents on one machine has
+# nothing to partition, so scoring this whole module "absent" is correct, not a
+# gap. The auditor should mark M12 not-applicable for single-checkout workflows.
+module: M12
+name: parallel-agent-ergonomics
+criteria:
+  - id: branch-reuse-and-footgun-bans-written
+    level: lite
+    requires: convention
+    statement: >-
+      The branch reuse-before-create rule and the shared-state footgun bans
+      (no git stash across worktrees, no root install with the wrong package
+      manager) are written down where agents will read them.
+    observe:
+      - "an instruction/doc states: reuse an existing branch before creating one"
+      - "a footgun list bans stash-across-worktrees and wrong-manager root installs, each with a reason"
+
+  - id: port-allocation-convention-exists
+    level: lite
+    requires: convention
+    statement: >-
+      A per-worktree port-allocation convention exists, so two worktrees do not
+      default to the same port.
+    observe:
+      - "a documented convention assigns each worktree a port (a range to pick from, or a derivation)"
+
+  - id: port-allocation-scripted
+    level: standard
+    requires: mechanical
+    statement: >-
+      Per-worktree port allocation is scripted and deterministic — the same
+      worktree identity always maps to the same in-range port.
+    observe:
+      - "a script maps a worktree id to a stable port within a configured range"
+      - "the dev flow / a create hook calls it rather than hardcoding a port"
+
+  - id: heavy-run-mutex-scripted-with-ci-bypass
+    level: standard
+    requires: mechanical
+    statement: >-
+      Heavy build/test runs pass through a scripted cross-worktree mutex that
+      serializes them on one machine and bypasses under CI.
+    observe:
+      - "a lock wrapper (atomic mkdir-style) guards heavy commands across worktrees"
+      - "it runs the command immediately when a CI signal is set (CI / an explicit bypass)"
+
+  - id: worktree-hooks-wired
+    level: standard
+    requires: mechanical
+    statement: >-
+      Worktree create/remove hooks are wired — create allocates and surfaces the
+      port slot, remove nudges reflection.
+    observe:
+      - "a create hook allocates/prints the worktree's port slot"
+      - "a remove hook prints a reflection nudge (non-blocking)"
+
+  - id: utilities-self-tested-in-ci
+    level: strict
+    requires: mechanical
+    statement: >-
+      The port allocator and the resource lock each ship a self-test that runs
+      in CI, so a broken utility fails loudly instead of silently misallocating.
+    observe:
+      - "each utility has a paired self-test exercising a known pass and a known fail"
+      - "CI runs both self-tests"
+
+  - id: teardown-nudges-reflection-wired
+    level: strict
+    requires: mechanical
+    statement: >-
+      The worktree teardown hook's reflection nudge is wired to the learning
+      loop, so a session's lessons have a durable destination.
+    observe:
+      - "the remove hook points at the reflection step / learning-loop inbox (ties to M8)"
+      - "the nudge fires on teardown without blocking it"
+
+  - id: footgun-bans-enforced-where-mechanizable
+    level: strict
+    requires: mechanical
+    statement: >-
+      The footgun bans are enforced where mechanizable — e.g. a hook or lint
+      rejects a root install with a package manager the repo did not declare.
+    observe:
+      - "a hook/lint derives the declared package manager and rejects the others at the root"
+      - "the remaining bans that cannot be mechanized are still documented"

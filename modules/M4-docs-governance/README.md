@@ -107,7 +107,7 @@ What this module provides:
 - [`reference/docs.ts`](reference/docs.ts) — the small frontmatter reader the
   three scripts share.
 - [`mappings.md`](mappings.md) (CI providers, hook managers, schema formats)
-  and [`maturity.yaml`](maturity.yaml).
+  and the module's [maturity criteria](../../plugin/skills/audit/criteria/M4-docs-governance.yaml).
 
 Each reference script has a paired self-test beside it. The
 [`/jig:descar`](../../plugin/skills/descar/SKILL.md) skill is the

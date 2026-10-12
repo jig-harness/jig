@@ -60,7 +60,7 @@ corpus, then promote to blocking once the false-positive rate is low and
 existing scars are swept. Run the paired self-test
 ([`check-descarring-scars.test.ts`](check-descarring-scars.test.ts)) as a **blocking** CI
 step regardless — proving the gate still catches scars is what lets you trust an
-advisory scan. The Strict criterion in [`../../maturity.yaml`](../../maturity.yaml)
+advisory scan. The Strict criterion in [the maturity criteria](../../../../plugin/skills/audit/criteria/M4-docs-governance.yaml)
 is the blocking version tied to promotion into `approved`.
 
 ## Files

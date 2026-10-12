@@ -177,7 +177,7 @@ is planned as two plugin skills with a pluggable store; the design is in
 | [`reference/parity-report/`](reference/parity-report/) | Recall, precision and `missed_blockers` per reviewer, failing on a missed blocker |
 | [`reference/reflection-trigger/`](reference/reflection-trigger/) | Fires reflection from [M7](../M7-pr-lifecycle-review/)'s convergence line when a change took many rounds, and writes the record |
 | [`mappings.md`](mappings.md) | Trackers for lever ids, eval runners, telemetry, per-runtime reflection and memory commands |
-| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+| [maturity criteria](../../plugin/skills/audit/criteria/M8-learning-loop.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference gate ships with a self-test and fixtures, and delegates to the
 shared implementation in [`lib/module-gates.ts`](../../lib/module-gates.ts);

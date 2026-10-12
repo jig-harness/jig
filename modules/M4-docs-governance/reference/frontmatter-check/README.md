@@ -64,7 +64,7 @@ Run the self-test any time with `bun test frontmatter-check.test.ts`.
 A diff-aware gate completes the picture: if a doc's *body* changes,
 `last_updated` must advance in the same diff. That needs the diff, not just the
 file, so it lives in CI wiring rather than this file check — the Strict-level
-criterion in [`../../maturity.yaml`](../../maturity.yaml) names it. Sketch:
+criterion in [the maturity criteria](../../../../plugin/skills/audit/criteria/M4-docs-governance.yaml) names it. Sketch:
 parse the diff's hunk headers, and if any changed line falls outside the
 frontmatter block, require the `last_updated:` line to have been added/advanced
 (or already equal today).

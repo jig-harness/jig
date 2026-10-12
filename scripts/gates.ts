@@ -7,6 +7,7 @@ import { checkTables } from "./check-md-tables.ts";
 import { checkGlossary } from "./check-glossary-coverage.ts";
 import { checkTracker } from "./check-no-tracker-refs.ts";
 import { checkChangelog } from "./check-changelog.ts";
+import { checkAuditFit } from "./check-audit-fit.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -90,8 +91,9 @@ async function gates(): Promise<number> {
     checkGlossary,
     checkTracker,
     checkChangelog,
+    checkAuditFit,
   ]) {
-    const status = check(root);
+    const status = await check(root);
     if (status) return status;
   }
   console.log("all gates passed");

@@ -4,9 +4,10 @@ Improving an existing project. The entry point is an **audit**, not a module.
 
 ## The ladder
 
-1. **Audit** — run [audit/](../audit/) against the repo. Output: module
-   scores, drift findings, and a prioritized adoption sequence phrased in your
-   own toolchain.
+1. **Audit** — run [`/jig:audit`](../plugin/skills/audit/README.md) in the
+   repo. Output: module scores, drift findings, and a prioritized adoption
+   sequence phrased in your own toolchain, plus a committed record the next
+   audit compares against.
 2. **Fix drift first** — stale instruction files and docs that contradict
    reality actively mislead every agent session; fixing them is cheap and
    pays immediately. Drift fixes are usually an audit's highest-value quick

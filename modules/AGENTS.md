@@ -13,8 +13,12 @@ README.md      # plain-language opener, invariant, maturity levels, adoption ste
 templates/     # copyable skeletons (AGENTS.md skeleton, PRD template, …)
 reference/     # portable scripts / workflow YAML / schema files, each with a self-test
 mappings.md    # per-ecosystem tool mapping table
-maturity.yaml  # machine-evaluable criteria the auditor scores against
 ```
+
+Its machine-evaluable maturity criteria live in the audit skill, as
+`plugin/skills/audit/criteria/M<n>-<name>.yaml`, because the plugin installs
+only `plugin/` and the audit must read them from any repository. The module
+README links its file.
 
 - **README order:** what problem the practice solves and what it looks like
   without it (plain language, before any mechanism), the invariant, the
@@ -22,11 +26,13 @@ maturity.yaml  # machine-evaluable criteria the auditor scores against
   **Status** section: what the module provides, what it deliberately leaves
   out and why, and what is future. No porting history and no source paths
   from another repository.
-- **`maturity.yaml`** follows the schema in [README.md](README.md#maturityyaml-schema).
+- **The maturity criteria** follow the format in
+  [the criteria README](../plugin/skills/audit/criteria/README.md).
   Criteria are observable repository facts (a file exists, a CI job runs, a
   hook is configured), never quality judgments, scored on the enforcement
-  ladder. Change a criterion and the [auditor](../audit/README.md) changes
-  with it: `bun audit/score-modules.ts --check` must still pass.
+  ladder. They are part of the plugin, so a change to them is a plugin change
+  ([plugin/AGENTS.md](../plugin/AGENTS.md): version bump and changelog), and
+  `bun plugin/skills/audit/scripts/score.ts --check` must still pass.
 - **`reference/`** gates are Bun/TypeScript commands with a paired self-test
   and fixtures. A reader adapts them, so they take their inputs as arguments
   and carry no repository's paths. Many share helpers in the repository's
@@ -44,7 +50,7 @@ maturity.yaml  # machine-evaluable criteria the auditor scores against
 
 - The module table in [README.md](README.md), the profile targets in
   [profiles/README.md](../profiles/README.md) and the survey-to-module map in
-  [audit/methodology.md](../audit/methodology.md) name every module; a new or
+  [audit methodology](../plugin/skills/audit/references/methodology.md) name every module; a new or
   renamed module changes all three.
 - When a skill in the [plugin](../plugin/README.md) implements a module's
   practice, the module README links it as the runnable form, and the skill

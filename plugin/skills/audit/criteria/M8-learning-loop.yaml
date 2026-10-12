@@ -1,0 +1,122 @@
+# Machine-evaluable criteria for M8 (learning loop).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M8
+name: learning-loop
+criteria:
+  - id: flywheel-documented
+    level: lite
+    requires: convention
+    statement: >-
+      The miss->lens flywheel is written down (classify, file with a durable id,
+      pre-fix fixture, additive lens, validate, measure) and referenced by the
+      instructions.
+    observe:
+      - "a flywheel/learning-loop doc states the full loop end to end"
+      - "it names the pre-fix fixture and validate-then-gate steps"
+
+  - id: miss-taxonomy-exists
+    level: lite
+    requires: convention
+    statement: >-
+      A closed miss taxonomy exists and misses are classified against it, so
+      recurring classes are countable rather than anecdotal.
+    observe:
+      - "a miss-taxonomy file enumerates categories with stable ids"
+      - "filed misses carry one of those categories"
+
+  - id: reflection-habit
+    level: lite
+    requires: convention
+    statement: >-
+      A session-reflection step captures end-of-session feedback into an inbox
+      for later processing (not lost at session end).
+    observe:
+      - "a reflect step / command appends feedback to a durable inbox"
+
+  - id: corpus-machine-readable
+    level: standard
+    requires: mechanical
+    statement: >-
+      Misses live in a machine-readable corpus where every entry has a unique
+      lever id, a valid taxonomy category, and a pinned pre-fix commit, and a
+      lint validates it in CI.
+    observe:
+      - "a corpus file lists fixtures with lever id + category + pinned_commit"
+      - "a corpus-lint check runs in CI and fails on a duplicate/unknown/unpinned entry"
+
+  - id: lenses-additive
+    level: standard
+    requires: convention
+    statement: >-
+      New coverage is added as numbered, additive lenses each linked to the
+      lever that motivated it; existing lenses are not silently rewritten away.
+    observe:
+      - "lenses are numbered and reference a lever id"
+      - "the convention states the lens list is append-only"
+
+  - id: scaffolding-changes-approved
+    level: standard
+    requires: convention
+    statement: >-
+      Scaffolding / meta-spec changes proposed by reflection require human
+      approval before they are applied.
+    observe:
+      - "reflection feedback becomes PROPOSED changes, gated on a human approval step"
+      - "the approval is listed as a HITL decision (see M7 registry)"
+
+  - id: validate-then-gate-enforced
+    level: strict
+    requires: mechanical
+    statement: >-
+      A fixture may enter the blocking regression corpus (required: true) only
+      with a recorded live validation, enforced by the corpus lint.
+    observe:
+      - "corpus-lint fails a required: true fixture that lacks a dated validated record"
+      - "the check runs in CI"
+
+  - id: parity-measured
+    level: strict
+    requires: mechanical
+    statement: >-
+      A parity report measures recall / precision / missed_blockers against
+      oracles on a schedule; a missed blocker fails loudly and reviewer
+      promotion to blocking is gated on measured precision.
+    observe:
+      - "a scheduled parity job emits per-reviewer tallies and runs the parity gate"
+      - "a missed blocker fails the gate; precision feeds the M7 promotion decision"
+
+  - id: learning-gates-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      The corpus lint and the parity report each ship a self-test that runs in
+      CI, so a broken learning-loop gate fails loudly.
+    observe:
+      - "each gate has a paired self-test exercising a known pass and a known fail"
+      - "CI runs the self-tests"
+
+  - id: memory-promotion-tracked
+    level: strict
+    requires: convention
+    statement: >-
+      Durable lessons are promoted from an agent's private memory into
+      git-tracked, shared memory through a review point, not an automatic dump.
+    observe:
+      - "a promote-memory step lifts private memory into a git-tracked shared store"
+      - "promotion is a review point, not unattended"
+
+  - id: reflection-triggered-on-an-observable
+    level: strict
+    requires: mechanical
+    statement: >-
+      Session reflection is prompted by an observable signal — such as a review
+      whose FINAL round count, at convergence, met a threshold — rather than by
+      the author remembering, and the signal is recorded so entries can be
+      ranked.
+    observe:
+      - "the trigger fires on a converged review whose final round count met the threshold — not mid-loop, where the count is not yet the answer"
+      - "the trigger runs as a step in the review loop, not as an instruction to remember"
+      - "the reflection record carries the triggering measurement — the change id and the count — written by the trigger rather than by hand"
+      - "the threshold is configurable, and firing on every change is not the default"
+      - "a record already filed for that change and count is not filed again, including after the inbox entry has been processed"

@@ -34,7 +34,8 @@ Changing their language would remove the behavior under test.
 
 Shell snippets in consumer templates remain examples of host wiring. They are
 not Jig's runnable gate implementations. No Bash gate or self-test
-remains in `scripts/`, `audit/` or module `reference/` outside fixtures.
+remains in `scripts/`, the plugin's skills or module `reference/` outside
+fixtures.
 
 ## Reproducing a comparison
 

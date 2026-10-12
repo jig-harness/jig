@@ -207,7 +207,7 @@ Whichever you pick, two properties do the work:
   missing verdict fails immediately rather than becoming an unclassifiable row
   at export. Enforcement after the fact cannot recover a verdict nobody wrote.
   This is why the write-time criterion in
-  [`maturity.yaml`](maturity.yaml) sits a rung above the convention.
+  the module's [maturity criteria](../../plugin/skills/audit/criteria/M7-pr-lifecycle-review.yaml) sits a rung above the convention.
 
 Adopters whose tooling emits different words (`accepted` for `addressed`,
 `obsolete` for `moot`) map them in the exporter's `canon()`, whose synonym

@@ -29,17 +29,17 @@ use a [Developer Certificate of Origin](GLOSSARY.md) sign-off.
 ### 2. Skill assets live in the plugin
 
 The plugin installs only `plugin/`, so a skill cannot read anything under
-`modules/`. Templates, gates and criteria a skill uses move into the skill
-that uses them (moved, not copied), and the module links to them there: one
-source, nothing to keep in step. This unblocks items 3–5, which need M6's
-templates, M4's gates and every module's `maturity.yaml`. The module contract
-changes in the same pull request: [modules/AGENTS.md](modules/AGENTS.md)
-requires `templates/`, `reference/` and `maturity.yaml` in every module
-directory, and `audit/score-modules.ts` reads `modules/*/maturity.yaml`, so
-the contract, the auditor and its coverage check move to the new location
-together, and each module links to the assets it no longer holds. Moving the plugin to
-the repository root is not an option: the root `package.json` would make each
-tool install the development dependencies on every machine.
+`modules/`. Templates and gates a skill uses move into the skill that uses
+them (moved, not copied), and the module links to them there: one source,
+nothing to keep in step, as the maturity criteria already do from the
+[audit skill](plugin/skills/audit/criteria/README.md). This unblocks items 3
+and 4, which need M6's templates and M4's gates. The module contract changes
+in the same pull request: [modules/AGENTS.md](modules/AGENTS.md) requires
+`templates/` and `reference/` in every module directory, so the contract
+changes with the move, and each module links to the assets it no longer
+holds. Moving the plugin to the repository root is not an option: the root
+`package.json` would make each tool install the development dependencies on
+every machine.
 
 ### 3. The kickoff family
 
@@ -112,57 +112,7 @@ The practice itself (a changelog per released artifact, mechanically
 checked) belongs in a module; decide whether M10 (environments and deploy)
 holds it or a new release module does.
 
-### 5. `/jig:audit`
-
-The auditor as a plugin skill a repository runs again and again, not a
-one-time adoption step. Today the [auditor](audit/README.md) is a method, survey
-prompts and a checklist generator that an agent follows by hand from a
-Jig checkout; a repository that installs the plugin cannot run it, and
-nothing records what an earlier audit found.
-
-What it does:
-
-1. **Configuration fit** (mechanical, a script). Reads the repository's
-   `.config/jig.yaml` and reports unknown or deprecated keys,
-   wrong types, derivations that fail (the gate command does not exist, the
-   base branch's protection cannot be read, a required check never runs, the
-   tracker cannot be reached), declared values the repository contradicts (for
-   example `stacking: none` with stacked pull requests open), and features the
-   repository's shape suggests but does not use. The field list comes from one
-   machine-readable schema, which [CONFIGURATION.md](plugin/CONFIGURATION.md)
-   and the skills' own validation also use, so the three cannot drift.
-2. **Maturity scoring.** Scores every module's `maturity.yaml` criteria against
-   the repository. A criterion that names an observable fact (a file exists, a
-   CI job runs on pull requests, a hook is configured) gains an optional
-   machine `probe` the script evaluates; the rest are judged by the agent from
-   the survey prompts, with file-path evidence, as
-   [audit/methodology.md](audit/methodology.md) requires.
-3. **A committed record**, `.config/jig-audit.yaml`: the plugin version
-   audited, the date, each criterion's score and evidence, and the
-   recommendations the team declined, each with a reason and a condition for
-   revisiting it. A re-run compares against the record and reports what is
-   fixed, still open, regressed or new, and does not repeat a declined
-   recommendation until its condition holds.
-4. **`since: <version>` markers** on configuration fields and maturity
-   criteria, so a re-run can say what Jig added since the last audit.
-5. **Read-only by default.** Applying a recommendation is a separate, opt-in
-   step that opens one pull request per recommendation (through `do-item`'s
-   pull-request policy), never a bulk change.
-6. **Several repositories**: the
-   [portfolio comparison](audit/portfolio-methodology.md) runs over the
-   per-repository records instead of re-auditing.
-
-Design points to settle in the pull request:
-
-- The criteria live in the skill after item 2, in the same `maturity.yaml`
-  schema; the skill reads them there, and each module links to its own.
-- `audit/` moves into `plugin/skills/audit/` (moved, not copied), leaving a
-  pointer in `audit/README.md`.
-- Done when the skill audits Jig itself (its record committed here) and
-  one external repository, as the
-  [calibration run](audit/calibration/2026-07-19-execa.md) did by hand.
-
-### 6. A shared runtime kernel and diagnostics
+### 5. A shared runtime kernel and diagnostics
 
 The plugin's scripts each solve the same problems by hand: decoding JSON
 from `gh` and configuration files, retrying, releasing locks on a signal,
@@ -198,7 +148,7 @@ item gives each a named replacement and then moves the code onto it.
   drive-pr and resolve-review-comments each keep; the duplicated block in
   `fleet-health.ts`; fallow's complexity hotspots.
 
-### 7. Session reflection with a pluggable store
+### 6. Session reflection with a pluggable store
 
 Turns the reflection cycle of [M8](modules/M8-learning-loop/README.md) into
 two skills: `reflect` records what a session learned about the scaffolding,
@@ -230,13 +180,13 @@ findings about Jig's skills from both, and the conformance suite passes
 against the filesystem store. The design then moves into the skills' READMEs
 and M8.
 
-### 8. Notion store for reflections
+### 7. Notion store for reflections
 
 The [Notion store](design/reflection.md#notion-store): reflections in a Notion
 database people browse and filter, from two settings (`NOTION_TOKEN` and
 `reflection.notion.database`), with `init` creating the database. One page
 per change; each event kept in the page as a JSON block that `list` reads, and
-the properties recomputed from the events as a view. Built after item 7, on
+the properties recomputed from the events as a view. Built after item 6, on
 its contract.
 
 Done when the conformance suite passes against a local fake of the Notion API
@@ -245,7 +195,7 @@ database `init` created using only the two settings.
 
 ## Next
 
-### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
+### 8. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
 Lets a converged drive arm the forge's auto-merge for the exact head it
 certified. It relaxes "a human merges", so the doctrine change is approved on
@@ -266,7 +216,7 @@ before it opens as a pull request the design must guarantee that:
   maturity criteria) changes in the same pull request, in the direction the
   decision picks.
 
-### 10. Values the skills still assume
+### 9. Values the skills still assume
 
 Move into configuration when a consumer needs them:
 
@@ -277,7 +227,7 @@ Move into configuration when a consumer needs them:
 - summary-finding severity is parsed only for the reviewers whose comment
   formats the drive already knows.
 
-### 11. Jig's own Simplified Technical English linter
+### 10. Jig's own Simplified Technical English linter
 
 `decide`'s `ste-lint` is a faithful TypeScript translation of a third-party
 Python linter, kept output-identical to it. Rewrite it as Jig's own
@@ -287,7 +237,7 @@ today), and keep crediting the original
 ([Credits](plugin/RECOMMENDED-SKILLS.md#credits)). The parity record and the
 golden files from the Python linter then retire with the translation.
 
-### 12. More tracker adapters
+### 11. More tracker adapters
 
 Jira, and a plan file kept in the repository. Both wait on the open decisions
 below.

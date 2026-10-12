@@ -126,7 +126,7 @@ What this module provides:
 - [`reference/stage-review-record/`](reference/stage-review-record/) — fails an
   artifact marked `status: accepted` that carries no review record.
 - [`mappings.md`](mappings.md) (agent runtimes, issue trackers, doc and
-  template homes, CI) and [`maturity.yaml`](maturity.yaml).
+  template homes, CI) and the module's [maturity criteria](../../plugin/skills/audit/criteria/M6-feature-delivery-pipeline.yaml).
 
 Both gates have paired self-tests and fixtures beside them. The
 [`/jig:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)

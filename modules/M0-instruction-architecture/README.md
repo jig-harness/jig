@@ -96,7 +96,7 @@ What this module provides:
   [`scripts/freshness.test.ts`](../../scripts/freshness.test.ts); the recipe is
   in [`mappings.md`](mappings.md#cross-runtime-skill-discovery-the-symlink-mirror).
 - [`mappings.md`](mappings.md) (Claude Code, Codex, Cursor and Copilot file
-  conventions) and [`maturity.yaml`](maturity.yaml).
+  conventions) and the module's [maturity criteria](../../plugin/skills/audit/criteria/M0-instruction-architecture.yaml).
 
 Jig's own [`AGENTS.md`](../../AGENTS.md), `CLAUDE.md` pointer and
 nested `AGENTS.md` files are a working instance of this module.

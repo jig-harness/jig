@@ -1,0 +1,85 @@
+# Machine-evaluable criteria for M9 (tasks & memory).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M9
+name: tasks-memory
+criteria:
+  - id: taxonomy-documented
+    level: lite
+    requires: convention
+    statement: >-
+      An issue taxonomy is written down once — a closed set of types and
+      statuses plus named flag labels — and referenced by the instructions.
+    observe:
+      - "a label taxonomy lists types, statuses, and flag labels"
+      - "each flag label names the process it is meant to fire"
+
+  - id: memory-location-designated
+    level: lite
+    requires: convention
+    statement: >-
+      A persistent, multi-session location for agent memory is designated (the
+      how tier), distinct from the tracker and from in-session task lists.
+    observe:
+      - "a memory home is named (a git-tracked dir or a runtime memory feature)"
+      - "the what / how / in-session tiering is documented"
+
+  - id: taxonomy-validated-ssot
+    level: standard
+    requires: mechanical
+    statement: >-
+      The taxonomy is a single validated source-of-truth file, and the
+      label-taxonomy lint runs mechanically so it can't drift into folksonomy.
+    observe:
+      - "a label-taxonomy file is the SSoT (unique ids, closed types/statuses)"
+      - "the label-taxonomy lint runs as a gate on changes to it"
+
+  - id: flag-labels-fire-gates
+    level: standard
+    requires: mechanical
+    statement: >-
+      Flag labels actually fire process, not just categorize — e.g. a migration
+      flag triggers a required check and a hitl flag is honoured.
+    observe:
+      - "at least one flag label is wired to a required check or blocking rule"
+      - "the wiring is derived where possible from the M3 change-area catalog"
+
+  - id: memory-promotion-documented
+    level: standard
+    requires: convention
+    statement: >-
+      The path that lifts a durable lesson from private per-session memory into
+      git-tracked shared memory through a review point is documented.
+    observe:
+      - "a private -> promoted -> git-tracked promotion flow is written down"
+      - "promotion is a review point (HITL), not an automatic dump"
+
+  - id: taxonomy-gates-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      The label-taxonomy lint and the required-phases gate each ship a self-test
+      that runs in CI, so a broken tasks/memory gate fails loudly.
+    observe:
+      - "each gate has a paired self-test exercising a known pass and a known fail"
+      - "CI runs the self-tests"
+
+  - id: required-phases-gate-closure
+    level: strict
+    requires: mechanical
+    statement: >-
+      Required-phase formulas gate item closure — an item cannot reach a done
+      state with a phase the formula marks required left unrecorded.
+    observe:
+      - "a phase-formula file marks the required phases for a work class"
+      - "the required-phases gate runs at close/merge and blocks on a skipped required phase"
+
+  - id: hitl-flag-revokes-autonomy
+    level: strict
+    requires: mechanical
+    statement: >-
+      The hitl flag mechanically revokes autonomous execution/merge for the
+      issue and its PR (the same rule M7 and M0 use).
+    observe:
+      - "a hitl label is defined in the taxonomy and revokes autonomous merge"
+      - "automation cannot self-merge an item carrying the hitl flag"

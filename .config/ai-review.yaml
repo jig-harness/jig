@@ -5,7 +5,7 @@ platform_description: "Jig — a vendor-agnostic toolkit for AI-native software-
 architecture_invariants: |-
   Weigh these repository invariants (flag violations):
   - Keep Jig vendor-agnostic and technology-flexible: state the invariant before naming tools, and put ecosystem-specific mappings in each module's mappings.md.
-  - Preserve the module contract: a complete module has a plain-language README, copyable templates, portable reference material, mappings.md, and maturity.yaml. Maturity criteria must be observable repository facts and use the absent → convention-only → mechanically enforced ladder.
+  - Preserve the module contract: a complete module has a plain-language README, copyable templates, portable reference material, mappings.md, and maturity criteria in the audit skill (plugin/skills/audit/criteria/). Maturity criteria must be observable repository facts and use the absent → convention-only → mechanically enforced ladder.
   - Name no organization Jig learned from and import no product-domain material from one: no organization names, tracker keys, foreign pull-request numbers or paths that exist only elsewhere. Keep portable mechanisms separate from local values; use neutral examples and flag uncertain boundary changes for human review.
   - Everything under plugin/ runs from a copy outside this repository and ships only as a new version: a change there bumps both plugin manifests and adds a CHANGELOG.md section.
   - Approved documentation states current truth without review dialogue or correction traces. Define new terms of art in GLOSSARY.md, keep Markdown tables preceded by a blank line, and preserve working relative links.
@@ -26,9 +26,9 @@ high_risk_path_patterns:
   - source: '^plugin/\.(claude|codex)-plugin/'
   - source: '^\.github/workflows/'
   - source: '^scripts/'
-  - source: '^audit/(score-modules\.ts|methodology\.md|survey-prompts/)'
+  - source: '^plugin/skills/audit/(scripts/|config-schema\.yaml$|references/(methodology\.md$|survey-prompts/))'
   - source: '^modules/M[0-9]+-[^/]+/reference/'
-  - source: '^modules/M[0-9]+-[^/]+/maturity\.yaml$'
+  - source: '^plugin/skills/audit/criteria/M[0-9]+-[^/]+\.yaml$'
 
 rules:
   - id: module-contract
@@ -36,7 +36,7 @@ rules:
     attention: "Review module changes against Jig's module contract. README changes must stay plain-language-first and describe the invariant before tooling; mappings must separate tool choices from the invariant; maturity criteria must be observable and use the enforcement ladder; templates and reference material must remain copyable, portable, and internally linked."
     severity: high
   - id: ip-scrub-and-portability
-    paths: ["modules/**", "plugin/**", "README.md", "PLAYBOOK.md", "ROADMAP.md", "CHANGELOG.md", "principles/**/*.md", "profiles/**/*.md", "adoption/**/*.md", "audit/**/*.md"]
+    paths: ["modules/**", "plugin/**", "README.md", "PLAYBOOK.md", "ROADMAP.md", "CHANGELOG.md", "principles/**/*.md", "profiles/**/*.md", "adoption/**/*.md"]
     attention: "Flag product-domain content, customer data, names of the organizations Jig learned from, or examples that could cross Jig's origin boundary. Flag values presented as universal mechanisms, and mechanisms that make a consumer depend on access to any particular organization's repository."
     severity: high
   - id: markdown-governance
@@ -48,9 +48,13 @@ rules:
     attention: "Check that gates are deterministic, fail closed on invalid input, keep their intended scope, and retain or update their paired self-tests and fixtures. CI changes must continue to run `bun run gates` for repository-wide quality gates and pin third-party actions to immutable commits."
     severity: high
   - id: auditor-evidence
-    paths: ["audit/**", "modules/**/maturity.yaml"]
+    paths: ["plugin/skills/audit/**", ".config/jig-audit.yaml"]
     attention: "Check that audit claims and maturity criteria remain evidence-based, actionable, and scoped to observable repository facts. Do not turn an expected-absent module into a penalty or present advisory evidence as mechanically enforced."
     severity: high
+  - id: audit-fit
+    paths: ["plugin/**", "modules/**", "scripts/**", "lib/**", ".github/workflows/**", ".config/jig.yaml"]
+    attention: "Check that the pull request re-evaluated the audit skill (plugin/skills/audit/) against its change and that its description states the audit impact. Flag a new or changed configuration field, skill, module practice, criterion, gate or template that config-schema.yaml, the criteria and their probes, or config-fit.ts do not reflect, and a description that does not say what changed in the audit or why nothing did."
+    severity: medium
   - id: template-reference-separation
     paths: ["modules/**/templates/**", "modules/**/reference/**"]
     attention: "Ensure templates are neutral copyable skeletons and reference material contains portable mechanisms rather than local policy values. Keep fixture changes aligned with the documented contract and paired self-test expectations."

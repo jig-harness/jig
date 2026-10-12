@@ -57,10 +57,24 @@ Contents: [the file](#the-file) ·
   prints every field set in any layer, its value and the file or variable
   that set it (`jig-config.ts review` narrows it to one section, `--json`
   for a script);
+  `bun <plugin>/skills/audit/scripts/config-fit.ts` checks the repository's
+  file against the plugin's machine-readable
+  [schema](skills/audit/config-schema.yaml) and against the repository:
+  unknown, refused, deprecated and mistyped fields, commands and paths that do
+  not exist, required checks that never run, and declared values the
+  repository contradicts;
   `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
   prints the review skill's values or what is missing;
   `bun <plugin>/skills/do-item/scripts/pr-plan.ts open` prints the pull-request
   policy as it applies to the current branch.
+- **One list of fields.** The schema and this document list the same fields
+  with the same readers, and the schema's value sets are the ones the reading
+  skills accept; the audit skill's tests fail when they differ. A field added
+  to a skill is added to both in the same pull request, with `since:` the
+  plugin version that adds it, so an audit can report it as new.
+- **The audit record.** `/jig:audit` keeps what it found in
+  `.config/jig-audit.yaml` beside this file; it is not configuration, and no
+  other skill reads it.
 
 ## Configuration layers
 
@@ -391,9 +405,10 @@ comment looks like are described in the header of
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `resolve-conflicts`) detect
+`explain`, `resolve-conflicts`, `audit`) detect
 what they need from the repository; set a field only when detection picks
-the wrong thing. `programmatic-execution` reads no field.
+the wrong thing. `programmatic-execution` and `audit` read no field of their
+own; `audit` checks all the others.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|

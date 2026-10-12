@@ -82,7 +82,7 @@ What this module provides:
   drift check that replays migrations into a throwaway Postgres container
   with docker, plus the normalization and operational lessons.
 - [`mappings.md`](mappings.md) (CI providers, hook managers, container and
-  database variants) and [`maturity.yaml`](maturity.yaml).
+  database variants) and the module's [maturity criteria](../../plugin/skills/audit/criteria/M2-generated-artifact-freshness.yaml).
 
 The self-tests for all three references are in
 [`scripts/freshness.test.ts`](../../scripts/freshness.test.ts). The
@@ -95,4 +95,4 @@ data), because they would add domain values without adding mechanism — the
 worked index example carries the whole pattern.
 
 Future: a generic generator for the derived-file inventory. The Strict
-criterion that requires one is stated in [`maturity.yaml`](maturity.yaml).
+criterion that requires one is stated in the module's [maturity criteria](../../plugin/skills/audit/criteria/M2-generated-artifact-freshness.yaml).

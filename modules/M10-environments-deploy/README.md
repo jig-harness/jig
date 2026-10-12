@@ -89,7 +89,7 @@ published package has no environments, no `verified`-to-production path, and no
 preview environments to spin up — its "deploy" is a release/publish gated
 elsewhere. Such a repo can satisfy this module at Lite (document that it does not
 deploy) without the Standard/Strict deploy machinery counting against it; the
-[audit](../../audit/) calibrates by repo shape.
+[audit](../../plugin/skills/audit/README.md) calibrates by repo shape.
 
 ## Adoption steps
 
@@ -129,7 +129,7 @@ it recognises when the repository names no document of its own
 | [`reference/verified-pointer/`](reference/verified-pointer/) | The freshness watchdog: fails when the `verified` pointer lags the default branch |
 | [`reference/promote-safety/`](reference/promote-safety/) | The lint that fails a production deploy that can fire on its own or ships a mutable ref |
 | [`mappings.md`](mappings.md) | CI providers, preview-environment platforms, promotion gates |
-| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+| [maturity criteria](../../plugin/skills/audit/criteria/M10-environments-deploy.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference gate is a standalone Bun script with a self-test and fixtures.
 

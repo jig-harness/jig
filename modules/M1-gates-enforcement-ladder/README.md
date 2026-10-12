@@ -105,7 +105,7 @@ What this module provides:
   promotion; with its self-tests.
 - [`mappings.md`](mappings.md) — hook managers (lefthook, husky, pre-commit),
   CI providers (GitHub Actions, GitLab CI) and pin-and-update providers; and
-  [`maturity.yaml`](maturity.yaml).
+  the module's [maturity criteria](../../plugin/skills/audit/criteria/M1-gates-enforcement-ladder.yaml).
 
 The self-tests for the grep gate and the commit-msg marker are in
 [`scripts/freshness.test.ts`](../../scripts/freshness.test.ts); the

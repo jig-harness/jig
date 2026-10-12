@@ -85,7 +85,7 @@ What this module provides:
 - [`reference/decisions-to-checks/`](reference/decisions-to-checks/) — a
   generic interpreter that applies the rules catalog to changed files.
 - [`mappings.md`](mappings.md) (hook managers, CI providers, issue trackers)
-  and [`maturity.yaml`](maturity.yaml).
+  and the module's [maturity criteria](../../plugin/skills/audit/criteria/M5-adr-practice.yaml).
 
 Each reference gate has a paired self-test beside it. The
 [`/jig:adr`](../../plugin/skills/adr/SKILL.md) skill is the runnable

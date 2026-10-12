@@ -153,7 +153,7 @@ What this module provides:
   gate that matches against parsed `paths:` values, with its self-test and
   fixtures.
 - [`mappings.md`](mappings.md) (CI path filters, tracker labels, deploy tiers)
-  and [`maturity.yaml`](maturity.yaml).
+  and the module's [maturity criteria](../../plugin/skills/audit/criteria/M3-change-area-catalog.yaml).
 
 Deliberately left out: a runnable resolver, catalog validator and projection
 emitters. A change-area resolver is a structured-data and graph job best

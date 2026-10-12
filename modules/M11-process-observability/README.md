@@ -126,7 +126,7 @@ Their configuration is `fleet_health` and `drive.escape_baseline_doc` in the
 | [`reference/event-schema-lint/`](reference/event-schema-lint/) | Validates an emitted event stream against the schema |
 | [`reference/no-dark-instruments/`](reference/no-dark-instruments/) | Fails when a registered metric's source is missing, empty or a placeholder |
 | [`mappings.md`](mappings.md) | Telemetry and analytics backends, where events are emitted from, dashboard homes |
-| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+| [maturity criteria](../../plugin/skills/audit/criteria/M11-process-observability.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference gate is a standalone Bun script with a self-test and fixtures.
 The parity and precision computation is not repeated here: it is

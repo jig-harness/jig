@@ -3,8 +3,9 @@
 The 13 practice modules. Each adopts independently at three maturity levels
 (Lite / Standard / Strict — see [principle 2](../principles/02-modular-profile-composed.md))
 and carries the same directory contract: `README.md`, `templates/`,
-`reference/`, `mappings.md`, `maturity.yaml`. The contract, the README order
-and the facts to keep consistent across modules are in [AGENTS.md](AGENTS.md).
+`reference/`, `mappings.md`, and its [maturity criteria](#maturity-criteria) in
+the audit skill. The contract, the README order and the facts to keep
+consistent across modules are in [AGENTS.md](AGENTS.md).
 
 The last column names the [plugin](../plugin/README.md) skills that run a
 module's practice for you; a module without one is adopted from its templates
@@ -27,40 +28,15 @@ and reference gates.
 | [M12 Parallel-agent ergonomics](M12-parallel-agent-ergonomics/) | Multiple agents, one machine/repo: ports, mutexes, branch discipline | — |
 
 Adoption ordering for brownfield projects is leverage-first — typically
-M1 → M2 → M0 → M4 — but the [audit](../audit/) report's recommendation
+M1 → M2 → M0 → M4 — but the [audit](../plugin/skills/audit/README.md) report's recommendation
 sequence overrides any generic ordering.
 
-## `maturity.yaml` schema
+## Maturity criteria
 
-Every module's `maturity.yaml` uses one format, so the [auditor](../audit/)
-can score any module the same way. Criteria are observable repo facts (a file
-exists, a CI job is present, a hook is configured) — never judgments of
-quality — and each is scored on the enforcement ladder (see
-[GLOSSARY.md](../GLOSSARY.md)): `absent` → `convention` → `mechanical`.
-
-```yaml
-module: M1                        # module id
-name: gates-enforcement-ladder    # module directory suffix
-criteria:
-  - id: gate-set-documented       # stable slug, unique within the module
-    level: lite                   # rung where this first becomes required:
-                                  #   lite | standard | strict
-    requires: convention          # minimum score to pass: convention | mechanical
-    statement: >-                 # the criterion as one plain-language sentence
-      An ordered gate set is stated in one canonical place and runnable
-      with a single command.
-    observe:                      # what the auditor actually looks for
-      - "instruction file lists the ordered gates"
-      - "one script/task runs them all"
-```
-
-Scoring: each criterion is *observed* on the enforcement ladder as `absent`,
-`convention` (stated in prose or habit only), `advisory` (a check runs
-mechanically but cannot block — a non-blocking CI step; see
-[GLOSSARY.md](../GLOSSARY.md)), or `mechanical` (a hook, CI job, or review
-gate enforces it). The `requires` field is the *pass bar* and takes only
-`convention` or `mechanical`: a criterion needing `mechanical` is **not** met
-by an `advisory` observation (that is precisely a gate to promote). A repo
-attains a maturity level when every criterion at that level *and below* is
-observed at or above its `requires`. `requires: mechanical` criteria are what
-separate Standard/Strict rungs from documentation theater.
+Each module's maturity criteria are observable repository facts the
+[audit skill](../plugin/skills/audit/README.md) scores, in one file per module
+under [`plugin/skills/audit/criteria/`](../plugin/skills/audit/criteria/),
+where the plugin can read them from any repository. Their format, how they
+are scored and how a level is attained are in that folder's
+[README](../plugin/skills/audit/criteria/README.md). Each module README links
+its own file.

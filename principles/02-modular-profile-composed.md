@@ -21,7 +21,7 @@ scaffolding that lets AI agents work it well (principle 3).
 
 - A module never *requires* another module's Strict level; cross-module
   dependencies are declared in the module README and kept minimal.
-- Maturity levels are defined by **observable criteria** (`maturity.yaml`) so
-  the auditor can score them — not by adjectives.
+- Maturity levels are defined by **observable criteria** (one machine-readable
+  file per module) so the auditor can score them — not by adjectives.
 - Brownfield adoption is one rung at a time; "we adopted the module" means "we
   reached Lite," not "we did everything."

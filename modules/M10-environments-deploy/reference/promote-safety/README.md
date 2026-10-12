@@ -52,7 +52,7 @@ neither. Two subtleties the heuristic gets right:
   GitHub/GitLab **environment protection rules** — required reviewers, wait
   timers — are attached; the actual approval is a repo setting the lint can't
   see, so it checks the wiring hook exists and leaves the rule to the
-  [maturity criterion](../../maturity.yaml)) or a GitLab `when: manual`.
+  [maturity criterion](../../../../plugin/skills/audit/criteria/M10-environments-deploy.yaml)) or a GitLab `when: manual`.
 - **A `verified` reference does not clear a mutable ref.** A line matcher cannot
   prove *which* line is the deploy command, so a `verified` reference elsewhere
   in the deploy job — a build-artifact download, a tooling checkout — cannot
@@ -100,7 +100,7 @@ as [M7](../../../M7-pr-lifecycle-review/)'s lint):
 - It reads a **job-level** `environment:` key (at the job-body indent, not a
   deeper step *input* named `environment`) as "a gate exists" — but it does not
   confirm the environment actually has required reviewers configured (that lives
-  in repo settings, which the strict [maturity criterion](../../maturity.yaml)
+  in repo settings, which the strict [maturity criterion](../../../../plugin/skills/audit/criteria/M10-environments-deploy.yaml)
   covers separately). Likewise, a GitLab `when: manual` anywhere in the job
   clears a push finding even if it belongs to a *different* rule than the
   push-matching one — binding a gate to the specific rule that fires on push is

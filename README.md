@@ -25,7 +25,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
    kickoff methodology ([seeds/project-kickoff/](seeds/project-kickoff/)) with
    day-one module adoption.
 2. **Brownfield upgrade** — improving an existing project: start with an
-   **audit** ([audit/](audit/)) that scores the target repo against the module
+   **audit** ([`/jig:audit`](plugin/skills/audit/README.md)) that scores the target repo against the module
    map and produces a prioritized, actionable report, then adopt modules one
    maturity rung at a time ([adoption/brownfield.md](adoption/brownfield.md)).
 3. **Reference** — cherry-pick a single pattern (e.g., generated-artifact
@@ -45,11 +45,10 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 | [principles/](principles/) | The seven design principles behind everything here |
 | [modules/](modules/) | The 13 practice modules (M0–M12), each independently adoptable |
-| [audit/](audit/) | The auditor: methodology, survey prompts, report template |
 | [profiles/](profiles/) | Module compositions: Solo/Lite, Team/Standard, Regulated/Strict |
 | [adoption/](adoption/) | Greenfield and brownfield adoption paths |
 | [seeds/](seeds/) | Imported source material, kept as-imported for provenance |
-| [plugin/](plugin/README.md) | The `jig` plugin: agent skills for Claude Code and Codex (the pull-request drive loop, issue pickup, review resolution, conflict resolution, and procedure skills), the `review-arbiter` agent, and [recommended third-party skills](plugin/RECOMMENDED-SKILLS.md) |
+| [plugin/](plugin/README.md) | The `jig` plugin: agent skills for Claude Code and Codex (the pull-request drive loop, issue pickup, review resolution, conflict resolution, the [repository audit](plugin/skills/audit/README.md), and procedure skills), the `review-arbiter` agent, and [recommended third-party skills](plugin/RECOMMENDED-SKILLS.md) |
 | [tools/](tools/README.md) | Runnable development tools |
 
 ## Status

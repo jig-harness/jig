@@ -30,6 +30,7 @@ when they run.
 | [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool, grounded in the repository's real schema and code | `/jig:design-brief-builder` |
 | [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/jig:decide` |
 | [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/jig:explain` |
+| [audit](skills/audit/README.md) | Audits the repository against Jig's practice modules: checks its `.config/jig.yaml` against the repository, scores every module's maturity criteria with evidence, and records the result in the repository so the next audit reports what changed | `/jig:audit` |
 
 The plugin also ships agents (a [subagent](../GLOSSARY.md) is a separately prompted helper
 that a skill hands a narrow job to):
@@ -169,7 +170,11 @@ committed: no copy of the skill, no install script, no generated files.
    Fields a skill does not read are ignored, so other tooling can share the
    file. Check it by running the skill's first step from the repository:
    `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
-   prints the values or says what is missing.
+   prints the values or says what is missing, and
+   `bun <plugin>/skills/audit/scripts/config-fit.ts` checks every field
+   against the plugin's schema and the repository (misspelt or deprecated
+   fields, commands and paths that do not exist, required checks that never
+   run).
 
    Values that are yours rather than the repository's go in `~/.jig/jig.yaml`,
    which every repository on the machine reads below its own file; an
@@ -328,7 +333,7 @@ lists them.
 
 ## The procedure skills
 
-The skills from `review` to `explain` in the table above need no
+The skills from `review` to `audit` in the table above need no
 configuration: each one detects what it can from the repository (its base
 branch, package manager, decision-record folder, documentation root) and falls
 back to generic guidance where a repository has nothing to detect. They read

@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { remediation } from "./check-branch-protection.ts";
+import { checkAuditFit } from "./check-audit-fit.ts";
 import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 
@@ -376,4 +377,65 @@ test("the changelog must carry the current plugin version", async () => {
   manifest("codex", "1.3.0");
   expect(checkChangelog(dir)).toBe(1);
   expect(checkChangelog(root)).toBe(0);
+});
+
+test("check-audit-fit passes on Jig and fails until a new criterion is scored", async () => {
+  expect(await checkAuditFit(root)).toBe(0);
+  const dir = temp();
+  safeSpawn(["git", "init", "-q", dir]);
+  const criteria = join(dir, "criteria");
+  mkdirSync(join(dir, ".config"), { recursive: true });
+  mkdirSync(criteria);
+  writeFileSync(
+    join(criteria, "M1-gates.yaml"),
+    "module: M1\nname: gates\ncriteria:\n  - { id: a, level: lite, requires: convention, statement: A., observe: [a] }\n",
+  );
+  const record = (criteria: string) =>
+    `version: 1\nplugin_version: 0.0.0\ndate: "2026-01-01"\ncommit: abc\nshape: library\ncriteria:\n${criteria}`;
+  const a = '  M1/a: { score: convention, evidence: "AGENTS.md" }\n';
+  writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a));
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  writeFileSync(join(dir, ".config/jig.yaml"), "other_tool:\n  key: 1\n");
+  expect(await checkAuditFit(dir, criteria)).toBe(0);
+
+  writeFileSync(
+    join(criteria, "M1-gates.yaml"),
+    `${readFileSync(join(criteria, "M1-gates.yaml"), "utf8")}  - { id: b, level: lite, requires: convention, statement: B., observe: [b] }\n`,
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  writeFileSync(
+    join(dir, ".config/jig-audit.yaml"),
+    record(`${a}  M1/b: { score: absent, evidence: "none" }\n`),
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(0);
+
+  writeFileSync(join(dir, "package.json"), '{"scripts": {"gates": "x"}}');
+  writeFileSync(
+    join(dir, ".config/jig.yaml"),
+    "gates:\n  comand: npm run gates\n",
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  writeFileSync(
+    join(dir, ".config/jig.yaml"),
+    "gates:\n  command: npm run missing\n",
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  writeFileSync(
+    join(dir, ".config/jig-audit.yaml"),
+    `${record(`${a}  M1/b: { score: absent, evidence: "none" }\n`)}declined:\n  - refs: ["config/derivation:gates.command"]\n    reason: Not now.\n    revisit_when: Later.\n`,
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  // Declining an unknown field does not get it past the gate.
+  writeFileSync(
+    join(dir, ".config/jig.yaml"),
+    "gates:\n  comand: npm run gates\n",
+  );
+  writeFileSync(
+    join(dir, ".config/jig-audit.yaml"),
+    `${record(`${a}  M1/b: { score: absent, evidence: "none" }\n`)}declined:\n  - refs: ["config/unknown:gates.comand"]\n    reason: Not now.\n    revisit_when: Later.\n`,
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+
+  rmSync(join(dir, ".config/jig-audit.yaml"));
+  expect(await checkAuditFit(dir, criteria)).toBe(2);
 });

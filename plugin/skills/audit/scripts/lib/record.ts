@@ -1,0 +1,520 @@
+/**
+ * The audit record (`.config/jig-audit.yaml`): what an audit found, committed
+ * in the audited repository so the next audit can compare against it.
+ *
+ *   version: 1
+ *   plugin_version: 0.13.0     # the plugin that ran the audit
+ *   date: 2026-10-12
+ *   commit: <full sha>          # the commit audited
+ *   shape: library              # what the repository is; calibrates expected-absent
+ *   criteria:
+ *     M1/ci-runs-gates-on-pr:
+ *       score: mechanical       # absent | convention | advisory | mechanical | expected-absent
+ *       evidence: .github/workflows/ci.yml runs the gates; required on main
+ *   declined:                   # recommendations the team chose not to take
+ *     - refs: [M1/precommit-autofix-hooks]
+ *       reason: The editor formats on save and CI checks formatting.
+ *       revisit_when: Formatting failures reach CI more than once a month.
+ *       revisit_after: 2027-04-01   # optional: raise it again after this date
+ *
+ * A declined entry's `refs` name criteria (`M<n>/<id>`) or configuration
+ * findings (`config/<finding id>`).
+ */
+import { isMapping as isRecord } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import {
+  type Attainment,
+  attained,
+  type Criterion,
+  EXPECTED_ABSENT,
+  meets,
+  type Module,
+  rank,
+  type Score,
+  SCORES,
+} from "./criteria.ts";
+import type { Schema } from "./schema.ts";
+import { compareVersions, isDate, VERSION_PATTERN } from "./repo.ts";
+
+export const RECORD_RELPATH = ".config/jig-audit.yaml";
+
+export interface Declined {
+  refs: string[];
+  reason: string;
+  revisit_when: string;
+  revisit_after?: string;
+}
+
+export interface AuditRecord {
+  version: 1;
+  plugin_version: string;
+  date: string;
+  commit: string;
+  shape?: string;
+  criteria: Map<string, { score: Score | null; evidence: string | null }>;
+  declined: Declined[];
+}
+
+const text = (v: unknown): v is string =>
+  typeof v === "string" && v.trim() !== "";
+
+/** A YAML date without quotes parses as a Date; read both forms as text. */
+function isoDate(v: unknown): unknown {
+  return v instanceof Date ? v.toISOString().slice(0, 10) : v;
+}
+
+type Scored = { score: Score | null; evidence: string | null };
+
+function parseCriteria(raw: unknown, file: string): Map<string, Scored> {
+  if (!isRecord(raw)) throw new Error(`${file}: criteria must be a mapping`);
+  const criteria = new Map<string, Scored>();
+  for (const [key, entry] of Object.entries(raw)) {
+    if (!/^M\d+\/[a-z0-9-]+$/.test(key))
+      throw new Error(`${file}: ${key} is not a criterion key (M<n>/<id>)`);
+    if (!isRecord(entry)) throw new Error(`${file}: ${key} must be a mapping`);
+    const score = entry.score ?? null;
+    if (score !== null && !(SCORES as readonly unknown[]).includes(score))
+      throw new Error(`${file}: ${key}.score must be ${SCORES.join(" | ")}`);
+    const evidence = entry.evidence ?? null;
+    if (evidence !== null && typeof evidence !== "string")
+      throw new Error(`${file}: ${key}.evidence must be text`);
+    criteria.set(key, { score: score as Score | null, evidence });
+  }
+  return criteria;
+}
+
+function parseDeclined(d: unknown, at: string): Declined {
+  if (!isRecord(d)) throw new Error(`${at} must be a mapping`);
+  if (!Array.isArray(d.refs) || d.refs.length === 0 || !d.refs.every(text))
+    throw new Error(`${at}.refs must list criteria or config findings`);
+  for (const ref of d.refs as string[])
+    if (!/^(M\d+\/[a-z0-9-]+|config\/.+)$/.test(ref))
+      throw new Error(
+        `${at}.refs: ${ref} is neither M<n>/<id> nor config/<finding>`,
+      );
+  if (!text(d.reason)) throw new Error(`${at}.reason is required`);
+  if (!text(d.revisit_when)) throw new Error(`${at}.revisit_when is required`);
+  const after = isoDate(d.revisit_after);
+  if (
+    after !== undefined &&
+    after !== null &&
+    (typeof after !== "string" || !isDate(after))
+  )
+    throw new Error(`${at}.revisit_after must be a calendar date, YYYY-MM-DD`);
+  return {
+    refs: d.refs as string[],
+    reason: d.reason,
+    revisit_when: d.revisit_when,
+    ...(typeof after === "string" ? { revisit_after: after } : {}),
+  };
+}
+
+/**
+ * Parse a record. Shape errors throw; a record that parses but is incomplete
+ * (an unscored criterion) is reported by `checkRecord`, so a draft can be
+ * read while it is being filled in.
+ */
+export function parseRecord(source: string, file: string): AuditRecord {
+  const raw = load(source);
+  if (!isRecord(raw)) throw new Error(`${file}: must be a mapping`);
+  if (raw.version !== 1) throw new Error(`${file}: version must be 1`);
+  if (
+    typeof raw.plugin_version !== "string" ||
+    !VERSION_PATTERN.test(raw.plugin_version)
+  )
+    throw new Error(`${file}: plugin_version must be a version such as 0.13.0`);
+  const date = isoDate(raw.date);
+  if (typeof date !== "string" || !isDate(date))
+    throw new Error(`${file}: date must be a calendar date, YYYY-MM-DD`);
+  if (!text(raw.commit)) throw new Error(`${file}: commit is required`);
+  if (raw.shape !== undefined && raw.shape !== null && !text(raw.shape))
+    throw new Error(`${file}: shape must be text`);
+  const criteria = parseCriteria(raw.criteria ?? {}, file);
+  const declinedRaw = raw.declined ?? [];
+  if (!Array.isArray(declinedRaw))
+    throw new Error(`${file}: declined must be a list`);
+  return {
+    version: 1,
+    plugin_version: raw.plugin_version,
+    date,
+    commit: raw.commit,
+    ...(text(raw.shape) ? { shape: raw.shape } : {}),
+    criteria,
+    declined: declinedRaw.map((d, i) =>
+      parseDeclined(d, `${file}: declined[${i}]`),
+    ),
+  };
+}
+
+/** What makes a record unfit to commit: unscored or unknown criteria, scores without evidence. */
+export function checkRecord(record: AuditRecord, modules: Module[]): string[] {
+  const problems: string[] = [];
+  const known = new Set(modules.flatMap((m) => m.criteria.map((c) => c.key)));
+  for (const key of known) {
+    const entry = record.criteria.get(key);
+    if (!entry) problems.push(`${key}: missing`);
+    else if (entry.score === null) problems.push(`${key}: not scored`);
+    else if (!text(entry.evidence)) problems.push(`${key}: no evidence`);
+  }
+  for (const key of record.criteria.keys())
+    if (!known.has(key))
+      problems.push(`${key}: not a criterion of this plugin version`);
+  for (const d of record.declined)
+    for (const ref of d.refs)
+      if (ref.startsWith("M") && !known.has(ref))
+        problems.push(
+          `declined ${ref}: not a criterion of this plugin version`,
+        );
+  return problems;
+}
+
+/** The scored criteria of a record, as `attained` reads them. */
+export function scoresOf(record: AuditRecord): Map<string, Score> {
+  const scores = new Map<string, Score>();
+  for (const [key, entry] of record.criteria)
+    if (entry.score !== null) scores.set(key, entry.score);
+  return scores;
+}
+
+export type Change =
+  | "fixed"
+  | "regressed"
+  | "still-open"
+  | "unchanged"
+  | "new"
+  | "added-by-jig"
+  | "reclassified"
+  | "removed";
+
+export interface CriterionChange {
+  key: string;
+  change: Change;
+  prior: Score | null;
+  current: Score | null;
+}
+
+export type DeclinedStatus = "held" | "due" | "resolved" | "stale";
+
+export interface Comparison {
+  criteria: CriterionChange[];
+  declined: { entry: Declined; status: DeclinedStatus; why: string }[];
+  /** Configuration fields the plugin added after the prior audit's version. */
+  newFields: string[];
+  levels: {
+    module: string;
+    prior: Attainment | null;
+    current: Attainment | null;
+  }[];
+}
+
+/** How a criterion scored both times changed against its pass bar. */
+function scoredChange(
+  before: Score,
+  after: Score,
+  requires: Criterion["requires"],
+): Change {
+  // Into or out of expected-absent is a change in what the repository
+  // is, not in how well it follows the practice.
+  if ((before === EXPECTED_ABSENT) !== (after === EXPECTED_ABSENT))
+    return "reclassified";
+  const [was, is] = [meets(before, requires), meets(after, requires)];
+  if (!was && is) return "fixed";
+  if (was && !is) return "regressed";
+  if (rank(after) < rank(before)) return "regressed";
+  return was ? "unchanged" : "still-open";
+}
+
+/** How a criterion changed since the prior audit, run by plugin `priorVersion`. */
+function criterionChange(
+  criterion: Criterion,
+  before: Score | null,
+  after: Score,
+  priorVersion: string,
+): Change {
+  if (before !== null) return scoredChange(before, after, criterion.requires);
+  return criterion.since && compareVersions(criterion.since, priorVersion) > 0
+    ? "added-by-jig"
+    : "new";
+}
+
+/** Whether every criterion `refs` names now meets its bar. */
+function allMet(
+  refs: string[],
+  all: Map<string, Criterion>,
+  scores: Map<string, Score>,
+): boolean {
+  return refs.every((r) => {
+    const score = scores.get(r);
+    const c = all.get(r);
+    return score !== undefined && c !== undefined && meets(score, c.requires);
+  });
+}
+
+/** Where a prior declined entry stands now. */
+function declinedStatus(
+  entry: Declined,
+  all: Map<string, Criterion>,
+  scores: Map<string, Score>,
+  today: string,
+): Comparison["declined"][number] {
+  const criteriaRefs = entry.refs.filter((r) => !r.startsWith("config/"));
+  // A configuration ref is settled by config-fit, not by criterion scores,
+  // so an entry that names one is never resolved here.
+  const namesConfig = criteriaRefs.length < entry.refs.length;
+  const missing = criteriaRefs.filter((r) => !all.has(r));
+  if (missing.length > 0)
+    return {
+      entry,
+      status: "stale",
+      why: `${missing.join(", ")} is no longer a criterion; decide again or drop it`,
+    };
+  if (
+    !namesConfig &&
+    criteriaRefs.length > 0 &&
+    allMet(criteriaRefs, all, scores)
+  )
+    return {
+      entry,
+      status: "resolved",
+      why: "every criterion it names now meets its bar; drop the entry",
+    };
+  if (entry.revisit_after && entry.revisit_after <= today)
+    return {
+      entry,
+      status: "due",
+      why: `revisit date ${entry.revisit_after} has passed`,
+    };
+  return { entry, status: "held", why: `held until: ${entry.revisit_when}` };
+}
+
+/**
+ * Compare a new record with the prior one. A criterion is `fixed` when it
+ * now meets its bar and did not, `regressed` when it no longer meets it or
+ * its rung dropped (below the bar too), `still-open` when it fails both times
+ * on the same or a higher rung; one the prior
+ * record lacks is `added-by-jig` when its `since` is newer than the prior
+ * audit's plugin version, else `new`.
+ */
+export function compare(
+  prior: AuditRecord,
+  current: AuditRecord,
+  modules: Module[],
+  schema: Schema,
+  today: string,
+): Comparison {
+  const all = new Map<string, Criterion>(
+    modules.flatMap((m) => m.criteria.map((c) => [c.key, c] as const)),
+  );
+  const changes: CriterionChange[] = [];
+  for (const [key, criterion] of all) {
+    const before = prior.criteria.get(key)?.score ?? null;
+    const after = current.criteria.get(key)?.score ?? null;
+    if (after === null) continue;
+    const change = criterionChange(
+      criterion,
+      before,
+      after,
+      prior.plugin_version,
+    );
+    changes.push({ key, change, prior: before, current: after });
+  }
+  for (const [key, entry] of prior.criteria)
+    if (!all.has(key))
+      changes.push({
+        key,
+        change: "removed",
+        prior: entry.score,
+        current: null,
+      });
+
+  const currentScores = scoresOf(current);
+  const declined = prior.declined.map((entry) =>
+    declinedStatus(entry, all, currentScores, today),
+  );
+
+  const newFields = schema.fields
+    .filter(
+      (f) => f.since && compareVersions(f.since, prior.plugin_version) > 0,
+    )
+    .map((f) => `${f.path} (since ${f.since})`);
+
+  const priorScores = scoresOf(prior);
+  const levels = modules.map((m) => ({
+    module: `${m.module} ${m.name}`,
+    prior: attained(m, priorScores),
+    current: attained(m, currentScores),
+  }));
+  return { criteria: changes, declined, newFields, levels };
+}
+
+const CHANGE_ORDER: Change[] = [
+  "regressed",
+  "fixed",
+  "added-by-jig",
+  "new",
+  "still-open",
+  "reclassified",
+  "removed",
+];
+
+export function renderComparison(c: Comparison, prior: AuditRecord): string {
+  const lines = [
+    `# Changes since the audit of ${prior.date} (plugin ${prior.plugin_version})`,
+    "",
+  ];
+  for (const change of CHANGE_ORDER) {
+    const rows = c.criteria.filter((r) => r.change === change);
+    if (rows.length === 0) continue;
+    lines.push(`## ${change} (${rows.length})`, "");
+    for (const r of rows)
+      lines.push(`- ${r.key}: ${r.prior ?? "—"} → ${r.current ?? "—"}`);
+    lines.push("");
+  }
+  const unchanged = c.criteria.filter((r) => r.change === "unchanged").length;
+  lines.push(`Unchanged and met: ${unchanged}.`, "");
+  if (c.newFields.length > 0)
+    lines.push(
+      "## Configuration fields added since",
+      "",
+      ...c.newFields.map((f) => `- ${f}`),
+      "",
+    );
+  if (c.declined.length > 0) {
+    lines.push("## Declined recommendations", "");
+    for (const d of c.declined)
+      lines.push(`- **${d.status}** ${d.entry.refs.join(", ")}: ${d.why}`);
+    lines.push("");
+  }
+  lines.push(
+    "## Levels attained",
+    "",
+    "| Module | Prior | Now |",
+    "|--------|-------|-----|",
+  );
+  for (const l of c.levels)
+    lines.push(
+      `| ${l.module} | ${l.prior ?? "incomplete"} | ${l.current ?? "incomplete"} |`,
+    );
+  return `${lines.join("\n")}\n`;
+}
+
+/** One YAML double-quoted scalar: JSON's string syntax is a subset of it. */
+export const quote = (s: string): string => JSON.stringify(s);
+
+const oneLine = (s: string): string => s.replace(/\s+/g, " ");
+
+/** One criterion's draft entry: its comments, then its score and evidence. */
+function draftCriterion(
+  c: Criterion,
+  prior: { score: Score | null; evidence: string | null } | undefined,
+  decided: { score: Score; evidence: string } | undefined,
+  hint: string | undefined,
+): string[] {
+  const out = [
+    `  ${c.key}:   # ${c.level}, requires ${c.requires}`,
+    `    # ${oneLine(c.statement)}`,
+  ];
+  if (prior?.score)
+    out.push(`    # prior: ${prior.score}: ${oneLine(prior.evidence ?? "")}`);
+  if (hint) out.push(`    # probe ${oneLine(hint)}`);
+  out.push(`    score: ${decided ? decided.score : "null"}`);
+  out.push(`    evidence: ${decided ? quote(decided.evidence) : "null"}`);
+  return out;
+}
+
+/** The prior record's declined entries, carried over unchanged. */
+function draftDeclined(declined: Declined[]): string[] {
+  if (declined.length === 0) return ["declined: []"];
+  const out = ["declined:"];
+  for (const d of declined) {
+    out.push(`  - refs: [${d.refs.map(quote).join(", ")}]`);
+    out.push(`    reason: ${quote(d.reason)}`);
+    out.push(`    revisit_when: ${quote(d.revisit_when)}`);
+    if (d.revisit_after)
+      out.push(`    revisit_after: ${quote(d.revisit_after)}`);
+  }
+  return out;
+}
+
+/**
+ * A draft record for a new audit, ready for the agent to fill in. Scores the
+ * script decided (a probe whose precondition is missing) are filled; every
+ * other criterion has `score: null` with its statement, its pass bar and the
+ * prior audit's answer as comments. The prior record's declined entries are
+ * carried over unchanged.
+ */
+export function renderDraft(opts: {
+  modules: Module[];
+  decided: ReadonlyMap<string, { score: Score; evidence: string }>;
+  hints: ReadonlyMap<string, string>;
+  prior: AuditRecord | null;
+  pluginVersion: string;
+  date: string;
+  commit: string;
+}): string {
+  const out = [
+    "# Jig audit record: written by /jig:audit, read by its next run.",
+    "# Each criterion carries its level, pass bar and statement as comments.",
+    "version: 1",
+    `plugin_version: ${opts.pluginVersion}`,
+    `date: ${quote(opts.date)}`,
+    `commit: ${opts.commit}`,
+    `shape: ${opts.prior?.shape ? quote(opts.prior.shape) : "null"}   # library | application | service | monorepo | documentation | …`,
+    "criteria:",
+  ];
+  for (const m of opts.modules) {
+    out.push(`  # ${m.module} ${m.name}`);
+    for (const c of m.criteria)
+      out.push(
+        ...draftCriterion(
+          c,
+          opts.prior?.criteria.get(c.key),
+          opts.decided.get(c.key),
+          opts.hints.get(c.key),
+        ),
+      );
+  }
+  out.push(...draftDeclined(opts.prior?.declined ?? []));
+  return `${out.join("\n")}\n`;
+}
+
+/** Scores of several repositories' records side by side. */
+export function renderPortfolio(
+  records: { name: string; record: AuditRecord }[],
+  modules: Module[],
+): string {
+  const names = records.map((r) => r.name);
+  const head = `| Criterion | Requires | ${names.join(" | ")} |`;
+  const rule = `|-----------|----------|${names.map(() => "---").join("|")}|`;
+  const lines = [
+    "# Portfolio scores",
+    "",
+    `Records: ${records.map((r) => `${r.name} (${r.record.date}, plugin ${r.record.plugin_version}${r.record.shape ? `, ${r.record.shape}` : ""})`).join("; ")}.`,
+    "A ✓ marks a criterion that meets its bar; `expected-absent` is met by the repository's shape.",
+    "",
+    "## Levels attained",
+    "",
+    `| Module | ${names.join(" | ")} |`,
+    `|--------|${names.map(() => "---").join("|")}|`,
+  ];
+  for (const m of modules)
+    lines.push(
+      `| ${m.module} ${m.name} | ${records.map((r) => attained(m, scoresOf(r.record)) ?? "incomplete").join(" | ")} |`,
+    );
+  lines.push("");
+  for (const m of modules) {
+    lines.push(`## ${m.module} ${m.name}`, "", head, rule);
+    for (const c of m.criteria) {
+      const cells = records.map((r) => {
+        const score = r.record.criteria.get(c.key)?.score;
+        if (!score) return "—";
+        return meets(score, c.requires) && score !== EXPECTED_ABSENT
+          ? `${score} ✓`
+          : score;
+      });
+      lines.push(`| ${c.id} | ${c.requires} | ${cells.join(" | ")} |`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}

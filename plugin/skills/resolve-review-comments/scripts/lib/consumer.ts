@@ -289,7 +289,7 @@ function checkReviewField(key: string, value: unknown): void {
   if (key === "taxonomy") checkTaxonomy(value);
 }
 
-function parseReviewConfig(review: unknown): ReviewConfig {
+export function parseReviewConfig(review: unknown): ReviewConfig {
   if (review === undefined) return {};
   if (!review || typeof review !== "object" || Array.isArray(review))
     throw new Error("review must be an object");

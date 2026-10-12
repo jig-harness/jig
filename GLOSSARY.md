@@ -426,7 +426,18 @@ capitalized as commonly written; cross-references are *italicized*.
   models decide, cheap models explore).
 - **Auditor** — Jig's runnable assessment: parallel surveys of a target
   repo, stack detection, per-module maturity scoring, and a prioritized
-  recommendations report. See [audit/](audit/).
+  recommendations report, recorded in the audited repository so a re-run
+  reports what changed. Runs as the `jig` plugin's `/jig:audit`; see the
+  [audit skill](plugin/skills/audit/README.md).
+- **Audit record** — the file (`.config/jig-audit.yaml`) in which an audit
+  leaves what it found in the audited repository: the plugin version, date and
+  commit, each maturity criterion's score with its evidence, and the
+  recommendations the team declined, each with a reason and a condition for
+  revisiting it. The next audit compares against it.
+- **Probe** — a precondition of a maturity criterion that a script can test
+  from the repository's files ("some CI configuration exists"). When it does
+  not hold the criterion is scored absent without further judgement; when it
+  holds, an agent still judges the criterion itself.
 - **Backflow** — the standing rule that lessons learned in the repositories
   that use Jig flow back into it (and Jig's improvements flow
   out to them), keeping both honest.
@@ -456,6 +467,11 @@ capitalized as commonly written; cross-references are *italicized*.
   for every repository, then the repository's *consumer overlay*, then
   environment variables for one run. Sections merge field by field; any
   other value replaces the earlier one whole.
+- **Configuration schema** — the machine-readable list of every field the
+  consumer overlay may hold, with its type and the skills that read it
+  ([config-schema.yaml](plugin/skills/audit/config-schema.yaml)). The audit
+  checks a repository's file against it, and tests keep it and the written
+  reference listing the same fields.
 - **Toolchain** — the runtime, compiler and checks used to build and test tools.
 - **Bun** — the runtime that executes Jig's TypeScript commands and tests,
   installs their dependencies and bundles the tools.

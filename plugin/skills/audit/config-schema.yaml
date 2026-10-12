@@ -1,0 +1,365 @@
+# Every field of a repository's `.config/jig.yaml`, in machine-readable form.
+#
+# One list, read three ways: the audit skill's configuration-fit check
+# validates a repository's file against it, the audit skill's tests check that
+# plugin/CONFIGURATION.md documents exactly these fields with the same readers,
+# and the same tests check the value sets here against the constants the
+# reading skills validate with. A field added to a skill is added here, to
+# CONFIGURATION.md and to the skill in one pull request.
+#
+# Field entries, keyed by the dotted path of the field:
+#   type      string | command | path | regex | boolean | integer | enum
+#             | list | map | any
+#               command: a shell command line; its program must resolve
+#               path:    relative to the repository root unless absolute
+#   values    enum: the allowed values; integer: words allowed besides a number
+#   min       integer: the least allowed number
+#   pattern   string: a regular expression the value must match
+#   nullable  true when `null` is accepted and means "not set"
+#   items     list: the type of each entry: a type name; `fields:` for a
+#             list of mappings, each field typed; or, for a nested list or map,
+#             `{ type: list, items: … }` or `{ type: map, values_type: … }`
+#   distinct  list: entries must be distinct
+#   nonempty  list: at least one entry
+#   keys      map: the only keys allowed (absent: any key)
+#   values_type  map: the type of each value (default string)
+#   exists    path: `required` when the reading skill refuses a configured path
+#             that does not exist; `expected` when a missing one only makes
+#             the field useless
+#   read_by   the skills that read the field (CONFIGURATION.md's "Read by")
+#   repository_only  true for a field that describes one repository: the user
+#             file refuses it (CONFIGURATION.md § Configuration layers)
+#   deprecated  the message a re-run prints: what to use instead
+#   since     the plugin version that added the field; fields older than the
+#             audit skill carry none
+version: 1
+
+# Maps whose keys the skills look up: an unknown key there is refused, since
+# it would silently keep the default it was written to change. Unknown keys
+# elsewhere are ignored, so other tooling can share the file.
+strict:
+  - pull_requests
+  - issue_tracker.states
+  - issue_tracker.labels
+  - resolve_conflicts
+
+# Sections a skill refuses outright, with what to do instead.
+refused:
+  do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"
+
+fields:
+  gates.command:
+    type: command
+    read_by: [resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar]
+    repository_only: true
+
+  review.bots:
+    type: list
+    items: string
+    read_by: [resolve-review-comments, drive-pr, review]
+  review.job_pattern:
+    type: regex
+    nullable: true
+    read_by: [resolve-review-comments]
+  review.required_checks:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.deferral_team:
+    type: string
+    read_by: [resolve-review-comments]
+  review.repo_label:
+    type: string
+    read_by: [resolve-review-comments]
+    repository_only: true
+  review.repo_slug:
+    type: string
+    pattern: "^[^/\\s]+/[^/\\s]+$"
+    read_by: [resolve-review-comments]
+    repository_only: true
+  review.taxonomy.types:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.taxonomy.repos:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.taxonomy.sizes:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.taxonomy.categories:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.taxonomy.context_prefixes:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.taxonomy.ownership_prefixes:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.taxonomy.provenance_label:
+    type: string
+    read_by: [resolve-review-comments, drive-pr]
+    deprecated: "use issue_tracker.labels.followup; the older name is still read while that is unset"
+  review.taxonomy.epic_label:
+    type: string
+    read_by: [resolve-review-comments, drive-pr]
+    deprecated: "use issue_tracker.labels.epic; the older name is still read while that is unset"
+  review.reviewer_app:
+    type: string
+    read_by: [drive-pr]
+  review.reviewer_check_pattern:
+    type: regex
+    read_by: [drive-pr]
+  review.sticky_marker:
+    type: string
+    read_by: [drive-pr]
+  review.reviewed_sha_marker:
+    type: string
+    read_by: [drive-pr]
+
+  repository.base_branch:
+    type: string
+    pattern: "^(?!origin/)[^\\s~^:?*\\[\\\\]+$"
+    read_by: [drive-pr, do-item, review, descar]
+    repository_only: true
+
+  pull_requests.stacking:
+    type: enum
+    values: [none, native, branch]
+    read_by: [do-item]
+  pull_requests.max_stack_depth:
+    type: integer
+    min: 1
+    read_by: [do-item]
+  pull_requests.open_as:
+    type: enum
+    values: [draft, ready]
+    read_by: [do-item]
+  pull_requests.mark_ready:
+    type: integer
+    min: 1
+    values: [converged, never]
+    read_by: [drive-pr]
+  pull_requests.branch_name:
+    type: string
+    pattern: "\\{key(_lower)?\\}"
+    read_by: [do-item]
+  pull_requests.issue_link:
+    type: enum
+    values: [closes, refs, none]
+    read_by: [do-item]
+  pull_requests.size_budget:
+    type: integer
+    min: 1
+    read_by: [do-item]
+  pull_requests.labels:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+  pull_requests.title_format:
+    type: enum
+    values: [conventional, free]
+    read_by: [do-item]
+
+  drive.validation_plan_command:
+    type: command
+    read_by: [drive-pr, fix-ci, resolve-conflicts, review, descar]
+  drive.load_guard_command:
+    type: command
+    read_by: [drive-pr]
+  drive.change_areas_catalog:
+    type: path
+    exists: expected
+    read_by: [drive-pr, do-item, review, decide]
+  drive.reviews_drafts:
+    type: boolean
+    read_by: [drive-pr, do-item]
+  drive.escape_baseline_doc:
+    type: path
+    exists: expected
+    read_by: [drive-pr]
+
+  ci.required_checks:
+    type: list
+    items: string
+    distinct: true
+    read_by: [drive-pr]
+    repository_only: true
+  ci.hold_label:
+    type: string
+    read_by: [drive-pr]
+
+  issue_tracker.adapter:
+    type: enum
+    values: [linear]
+    read_by: [do-item, drive-pr, decide]
+  issue_tracker.team:
+    type: string
+    pattern: "^[A-Z][A-Z0-9]*$"
+    read_by: [do-item, drive-pr, review]
+    repository_only: true
+  issue_tracker.states:
+    type: map
+    keys: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate]
+    read_by: [do-item]
+  issue_tracker.labels.epic:
+    type: string
+    read_by: [do-item, resolve-review-comments, drive-pr]
+  issue_tracker.labels.hitl:
+    type: string
+    read_by: [do-item, decide]
+  issue_tracker.labels.manual_ops:
+    type: string
+    read_by: [do-item]
+  issue_tracker.labels.followup:
+    type: string
+    read_by: [do-item, resolve-review-comments, drive-pr]
+  issue_tracker.labels.bug:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [do-item]
+  issue_tracker.labels.pattern_prefix:
+    type: string
+    read_by: [do-item]
+  issue_tracker.labels.batch_sizes:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+  issue_tracker.labels.extractable_tails:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+  issue_tracker.file_command:
+    type: string
+    read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory]
+
+  do_item.agents.default:
+    type: string
+    read_by: [do-item]
+  do_item.agents.integrator:
+    type: string
+    read_by: [do-item]
+  do_item.agents.catalog:
+    type: map
+    read_by: [do-item]
+  do_item.agents.codearea_areas:
+    type: map
+    read_by: [do-item]
+  do_item.agents.labels:
+    type: map
+    read_by: [do-item]
+  do_item.agents.title_keywords:
+    type: map
+    read_by: [do-item]
+  do_item.scouts:
+    type: map
+    values_type: { type: list, items: string }
+    read_by: [do-item]
+  do_item.gates:
+    type: list
+    items:
+      fields:
+        labels: { type: list, items: string }
+        paths: { type: list, items: string }
+        skill: string
+    read_by: [do-item]
+  do_item.execution_plan_block:
+    type: string
+    read_by: [do-item]
+
+  fleet_health.config:
+    type: path
+    exists: expected
+    read_by: [drive-pr]
+  fleet_health.snapshot_dir:
+    type: path
+    read_by: [drive-pr]
+
+  adr.directory:
+    type: path
+    exists: required
+    read_by: [adr, review, decide, explain]
+  adr.rules_file:
+    type: path
+    exists: required
+    read_by: [adr, review]
+  descar.lint_command:
+    type: command
+    read_by: [descar]
+  promote_memory.lint_command:
+    type: command
+    read_by: [promote-memory]
+  promote_memory.target_dir:
+    type: path
+    read_by: [promote-memory]
+  fix_ci.regenerate_commands:
+    type: list
+    items: command
+    read_by: [fix-ci]
+  resolve_conflicts.generated:
+    type: list
+    items:
+      fields:
+        paths: { type: list, items: string }
+        command: command
+    read_by: [resolve-conflicts]
+  github_actions.conventions_doc:
+    type: path
+    exists: expected
+    read_by: [github-actions]
+  design_brief.kit:
+    type: path
+    exists: expected
+    read_by: [design-brief-builder]
+  design_brief.design_language:
+    type: path
+    exists: expected
+    read_by: [design-brief-builder]
+  design_brief.prototypes:
+    type: path
+    read_by: [design-brief-builder]
+  decide.policy_files:
+    type: list
+    items: path
+    read_by: [decide]
+  decide.rules_directory:
+    type: path
+    read_by: [decide]
+  decide.glossary_file:
+    type: path
+    exists: expected
+    read_by: [decide, explain]
+  decide.architect_agent:
+    type: string
+    read_by: [decide]
+  decide.escalation_labels:
+    type: list
+    items: string
+    read_by: [decide]
+  explain.figure_build_command:
+    type: command
+    read_by: [explain]

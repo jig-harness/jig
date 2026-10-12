@@ -118,8 +118,9 @@ Read in this order when starting a session here:
   and the changed files' complexity and duplication (fallow), the ratchet,
   gate self-tests, build, Markdown links resolve, blank line before tables, terms of art
   defined in the glossary (acronym proxy; escape hatch:
-  `scripts/glossary-allowlist.txt`), no origin references, and a changelog
-  entry for the current plugin version. CI runs the same command on every PR
+  `scripts/glossary-allowlist.txt`), no origin references, a changelog
+  entry for the current plugin version, and Jig's own audit record and
+  configuration fitting the audit skill. CI runs the same command on every PR
   (`.github/workflows/gates.yml`). Scope differs per gate, and each check
   script's header comment states exactly what it skips and why: the Markdown
   gates leave vendored material (`seeds/`), `templates/` and test `fixtures/`
@@ -138,6 +139,19 @@ Read in this order when starting a session here:
   initiative: only when a person has asked for that loosening, and say so in
   the pull request. When the gate reports a rule at zero, promote it to
   `error` (or move the flag into `tsconfig.json`).
+- **Keep the auditor current.** Nearly every change to Jig moves what
+  `/jig:audit` should see: a new or changed skill, configuration field,
+  module practice, criterion, gate or template. Each pull request, and every
+  feature without exception, re-evaluates the audit skill
+  ([plugin/skills/audit/](plugin/skills/audit/SKILL.md)) against the change:
+  does `config-schema.yaml` list the field, its type and its readers; do the
+  criteria and their probes still describe the practice; does `config-fit.ts`
+  check what the change makes checkable; does Jig's own record
+  (`.config/jig-audit.yaml`) still hold. The pull request description says
+  what changed in the audit, or why nothing needed to. The gates enforce the
+  mechanical half: a criterion added, renamed or removed fails until Jig's
+  record scores it, and Jig's configuration must fit the schema; the rest is
+  this review.
 - **This repository is the `jig` plugin.** Both tools install it from
   `main`; the rules for changing anything under `plugin/` (running from a copy
   outside this repository, the version bump, the release tag) are in

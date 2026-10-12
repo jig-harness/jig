@@ -58,6 +58,10 @@ beforeAll(() => {
     recursive: true,
     filter: (path) => !path.includes("__tests__"),
   });
+  for (const manifest of [".claude-plugin", ".codex-plugin"])
+    cpSync(join(root, "plugin", manifest), join(scratch, "cache", manifest), {
+      recursive: true,
+    });
   scripts = join(scratch, "cache", "skills", skill, "scripts");
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -747,6 +751,49 @@ fix_ci:
   expectSpawnExit({ ...fixCi, exitCode: fixCi.status }, 0);
   expect(fixCi.stdout).toContain("package_manager: bun (from bun.lock)\n");
   expect(fixCi.stdout).toContain("  - bun run generate\n");
+});
+
+test("the audit reads its schema, criteria and version from the plugin copy", () => {
+  const consumer = consumerRepo("audit", "gates:\n  comand: make check\n");
+  const commit = spawnSync(
+    "git",
+    [
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@example.com",
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "start",
+    ],
+    { cwd: consumer, env, encoding: "utf8" },
+  );
+  expectSpawnExit({ ...commit, exitCode: commit.status }, 0);
+  const scripts = join(scratch, "cache", "skills", "audit", "scripts");
+  const run = (script: string, ...args: string[]) =>
+    spawnSync(process.execPath, [join(scripts, script), ...args], {
+      cwd: consumer,
+      env,
+      encoding: "utf8",
+    });
+
+  const fit = run("config-fit.ts", "--offline", "--json");
+  expect(
+    (JSON.parse(fit.stdout) as { findings: { id: string }[] }).findings.map(
+      (f) => f.id,
+    ),
+  ).toContain("unknown:gates.comand");
+
+  const check = run("score.ts", "--check");
+  expectSpawnExit({ ...check, exitCode: check.status }, 0);
+
+  const draft = join(scratch, "audit-draft.yaml");
+  const write = run("score.ts", "--draft", draft);
+  expectSpawnExit({ ...write, exitCode: write.status }, 0);
+  const version = json("plugin/.claude-plugin/plugin.json").version;
+  expect(readFileSync(draft, "utf8")).toContain(`plugin_version: ${version}\n`);
 });
 
 test("the sheet skills run from the plugin copy and share one sheet kit", () => {

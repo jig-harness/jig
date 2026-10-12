@@ -58,7 +58,8 @@ export interface PrPolicy {
   titleFormat: TitleFormat | null;
 }
 
-const KNOWN_KEYS = [
+/** The fields `pull_requests` may hold; any other key is refused. */
+export const KNOWN_KEYS = [
   "stacking",
   "max_stack_depth",
   "open_as",

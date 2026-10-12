@@ -251,7 +251,7 @@ values and gate commands from its configuration at run time
 | [`reference/review-convergence/`](reference/review-convergence/) | The round stop condition: waits for reviewers to settle, aborts on a PR that stopped being open |
 | [`reference/pr-target-safety/`](reference/pr-target-safety/) | The fork-safe wiring lint |
 | [`mappings.md`](mappings.md) | Forges, stacked-PR tools, review bots, agent-runtime reviewers, CI providers, trackers |
-| [`maturity.yaml`](maturity.yaml) | The criteria the [auditor](../../audit/README.md) scores |
+| [maturity criteria](../../plugin/skills/audit/criteria/M7-pr-lifecycle-review.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference gate ships with a self-test and fixtures, and delegates to the
 shared implementation in [`lib/module-gates.ts`](../../lib/module-gates.ts);

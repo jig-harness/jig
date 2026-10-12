@@ -1,0 +1,223 @@
+/**
+ * The configuration schema is the one list of `.config/jig.yaml` fields.
+ * These tests keep the two other places that list them in step with it:
+ * CONFIGURATION.md (every field documented, with the same readers, and a
+ * complete example that passes) and the skills that read the fields (the
+ * value sets they accept).
+ */
+import { REPOSITORY_ONLY_FIELDS } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { LABEL_ROLES } from "../../resolve-review-comments/scripts/lib/tracker-labels.ts";
+import {
+  ISSUE_LINKS,
+  KNOWN_KEYS,
+  OPEN_AS,
+  parsePrPolicy,
+  STACKING_MODES,
+  TITLE_FORMATS,
+} from "../../drive-pr/scripts/lib/pr-policy.ts";
+import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
+import {
+  CANONICAL_STATES,
+  knownAdapters,
+} from "../../do-item/scripts/lib/tracker/index.ts";
+import { checkConfig, loadSchema, parseSchema } from "../scripts/lib/schema.ts";
+import { runScript } from "./helpers.ts";
+
+const plugin = join(import.meta.dir, "..", "..", "..");
+const repoRoot = join(plugin, "..");
+const schema = loadSchema();
+const field = (path: string) => schema.fields.find((f) => f.path === path);
+const under = (prefix: string) =>
+  schema.fields
+    .filter((f) => f.path.startsWith(`${prefix}.`))
+    .map((f) => f.path.slice(prefix.length + 1));
+
+/** The overlay field rows of CONFIGURATION.md, with their "Read by" cells. */
+function documentedFields(): Map<string, string[] | null> {
+  const rows = new Map<string, string[] | null>();
+  let skip = false;
+  let readBy = -1;
+  for (const line of readFileSync(
+    join(plugin, "CONFIGURATION.md"),
+    "utf8",
+  ).split("\n")) {
+    if (line.startsWith("#")) {
+      // The triage and fleet-health files are separate files with their own fields.
+      skip =
+        /^### The |^## (What is derived|Environment variables|Complete example)/.test(
+          line,
+        );
+      continue;
+    }
+    if (skip || !line.startsWith("|")) continue;
+    const cells = line
+      .split("|")
+      .slice(1, -1)
+      .map((c) => c.trim());
+    if (cells[0] === "Field") {
+      readBy = cells.indexOf("Read by");
+      continue;
+    }
+    const name = /^`([a-z_.]+)`$/.exec(cells[0] ?? "")?.[1];
+    if (!name?.includes(".")) continue;
+    rows.set(
+      name,
+      readBy < 0
+        ? null
+        : (cells[readBy] ?? "")
+            .replace(/\([^)]*\)/g, "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+    );
+  }
+  return rows;
+}
+
+function completeExample(): Record<string, unknown> {
+  const doc = readFileSync(join(plugin, "CONFIGURATION.md"), "utf8");
+  const block = /## Complete example[\s\S]*?```yaml\n([\s\S]*?)```/.exec(
+    doc,
+  )?.[1];
+  if (!block) throw new Error("CONFIGURATION.md has no complete example");
+  return load(block) as Record<string, unknown>;
+}
+
+describe("CONFIGURATION.md", () => {
+  const documented = documentedFields();
+
+  test("documents exactly the schema's fields", () => {
+    expect([...documented.keys()].sort()).toEqual(
+      schema.fields.map((f) => f.path).sort(),
+    );
+  });
+
+  test("marks as repository-only exactly the fields the user file refuses", () => {
+    expect(
+      schema.fields
+        .filter((f) => f.repository_only)
+        .map((f) => f.path)
+        .sort(),
+    ).toEqual([...REPOSITORY_ONLY_FIELDS].sort());
+  });
+
+  test("names the same readers as the schema", () => {
+    for (const [path, readers] of documented)
+      if (readers !== null)
+        expect([path, readers.sort()]).toEqual([
+          path,
+          [...(field(path)?.read_by ?? [])].sort(),
+        ]);
+  });
+
+  test("its complete example sets every field and passes the schema and the skills", () => {
+    const example = completeExample();
+    const findings = checkConfig(example, schema);
+    expect(findings.filter((f) => !f.id.startsWith("deprecated:"))).toEqual([]);
+    expect(() => parsePrPolicy(example)).not.toThrow();
+    expect(() => parseTrackerConfig(example)).not.toThrow();
+    const set = (path: string) =>
+      path
+        .split(".")
+        .reduce<unknown>(
+          (node, key) => (node as Record<string, unknown> | undefined)?.[key],
+          example,
+        );
+    for (const f of schema.fields)
+      expect([f.path, set(f.path) !== undefined]).toEqual([f.path, true]);
+  });
+});
+
+describe("the reading skills", () => {
+  test("accept the value sets the schema lists", () => {
+    expect(field("pull_requests.stacking")?.values).toEqual([
+      ...STACKING_MODES,
+    ]);
+    expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
+    expect(field("pull_requests.issue_link")?.values).toEqual([...ISSUE_LINKS]);
+    expect(field("pull_requests.title_format")?.values).toEqual([
+      ...TITLE_FORMATS,
+    ]);
+    expect(field("issue_tracker.states")?.keys).toEqual([...CANONICAL_STATES]);
+    expect(field("issue_tracker.adapter")?.values).toEqual(knownAdapters());
+  });
+
+  test("read the fields the schema lists in their strict maps", () => {
+    expect(under("pull_requests").sort()).toEqual([...KNOWN_KEYS].sort());
+    expect(under("issue_tracker.labels").sort()).toEqual(
+      [...LABEL_ROLES].sort(),
+    );
+    for (const prefix of schema.strict)
+      expect([
+        prefix,
+        schema.fields.some(
+          (f) => f.path === prefix || f.path.startsWith(`${prefix}.`),
+        ),
+      ]).toEqual([prefix, true]);
+  });
+
+  test("exist under the names the schema gives as readers", () => {
+    for (const f of schema.fields)
+      for (const skill of f.read_by)
+        expect([
+          f.path,
+          skill,
+          existsSync(join(plugin, "skills", skill, "SKILL.md")),
+        ]).toEqual([f.path, skill, true]);
+  });
+});
+
+test("Jig's own configuration fits", () => {
+  const run = runScript("config-fit.ts", ["--offline", "--json"], repoRoot);
+  const report = JSON.parse(run.out) as {
+    findings: { id: string; severity: string }[];
+  };
+  expect(
+    report.findings.filter(
+      (f) => f.severity === "error" || f.severity === "warning",
+    ),
+  ).toEqual([]);
+  expect(run.code).toBe(0);
+});
+
+describe("the schema's own format", () => {
+  const withField = (entry: Record<string, unknown>) => ({
+    version: 1,
+    strict: [],
+    refused: {},
+    fields: { "a.b": { read_by: ["x"], ...entry } },
+  });
+  test("a list nested in a list or map has its entries typed", () => {
+    const errors = checkConfig(
+      {
+        do_item: { gates: [{ labels: [1], paths: ["a"], skill: "s" }] },
+        resolve_conflicts: { generated: [{ paths: [42], command: "x" }] },
+      },
+      schema,
+    ).filter((f) => f.severity === "error");
+    expect(errors.map((f) => f.id)).toEqual([
+      "type:do_item.gates",
+      "type:resolve_conflicts.generated",
+    ]);
+    expect(
+      checkConfig({ do_item: { scouts: { a: ["x", {}] } } }, schema).map(
+        (f) => f.id,
+      ),
+    ).toEqual(["type:do_item.scouts"]);
+  });
+  test("nullable, distinct and nonempty are true or false", () => {
+    for (const key of ["nullable", "distinct", "nonempty"])
+      expect(() =>
+        parseSchema(
+          withField({ type: "list", items: "string", [key]: "false" }),
+        ),
+      ).toThrow(`${key} must be true or false`);
+    expect(() =>
+      parseSchema(withField({ type: "list", items: { type: "list" } })),
+    ).toThrow("a list needs items");
+  });
+});

@@ -13,8 +13,8 @@ and gates.
 
 This is the runnable form of the reflection cycle in
 [M8](../modules/M8-learning-loop/README.md). It is planned work:
-[ROADMAP.md](../ROADMAP.md) items 7 (the skills, the filesystem store and the
-store contract) and 8 (the Notion store).
+[ROADMAP.md](../ROADMAP.md) items 6 (the skills, the filesystem store and the
+store contract) and 7 (the Notion store).
 
 Contents: [the loop](#the-loop) · [events](#events) ·
 [computed state](#computed-state) · [the journal](#the-journal) ·

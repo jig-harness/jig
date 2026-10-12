@@ -24,10 +24,76 @@ changes are marked **Breaking** and say what a consumer changes.
 - Session reflection is planned: [design/reflection.md](design/reflection.md)
   describes the event log, the per-worktree journal, the `reflect` and
   `review-reflections` skills, the store contract and the filesystem, Notion
-  and (future) Jira stores; [ROADMAP.md](ROADMAP.md) items 7 and 8 build it.
+  and (future) Jira stores; [ROADMAP.md](ROADMAP.md) items 6 and 7 build it.
   [design/](design/README.md) holds the designs of roadmap items until they
   are built.
+- Every pull request re-evaluates the audit skill against its change
+  ([AGENTS.md § Ways of working](AGENTS.md#ways-of-working-in-this-repo)).
+  `bun run gates` fails until Jig's own audit record scores every current
+  criterion and Jig's configuration exists, fits the audit's schema and has
+  no unknown key in a Jig section (`scripts/check-audit-fit.ts`); the review policy flags a pull request that
+  does not say what it changed in the audit.
 
+## [0.15.0] - 2026-10-12
+
+The auditor becomes a plugin skill, `/jig:audit`, that a repository runs again
+and again. Nothing in a consumer's configuration changes.
+
+### Added
+
+- `/jig:audit` ([audit skill](plugin/skills/audit/README.md)): checks the
+  repository's `.config/jig.yaml` against the repository, scores every
+  module's maturity criteria with file-path evidence, writes the result to
+  `.config/jig-audit.yaml`, and on a re-run reports what was fixed, regressed,
+  is still open or was added by Jig since, without repeating a recommendation
+  the team declined until its revisit condition holds. Read-only unless asked
+  to apply one recommendation, which opens one pull request through
+  `do-item`'s pull-request policy. `/jig:audit portfolio` compares several
+  repositories' records.
+- `config-fit.ts`: unknown, refused, deprecated and mistyped fields, what the
+  skills' own validation rejects, commands and paths that do not exist, an
+  unknown integration branch, required checks that never ran on recent merged
+  pull requests, missing pull-request labels, an unreachable tracker, declared
+  values the repository contradicts (`stacking: none` with stacked pull
+  requests open, a declared reviewer that reviews nothing), and settings the
+  repository suggests (a gate command, a change-area catalog, reviewers, the
+  issue-key prefix). A command is checked as a shell would run it: a line
+  the shell refuses, every `make` target, a bare `yarn`, `pnpm` or `bun`
+  script, a program file that is missing, not executable or not tracked; what
+  runs after a `cd` or in another directory, through `env` or `exec` with an
+  option, or on a line using shell syntax beyond plain words, quotes and
+  `&&`, `||`, `;` and `|` (a line break, an escape, a comment, an expansion,
+  a glob, a tilde, a redirection) is reported unchecked, unless that line is
+  one the shell refuses anyway. Without
+  forge access the forge questions are unchecked, never passing. A decline in
+  the audit record never hides an error, nor, from `check-audit-fit.ts`, an
+  unknown key. It judges the repository's file alone, never the user file
+  or `JIG__*` variables of whoever runs it, and reports what those add on
+  that machine.
+- A machine-readable configuration schema,
+  [`config-schema.yaml`](plugin/skills/audit/config-schema.yaml), listing every
+  field with its type, readers, deprecation and whether only a repository may
+  set it. Tests fail when it and
+  [CONFIGURATION.md](plugin/CONFIGURATION.md) list different fields or
+  readers, or when its value sets differ from the reading skills' own.
+- Optional `probe`s on maturity criteria (a necessary condition a file search
+  can rule out, which scores the criterion `absent` when it does not hold, and
+  leaves it unchecked when a file was too large to search) and
+  `since:` markers on criteria and configuration fields, so a re-audit tells
+  what Jig added from what the repository lost.
+- M1 criterion `existing-findings-ratcheted` (Strict): a rule that still has
+  findings is ratcheted against the merge base and promoted at zero.
+- Jig's own audit record, [`.config/jig-audit.yaml`](.config/jig-audit.yaml),
+  and a [calibration run](plugin/skills/audit/calibration/2026-10-12-execa.md)
+  of the skill against an external library.
+
+### Changed
+
+- The modules' maturity criteria moved from `modules/M<n>-<name>/maturity.yaml`
+  to [`plugin/skills/audit/criteria/`](plugin/skills/audit/criteria/README.md),
+  and the auditor's method, survey prompts, templates and calibration run from
+  `audit/` into the skill; `audit/score-modules.ts` is now the skill's
+  `score.ts`. Each module README links its criteria file.
 ## [0.14.0] - 2026-10-12
 
 ### Added
@@ -342,7 +408,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/docomply/jig/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/docomply/jig/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/docomply/jig/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/docomply/jig/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/docomply/jig/compare/v0.10.0...v0.11.0
