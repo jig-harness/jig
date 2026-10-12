@@ -43,7 +43,9 @@ import { isAbsolute, join } from "node:path";
 import {
   consumerRoot,
   readOverlay,
+  withSource,
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
+import { formatField } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
 import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { doItemSection } from "./lib/overlay.ts";
@@ -76,7 +78,7 @@ function stringMap(v: unknown, where: string): Record<string, string> {
   const out: Record<string, string> = Object.create(null);
   for (const [k, x] of Object.entries(v)) {
     if (typeof x !== "string" || x.trim() === "")
-      throw new Error(`${where}.${k} must be a nonempty string`);
+      throw new Error(`${where}.${formatField([k])} must be a nonempty string`);
     // Labels are matched case-insensitively.
     out[k.toLowerCase()] = x;
   }
@@ -107,7 +109,9 @@ export function parseAgentRouting(
       !Array.isArray(list) ||
       list.some((s) => typeof s !== "string" || s.trim() === "")
     )
-      throw new Error(`do_item.scouts.${agent} must be a list of scout names`);
+      throw new Error(
+        `do_item.scouts.${formatField([agent])} must be a list of scout names`,
+      );
     scouts[agent] = list as string[];
   }
   return {
@@ -270,6 +274,25 @@ async function readAllStdin(): Promise<string> {
   return s;
 }
 
+/**
+ * The consumer's routing and catalog path, an error naming the layer that
+ * set the field.
+ */
+function readRouting(catalogArg: string | null): {
+  routing: AgentRouting;
+  catalogPath: string | null;
+} {
+  const overlay = readOverlay();
+  try {
+    return {
+      routing: parseAgentRouting(overlay),
+      catalogPath: catalogArg ?? catalogPathFromOverlay(overlay),
+    };
+  } catch (e) {
+    throw withSource(overlay, ["do_item", "do_issue", "drive"], e);
+  }
+}
+
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2), {
     flags: ["verbose"],
@@ -324,9 +347,7 @@ async function main(): Promise<number> {
     const labels = (rawLabels ?? []) as string[];
     const title = rawTitle ?? "";
 
-    const overlay = readOverlay();
-    const routing = parseAgentRouting(overlay);
-    const catalogPath = catalogArg ?? catalogPathFromOverlay(overlay);
+    const { routing, catalogPath } = readRouting(catalogArg);
     const catalog = catalogPath === null ? null : loadCatalog(catalogPath);
 
     if (verbose) {

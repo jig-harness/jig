@@ -1,4 +1,4 @@
 # Ad hoc tests run here need the same scratch-directory containment and
 # consumer configuration as a run from the repository root.
 [test]
-preload = ["../../../../lib/test-tmpdir-bun-preload.ts", "../../resolve-review-comments/__tests__/preload.ts"]
+preload = ["../../../../lib/test-tmpdir-bun-preload.ts", "../../../../lib/test-jig-config-preload.ts", "../../resolve-review-comments/__tests__/preload.ts"]

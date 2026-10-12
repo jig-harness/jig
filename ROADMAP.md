@@ -198,9 +198,54 @@ item gives each a named replacement and then moves the code onto it.
   drive-pr and resolve-review-comments each keep; the duplicated block in
   `fleet-health.ts`; fallow's complexity hotspots.
 
+### 7. Session reflection with a pluggable store
+
+Turns the reflection cycle of [M8](modules/M8-learning-loop/README.md) into
+two skills: `reflect` records what a session learned about the scaffolding,
+and `review-reflections` turns what accumulated into changes a person approves.
+Today the plugin only nudges toward "the repository's own `/reflect`". The
+design is in [design/reflection.md](design/reflection.md); this item builds:
+
+- the event log (findings and decisions, each with the session that wrote it:
+  Jig version, skills, time, harness, model), and the state computed from it;
+- the per-worktree journal that captures findings as they happen, and
+  `reflect`, which merges them, names their classes, escalates a recurring
+  class to one tracker issue, and contributes the rest to the store;
+- `review-reflections`, with the merge check that makes a fix `implemented`;
+- the store contract, its conformance suite, the filesystem store, and the
+  `command` store for a store a repository or a person writes;
+- the `reflection` configuration section, on only when some layer has it, and
+  the drive, the review loop, `do-item` and M12's worktree removal asking for
+  reflection only when it is on. A repository that relied on the nudge to run
+  its own `/reflect` without a `reflection` section stops being nudged; the
+  release notes say so;
+- in M8: the invariant gains "reflection records are append-only, carry an
+  id, and their state is computed"; `mappings.md` lists the stores; the module
+  links the skills. The reflection trigger and its markdown inbox stay as the
+  option for repositories without the plugin.
+
+Done when two repositories reflect into one filesystem store, a review run in
+each shows only its own findings, a review run in this repository shows the
+findings about Jig's skills from both, and the conformance suite passes
+against the filesystem store. The design then moves into the skills' READMEs
+and M8.
+
+### 8. Notion store for reflections
+
+The [Notion store](design/reflection.md#notion-store): reflections in a Notion
+database people browse and filter, from two settings (`NOTION_TOKEN` and
+`reflection.notion.database`), with `init` creating the database. One page
+per change; each event kept in the page as a JSON block that `list` reads, and
+the properties recomputed from the events as a view. Built after item 7, on
+its contract.
+
+Done when the conformance suite passes against a local fake of the Notion API
+and against a live scratch database, and a repository reflects into a
+database `init` created using only the two settings.
+
 ## Next
 
-### 7. Delegated merge (`pull_requests.merge: auto-on-converged`)
+### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
 Lets a converged drive arm the forge's auto-merge for the exact head it
 certified. It relaxes "a human merges", so the doctrine change is approved on
@@ -221,7 +266,7 @@ before it opens as a pull request the design must guarantee that:
   maturity criteria) changes in the same pull request, in the direction the
   decision picks.
 
-### 8. Values the skills still assume
+### 10. Values the skills still assume
 
 Move into configuration when a consumer needs them:
 
@@ -232,7 +277,7 @@ Move into configuration when a consumer needs them:
 - summary-finding severity is parsed only for the reviewers whose comment
   formats the drive already knows.
 
-### 9. Jig's own Simplified Technical English linter
+### 11. Jig's own Simplified Technical English linter
 
 `decide`'s `ste-lint` is a faithful TypeScript translation of a third-party
 Python linter, kept output-identical to it. Rewrite it as Jig's own
@@ -242,13 +287,18 @@ today), and keep crediting the original
 ([Credits](plugin/RECOMMENDED-SKILLS.md#credits)). The parity record and the
 golden files from the Python linter then retire with the translation.
 
-### 10. More tracker adapters
+### 12. More tracker adapters
 
 Jira, and a plan file kept in the repository. Both wait on the open decisions
 below.
 
 ## Later
 
+- **Jira store for reflections.** One issue per finding, of a custom issue
+  type with fields for class, severity, target, harness, model and Jig
+  version; the event kept as an issue property. Its shape and open questions
+  are in [design/reflection.md](design/reflection.md#jira-store-future); build
+  it when a team that tracks its work in Jira needs it.
 - **More skills.** `scaffolding-update` (keeps agent instruction files in step
   with decisions and audits them; M0), with its paths as configuration; and a
   SOLID-principles review skill, once its generic procedure is separated from

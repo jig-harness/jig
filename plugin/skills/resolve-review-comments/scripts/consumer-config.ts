@@ -18,6 +18,8 @@ import {
   readOverlay,
   reviewConfig,
   reviewerSelection,
+  sourceIn,
+  withSource,
 } from "./lib/consumer.ts";
 import { parseTrackerLabels } from "./lib/tracker-labels.ts";
 
@@ -58,7 +60,7 @@ async function main(): Promise<number> {
   } catch (err) {
     fail(
       2,
-      `consumer-config: ${overlayPath()}: ${err instanceof Error ? err.message : err}; declare the exact required check names, or set job_pattern to null to recognise reviewer checks by name`,
+      `consumer-config: ${err instanceof Error ? err.message : err}: ${sourceIn(overlay, "review.job_pattern")}; declare the exact required check names, or set job_pattern to null to recognise reviewer checks by name`,
     );
   }
   // The labels a deferral files with: checked now, not when the first
@@ -68,7 +70,7 @@ async function main(): Promise<number> {
   } catch (err) {
     fail(
       2,
-      `consumer-config: ${overlayPath()}: ${err instanceof Error ? err.message : err}`,
+      `consumer-config: ${withSource(overlay, ["issue_tracker", "review"], err).message}`,
     );
   }
   const lines: [string, string][] = [

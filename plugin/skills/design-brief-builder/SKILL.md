@@ -38,8 +38,10 @@ is for. Never `cd` into the skill directory.
 
 ## Consumer configuration
 
-The repository's design sources are read from `.config/jig.yaml`.
-Every field is optional:
+The repository's design sources are read from its Jig configuration
+(every layer, `.config/jig.yaml` among them) with
+`bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" design_brief --json`;
+exit 2 means no layer sets the section. Every field is optional:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|

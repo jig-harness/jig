@@ -1,7 +1,7 @@
 /**
  * The consumer repository's drive-loop values, read from its Jig
- * configuration file (`.config/jig.yaml`) through the review
- * skill's reader.
+ * configuration (every layer, `.config/jig.yaml` among them) through the
+ * review skill's reader.
  *
  * Every field here is optional and has a mechanism default, so a repository
  * without the file still drives: the review skill that each round spawns is
@@ -9,12 +9,12 @@
  * that exists but cannot be parsed, or a field of the wrong type, is an error
  * rather than a silent default.
  */
-import { existsSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { layersFingerprint } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
 import {
+  configSource,
   consumerRoot,
-  overlayPath,
-  readOverlay,
+  readConfig,
 } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
 import { verifyOriginIsPrRepo } from "./base-drift.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
@@ -22,17 +22,15 @@ import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 let cache: { key: string; value: Record<string, unknown> } | undefined;
 
 /**
- * The parsed configuration file, or `{}` when the repository has none.
- * Re-read only when the file's path, size or modification time changes:
+ * The merged configuration, or `{}` when no layer exists. Re-read only when a
+ * layer's path, size or modification time, or a `JIG__` variable, changes:
  * evidence predicates ask once per comment.
  */
 export function readOptionalOverlay(): Record<string, unknown> {
-  const path = overlayPath();
-  if (!existsSync(path)) return {};
-  const st = statSync(path);
-  const key = `${path}\0${st.size}\0${st.mtimeMs}`;
+  const root = consumerRoot();
+  const key = `${root}\0${layersFingerprint(root)}`;
   if (cache?.key === key) return cache.value;
-  const value = readOverlay();
+  const value = readConfig();
   cache = { key, value };
   return value;
 }
@@ -41,7 +39,7 @@ function section(name: string): Record<string, unknown> {
   const value = readOptionalOverlay()[name];
   if (value === undefined || value === null) return {};
   if (typeof value !== "object" || Array.isArray(value))
-    throw new Error(`${name} must be an object: ${overlayPath()}`);
+    throw new Error(`${name} must be an object: ${configSource(name)}`);
   return value as Record<string, unknown>;
 }
 
@@ -58,7 +56,7 @@ function optionalString(sectionName: string, key: string): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string" || value.trim() === "")
     throw new Error(
-      `${sectionName}.${key} must be a nonempty string: ${overlayPath()}`,
+      `${sectionName}.${key} must be a nonempty string: ${configSource(`${sectionName}.${key}`)}`,
     );
   return value;
 }
@@ -180,7 +178,7 @@ export function reviewsDrafts(): boolean | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "boolean")
     throw new Error(
-      `drive.reviews_drafts must be true or false: ${overlayPath()}`,
+      `drive.reviews_drafts must be true or false: ${configSource("drive.reviews_drafts")}`,
     );
   return value;
 }
@@ -199,7 +197,7 @@ export function requiredChecksSetting(): string[] | undefined {
     new Set(value).size !== value.length
   )
     throw new Error(
-      `ci.required_checks must be a list of distinct nonempty check names: ${overlayPath()}`,
+      `ci.required_checks must be a list of distinct nonempty check names: ${configSource("ci.required_checks")}`,
     );
   return value as string[];
 }

@@ -28,11 +28,16 @@
  * cannot look like a retune.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
+  fieldInMessage,
+  type LayeredConfig,
+  sourceOf,
+} from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import {
   consumerRoot,
-  OVERLAY_RELPATH,
+  layeredConfig,
 } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
 import {
   parseTrackerLabels,
@@ -87,23 +92,26 @@ function stringAt(obj: unknown, ...path: string[]): string | null {
  * unparseable one is an error.
  */
 export function overlayContext(root: string): ConfigContext {
-  const override = process.env.JIG_OVERLAY?.trim();
-  const path = override ? override : join(root, OVERLAY_RELPATH);
-  if (!existsSync(path)) return { ...EMPTY_CONTEXT, root };
-  let overlay: unknown;
+  let config: LayeredConfig;
   try {
-    overlay = loadYaml(readFileSync(path, "utf8"));
+    config = layeredConfig(root);
   } catch (err) {
     throw new FleetHealthConfigError(
-      `${path}: could not be read (${err instanceof Error ? err.message : String(err)})`,
+      err instanceof Error ? err.message : String(err),
     );
   }
+  if (config.layers.length === 0) return { ...EMPTY_CONTEXT, root };
+  const overlay = config.values;
   let labels: TrackerLabels;
   try {
-    labels = parseTrackerLabels(isRecordValue(overlay) ? overlay : {});
+    labels = parseTrackerLabels(overlay);
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // The labels are read from issue_tracker.labels and, for older
+    // configurations, from review.taxonomy.
+    const section = message.startsWith("review") ? "review" : "issue_tracker";
     throw new FleetHealthConfigError(
-      `${path}: ${err instanceof Error ? err.message : String(err)}`,
+      `${sourceOf(config, fieldInMessage(message, section))}: ${message}`,
     );
   }
   const at = (p: string | null): string | null =>

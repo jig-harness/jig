@@ -72,13 +72,15 @@ than a retrospection page and goes through review. This skill is for
 observations and lessons, not decisions.
 
 If the memory describes a **bug** or a **feature**, file it in the
-repository's issue tracker (the command in `issue_tracker.file_command` in
-`.config/jig.yaml`, when set).
+repository's issue tracker (the command in `issue_tracker.file_command`,
+read as the repository values below are, when set).
 
 ## Repository values
 
-Read these from `.config/jig.yaml` when present; each has a
-default:
+Read these from the repository's Jig configuration (every layer,
+`.config/jig.yaml` among them) with
+`bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" promote_memory --json`;
+exit 2 means no layer sets the section. Each has a default:
 
 - `promote_memory.lint_command`: a command that checks one memory against the
   repository, with `{dir}` and `{file}` standing for the memory directory and

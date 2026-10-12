@@ -29,9 +29,12 @@ Read the repository's own description of its pipeline first, if it has one.
 It is the reference for scope, triggers and job order in every phase below,
 and the only reference for Phase 4.
 
-1. Read `github_actions.conventions_doc` from
-   `.config/jig.yaml`: the path of the document that describes
-   the repository's workflows and their conventions.
+1. Read `github_actions.conventions_doc` from the repository's Jig
+   configuration with
+   `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" github_actions.conventions_doc`
+   (every layer, `.config/jig.yaml` among them; exit 2 means no layer sets
+   it): the path of the document that describes the repository's workflows
+   and their conventions.
 2. When the field or the file is absent, look for such a document: search the
    instruction file (`AGENTS.md` or equivalent) and the docs tree for one that
    describes the CI pipeline or workflow strategy.
@@ -257,7 +260,7 @@ alignment.
 | Need | Use |
 |------|-----|
 | Fix a red CI run on a branch or pull request | `/jig:fix-ci` |
-| File an issue for a workflow bug | the repository's issue-filing command (`issue_tracker.file_command` in `.config/jig.yaml`) |
+| File an issue for a workflow bug | the repository's issue-filing command (`issue_tracker.file_command`, read as in step 1) |
 
 ## Checks the repository may already enforce
 

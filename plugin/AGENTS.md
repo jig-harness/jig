@@ -17,7 +17,9 @@ once.
   `tools/plugin/plugin.test.ts` checks the skills from a copy.
 - **Consumer values are configuration.** A repository's values (bots, teams,
   labels, branch names, commands) are read at run time from its
-  `.config/jig.yaml`. Every field is documented in
+  `.config/jig.yaml` and the other configuration layers, always through the
+  shared reader in `skills/resolve-review-comments/scripts/lib/consumer.ts`,
+  never by parsing the file directly. Every field is documented in
   [CONFIGURATION.md](CONFIGURATION.md) in the same pull request that adds or
   changes it, with its default and the skills that read it.
 - **Every change ships as a version.** A pull request that changes `plugin/`

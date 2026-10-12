@@ -14,10 +14,10 @@
  * with a message naming the field.
  */
 
-import { existsSync } from "node:fs";
 import {
-  overlayPath,
+  readConfig,
   readOverlay,
+  withSource,
 } from "../../../../resolve-review-comments/scripts/lib/consumer.ts";
 import {
   parseTrackerLabels,
@@ -136,9 +136,24 @@ export function parseTrackerConfig(
   return { adapter, team, states, labels: parseTrackerLabels(overlay) };
 }
 
+/**
+ * `parseTrackerConfig` over merged configuration values (`readConfig`,
+ * `readOverlay`, `layeredConfig`), its errors naming the file or variable
+ * that set the field at fault. The labels also read legacy `review` fields.
+ */
+export function trackerConfigFrom(
+  values: Record<string, unknown>,
+): TrackerConfig {
+  try {
+    return parseTrackerConfig(values);
+  } catch (err) {
+    throw withSource(values, ["issue_tracker", "review"], err);
+  }
+}
+
 /** The consumer's tracker settings; throws when the overlay is missing or invalid. */
 export function trackerConfig(): TrackerConfig {
-  return parseTrackerConfig(readOverlay());
+  return trackerConfigFrom(readOverlay());
 }
 
 /**
@@ -150,17 +165,16 @@ export function trackerConfig(): TrackerConfig {
 export function ownTrackerConfig(): TrackerConfig {
   const overlay = readOverlay();
   refuseRenamedSection(overlay);
-  return parseTrackerConfig(overlay);
+  return trackerConfigFrom(overlay);
 }
 
 /**
- * The consumer's team key, or `null` when the repository has no overlay or
- * declares no team. For callers that only recognise issue keys in text and
+ * The consumer's team key, or `null` when no configuration layer declares
+ * one. For callers that only recognise issue keys in text and
  * can do without them.
  */
 export function teamKeyOrNull(): string | null {
-  if (!existsSync(overlayPath())) return null;
-  return trackerConfig().team;
+  return trackerConfigFrom(readConfig()).team;
 }
 
 /** The consumer's team key; throws naming the field when it is not set. */

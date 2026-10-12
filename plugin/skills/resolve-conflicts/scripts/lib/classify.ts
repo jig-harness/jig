@@ -14,12 +14,12 @@
  *
  * A `generated` entry also overrides the built-in table for a path it matches.
  */
-import { existsSync } from "node:fs";
 import { posix } from "node:path";
 import { fail } from "../../../resolve-review-comments/scripts/lib/cli.ts";
+import { fieldInMessage } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
 import {
-  overlayPath,
-  readOverlay,
+  readConfig,
+  sourceIn,
 } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
 
 export type PathClass = "lockfile" | "generated" | "binary" | "text";
@@ -83,18 +83,19 @@ const SECTION = "resolve_conflicts";
  * section stops the script with exit 2 and the exact field at fault.
  */
 export function generatedEntries(): GeneratedEntry[] {
-  const path = overlayPath();
-  if (!existsSync(path)) return [];
   let overlay: Record<string, unknown>;
   try {
-    overlay = readOverlay();
+    overlay = readConfig();
   } catch (err) {
     fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
   }
   const section = overlay[SECTION];
   if (section === undefined || section === null) return [];
   const bad = (what: string): never =>
-    fail(2, `resolve-conflicts: ${what} in ${path}`);
+    fail(
+      2,
+      `resolve-conflicts: ${what} in ${sourceIn(overlay, fieldInMessage(what, SECTION))}`,
+    );
   if (typeof section !== "object" || Array.isArray(section))
     bad(`${SECTION} must be a mapping`);
   for (const key of Object.keys(section as object))

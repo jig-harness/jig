@@ -6,12 +6,18 @@
  * differs per repository is read from the repository the agent is working in:
  * its configuration file, its triage bands and its sibling skills.
  */
-import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { load } from "./yaml.ts";
+import {
+  fieldInMessage,
+  type LayeredConfig,
+  loadLayeredConfig,
+  OVERLAY_RELPATH,
+  repositoryConfigPath,
+  sourceOf,
+} from "./config-layers.ts";
 
-/** The consumer configuration file, relative to the repository root. */
-export const OVERLAY_RELPATH = ".config/jig.yaml";
+export { OVERLAY_RELPATH };
 
 /** Where to read about adopting the skill, quoted in configuration errors. */
 export const ADOPTION_DOC =
@@ -137,103 +143,160 @@ export function siblingSkill(name: string, scriptDir: string): string {
   return join(dirname(dirname(scriptDir)), name);
 }
 
-/** The configuration file path: `JIG_OVERLAY`, else the repository's own. */
-export function overlayPath(): string {
-  const override = process.env.JIG_OVERLAY;
-  if (override !== undefined && override.trim() !== "") return override;
-  return join(consumerRoot(), OVERLAY_RELPATH);
+/** The repository's configuration file: `JIG_OVERLAY`, else its own. */
+export function overlayPath(root = consumerRoot()): string {
+  return repositoryConfigPath(root);
+}
+
+/** The read each merged value came from, so a validator can name its source. */
+const loaded = new WeakMap<object, LayeredConfig>();
+
+/**
+ * Every configuration layer of the repository at `root`, merged (see
+ * `config-layers.ts`). The only place a skill reads the layers.
+ */
+export function layeredConfig(root = consumerRoot()): LayeredConfig {
+  const config = loadLayeredConfig(root);
+  loaded.set(config.values, config);
+  return config;
 }
 
 /**
- * The whole consumer configuration, parsed. A missing file is an error, never
- * an empty configuration: an installed skill invoked in a repository that has
- * not adopted it must say so rather than run with guessed policy.
+ * Where `field` (dotted) came from in the merged `values` this reader
+ * returned: the file or environment variable that set it. Values from
+ * anywhere else (a test's literal) name the repository's file.
+ */
+export function sourceIn(
+  values: Record<string, unknown>,
+  field: string,
+): string {
+  const config = loaded.get(values);
+  return config === undefined ? OVERLAY_RELPATH : sourceOf(config, field);
+}
+
+/**
+ * A validation error inside `sections` of the merged `values`, with the
+ * source of the field the message opens with appended (see
+ * `fieldInMessage`).
+ */
+export function withSource(
+  values: Record<string, unknown>,
+  sections: string | readonly string[],
+  error: unknown,
+): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(
+    `${message}: ${sourceIn(values, fieldInMessage(message, sections))}`,
+  );
+}
+
+/**
+ * The merged configuration, which may be empty: for skills that run on
+ * their defaults in a repository without its own file.
+ */
+export function readConfig(): Record<string, unknown> {
+  return layeredConfig().values;
+}
+
+/** Whether the repository has its own configuration file. */
+export function hasRepositoryConfig(): boolean {
+  return layeredConfig().hasRepository;
+}
+
+/**
+ * The merged configuration of a repository that has adopted Jig. A
+ * missing repository file is an error, never an empty configuration, even
+ * when the user layer exists: an installed skill invoked in a repository that
+ * has not adopted it must say so rather than run with guessed policy.
  */
 export function readOverlay(): Record<string, unknown> {
-  const path = overlayPath();
-  if (!existsSync(path))
+  const config = layeredConfig();
+  if (!config.hasRepository)
     throw new Error(
-      `Jig configuration not found: ${path}. This repository has not configured the review skill; add ${OVERLAY_RELPATH} (see ${ADOPTION_DOC}) or point JIG_OVERLAY at a configuration file.`,
+      `Jig configuration not found: ${config.repositoryPath}. This repository has not configured the review skill; add ${OVERLAY_RELPATH} (see ${ADOPTION_DOC}) or point JIG_OVERLAY at a configuration file.`,
     );
-  let overlay: unknown;
-  try {
-    overlay = load(readFileSync(path, "utf8"));
-  } catch (err) {
-    throw new Error(
-      `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-  if (!overlay || typeof overlay !== "object" || Array.isArray(overlay))
-    throw new Error(`consumer overlay must be an object: ${path}`);
-  return overlay as Record<string, unknown>;
+  return config.values;
+}
+
+/**
+ * Where a field's value came from (dotted, such as `drive.reviews_drafts`),
+ * for an error message: the file or environment variable that set it.
+ */
+export function configSource(field: string): string {
+  return sourceOf(layeredConfig(), field);
 }
 
 export function reviewConfig(): ReviewConfig {
-  const path = overlayPath();
-  const review = readOverlay().review;
+  const overlay = readOverlay();
+  try {
+    return parseReviewConfig(overlay.review);
+  } catch (err) {
+    throw withSource(overlay, "review", err);
+  }
+}
+
+function checkTaxonomy(value: unknown): void {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("review.taxonomy must be an object");
+  // Context ownership controls whether two findings may share a batch.
+  // Omitting the ownership set must not silently allow unrelated owners
+  // to be reconciled together when a consumer declares batching labels.
+  if (
+    ["context_prefixes", "types", "repos"].some((field) =>
+      Object.hasOwn(value, field),
+    ) &&
+    !Object.hasOwn(value, "ownership_prefixes")
+  )
+    throw new Error(
+      "review.taxonomy.ownership_prefixes is required with context_prefixes, types, or repos; declare the ownership label prefixes before filing deferred findings",
+    );
+  for (const [field, tokens] of Object.entries(value)) {
+    if (["provenance_label", "epic_label"].includes(field)) {
+      if (typeof tokens !== "string" || !tokens.trim())
+        throw new Error(`review.taxonomy.${field} must be a nonempty string`);
+    } else if (!isDistinctNonEmptyList(tokens))
+      throw new Error(
+        `review.taxonomy.${field} must contain distinct nonempty strings`,
+      );
+  }
+}
+
+function isDistinctNonEmptyList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((x) => typeof x === "string" && x.trim() !== "") &&
+    new Set(value).size === value.length
+  );
+}
+
+function checkReviewField(key: string, value: unknown): void {
+  if (
+    key === "bots" &&
+    (!Array.isArray(value) ||
+      value.some((x) => typeof x !== "string" || x.trim() === ""))
+  )
+    throw new Error("review.bots must be a list of nonempty reviewer names");
+  if (
+    ["job_pattern", "deferral_team", "repo_label", "repo_slug"].includes(key) &&
+    typeof value !== "string"
+  )
+    throw new Error(`review.${key} must be a string`);
+  if (key === "required_checks" && !isDistinctNonEmptyList(value))
+    throw new Error(
+      "review.required_checks must contain distinct nonempty check names",
+    );
+  if (key === "taxonomy") checkTaxonomy(value);
+}
+
+function parseReviewConfig(review: unknown): ReviewConfig {
   if (review === undefined) return {};
   if (!review || typeof review !== "object" || Array.isArray(review))
-    throw new Error(`review must be an object: ${path}`);
+    throw new Error("review must be an object");
   const entries = Object.entries(review).filter(
     // A null pattern means "not set": wait on the reviewer-name heuristic.
     ([key, value]) => !(key === "job_pattern" && value === null),
   );
-  for (const [key, value] of entries) {
-    if (
-      key === "bots" &&
-      (!Array.isArray(value) ||
-        value.some((x) => typeof x !== "string" || x.trim() === ""))
-    )
-      throw new Error("review.bots must be a list of nonempty reviewer names");
-    if (
-      ["job_pattern", "deferral_team", "repo_label", "repo_slug"].includes(
-        key,
-      ) &&
-      typeof value !== "string"
-    )
-      throw new Error(`review.${key} must be a string`);
-    if (
-      key === "required_checks" &&
-      (!Array.isArray(value) ||
-        value.length === 0 ||
-        value.some((x) => typeof x !== "string" || !x.trim()) ||
-        new Set(value).size !== value.length)
-    )
-      throw new Error(
-        "review.required_checks must contain distinct nonempty check names",
-      );
-    if (key === "taxonomy") {
-      if (!value || typeof value !== "object" || Array.isArray(value))
-        throw new Error("review.taxonomy must be an object");
-      // Context ownership controls whether two findings may share a batch.
-      // Omitting the ownership set must not silently allow unrelated owners
-      // to be reconciled together when a consumer declares batching labels.
-      if (
-        ["context_prefixes", "types", "repos"].some((field) =>
-          Object.hasOwn(value, field),
-        ) &&
-        !Object.hasOwn(value, "ownership_prefixes")
-      )
-        throw new Error(
-          "review.taxonomy.ownership_prefixes is required with context_prefixes, types, or repos; declare the ownership label prefixes before filing deferred findings",
-        );
-      for (const [field, tokens] of Object.entries(value)) {
-        if (["provenance_label", "epic_label"].includes(field)) {
-          if (typeof tokens !== "string" || !tokens.trim())
-            throw new Error(
-              `review.taxonomy.${field} must be a nonempty string`,
-            );
-        } else if (
-          !Array.isArray(tokens) ||
-          !tokens.length ||
-          tokens.some((x) => typeof x !== "string" || !x.trim()) ||
-          new Set(tokens).size !== tokens.length
-        )
-          throw new Error(
-            `review.taxonomy.${field} must contain distinct nonempty strings`,
-          );
-      }
-    }
-  }
+  for (const [key, value] of entries) checkReviewField(key, value);
   return Object.fromEntries(entries) as ReviewConfig;
 }

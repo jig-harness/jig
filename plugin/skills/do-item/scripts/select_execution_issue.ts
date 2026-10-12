@@ -11,10 +11,9 @@
  * The block name comes from `do_item.execution_plan_block` in the consumer
  * overlay (default `execution-plan-v1`).
  */
-import { existsSync } from "node:fs";
 import {
-  overlayPath,
-  readOverlay,
+  readConfig,
+  withSource,
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import {
@@ -28,12 +27,23 @@ import {
 
 const KEY = /^[A-Z][A-Z0-9]*-\d+$/;
 
-/** The configured block name; the default when the repository sets none. */
+/**
+ * The configured block name; the default when the repository sets none. An
+ * error names the file or variable that set the field.
+ */
 export function executionPlanBlock(
-  overlay: Record<string, unknown> | null = existsSync(overlayPath())
-    ? readOverlay()
-    : null,
+  overlay: Record<string, unknown> | null = readConfig(),
 ): string {
+  try {
+    return blockName(overlay);
+  } catch (err) {
+    throw overlay === null
+      ? err
+      : withSource(overlay, ["do_item", "do_issue"], err);
+  }
+}
+
+function blockName(overlay: Record<string, unknown> | null): string {
   const section = doItemSection(overlay);
   if (section === undefined || section === null) return DEFAULT_BLOCK;
   if (typeof section !== "object" || Array.isArray(section))

@@ -9,7 +9,8 @@
  * Usage: bun consumer-config.ts
  *   Run from inside the repository (any directory of it). The repository
  *   root and configuration file can be overridden with
- *   JIG_CONSUMER_ROOT and JIG_OVERLAY.
+ *   JIG_CONSUMER_ROOT and JIG_OVERLAY; the user file and `JIG__` variables
+ *   are read as for every skill.
  *
  * Every value has a fallback, so a repository without a configuration file
  * still gets a usable answer; the output says which values are fallbacks.
@@ -24,9 +25,11 @@ import {
   runMain,
 } from "../../resolve-review-comments/scripts/lib/cli.ts";
 import {
+  configSource,
   consumerRoot,
+  hasRepositoryConfig,
   overlayPath,
-  readOverlay,
+  readConfig,
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
 
 export interface PackageManager {
@@ -136,14 +139,20 @@ function section(
   const value = overlay[name];
   if (value === undefined || value === null) return {};
   if (typeof value !== "object" || Array.isArray(value))
-    fail(2, `consumer-config: ${name} must be an object in ${overlayPath()}`);
+    fail(
+      2,
+      `consumer-config: ${name} must be an object in ${configSource(name)}`,
+    );
   return value as Record<string, unknown>;
 }
 
 function optionalText(value: unknown, field: string): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string" || value.trim() === "")
-    fail(2, `consumer-config: ${field} must be a nonempty string`);
+    fail(
+      2,
+      `consumer-config: ${field} must be a nonempty string (${configSource(field)})`,
+    );
   return value;
 }
 
@@ -154,19 +163,11 @@ export interface FixCiConfig {
   regenerateCommands: string[];
 }
 
-/** Read the values; an absent configuration file means every default. */
+/** Read the values from every configuration layer; an unset value has its default. */
 export function fixCiConfig(): FixCiConfig {
-  const path = overlayPath();
-  if (!existsSync(path))
-    return {
-      configuration: null,
-      gatesCommand: undefined,
-      validationPlanCommand: undefined,
-      regenerateCommands: [],
-    };
   let overlay: Record<string, unknown>;
   try {
-    overlay = readOverlay();
+    overlay = readConfig();
   } catch (err) {
     fail(2, `consumer-config: ${err instanceof Error ? err.message : err}`);
   }
@@ -179,10 +180,10 @@ export function fixCiConfig(): FixCiConfig {
   )
     fail(
       2,
-      "consumer-config: fix_ci.regenerate_commands must be a list of nonempty commands",
+      `consumer-config: fix_ci.regenerate_commands must be a list of nonempty commands (${configSource("fix_ci.regenerate_commands")})`,
     );
   return {
-    configuration: path,
+    configuration: hasRepositoryConfig() ? overlayPath() : null,
     gatesCommand: optionalText(
       section(overlay, "gates").command,
       "gates.command",
@@ -204,7 +205,7 @@ async function main(): Promise<number> {
     [
       "configuration",
       config.configuration ??
-        `(none: ${overlayPath()} is absent, defaults apply)`,
+        `(none: ${overlayPath()} is absent; the user file, JIG__ variables and defaults apply)`,
     ],
     [
       "package_manager",

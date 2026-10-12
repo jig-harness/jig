@@ -217,7 +217,7 @@
  * only carries the POSIX direct-execution path.
  */
 
-import { readOverlay, reviewConfig } from "./lib/consumer.ts";
+import { readOverlay, reviewConfig, withSource } from "./lib/consumer.ts";
 import {
   DEFAULT_TRACKER_LABELS,
   parseTrackerLabels,
@@ -276,7 +276,12 @@ export const BATCH_SIZES = consumer.taxonomy?.sizes ?? ["xs", "small"];
  */
 const labels = (() => {
   try {
-    return parseTrackerLabels(readOverlay());
+    const overlay = readOverlay();
+    try {
+      return parseTrackerLabels(overlay);
+    } catch (error) {
+      throw withSource(overlay, ["issue_tracker", "review"], error);
+    }
   } catch (error) {
     consumerError ??= error instanceof Error ? error.message : String(error);
     return DEFAULT_TRACKER_LABELS;

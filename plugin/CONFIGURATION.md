@@ -10,10 +10,14 @@ which skill reads it. It is the complete reference; the skill READMEs explain
 the behaviour behind each field.
 
 The file is the repository's [consumer overlay](../GLOSSARY.md): its own
-values, laid over the shared procedure. Every field is optional unless its
-row says otherwise. Add a field only when its default does not fit.
+values, laid over the shared procedure. Values that belong to a person or a
+machine rather than to one repository go in a user file instead, and a single
+run can override either through environment variables: see
+[configuration layers](#configuration-layers). Every field is optional unless
+its row says otherwise. Add a field only when its default does not fit.
 
 Contents: [the file](#the-file) ·
+[configuration layers](#configuration-layers) ·
 [what is derived, not declared](#what-is-derived-not-declared) ·
 [`gates`](#gates) · [`review`](#review) · [`repository`](#repository) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
@@ -49,10 +53,72 @@ Contents: [the file](#the-file) ·
   (entries that are not strings are dropped), `drive.escape_baseline_doc`,
   and the `fleet_health` fields. The checks below report refused values
   only, and only for the fields they print.
-- **Check it.** `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
+- **Check it.** `bun <plugin>/skills/resolve-review-comments/scripts/jig-config.ts`
+  prints every field set in any layer, its value and the file or variable
+  that set it (`jig-config.ts review` narrows it to one section, `--json`
+  for a script);
+  `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
   prints the review skill's values or what is missing;
   `bun <plugin>/skills/do-item/scripts/pr-plan.ts open` prints the pull-request
   policy as it applies to the current branch.
+
+## Configuration layers
+
+The skills read their values from up to three
+[configuration layers](../GLOSSARY.md). A higher layer overrides a lower one:
+
+| Layer | Where | Holds |
+|-------|-------|-------|
+| 1. User | `~/.jig/jig.yaml`; `JIG_HOME` moves the `~/.jig` folder | One person's or one machine's values, for every repository: a personal default, a folder shared by all repositories |
+| 2. Repository | `.config/jig.yaml` ([the file](#the-file)); `JIG_OVERLAY` names a different file | The repository's own values |
+| 3. Environment | `JIG__<SECTION>__<FIELD>` variables | One run's values |
+
+Command-line flags, where a script has them, override all three.
+
+- **Merging.** Sections merge field by field: a user file that sets
+  `review.sticky_marker` and a repository file that sets `review.bots` give
+  both. Any other value (text, a number, a date, a list, `null`) replaces the
+  lower layer's value whole, so a list is never part one layer's and part
+  another's.
+- **Environment variables.** Two underscores separate the levels and the
+  names are read in lower case: `JIG__ISSUE_TRACKER__TEAM=ENG` sets
+  `issue_tracker.team`. `true`, `false`, `null`, decimal numbers (`400`,
+  `+400`, `-0.5`, `.5`, `1e3`), and lists or maps written in YAML's bracket
+  form (`[a, "b[bot]"]`) take their type; anything
+  else is text as written. A value in quotes is the text inside them
+  (`JIG__REPOSITORY__BASE_BRANCH="'1.10'"`), which keeps a value that looks
+  like a number, `true` or a bracketed shell command as text; a field given
+  the wrong type refuses it and names the variable. An empty variable is not
+  set. Two variables for one field, or one that sets a value and another
+  that sets a field inside it (`JIG__DRIVE` beside
+  `JIG__DRIVE__REVIEWS_DRAFTS`, whatever `JIG__DRIVE` holds), are an error. The older per-field variables
+  (`DRIVE_PR_BASE_BRANCH` and the others under
+  [environment variables](#environment-variables)) still work and override
+  all three layers.
+- **Fields only a repository sets.** `gates.command`,
+  `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
+  `review.repo_label` and `ci.required_checks` describe one repository. Set
+  in the user file they would apply to every repository on the machine, so
+  the user file refuses them with an error naming the field. An environment
+  variable may still override them for one run.
+- **Adoption is the repository's file.** A user file alone does not make a
+  repository look adopted: `resolve-review-comments` and the tracker scripts
+  still refuse to run without `.config/jig.yaml`. The skills that run on
+  their defaults read the user file and the environment either way.
+- **Paths** in any layer are relative to the repository root, as in the
+  repository's file.
+- **Errors** name the file or variable that set the field at fault, and
+  `jig-config.ts` shows which layer set each field. It writes a key that
+  holds a dot in quotes (`do_item.agents.title_keywords."node.js"`), and
+  accepts a field written the same way.
+- **Shape.** No layer may hold a `__proto__` key, a value that contains
+  itself (a recursive YAML alias), or more than 10,000 values once its
+  aliases are expanded; each is an error naming the file or variable. The
+  environment layer is every `JIG__*` variable together, so the bound holds
+  for them combined as well as for each one.
+- **Leaving the user layer out.** `JIG_USER_LAYER=off` reads the repository
+  file and the environment only. The independent review sets it, so its
+  policy comes from the base branch's file alone.
 
 ## What is derived, not declared
 
@@ -359,6 +425,9 @@ These are set per machine or per run, not committed:
 |----------|--------------|
 | `JIG_OVERLAY` | Path of the configuration file to read instead of the repository's own |
 | `JIG_CONSUMER_ROOT` | The repository root, instead of the nearest folder holding `.git` |
+| `JIG_HOME` | The folder holding the user layer's `jig.yaml`, instead of `~/.jig` |
+| `JIG_USER_LAYER` | `off` leaves the user layer out (see [configuration layers](#configuration-layers)) |
+| `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_STATE_DIR` | Where a drive keeps its rounds, locks and leases |

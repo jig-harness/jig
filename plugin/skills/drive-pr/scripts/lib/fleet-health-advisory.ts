@@ -23,13 +23,12 @@
  * names (`fleet_health.snapshot_dir`).
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import {
   consumerRoot,
-  overlayPath,
-  readOverlay,
+  readConfig,
 } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
 import {
   LIFECYCLE_ACTIVITY,
@@ -72,10 +71,9 @@ export function expandDir(raw: string, home: string = homedir()): string {
   return isAbsolute(raw) ? raw : join(consumerRoot(), raw);
 }
 
-/** `fleet_health.snapshot_dir` from the consumer overlay, or `null` (no overlay, or unset). */
+/** `fleet_health.snapshot_dir` from the configuration, or `null` (unset). */
 export function configuredSnapshotDir(): string | null {
-  if (!existsSync(overlayPath())) return null;
-  const section = readOverlay().fleet_health;
+  const section = readConfig().fleet_health;
   if (!isRecord(section)) return null;
   const dir = section.snapshot_dir;
   return typeof dir === "string" && dir.trim() !== "" ? dir.trim() : null;

@@ -448,6 +448,14 @@ capitalized as commonly written; cross-references are *italicized*.
   `.config/jig.yaml` and read by the procedure when it runs.
   The procedure stays shared while the values belong to the consumer. Every
   field is in [plugin/CONFIGURATION.md](plugin/CONFIGURATION.md).
+- **JSONL (JSON Lines)** — a text format with one complete JSON value per
+  line. Appending a record is appending a line, and a reader can process the
+  file line by line, so it suits logs that only grow.
+- **Configuration layer** — one source of configuration values, read in a
+  fixed order so a later one overrides an earlier one: a person's own file
+  for every repository, then the repository's *consumer overlay*, then
+  environment variables for one run. Sections merge field by field; any
+  other value replaces the earlier one whole.
 - **Toolchain** — the runtime, compiler and checks used to build and test tools.
 - **Bun** — the runtime that executes Jig's TypeScript commands and tests,
   installs their dependencies and bundles the tools.

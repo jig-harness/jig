@@ -1,6 +1,7 @@
 /**
  * The consumer repository's own values for `/decide` and `/explain`, read at
- * run time from `.config/jig.yaml`.
+ * run time from its Jig configuration (`.config/jig.yaml` and the other
+ * layers).
  *
  * Every field these skills read has a default, so a repository that has not
  * written the file still gets a working skill: the defaults follow
@@ -8,10 +9,12 @@
  * them out, policy in `AGENTS.md`). A file that exists but cannot be read or
  * holds a field of the wrong type is an error, never a silent default.
  */
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
-import { OVERLAY_RELPATH } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
-import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import {
+  layeredConfig,
+  withSource,
+} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
 import { CANDIDATE_DIRS } from "../../../adr/scripts/locate.ts";
 
 /** Where the ADRs live when `adr.directory` is not set and none is detected (Jig module M5). */
@@ -37,29 +40,17 @@ export const DEFAULT_PRECEDENT_SOURCES: PrecedentSources = {
 };
 
 /**
- * The parsed configuration of the repository at `repoRoot`, or `{}` when it
- * has none. `JIG_OVERLAY` names another file; that file must exist.
+ * The merged configuration of the repository at `repoRoot` (every layer, see
+ * `config-layers.ts`), or `{}` when no layer exists. A `JIG_OVERLAY` that
+ * names a missing file is an error.
  */
 export function readOptionalOverlay(repoRoot: string): Record<string, unknown> {
-  const override = process.env.JIG_OVERLAY;
-  const explicit = override !== undefined && override.trim() !== "";
-  const path = explicit ? override : join(repoRoot, OVERLAY_RELPATH);
-  if (!existsSync(path)) {
-    if (explicit) throw new Error(`JIG_OVERLAY names a missing file: ${path}`);
-    return {};
-  }
-  let parsed: unknown;
-  try {
-    parsed = load(readFileSync(path, "utf8"));
-  } catch (err) {
+  const config = layeredConfig(repoRoot);
+  if (!config.hasRepository && process.env.JIG_OVERLAY?.trim())
     throw new Error(
-      `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
+      `JIG_OVERLAY names a missing file: ${config.repositoryPath}`,
     );
-  }
-  if (parsed === null || parsed === undefined) return {};
-  if (typeof parsed !== "object" || Array.isArray(parsed))
-    throw new Error(`Jig configuration must be a mapping: ${path}`);
-  return parsed as Record<string, unknown>;
+  return config.values;
 }
 
 function sectionOf(
@@ -69,7 +60,7 @@ function sectionOf(
   const value = overlay[name];
   if (value === undefined || value === null) return {};
   if (typeof value !== "object" || Array.isArray(value))
-    throw new Error(`${name} in ${OVERLAY_RELPATH} must be a mapping`);
+    throw new Error(`${name} must be a mapping`);
   return value as Record<string, unknown>;
 }
 
@@ -104,6 +95,17 @@ export function adrDirectory(
   overlay: Record<string, unknown>,
   repoRoot?: string,
 ): string {
+  try {
+    return detectedAdrDirectory(overlay, repoRoot);
+  } catch (err) {
+    throw withSource(overlay, "adr", err);
+  }
+}
+
+function detectedAdrDirectory(
+  overlay: Record<string, unknown>,
+  repoRoot?: string,
+): string {
   const detected =
     repoRoot === undefined
       ? undefined
@@ -127,6 +129,17 @@ export function precedentSources(
   overlay: Record<string, unknown>,
   repoRoot?: string,
 ): PrecedentSources {
+  const adr = adrDirectory(overlay, repoRoot);
+  try {
+    return { adrDirectory: adr, ...decideSources(overlay) };
+  } catch (err) {
+    throw withSource(overlay, "decide", err);
+  }
+}
+
+function decideSources(
+  overlay: Record<string, unknown>,
+): Omit<PrecedentSources, "adrDirectory"> {
   const decide = sectionOf(overlay, "decide");
   const d = DEFAULT_PRECEDENT_SOURCES;
   let policyFiles = d.policyFiles;
@@ -138,7 +151,6 @@ export function precedentSources(
     );
   }
   return {
-    adrDirectory: adrDirectory(overlay, repoRoot),
     policyFiles,
     rulesDirectory: optionalPath(
       decide,
@@ -159,9 +171,13 @@ export function precedentSources(
 export function figureBuildCommand(
   overlay: Record<string, unknown>,
 ): string | undefined {
-  const value = sectionOf(overlay, "explain").figure_build_command;
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.trim() === "")
-    throw new Error("explain.figure_build_command must be a nonempty string");
-  return value.trim();
+  try {
+    const value = sectionOf(overlay, "explain").figure_build_command;
+    if (value === undefined) return undefined;
+    if (typeof value !== "string" || value.trim() === "")
+      throw new Error("explain.figure_build_command must be a nonempty string");
+    return value.trim();
+  } catch (err) {
+    throw withSource(overlay, "explain", err);
+  }
 }

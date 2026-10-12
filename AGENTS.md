@@ -22,7 +22,8 @@ as configuration; product-bound code never comes here.
 Read in this order when starting a session here:
 
 1. [ROADMAP.md](ROADMAP.md) — what is open and in which order (the
-   continuation anchor). Finished work is in [CHANGELOG.md](CHANGELOG.md).
+   continuation anchor), and [design/](design/README.md) for the items that
+   have a design. Finished work is in [CHANGELOG.md](CHANGELOG.md).
 2. The instructions closest to what you change: [plugin/AGENTS.md](plugin/AGENTS.md)
    for skills and the plugin, [modules/AGENTS.md](modules/AGENTS.md) for the
    practice modules. They add to this file; they do not repeat it.

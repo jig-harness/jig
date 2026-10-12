@@ -31,11 +31,16 @@ function overlay(text: string) {
   writeFileSync(join(repo, ".config", "jig.yaml"), text);
 }
 
-function runConfig(): { code: number; out: string; err: string } {
+function runConfig(extra: Record<string, string> = {}): {
+  code: number;
+  out: string;
+  err: string;
+} {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env))
     if (v !== undefined && k !== "JIG_OVERLAY") env[k] = v;
   env.JIG_CONSUMER_ROOT = repo;
+  Object.assign(env, extra);
   const r = spawnSync(process.execPath, [SCRIPT], {
     cwd: repo,
     env,
@@ -153,5 +158,24 @@ describe("consumer-config.ts", () => {
   it("refuses a configuration that does not parse", () => {
     overlay("gates: [unclosed\n");
     expect(runConfig().code).toBe(2);
+  });
+});
+
+describe("configuration layers", () => {
+  it("reads the user file and JIG__ variables without a repository file", () => {
+    const home = join(repo, "home");
+    mkdirSync(home);
+    writeFileSync(
+      join(home, "jig.yaml"),
+      "drive:\n  validation_plan_command: plan --json\n",
+    );
+    const r = runConfig({
+      JIG_HOME: home,
+      JIG__GATES__COMMAND: "make ci",
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("gates.command: make ci");
+    expect(r.out).toContain("drive.validation_plan_command: plan --json");
+    expect(r.out).toContain("is absent; the user file");
   });
 });

@@ -17,7 +17,7 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { overlayPath } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+import { withSource } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
 import { readOptionalOverlay } from "./overlay.ts";
 import { ghCall, git } from "./proc.ts";
 
@@ -183,14 +183,16 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
   };
 }
 
-/** The repository's pull-request policy; throws naming the file when invalid. */
+/**
+ * The repository's pull-request policy; when invalid, throws naming the file
+ * or variable that set the field at fault.
+ */
 export function prPolicy(): PrPolicy {
+  const overlay = readOptionalOverlay();
   try {
-    return parsePrPolicy(readOptionalOverlay());
+    return parsePrPolicy(overlay);
   } catch (e) {
-    throw new Error(
-      `${e instanceof Error ? e.message : String(e)}: ${overlayPath()}`,
-    );
+    throw withSource(overlay, "pull_requests", e);
   }
 }
 

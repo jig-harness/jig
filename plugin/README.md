@@ -171,6 +171,14 @@ committed: no copy of the skill, no install script, no generated files.
    `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
    prints the values or says what is missing.
 
+   Values that are yours rather than the repository's go in `~/.jig/jig.yaml`,
+   which every repository on the machine reads below its own file; an
+   environment variable overrides both for one run. The
+   [configuration layers](CONFIGURATION.md#configuration-layers) section
+   explains the order, and
+   `bun <plugin>/skills/resolve-review-comments/scripts/jig-config.ts` shows
+   which layer set each value.
+
 2. **Tell agents and people where the skill comes from.** Add a short section
    to the repository's `AGENTS.md` (or equivalent), for example:
 
@@ -533,11 +541,16 @@ of the plugin:
   `.claude/skills/<name>/…` for your own files.
 - **Working directory:** scripts run with the consumer repository as the
   working directory and must not depend on being run from the skill directory.
-- **Consumer values:** read them at run time from
-  `.config/jig.yaml` (see
-  `resolve-review-comments/scripts/lib/consumer.ts`), fail with a clear message
-  when a required value is missing, and accept older files. Never bake a
-  repository's values into `SKILL.md`.
+- **Consumer values:** read them at run time through
+  `resolve-review-comments/scripts/lib/consumer.ts` (`readConfig`, or
+  `readOverlay` where the skill requires an adopted repository), which merges
+  every [configuration layer](CONFIGURATION.md#configuration-layers); never
+  parse `.config/jig.yaml` directly, or the user file and the environment are
+  silently skipped. A procedure whose agent reads a value itself tells it to
+  run `../resolve-review-comments/scripts/jig-config.ts <field>` by sibling
+  path, not to open the file. Fail with a clear message when a required value is
+  missing, and accept older files. Never bake a repository's values into
+  `SKILL.md`.
 - **Dependencies:** the plugin cache has no `node_modules`. Use Bun's
   built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
   with its licence and a test that keeps it identical to the pinned package

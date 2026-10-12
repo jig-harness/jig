@@ -161,7 +161,9 @@ Jig's [plugin](../../plugin/README.md): it checks that a private memory
 still holds before lifting it into the team's git-tracked docs. The review
 loop that feeds the reflection trigger runs as
 [`drive-pr`](../../plugin/skills/drive-pr/README.md) (see
-[M7](../M7-pr-lifecycle-review/README.md#status)).
+[M7](../M7-pr-lifecycle-review/README.md#status)). Session reflection itself
+is planned as two plugin skills with a pluggable store; the design is in
+[design/reflection.md](../../design/reflection.md).
 
 ### What the module provides
 

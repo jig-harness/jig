@@ -20,16 +20,15 @@ import {
   type WindowSpec,
 } from "./fleet-health.ts";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { openTracker } from "../../../do-item/scripts/lib/tracker/index.ts";
-import { parseTrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
+import { trackerConfigFrom } from "../../../do-item/scripts/lib/tracker/config.ts";
 import type {
   IssueComments,
   Tracker,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
 import {
   consumerRoot,
-  OVERLAY_RELPATH,
+  layeredConfig,
 } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
 import { load as loadYaml } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
 import type { FleetHealthConfig } from "./fleet-health-config.ts";
@@ -606,13 +605,9 @@ export function connectTracker(cfg: FleetHealthConfig): Tracker {
     throw new Error(
       "no issue_tracker.team in the consumer overlay, so issue keys cannot be read",
     );
-  const path =
-    process.env.JIG_OVERLAY?.trim() ||
-    join(cfg.root ?? consumerRoot(), OVERLAY_RELPATH);
-  const overlay: unknown = loadYaml(readFileSync(path, "utf8"));
-  if (!isRecord(overlay))
-    throw new Error(`consumer overlay must be an object: ${path}`);
-  return openTracker(parseTrackerConfig(overlay));
+  return openTracker(
+    trackerConfigFrom(layeredConfig(cfg.root ?? consumerRoot()).values),
+  );
 }
 
 export function isRecord(v: unknown): v is Record<string, unknown> {

@@ -27,13 +27,14 @@
  * (the search for a rules file would be inconclusive).
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join, posix } from "node:path";
+import { readConfigFile } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
 import {
   consumerRoot,
-  overlayPath,
+  readConfig,
+  sourceIn,
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
-import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
 
 export const CANDIDATE_DIRS = [
   "docs/adr",
@@ -69,20 +70,26 @@ export interface Location {
 
 export class LocateError extends Error {}
 
-/** The `adr` section of the overlay; {} when the file or section is absent. */
-export function adrConfig(path = overlayPath()): AdrConfig {
-  if (!existsSync(path)) return {};
-  const overlay = load(readFileSync(path, "utf8")) as Record<string, unknown>;
-  const section = overlay?.adr;
+/**
+ * The `adr` section; {} when it is absent. Read from the file at `path`
+ * alone when one is given, else from every configuration layer.
+ */
+export function adrConfig(path?: string): AdrConfig {
+  const overlay =
+    path === undefined ? readConfig() : (readConfigFile(path) ?? {});
+  const where = (field: string): string => path ?? sourceIn(overlay, field);
+  const section = overlay.adr;
   if (section === undefined || section === null) return {};
   if (typeof section !== "object" || Array.isArray(section))
-    throw new LocateError(`adr must be an object: ${path}`);
+    throw new LocateError(`adr must be an object: ${where("adr")}`);
   const config: AdrConfig = {};
   for (const key of ["directory", "rules_file"] as const) {
     const value = (section as Record<string, unknown>)[key];
     if (value === undefined || value === null) continue;
     if (typeof value !== "string" || value.trim() === "")
-      throw new LocateError(`adr.${key} must be a nonempty string: ${path}`);
+      throw new LocateError(
+        `adr.${key} must be a nonempty string: ${where(`adr.${key}`)}`,
+      );
     config[key] = value;
   }
   return config;

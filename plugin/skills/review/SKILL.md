@@ -105,6 +105,7 @@ either one leaks the reviewed tree into policy:
   | `PATH`, `HOME` | the caller's, so that tools are found; `PATH` must not name a directory inside the reviewed tree |
   | `JIG_CONSUMER_ROOT` | `<base-tree>` |
   | `JIG_OVERLAY` | `<base-tree>/.config/jig.yaml` |
+  | `JIG_USER_LAYER` | `off`, so the caller's user layer (`$HOME/.jig/jig.yaml`) is not read: `HOME` is passed for tools, and the policy comes from the base branch's file alone |
   | `RULES` (rule check only) | `<base-tree>/<rulesFile>` |
   | `WINDOW`, `STRICT` (rule check only) | left unset, so the check's defaults apply (a two-line `follow_check` window, warnings not counted as failures), unless the base branch's own gate definition sets them: then the values written there, read from `<base-tree>` |
 
@@ -120,6 +121,7 @@ either one leaks the reviewed tree into policy:
   env -i PATH="$PATH" HOME="$HOME" \
     JIG_CONSUMER_ROOT="<base-tree>" \
     JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
+    JIG_USER_LAYER=off \
     bun --no-env-file --config="<bunfig>" <script> <arguments>
   ```
 
@@ -224,6 +226,7 @@ Set up once per review:
      env -i PATH="$PATH" HOME="$HOME" \
        JIG_CONSUMER_ROOT="<base-tree>" \
        JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
+       JIG_USER_LAYER=off \
        bun --no-env-file --config="<bunfig>" "${CLAUDE_SKILL_DIR}/../adr/scripts/locate.ts"
    ```
 
@@ -258,6 +261,7 @@ Set up once per review:
        env -i PATH="$PATH" HOME="$HOME" \
          JIG_CONSUMER_ROOT="<base-tree>" \
          JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
+         JIG_USER_LAYER=off \
          RULES="<base-tree>/<rulesFile>" \
          xargs -0 bun --no-env-file --config="<bunfig>" "<base-tree>/<path to adr-rules-check.ts>"
    )
@@ -365,6 +369,7 @@ tr '\0' '\n' < "<effective-files>" |
     env -i PATH="$PATH" HOME="$HOME" \
       JIG_CONSUMER_ROOT="<base-tree>" \
       JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
+      JIG_USER_LAYER=off \
       sh -c '<validation_plan_command>')
 ```
 

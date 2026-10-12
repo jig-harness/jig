@@ -19,6 +19,47 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ## [Unreleased]
 
+### Added
+
+- Session reflection is planned: [design/reflection.md](design/reflection.md)
+  describes the event log, the per-worktree journal, the `reflect` and
+  `review-reflections` skills, the store contract and the filesystem, Notion
+  and (future) Jira stores; [ROADMAP.md](ROADMAP.md) items 7 and 8 build it.
+  [design/](design/README.md) holds the designs of roadmap items until they
+  are built.
+
+## [0.14.0] - 2026-10-12
+
+### Added
+
+- **Configuration layers.** Below the repository's `.config/jig.yaml`, every
+  skill now reads `~/.jig/jig.yaml` (`JIG_HOME` moves the folder) for a
+  person's or a machine's own values, and above it `JIG__<SECTION>__<FIELD>`
+  environment variables for one run. Sections merge field by field; other
+  values replace. The user file refuses the fields that describe one
+  repository (`gates.command`, `repository.base_branch`, `issue_tracker.team`,
+  `review.repo_slug`, `review.repo_label`, `ci.required_checks`). A layer (a
+  file, or the environment variables together) may not hold a `__proto__`
+  key, a value that contains itself, or more than 10,000 values once its
+  aliases are expanded. A user file
+  alone does not make a repository adopted. `JIG_USER_LAYER=off` leaves the
+  user file out, and the independent review sets it so that its policy comes
+  from the base branch alone. See
+  [configuration layers](plugin/CONFIGURATION.md#configuration-layers).
+- `resolve-review-comments/scripts/jig-config.ts` prints every field set in
+  any layer, its value and the file or variable that set it; a key that
+  holds a dot is written in quotes.
+
+### Changed
+
+- Every skill reads its configuration through one shared reader. Errors about
+  a field name the file or variable that set it, not always the repository's
+  file. An empty `.config/jig.yaml` is read as no values instead of being
+  refused.
+- `github-actions`, `promote-memory`, `design-brief-builder` and `descar`
+  have the agent read their values with `jig-config.ts` rather than from
+  `.config/jig.yaml`, so the user file and the environment apply to them too.
+
 ## [0.13.0] - 2026-10-12
 
 The plugin's scripts run on Bun only, and Jig's own code now passes a

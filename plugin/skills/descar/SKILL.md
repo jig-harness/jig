@@ -52,9 +52,11 @@ Find these once, at the start:
 - **Promoted status**: `approved` in M4's schema. The repository's
   frontmatter schema may name more (a corpus where `active` is the promoted
   status, say); use all of them.
-- **Scar lint**: read `descar.lint_command` from
-  `.config/jig.yaml`, a command that takes document paths as
-  arguments. When it is absent, look for the lint the repository adopted from
+- **Scar lint**: read `descar.lint_command` from the repository's Jig
+  configuration with
+  `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" descar.lint_command`
+  (every layer, `.config/jig.yaml` among them; exit 2 means no layer sets
+  it), a command that takes document paths as arguments. When it is absent, look for the lint the repository adopted from
   M4 (`git ls-files '*check-descarring-scars*'`) and run it with `bun` (or the
   interpreter its extension implies). When there is none, there is no lint:
   inventory S1 to S3 by hand as well as S4, and say so in the report.
