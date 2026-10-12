@@ -5,10 +5,8 @@ gates:
   command: bun run gates
 review:
   bots: ["docomply-review[bot]", "coderabbitai[bot]"]
-  # Not set: reviewer checks are recognised by name.
-  job_pattern: null
   deferral_team: DOC
-  repo_label: groundwork
+  repo_label: jig
   repo_slug: docomply/jig
   taxonomy:
     types: [bug, feature, infra, docs, chore]
@@ -19,19 +17,22 @@ review:
       - ai-review
       - engineering-standards
       - harness-toolkit
-      - groundwork
+      - jig
       - finops-engine
-      - public-sources-mcp
+      - sourcebook
     sizes: [xs, small]
     context_prefixes: ["agent:", "domain:", "codearea:"]
     ownership_prefixes: ["agent:", "domain:"]
     categories:
       [correctness, data-integrity, security, compliance, ux, performance, tests, docs, drift, style]
-    provenance_label: pr-followup
-    epic_label: epic
 issue_tracker:
   adapter: linear
   team: DOC
+  file_command: mcp__linear__save_issue
+  # Declared, not left to the default, so fleet health measures follow-ups.
+  labels:
+    followup: pr-followup
+    epic: epic
 pull_requests:
   # One pull request per change against main; a person merges.
   stacking: none

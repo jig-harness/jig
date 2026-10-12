@@ -19,6 +19,13 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- This repository's own `.config/jig.yaml` labels its follow-ups `jig`
+  (was `groundwork`, a label the tracker no longer has) and names `sourcebook`
+  among the repository labels; the follow-up and epic labels move to
+  `issue_tracker.labels`, and agents file issues through the Linear tool.
+
 ## [0.12.0] - 2026-10-12
 
 Groundwork is renamed **Jig**. Every machine and every repository that uses
