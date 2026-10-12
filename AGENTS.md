@@ -1,17 +1,17 @@
-# Groundwork Agent Instructions
+# Jig Agent Instructions
 
-Context for AI coding agents working **on the groundwork repo itself**.
+Context for AI coding agents working **on the Jig repo itself**.
 Compatible with Claude Code, Codex, Cursor, and others.
 
 ## What this repo is
 
-Groundwork distills the delivery practices of a mature AI-native codebase into
+Jig distills the delivery practices of a mature AI-native codebase into
 a vendor-agnostic, tech-stack-flexible, modular template. Its uses:
 greenfield template, brownfield upgrade path, **runnable auditor** that scores
 a target repo and produces actionable recommendations, and **shared runnable
 tooling** — the agent skills and development tools (PR review loops, issue
 pickup, conflict resolution, gates) that repositories use instead of
-copying. Skills ship as the `groundwork` plugin for Claude Code and Codex,
+copying. Skills ship as the `jig` plugin for Claude Code and Codex,
 installed once per machine ([plugin/README.md](plugin/README.md)).
 
 The placement rule for that tooling: a generic mechanism lives here; an
@@ -30,7 +30,7 @@ Read in this order when starting a session here:
 
 ## Writing conventions (MANDATORY)
 
-- **Plain language first.** Groundwork must be accessible to readers unfamiliar
+- **Plain language first.** Jig must be accessible to readers unfamiliar
   with any of these techniques. Expand jargon on first use per document and
   link it to [GLOSSARY.md](GLOSSARY.md). When you introduce a new term of art,
   add it to the glossary in the same commit. Every module README opens with a
@@ -49,7 +49,7 @@ Read in this order when starting a session here:
   the repo-agnostic mechanism goes into `reference/` (or a skill), that
   repository's values become placeholders, configuration or neutral
   examples. Where the source hasn't made that split, make it on the way in.
-- **No origin references.** Groundwork names no organization it learned from:
+- **No origin references.** Jig names no organization it learned from:
   no organization or product names, no issue-tracker keys or links, no
   pull-request numbers or review rounds from another repository, no paths
   that exist only there — in documents, code comments, test names and test
@@ -83,17 +83,17 @@ Read in this order when starting a session here:
   the moment the original takes its next fix.
 - Markdown: blank line before every table (many renderers break otherwise).
 
-## Learning from the repositories that use Groundwork
+## Learning from the repositories that use Jig
 
-- A repository that uses Groundwork is an **instance**, not upstream:
-  Groundwork states the general pattern; the instance holds one concrete,
+- A repository that uses Jig is an **instance**, not upstream:
+  Jig states the general pattern; the instance holds one concrete,
   battle-tested implementation.
 - **Backflow**: when an instance learns something (a new lens, gate, or
-  corrected design), evaluate it for Groundwork. Bring in the *corrected*
+  corrected design), evaluate it for Jig. Bring in the *corrected*
   design, not the first attempt — e.g., derivable-fact freshness landed as
   "CI-check without committing the derived file" after materialized copies
   proved a merge-conflict liability (prefer: drop > CI-check > commit).
-- Groundwork must never *require* access to any particular instance to be
+- Jig must never *require* access to any particular instance to be
   useful: everything a consumer needs is here, and each consumer's own values
   arrive as configuration.
 
@@ -122,10 +122,10 @@ Read in this order when starting a session here:
   gates leave vendored material (`seeds/`), `templates/` and test `fixtures/`
   out, while the origin-reference gate covers everything, vendored material
   and templates included, except test `fixtures/` and its own pattern file.
-  Locally, `GROUNDWORK_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out
+  Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out
   the long drive-pr suite; run its test files for what you changed, and let
   CI's shards run the rest.
-- **This repository is the `groundwork` plugin.** Both tools install it from
+- **This repository is the `jig` plugin.** Both tools install it from
   `main`; the rules for changing anything under `plugin/` (running from a copy
   outside this repository, the version bump, the release tag) are in
   [plugin/AGENTS.md](plugin/AGENTS.md).

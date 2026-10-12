@@ -37,12 +37,12 @@ import {
 
 let ctx: string;
 let pickups: Map<string, string>;
-const savedOverlay = process.env.GROUNDWORK_OVERLAY;
+const savedOverlay = process.env.JIG_OVERLAY;
 beforeEach(() => {
   ctx = mkdtempSync(join(tmpdir(), "intent-chain-capture-"));
   pickups = new Map();
   // Branch names carry the consumer's team key (ENG here).
-  process.env.GROUNDWORK_OVERLAY = join(
+  process.env.JIG_OVERLAY = join(
     import.meta.dir,
     "fixtures",
     "tracker-overlay.yaml",
@@ -50,8 +50,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   rmSync(ctx, { recursive: true, force: true });
-  if (savedOverlay === undefined) delete process.env.GROUNDWORK_OVERLAY;
-  else process.env.GROUNDWORK_OVERLAY = savedOverlay;
+  if (savedOverlay === undefined) delete process.env.JIG_OVERLAY;
+  else process.env.JIG_OVERLAY = savedOverlay;
 });
 
 const chainDir = () => join(ctx, INTENT_CHAIN_SUBDIR);

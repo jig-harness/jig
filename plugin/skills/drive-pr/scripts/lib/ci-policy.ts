@@ -225,7 +225,7 @@ async function derivedRequiredChecks(
   ]);
   const failure = (what: string, reason: string): Error =>
     new Error(
-      `cannot read the required checks of '${branch}' from its ${what} (${reason}); list them in ci.required_checks in .config/groundwork-overlay.yaml`,
+      `cannot read the required checks of '${branch}' from its ${what} (${reason}); list them in ci.required_checks in .config/jig.yaml`,
     );
   if ("error" in branchInfo)
     throw failure("branch protection", branchInfo.error);
@@ -308,14 +308,14 @@ export async function ciPolicy(
     const integration = await baseBranch(root);
     if (integration === null)
       throw new Error(
-        "cannot tell which branch's protection names the required checks; list them in ci.required_checks in .config/groundwork-overlay.yaml",
+        "cannot tell which branch's protection names the required checks; list them in ci.required_checks in .config/jig.yaml",
       );
     branches = [integration];
   } else {
     const target = await protectedBranchesOf(pr, root);
     if ("error" in target)
       throw new Error(
-        `${target.error}; retry, or list them in ci.required_checks in .config/groundwork-overlay.yaml`,
+        `${target.error}; retry, or list them in ci.required_checks in .config/jig.yaml`,
       );
     branches = target.branches;
   }

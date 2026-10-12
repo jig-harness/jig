@@ -5,7 +5,7 @@
  * function under test IS `git rev-parse --git-common-dir`, so a stub would
  * not exercise it — same rationale as `actor.test.ts`/`store.test.ts`).
  * `$HOME` is always faked: this suite must never touch the real
- * `~/.local/state/groundwork`.
+ * `~/.local/state/jig`.
  */
 
 import { afterAll, describe, expect, it, mock } from "bun:test";
@@ -94,10 +94,10 @@ function runMigrate(
 }
 
 function newDirFor(home: string): string {
-  // The marker path is under $HOME/.local/state/groundwork/drive-pr/<one hashed dir> — the
+  // The marker path is under $HOME/.local/state/jig/drive-pr/<one hashed dir> — the
   // exact hash is `cloneKey`'s business, not this suite's, so find it by
   // listing rather than recomputing sha256 a second time here.
-  const drivePrRoot = join(home, ".local", "state", "groundwork", "drive-pr");
+  const drivePrRoot = join(home, ".local", "state", "jig", "drive-pr");
   const entries = existsSync(drivePrRoot) ? readdirSync(drivePrRoot) : [];
   expect(entries.length).toBe(1);
   return join(drivePrRoot, entries[0] ?? "");
@@ -128,7 +128,7 @@ function deterministicNewDir(home: string): string {
     .update(FIXED_CLONE_ID)
     .digest("hex")
     .slice(0, 16);
-  return join(home, ".local", "state", "groundwork", "drive-pr", key);
+  return join(home, ".local", "state", "jig", "drive-pr", key);
 }
 
 /** Backdates `path`'s mtime by `minutes`, past `createLock`'s staleness window. */
@@ -216,7 +216,7 @@ describe("migrate-legacy-state.ts", () => {
     expect(existsSync(legacyStateFile)).toBe(true);
     expect(readFileSync(legacyStateFile, "utf8")).toBe('{"pr":4172}');
 
-    const drivePrRoot = join(home, ".local", "state", "groundwork", "drive-pr");
+    const drivePrRoot = join(home, ".local", "state", "jig", "drive-pr");
     // Not even the marker (or the directory it would live in, in some
     // configurations) gets written on a dry run.
     const entries = existsSync(drivePrRoot) ? readdirSync(drivePrRoot) : [];
@@ -661,7 +661,7 @@ describe("migrate-legacy-state.ts", () => {
     expect(r.stderr).toContain("staging leftover");
     expect(existsSync(staging)).toBe(true);
 
-    const drivePrRoot = join(home, ".local", "state", "groundwork", "drive-pr");
+    const drivePrRoot = join(home, ".local", "state", "jig", "drive-pr");
     const entries = existsSync(drivePrRoot) ? readdirSync(drivePrRoot) : [];
     if (entries.length > 0) {
       expect(

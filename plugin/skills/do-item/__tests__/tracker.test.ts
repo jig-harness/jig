@@ -140,21 +140,21 @@ describe("tracker configuration", () => {
   });
 
   describe("teamKeyOrNull", () => {
-    const saved = process.env.GROUNDWORK_OVERLAY;
+    const saved = process.env.JIG_OVERLAY;
     let dir: string | null = null;
     afterEach(() => {
-      if (saved === undefined) delete process.env.GROUNDWORK_OVERLAY;
-      else process.env.GROUNDWORK_OVERLAY = saved;
+      if (saved === undefined) delete process.env.JIG_OVERLAY;
+      else process.env.JIG_OVERLAY = saved;
       if (dir !== null) rmSync(dir, { recursive: true, force: true });
       dir = null;
     });
     it("is null without an overlay and the team with one", () => {
       dir = mkdtempSync(join(tmpdir(), "tracker-config-"));
-      process.env.GROUNDWORK_OVERLAY = join(dir, "missing.yaml");
+      process.env.JIG_OVERLAY = join(dir, "missing.yaml");
       expect(teamKeyOrNull()).toBeNull();
       const path = join(dir, "overlay.yaml");
       writeFileSync(path, "issue_tracker:\n  team: ENG\n");
-      process.env.GROUNDWORK_OVERLAY = path;
+      process.env.JIG_OVERLAY = path;
       expect(teamKeyOrNull()).toBe("ENG");
     });
     it("opening the tracker refuses the pre-rename do_issue section", () => {
@@ -164,7 +164,7 @@ describe("tracker configuration", () => {
         path,
         "issue_tracker:\n  team: ENG\ndo_issue:\n  gates: []\n",
       );
-      process.env.GROUNDWORK_OVERLAY = path;
+      process.env.JIG_OVERLAY = path;
       expect(() => openTracker()).toThrow("now called do_item");
     });
   });

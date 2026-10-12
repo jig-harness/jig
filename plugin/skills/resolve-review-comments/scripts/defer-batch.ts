@@ -831,7 +831,7 @@ export function initialDescription(
   const lines = [
     provenance,
     "",
-    "Filed per the batch-by-default rule in Groundwork's resolve-review-comments",
+    "Filed per the batch-by-default rule in Jig's resolve-review-comments",
     "`references/deferral-protocol.md` § Batching",
     "is the default. Each entry is self-contained: the review-source URL, the",
     "reviewer's finding quoted, and why it was deferred rather than fixed in the PR.",

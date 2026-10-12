@@ -8,7 +8,7 @@
  * It drives the installed Google Chrome through `playwright-core`. Where
  * Chrome is missing the checks cannot run, so they are skipped and the run
  * says so in a warning. An environment that must run them sets
- * `GROUNDWORK_REQUIRE_BROWSER=1`; there a missing browser is a failing test,
+ * `JIG_REQUIRE_BROWSER=1`; there a missing browser is a failing test,
  * so a suite that never ran cannot read as a pass.
  */
 import { afterAll, describe, expect, it } from "bun:test";
@@ -58,11 +58,11 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const required = process.env.GROUNDWORK_REQUIRE_BROWSER === "1";
+const required = process.env.JIG_REQUIRE_BROWSER === "1";
 if (!browser && required)
   it("a browser is available", () => {
     throw new Error(
-      `these checks need Google Chrome and found none (${missing}); GROUNDWORK_REQUIRE_BROWSER=1 makes a missing browser fail instead of skipping`,
+      `these checks need Google Chrome and found none (${missing}); JIG_REQUIRE_BROWSER=1 makes a missing browser fail instead of skipping`,
     );
   });
 if (!browser && !required)

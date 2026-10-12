@@ -1,22 +1,20 @@
 /**
  * The consumer repository's own values for `/decide` and `/explain`, read at
- * run time from `.config/groundwork-overlay.yaml`.
+ * run time from `.config/jig.yaml`.
  *
  * Every field these skills read has a default, so a repository that has not
  * written the file still gets a working skill: the defaults follow
- * Groundwork's own conventions (ADRs under `docs/adr/` as module M5 lays
+ * Jig's own conventions (ADRs under `docs/adr/` as module M5 lays
  * them out, policy in `AGENTS.md`). A file that exists but cannot be read or
  * holds a field of the wrong type is an error, never a silent default.
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { OVERLAY_RELPATH } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
 import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
 import { CANDIDATE_DIRS } from "../../../adr/scripts/locate.ts";
 
-/** The consumer configuration file, relative to the repository root. */
-export const OVERLAY_RELPATH = ".config/groundwork-overlay.yaml";
-
-/** Where the ADRs live when `adr.directory` is not set and none is detected (Groundwork module M5). */
+/** Where the ADRs live when `adr.directory` is not set and none is detected (Jig module M5). */
 export const DEFAULT_ADR_DIRECTORY = "docs/adr";
 
 /** The precedent sources `/decide` searches, as repository-relative paths. */
@@ -40,15 +38,14 @@ export const DEFAULT_PRECEDENT_SOURCES: PrecedentSources = {
 
 /**
  * The parsed configuration of the repository at `repoRoot`, or `{}` when it
- * has none. `GROUNDWORK_OVERLAY` names another file; that file must exist.
+ * has none. `JIG_OVERLAY` names another file; that file must exist.
  */
 export function readOptionalOverlay(repoRoot: string): Record<string, unknown> {
-  const override = process.env.GROUNDWORK_OVERLAY;
+  const override = process.env.JIG_OVERLAY;
   const explicit = override !== undefined && override.trim() !== "";
   const path = explicit ? override : join(repoRoot, OVERLAY_RELPATH);
   if (!existsSync(path)) {
-    if (explicit)
-      throw new Error(`GROUNDWORK_OVERLAY names a missing file: ${path}`);
+    if (explicit) throw new Error(`JIG_OVERLAY names a missing file: ${path}`);
     return {};
   }
   let parsed: unknown;
@@ -56,12 +53,12 @@ export function readOptionalOverlay(repoRoot: string): Record<string, unknown> {
     parsed = load(readFileSync(path, "utf8"));
   } catch (err) {
     throw new Error(
-      `Groundwork configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
+      `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
   if (parsed === null || parsed === undefined) return {};
   if (typeof parsed !== "object" || Array.isArray(parsed))
-    throw new Error(`Groundwork configuration must be a mapping: ${path}`);
+    throw new Error(`Jig configuration must be a mapping: ${path}`);
   return parsed as Record<string, unknown>;
 }
 

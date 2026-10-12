@@ -1,7 +1,7 @@
 # TEMPLATE — copy to your repo (e.g. event-schema.yaml) and prune to the process
 # events YOUR delivery system actually emits. This is the CLOSED set of process-
 # telemetry event types and the fields each one must carry. It is the contract
-# Groundwork's event-schema lint
+# Jig's event-schema lint
 # (modules/M11-process-observability/reference/event-schema-lint/) validates a
 # live event stream against, and the vocabulary the metrics registry
 # (metrics-registry.yaml) builds its `source:` on.

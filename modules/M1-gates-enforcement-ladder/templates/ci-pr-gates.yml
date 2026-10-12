@@ -1,4 +1,4 @@
-# PR quality gates — GitHub Actions skeleton (groundwork module M1).
+# PR quality gates — GitHub Actions skeleton (Jig module M1).
 #
 # Copy to .github/workflows/pr-gates.yml, replace every <placeholder>, delete
 # jobs you don't need. The SHAPE is the point:

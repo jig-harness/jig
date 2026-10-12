@@ -7,7 +7,7 @@
  *   Run from inside the repository. Prints JSON:
  *   { directory, naming, width, highest, next, nextFile, rulesFile }
  *
- * - `directory`: `adr.directory` from `.config/groundwork-overlay.yaml` when
+ * - `directory`: `adr.directory` from `.config/jig.yaml` when
  *   set (it must exist), else the first existing candidate in
  *   CANDIDATE_DIRS, else null (no records yet; the caller proposes
  *   `docs/adr`).

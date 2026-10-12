@@ -152,7 +152,7 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    invariant **every PR's final target is resolvable**: either the PR targets
    the integration branch, or it is part of a forge-native stack whose
    metadata names the target, or the repository accepts plain branch chains
-   and its tooling walks them. Groundwork's
+   and its tooling walks them. Jig's
    [`do-item`](../../plugin/skills/do-item/SKILL.md) applies the policy with
    `pr-plan.ts` and refuses a PR that breaks it; the fields are in the
    [configuration reference](../../plugin/CONFIGURATION.md#pull_requests).
@@ -216,8 +216,8 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    label / draft rules to it.
 7. Declare the pull-request shape: whether PRs may stack and how (forge-native
    stacks or plain branch chains), the maximum stack depth, branch naming,
-   the issue link, and the size budget. With Groundwork's plugin
-   that is the `pull_requests` section of `.config/groundwork-overlay.yaml`
+   the issue link, and the size budget. With Jig's plugin
+   that is the `pull_requests` section of `.config/jig.yaml`
    ([reference](../../plugin/CONFIGURATION.md#pull_requests)); per-tool
    options are in [mappings.md](mappings.md#stacked-pull-requests).
 
@@ -225,8 +225,8 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
 
 ### Runnable form
 
-The practice runs as skills in Groundwork's
-[`groundwork` plugin](../../plugin/README.md), installed once per machine for
+The practice runs as skills in Jig's
+[`jig` plugin](../../plugin/README.md), installed once per machine for
 Claude Code and Codex. Each reads the repository's own reviewers, tracker
 values and gate commands from its configuration at run time
 ([setup](../../plugin/README.md#the-drive-loop-and-issue-pickup)).

@@ -3778,7 +3778,7 @@ export async function resolveFenceContext(label: string): Promise<
     // own default moved off it, so a fence that stopped here would
     // keep reading a location nothing writes to anymore while every other
     // consumer (including this same process's own lease writes) reads and
-    // writes `~/.local/state/groundwork/drive-pr/<cloneKey>/`. A standalone command run
+    // writes `~/.local/state/jig/drive-pr/<cloneKey>/`. A standalone command run
     // without `$DRIVE_PR_STATE_DIR` would then authorize a mutation without
     // ever seeing a live lease that exists only in the relocated directory.
     //
@@ -3915,7 +3915,7 @@ function resolveLegacyFallbackDir(legacyDir: string): string {
     // effect this function exists to avoid — no identity is invented, and
     // `ensureMigratedFromLegacy` would create this exact directory moments
     // later for any real admission anyway; recursive because nothing
-    // upstream of `.local/state/groundwork/` is guaranteed to exist either. A no-op when
+    // upstream of `.local/state/jig/` is guaranteed to exist either. A no-op when
     // `newDir` already existed.
     mkdirSync(newDir, { recursive: true });
     return resolve(newDir);

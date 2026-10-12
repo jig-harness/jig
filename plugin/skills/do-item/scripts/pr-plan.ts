@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Apply the repository's pull-request policy (`pull_requests` in
- * `.config/groundwork-overlay.yaml`, plus the facts derived from the
+ * `.config/jig.yaml`, plus the facts derived from the
  * repository itself) to one pull request about to be opened, so the agent
  * opening it follows the repository's rules instead of improvising them.
  *
@@ -164,7 +164,7 @@ async function buildOpenPlan(opts: {
   const trunk = await baseBranch(root);
   if (trunk === null)
     throw new Error(
-      "the integration branch is unknown: set repository.base_branch in .config/groundwork-overlay.yaml, or give this clone an origin/HEAD (git remote set-head origin --auto)",
+      "the integration branch is unknown: set repository.base_branch in .config/jig.yaml, or give this clone an origin/HEAD (git remote set-head origin --auto)",
     );
 
   const settings = await readRepoSettings(root);

@@ -109,7 +109,7 @@ export function qualifyingOutcome(body: string): QualifyingReply | null {
 /**
  * Marks a merit-outcome reply posted with `triage-thread.ts --leave-open` — a
  * deliberate choice not to resolve, usually a human thread (see
- * `/groundwork:resolve-review-comments` § Human threads) — so ANY later reader of this reply's durable text can
+ * `/jig:resolve-review-comments` § Human threads) — so ANY later reader of this reply's durable text can
  * recover that choice instead of needing it supplied again. Readers exist today
  * in `triage-thread.ts`'s own inline reconciliation, and in
  * `reconcile-replied-threads.ts`'s standalone sweep — its own header describes

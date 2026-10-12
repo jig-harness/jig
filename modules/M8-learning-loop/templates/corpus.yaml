@@ -1,7 +1,7 @@
 # TEMPLATE — copy to your repo (e.g. corpus.yaml) and replace the examples.
 # This is the eval corpus: the set of past misses reconstructed as replayable
 # fixtures, so yesterday's miss becomes a regression test for the process
-# itself. Groundwork's corpus-lint gate
+# itself. Jig's corpus-lint gate
 # (modules/M8-learning-loop/reference/corpus-lint/) enforces its invariants; its
 # parity report (modules/M8-learning-loop/reference/parity-report/) measures how
 # the reviewers do against it.

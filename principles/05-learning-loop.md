@@ -1,7 +1,7 @@
 # 5 — Learning loop built in
 
 A delivery system that doesn't learn from its misses decays into ritual.
-Groundwork ships the learning machinery as a module (M8) and applies it to
+Jig ships the learning machinery as a module (M8) and applies it to
 itself:
 
 - **Miss → lens**: when a reviewer, gate, or agent misses something an
@@ -18,15 +18,15 @@ itself:
 - **Memory promotion**: durable insights move from agent-private memory into
   the shared, versioned knowledge base.
 
-**Why.** This is the only mechanism in groundwork that makes all the others
+**Why.** This is the only mechanism in Jig that makes all the others
 self-improving; without it, every checklist is frozen at the day it was
 written.
 
 **Consequences:**
 
-- **Backflow is a standing obligation**: groundwork was distilled from a
+- **Backflow is a standing obligation**: Jig was distilled from a
   production codebase, and every repository that uses it keeps learning. Each
   new lesson there (a corrected design, a new lens) is evaluated for
-  Groundwork, which takes the *corrected* design, not the first attempt.
+  Jig, which takes the *corrected* design, not the first attempt.
 - Improvement artifacts (taxonomies, fixtures, lens registries) are versioned
   in the repo like code — the process has a test suite.

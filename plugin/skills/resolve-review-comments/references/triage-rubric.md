@@ -511,7 +511,7 @@ adds round cost, so:
 ## The Review Arbiter
 
 For threads the rubric does not decide, spawn the **Review Arbiter** agent
-(`groundwork:review-arbiter`) — one invocation can take a batch of
+(`jig:review-arbiter`) — one invocation can take a batch of
 contested threads. Give it, per thread: the thread body, `path`/`line`, the
 finding's diff hunk — or an explicit note that it anchors to pre-existing code
 the PR did not touch (the arbiter has no `git`/`gh` access, so this is how it

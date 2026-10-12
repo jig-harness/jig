@@ -3,7 +3,7 @@
 > Copy this into your docs tree (e.g. `docs/development/telemetry.md`) and adapt
 > the event names, metrics, and owners to your repo. It is the narrative
 > contract; the machine-checkable pieces are `event-schema.yaml`,
-> `metrics-registry.yaml`, and the two gates in Groundwork's
+> `metrics-registry.yaml`, and the two gates in Jig's
 > [M11 `reference/`](https://github.com/docomply/jig/tree/main/modules/M11-process-observability/reference).
 
 This describes how the **delivery process measures itself** — not the product.
@@ -65,7 +65,7 @@ hand-built charts.
 
 A dashboard's job is to make **drift visible** — an adoption rate sliding, a
 gate’s pass-rate collapsing, cycle time creeping up — early enough to act. The
-specific threshold/alert *values* are yours; Groundwork ships the mechanism, not
+specific threshold/alert *values* are yours; Jig ships the mechanism, not
 the numbers.
 
 ## How measurements drive promote/demote

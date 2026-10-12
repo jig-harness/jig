@@ -9,7 +9,7 @@ system. This module packages the loop that converts a miss into a permanent
 improvement — the **miss→lens [flywheel](../../GLOSSARY.md)** — plus the two
 companion cycles (session reflection and memory promotion) that keep the
 scaffolding itself learning. It is the most transferable practice in
-groundwork: it applies to *any* evaluable agent behavior, not just review.
+jig: it applies to *any* evaluable agent behavior, not just review.
 
 ## Invariant
 
@@ -65,7 +65,7 @@ missed. Then:
 - **Memory promotion** — an agent's private, per-session memory is periodically
   promoted (via a `/promote-memory`-style step) into git-tracked, shared team
   memory, so a lesson one agent learned survives the session and reaches the
-  others. Promotion is a review point, not an automatic dump. Groundwork's
+  others. Promotion is a review point, not an automatic dump. Jig's
   plugin runs this step as
   [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md).
 
@@ -157,7 +157,7 @@ which lever, or whether the reviewer was the thing that was wrong.
 
 Memory promotion runs as the
 [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) skill in
-Groundwork's [plugin](../../plugin/README.md): it checks that a private memory
+Jig's [plugin](../../plugin/README.md): it checks that a private memory
 still holds before lifting it into the team's git-tracked docs. The review
 loop that feeds the reflection trigger runs as
 [`drive-pr`](../../plugin/skills/drive-pr/README.md) (see

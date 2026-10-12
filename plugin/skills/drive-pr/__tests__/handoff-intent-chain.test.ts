@@ -40,8 +40,8 @@ let handoffDir: string;
 const savedEnv = {
   handoff: process.env.DRIVE_PR_HANDOFF_DIR,
   chain: process.env.DRIVE_PR_INTENT_CHAIN_DIR,
-  refocus: process.env.GROUNDWORK_REFOCUS,
-  overlay: process.env.GROUNDWORK_OVERLAY,
+  refocus: process.env.JIG_REFOCUS,
+  overlay: process.env.JIG_OVERLAY,
 };
 
 beforeEach(() => {
@@ -51,10 +51,10 @@ beforeEach(() => {
   handoffDir = mkdtempSync(join(tmpdir(), "handoff-dir-"));
   process.env.DRIVE_PR_HANDOFF_DIR = handoffDir;
   process.env.DRIVE_PR_INTENT_CHAIN_DIR = dir;
-  delete process.env.GROUNDWORK_REFOCUS;
+  delete process.env.JIG_REFOCUS;
   // The branch grammar reads the consumer's team key (ENG here); the
   // subprocess tests inherit it through the environment.
-  process.env.GROUNDWORK_OVERLAY = join(
+  process.env.JIG_OVERLAY = join(
     import.meta.dir,
     "fixtures",
     "tracker-overlay.yaml",
@@ -67,8 +67,8 @@ afterEach(() => {
   for (const [k, v] of [
     ["DRIVE_PR_HANDOFF_DIR", savedEnv.handoff],
     ["DRIVE_PR_INTENT_CHAIN_DIR", savedEnv.chain],
-    ["GROUNDWORK_REFOCUS", savedEnv.refocus],
-    ["GROUNDWORK_OVERLAY", savedEnv.overlay],
+    ["JIG_REFOCUS", savedEnv.refocus],
+    ["JIG_OVERLAY", savedEnv.overlay],
   ] as const) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
@@ -165,7 +165,7 @@ describe("handoff intent-chain section", () => {
     expect(text).toContain("_No readable `.context/intent-chain/`");
   });
 
-  it("injects nothing on an off arm, and GROUNDWORK_REFOCUS overrides the arm both ways", async () => {
+  it("injects nothing on an off arm, and JIG_REFOCUS overrides the arm both ways", async () => {
     writeChain("off", "Secret scope.");
     const off = (await intentChainSection(dir, undefined)).join("\n");
     expect(off).toContain("Refocus is off for this work item");

@@ -1,4 +1,4 @@
-# Groundwork's skills: the `groundwork` plugin
+# Jig's skills: the `jig` plugin
 
 Agent procedures (*skills*) that many repositories use should have one
 maintained source, so a fix reaches every repository at once and no copy drifts.
@@ -6,7 +6,7 @@ Without that, each repository carries its own copy of the same procedure, the
 copies diverge, and every agent tool on every machine needs its own setup step
 before a new working copy can use them.
 
-Groundwork ships its skills as one **plugin**: an installable bundle that Claude
+Jig ships its skills as one **plugin**: an installable bundle that Claude
 Code and Codex both understand. You install it **once per machine**. From then
 on every repository, every [worktree](../GLOSSARY.md) and every session on that
 machine has the skills; creating a new worktree, workspace or clone needs no
@@ -16,27 +16,27 @@ when they run.
 
 | Skill | What it does | Invoke as |
 |-------|--------------|-----------|
-| [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/groundwork:drive-pr` |
-| [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/groundwork:do-item` |
-| [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/groundwork:resolve-review-comments` |
-| [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/groundwork:review` |
-| [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/groundwork:fix-ci` |
-| [resolve-conflicts](skills/resolve-conflicts/SKILL.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files, records every decision in the commit message and checks that no change was silently dropped | `/groundwork:resolve-conflicts` |
-| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, caching and the repository's own workflow conventions | `/groundwork:github-actions` |
-| [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/groundwork:adr` |
-| [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/groundwork:descar` |
-| [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/groundwork:promote-memory` |
-| [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/groundwork:programmatic-execution` |
-| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool, grounded in the repository's real schema and code | `/groundwork:design-brief-builder` |
-| [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/groundwork:decide` |
-| [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/groundwork:explain` |
+| [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` |
+| [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` |
+| [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` |
+| [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/jig:review` |
+| [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` |
+| [resolve-conflicts](skills/resolve-conflicts/SKILL.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files, records every decision in the commit message and checks that no change was silently dropped | `/jig:resolve-conflicts` |
+| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, caching and the repository's own workflow conventions | `/jig:github-actions` |
+| [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/jig:adr` |
+| [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/jig:descar` |
+| [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/jig:promote-memory` |
+| [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/jig:programmatic-execution` |
+| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool, grounded in the repository's real schema and code | `/jig:design-brief-builder` |
+| [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/jig:decide` |
+| [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/jig:explain` |
 
 The plugin also ships agents (a [subagent](../GLOSSARY.md) is a separately prompted helper
 that a skill hands a narrow job to):
 
 | Agent | What it does | Available as |
 |-------|--------------|--------------|
-| [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `groundwork:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
+| [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
 Contents: [requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
@@ -48,6 +48,7 @@ Contents: [requirements](#requirements) ·
 [where it works](#where-it-works) · [troubleshooting](#troubleshooting) ·
 [how it works](#how-it-works) · [add a skill](#add-or-change-a-skill) ·
 [release](#release-a-new-version) ·
+[moving from the `groundwork` plugin](#moving-from-the-groundwork-plugin) ·
 [moving off the per-worktree installer](#moving-off-the-per-worktree-installer)
 
 ## Requirements
@@ -55,7 +56,7 @@ Contents: [requirements](#requirements) ·
 - **Claude Code** 2.1.292 or later and/or a **Codex CLI** with plugin support (tested with 0.159). Either
   one is enough; install for each one you use.
 - **Bun** on `PATH`: the skills' scripts are TypeScript run by
-  [Bun](https://bun.sh). Any recent Bun works; Groundwork tests with the
+  [Bun](https://bun.sh). Any recent Bun works; Jig tests with the
   version in [mise.toml](../mise.toml).
 - **git** and the **GitHub CLI** (`gh`), signed in with access to the
   repositories you work on.
@@ -77,17 +78,17 @@ Run these once per machine, in a terminal (not inside an agent session).
 
 **Claude Code** (one step: it registers the marketplace and installs; on
 Claude Code older than 2.1.292, run `claude plugin marketplace add <address>`
-and then `claude plugin install groundwork@groundwork` instead):
+and then `claude plugin install jig@jig` instead):
 
 ```sh
-claude plugin install groundwork --marketplace https://github.com/docomply/jig.git
+claude plugin install jig --marketplace https://github.com/docomply/jig.git
 ```
 
 **Codex**:
 
 ```sh
 codex plugin marketplace add https://github.com/docomply/jig.git
-codex plugin add groundwork@groundwork
+codex plugin add jig@jig
 ```
 
 **Both at once**, from a checkout of this repository (it installs for each tool
@@ -102,7 +103,7 @@ for a tool that is on `PATH`):
 
 ```sh
 bun tools/plugin/setup.ts --check
-claude plugin list        # shows groundwork@groundwork, enabled
+claude plugin list        # shows jig@jig, enabled
 codex plugin list         # same for Codex
 ```
 
@@ -118,19 +119,19 @@ workspace administrator can sync a GitHub marketplace for the team.
 
 Plugin skills carry the plugin's name as a prefix.
 
-- **Claude Code:** type `/groundwork:` and pick the skill, for example
-  `/groundwork:resolve-review-comments 123`. Claude also uses a skill on its
+- **Claude Code:** type `/jig:` and pick the skill, for example
+  `/jig:resolve-review-comments 123`. Claude also uses a skill on its
   own when the request matches its description.
-- **Codex:** ask for it by name ("use the groundwork:resolve-review-comments
+- **Codex:** ask for it by name ("use the jig:resolve-review-comments
   skill on PR 123"), or type `@` and choose it.
 
 For example:
 
 ```text
-/groundwork:do-item ENG-123           # pick up an issue; opens a PR and starts a drive
-/groundwork:drive-pr 456              # start an unattended drive of PR 456 in the background
-/groundwork:drive-pr --interactive 456   # one round in this session, then stop
-/groundwork:resolve-review-comments 456  # one review-resolution pass, no drive
+/jig:do-item ENG-123           # pick up an issue; opens a PR and starts a drive
+/jig:drive-pr 456              # start an unattended drive of PR 456 in the background
+/jig:drive-pr --interactive 456   # one round in this session, then stop
+/jig:resolve-review-comments 456  # one review-resolution pass, no drive
 ```
 
 Skills call the `review-arbiter` agent themselves when a finding is
@@ -146,7 +147,7 @@ repository that has none; the other skills fall back to their defaults.
 A repository adopts a skill by committing its values. Nothing else is
 committed: no copy of the skill, no install script, no generated files.
 
-1. **Create `.config/groundwork-overlay.yaml`** with the values the skill needs.
+1. **Create `.config/jig.yaml`** with the values the skill needs.
    This file is the *consumer overlay* (see the [glossary](../GLOSSARY.md)):
    the repository's own values, laid over the shared procedure. JSON is valid
    YAML, so a JSON-formatted file works too. The minimum for
@@ -174,12 +175,12 @@ committed: no copy of the skill, no install script, no generated files.
    to the repository's `AGENTS.md` (or equivalent), for example:
 
    ```markdown
-   ## Shared skills (Groundwork)
+   ## Shared skills (Jig)
 
-   `/groundwork:resolve-review-comments` comes from the `groundwork` plugin,
+   `/jig:resolve-review-comments` comes from the `jig` plugin,
    installed once per machine (see
    https://github.com/docomply/jig/blob/main/plugin/README.md#install-the-plugin).
-   This repository's values are in `.config/groundwork-overlay.yaml`.
+   This repository's values are in `.config/jig.yaml`.
    If the skill is not listed, install the plugin and start a new session.
    ```
 
@@ -190,11 +191,11 @@ committed: no copy of the skill, no install script, no generated files.
    ```json
    {
      "extraKnownMarketplaces": {
-       "groundwork": {
+       "jig": {
          "source": { "source": "git", "url": "https://github.com/docomply/jig.git" }
        }
      },
-     "enabledPlugins": { "groundwork@groundwork": true }
+     "enabledPlugins": { "jig@jig": true }
    }
    ```
 
@@ -276,7 +277,7 @@ do_item:
   execution_plan_block: execution-plan-v1   # fenced block name read from an epic's description
 fleet_health:
   config: .config/fleet-health.yaml         # fleet-health settings file
-  snapshot_dir: ~/.local/state/groundwork/dashboard   # where snapshots are written; `~` is expanded
+  snapshot_dir: ~/.local/state/jig/dashboard   # where snapshots are written; `~` is expanded
 ```
 
 The agent and scout names above are examples; use the agents your repository
@@ -296,13 +297,13 @@ review rounds (see the [drive-pr README](skills/drive-pr/README.md#ci-hold)).
 **Where a drive keeps its state.** A drive records its rounds, locks and
 leases (a [lease](../GLOSSARY.md) is a short-lived claim that one session owns the pull
 request's threads) outside the repository, in a per-clone folder:
-`~/.local/state/groundwork/drive-pr/<clone>/` by default. Set
+`~/.local/state/jig/drive-pr/<clone>/` by default. Set
 `DRIVE_PR_STATE_DIR` to move it; to move existing state into another folder,
 run `bun <skill-dir>/scripts/migrate-state-dir.ts --from <old-dir>` (see the
 [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir)). The
 [verification-fit](../GLOSSARY.md) log (the agent's recorded verdicts on whether each round's
-required validation was worth its cost) defaults to the Groundwork state
-folder too; `GROUNDWORK_VERIFICATION_FIT_LOG` overrides it.
+required validation was worth its cost) defaults to the Jig state
+folder too; `JIG_VERIFICATION_FIT_LOG` overrides it.
 
 **How the skills reach the issue tracker.** `do-item` and `drive-pr` talk to
 the tracker only through a small [tracker interface](../GLOSSARY.md) (read an issue with its
@@ -331,7 +332,7 @@ these only when detection picks the wrong thing:
 ```yaml
 adr:
   directory: docs/adr                 # decision records; default: detected (docs/adr, doc/adr, docs/decisions, …)
-  rules_file: docs/adr/rules.yaml     # machine-readable rules (Groundwork M5); default: detected, else none
+  rules_file: docs/adr/rules.yaml     # machine-readable rules (Jig M5); default: detected, else none
 descar:
   lint_command: "bun scripts/check-descarring-scars.ts"   # scar lint taking document paths; default: detected (M4's lint), else a manual read
 promote_memory:
@@ -386,7 +387,7 @@ them together.
   instructions, or define the arbiter once as a Codex custom agent from that
   file.
 - **The drive's default pass command** starts Claude Code
-  (`claude -p "/groundwork:drive-pr <PR>"`). To drive with Codex, put a Codex
+  (`claude -p "/jig:drive-pr <PR>"`). To drive with Codex, put a Codex
   command after the `--` in the
   [start command](skills/drive-pr/README.md#how-to-start-it).
 
@@ -398,28 +399,28 @@ a status board that runs `await-round.ts`), it must find the installed copy,
 because the repository holds none. Look in this order and fail
 with a clear message when none is found:
 
-1. `GROUNDWORK_SKILLS_DIR`, set by the caller (CI jobs and tests point it at
+1. `JIG_SKILLS_DIR`, set by the caller (CI jobs and tests point it at
    a checkout of this repository's `plugin/skills`).
-2. Claude Code: the entry with `"id": "groundwork@groundwork"` and
+2. Claude Code: the entry with `"id": "jig@jig"` and
    `"scope": "user"` in `claude plugin list --json`: its `readFromFolder` when
    present (a plugin loaded in place from a local marketplace), otherwise its
    `installPath`; append `/skills` and check that the directory exists.
-3. Codex: the `version` of `groundwork@groundwork` in `codex plugin list --json`,
-   then `${CODEX_HOME:-~/.codex}/plugins/cache/groundwork/groundwork/<version>/skills`.
+3. Codex: the `version` of `jig@jig` in `codex plugin list --json`,
+   then `${CODEX_HOME:-~/.codex}/plugins/cache/jig/jig/<version>/skills`.
 
 Paths inside the cache change with each release, so never store them.
 
 ## Update, pin or remove
 
 - **Update** to the latest release: `bun tools/plugin/setup.ts`, or by hand
-  `claude plugin marketplace update groundwork && claude plugin update groundwork@groundwork --scope user`
-  and `codex plugin marketplace upgrade groundwork && codex plugin add groundwork@groundwork`.
+  `claude plugin marketplace update jig && claude plugin update jig@jig --scope user`
+  and `codex plugin marketplace upgrade jig && codex plugin add jig@jig`.
   A tool picks up a new release only when the plugin's `version` changes (see
   [release](#release-a-new-version)). Claude Code can also update in the
-  background: `/plugin` → **Marketplaces** → `groundwork` →
+  background: `/plugin` → **Marketplaces** → `jig` →
   **Enable auto-update**.
 - **Pin** a machine to a release tag: add the marketplace at that tag,
-  `claude plugin install groundwork --marketplace https://github.com/docomply/jig.git#v0.3.0`,
+  `claude plugin install jig --marketplace https://github.com/docomply/jig.git#v0.3.0`,
   or `codex plugin marketplace add https://github.com/docomply/jig.git --ref v0.3.0`.
   Versions are chosen per machine, not per repository: every repository on a
   machine uses the same release, so releases keep reading older configuration
@@ -429,10 +430,10 @@ Paths inside the cache change with each release, so never store them.
   that changes `plugin/` therefore bumps the version (see
   [release](#release-a-new-version)); otherwise two machines showing the same
   version can run different code.
-- **Remove**: `claude plugin uninstall groundwork@groundwork` and
-  `codex plugin remove groundwork@groundwork` (add
-  `claude plugin marketplace remove groundwork` /
-  `codex plugin marketplace remove groundwork` to forget the source too).
+- **Remove**: `claude plugin uninstall jig@jig` and
+  `codex plugin remove jig@jig` (add
+  `claude plugin marketplace remove jig` /
+  `codex plugin marketplace remove jig` to forget the source too).
 
 ## Where it works
 
@@ -445,7 +446,7 @@ runs as you:
 | A terminal session in any clone or worktree | Nothing beyond the one-time install |
 | Conductor, herdr, or any tool that creates worktrees and starts sessions | Nothing: new workspaces are ordinary directories on a machine that has the plugin |
 | `claude -p`, `codex exec`, scripts and loops | Nothing; plugins load in headless runs too |
-| A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install groundwork --marketplace …`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` |
+| A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace …`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` |
 | CI jobs that only run tests and gates | Nothing: they do not need the skills |
 | A runner that gives each session its own Claude Code configuration directory (`CLAUDE_CONFIG_DIR`) | A user-level install lives in the default directory and is not seen there. Build a seed once (as for containers) and set `CLAUDE_CODE_PLUGIN_SEED_DIR` in the runner's environment; repositories enable the plugin through `enabledPlugins` in `.claude/settings.json` |
 | A tool without plugin support | Copy or link `plugin/skills/<name>` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`); the command name is then the bare skill name |
@@ -460,7 +461,7 @@ runs as you:
   git could not read the private repository without a prompt. Run
   `gh auth login` and `gh auth setup-git`, then retry with the HTTPS address
   above. Check with `git ls-remote https://github.com/docomply/jig.git`.
-- **"Groundwork configuration not found"** — the agent is working in a
+- **"Jig configuration not found"** — the agent is working in a
   repository that has not [configured](#configure-a-repository) the skill, or
   outside any repository. Start the agent in the repository, or add the
   configuration file.
@@ -501,7 +502,7 @@ every `skills/<name>/SKILL.md`. One `SKILL.md` serves both: Claude Code fills
 in `${CLAUDE_SKILL_DIR}` with the skill's directory, and the procedure tells
 any other tool to do the same. Each script finds its repository by walking up
 from the directory the agent runs it in, then reads that repository's
-`.config/groundwork-overlay.yaml`.
+`.config/jig.yaml`.
 
 Why per machine rather than per repository: an agent tool lists the skills it
 can see when a session starts. A skill installed into each worktree therefore
@@ -533,7 +534,7 @@ of the plugin:
 - **Working directory:** scripts run with the consumer repository as the
   working directory and must not depend on being run from the skill directory.
 - **Consumer values:** read them at run time from
-  `.config/groundwork-overlay.yaml` (see
+  `.config/jig.yaml` (see
   `resolve-review-comments/scripts/lib/consumer.ts`), fail with a clear message
   when a required value is missing, and accept older files. Never bake a
   repository's values into `SKILL.md`.
@@ -573,13 +574,60 @@ of the plugin:
 Machines receive the release on their next update. Repositories need no change
 unless the changelog says so.
 
+## Moving from the `groundwork` plugin
+
+Up to 0.11.0 the plugin was called `groundwork` (`groundwork@groundwork`, with
+`/groundwork:` commands). From 0.12.0 it is `jig@jig`, with `/jig:` commands.
+**This is a clean break: no old name is read anywhere.** The old
+configuration file, the `GROUNDWORK_*` variables and the old folders are
+ignored without a notice, so each of them has to be moved by hand:
+
+| Before | Now | What happens to the old one |
+|--------|-----|-----------------------------|
+| `.config/groundwork-overlay.yaml` | `.config/jig.yaml` | ignored; a skill reports the repository as unconfigured |
+| `GROUNDWORK_*` variables | `JIG_*` | ignored |
+| `~/.local/state/groundwork/drive-pr/` | `~/.local/state/jig/drive-pr/` | ignored; a drive starts from empty state |
+| `~/.local/state/groundwork/dashboard/` | `~/.local/state/jig/dashboard/` | ignored |
+| `~/.local/state/groundwork/verification-fit.jsonl` | `~/.local/state/jig/verification-fit.jsonl` | ignored; move the file to keep its history |
+| `~/.cache/groundwork/gh-cache/` | `~/.cache/jig/gh-cache/` | ignored; the cache refills on its own |
+
+**On each machine**, for both tools:
+
+1. Stop the drives running there (`bun <drive-pr skill>/scripts/drives.ts`
+   lists them; [Call a skill's scripts](#call-a-skills-scripts-from-repository-code)
+   says where a skill's folder is). A running drive keeps the code it started
+   with, and removing the old plugin deletes the scripts it calls.
+2. From a checkout of this repository, run `bun tools/plugin/setup.ts`. It
+   installs `jig@jig` and leaves the old plugin alone, so remove that by hand:
+   `claude plugin uninstall groundwork@groundwork --scope user` and
+   `claude plugin marketplace remove groundwork`, and for Codex
+   `codex plugin remove groundwork@groundwork` and
+   `codex plugin marketplace remove groundwork`.
+3. To keep the history of the drives' state, move it:
+   `bun <drive-pr skill>/scripts/migrate-state-dir.ts --from ~/.local/state/groundwork/drive-pr`.
+   A machine that sets `DRIVE_PR_STATE_DIR` has nothing to move.
+4. Rename any `GROUNDWORK_*` variables in shell profiles, launch agents and
+   CI configuration to `JIG_*`.
+
+**In each repository** that uses the plugin:
+
+1. Rename the configuration file: `git mv .config/groundwork-overlay.yaml .config/jig.yaml`.
+2. Change `/groundwork:` to `/jig:` in its instructions (`AGENTS.md`, skills,
+   rules) and `groundwork:` to `jig:` where it names an agent.
+3. Where `.claude/settings.json` enables the plugin by id
+   (`enabledPlugins`), change `groundwork@groundwork` to `jig@jig`.
+4. Code that [finds the installed skills](#call-a-skills-scripts-from-repository-code)
+   looks for `JIG_SKILLS_DIR`, the id `jig@jig` and the cache folder
+   `plugins/cache/jig/jig/` instead of the `groundwork` names.
+
 ## Moving off the per-worktree installer
 
 Releases up to `v0.1.1-review-pilot` were installed into each worktree by an
 installer rather than as a plugin. A repository still on one of those tags
 moves to the plugin like this:
 
-1. Keep `.config/groundwork-overlay.yaml`. If it sets `review.job_pattern`,
+1. Rename `.config/groundwork-overlay.yaml` to `.config/jig.yaml`. If it
+   sets `review.job_pattern`,
    also set `review.required_checks`, or set the pattern to `null`; the
    review skill refuses the file otherwise. `harness.*` fields are ignored:
    tools a skill needs beyond `git`, `gh` and `bun` go into the repository's
@@ -591,7 +639,7 @@ moves to the plugin like this:
    block. Code that imported `.groundwork/lib/` or ran a script by its old
    path must [find the installed copy](#call-a-skills-scripts-from-repository-code)
    instead.
-3. Rename `/resolve-review-comments` to `/groundwork:resolve-review-comments`
+3. Rename `/resolve-review-comments` to `/jig:resolve-review-comments`
    in the repository's instructions, add the `AGENTS.md` section from
    [Configure a repository](#configure-a-repository), and install the plugin
    on each machine.

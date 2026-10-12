@@ -14,7 +14,7 @@
  * checked). The interpreter skips a
  * rule without a pattern and treats any severity other than `critical` as a
  * warning, so either mistake would weaken enforcement without a word. POSIX character classes such as `[[:space:]]` are translated the
- * way Groundwork's reference interpreter (module M5) translates them, so a
+ * way Jig's reference interpreter (module M5) translates them, so a
  * class that interpreter would reject is rejected here too.
  *
  * That interpreter does not parse YAML: it reads `pattern_rules` line by line,

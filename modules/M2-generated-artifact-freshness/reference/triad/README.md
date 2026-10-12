@@ -30,7 +30,7 @@ definitions, ORM types from migrations, dependency notices from lockfiles.
 | `fixture/docs/` | Tiny docs tree (with its committed, fresh `index.md`) to run against |
 
 Both exit 2 on a usage error or unreadable input. Their self-tests are in
-Groundwork's [`scripts/freshness.test.ts`](../../../../scripts/freshness.test.ts).
+Jig's [`scripts/freshness.test.ts`](../../../../scripts/freshness.test.ts).
 
 Try it with the pinned Bun runtime:
 

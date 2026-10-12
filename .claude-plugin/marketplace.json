@@ -1,12 +1,12 @@
 {
-  "name": "groundwork",
-  "description": "Groundwork's agent skills and agents for Claude Code.",
+  "name": "jig",
+  "description": "Jig's agent skills and agents for Claude Code.",
   "owner": { "name": "Docomply" },
   "plugins": [
     {
-      "name": "groundwork",
+      "name": "jig",
       "source": "./plugin",
-      "description": "Groundwork's shared agent skills (drive-pr, do-item, resolve-review-comments, resolve-conflicts and procedure skills) and the review-arbiter agent."
+      "description": "Jig's shared agent skills (drive-pr, do-item, resolve-review-comments, resolve-conflicts and procedure skills) and the review-arbiter agent."
     }
   ]
 }

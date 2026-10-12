@@ -1,4 +1,4 @@
-# Git-hooks skeleton (lefthook syntax) — groundwork module M1.
+# Git-hooks skeleton (lefthook syntax) — Jig module M1.
 #
 # Copy to your repo root as lefthook.yml, replace every <placeholder>, delete
 # what you don't need. The SHAPE is the point:

@@ -60,7 +60,7 @@ describe("round-plan.ts unconcluded git operation guard", () => {
     out.HOME = home;
     out.GIT_CONFIG_GLOBAL = "/dev/null";
     out.GIT_CONFIG_NOSYSTEM = "1";
-    out.GROUNDWORK_OVERLAY = join(dir, ".config", "groundwork-overlay.yaml");
+    out.JIG_OVERLAY = join(dir, ".config", "jig.yaml");
     out.PATH = `${bin}:${process.env.PATH ?? ""}`;
     return out;
   }
@@ -96,10 +96,7 @@ describe("round-plan.ts unconcluded git operation guard", () => {
   // info/exclude below, so it never shows up in the diff being planned.
   function writeOverlay(overlay: Record<string, unknown>): void {
     mkdirSync(join(dir, ".config"), { recursive: true });
-    writeFileSync(
-      join(dir, ".config", "groundwork-overlay.yaml"),
-      JSON.stringify(overlay),
-    );
+    writeFileSync(join(dir, ".config", "jig.yaml"), JSON.stringify(overlay));
   }
 
   function roundPlan(): { code: number; stdout: string; stderr: string } {
@@ -332,7 +329,7 @@ describe("a stacked layer's round base", () => {
     out.HOME = home;
     out.GIT_CONFIG_GLOBAL = "/dev/null";
     out.GIT_CONFIG_NOSYSTEM = "1";
-    out.GROUNDWORK_OVERLAY = join(dir, ".config", "groundwork-overlay.yaml");
+    out.JIG_OVERLAY = join(dir, ".config", "jig.yaml");
     out.GIT_AUTHOR_NAME = "round-plan probe";
     out.GIT_AUTHOR_EMAIL = "probe@example.invalid";
     out.GIT_COMMITTER_NAME = "round-plan probe";
@@ -414,7 +411,7 @@ esac
     mustGit("remote", "add", "origin", "https://github.com/acme/widgets.git");
     mkdirSync(join(dir, ".config"), { recursive: true });
     writeFileSync(
-      join(dir, ".config", "groundwork-overlay.yaml"),
+      join(dir, ".config", "jig.yaml"),
       JSON.stringify({
         repository: { base_branch: "develop" },
         gates: { command: "make check" },

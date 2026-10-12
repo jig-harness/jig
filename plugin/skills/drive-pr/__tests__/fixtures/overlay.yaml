@@ -13,7 +13,7 @@ review:
   repo_slug: example/project
   taxonomy:
     types: [bug, feature, infra, docs, chore]
-    repos: [project, website, runner, reviewer, standards, toolkit, groundwork, billing]
+    repos: [project, website, runner, reviewer, standards, toolkit, jig, billing]
     sizes: [xs, small]
     categories: [correctness, data-integrity, security, compliance, ux, performance, tests, docs, drift, style]
     context_prefixes: ["agent:", "domain:", "codearea:"]

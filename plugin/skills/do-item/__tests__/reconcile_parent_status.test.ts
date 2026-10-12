@@ -700,13 +700,13 @@ describe("reconcile_parent_status.ts (CLI entrypoint)", () => {
         children: [{ state: { name: "Done", type: "completed" } }],
       }),
       [],
-      { GROUNDWORK_OVERLAY: join(SCRIPTS, "no-such-overlay.yaml") },
+      { JIG_OVERLAY: join(SCRIPTS, "no-such-overlay.yaml") },
     );
     expect({ status: r.status, stdout: r.stdout }).toEqual({
       status: 1,
       stdout: "",
     });
-    expect(r.stderr).toContain("Groundwork configuration not found");
+    expect(r.stderr).toContain("Jig configuration not found");
   });
 
   it("refuses to decide from an overlay with the pre-rename do_issue section", () => {
@@ -720,7 +720,7 @@ describe("reconcile_parent_status.ts (CLI entrypoint)", () => {
           children: [{ state: { name: "Done", type: "completed" } }],
         }),
         [],
-        { GROUNDWORK_OVERLAY: overlay },
+        { JIG_OVERLAY: overlay },
       );
       expect({ status: r.status, stdout: r.stdout }).toEqual({
         status: 1,

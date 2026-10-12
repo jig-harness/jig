@@ -35,7 +35,7 @@ function editSnapshot(edit: (snapshot: Snapshot) => void): void {
       "rev-parse",
       "--path-format=absolute",
       "--git-path",
-      "groundwork/conflicts.json",
+      "jig/conflicts.json",
     )
     .trim();
   const snapshot = JSON.parse(readFileSync(file, "utf8")) as Snapshot;
@@ -377,7 +377,7 @@ describe("the snapshot's identity", () => {
         "rev-parse",
         "--path-format=absolute",
         "--git-path",
-        "groundwork/conflicts.json",
+        "jig/conflicts.json",
       )
       .trim();
     rmSync(file);

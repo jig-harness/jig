@@ -19,7 +19,7 @@ changed the code, nothing tells a reviewer what was decided, and a genuine
 product disagreement is settled by an agent without anyone noticing.
 
 This skill gives the resolution a structure and checks it before it is
-concluded. It belongs to the pull-request lifecycle of Groundwork module
+concluded. It belongs to the pull-request lifecycle of Jig module
 [M7 (PR lifecycle & review)](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md):
 a pull request that conflicts with its base cannot merge, and the resolution
 is part of the change its reviewers see.
@@ -32,8 +32,8 @@ decision is recorded where reviewers see it: the merge commit message. The
 resolution is validated before it is concluded and pushed. A conflict whose
 right answer is a product decision goes to a human.
 
-Groundwork maintains this procedure and ships it in the `groundwork` plugin.
-A repository adds its own generated files in `.config/groundwork-overlay.yaml`
+Jig maintains this procedure and ships it in the `jig` plugin.
+A repository adds its own generated files in `.config/jig.yaml`
 (the [consumer overlay](https://github.com/docomply/jig/blob/main/GLOSSARY.md));
 without that file the skill works on its defaults.
 
@@ -86,7 +86,7 @@ from this side before they are regenerated.
 If an operation has already stopped on conflicts, go to Step 2.
 
 To bring a branch up to date with its base (the `conflict-resolve` round of
-[`/groundwork:drive-pr`](../drive-pr/SKILL.md) is this case), merge the base
+[`/jig:drive-pr`](../drive-pr/SKILL.md) is this case), merge the base
 in, with a base section in the markers:
 
 ```bash
@@ -189,7 +189,7 @@ Write each reason for the reviewer, in one or two sentences.
 each decision.
 
 The record lives in the snapshot, `$(git rev-parse --git-path
-groundwork/conflicts.json)`, which is never committed. Its shape:
+jig/conflicts.json)`, which is never committed. Its shape:
 
 ```json
 {
@@ -346,7 +346,7 @@ each question.
 
 ## Configuration
 
-One optional section in `.config/groundwork-overlay.yaml`:
+One optional section in `.config/jig.yaml`:
 
 ```yaml
 resolve_conflicts:
@@ -359,7 +359,7 @@ Each entry's `paths` are globs over repository-relative paths (`*` and `?`
 stay within one directory; `**` spans any number), and `command` rebuilds
 them, run from the repository root. An entry also overrides the built-in
 lockfile table for a path it matches. Unknown keys and wrong types are
-refused with the field named (exit 2). `GROUNDWORK_OVERLAY` points the
+refused with the field named (exit 2). `JIG_OVERLAY` points the
 scripts at another configuration file.
 
 Built-in lockfiles, matched by file name in any directory and regenerated in
@@ -390,8 +390,8 @@ that directory:
 
 ## Related skills
 
-- [`/groundwork:drive-pr`](../drive-pr/SKILL.md) runs this skill in its
+- [`/jig:drive-pr`](../drive-pr/SKILL.md) runs this skill in its
   `conflict-resolve` round and when its `base-sync.ts` reports a conflict
   (exit 9).
-- [`/groundwork:fix-ci`](../fix-ci/SKILL.md) for checks that fail after the
+- [`/jig:fix-ci`](../fix-ci/SKILL.md) for checks that fail after the
   merge for reasons the resolution did not cause.

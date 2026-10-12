@@ -106,7 +106,7 @@ concrete per-tracker, per-runtime wiring lives in [mappings.md](mappings.md).
 
 ### Runnable form
 
-Two skills in Groundwork's [plugin](../../plugin/README.md) run parts of this
+Two skills in Jig's [plugin](../../plugin/README.md) run parts of this
 practice:
 
 - [`do-item`](../../plugin/skills/do-item/SKILL.md) picks up a work item

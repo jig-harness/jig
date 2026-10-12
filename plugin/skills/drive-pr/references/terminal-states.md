@@ -2062,7 +2062,7 @@ path; this becomes a real guard when one exists, and not before.
 
 Under `drive.ts` each round is a fresh agent process, so context resets per round
 by construction. The dial therefore bites only where that is not true: one round
-large enough to strain a single context, the interactive `/loop /groundwork:drive-pr --interactive` path
+large enough to strain a single context, the interactive `/loop /jig:drive-pr --interactive` path
 where one session spans rounds, and `never`, whose point is surviving compaction
 *within* a round.
 
@@ -2108,5 +2108,5 @@ all. Treat the margin as the signal, not the number.
 
 `drive.ts`'s per-round `claude -p` processes each start a fresh session, so the
 budget resets per round there and the guard bites hardest exactly where
-`--handoff-at` does: one very large round, and the interactive `/loop /groundwork:drive-pr --interactive`
+`--handoff-at` does: one very large round, and the interactive `/loop /jig:drive-pr --interactive`
 path.

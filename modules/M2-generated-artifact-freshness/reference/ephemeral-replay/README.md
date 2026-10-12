@@ -44,7 +44,7 @@ docker unavailable, the database never becoming ready, a failing migration).
 | `KEEP_CONTAINER` | Any value keeps the container for debugging instead of removing it |
 
 The self-tests (normalization, missing input, migration order, cleanup) are in
-Groundwork's [`scripts/freshness.test.ts`](../../../../scripts/freshness.test.ts).
+Jig's [`scripts/freshness.test.ts`](../../../../scripts/freshness.test.ts).
 
 ## Normalization gotchas (where this pattern actually fails)
 

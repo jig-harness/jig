@@ -110,9 +110,9 @@ What this module provides:
   and [`maturity.yaml`](maturity.yaml).
 
 Each reference script has a paired self-test beside it. The
-[`/groundwork:descar`](../../plugin/skills/descar/SKILL.md) skill is the
+[`/jig:descar`](../../plugin/skills/descar/SKILL.md) skill is the
 operating procedure for the de-scarring rule: it handles the part a lint
-cannot do. [`/groundwork:promote-memory`](../../plugin/skills/promote-memory/SKILL.md)
+cannot do. [`/jig:promote-memory`](../../plugin/skills/promote-memory/SKILL.md)
 promotes a lesson from an agent's private memory into this docs tree.
 
 Deliberately left out: a tag-merge normalizer and a full canonical tag

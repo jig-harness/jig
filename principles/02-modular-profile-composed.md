@@ -1,6 +1,6 @@
 # 2 — Modular, profile-composed
 
-Groundwork is not a framework you adopt whole. It is **13 modules**
+Jig is not a framework you adopt whole. It is **13 modules**
 ([modules/](../modules/)) that adopt independently, each defined at three
 **maturity levels** — Lite, Standard, Strict — and composed by **profiles**
 ([profiles/](../profiles/)) matching project shapes:
@@ -14,7 +14,7 @@ Groundwork is not a framework you adopt whole. It is **13 modules**
 
 **Why.** Projects differ in size, lifespan, team, and compliance posture; an
 all-or-nothing methodology gets adopted by nobody. The single assumption
-groundwork *does* make: every project, whatever its size, benefits from
+Jig *does* make: every project, whatever its size, benefits from
 scaffolding that lets AI agents work it well (principle 3).
 
 **Consequences:**

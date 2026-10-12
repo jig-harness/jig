@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { generateIndex } from "./generate-index";
 
 test("index fixture reproduces exactly and changed inputs make the gate fail", () => {
-  const root = mkdtempSync(join(tmpdir(), "groundwork-index-"));
+  const root = mkdtempSync(join(tmpdir(), "jig-index-"));
   try {
     const docs = join(root, "docs");
     cpSync(join(import.meta.dir, "fixtures/docs"), docs, { recursive: true });

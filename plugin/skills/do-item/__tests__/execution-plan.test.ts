@@ -283,7 +283,7 @@ describe("shared execution-plan-v1 pickup", () => {
           input: JSON.stringify(input(description)),
           env: {
             ...process.env,
-            GROUNDWORK_OVERLAY: join(dir, "overlay.yaml"),
+            JIG_OVERLAY: join(dir, "overlay.yaml"),
           },
         },
       );

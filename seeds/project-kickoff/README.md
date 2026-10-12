@@ -2,7 +2,7 @@
 
 Imported 2026-07-18 from a personal Craft Agents skill
 (`~/.craft-agent/workspaces/personal/skills/project-kickoff/`, v2.0 of
-2026-02-24) as founding seed material for groundwork's greenfield adoption
+2026-02-24) as founding seed material for Jig's greenfield adoption
 path. This is the **stable, shared copy** — cite this location, not the
 personal path.
 

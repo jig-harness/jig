@@ -116,7 +116,7 @@ The design-prototype loop is an iterate-and-review skill over a UI surface.
 The fresh-context rule is the portable part; which runtime hosts it is a local
 choice. Model routing and named critique personas are deliberately not
 prescribed here. For the design loop's brief, the
-[`/groundwork:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
+[`/jig:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
 skill assembles and audits the bundle an external design session receives.
 
 ## Issue trackers — epic decomposition + flag labels

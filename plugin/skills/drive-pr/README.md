@@ -8,7 +8,7 @@ quiet ways: a session declares the PR finished while a reviewer is still
 running, a fix is pushed to a PR that has already merged, or a long drive dies
 with its context and nobody notices.
 
-**What it does.** `/groundwork:drive-pr` is a [PR drive loop](https://github.com/docomply/jig/blob/main/GLOSSARY.md): it runs a PR's [review rounds](https://github.com/docomply/jig/blob/main/GLOSSARY.md) unattended until the PR reaches exactly one [terminal state](https://github.com/docomply/jig/blob/main/GLOSSARY.md). Each round it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the validation plan for the change, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long drive never depends on one session surviving.
+**What it does.** `/jig:drive-pr` is a [PR drive loop](https://github.com/docomply/jig/blob/main/GLOSSARY.md): it runs a PR's [review rounds](https://github.com/docomply/jig/blob/main/GLOSSARY.md) unattended until the PR reaches exactly one [terminal state](https://github.com/docomply/jig/blob/main/GLOSSARY.md). Each round it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the validation plan for the change, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long drive never depends on one session surviving.
 
 A few behaviours worth knowing before you arm one:
 
@@ -18,15 +18,15 @@ A few behaviours worth knowing before you arm one:
 - **Stops.** It stops on a state it names precisely — convergence verified against the exact commit, a merged or closed PR, a conflict it could not resolve, findings that need a human decision ([HITL](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) — or on one of the operational stops in [the exit table](#the-exit-states--what-you-do-now).
 - **Limits.** It never approves, never merges, and never bypasses a hook.
 
-The practice it implements is Groundwork's [M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md); its loop-cost reports belong to [M11 — Process observability](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/README.md).
+The practice it implements is Jig's [M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md); its loop-cost reports belong to [M11 — Process observability](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/README.md).
 
 This page is for **you, the human** — the operator contract agents follow is the skill itself: [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
 
 ## Installation
 
-The skill ships in the `groundwork` plugin, installed once per machine for
-Claude Code and Codex; see [Groundwork's skills](../../README.md#install-the-plugin).
-In a session it is `/groundwork:drive-pr`. Its scripts run from the plugin
+The skill ships in the `jig` plugin, installed once per machine for
+Claude Code and Codex; see [Jig's skills](../../README.md#install-the-plugin).
+In a session it is `/jig:drive-pr`. Its scripts run from the plugin
 directory with [Bun](https://bun.sh) and act on the repository the agent is
 working in, so the target repository needs no copy of the skill. Git and an
 authenticated GitHub CLI (`gh`) are also required, and each round runs the
@@ -40,7 +40,7 @@ command from the root of the repository whose PR is being driven.
 
 ## Consumer configuration
 
-Each repository keeps its values in `.config/groundwork-overlay.yaml`, the
+Each repository keeps its values in `.config/jig.yaml`, the
 same file [`resolve-review-comments`](../resolve-review-comments/README.md#consumer-configuration)
 reads. Every field below is optional: a repository that sets none of them still
 drives, on the defaults shown. A file that exists but cannot be parsed, or a
@@ -58,13 +58,13 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `drive.validation_plan_command` | A command that reads the changed files (one per line) on stdin and prints the validation plan as JSON on stdout: `{validation: {localChecks: [...], verificationChecks: [...], testbox: {required, command, warmupCommand, requiredBy}}, reviewSkills: [...]}`. `round-plan.ts` runs it through the shell from the repository root | Unset: the plan is the single local check `gates.command` |
 | `drive.load_guard_command` | A command `round-plan.ts` runs (in text mode) before printing the plan, which waits until the machine's load allows heavy checks | Unset: no load guard |
 | `drive.change_areas_catalog` | Path, relative to the repository root or absolute, to a [change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md): YAML whose `areas:` map holds area key → `{paths: [globs], ...}`. `verification-fit.ts` validates `--area` against its keys | Unset: `--area` is recorded unchecked and the script reports the catalog as not configured |
-| `drive.reviews_drafts` | `true` or `false`: does the AI reviewer review draft PRs. The drive uses it only to explain a draft PR that has no reviewer check run yet (`/groundwork:do-item` also reads it to decide whether new PRs open as drafts) | Unset: unknown, and no hint is given |
+| `drive.reviews_drafts` | `true` or `false`: does the AI reviewer review draft PRs. The drive uses it only to explain a draft PR that has no reviewer check run yet (`/jig:do-item` also reads it to decide whether new PRs open as drafts) | Unset: unknown, and no hint is given |
 | `ci.required_checks` | The exact check names that must complete on the converged head before the drive certifies it (and, with a hold, that must run again after the hold is removed). `[]` means none: the drive relies on the overall CI verdict alone, which is green even when no CI has registered on the head. Without a hold, the drive judges each required check as branch protection does: a skipped or neutral result passes, and a legacy commit status of that name can stand in for a check run. With a hold, required checks must be check runs, since only a run's id proves it ran after the hold was removed. Unrelated to `review.required_checks`, which names the review skill's reviewer checks | Derived: the checks the pull request's base branch requires, from classic branch protection and active rulesets together. For a stacked layer, whose base is a feature branch, the checks of the branch the stack's bottom layer targets are added to the base's own. A check that protection pins to a GitHub App counts only when that app publishes it, as a check run or a commit status; a check pinned to several apps (classic protection to one, a ruleset to another) needs a passing result from each. When the base requires none, the drive also waits until some non-reviewer CI has registered on the head; a commit status named like the reviewer's check does not count. A base branch, integration branch, stack or protection that cannot be read is an error that asks for this field; the drive never falls back to another branch's protection |
 | `ci.hold_label` | A label the repository's workflows honour on intermediate pushes: while it is present they skip their expensive jobs, and removing it runs them in full (see [§ CI hold](#ci-hold)). Requires `ci.required_checks`, listing only checks that run again when the label is removed | Unset: no hold. Every push runs the repository's normal CI and the drive never adds or removes a label |
 | `pull_requests.mark_ready` | When the drive marks a draft Ready: a round number N (after round N completes), `converged` (only when the draft-reviewing reviewer has nothing left), or `never`. A draft that converges before round N is marked at convergence | `1`: after the first completed round |
 | `drive.escape_baseline_doc` | Path, relative to the repository root, to the document recording the human-judged defect-escape baseline (`## Baseline window: <from> → <to>` headings, each followed by an `**Escape rate: <n> of <total> ...**` line). The loop-cost reports print its latest figure next to their speed numbers | `docs/review-loop-baseline.md`; a missing document reads as "unmeasured" |
 | `fleet_health.config` | Path, relative to the repository root or absolute, to the fleet-health settings file that `fleet-health.ts` and the per-round fleet-health warnings read ([format](../../CONFIGURATION.md#the-fleet-health-file)) | `.config/fleet-health.yaml` |
-| `fleet_health.snapshot_dir` | Where the gate reads the published `fleet-health.json` snapshot from (`~` is expanded). `DEV_DASHBOARD_DIR` overrides it | `~/.local/state/groundwork/dashboard` |
+| `fleet_health.snapshot_dir` | Where the gate reads the published `fleet-health.json` snapshot from (`~` is expanded). `DEV_DASHBOARD_DIR` overrides it | `~/.local/state/jig/dashboard` |
 
 Every field of the file, for every skill, is in the plugin's
 [configuration reference](../../CONFIGURATION.md).
@@ -80,7 +80,7 @@ identities). `review.job_pattern` and `review.required_checks` govern only the
 review skill's own passes; the drive's convergence decision does not read them.
 Where the drive reaches the issue tracker (the human-checkpoint check before it
 arms, and the fleet-health and program-wide metrics reports), it uses the
-`issue_tracker` settings `/groundwork:do-item` documents.
+`issue_tracker` settings `/jig:do-item` documents.
 
 **What the drive requires of the AI reviewer.** Having the review skill
 configured is not enough to drive. The drive certifies convergence from one
@@ -121,8 +121,8 @@ configuration, because they describe one machine's layout:
 
 | Variable | What it does | Default |
 |----------|--------------|---------|
-| `DRIVE_PR_STATE_DIR` | The drive's state directory (see § Where its state lives) | `~/.local/state/groundwork/drive-pr/<clone-key>/` |
-| `GROUNDWORK_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/groundwork/verification-fit.jsonl` |
+| `DRIVE_PR_STATE_DIR` | The drive's state directory (see § Where its state lives) | `~/.local/state/jig/drive-pr/<clone-key>/` |
+| `JIG_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/jig/verification-fit.jsonl` |
 | `DRIVE_PR_REAPER_LAUNCHD_LABEL`, `DRIVE_PR_REAPER_CRONTAB_MARKER` | Name a scheduled `reap-state.ts --delete` job, so `migrate-state-dir.ts` refuses while it is enabled | Unset: no schedule is checked |
 
 ### CI hold
@@ -191,17 +191,17 @@ The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 
 ## When to reach for it
 
-- **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/groundwork:do-item` run arms the drive when it opens the draft PR. Typing `/groundwork:drive-pr [PR]` in a session does the same thing: the agent starts the driver below in the background, reports its log path, and stops — it does not work a round itself.
-- **You want exactly one round, interactively, with yourself in the loop** → `/groundwork:drive-pr --interactive [PR]` (one in-session round, then stop), or [`/groundwork:resolve-review-comments`](../resolve-review-comments/README.md) (the drive wraps it).
-- **CI is red and that's the only problem** → repair it directly, with [`/groundwork:fix-ci`](../fix-ci/SKILL.md). (A drive already in flight repairs red CI itself, up to `DRIVE_PR_CI_REPAIR_ROUNDS` times; repair by hand when there is no drive running, or when its budget is spent.)
+- **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/jig:do-item` run arms the drive when it opens the draft PR. Typing `/jig:drive-pr [PR]` in a session does the same thing: the agent starts the driver below in the background, reports its log path, and stops — it does not work a round itself.
+- **You want exactly one round, interactively, with yourself in the loop** → `/jig:drive-pr --interactive [PR]` (one in-session round, then stop), or [`/jig:resolve-review-comments`](../resolve-review-comments/README.md) (the drive wraps it).
+- **CI is red and that's the only problem** → repair it directly, with [`/jig:fix-ci`](../fix-ci/SKILL.md). (A drive already in flight repairs red CI itself, up to `DRIVE_PR_CI_REPAIR_ROUNDS` times; repair by hand when there is no drive running, or when its budget is spent.)
 
 ## How to start it
 
 ```bash
-bun <skill-dir>/scripts/drive.ts <PR> --bots-only -- claude -p "/groundwork:drive-pr --bots-only <PR>"
+bun <skill-dir>/scripts/drive.ts <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
 ```
 
-The `bun` prefix and the single line are both deliberate, so don't "tidy" them: running the `.ts` file directly relies on its shebang and works on macOS/Linux only, and a `\` continuation works only in a POSIX shell — this form also runs on PowerShell and `cmd.exe`. It is the same command `/groundwork:do-item` emits and spawns when it arms the drive for you, and the one `/groundwork:drive-pr` spawns from a session. The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
+The `bun` prefix and the single line are both deliberate, so don't "tidy" them: running the `.ts` file directly relies on its shebang and works on macOS/Linux only, and a `\` continuation works only in a POSIX shell — this form also runs on PowerShell and `cmd.exe`. It is the same command `/jig:do-item` emits and spawns when it arms the drive for you, and the one `/jig:drive-pr` spawns from a session. The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
 
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default 10). `--dry-run` reports what each round would do and never invokes the pass. Starting it twice **in the same clone** is safe — see exit `11`. That is the exact reach: the lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. A separate clone — another machine, a CI checkout — takes its own lock and can drive the same PR at the same time.
 
@@ -240,7 +240,7 @@ One red-CI cause is worth ruling out before you repair anything in a repository 
 
 ## Where its state lives
 
-- **The per-clone state dir** — `~/.local/state/groundwork/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` overrides it — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the round counter, the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
+- **The per-clone state dir** — `~/.local/state/jig/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` overrides it — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the round counter, the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
   - `pr-drive-<PR>.lock`, keyed by **PR** — refuses a second drive of *this PR* anywhere in the clone (exit `11`).
   - `pr-drive-worktree-<key>.lock`, keyed by **working tree** (`--show-toplevel`) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
 
@@ -257,7 +257,7 @@ it (the *State reaping* entry) explains what it may and may not delete.
 ## Relocating the state dir
 
 `$DRIVE_PR_STATE_DIR` overrides the default state directory
-(`~/.local/state/groundwork/drive-pr/<clone-key>/`) outright and skips the
+(`~/.local/state/jig/drive-pr/<clone-key>/`) outright and skips the
 legacy-location migration guard. The override does not move existing state:
 migrate it using the procedure below **before** exporting the new path, or the
 drive can start with an empty round and lease history. The same procedure moves
@@ -289,7 +289,7 @@ file and need it written into their own configuration as an absolute path.
    ```
 
    `--to` defaults to the current state root
-   (`~/.local/state/groundwork/drive-pr`); `~` is expanded. To move one clone's
+   (`~/.local/state/jig/drive-pr`); `~` is expanded. To move one clone's
    directory to an exact destination instead, pass both absolute paths:
    `migrate-state-dir.ts /absolute/current/state-dir /absolute/new/state-dir`.
 
@@ -336,7 +336,7 @@ If a drive died mid-round hours ago, just re-arm — recovery is the designed pa
 ## Changing this skill
 
 Read [`references/consistency.md`](references/consistency.md) first. The
-tests live in `__tests__/` and run from the Groundwork repository root with
+tests live in `__tests__/` and run from the Jig repository root with
 `bun test plugin/skills/drive-pr` (the root `bunfig.toml` supplies the test
 preloads); they never run from the plugin cache.
 `__tests__/terminal-states-consistency.test.ts` checks that every terminal

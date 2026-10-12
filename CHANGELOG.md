@@ -1,10 +1,10 @@
 # Changelog
 
-Notable changes to Groundwork. The format follows
+Notable changes to Jig (called Groundwork up to 0.11.0). The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), and versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-A version number is the version of the `groundwork` [plugin](plugin/README.md)
+A version number is the version of the `jig` [plugin](plugin/README.md)
 (`version` in `plugin/.claude-plugin/plugin.json` and
 `plugin/.codex-plugin/plugin.json`), and each release is tagged `v<version>` on
 its merge commit. Machines receive a change to the plugin only through a new
@@ -19,11 +19,51 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-12
+
+Groundwork is renamed **Jig**. Every machine and every repository that uses
+the plugin follows the steps in
+[Moving from the `groundwork` plugin](plugin/README.md#moving-from-the-groundwork-plugin):
+on each machine, stop the drives, run `bun tools/plugin/setup.ts`, remove the
+old plugin and rename the `GROUNDWORK_*` variables; in each repository, rename
+the configuration file and the `/groundwork:` commands. **There is no
+transition period: no old name is read, so nothing falls back and nothing
+warns.**
+
 ### Changed
 
-- The roadmap queues the rename to jig, the licence, skill assets in the
-  plugin, the kickoff family of skills and a changelog skill ahead of the
-  auditor skill.
+- **Breaking:** the plugin and both marketplaces are `jig@jig` (were
+  `groundwork@groundwork`), and every command is `/jig:<skill>` (was
+  `/groundwork:<skill>`); the review arbiter agent is `jig:review-arbiter`.
+  `tools/plugin/setup.ts` installs `jig@jig` and does not touch
+  `groundwork@groundwork`; remove that and the `groundwork` marketplace by
+  hand. A repository that enables the plugin by id in `.claude/settings.json`
+  changes the id.
+- **Breaking:** the repository moves to `https://github.com/docomply/jig`;
+  install commands, marketplace sources and links use the new address.
+- **Breaking:** the configuration file is `.config/jig.yaml`
+  (was `.config/groundwork-overlay.yaml`); the old file is not read, and a
+  repository that still has only the old one is reported as unconfigured.
+- **Breaking:** environment variables are `JIG_*` (were `GROUNDWORK_*`); the
+  old names are not read. Variables only this repository's own tests and
+  gates read (`JIG_GATES_SKIP_SEPARATE_SUITES`, `JIG_TEST_TMPDIR`,
+  `JIG_BASH_PARITY`, `JIG_REQUIRE_BROWSER`, `JIG_MARKETPLACE`,
+  `JIG_SETUP_TIMEOUT_SECONDS`) are renamed the same way.
+- **Breaking:** default locations move from `groundwork` to `jig`, and nothing
+  is read from the old ones: the drive state
+  (`~/.local/state/jig/drive-pr/`, so a drive starts from empty state unless
+  `migrate-state-dir.ts --from ~/.local/state/groundwork/drive-pr` moved it),
+  the fleet-health snapshot folder (`~/.local/state/jig/dashboard`), the
+  verification-fit log, the GitHub answer cache (`~/.cache/jig/gh-cache`) and
+  the `resolve-conflicts` snapshot (`<git-dir>/jig/conflicts.json`). A
+  machine that sets `DRIVE_PR_STATE_DIR` is not affected by the first.
+- The roadmap queues the rename, the licence, skill assets in the plugin, the
+  kickoff family of skills and a changelog skill ahead of the auditor skill.
+
+### Added
+
+- The Jig logo: a horizontal lockup heads the README, and the round mark is
+  the plugin's icon in both tools (`assets/brand/`, `plugin/assets/`).
 
 ## [0.11.0] - 2026-10-12
 
@@ -203,7 +243,8 @@ changes are marked **Breaking** and say what a consumer changes.
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/docomply/jig/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/docomply/jig/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/docomply/jig/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/docomply/jig/compare/v0.9.0...v0.9.1

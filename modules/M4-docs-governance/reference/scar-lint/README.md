@@ -5,7 +5,7 @@ Enforces the [de-scarring rule](../../templates/WIKI-SCHEMA.md): an
 review that produced it. This lint is the rule's mechanical half: a practice
 that is only cultural erodes, so the rule is written down *and* given a gate.
 The judgment half — scars a pattern cannot recognize — is the
-[`/groundwork:descar`](../../../../plugin/skills/descar/SKILL.md) skill.
+[`/jig:descar`](../../../../plugin/skills/descar/SKILL.md) skill.
 
 ## What counts as a scar
 

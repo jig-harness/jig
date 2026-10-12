@@ -28,8 +28,8 @@ import {
 
 const FIXTURE = join(import.meta.dir, "fixtures", "fleet-health.yaml");
 const SAVED = {
-  root: process.env.GROUNDWORK_CONSUMER_ROOT,
-  overlay: process.env.GROUNDWORK_OVERLAY,
+  root: process.env.JIG_CONSUMER_ROOT,
+  overlay: process.env.JIG_OVERLAY,
 };
 let repo: string;
 
@@ -37,15 +37,15 @@ beforeEach(() => {
   repo = mkdtempSync(join(tmpdir(), "fleet-health-config-"));
   mkdirSync(join(repo, ".git"));
   mkdirSync(join(repo, ".config"));
-  process.env.GROUNDWORK_CONSUMER_ROOT = repo;
-  delete process.env.GROUNDWORK_OVERLAY;
+  process.env.JIG_CONSUMER_ROOT = repo;
+  delete process.env.JIG_OVERLAY;
 });
 
 afterEach(() => {
   rmSync(repo, { recursive: true, force: true });
   for (const [k, v] of [
-    ["GROUNDWORK_CONSUMER_ROOT", SAVED.root],
-    ["GROUNDWORK_OVERLAY", SAVED.overlay],
+    ["JIG_CONSUMER_ROOT", SAVED.root],
+    ["JIG_OVERLAY", SAVED.overlay],
   ] as const) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 function overlay(text: string): void {
-  writeFileSync(join(repo, ".config", "groundwork-overlay.yaml"), text);
+  writeFileSync(join(repo, ".config", "jig.yaml"), text);
 }
 
 describe("loadConfig", () => {
@@ -97,7 +97,7 @@ describe("loadConfig", () => {
   it("with a path reads the overlay of the repository that holds it", () => {
     const elsewhere = mkdtempSync(join(tmpdir(), "fleet-health-cwd-"));
     try {
-      delete process.env.GROUNDWORK_CONSUMER_ROOT;
+      delete process.env.JIG_CONSUMER_ROOT;
       const path = join(repo, ".config", "fleet-health.yaml");
       copyFileSync(FIXTURE, path);
       overlay("issue_tracker:\n  team: OPS\n");
@@ -204,7 +204,7 @@ describe("the snapshot directory", () => {
       "/tmp/dash",
     );
     expect(dashboardDir({}, "/home/u")).toBe(
-      "/home/u/.local/state/groundwork/dashboard",
+      "/home/u/.local/state/jig/dashboard",
     );
     overlay("fleet_health:\n  snapshot_dir: ~/panels\n");
     expect(dashboardDir({}, "/home/u")).toBe("/home/u/panels");

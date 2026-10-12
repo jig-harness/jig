@@ -120,7 +120,7 @@ function cleanEnv(): Record<string, string> {
     if (k.startsWith("GIT_") || v === undefined) continue;
     env[k] = v;
   }
-  env.GROUNDWORK_OVERLAY = overlayFile;
+  env.JIG_OVERLAY = overlayFile;
   env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
   env.GIT_CONFIG_GLOBAL = join(dir, "gitconfig");
   env.GIT_CONFIG_NOSYSTEM = "1";

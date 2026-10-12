@@ -178,7 +178,7 @@ export async function main(
         ? String.fromCharCode(b)
         : "_",
     ).join(""),
-    lock = join(root, `groundwork-lock.${safe}`),
+    lock = join(root, `jig-lock.${safe}`),
     owner = String(process.pid);
   const fileOwners = platform === "win32";
   // Windows hard links need no symlink permission. The unique source file has

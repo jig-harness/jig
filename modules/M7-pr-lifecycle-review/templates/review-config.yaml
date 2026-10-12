@@ -15,7 +15,7 @@
 #                           containment limits (no runaway comment floods, no
 #                           executing untrusted fork code — see the PR-target
 #                           safety lint, modules/M7-pr-lifecycle-review/
-#                           reference/pr-target-safety/ in Groundwork).
+#                           reference/pr-target-safety/ in Jig).
 #   4. Reviewer source    — the PR head cannot change the runtime, prompts, or
 #                           policy used for its own authoritative review.
 

@@ -1,7 +1,7 @@
 # Audit report — <target repo> — <date>
 
 > Template. Replace every `<…>`; delete guidance blockquotes. Keep the
-> executive summary jargon-free (link the groundwork glossary on first use of
+> executive summary jargon-free (link the Jig glossary on first use of
 > any term of art).
 
 ## Executive summary

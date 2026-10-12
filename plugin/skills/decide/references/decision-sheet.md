@@ -187,7 +187,7 @@ clone), and in two more cases:
   `source` counts, with or without a trailing slash once it has a directory
   part. A single-segment directory such as `services` reads as a prose word,
   so write it `services/`. A bare `ADR-NNNN` resolves to its file in the ADR
-  directory (`adr.directory`, else detected as `/groundwork:adr` does). Cite repository-rooted paths. A citation may follow `(`,
+  directory (`adr.directory`, else detected as `/jig:adr` does). Cite repository-rooted paths. A citation may follow `(`,
   `[`, a quote or a separator. A path with a space in it goes in backticks,
   as `.run/Backend Dev.run.xml`.
   Keep the `source` field to citations. A prose word with a dot, such as
@@ -307,7 +307,7 @@ these:
   at 1440 x 900 shows every matrix row. The top bar fits or wraps from 1024 px
   up. A browser test holds each of these (`decision-sheet-browser.test.ts`). It
   needs Google Chrome: where Chrome is missing it skips and says so, and with
-  `GROUNDWORK_REQUIRE_BROWSER=1` a missing browser fails the run instead.
+  `JIG_REQUIRE_BROWSER=1` a missing browser fails the run instead.
 
 ## The sheet kit
 
@@ -315,7 +315,7 @@ The reading system of the `document` layout is not specific to decisions:
 the frame, cited claims in the margin, terms in place, issue links, the top
 bar, print, escaping, the validator primitives and the freshness guard. It
 lives in `scripts/sheet-kit/`, and the explainer sheet of
-[`/groundwork:explain`](../../explain/SKILL.md) uses it too. There is one copy:
+[`/jig:explain`](../../explain/SKILL.md) uses it too. There is one copy:
 `explain` imports it by a relative path (`../../decide/scripts/sheet-kit/`),
 because the skills ship together in one plugin and a sibling skill's
 directory is always beside this one. A change to the kit changes both sheet

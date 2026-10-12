@@ -676,7 +676,7 @@ describe("drive-status.ts structuralEscalationDue", () => {
   });
 
   // A thread left open on purpose (`triage-thread.ts --leave-open`, usually a
-  // human thread per `/groundwork:resolve-review-comments` § Human threads) is a settled
+  // human thread per `/jig:resolve-review-comments` § Human threads) is a settled
   // decision, not a recurring root cause — it stays unresolved on GitHub
   // forever by design, so without this exclusion it would arm the signal for
   // as long as the PR stays open, on a file nothing new landed on.
@@ -4118,7 +4118,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
   }
 
   it("under --bots-only, leaves a replied HUMAN thread open — the deliberate state, not a leak", async () => {
-    // `/groundwork:resolve-review-comments` § Human threads makes "a human thread you replied to
+    // `/jig:resolve-review-comments` § Human threads makes "a human thread you replied to
     // but chose not to close on the author's behalf" the one sanctioned
     // exception to "every comment you act on ends resolved", and says that
     // exception is WHY continuous mode targets bot threads. This sweep runs
@@ -4159,7 +4159,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // `drive.ts` is the unattended runner, and it accepts `--bots-only` as
     // optional — so a drive started without it ran an UNSCOPED sweep every
     // round, resolving human threads with nobody watching. That is the act
-    // `/groundwork:resolve-review-comments` § Human threads reserves, and it does not become
+    // `/jig:resolve-review-comments` § Human threads reserves, and it does not become
     // permissible because the operator also wanted human threads COUNTED.
     //
     // `$DRIVE_PR_TARGET` exists exactly when drive.ts spawned this gate, which

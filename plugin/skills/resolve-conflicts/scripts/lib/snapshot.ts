@@ -1,7 +1,7 @@
 /**
  * The conflict snapshot: the map `conflict-map.ts` writes and the resolution
  * record the resolver fills in, kept in one JSON file inside the git
- * directory (`<git-dir>/groundwork/conflicts.json`), so it is never committed.
+ * directory (`<git-dir>/jig/conflicts.json`), so it is never committed.
  *
  * It holds the stage blob ids of every conflicted path. Once a path is staged
  * with `git add`, git forgets which versions conflicted, but the blobs remain
@@ -147,7 +147,7 @@ export function emptyResolution(): Resolution {
  * followed.
  */
 export function snapshotPath(root: string): string {
-  return join(gitPath(root, "groundwork"), "conflicts.json");
+  return join(gitPath(root, "jig"), "conflicts.json");
 }
 
 /**

@@ -41,7 +41,7 @@
  * and outranks on.
  *
  * Records append as JSON lines to
- *   ${GROUNDWORK_VERIFICATION_FIT_LOG:-$HOME/.local/state/groundwork/verification-fit.jsonl}
+ *   ${JIG_VERIFICATION_FIT_LOG:-$HOME/.local/state/jig/verification-fit.jsonl}
  * — deliberately OUTSIDE the worktree: a per-PR workspace is archived when
  * its PR merges, and per-PR drive state dies with the clone, but calibration
  * evidence must accumulate ACROSS PRs to mean anything.
@@ -87,15 +87,9 @@ function die(message: string): never {
 }
 
 function logPath(): string {
-  const override = process.env.GROUNDWORK_VERIFICATION_FIT_LOG;
+  const override = process.env.JIG_VERIFICATION_FIT_LOG;
   if (override && override.trim() !== "") return override;
-  return join(
-    homedir(),
-    ".local",
-    "state",
-    "groundwork",
-    "verification-fit.jsonl",
-  );
+  return join(homedir(), ".local", "state", "jig", "verification-fit.jsonl");
 }
 
 /**

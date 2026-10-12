@@ -1,6 +1,6 @@
 # 1 — Principles over tools
 
-Every practice in groundwork is stated as a **tool-independent invariant**
+Every practice in Jig is stated as a **tool-independent invariant**
 first — e.g., "every committed generated file has a regenerate script, a drift
 check in CI, and an auto-refresh at commit time" — and only then mapped to
 concrete implementations per ecosystem.

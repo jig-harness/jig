@@ -97,7 +97,7 @@ export type PassChildAnswer = true | false | null;
  * Any argv naming a top-level script under `drive-pr`'s,
  * `resolve-review-comments`'s or `do-item`'s own `scripts/` directory —
  * `…/skills/(drive-pr|resolve-review-comments|do-item)/scripts/<file>.ts`,
- * whether the skills sit in the plugin install (`…/groundwork/<version>/skills/…`)
+ * whether the skills sit in the plugin install (`…/jig/<version>/skills/…`)
  * or in a consumer's own `.claude/skills/…` override, exactly two path
  * segments past `scripts`, so `scripts/lib/**` and
  * `scripts/__tests__/**` fixtures do not match. `tsArgv()` (`proc.ts`) always

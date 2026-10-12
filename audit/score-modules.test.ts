@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-const scratch = mkdtempSync(join(tmpdir(), "groundwork-score-")),
+const scratch = mkdtempSync(join(tmpdir(), "jig-score-")),
   gate = join(import.meta.dir, "score-modules.ts");
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 const run = (args: string[]) =>

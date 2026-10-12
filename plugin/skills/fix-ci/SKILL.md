@@ -12,11 +12,11 @@ Fix every error from a failed GitHub Actions run until the local checks pass,
 then commit and push. CI ([continuous integration](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) is
 the service that runs the repository's checks on every push; this skill turns
 its red run into a green one without guessing. The checks it repairs are the
-repository's quality gates, the subject of Groundwork module
+repository's quality gates, the subject of Jig module
 [M1 (gates & enforcement ladder)](https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md).
 
-Groundwork maintains this procedure and ships it in the `groundwork` plugin.
-Each repository supplies its own values in `.config/groundwork-overlay.yaml`
+Jig maintains this procedure and ships it in the `jig` plugin.
+Each repository supplies its own values in `.config/jig.yaml`
 (the [consumer overlay](https://github.com/docomply/jig/blob/main/GLOSSARY.md)); every value this skill reads
 has a fallback, so it also works in a repository without that file.
 
@@ -382,7 +382,7 @@ its consumer), say which and why.
 
 ## Related skills
 
-- `/groundwork:github-actions` reviews workflow changes; use it when the fix
+- `/jig:github-actions` reviews workflow changes; use it when the fix
   touches `.github/workflows/` or `.github/actions/`.
-- `/groundwork:drive-pr` drives a pull request through review rounds; its
+- `/jig:drive-pr` drives a pull request through review rounds; its
   `round-plan.ts` is the plan Step 3 runs.

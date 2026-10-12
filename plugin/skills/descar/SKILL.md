@@ -14,7 +14,7 @@ allowed-tools:
 # De-scarring a promoted document
 
 Removes the archaeology from a document so its body is a live statement of what
-is true now. [De-scarring](https://github.com/docomply/jig/blob/main/GLOSSARY.md) is the rule in Groundwork's
+is true now. [De-scarring](https://github.com/docomply/jig/blob/main/GLOSSARY.md) is the rule in Jig's
 docs-governance module ([M4](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/README.md)):
 an approved document carries no trace of the review or the edits that produced
 it. M4 gives the rule and a lint for its mechanical part; this skill is the
@@ -53,7 +53,7 @@ Find these once, at the start:
   frontmatter schema may name more (a corpus where `active` is the promoted
   status, say); use all of them.
 - **Scar lint**: read `descar.lint_command` from
-  `.config/groundwork-overlay.yaml`, a command that takes document paths as
+  `.config/jig.yaml`, a command that takes document paths as
   arguments. When it is absent, look for the lint the repository adopted from
   M4 (`git ls-files '*check-descarring-scars*'`) and run it with `bun` (or the
   interpreter its extension implies). When there is none, there is no lint:

@@ -531,8 +531,8 @@ export let binDir: string;
 /**
  * A per-suite scratch `$HOME`, so a probe that resolves `resolveStateDir`'s
  * an earlier change default (no `$DRIVE_PR_STATE_DIR` override — deliberately, to test
- * the default itself) writes under `<suiteHome>/.local/state/groundwork/`, never the real
- * `~/.local/state/groundwork` on whatever machine runs this suite. Before an earlier change the
+ * the default itself) writes under `<suiteHome>/.local/state/jig/`, never the real
+ * `~/.local/state/jig` on whatever machine runs this suite. Before an earlier change the
  * unoverridden default was `--git-common-dir`, entirely inside the scratch
  * repo `tmpRoot` already isolates and cleans up — `$HOME` was irrelevant.
  * `gitCleanEnv` sets this for every subprocess the suite spawns; a test
@@ -564,7 +564,7 @@ export const SUITE_ENV_OVERRIDES = [
   "DRIVE_PR_LOCK_RETRY_MS",
   "DRIVE_PR_CLAUDE_PROJECTS_DIR",
   "DRIVE_PR_CODEX_SESSIONS_DIR",
-  "GROUNDWORK_OVERLAY",
+  "JIG_OVERLAY",
 ] as const;
 export let priorSuiteEnv: Map<string, string | undefined>;
 /** Scratch repos for the probes that read local HEAD and the working tree. */
@@ -974,11 +974,7 @@ export function useDrivePrSuite(): void {
     // The consumer configuration every probe reads: the reviewer app the
     // fixtures post as, the base branch the scratch repositories carry, and
     // the plan command the round-plan probes stub.
-    process.env.GROUNDWORK_OVERLAY = join(
-      import.meta.dir,
-      "fixtures",
-      "overlay.yaml",
-    );
+    process.env.JIG_OVERLAY = join(import.meta.dir, "fixtures", "overlay.yaml");
 
     tmpRoot = mkdtempSync(join(tmpdir(), "drive-pr-test-"));
     binDir = join(tmpRoot, "bin");

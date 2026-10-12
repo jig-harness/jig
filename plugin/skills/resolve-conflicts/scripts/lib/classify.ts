@@ -5,7 +5,7 @@
  *
  * Lockfiles are recognised by file name from a small built-in table.
  * Generated files are declared by the repository in
- * `.config/groundwork-overlay.yaml`:
+ * `.config/jig.yaml`:
  *
  *   resolve_conflicts:
  *     generated:

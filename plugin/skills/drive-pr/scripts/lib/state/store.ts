@@ -3,7 +3,7 @@
  * (fail-closed), and how it is written (atomically, under the lock, with the
  * handoff regenerated in the same hold).
  *
- * State lives OUTSIDE the repository tree, under `~/.local/state/groundwork/drive-pr/`,
+ * State lives OUTSIDE the repository tree, under `~/.local/state/jig/drive-pr/`,
  * keyed per clone: it is per-clone, never committed, and
  * survives across separate invocations hours apart — the same placement
  * await-round.ts uses for its round counter, and for the same reason.
@@ -43,7 +43,7 @@ import { type DriveState, freshState, isUsableState } from "./schema.ts";
  * directory itself. It can print a RELATIVE path, so it is resolved against
  * the cwd before use.
  *
- * The default: `~/.local/state/groundwork/drive-pr/<cloneKey>/`, never inside the
+ * The default: `~/.local/state/jig/drive-pr/<cloneKey>/`, never inside the
  * repository tree. `.git/` grows one PERMANENT quarantine entry per
  * `createLock` acquire/release cycle — every read-modify-write of
  * every PR's state mints one on the happy path, and the only thing that ever
@@ -165,7 +165,7 @@ export function defaultStateDirFor(legacyDir: string): string {
     homedir(),
     ".local",
     "state",
-    "groundwork",
+    "jig",
     "drive-pr",
     cloneKey(legacyDir),
   );
@@ -182,7 +182,7 @@ export function peekDefaultStateDirFor(legacyDir: string): string | null {
   const key = peekCloneKey(legacyDir);
   return key === null
     ? null
-    : join(homedir(), ".local", "state", "groundwork", "drive-pr", key);
+    : join(homedir(), ".local", "state", "jig", "drive-pr", key);
 }
 
 /**
@@ -320,7 +320,7 @@ export async function openStore(pr: string): Promise<StateStore> {
   // is no migration to have missed) and when the state file exists (the
   // condition it warns about has ended). It searches `join(stateDir,
   // 'worktrees')` for the PRE-git-common-dir migration's orphans, which —
-  // under the default — is a subdirectory of `~/.local/state/groundwork/...` that
+  // under the default — is a subdirectory of `~/.local/state/jig/...` that
   // never gets populated (git only ever creates a `worktrees/` folder inside
   // an actual `.git` dir), so this is now a permanent no-op except for a
   // clone still resolving `stateDir` to `--git-common-dir` itself (an

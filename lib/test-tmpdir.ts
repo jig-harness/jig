@@ -19,17 +19,17 @@
 //
 // Published for tests that need to assert containment (the system temp dir did
 // not grow) without importing this module across a package boundary:
-//   GROUNDWORK_TEST_TMPDIR         this process's scoped root
-//   GROUNDWORK_TEST_TMPDIR_SYSTEM  the temp dir it would otherwise have used
+//   JIG_TEST_TMPDIR         this process's scoped root
+//   JIG_TEST_TMPDIR_SYSTEM  the temp dir it would otherwise have used
 // A consumer that needs different names (for example so a host-side sweep can
 // reap by its own prefix) passes them in the options.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export const TEST_TMPDIR_PREFIX = "groundwork-test-tmp.";
-export const TEST_TMPDIR_ENV = "GROUNDWORK_TEST_TMPDIR";
-export const TEST_TMPDIR_SYSTEM_ENV = "GROUNDWORK_TEST_TMPDIR_SYSTEM";
+export const TEST_TMPDIR_PREFIX = "jig-test-tmp.";
+export const TEST_TMPDIR_ENV = "JIG_TEST_TMPDIR";
+export const TEST_TMPDIR_SYSTEM_ENV = "JIG_TEST_TMPDIR_SYSTEM";
 
 /**
  * Every variable `os.tmpdir()` consults. The precedence differs by platform:

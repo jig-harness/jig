@@ -2,7 +2,7 @@
 
 > You are surveying a target repository's delivery practices. Your job is to
 > DESCRIBE the target's state with evidence — the gap analysis against the
-> groundwork practices template happens later, in synthesis, not in your
+> Jig practices template happens later, in synthesis, not in your
 > survey. Work read-only. Do NOT dump file contents — return a structured
 > synthesis with specific file paths as evidence. Where a practice is
 > referenced but not enforced or written down, say so explicitly: the

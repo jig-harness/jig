@@ -113,7 +113,7 @@ deploy) without the Standard/Strict deploy machinery counting against it; the
 
 ### Runnable form
 
-Groundwork's [plugin](../../plugin/README.md) carries the
+Jig's [plugin](../../plugin/README.md) carries the
 [`github-actions`](../../plugin/skills/github-actions/SKILL.md) skill, which
 reviews a change to a repository's workflows against its documented CI
 architecture; [`CI-ARCHITECTURE.md`](templates/CI-ARCHITECTURE.md) is the shape

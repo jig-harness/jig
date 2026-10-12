@@ -311,7 +311,7 @@ describe("refocusArm", () => {
     expect(refocusArm("ENG-8529", undefined)).toBe("on");
     expect(refocusArm("ENG-8530", undefined)).toBe("off");
   });
-  it("honours GROUNDWORK_REFOCUS in both directions", () => {
+  it("honours JIG_REFOCUS in both directions", () => {
     expect(refocusArm("ENG-8530", "1")).toBe("on");
     expect(refocusArm("ENG-8529", "off")).toBe("off");
     expect(refocusArm("ENG-8530", "garbage")).toBe("off");

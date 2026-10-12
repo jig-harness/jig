@@ -12,24 +12,24 @@ database migration, an API endpoint, frontend code, a plan document, …) from
 the diff and runs [tiered checks](https://github.com/docomply/jig/blob/main/GLOSSARY.md) against the repository's
 standards: its architecture decision records
 ([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md): short numbered documents
-that each record one design decision and its reason, Groundwork module
+that each record one design decision and its reason, Jig module
 [M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)) and
 their machine-readable rules, its
 [change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (one file
 mapping path patterns to named areas of the codebase and what a change to each
-implies, Groundwork module
+implies, Jig module
 [M3](https://github.com/docomply/jig/blob/main/modules/M3-change-area-catalog/README.md)),
 and its specialist review skills.
 
-It is the runnable form of the author-side tiered review in Groundwork module
+It is the runnable form of the author-side tiered review in Jig module
 [M7 (PR lifecycle & review)](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md):
 the review a change gets before it is pushed, ahead of the pull request's own
 reviewers.
 
-Groundwork maintains this procedure and ships it in the `groundwork` plugin.
+Jig maintains this procedure and ships it in the `jig` plugin.
 Each repository supplies its own values: its rules, its catalog, its
 specialist skills and its base branch. Where this file names a configured
-value, it comes from `.config/groundwork-overlay.yaml` in the repository under
+value, it comes from `.config/jig.yaml` in the repository under
 review, read from its base branch; see [Consumer configuration](#consumer-configuration)
 and [Policy comes from the base branch](#policy-comes-from-the-base-branch-not-the-change-under-review).
 
@@ -50,7 +50,7 @@ Never `cd` into the skill directory.
 ### Consumer configuration
 
 Every field is optional. Read them from the base branch's copy of
-`.config/groundwork-overlay.yaml` (see the next section):
+`.config/jig.yaml` (see the next section):
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
@@ -64,7 +64,7 @@ Every field is optional. Read them from the base branch's copy of
 ### Policy comes from the base branch, not the change under review
 
 The change under review cannot define the rules it is reviewed against
-(Groundwork module M7). Otherwise a change could weaken an ADR rule, drop a
+(Jig module M7). Otherwise a change could weaken an ADR rule, drop a
 specialist gate from the catalog or edit a detector command, and then pass
 its own review. So the review policy is the copy on the base branch (or on an
 independent source the repository configures, such as a pinned release), and
@@ -92,8 +92,8 @@ either one leaks the reviewed tree into policy:
   from the reviewed tree or from the caller's session reaches a command that
   applies policy (the ADR `locate.ts` script, the M5 rule check, the
   validation plan command, any rule detector or contract check). Removing
-  the variables known to be dangerous does not hold: the groundwork scripts
-  read the repository and overlay from `GROUNDWORK_*` variables, git reads
+  the variables known to be dangerous does not hold: the Jig scripts
+  read the repository and overlay from `JIG_*` variables, git reads
   `GIT_DIR` and its siblings, the rule check reads its window and strictness
   from the environment, and Bun loads a `.env` file and a `bunfig.toml` from
   the current directory on its own, so each new reader is one more variable
@@ -103,8 +103,8 @@ either one leaks the reviewed tree into policy:
   | Variable | Value |
   |----------|-------|
   | `PATH`, `HOME` | the caller's, so that tools are found; `PATH` must not name a directory inside the reviewed tree |
-  | `GROUNDWORK_CONSUMER_ROOT` | `<base-tree>` |
-  | `GROUNDWORK_OVERLAY` | `<base-tree>/.config/groundwork-overlay.yaml` |
+  | `JIG_CONSUMER_ROOT` | `<base-tree>` |
+  | `JIG_OVERLAY` | `<base-tree>/.config/jig.yaml` |
   | `RULES` (rule check only) | `<base-tree>/<rulesFile>` |
   | `WINDOW`, `STRICT` (rule check only) | left unset, so the check's defaults apply (a two-line `follow_check` window, warnings not counted as failures), unless the base branch's own gate definition sets them: then the values written there, read from `<base-tree>` |
 
@@ -118,8 +118,8 @@ either one leaks the reviewed tree into policy:
 
   ```bash
   env -i PATH="$PATH" HOME="$HOME" \
-    GROUNDWORK_CONSUMER_ROOT="<base-tree>" \
-    GROUNDWORK_OVERLAY="<base-tree>/.config/groundwork-overlay.yaml" \
+    JIG_CONSUMER_ROOT="<base-tree>" \
+    JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
     bun --no-env-file --config="<bunfig>" <script> <arguments>
   ```
 
@@ -152,7 +152,7 @@ Set up once per review:
    fi
    [ -n "$default" ] || { echo "ERROR: cannot resolve the default branch" >&2; exit 1; }
    git fetch origin "$default" &&
-     git show "origin/$default:.config/groundwork-overlay.yaml"
+     git show "origin/$default:.config/jig.yaml"
    ```
 
    An overlay absent on the default branch means every field takes its
@@ -214,16 +214,16 @@ Set up once per review:
    Each step below that names `<effective-files>` means this list. To read
    it, `tr '\0' '\n' < "<effective-files>"` prints one path per line.
 4. **Resolve configuration inside the snapshot.** Read the overlay from
-   `<base-tree>/.config/groundwork-overlay.yaml`, and locate the ADR rules
-   file, configured or detected, by running the `/groundwork:adr` skill's
+   `<base-tree>/.config/jig.yaml`, and locate the ADR rules
+   file, configured or detected, by running the `/jig:adr` skill's
    script inside the snapshot with the enumerated environment, so both the
    configured path and the discovery come from the base branch:
 
    ```bash
    cd "<base-tree>" &&
      env -i PATH="$PATH" HOME="$HOME" \
-       GROUNDWORK_CONSUMER_ROOT="<base-tree>" \
-       GROUNDWORK_OVERLAY="<base-tree>/.config/groundwork-overlay.yaml" \
+       JIG_CONSUMER_ROOT="<base-tree>" \
+       JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
        bun --no-env-file --config="<bunfig>" "${CLAUDE_SKILL_DIR}/../adr/scripts/locate.ts"
    ```
 
@@ -256,8 +256,8 @@ Set up once per review:
      set -o pipefail
      while IFS= read -r -d '' f; do if [ -f "$f" ]; then printf '%s\0' "$f"; fi; done < "<effective-files>" |
        env -i PATH="$PATH" HOME="$HOME" \
-         GROUNDWORK_CONSUMER_ROOT="<base-tree>" \
-         GROUNDWORK_OVERLAY="<base-tree>/.config/groundwork-overlay.yaml" \
+         JIG_CONSUMER_ROOT="<base-tree>" \
+         JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
          RULES="<base-tree>/<rulesFile>" \
          xargs -0 bun --no-env-file --config="<bunfig>" "<base-tree>/<path to adr-rules-check.ts>"
    )
@@ -277,19 +277,19 @@ the summary.
 
 ```bash
 # Review uncommitted changes (most common)
-/groundwork:review
+/jig:review
 
 # Review specific files
-/groundwork:review src/orders/orders.service.ts
+/jig:review src/orders/orders.service.ts
 
 # Tier 1 only (fast pattern checks)
-/groundwork:review --tier=1
+/jig:review --tier=1
 
 # Review a plan document
-/groundwork:review docs/plans/checkout-redesign.md
+/jig:review docs/plans/checkout-redesign.md
 
 # Full pull request review
-/groundwork:review --pr
+/jig:review --pr
 ```
 
 ## Tier overview
@@ -363,8 +363,8 @@ grep -qzxF "<catalog>" "<effective-files>" && echo "catalog_changed"
 tr '\0' '\n' < "<effective-files>" |
   (cd "<base-tree>" &&
     env -i PATH="$PATH" HOME="$HOME" \
-      GROUNDWORK_CONSUMER_ROOT="<base-tree>" \
-      GROUNDWORK_OVERLAY="<base-tree>/.config/groundwork-overlay.yaml" \
+      JIG_CONSUMER_ROOT="<base-tree>" \
+      JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
       sh -c '<validation_plan_command>')
 ```
 
@@ -452,7 +452,7 @@ example:
 - when the diff touches documentation: claims whose cited source moved or no
   longer resolves, if the repository checks documentation claims.
 
-Generated-artifact freshness is Groundwork module M2's practice; use the
+Generated-artifact freshness is Jig module M2's practice; use the
 checks the repository has. Each check keeps the blocking status the
 repository gives it: a failing check that is one of its gates, a required CI
 status, or a rule marked `critical` blocks the review; findings from any other
@@ -524,20 +524,20 @@ every finding, anchored or not. What happens next depends on context:
 
 1. **A pull request exists for this branch.** Its inline review threads carry
    a resolved state and accept the outcome-prefixed replies
-   `/groundwork:resolve-review-comments` needs, but nothing here posts *this
+   `/jig:resolve-review-comments` needs, but nothing here posts *this
    run's* findings to them: there is no handoff from this skill into a pull
    request thread. The repository's AI reviewer (`review.bots`), if it has
    one, runs its own independent review on pushes, on its own cadence and
    coverage. A harness review command that posts inline comments (Claude
    Code's `/code-review --comment`, for one) likewise runs a fresh review of
    the diff and posts *that* review's findings once the pull request is
-   Ready, whether a human marked it Ready or `/groundwork:drive-pr` did after
+   Ready, whether a human marked it Ready or `/jig:drive-pr` did after
    its first completed round. Neither replays this run's Tier 1–3 findings.
    Treat the pull request's inline threads and this skill's summary block as
    two independent reviews, not a pipeline. Do **not** post from here.
 
    A findings panel with no resolved or unresolved state cannot carry the
-   outcome-prefixed replies `/groundwork:resolve-review-comments` requires,
+   outcome-prefixed replies `/jig:resolve-review-comments` requires,
    which is why the pull request's review threads are the surface for
    anchored findings.
 2. **No pull request yet.** The summary block above is the intended terminal
@@ -565,7 +565,7 @@ The full rule tables (critical rules, warning rules, artifact-to-rule
 mapping) are derived from the ADR rules file, the single source of truth for
 rule definitions. Its basic shape (`pattern_rules` with `id`, `adr`,
 `severity`, `pattern`, `follow_check`, `exclude`, `message`, `fix_hint`) is
-Groundwork module M5's `adr-rules.yaml` template; this skill also reads, when
+Jig module M5's `adr-rules.yaml` template; this skill also reads, when
 present, a rule's `tier` and `detector`, a `semantic_rules` list (Tier 3
 rules, each with a `trigger` and a `prompt`; a `tier` field on them is
 optional), and an `artifact_detection` map.
@@ -593,7 +593,7 @@ optional), and an `artifact_detection` map.
 ## Integration
 
 ```
-before opening a pull request → /groundwork:review → Tier 1 blocks if critical → Tier 2 blocks on a failing blocking check, other warnings in the PR body → Tier 3 required for db/api
-/groundwork:do-item <issue> → runs the same tiers as its pre-PR code review gate
+before opening a pull request → /jig:review → Tier 1 blocks if critical → Tier 2 blocks on a failing blocking check, other warnings in the PR body → Tier 3 required for db/api
+/jig:do-item <issue> → runs the same tiers as its pre-PR code review gate
 CI: the repository's ADR rule check, pattern tier only
 ```

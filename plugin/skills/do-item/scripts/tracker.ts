@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Tracker operations from the command line, through the consumer's tracker
- * (`issue_tracker` in `.config/groundwork-overlay.yaml`).
+ * (`issue_tracker` in `.config/jig.yaml`).
  *
  * Usage:
  *     bun tracker.ts children <issue-key>

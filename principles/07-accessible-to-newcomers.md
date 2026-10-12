@@ -1,10 +1,10 @@
 # 7 — Accessible to newcomers
 
-Groundwork assumes **no prior familiarity** with any of the techniques it
+Jig assumes **no prior familiarity** with any of the techniques it
 packages. A reader meeting "SSoT," "drift gate," or "HITL" for the first time
 must be able to use this repo without outside context.
 
-**Consequences (binding on all groundwork content):**
+**Consequences (binding on all Jig content):**
 
 - A root [GLOSSARY.md](../GLOSSARY.md) defines every term of art in plain
   language. New terms are added in the same commit that introduces them.

@@ -6,7 +6,7 @@
  * Usage: bun consumer-config.ts
  *   Run from inside the consumer repository (any directory of it). The
  *   repository root and configuration file can be overridden with
- *   GROUNDWORK_CONSUMER_ROOT and GROUNDWORK_OVERLAY.
+ *   JIG_CONSUMER_ROOT and JIG_OVERLAY.
  *
  * Exit codes: 0 configuration usable; 2 configuration missing or invalid.
  */

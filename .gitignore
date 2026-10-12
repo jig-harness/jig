@@ -1,4 +1,4 @@
-# Editor / IDE local state. Groundwork is vendor-neutral by design (module M0):
+# Editor / IDE local state. Jig is vendor-neutral by design (module M0):
 # no contributor should need a particular IDE, and none should have to see
 # anyone else than their own IDE state in a diff.
 .idea/

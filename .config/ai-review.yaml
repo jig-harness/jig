@@ -1,12 +1,12 @@
-# Review configuration for Groundwork. The reviewer resolves this file from the
+# Review configuration for Jig. The reviewer resolves this file from the
 # base branch, so a pull request cannot weaken the policy that reviews it.
-platform_description: "Groundwork — a vendor-agnostic toolkit for AI-native software-delivery practices: reusable practice modules, Bun/TypeScript quality gates, a repository auditor, and agent skills shipped as a plugin for Claude Code and Codex"
+platform_description: "Jig — a vendor-agnostic toolkit for AI-native software-delivery practices: reusable practice modules, Bun/TypeScript quality gates, a repository auditor, and agent skills shipped as a plugin for Claude Code and Codex"
 
 architecture_invariants: |-
   Weigh these repository invariants (flag violations):
-  - Keep Groundwork vendor-agnostic and technology-flexible: state the invariant before naming tools, and put ecosystem-specific mappings in each module's mappings.md.
+  - Keep Jig vendor-agnostic and technology-flexible: state the invariant before naming tools, and put ecosystem-specific mappings in each module's mappings.md.
   - Preserve the module contract: a complete module has a plain-language README, copyable templates, portable reference material, mappings.md, and maturity.yaml. Maturity criteria must be observable repository facts and use the absent → convention-only → mechanically enforced ladder.
-  - Name no organization Groundwork learned from and import no product-domain material from one: no organization names, tracker keys, foreign pull-request numbers or paths that exist only elsewhere. Keep portable mechanisms separate from local values; use neutral examples and flag uncertain boundary changes for human review.
+  - Name no organization Jig learned from and import no product-domain material from one: no organization names, tracker keys, foreign pull-request numbers or paths that exist only elsewhere. Keep portable mechanisms separate from local values; use neutral examples and flag uncertain boundary changes for human review.
   - Everything under plugin/ runs from a copy outside this repository and ships only as a new version: a change there bumps both plugin manifests and adds a CHANGELOG.md section.
   - Approved documentation states current truth without review dialogue or correction traces. Define new terms of art in GLOSSARY.md, keep Markdown tables preceded by a blank line, and preserve working relative links.
   - Quality gates and the auditor must be deterministic, portable, self-tested, and proportionate. A check must not silently weaken its scope or turn a required failure into a pass.
@@ -33,11 +33,11 @@ high_risk_path_patterns:
 rules:
   - id: module-contract
     paths: ["modules/**"]
-    attention: "Review module changes against Groundwork's module contract. README changes must stay plain-language-first and describe the invariant before tooling; mappings must separate tool choices from the invariant; maturity criteria must be observable and use the enforcement ladder; templates and reference material must remain copyable, portable, and internally linked."
+    attention: "Review module changes against Jig's module contract. README changes must stay plain-language-first and describe the invariant before tooling; mappings must separate tool choices from the invariant; maturity criteria must be observable and use the enforcement ladder; templates and reference material must remain copyable, portable, and internally linked."
     severity: high
   - id: ip-scrub-and-portability
     paths: ["modules/**", "plugin/**", "README.md", "PLAYBOOK.md", "ROADMAP.md", "CHANGELOG.md", "principles/**/*.md", "profiles/**/*.md", "adoption/**/*.md", "audit/**/*.md"]
-    attention: "Flag product-domain content, customer data, names of the organizations Groundwork learned from, or examples that could cross Groundwork's origin boundary. Flag values presented as universal mechanisms, and mechanisms that make a consumer depend on access to any particular organization's repository."
+    attention: "Flag product-domain content, customer data, names of the organizations Jig learned from, or examples that could cross Jig's origin boundary. Flag values presented as universal mechanisms, and mechanisms that make a consumer depend on access to any particular organization's repository."
     severity: high
   - id: markdown-governance
     paths: ["**/*.md"]
@@ -56,6 +56,6 @@ rules:
     attention: "Ensure templates are neutral copyable skeletons and reference material contains portable mechanisms rather than local policy values. Keep fixture changes aligned with the documented contract and paired self-test expectations."
     severity: medium
 
-# Groundwork has no generated output that contributors should regenerate, nor a
+# Jig has no generated output that contributors should regenerate, nor a
 # live change-area catalog or path-scoped rules corpus. Omit those optional
 # sections so their defaults do not point at misleading placeholder locations.

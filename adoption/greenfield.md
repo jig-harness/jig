@@ -1,6 +1,6 @@
 # Greenfield adoption
 
-Starting a new project with groundwork from day one. The entry point is a
+Starting a new project with Jig from day one. The entry point is a
 **structured kickoff** that produces the first delivery artifacts, followed by
 adopting the profile's modules at their target maturity from the start.
 
@@ -32,12 +32,12 @@ as you go.
 | 5. Repo bootstrap (instruction file, gates, plan) | the scaffolding spine | [M0](../modules/M0-instruction-architecture/) (instruction file + [glossary](../GLOSSARY.md)), [M1](../modules/M1-gates-enforcement-ladder/) (gate set + [CI](../GLOSSARY.md)), [M2](../modules/M2-generated-artifact-freshness/) (derived-file inventory) |
 | 6. Plan review | validated master plan | [M6](../modules/M6-feature-delivery-pipeline/) adversarial review, applied to the plan |
 | 7. Human development guide | contributor-facing docs | [M4](../modules/M4-docs-governance/) (docs governance) |
-| 8. Scaffold the project | running skeleton | stack-specific (derive the stack; not a groundwork module) |
+| 8. Scaffold the project | running skeleton | stack-specific (derive the stack; not a Jig module) |
 | 9. Nested instruction files | per-directory rules | [M0](../modules/M0-instruction-architecture/) (per-directory instructions, tool deltas as pointers) |
 | 10. Implementation planning (**review each plan**) | epic + phase plans | [M6](../modules/M6-feature-delivery-pipeline/) epic decomposition + [M9](../modules/M9-tasks-memory/) tactical plans |
 | 11. Populate the tracker | filed, labelled work | [M9](../modules/M9-tasks-memory/) — label taxonomy + [issue templates](../modules/M9-tasks-memory/templates/ISSUE-TEMPLATES.md); [flag labels](../GLOSSARY.md) set here drive downstream gates |
 
-The kickoff's Lite/Standard/Enterprise tiers map directly onto groundwork's
+The kickoff's Lite/Standard/Enterprise tiers map directly onto Jig's
 [profiles](../profiles/) — pick the profile during phase 5 and adopt its modules
 at their target maturity from the start.
 

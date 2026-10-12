@@ -395,7 +395,7 @@ describe("the snapshot", () => {
         "rev-parse",
         "--path-format=absolute",
         "--git-path",
-        "groundwork/conflicts.json",
+        "jig/conflicts.json",
       )
       .trim();
     writeFileSync(file, "{ damaged");
@@ -417,7 +417,7 @@ describe("the snapshot", () => {
           "rev-parse",
           "--path-format=absolute",
           "--git-path",
-          "groundwork/conflicts.json",
+          "jig/conflicts.json",
         )
         .trim();
       const before = readFileSync(file, "utf8");
@@ -439,7 +439,7 @@ describe("the snapshot", () => {
         "rev-parse",
         "--path-format=absolute",
         "--git-path",
-        "groundwork/conflicts.json",
+        "jig/conflicts.json",
       )
       .trim();
   }

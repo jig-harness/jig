@@ -62,7 +62,7 @@ update or unexplained version ceiling is hidden maintenance debt.
 ## Non-JavaScript repositories
 
 The invariant is that a gate has one reproducible implementation, independent
-of the application's language. Groundwork chooses a mise-managed Bun pin: run the complete pinned checkout with its `mise.toml` active,
+of the application's language. Jig chooses a mise-managed Bun pin: run the complete pinned checkout with its `mise.toml` active,
 install `bun.lock` with `bun install --frozen-lockfile`, and invoke `bun <gate.ts>`.
 The consumer's application can remain Python, Go or any other stack.
 

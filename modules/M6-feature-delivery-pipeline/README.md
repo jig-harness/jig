@@ -129,7 +129,7 @@ What this module provides:
   template homes, CI) and [`maturity.yaml`](maturity.yaml).
 
 Both gates have paired self-tests and fixtures beside them. The
-[`/groundwork:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
+[`/jig:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
 skill runs the first step of the design-prototype loop: it assembles the brief
 for an external design session and audits it before the session starts.
 

@@ -1,5 +1,5 @@
-# Groundwork's own values for its skills, read at run time by the plugin
-# (plugin/README.md § Configure a repository). Groundwork uses its own skills
+# Jig's own values for its skills, read at run time by the plugin
+# (plugin/README.md § Configure a repository). Jig uses its own skills
 # on its pull requests like any other consumer.
 gates:
   command: bun run gates

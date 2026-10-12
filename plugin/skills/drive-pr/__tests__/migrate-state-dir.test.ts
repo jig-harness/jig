@@ -275,7 +275,7 @@ describe("--from: migrating a whole state root", () => {
       timeoutMs: undefined,
     });
     expect(defaultStateRootDir()).toEndWith(
-      join(".local", "state", "groundwork", "drive-pr"),
+      join(".local", "state", "jig", "drive-pr"),
     );
   });
 

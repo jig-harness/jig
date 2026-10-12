@@ -11,14 +11,14 @@
  *   it. --json prints the map as JSON. --integration names the side that
  *   carries the base branch when the merge heuristic would guess wrong.
  *
- * Writes the map to `<git-dir>/groundwork/conflicts.json`, the snapshot that
+ * Writes the map to `<git-dir>/jig/conflicts.json`, the snapshot that
  * record.ts fills in and check-resolution.ts verifies. Running it again for
  * the same operation keeps the decisions already recorded; a snapshot for a
  * different operation is replaced. Reads nothing else into the repository
  * and changes nothing else.
  *
- * Reads `resolve_conflicts.generated` from `.config/groundwork-overlay.yaml`
- * (path globs and the command that regenerates them); GROUNDWORK_OVERLAY
+ * Reads `resolve_conflicts.generated` from `.config/jig.yaml`
+ * (path globs and the command that regenerates them); JIG_OVERLAY
  * points at another configuration file.
  *
  * Exit codes: 0 mapped; 2 usage error, not in a git work tree, or invalid

@@ -1,6 +1,6 @@
 # TEMPLATE — copy to your repo (e.g. label-taxonomy.yaml) and prune to the
 # labels YOUR tracker actually uses. This is the single source of truth (SSoT)
-# for issue classification, and it is validated by Groundwork's label-taxonomy
+# for issue classification, and it is validated by Jig's label-taxonomy
 # lint (modules/M9-tasks-memory/reference/label-taxonomy-lint/), so keep it in
 # sync with your tracker.
 #

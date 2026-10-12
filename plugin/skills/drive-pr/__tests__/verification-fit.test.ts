@@ -182,8 +182,8 @@ async function runScript(
     // instead, selecting the enclosing worktree rather than `baseRepo`.
     env: {
       ...scrubbedGitEnv(),
-      GROUNDWORK_VERIFICATION_FIT_LOG: logFile,
-      GROUNDWORK_OVERLAY: overlayFile,
+      JIG_VERIFICATION_FIT_LOG: logFile,
+      JIG_OVERLAY: overlayFile,
       // Point drive-state at an empty dir so `rounds` resolves without touching
       // any real per-clone drive state.
       DRIVE_PR_STATE_DIR: workDir,

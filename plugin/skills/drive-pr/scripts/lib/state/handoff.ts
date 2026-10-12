@@ -473,7 +473,7 @@ export async function renderHandoff(
   lines.push(
     ...(await intentChainSection(
       await intentChainDir(dir),
-      process.env.GROUNDWORK_REFOCUS,
+      process.env.JIG_REFOCUS,
       pr,
     )),
   );

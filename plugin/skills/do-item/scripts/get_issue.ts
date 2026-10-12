@@ -197,7 +197,7 @@ function notFound(issueId: string, why: string): Record<string, unknown> {
     found: false,
     suggestions: [
       "Check the key format (e.g. ENG-123, not just 123)",
-      "Check issue_tracker.team in .config/groundwork-overlay.yaml",
+      "Check issue_tracker.team in .config/jig.yaml",
       "Use the tracker's own integration (Linear: the get_issue MCP tool)",
     ],
   };

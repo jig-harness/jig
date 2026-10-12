@@ -1,5 +1,5 @@
 /**
- * The repository is the `groundwork` plugin for Claude Code and Codex. These
+ * The repository is the `jig` plugin for Claude Code and Codex. These
  * tests pin its manifests and run the shipped skill scripts the way a plugin
  * cache holds them: copied outside this repository (no `node_modules`
  * anywhere above them), invoked from a scratch consumer repository whose own
@@ -41,9 +41,9 @@ const env = Object.fromEntries(
     ([key]) => !LEAKY_GIT_ENV.some((name) => name === key.toUpperCase()),
   ),
 );
-delete env.GROUNDWORK_OVERLAY;
-delete env.GROUNDWORK_REVIEW_TRIAGE_CONFIG;
-delete env.GROUNDWORK_CONSUMER_ROOT;
+delete env.JIG_OVERLAY;
+delete env.JIG_REVIEW_TRIAGE_CONFIG;
+delete env.JIG_CONSUMER_ROOT;
 
 function json(path: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -52,7 +52,7 @@ function json(path: string): Record<string, unknown> {
 let scratch: string;
 let scripts: string;
 beforeAll(() => {
-  scratch = realpathSync(mkdtempSync(join(tmpdir(), "groundwork-plugin-")));
+  scratch = realpathSync(mkdtempSync(join(tmpdir(), "jig-plugin-")));
   // The plugin cache copies the plugin directory; tests are not part of it.
   cpSync(join(root, "plugin", "skills"), join(scratch, "cache", "skills"), {
     recursive: true,
@@ -66,7 +66,7 @@ test("both harness manifests describe the same plugin", () => {
   const claude = json("plugin/.claude-plugin/plugin.json");
   const codex = json("plugin/.codex-plugin/plugin.json");
   for (const manifest of [claude, codex]) {
-    expect(manifest.name).toBe("groundwork");
+    expect(manifest.name).toBe("jig");
     expect(manifest.skills).toBe("./skills/");
     expect(String(manifest.version)).toMatch(/^\d+\.\d+\.\d+$/);
   }
@@ -152,9 +152,9 @@ test("every shipped agent is named after its file and inherits the session's mod
   }
 });
 
-test("setup defaults to the Groundwork repository and rejects unknown flags", () => {
-  const previous = process.env.GROUNDWORK_MARKETPLACE;
-  delete process.env.GROUNDWORK_MARKETPLACE;
+test("setup defaults to the Jig repository and rejects unknown flags", () => {
+  const previous = process.env.JIG_MARKETPLACE;
+  delete process.env.JIG_MARKETPLACE;
   try {
     expect(parse([])).toEqual({
       check: false,
@@ -171,7 +171,7 @@ test("setup defaults to the Groundwork repository and rejects unknown flags", ()
     expect(() => parse(["--source"])).toThrow("needs a marketplace source");
     expect(() => parse(["--bogus"])).toThrow("unknown argument");
   } finally {
-    if (previous !== undefined) process.env.GROUNDWORK_MARKETPLACE = previous;
+    if (previous !== undefined) process.env.JIG_MARKETPLACE = previous;
   }
 });
 
@@ -209,7 +209,7 @@ test("setup recognises where a marketplace is registered from", () => {
   expect(
     claudeMarketplace([
       {
-        name: "groundwork",
+        name: "jig",
         source: "git",
         url: "https://github.com/docomply/jig.git",
         ref: "v0.2.0",
@@ -220,15 +220,13 @@ test("setup recognises where a marketplace is registered from", () => {
     git: true,
   });
   expect(
-    claudeMarketplace([
-      { name: "groundwork", source: "directory", path: "/src/groundwork" },
-    ]),
-  ).toEqual({ location: "/src/groundwork", git: false });
+    claudeMarketplace([{ name: "jig", source: "directory", path: "/src/jig" }]),
+  ).toEqual({ location: "/src/jig", git: false });
   expect(
     codexMarketplace({
       marketplaces: [
         {
-          name: "groundwork",
+          name: "jig",
           marketplaceSource: { sourceType: "git", source: DEFAULT_SOURCE },
         },
       ],
@@ -238,13 +236,13 @@ test("setup recognises where a marketplace is registered from", () => {
   expect(sameSource(`${DEFAULT_SOURCE}#v0.2.0`, DEFAULT_SOURCE)).toBe(true);
   // A requested release must not be satisfied by an unpinned registration.
   expect(sameSource(DEFAULT_SOURCE, `${DEFAULT_SOURCE}#v0.2.0`)).toBe(false);
-  expect(
-    sameSource("https://github.com/docomply/jig", DEFAULT_SOURCE),
-  ).toBe(true);
+  expect(sameSource("https://github.com/docomply/jig", DEFAULT_SOURCE)).toBe(
+    true,
+  );
   expect(
     sameSource(`${DEFAULT_SOURCE}#v0.1.0`, `${DEFAULT_SOURCE}#v0.2.0`),
   ).toBe(false);
-  expect(sameSource("/src/groundwork", DEFAULT_SOURCE)).toBe(false);
+  expect(sameSource("/src/jig", DEFAULT_SOURCE)).toBe(false);
 });
 
 /**
@@ -277,7 +275,7 @@ if (process.env[key] !== undefined) console.log(process.env[key]);
       env: {
         ...env,
         ...stub,
-        GROUNDWORK_MARKETPLACE: "",
+        JIG_MARKETPLACE: "",
         PATH: `${bin}${delimiter}${dirname(process.execPath)}${delimiter}/usr/bin${delimiter}/bin`,
       },
       encoding: "utf8",
@@ -291,7 +289,7 @@ if (process.env[key] !== undefined) console.log(process.env[key]);
 }
 
 const registeredHere = JSON.stringify([
-  { name: "groundwork", source: "directory", path: "/src/groundwork" },
+  { name: "jig", source: "directory", path: "/src/jig" },
 ]);
 const userInstall = JSON.stringify([
   { id: PLUGIN_ID, scope: "user", version: "0.2.0", enabled: true },
@@ -305,7 +303,7 @@ test.skipIf(process.platform === "win32")(
       STUB_CLAUDE_PLUGIN_LIST_JSON: userInstall,
     });
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain("is registered from /src/groundwork");
+    expect(result.stderr).toContain("is registered from /src/jig");
     expect(result.calls).toEqual([
       "claude --version",
       "claude plugin marketplace list --json",
@@ -323,7 +321,7 @@ test.skipIf(process.platform === "win32")(
       STUB_CODEX_PLUGIN_MARKETPLACE_LIST_JSON: JSON.stringify({
         marketplaces: [
           {
-            name: "groundwork",
+            name: "jig",
             marketplaceSource: { sourceType: "git", source: DEFAULT_SOURCE },
           },
         ],
@@ -333,19 +331,15 @@ test.skipIf(process.platform === "win32")(
       }),
     });
     expect(result.status).toBe(0);
-    expect(result.calls).toContain(
-      "claude plugin update groundwork@groundwork --scope user",
-    );
-    expect(result.calls).not.toContain(
-      "claude plugin update groundwork@groundwork",
-    );
+    expect(result.calls).toContain("claude plugin update jig@jig --scope user");
+    expect(result.calls).not.toContain("claude plugin update jig@jig");
     const codex = result.calls.filter((call) =>
       call.startsWith("codex plugin"),
     );
     expect(codex).toEqual([
       "codex plugin marketplace list --json",
-      "codex plugin marketplace upgrade groundwork",
-      "codex plugin add groundwork@groundwork",
+      "codex plugin marketplace upgrade jig",
+      "codex plugin add jig@jig",
       "codex plugin list --json",
     ]);
   },
@@ -357,8 +351,8 @@ test.skipIf(process.platform === "win32")(
   () => {
     const result = runSetup(["--claude"], {
       STUB_CLAUDE_PLUGIN_MARKETPLACE_LIST_JSON: registeredHere,
-      STUB_SLEEP: "plugin marketplace update groundwork",
-      GROUNDWORK_SETUP_TIMEOUT_SECONDS: "1",
+      STUB_SLEEP: "plugin marketplace update jig",
+      JIG_SETUP_TIMEOUT_SECONDS: "1",
     });
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("did not finish within 1s");
@@ -373,7 +367,7 @@ test.skipIf(process.platform === "win32")(
     // not pass for the other tool alone.
     const result = runSetup(["--check"], {
       STUB_SLEEP: "--version",
-      GROUNDWORK_SETUP_TIMEOUT_SECONDS: "1",
+      JIG_SETUP_TIMEOUT_SECONDS: "1",
       STUB_CODEX_PLUGIN_LIST_JSON: JSON.stringify({
         installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: true }],
       }),
@@ -393,10 +387,7 @@ function consumerRepo(name: string, overlay?: string): string {
   expectSpawnExit({ ...git, exitCode: git.status }, 0);
   if (overlay !== undefined) {
     mkdirSync(join(consumer, ".config"));
-    writeFileSync(
-      join(consumer, ".config", "groundwork-overlay.yaml"),
-      overlay,
-    );
+    writeFileSync(join(consumer, ".config", "jig.yaml"), overlay);
   }
   return consumer;
 }
@@ -438,7 +429,7 @@ test("an explicit consumer root and a dangling sibling link are honoured", () =>
     [join(scripts, "consumer-config.ts")],
     {
       cwd: elsewhere,
-      env: { ...env, GROUNDWORK_CONSUMER_ROOT: consumer },
+      env: { ...env, JIG_CONSUMER_ROOT: consumer },
       encoding: "utf8",
     },
   );
@@ -529,8 +520,8 @@ test("an unconfigured repository is refused, not run with guessed values", () =>
     { cwd: consumer, env, encoding: "utf8" },
   );
   expectSpawnExit({ ...result, exitCode: result.status }, 2);
-  expect(result.stderr).toContain("Groundwork configuration not found");
-  expect(result.stderr).toContain(".config/groundwork-overlay.yaml");
+  expect(result.stderr).toContain("Jig configuration not found");
+  expect(result.stderr).toContain(".config/jig.yaml");
   const partial = consumerRepo("partial", "review:\n  job_pattern: null\n");
   const refused = spawnSync(
     process.execPath,

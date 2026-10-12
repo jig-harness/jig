@@ -24,7 +24,7 @@ import {
 import { isReviewerCheck } from "../scripts/lib/status/evidence.ts";
 
 const KEYS = [
-  "GROUNDWORK_OVERLAY",
+  "JIG_OVERLAY",
   "DRIVE_PR_REVIEWER_APP",
   "DRIVE_PR_BASE_BRANCH",
   "DRIVE_PR_REVIEWER_CHECK",
@@ -37,7 +37,7 @@ let dir: string;
 function overlay(text: string): void {
   const path = join(dir, `overlay-${Math.random()}.yaml`);
   writeFileSync(path, text);
-  process.env.GROUNDWORK_OVERLAY = path;
+  process.env.JIG_OVERLAY = path;
 }
 
 beforeEach(() => {
@@ -93,7 +93,7 @@ describe("reviewer identity", () => {
   });
 
   it("a repository with no configuration file drives on the defaults", () => {
-    process.env.GROUNDWORK_OVERLAY = join(dir, "absent.yaml");
+    process.env.JIG_OVERLAY = join(dir, "absent.yaml");
     expect(reviewerApp()).toBe("");
     expect(validationPlanCommand()).toBeUndefined();
     expect(reviewsDrafts()).toBeUndefined();

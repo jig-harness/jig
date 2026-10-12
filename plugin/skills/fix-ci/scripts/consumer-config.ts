@@ -9,7 +9,7 @@
  * Usage: bun consumer-config.ts
  *   Run from inside the repository (any directory of it). The repository
  *   root and configuration file can be overridden with
- *   GROUNDWORK_CONSUMER_ROOT and GROUNDWORK_OVERLAY.
+ *   JIG_CONSUMER_ROOT and JIG_OVERLAY.
  *
  * Every value has a fallback, so a repository without a configuration file
  * still gets a usable answer; the output says which values are fallbacks.

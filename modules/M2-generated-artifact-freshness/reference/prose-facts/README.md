@@ -35,7 +35,7 @@ Two design rules:
 | `fixture/` | A tiny instruction file + guides directory both checks pass against |
 
 Both exit 0 when every stated copy agrees, 1 on drift, and 2 on a usage error
-or an unreadable input. Their self-tests are in Groundwork's
+or an unreadable input. Their self-tests are in Jig's
 [`scripts/freshness.test.ts`](../../../../scripts/freshness.test.ts).
 
 Try it with the pinned Bun runtime:

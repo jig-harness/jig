@@ -12,7 +12,7 @@
  * (`prBaseRef`).
  *
  * Where the plan comes from is the consumer's: `drive.validation_plan_command`
- * in `.config/groundwork-overlay.yaml` reads the changed files on stdin (one
+ * in `.config/jig.yaml` reads the changed files on stdin (one
  * per line) and prints the plan as JSON on stdout. A repository that declares
  * none gets a one-step plan, its `gates.command`, the complete local checks.
  * The JSON contract this script reads:
@@ -417,7 +417,7 @@ async function main(): Promise<number> {
       fail(
         1,
         "round-plan: this repository declares neither drive.validation_plan_command nor",
-        "gates.command in .config/groundwork-overlay.yaml, so there is no plan to emit.",
+        "gates.command in .config/jig.yaml, so there is no plan to emit.",
       );
     if (resolvedRes.why === "no-shell")
       fail(

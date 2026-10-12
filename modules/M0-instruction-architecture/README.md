@@ -98,7 +98,7 @@ What this module provides:
 - [`mappings.md`](mappings.md) (Claude Code, Codex, Cursor and Copilot file
   conventions) and [`maturity.yaml`](maturity.yaml).
 
-Groundwork's own [`AGENTS.md`](../../AGENTS.md), `CLAUDE.md` pointer and
+Jig's own [`AGENTS.md`](../../AGENTS.md), `CLAUDE.md` pointer and
 nested `AGENTS.md` files are a working instance of this module.
 
 Future: a generator for a per-agent model roster (the routing policy describes

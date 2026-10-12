@@ -1,7 +1,7 @@
 # Roadmap
 
-What Groundwork still has to build, in priority order. A session picking up
-Groundwork work starts here.
+What Jig still has to build, in priority order. A session picking up
+Jig work starts here.
 
 This page lists open work only. When an item is finished it leaves this page:
 what changed is recorded in [CHANGELOG.md](CHANGELOG.md), and how things work
@@ -12,40 +12,13 @@ Background on how the module map came about is in
 
 ## Now
 
-### 1. Rename Groundwork to jig
-
-A jig holds the work and guides the tool so every cut comes out the same;
-that is what these skills and gates do for agents. The short name also shortens
-every command (`/jig:drive-pr`). Renaming breaks every repository that uses
-the plugin, so it happens once, before anything is published, in one release
-with the consumers' changes paired:
-
-- the GitHub repository (renamed `jig` within the same organization; GitHub
-  redirects the old address, but install commands, marketplace registrations,
-  links and the origin-reference gate's allowed address move to the new one);
-- the plugin and both marketplaces (`groundwork@groundwork` → `jig@jig`), the
-  manifests, and the `/groundwork:` command prefix in every skill, document
-  and consumer instruction;
-- the configuration file (`.config/groundwork-overlay.yaml` → `.config/jig.yaml`),
-  still read under its old name for a transition period, with a message naming
-  the rename;
-- the `GROUNDWORK_*` environment variables (old names still read for the same
-  period), the state directories (migrated, as `migrate-state-dir.ts` does
-  today), and the package name;
-- the brand: the logo files (a horizontal lockup, a stacked mark on dark, and a
-  round mark) go into the repository, with the README header and any icon
-  field the two plugin manifests support.
-
-Every machine that uses the plugin installs the renamed one and removes the
-old; the changelog's entry for the release says exactly how.
-
-### 2. Licence
+### 1. Licence
 
 Apache-2.0 for the repository, MIT-0 for the templates (skeletons other
 repositories paste in without carrying a notice), with the organization that
-publishes Groundwork as the licensor. The MIT-0 exception names the template
-files themselves, not a directory, so it holds after item 3 moves them into
-skills and item 4 merges M6's with the kickoff's. A `LICENSE` at the root and a copy in `plugin/` (the plugin installs
+publishes Jig as the licensor. The MIT-0 exception names the template
+files themselves, not a directory, so it holds after item 2 moves them into
+skills and item 3 merges M6's with the kickoff's. A `LICENSE` at the root and a copy in `plugin/` (the plugin installs
 only that directory), a `NOTICE` naming the vendored js-yaml and `ste-lint`
 code and their licences, `license` fields in `package.json` and both
 manifests, a licence section in the README, and a gate that every vendored
@@ -53,12 +26,12 @@ directory carries its licence file. The origin-reference gate's allowed
 places gain `LICENSE` and `NOTICE`, which name the licensor. Outside contributions, once accepted,
 use a [Developer Certificate of Origin](GLOSSARY.md) sign-off.
 
-### 3. Skill assets live in the plugin
+### 2. Skill assets live in the plugin
 
 The plugin installs only `plugin/`, so a skill cannot read anything under
 `modules/`. Templates, gates and criteria a skill uses move into the skill
 that uses them (moved, not copied), and the module links to them there: one
-source, nothing to keep in step. This unblocks items 4–6, which need M6's
+source, nothing to keep in step. This unblocks items 3–5, which need M6's
 templates, M4's gates and every module's `maturity.yaml`. The module contract
 changes in the same pull request: [modules/AGENTS.md](modules/AGENTS.md)
 requires `templates/`, `reference/` and `maturity.yaml` in every module
@@ -68,7 +41,7 @@ together, and each module links to the assets it no longer holds. Moving the plu
 the repository root is not an option: the root `package.json` would make each
 tool install the development dependencies on every machine.
 
-### 4. The kickoff family
+### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
 the skills it calls, written by this repository's author and free of
@@ -104,7 +77,7 @@ workspace, whose copies are deleted in the same rollout):
 [adoption/greenfield.md](adoption/greenfield.md) then points at
 `/jig:kickoff` instead of the seed.
 
-### 5. `changelog` skill
+### 4. `changelog` skill
 
 Keeps a repository's changelog as a practice, not an afterthought, in either
 common format, detected from the file or set in configuration:
@@ -123,12 +96,12 @@ first; no `Unreleased`).
   both: structure, category names and order, dates written year-month-day,
   link references, and release coverage. Each rule, its conditions and its
   exemptions are taken from the format's own specification, cited where the
-  check enforces them, not restated here. Groundwork's own
+  check enforces them, not restated here. Jig's own
   `scripts/check-changelog.ts` is the starting point, not the finished check:
-  it reads Groundwork's two plugin manifests and checks only that their
+  it reads Jig's two plugin manifests and checks only that their
   versions agree and that the current one has a heading. The skill's check
   detects the format, validates the rules above, and takes the current version
-  from the repository rather than from fixed paths; Groundwork's `bun run
+  from the repository rather than from fixed paths; Jig's `bun run
   gates` keeps calling it.
 - **Release**: write the version's section (or move `Unreleased` into it),
   update the comparison links, and leave tagging to the release step.
@@ -139,12 +112,12 @@ The practice itself (a changelog per released artifact, mechanically
 checked) belongs in a module; decide whether M10 (environments and deploy)
 holds it or a new release module does.
 
-### 6. `/jig:audit`
+### 5. `/jig:audit`
 
 The auditor as a plugin skill a repository runs again and again, not a
 one-time adoption step. Today the [auditor](audit/README.md) is a method, survey
 prompts and a checklist generator that an agent follows by hand from a
-Groundwork checkout; a repository that installs the plugin cannot run it, and
+Jig checkout; a repository that installs the plugin cannot run it, and
 nothing records what an earlier audit found.
 
 What it does:
@@ -171,7 +144,7 @@ What it does:
    fixed, still open, regressed or new, and does not repeat a declined
    recommendation until its condition holds.
 4. **`since: <version>` markers** on configuration fields and maturity
-   criteria, so a re-run can say what Groundwork added since the last audit.
+   criteria, so a re-run can say what Jig added since the last audit.
 5. **Read-only by default.** Applying a recommendation is a separate, opt-in
    step that opens one pull request per recommendation (through `do-item`'s
    pull-request policy), never a bulk change.
@@ -181,17 +154,17 @@ What it does:
 
 Design points to settle in the pull request:
 
-- The criteria live in the skill after item 3, in the same `maturity.yaml`
+- The criteria live in the skill after item 2, in the same `maturity.yaml`
   schema; the skill reads them there, and each module links to its own.
 - `audit/` moves into `plugin/skills/audit/` (moved, not copied), leaving a
   pointer in `audit/README.md`.
-- Done when the skill audits Groundwork itself (its record committed here) and
+- Done when the skill audits Jig itself (its record committed here) and
   one external repository, as the
   [calibration run](audit/calibration/2026-07-19-execa.md) did by hand.
 
 ## Next
 
-### 7. Delegated merge (`pull_requests.merge: auto-on-converged`)
+### 6. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
 Lets a converged drive arm the forge's auto-merge for the exact head it
 certified. It relaxes "a human merges", so the doctrine change is approved on
@@ -212,7 +185,7 @@ before it opens as a pull request the design must guarantee that:
   maturity criteria) changes in the same pull request, in the direction the
   decision picks.
 
-### 8. Values the skills still assume
+### 7. Values the skills still assume
 
 Move into configuration when a consumer needs them:
 
@@ -223,17 +196,17 @@ Move into configuration when a consumer needs them:
 - summary-finding severity is parsed only for the reviewers whose comment
   formats the drive already knows.
 
-### 9. Groundwork's own Simplified Technical English linter
+### 8. Jig's own Simplified Technical English linter
 
 `decide`'s `ste-lint` is a faithful TypeScript translation of a third-party
-Python linter, kept output-identical to it. Rewrite it as Groundwork's own
-implementation of the same writing rules, free to deviate where Groundwork's
+Python linter, kept output-identical to it. Rewrite it as Jig's own
+implementation of the same writing rules, free to deviate where Jig's
 rules differ (for example by folding in the corrections its wrapper applies
 today), and keep crediting the original
 ([Credits](plugin/RECOMMENDED-SKILLS.md#credits)). The parity record and the
 golden files from the Python linter then retire with the translation.
 
-### 10. More tracker adapters
+### 9. More tracker adapters
 
 Jira, and a plan file kept in the repository. Both wait on the open decisions
 below.
@@ -265,7 +238,7 @@ below.
   schema and fixtures. M3's two reference READMEs are correct but long and
   hedged; rewrite them to state the rules plainly.
 - **Drive loop follow-ups.**
-  - `drive-pr`'s CI-repair round should run `/groundwork:fix-ci`, but that
+  - `drive-pr`'s CI-repair round should run `/jig:fix-ci`, but that
     skill commits and pushes on its own, while a drive pass must push through
     `finish-round.ts`; give `fix-ci` a mode that stops before pushing.
   - The orphan warning in `scripts/lib/state/orphans.ts` can never fire under
@@ -287,9 +260,9 @@ below.
 
 ## Standing: backflow
 
-Groundwork keeps learning from the repositories that use it. When one of them
+Jig keeps learning from the repositories that use it. When one of them
 finds a better gate, a corrected design or a new review lens, evaluate it for
-Groundwork and port the corrected design, not the first attempt
+Jig and port the corrected design, not the first attempt
 ([principle 5](principles/05-learning-loop.md)). A consumer's own values stay
 in that consumer's configuration.
 
@@ -297,7 +270,7 @@ in that consumer's configuration.
 
 These need a human decision before the work that depends on them starts.
 
-- **Publishing.** Groundwork is private. The licence is chosen (item 2);
+- **Publishing.** Jig is private. The licence is chosen (item 1);
   whether and when to open the repository, whole or per module, is still a
   human decision.
 - **Plan-file tracker format**: one file for the whole plan, or one per item.

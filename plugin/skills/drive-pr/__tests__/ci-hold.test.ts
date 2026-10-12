@@ -892,7 +892,7 @@ esac
         env: {
           ...process.env,
           PATH: `${bin}:${process.env.PATH ?? ""}`,
-          GROUNDWORK_OVERLAY: HOLD_OVERLAY,
+          JIG_OVERLAY: HOLD_OVERLAY,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
           // set-ci-hold is test-only fixture seeding —
@@ -1608,7 +1608,7 @@ esac
         env: {
           ...process.env,
           PATH: `${bin}:${process.env.PATH ?? ""}`,
-          GROUNDWORK_OVERLAY: HOLD_OVERLAY,
+          JIG_OVERLAY: HOLD_OVERLAY,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
         },

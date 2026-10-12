@@ -2,7 +2,7 @@
 
 > Copy this into your repo (e.g. `docs/development/ci-architecture.md`) and
 > adjust the tool names to your stack. It is the tool-independent contract; the
-> per-provider wiring lives in Groundwork's
+> per-provider wiring lives in Jig's
 > [M10 mappings](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/mappings.md), and
 > the two enforcement gates in its
 > [`reference/`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference).

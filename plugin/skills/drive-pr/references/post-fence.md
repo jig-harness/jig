@@ -190,7 +190,7 @@ comment, so the check and the `POST` are two moments.
 ## What would change this decision
 
 - Every install of `resolve-review-comments` also carries `drive-pr` — as the
-  `groundwork` plugin does — and no standalone copy remains in use. The probe
+  `jig` plugin does — and no standalone copy remains in use. The probe
   then guards nothing and should go.
 - `assert-post-allowed.ts` moves into `resolve-review-comments` and `drive-pr`
   spawns it in the other direction. That inverts the optional edge onto the

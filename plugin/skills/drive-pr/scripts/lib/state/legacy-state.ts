@@ -127,11 +127,11 @@ const MAX_NAMED_ENTRIES = 10;
  * gone.
  *
  * `{ recursive: true }` can create SEVERAL path components at once — on a
- * machine with no `~/.local/state/groundwork` at all yet, `dir` sits several
+ * machine with no `~/.local/state/jig` at all yet, `dir` sits several
  * new levels deep and `mkdirSync` creates all of them in one call. Fsyncing
  * only `dirname(dir)` protects the deepest new entry alone: the newly created
- * `groundwork` entry in `~/.local/state`, and the newly created `drive-pr`
- * entry in `groundwork`, would both still be uncommitted, so a crash right
+ * `jig` entry in `~/.local/state`, and the newly created `drive-pr`
+ * entry in `jig`, would both still be uncommitted, so a crash right
  * after this call can lose the WHOLE new hierarchy even though the deepest
  * fsync "succeeded". Walking up from `dir` before `mkdirSync` to find every
  * ancestor that does not exist YET, then fsyncing each one's own parent after

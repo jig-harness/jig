@@ -86,7 +86,7 @@ What this module provides:
 
 The self-tests for all three references are in
 [`scripts/freshness.test.ts`](../../scripts/freshness.test.ts). The
-[`/groundwork:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) skill uses this
+[`/jig:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) skill uses this
 module's vocabulary when a drift check fails: it finds the regenerate command
 beside the check and runs it.
 

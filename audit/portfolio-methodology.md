@@ -5,7 +5,7 @@ problems: a policy copied five times and maintained nowhere, a required check
 that only one repo actually requires, or a useful capability trapped inside
 an application repo. A portfolio audit adds a comparison pass after each repo
 has been audited on its own shape. It does not average unlike repositories or
-turn organization-specific choices into universal Groundwork content.
+turn organization-specific choices into universal Jig content.
 
 ## 1. Freeze a comparable audit basis
 
@@ -65,8 +65,8 @@ Place each finding by what it is, not by where it happened to be discovered.
 
 | Kind | Maintained home |
 |------|-----------------|
-| Universal, tool-independent delivery invariant | Groundwork module, template, mapping, or auditor |
-| Generic runnable mechanism (an agent skill, a review loop, a gate) | The Groundwork plugin, with each organization's values as configuration |
+| Universal, tool-independent delivery invariant | Jig module, template, mapping, or auditor |
+| Generic runnable mechanism (an agent skill, a review loop, a gate) | The Jig plugin, with each organization's values as configuration |
 | Organization-specific policy or supported-tool catalog | A separate organization-owned standards package or repository |
 | Executable service used across repositories | Its own versioned service or product repository |
 | Repo-specific paths, environments, secrets, or reviewer lenses | The consuming repository |
@@ -78,7 +78,7 @@ workflows, pinned actions, an agent-skill package, a bootstrap command, or a
 generated repo overlay. Consumers keep small local configuration and a
 machine-checkable version or freshness record.
 
-Groundwork must remain useful without access to that organization-specific
+Jig must remain useful without access to that organization-specific
 home. Bring in only the corrected, reusable invariant, with product content
 and private values removed.
 
@@ -91,7 +91,7 @@ three queues distinct:
 - urgent repository fixes, including credential rotation and unsafe release
   ordering;
 - shared-capability work that needs an organization-owned home;
-- universal backflow that improves Groundwork or its own maintenance.
+- universal backflow that improves Jig or its own maintenance.
 
 Do not create a new repository, choose its visibility or license, rotate a
 credential, or change protected-branch policy as an audit side effect. Those

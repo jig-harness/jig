@@ -29,7 +29,7 @@ The renderer turns the source into two projections:
 - a markdown text with the same content, for a comment or a chat
 
 It is the second sheet genre on the sheet kit. The first is the decision
-sheet of [`/groundwork:decide`](../decide/SKILL.md). Both share the reading
+sheet of [`/jig:decide`](../decide/SKILL.md). Both share the reading
 system (layout, citations, terms in place, the top bar, print) and the trust
 rules: the renderer adds only fixed labels, every claim has a citation, and a
 freshness guard compares the citations against `verifiedAt.commit`.
@@ -44,20 +44,20 @@ would expand the unset variable to an empty string.
 Run every command from the root of the repository the explainer describes.
 Never `cd` into the skill directory: the scripts find the repository, its
 history and its configuration from the working directory, or from
-`GROUNDWORK_CONSUMER_ROOT` when it is set. The scripts import
+`JIG_CONSUMER_ROOT` when it is set. The scripts import
 the sheet kit from the sibling `decide` skill
-(`${CLAUDE_SKILL_DIR}/../decide/scripts/sheet-kit/`), which the `groundwork`
+(`${CLAUDE_SKILL_DIR}/../decide/scripts/sheet-kit/`), which the `jig`
 plugin always installs beside this one.
 
 ### Consumer configuration
 
-The skill reads these optional fields from `.config/groundwork-overlay.yaml`
+The skill reads these optional fields from `.config/jig.yaml`
 at run time:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
 | `explain.figure_build_command` | The command that builds one figure; the skill runs it with the figure's stem as the last argument | No figure build: write explainers without figures |
-| `adr.directory` | Where a bare `ADR-NNNN` citation resolves for the freshness guard | Detected as `/groundwork:adr` does (`docs/adr`, `doc/adr`, `docs/decisions`, …), else `docs/adr` |
+| `adr.directory` | Where a bare `ADR-NNNN` citation resolves for the freshness guard | Detected as `/jig:adr` does (`docs/adr`, `doc/adr`, `docs/decisions`, …), else `docs/adr` |
 | `decide.glossary_file` | The repository's canonical vocabulary | `CONTEXT.md` |
 
 ## When to make one, and when plain text is enough
@@ -76,7 +76,7 @@ conversation. Do not make a sheet for a one-off answer.
 
 An explainer describes the system as it is. It does not propose a change,
 and it does not decide anything: a call that needs a ruling goes to
-[`/groundwork:decide`](../decide/SKILL.md). It is not customer-facing
+[`/jig:decide`](../decide/SKILL.md). It is not customer-facing
 content: a repository's user documentation follows its own policy.
 
 An explainer is for a human reader, and every claim cites its file so that a
@@ -118,4 +118,4 @@ explainer's research.
 | `scripts/explainer-sheet/explainer-sheet.ts` | `render`, `validate` and `extract` |
 | `scripts/explainer-sheet/source.ts` | The source schema, validator and `{step:N}` tokens |
 | `scripts/explainer-sheet/figures.ts` | The check a built figure must pass before it is embedded |
-| `../decide/scripts/sheet-kit/` | The sheet kit, shared with `/groundwork:decide`: one copy, imported by relative path |
+| `../decide/scripts/sheet-kit/` | The sheet kit, shared with `/jig:decide`: one copy, imported by relative path |

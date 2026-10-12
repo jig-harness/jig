@@ -1,17 +1,17 @@
 #!/usr/bin/env bun
 /**
- * Install, update or check the `groundwork` plugin for every agent harness on
+ * Install, update or check the `jig` plugin for every agent harness on
  * this machine: Claude Code and Codex, whichever command-line tools exist.
  *
  * Usage:
  *   bun tools/plugin/setup.ts            install, or update to the latest release
  *   bun tools/plugin/setup.ts --check    report what is installed; exit 1 if missing
  *   options: --source <marketplace>      install from this source instead of
- *                                        $GROUNDWORK_MARKETPLACE or the Groundwork
+ *                                        $JIG_MARKETPLACE or the Jig
  *                                        GitHub repository (HTTPS); refused when the
  *                                        marketplace is already registered elsewhere
  *            --claude | --codex          only that harness (required to exist)
- *   GROUNDWORK_SETUP_TIMEOUT_SECONDS     limit per tool command (default 300)
+ *   JIG_SETUP_TIMEOUT_SECONDS     limit per tool command (default 300)
  *
  * Every command is printed before it runs. It writes only the harnesses' own
  * user-level plugin settings and caches; it never touches a repository.
@@ -19,8 +19,8 @@
 import { spawnSync } from "node:child_process";
 import { cli } from "../../lib/cli.ts";
 
-export const PLUGIN = "groundwork";
-export const MARKETPLACE = "groundwork";
+export const PLUGIN = "jig";
+export const MARKETPLACE = "jig";
 export const PLUGIN_ID = `${PLUGIN}@${MARKETPLACE}`;
 export const DEFAULT_SOURCE = "https://github.com/docomply/jig.git";
 
@@ -33,11 +33,11 @@ export interface Installed {
 
 /** Upper bound per tool command, so a stalled fetch cannot hold setup forever. */
 export function commandTimeoutMs(): number {
-  const raw = process.env.GROUNDWORK_SETUP_TIMEOUT_SECONDS;
+  const raw = process.env.JIG_SETUP_TIMEOUT_SECONDS;
   const seconds = raw === undefined || raw === "" ? 300 : Number(raw);
   if (!Number.isFinite(seconds) || seconds <= 0)
     throw new Error(
-      `GROUNDWORK_SETUP_TIMEOUT_SECONDS must be a positive number of seconds, got ${raw}`,
+      `JIG_SETUP_TIMEOUT_SECONDS must be a positive number of seconds, got ${raw}`,
     );
   return seconds * 1000;
 }
@@ -52,7 +52,7 @@ function run(command: string, args: string[], quiet = false): string {
   });
   if (result.error && code(result.error) === "ETIMEDOUT")
     throw new Error(
-      `${command} ${args.join(" ")} did not finish within ${timeout / 1000}s (GROUNDWORK_SETUP_TIMEOUT_SECONDS)`,
+      `${command} ${args.join(" ")} did not finish within ${timeout / 1000}s (JIG_SETUP_TIMEOUT_SECONDS)`,
     );
   if (result.error) throw result.error;
   if (result.status !== 0)
@@ -92,7 +92,7 @@ function available(command: string): boolean {
   if (result.error && code(result.error) === "ENOENT") return false;
   if (result.error && code(result.error) === "ETIMEDOUT")
     throw new Error(
-      `${command} --version did not finish within ${timeout / 1000}s (GROUNDWORK_SETUP_TIMEOUT_SECONDS)`,
+      `${command} --version did not finish within ${timeout / 1000}s (JIG_SETUP_TIMEOUT_SECONDS)`,
     );
   if (result.error) throw result.error;
   if (result.status !== 0)
@@ -235,7 +235,7 @@ export function parse(argv: string[]): {
   only: Harness | null;
 } {
   let check = false;
-  const fromEnv = process.env.GROUNDWORK_MARKETPLACE;
+  const fromEnv = process.env.JIG_MARKETPLACE;
   let source = fromEnv || DEFAULT_SOURCE;
   let explicit = Boolean(fromEnv);
   let only: Harness | null = null;

@@ -95,7 +95,7 @@ criteria:
       - "'cannot tell' is its own exported value, distinguishable from a real state"
 
   # Encoding-agnostic on purpose: this scores THAT the verdict is validated where
-  # it is written, never which encoding was picked. Groundwork states no
+  # it is written, never which encoding was picked. Jig states no
   # preference between a leading token and a trailer (see mappings.md).
   - id: verdict-validated-at-write-time
     level: strict

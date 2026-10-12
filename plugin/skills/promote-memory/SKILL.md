@@ -13,12 +13,12 @@ allowed-tools:
 # Promote memory
 
 Lift an agent-private memory into the team's git-tracked docs. This is the
-[memory promotion](https://github.com/docomply/jig/blob/main/GLOSSARY.md) step of Groundwork's learning loop
+[memory promotion](https://github.com/docomply/jig/blob/main/GLOSSARY.md) step of Jig's learning loop
 ([M8](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/README.md); its
 [flywheel template](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/templates/FLYWHEEL.md),
 § Companion cycle: memory promotion), between the memory tiers that
 [M9](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/MEMORY-TIERS.md) defines. The
-promoted page lands in the docs tree that Groundwork's docs-as-wiki governance module
+promoted page lands in the docs tree that Jig's docs-as-wiki governance module
 ([M4](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/README.md)) lays out.
 
 ## Context
@@ -66,18 +66,18 @@ becomes everyone's wrong lesson.
 ## When not to use
 
 If the memory describes an **architectural decision**, use
-`/groundwork:adr` to write an architecture decision record
+`/jig:adr` to write an architecture decision record
 ([ADR](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) instead. A decision record carries more weight
 than a retrospection page and goes through review. This skill is for
 observations and lessons, not decisions.
 
 If the memory describes a **bug** or a **feature**, file it in the
 repository's issue tracker (the command in `issue_tracker.file_command` in
-`.config/groundwork-overlay.yaml`, when set).
+`.config/jig.yaml`, when set).
 
 ## Repository values
 
-Read these from `.config/groundwork-overlay.yaml` when present; each has a
+Read these from `.config/jig.yaml` when present; each has a
 default:
 
 - `promote_memory.lint_command`: a command that checks one memory against the
@@ -272,9 +272,9 @@ promoted content.
 
 ## Related skills
 
-- `/groundwork:adr`: use instead when the memory describes an architectural
+- `/jig:adr`: use instead when the memory describes an architectural
   decision.
-- `/groundwork:descar`: the de-scarring pass a page gets before it is
+- `/jig:descar`: the de-scarring pass a page gets before it is
   promoted to a permanent, approved document.
 - The repository's wiki lint, if it has one: it reports retrospection pages
   that were never promoted further (the retrospection backlog in M4's lint

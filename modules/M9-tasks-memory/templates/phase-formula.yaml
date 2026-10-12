@@ -1,7 +1,7 @@
 # TEMPLATE — copy to your repo (e.g. phase-formula.yaml) per class of recurring
 # multi-phase work, and prune to the phases YOU actually run. A "formula" encodes
 # the phases a whole class of work must move through, and marks which ones are
-# REQUIRED before an item may close. It is validated at close by Groundwork's
+# REQUIRED before an item may close. It is validated at close by Jig's
 # required-phases gate (modules/M9-tasks-memory/reference/required-phases/): an
 # item cannot reach a done state with a `required: true` phase unrecorded.
 #

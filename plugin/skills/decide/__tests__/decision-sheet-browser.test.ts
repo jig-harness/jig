@@ -7,7 +7,7 @@
  *
  * It drives the installed Google Chrome through `playwright-core`, so it
  * needs no browser download. Where Chrome is missing the checks cannot run,
- * and they are skipped with a warning. Set `GROUNDWORK_REQUIRE_BROWSER=1` on
+ * and they are skipped with a warning. Set `JIG_REQUIRE_BROWSER=1` on
  * a machine that must run them: there a missing browser is a failing test,
  * so a suite that never ran cannot read as a pass.
  */
@@ -105,15 +105,15 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-if (!browser && process.env.GROUNDWORK_REQUIRE_BROWSER === "1")
+if (!browser && process.env.JIG_REQUIRE_BROWSER === "1")
   it("a browser is available where one is required", () => {
     throw new Error(
-      `these checks need Google Chrome and found none (${missing}); GROUNDWORK_REQUIRE_BROWSER=1 makes a missing browser fail instead of skip`,
+      `these checks need Google Chrome and found none (${missing}); JIG_REQUIRE_BROWSER=1 makes a missing browser fail instead of skip`,
     );
   });
 else if (!browser)
   console.warn(
-    `decision-sheet-browser: skipped, no Chrome (${missing}). Set GROUNDWORK_REQUIRE_BROWSER=1 to make this an error.`,
+    `decision-sheet-browser: skipped, no Chrome (${missing}). Set JIG_REQUIRE_BROWSER=1 to make this an error.`,
   );
 
 const browserIt = browser ? it : it.skip;

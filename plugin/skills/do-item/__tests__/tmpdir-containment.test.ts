@@ -4,7 +4,7 @@
  * from the repository root, this suite included. Bun resolves `bunfig.toml`
  * from the working directory only, so a run from inside this directory gets
  * no preload; this probe fails loudly instead of letting scratch directories
- * leak into the system temp dir. `GROUNDWORK_TEST_TMPDIR_SYSTEM` is published
+ * leak into the system temp dir. `JIG_TEST_TMPDIR_SYSTEM` is published
  * by the preload itself (see `lib/test-tmpdir.ts`).
  */
 import { describe, expect, it } from "bun:test";
@@ -12,8 +12,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const SCOPED_ROOT = process.env.GROUNDWORK_TEST_TMPDIR;
-const SYSTEM_TMPDIR = process.env.GROUNDWORK_TEST_TMPDIR_SYSTEM;
+const SCOPED_ROOT = process.env.JIG_TEST_TMPDIR;
+const SYSTEM_TMPDIR = process.env.JIG_TEST_TMPDIR_SYSTEM;
 
 describe("temp-dir containment (root preload)", () => {
   it("the root preload is applied to this suite", () => {

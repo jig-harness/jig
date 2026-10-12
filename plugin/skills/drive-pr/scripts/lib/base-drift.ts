@@ -17,7 +17,7 @@
  *     overrides `ref:`). Local green and CI red is therefore a reachable, and
  *     silent, disagreement.
  *   - Conflicts get more expensive the longer they are left, and resolving one
- *     is exactly the intent-tracing work `/groundwork:resolve-conflicts` owns —
+ *     is exactly the intent-tracing work `/jig:resolve-conflicts` owns —
  *     work an unattended round should meet EARLY, while there is still a human
  *     around to park it for, not at the announce gate.
  *

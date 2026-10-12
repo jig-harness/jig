@@ -552,10 +552,7 @@ test("eight concurrent reflection invocations write exactly one record and relea
 test("stale locks fail bounded with a recovery instruction, while foreign lock paths survive", () => {
   const { inbox, env } = setupInbox();
   if (process.platform === "win32")
-    writeFileSync(
-      `${inbox}.lock`,
-      "groundwork-reflection-lock-v1 999999999 stale\n",
-    );
+    writeFileSync(`${inbox}.lock`, "jig-reflection-lock-v1 999999999 stale\n");
   else symlinkSync("999999999", `${inbox}.lock`);
   const run = reflectionCli([hard], { ...env, LOCK_TIMEOUT: "1" });
   expect(run.exitCode).toBe(2);
@@ -602,10 +599,7 @@ test("Windows owner-file protocol publishes complete ownership and preserves sta
       .readdirSync(dir)
       .some((name: string) => name.includes(".owner.")),
   ).toBe(false);
-  writeFileSync(
-    `${inbox}.lock`,
-    "groundwork-reflection-lock-v1 999999999 stale\n",
-  );
+  writeFileSync(`${inbox}.lock`, "jig-reflection-lock-v1 999999999 stale\n");
   const stale = await reflection(
     [hard],
     { ...env, LOCK_TIMEOUT: "0" },
@@ -631,7 +625,7 @@ test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
   async () => {
     const { inbox, env } = setupInbox();
     const lock = `${inbox}.lock`;
-    writeFileSync(lock, "groundwork-reflection-lock-v1 999999999 stale\n");
+    writeFileSync(lock, "jig-reflection-lock-v1 999999999 stale\n");
     chmodSync(lock, 0);
     const pending = reflection([hard], { ...env, LOCK_TIMEOUT: "0" }, "win32");
     await Bun.sleep(200);
@@ -651,7 +645,7 @@ test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
   async () => {
     const { inbox, env } = setupInbox();
     const lock = `${inbox}.lock`;
-    writeFileSync(lock, "groundwork-reflection-lock-v1 999999999 stale\n");
+    writeFileSync(lock, "jig-reflection-lock-v1 999999999 stale\n");
     chmodSync(lock, 0);
     const outcome = await reflection([hard], env, "win32");
     chmodSync(lock, 0o644);

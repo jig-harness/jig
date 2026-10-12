@@ -26,7 +26,7 @@ export const POSIX_ONLY_SUITES = [
  * the suite does not run twice. Locally `bun run gates` runs everything.
  */
 export const SEPARATE_SUITES = ["plugin/skills/drive-pr/**"];
-export const SKIP_SEPARATE_ENV = "GROUNDWORK_GATES_SKIP_SEPARATE_SUITES";
+export const SKIP_SEPARATE_ENV = "JIG_GATES_SKIP_SEPARATE_SUITES";
 
 /** The suite patterns this platform and environment leave out of the test step. */
 export function skippedSuites(

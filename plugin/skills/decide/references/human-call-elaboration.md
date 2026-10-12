@@ -60,8 +60,8 @@ bullet), so a long batch stays navigable without turning into a document.
 
 This section is the one canonical home of the writing rules. Every surface
 that asks a human for a call links here and does not restate them. Those
-surfaces are the `/groundwork:decide` escalations and elaborations, a
-`groundwork:review-arbiter` `escalate` ruling, and any planning skill's
+surfaces are the `/jig:decide` escalations and elaborations, a
+`jig:review-arbiter` `escalate` ruling, and any planning skill's
 section on what the human must decide or review. The reader is often a
 product, legal or business stakeholder. English may not be their first
 language, so a long sentence costs the most for the person who has to decide.

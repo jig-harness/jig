@@ -2,7 +2,7 @@
 
 What to do with a review finding that is **real but does not belong in this pull
 request**. Consumer values are declared in the repository's
-`.config/groundwork-overlay.yaml`: `review.deferral_team`, `review.repo_label`,
+`.config/jig.yaml`: `review.deferral_team`, `review.repo_label`,
 and `review.taxonomy` determine where issues go and which labels apply. The
 `pr-followup` and `epic` labels named below are the defaults of the `followup`
 and `epic` roles in `issue_tracker.labels`; read them as the repository's own
@@ -54,7 +54,7 @@ issue later at a higher round cost.
 
 Deferring is a scope decision. Clear-cut cases are decided autonomously by the
 [triage rubric](triage-rubric.md) — and, where the rubric does not settle it,
-by the **Review Arbiter** agent (`groundwork:review-arbiter`). A human
+by the **Review Arbiter** agent (`jig:review-arbiter`). A human
 decides only when the arbiter **escalates**: a genuine product or risk call the
 repo's own evidence cannot answer. Escalations are batched into one question at
 round end and must not stall the rest of the round — proceed with the in-scope

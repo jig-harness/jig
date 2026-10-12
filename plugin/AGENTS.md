@@ -1,8 +1,8 @@
-# Agent instructions: the `groundwork` plugin
+# Agent instructions: the `jig` plugin
 
 These add to the [repository's AGENTS.md](../AGENTS.md) for anything under
 `plugin/`. Claude Code and Codex install this directory from `main` onto every
-machine that uses Groundwork, so a mistake here reaches every repository at
+machine that uses Jig, so a mistake here reaches every repository at
 once.
 
 ## Rules
@@ -16,7 +16,7 @@ once.
   `tools/plugin/plugin.test.ts` checks the skills from a copy.
 - **Consumer values are configuration.** A repository's values (bots, teams,
   labels, branch names, commands) are read at run time from its
-  `.config/groundwork-overlay.yaml`. Every field is documented in
+  `.config/jig.yaml`. Every field is documented in
   [CONFIGURATION.md](CONFIGURATION.md) in the same pull request that adds or
   changes it, with its default and the skills that read it.
 - **Every change ships as a version.** A pull request that changes `plugin/`
@@ -35,7 +35,7 @@ once.
 - **`SKILL.md` is the agent's contract; `README.md` (where a skill has one) is
   the human's page.** Change both when behaviour changes; keep each to its
   reader.
-- **No third-party lineage in procedures.** Groundwork may be published. Do
+- **No third-party lineage in procedures.** Jig may be published. Do
   not bring in a skill, or its procedure text, that came from a public skill
   collection; recommend it in [RECOMMENDED-SKILLS.md](RECOMMENDED-SKILLS.md)
   with credit instead. A permissively licensed library a skill depends on is a
@@ -45,7 +45,7 @@ once.
 ## Verifying a change
 
 ```sh
-GROUNDWORK_GATES_SKIP_SEPARATE_SUITES=1 bun run gates
+JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates
 bun test --timeout 60000 plugin/skills/<skill>/__tests__/<file>.test.ts
 ```
 

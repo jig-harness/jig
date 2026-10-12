@@ -156,7 +156,7 @@ fill the `<...>` placeholders with your project's concrete tools:
 | Research spike | research note | `research-note-template.md` | the stage that was blocked; decisions → ADRs (M5) |
 | Requirements | PRD | `prd-template.md` | architecture, design, epic |
 | Architecture | architecture doc + ADRs | `architecture-template.md` | design, epic |
-| Design-prototype loop | accepted prototype | `<design-brief>` (e.g. the Groundwork `/groundwork:design-brief-builder` skill) + your `<design-prototype>` skill/tool | back into PRD / architecture; then epic |
+| Design-prototype loop | accepted prototype | `<design-brief>` (e.g. the Jig `/jig:design-brief-builder` skill) + your `<design-prototype>` skill/tool | back into PRD / architecture; then epic |
 | Epic decomposition | epic + flag-labelled sub-issues | M9 `ISSUE-TEMPLATES.md` (epic + sub-issue skeletons), filed via `<tracker>` | the PR loop (M7), via labels (M9 / M3) |
 
 ## Where this is not a straight line

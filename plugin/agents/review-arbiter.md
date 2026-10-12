@@ -143,7 +143,7 @@ thread: <threadId or url>
 verdict: fix-now | rejected | wont-fix | defer | escalate
 rationale: <ONE sentence, concrete, citing the code/rule/priority that decided it>
 reply-draft: <the reply body, opening with the matching outcome token per
-  `/groundwork:resolve-review-comments` § 3. When the verdict came from a `declined`
+  `/jig:resolve-review-comments` § 3. When the verdict came from a `declined`
   ladder stance (step 4), a `wont-fix`/`defer` draft here is that verdict's
   own `reply` field, copied verbatim — never a freshly composed sentence, and
   for `defer` the follow-up link goes before its trailing `<!-- {marker} -->`

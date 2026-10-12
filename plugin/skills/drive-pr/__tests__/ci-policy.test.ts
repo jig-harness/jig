@@ -297,7 +297,7 @@ esac
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH ?? ""}`,
-      GROUNDWORK_OVERLAY: overlay,
+      JIG_OVERLAY: overlay,
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
       DRIVE_PR_ALLOW_TEST_CI_HOLD_SEED: "1",

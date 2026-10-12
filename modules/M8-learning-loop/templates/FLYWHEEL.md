@@ -94,8 +94,8 @@ The same shape, applied to process feedback:
 3. Promotion is a **review point**, not an automatic dump — a wrong "lesson"
    promoted becomes everyone's wrong lesson.
 
-With Groundwork's plugin, this step is
-[`/groundwork:promote-memory`](https://github.com/docomply/jig/blob/main/plugin/skills/promote-memory/SKILL.md).
+With Jig's plugin, this step is
+[`/jig:promote-memory`](https://github.com/docomply/jig/blob/main/plugin/skills/promote-memory/SKILL.md).
 
 ## Anti-patterns this loop forbids
 

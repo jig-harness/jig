@@ -729,7 +729,7 @@ describe.skipIf(process.platform === "win32")(
             "AI review|CodeRabbit",
           ],
           fix,
-          { env: { GROUNDWORK_OVERLAY: overlay } },
+          { env: { JIG_OVERLAY: overlay } },
         );
         expect({ code: result.code, stderr: result.stderr }).toEqual({
           code: scenario.code,
@@ -773,7 +773,7 @@ describe.skipIf(process.platform === "win32")(
           JSON.stringify({ review: { required_checks: scenario.required } }),
         );
         const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-          env: { GROUNDWORK_OVERLAY: overlay },
+          env: { JIG_OVERLAY: overlay },
         });
         expect(r.code).toBe(scenario.code);
         expect(r.stderr).not.toContain("converged:");
@@ -796,7 +796,7 @@ describe.skipIf(process.platform === "win32")(
         JSON.stringify({ review: { required_checks: ["CodeRabbit"] } }),
       );
       const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-        env: { GROUNDWORK_OVERLAY: overlay },
+        env: { JIG_OVERLAY: overlay },
       });
       expect(r.code).toBe(7);
     });
@@ -813,7 +813,7 @@ describe.skipIf(process.platform === "win32")(
         }),
       );
       const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-        env: { GROUNDWORK_OVERLAY: overlay },
+        env: { JIG_OVERLAY: overlay },
       });
       expect(r.code).toBe(4);
       expect(r.stderr).toMatch(/waiting for: CodeRabbit$/m);
@@ -829,7 +829,7 @@ describe.skipIf(process.platform === "win32")(
         JSON.stringify({ review: { required_checks: ["custom-check"] } }),
       );
       const result = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-        env: { GROUNDWORK_OVERLAY: overlay },
+        env: { JIG_OVERLAY: overlay },
       });
       expect(result.code).toBe(3);
     });
@@ -845,7 +845,7 @@ describe.skipIf(process.platform === "win32")(
         "await-round.ts",
         [fix.pr, "--once", "--job-pattern", "AI review"],
         fix,
-        { env: { GROUNDWORK_OVERLAY: overlay } },
+        { env: { JIG_OVERLAY: overlay } },
       );
       expect(result.code).toBe(2);
       expect(result.stderr).toContain("excluded by --job-pattern");
@@ -2923,7 +2923,7 @@ describe.skipIf(process.platform === "win32")(
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             RRC_FIX: fix.dir,
             GH_CALL_TIMEOUT: "20",
-            GROUNDWORK_GH_CACHE_DIR: join(fix.dir, "etag-cache"),
+            JIG_GH_CACHE_DIR: join(fix.dir, "etag-cache"),
             ...env,
           },
         },

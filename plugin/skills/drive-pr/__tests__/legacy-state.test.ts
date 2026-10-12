@@ -184,7 +184,7 @@ describe("ensureMigratedFromLegacy", () => {
 
   it("fsyncs EVERY newly created ancestor, not just newDir’s immediate parent — the multi-level case", async () => {
     // `{ recursive: true }` can create several path components at once (a fresh
-    // $HOME with no `~/.local/state/groundwork` at all yet creates it,
+    // $HOME with no `~/.local/state/jig` at all yet creates it,
     // `drive-pr`, and the clone directory in one `mkdirSync` call). Fsyncing
     // only `dirname(newDir)` protects the deepest entry alone — the newly
     // created intermediate levels' own entries in THEIR parents would still be

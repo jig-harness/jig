@@ -1,6 +1,6 @@
 # The auditor
 
-Point groundwork at an existing repository and get back an analysis report
+Point Jig at an existing repository and get back an analysis report
 with prioritized, actionable recommendations. This is the primary brownfield
 entry point ([principle 6](../principles/06-audit-first.md)) and, re-run
 periodically, a practices-drift regression check.
@@ -33,7 +33,7 @@ follow [portfolio-methodology.md](portfolio-methodology.md). The comparison
 pass finds copied practices that have drifted, missing organization-wide
 enforcement, and capabilities that need a maintained home outside any one
 application repo. It does not turn organization-specific policy into a
-Groundwork module.
+Jig module.
 
 **Scored maturity assessment**: every module M0–M12 ships formal
 `maturity.yaml` criteria, so an audit scores the *whole* module map against

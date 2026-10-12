@@ -45,7 +45,7 @@
  *     the comment url is the cheap, already-fetched identifier for that,
  *     since GraphQL returns it per comment node regardless.
  *   - threadId → GraphQL node id; the SINGLE key for BOTH reply-to-thread.ts and
- *     resolve-thread.ts (per `/groundwork:resolve-review-comments` § Human threads)
+ *     resolve-thread.ts (per `/jig:resolve-review-comments` § Human threads)
  *   - comments → the thread's replies (finding + any back-and-forth) for the
  *     address/reject call. Capped at 100 and NOT paginated, so a very long
  *     thread can omit its most recent replies — including an outcome already

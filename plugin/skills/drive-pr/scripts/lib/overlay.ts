@@ -1,6 +1,6 @@
 /**
- * The consumer repository's drive-loop values, read from its Groundwork
- * configuration file (`.config/groundwork-overlay.yaml`) through the review
+ * The consumer repository's drive-loop values, read from its Jig
+ * configuration file (`.config/jig.yaml`) through the review
  * skill's reader.
  *
  * Every field here is optional and has a mechanism default, so a repository
@@ -282,7 +282,7 @@ export async function baseBranch(
 
 /** The sentence a caller prints when `baseBranch` returns `null`. */
 export const BASE_BRANCH_UNKNOWN =
-  "the base branch is unknown: set repository.base_branch in .config/groundwork-overlay.yaml (or DRIVE_PR_BASE_BRANCH), or give this clone an origin/HEAD (git remote set-head origin --auto)";
+  "the base branch is unknown: set repository.base_branch in .config/jig.yaml (or DRIVE_PR_BASE_BRANCH), or give this clone an origin/HEAD (git remote set-head origin --auto)";
 
 /**
  * The branch pull request `pr` targets, without the remote prefix, or `null`

@@ -1,7 +1,7 @@
 /**
  * The consumer repository's pull-request policy: how agents open and stack
  * pull requests. Declared values come from the `pull_requests`
- * section of `.config/groundwork-overlay.yaml`; the facts a repository already
+ * section of `.config/jig.yaml`; the facts a repository already
  * states elsewhere (its default branch, pull-request template, title
  * convention, delete-branch-on-merge setting, code owners) are derived
  * here instead of being asked for twice.

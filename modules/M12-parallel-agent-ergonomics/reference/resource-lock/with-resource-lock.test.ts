@@ -22,7 +22,7 @@ const existsSync = (path: string) => {
     return false;
   }
 };
-const scratch = mkdtempSync(join(tmpdir(), "groundwork-lock-test-")),
+const scratch = mkdtempSync(join(tmpdir(), "jig-lock-test-")),
   gate = join(import.meta.dir, "with-resource-lock.ts");
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 const environment = (extra: Record<string, string> = {}) => ({
@@ -80,7 +80,7 @@ test("actual concurrent critical sections serialize; bypass sensitivity interlea
   }
 });
 test("live holder times out, CI and explicit bypass ignore it", async () => {
-  const lock = join(scratch, "groundwork-lock.live");
+  const lock = join(scratch, "jig-lock.live");
   if (process.platform === "win32") writeFileSync(lock, String(process.pid));
   else symlinkSync(String(process.pid), lock);
   try {
@@ -126,7 +126,7 @@ test("dead holder and foreign directory are reclaimed", async () => {
   });
   await dead.exited;
   for (const name of ["stale", "foreign"]) {
-    const path = join(scratch, `groundwork-lock.${name}`);
+    const path = join(scratch, `jig-lock.${name}`);
     if (name === "stale") {
       if (process.platform === "win32") writeFileSync(path, String(dead.pid));
       else symlinkSync(String(dead.pid), path);
@@ -155,7 +155,7 @@ test("command result propagates and lock releases", async () => {
         ])
       ).code,
     ).toBe(code);
-  expect(existsSync(join(scratch, "groundwork-lock.exit"))).toBe(false);
+  expect(existsSync(join(scratch, "jig-lock.exit"))).toBe(false);
 });
 for (const [args, env] of [
   [[], {}],
@@ -192,7 +192,7 @@ test("Windows hard-link protocol serializes real processes and reclaims stale fi
   expect(readFileSync(log, "utf8")).toBe(
     "ENTER\nEXIT\nENTER\nEXIT\nENTER\nEXIT\n",
   );
-  const lock = join(scratch, "groundwork-lock.hardlink");
+  const lock = join(scratch, "jig-lock.hardlink");
   writeFileSync(lock, String(process.pid));
   try {
     expect(
@@ -227,7 +227,7 @@ const deadPid = async () => {
   return dead.pid;
 };
 test("wait is capped at the deadline even with a long poll interval", async () => {
-  const lock = join(scratch, "groundwork-lock.capped");
+  const lock = join(scratch, "jig-lock.capped");
   record(lock, process.pid);
   try {
     const started = performance.now();
@@ -251,7 +251,7 @@ test("wait is capped at the deadline even with a long poll interval", async () =
   }
 });
 test("claim left by a crashed reclaimer does not block recovery", async () => {
-  const lock = join(scratch, "groundwork-lock.orphan-claim"),
+  const lock = join(scratch, "jig-lock.orphan-claim"),
     deadHolder = await deadPid(),
     deadReclaimer = await deadPid();
   record(lock, deadHolder);
@@ -267,7 +267,7 @@ test("claim left by a crashed reclaimer does not block recovery", async () => {
   ).toBe(false);
 });
 test("claim held by a live reclaimer is respected and the stale lock stays", async () => {
-  const lock = join(scratch, "groundwork-lock.live-claim"),
+  const lock = join(scratch, "jig-lock.live-claim"),
     deadHolder = await deadPid(),
     claim = `${lock}.reclaim.${deadHolder}`;
   record(lock, deadHolder);
@@ -290,7 +290,7 @@ test("claim held by a live reclaimer is respected and the stale lock stays", asy
 });
 test("many contenders recovering one dead lock never overlap and leave nothing behind", async () => {
   const log = join(scratch, "recover-events.log"),
-    lock = join(scratch, "groundwork-lock.recover"),
+    lock = join(scratch, "jig-lock.recover"),
     program =
       "const fs=require('node:fs');fs.appendFileSync(process.env.LOG,'ENTER\\n');await Bun.sleep(30);fs.appendFileSync(process.env.LOG,'EXIT\\n');";
   for (let round = 0; round < 5; round++) {

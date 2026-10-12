@@ -48,6 +48,6 @@ freshness checked, a named owner), **M7 Strict** (HITL decision registry,
 merge reserved to humans), **M8** (learning loop with regression corpus), **M10 Standard+**
 (verify-then-promote, environment separation), **M11** (process
 observability/audit trails). Compliance artifacts (data-processing registers,
-threat models) are out of groundwork's scope but hook into M4's governance and
+threat models) are out of Jig's scope but hook into M4's governance and
 M9's flag labels (e.g., a "privacy-relevant" label firing a register-update
 gate).

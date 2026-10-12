@@ -9,7 +9,7 @@ allowed-tools: "Read Write Edit Grep Glob Bash(bun *) Bash(git *) Bash(gh *)"
 # Architecture decision records
 
 Manage architecture decision records ([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) and the
-rules extracted from them. Groundwork's ADR module
+rules extracted from them. Jig's ADR module
 ([M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)) defines the practice: one
 short numbered record per decision, changed only by amendment or supersession,
 with every pattern-checkable decision turned into a rule a gate enforces.
@@ -33,7 +33,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/locate.ts"
 It prints, as JSON, the records directory, the file naming in use
 (`ADR-NNNN-<slug>.md` or `NNNN-<slug>.md`), the highest number and the next
 one, and the decision-rules file. It reads two optional fields from
-`.config/groundwork-overlay.yaml`:
+`.config/jig.yaml`:
 
 - `adr.directory`: where the records live. Default: the first of `docs/adr`,
   `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`,
@@ -163,7 +163,7 @@ and its interpreter, and create one only if the user agrees.
    text is the regular expression as written: double quotes invite YAML
    backslash-escaping mistakes.
 4. For each semantic rule: if the file has a `semantic_rules` list (read by a
-   review harness such as `/groundwork:review`), add it there, in the shape of
+   review harness such as `/jig:review`), add it there, in the shape of
    the entries already present, typically:
 
    ```yaml
@@ -256,7 +256,7 @@ clock."
 
 ## Integration
 
-- **`/groundwork:review`** reads the rules file when it checks a change
+- **`/jig:review`** reads the rules file when it checks a change
   against the recorded decisions: pattern rules mechanically, semantic rules
   by reasoning.
 - **Continuous integration** can run the pattern rules on every change with

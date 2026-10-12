@@ -2,7 +2,7 @@
 /**
  * The one-time, per-clone migration `legacy-state.ts`'s guard sends a human
  * to: copies drive-pr's durable state out of the legacy
- * `--git-common-dir` location into the new default (`~/.local/state/groundwork/drive-pr/
+ * `--git-common-dir` location into the new default (`~/.local/state/jig/drive-pr/
  * <cloneKey>/`), then marks this clone migrated so `resolveStateDir` never
  * re-scans the legacy location again.
  *

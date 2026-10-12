@@ -1,20 +1,20 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reviewConfig } from "../scripts/lib/consumer.ts";
 
 function withOverlay(value: unknown, check: () => void): void {
   const directory = mkdtempSync(join(tmpdir(), "review-consumer-"));
-  const previous = process.env.GROUNDWORK_OVERLAY;
+  const previous = process.env.JIG_OVERLAY;
   try {
     const path = join(directory, "overlay.json");
     writeFileSync(path, JSON.stringify(value));
-    process.env.GROUNDWORK_OVERLAY = path;
+    process.env.JIG_OVERLAY = path;
     check();
   } finally {
-    if (previous === undefined) delete process.env.GROUNDWORK_OVERLAY;
-    else process.env.GROUNDWORK_OVERLAY = previous;
+    if (previous === undefined) delete process.env.JIG_OVERLAY;
+    else process.env.JIG_OVERLAY = previous;
     rmSync(directory, { recursive: true, force: true });
   }
 }

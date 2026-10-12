@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "groundwork",
+      "name": "jig",
       "dependencies": {
         "js-yaml": "4.1.1",
       },

@@ -7,7 +7,7 @@
  * `git rev-parse --git-common-dir` call plus the filesystem side effects that
  * follow it, so a stub of either would not be testing this function. `$HOME`
  * is always faked to a scratch directory: this suite must never read or
- * write the real `~/.local/state/groundwork`.
+ * write the real `~/.local/state/jig`.
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
@@ -158,11 +158,11 @@ describe("resolveStateDir", () => {
     }
   });
 
-  it("defaults to a path under $HOME/.local/state/groundwork/drive-pr, outside the repo tree", () => {
+  it("defaults to a path under $HOME/.local/state/jig/drive-pr, outside the repo tree", () => {
     const r = probeResolveStateDir(repoA, { HOME: homeA });
     expect(r.code).toBe(0);
     expect(r.stdout).toStartWith(
-      `OK:${join(homeA, ".local", "state", "groundwork", "drive-pr")}`,
+      `OK:${join(homeA, ".local", "state", "jig", "drive-pr")}`,
     );
     expect(r.stdout).not.toContain(repoA);
   });
@@ -231,7 +231,7 @@ describe("resolveStateDir", () => {
       const r = probeResolveStateDir(repoD, { HOME: homeD });
       expect(r.code).toBe(0);
       expect(r.stdout).toStartWith(
-        `OK:${join(homeD, ".local", "state", "groundwork", "drive-pr")}`,
+        `OK:${join(homeD, ".local", "state", "jig", "drive-pr")}`,
       );
     } finally {
       rmSync(repoD, { recursive: true, force: true });

@@ -23,9 +23,9 @@ possible. The caller performing a push owns its separate liveness check.
 
 ## Installation
 
-The skill ships in the `groundwork` plugin, installed once per machine for
-Claude Code and Codex; see [Groundwork's skills](../../README.md#install-the-plugin).
-In a session it is `/groundwork:resolve-review-comments`. Its scripts run from
+The skill ships in the `jig` plugin, installed once per machine for
+Claude Code and Codex; see [Jig's skills](../../README.md#install-the-plugin).
+In a session it is `/jig:resolve-review-comments`. Its scripts run from
 the plugin directory with [Bun](https://bun.sh) and act on the repository the
 agent is working in, so the target repository needs no copy of the skill and
 need not use JavaScript. Git and an authenticated GitHub CLI (`gh`) are also
@@ -33,12 +33,12 @@ required.
 
 ## Consumer configuration
 
-Each repository keeps its values in `.config/groundwork-overlay.yaml` (JSON is
+Each repository keeps its values in `.config/jig.yaml` (JSON is
 valid YAML, so a JSON-formatted file works too). The scripts read it from the
 root of the repository the agent is working in; the procedure starts by
 printing it (`scripts/consumer-config.ts`) and stops when it is missing or
-invalid. `GROUNDWORK_OVERLAY` points at another file and
-`GROUNDWORK_CONSUMER_ROOT` at another repository root; tests use both. Fields
+invalid. `JIG_OVERLAY` points at another file and
+`JIG_CONSUMER_ROOT` at another repository root; tests use both. Fields
 the skill does not read are ignored, so a configuration shared with other
 tooling can carry more.
 
@@ -92,15 +92,15 @@ which does not guarantee coverage of a consumer-defined reviewer set.
 Consumers retain policy stances, change-proportional validation commands,
 optional sibling-claim sweep commands, and any review-agent definition of their
 own (the plugin ships the `review-arbiter` agent) in their own instructions. Late-round triage bands remain consumer-owned in
-`.config/review-triage.yaml` (`GROUNDWORK_REVIEW_TRIAGE_CONFIG` points at
+`.config/review-triage.yaml` (`JIG_REVIEW_TRIAGE_CONFIG` points at
 another file); absent or unreadable state restores the ordinary acceptance
 rubric and reports the anomaly rather than declining uncertain work.
 Do not infer another repository's policy from the examples in this skill.
 
 ## Usage and optional integrations
 
-Invoke `/groundwork:resolve-review-comments [PR-number]` (Claude Code), or ask
-Codex to use the `groundwork:resolve-review-comments` skill. Use `--dry-run` to inspect a plan,
+Invoke `/jig:resolve-review-comments [PR-number]` (Claude Code), or ask
+Codex to use the `jig:resolve-review-comments` skill. Use `--dry-run` to inspect a plan,
 or `--bots-only` for an automated loop. GitHub App authorship defines that flag's
 thread filter; consumer bot names do not silently widen it to human threads.
 

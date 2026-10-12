@@ -12,7 +12,7 @@ This skill reviews changes to GitHub Actions workflows (the YAML files under
 `.github/workflows/` and the composite actions under `.github/actions/`) for
 security, correctness, performance, and fit with the repository's own CI
 ([continuous integration](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) architecture.
-The pipeline it checks against is the one Groundwork module
+The pipeline it checks against is the one Jig module
 [M10 (environments & deploy)](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/README.md)
 describes: gates on every pull request, verification after merge, deploys of
 verified builds only, and a manual promotion to production.
@@ -30,7 +30,7 @@ It is the reference for scope, triggers and job order in every phase below,
 and the only reference for Phase 4.
 
 1. Read `github_actions.conventions_doc` from
-   `.config/groundwork-overlay.yaml`: the path of the document that describes
+   `.config/jig.yaml`: the path of the document that describes
    the repository's workflows and their conventions.
 2. When the field or the file is absent, look for such a document: search the
    instruction file (`AGENTS.md` or equivalent) and the docs tree for one that
@@ -38,7 +38,7 @@ and the only reference for Phase 4.
 3. When there is none, review against the generic guidance in this skill only,
    skip Phase 4's drift comparison, and say so in the report.
 
-[Groundwork's M10 template](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md)
+[Jig's M10 template](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md)
 is one common shape for such a document. It splits delivery into four stages,
 each with one job and a hard boundary to the next:
 
@@ -256,8 +256,8 @@ alignment.
 
 | Need | Use |
 |------|-----|
-| Fix a red CI run on a branch or pull request | `/groundwork:fix-ci` |
-| File an issue for a workflow bug | the repository's issue-filing command (`issue_tracker.file_command` in `.config/groundwork-overlay.yaml`) |
+| Fix a red CI run on a branch or pull request | `/jig:fix-ci` |
+| File an issue for a workflow bug | the repository's issue-filing command (`issue_tracker.file_command` in `.config/jig.yaml`) |
 
 ## Checks the repository may already enforce
 

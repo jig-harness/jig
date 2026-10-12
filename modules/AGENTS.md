@@ -31,7 +31,7 @@ maturity.yaml  # machine-evaluable criteria the auditor scores against
   and fixtures. A reader adapts them, so they take their inputs as arguments
   and carry no repository's paths. Many share helpers in the repository's
   `lib/` (`lib/module-gates.ts`, `lib/cli.ts`); a reader runs them from a
-  pinned Groundwork checkout or vendors `lib/` with them, and the module's
+  pinned Jig checkout or vendors `lib/` with them, and the module's
   `mappings.md` recipes say which.
 - **`templates/`** are copied into other repositories: links in them are
   absolute (`https://github.com/docomply/jig/blob/main/…`) because a

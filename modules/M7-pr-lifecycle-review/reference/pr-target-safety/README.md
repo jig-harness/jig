@@ -70,6 +70,6 @@ direction for a security gate; a precise-parse version belongs in whatever
 language the repo already uses (see [M3](../../../M3-change-area-catalog/)'s
 same reasoning about graph jobs).
 
-The native gate uses the shared implementation in Groundwork’s
+The native gate uses the shared implementation in Jig’s
 [`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
-`lib/` together in the pinned Groundwork checkout when adopting it.
+`lib/` together in the pinned Jig checkout when adopting it.

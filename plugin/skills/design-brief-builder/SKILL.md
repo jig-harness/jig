@@ -17,7 +17,7 @@ user-interface request into the numbered `uploads/` bundle you hand to an
 external Claude Design session. The design work itself happens in that
 session; this skill produces the *inputs* and runs the audit gate that decides
 whether they are ready to submit. It runs the first step of the
-design-prototype loop in Groundwork's feature-delivery pipeline module
+design-prototype loop in Jig's feature-delivery pipeline module
 ([M6](https://github.com/docomply/jig/blob/main/modules/M6-feature-delivery-pipeline/README.md)).
 
 **Not this skill:** generating a prototype inside the repository, turning a
@@ -38,7 +38,7 @@ is for. Never `cd` into the skill directory.
 
 ## Consumer configuration
 
-The repository's design sources are read from `.config/groundwork-overlay.yaml`.
+The repository's design sources are read from `.config/jig.yaml`.
 Every field is optional:
 
 | Field | What it sets | When absent |
@@ -175,7 +175,7 @@ design called `Parcel*` for an entity the code calls `Shipment` becomes
   process, if it has one, or transliterate a single page directly.
 - Score the bundle against the kit's rubric, if it has one. Anything below the
   rubric's pass bar gets a retrospective line wherever the repository records
-  them (Groundwork module M8, learning loop).
+  them (Jig module M8, learning loop).
 
 ## References
 

@@ -10,7 +10,7 @@
  * Against a stub `gh` that logs every invocation to `calls.log`, so a test
  * reads off what actually went over the wire (GraphQL `pr view` vs REST
  * `api -i`) instead of inferring it. The cache is forced off
- * (`GROUNDWORK_GH_CACHE=off`, which beats an inherited `GROUNDWORK_GH_CACHE_DIR`)
+ * (`JIG_GH_CACHE=off`, which beats an inherited `JIG_GH_CACHE_DIR`)
  * so nothing here can be answered from a neighbour's entry — except the one
  * test that points it at its own fresh directory to exercise revalidation.
  */
@@ -84,8 +84,8 @@ const ENV_KEYS = [
   "GH_STUB_DIR",
   "GH_CALL_TIMEOUT",
   "GH_REPO",
-  "GROUNDWORK_GH_CACHE",
-  "GROUNDWORK_GH_CACHE_DIR",
+  "JIG_GH_CACHE",
+  "JIG_GH_CACHE_DIR",
 ];
 
 beforeAll(() => {
@@ -111,9 +111,9 @@ beforeEach(() => {
   process.env.PATH = `${binDir}:${savedEnv.PATH}`;
   process.env.GH_STUB_DIR = fixDir;
   process.env.GH_CALL_TIMEOUT = "20";
-  // Off beats an inherited GROUNDWORK_GH_CACHE_DIR, which itself beats NODE_ENV=test.
-  process.env.GROUNDWORK_GH_CACHE = "off";
-  delete process.env.GROUNDWORK_GH_CACHE_DIR;
+  // Off beats an inherited JIG_GH_CACHE_DIR, which itself beats NODE_ENV=test.
+  process.env.JIG_GH_CACHE = "off";
+  delete process.env.JIG_GH_CACHE_DIR;
   delete process.env.GH_REPO;
 });
 
@@ -149,8 +149,8 @@ describe("readPrState — a numeric PR", () => {
   );
 
   it("revalidates a second read with If-None-Match and takes the state from the cached body on 304", async () => {
-    process.env.GROUNDWORK_GH_CACHE_DIR = join(fixDir, "cache");
-    delete process.env.GROUNDWORK_GH_CACHE;
+    process.env.JIG_GH_CACHE_DIR = join(fixDir, "cache");
+    delete process.env.JIG_GH_CACHE;
     // Identifies the repository even in a remote-less checkout.
     process.env.GH_REPO = "acme/widgets";
     restBody("closed", true);

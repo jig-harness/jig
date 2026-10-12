@@ -1,6 +1,6 @@
 /**
  * The consumer's tracker settings, read from `issue_tracker` in
- * `.config/groundwork-overlay.yaml`:
+ * `.config/jig.yaml`:
  *
  *   issue_tracker:
  *     adapter: linear          # which adapter answers; default `linear`

@@ -521,7 +521,7 @@ describe("advisory only", () => {
     const required = [
       "package.json",
       "scripts/gates.ts",
-      ".config/groundwork-overlay.yaml",
+      ".config/jig.yaml",
       ".claude-plugin/marketplace.json",
       "plugin/.claude-plugin/plugin.json",
       "plugin/.codex-plugin/plugin.json",

@@ -3,7 +3,7 @@ import { siblingSkill } from "./lib/consumer.ts";
 /**
  * Reply IN-THREAD on a review thread, keyed off its GraphQL node id — the SAME
  * id that drives resolve-thread.ts (one id for both actions, per
- * `/groundwork:resolve-review-comments` § Human threads). Uses addPullRequestReviewThreadReply so the reply
+ * `/jig:resolve-review-comments` § Human threads). Uses addPullRequestReviewThreadReply so the reply
  * always lands inside the thread, never as a detached top-level comment, so
  * the fix/reject rationale stays attached to the finding. Prints the new
  * comment url.

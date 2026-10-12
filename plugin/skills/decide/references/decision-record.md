@@ -158,5 +158,5 @@ will contradict the record's own carve-outs.
 Phase 4's routing table in [`../SKILL.md`](../SKILL.md) decides. In short: a
 comment on the live issue by default; an `hitl`-labelled issue for an
 escalation; an ADR only when the decision constrains future code beyond the
-change that prompted it, and then via `/groundwork:adr` so the
+change that prompted it, and then via `/jig:adr` so the
 `adr-rules.yaml` extraction happens too.

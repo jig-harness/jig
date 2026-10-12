@@ -19,11 +19,11 @@ than a formatting habit — see [Reply format](#reply-format).
 This is the runnable form of the [comment-resolution loop](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in
 [M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md).
 
-Groundwork maintains this procedure and ships it as the `groundwork` plugin for
+Jig maintains this procedure and ships it as the `jig` plugin for
 Claude Code and Codex, installed once per machine. Each repository supplies its
-own values in `.config/groundwork-overlay.yaml`; consumer instructions supply
+own values in `.config/jig.yaml`; consumer instructions supply
 their policy, issue taxonomy and any validation or sibling sweep commands. Fix
-the shared mechanism in Groundwork; update values in the consumer. Read
+the shared mechanism in Jig; update values in the consumer. Read
 [README.md](README.md) for configuration, runtime requirements and limitations.
 
 ### Paths and working directory
@@ -248,11 +248,11 @@ and **every reply opens with that outcome in bold** — see
 no synonyms. Materiality and scope calls follow the
 [triage rubric](references/triage-rubric.md); a thread the rubric does not
 decide goes to the [**Review Arbiter**](https://github.com/docomply/jig/blob/main/GLOSSARY.md) agent
-(`groundwork:review-arbiter`, shipped with the plugin; in Codex, see the
+(`jig:review-arbiter`, shipped with the plugin; in Codex, see the
 [Codex notes](../../README.md#codex-notes)), and only an arbiter escalation
 interrupts the user. When that escalation turns out to be an **architectural**
 question rather than a product/scope one — which pattern, which contract
-shape, which boundary — route it through the `decide` skill (`/groundwork:decide`)
+shape, which boundary — route it through the `decide` skill (`/jig:decide`)
 before interrupting: it checks the question against the repository's
 architecture decision records ([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) and standing policy first, and a finding that contradicts settled policy is answered from
 the corpus rather than from the user's attention.
@@ -788,7 +788,7 @@ Both harnesses use the same stop condition; only the pass invocation differs.
 model self-paces on the reviewer's completion rather than a wall clock:
 
 ```
-/loop /groundwork:resolve-review-comments --bots-only
+/loop /jig:resolve-review-comments --bots-only
 ```
 
 The pass itself runs step 2 of this workflow, which calls `await-round.ts` — so
@@ -801,11 +801,11 @@ runs `await-round.ts` between passes. The pass command is plain **argv after
 run on Windows):
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/converge.ts" --bots-only -- codex exec "Use the groundwork:resolve-review-comments skill with --bots-only"
+bun "${CLAUDE_SKILL_DIR}/scripts/converge.ts" --bots-only -- codex exec "Use the jig:resolve-review-comments skill with --bots-only"
 ```
 
 `converge.ts` works for any harness — Claude Code users who want the loop
-outside an interactive session can put `claude -p "/groundwork:resolve-review-comments
+outside an interactive session can put `claude -p "/jig:resolve-review-comments
 --bots-only"` after the `--` instead. It bounds itself with `--max-rounds`
 (default 10) so a finding the agent cannot fix cannot loop forever. When you
 name a PR explicitly, the pass command must name the same PR (checked as a
@@ -839,9 +839,9 @@ the checks verdict:
   of them is a miss.
 
 The persisted part of that cache (PR-body ETags and `gh repo view` results)
-lives in `$GROUNDWORK_GH_CACHE_DIR` (default `~/.cache/groundwork/gh-cache`), one bounded,
+lives in `$JIG_GH_CACHE_DIR` (default `~/.cache/jig/gh-cache`), one bounded,
 overwritten file per request; check-signal ETags are process-local and never
-written to disk. `GROUNDWORK_GH_CACHE=off` disables the on-disk cache. Under `NODE_ENV=test` it is off unless a
+written to disk. `JIG_GH_CACHE=off` disables the on-disk cache. Under `NODE_ENV=test` it is off unless a
 directory is given, so a suite that forgets to isolate itself runs uncached
 rather than reading another test's answer. The `drive-pr` skill carries its
 own copy of this cache code (`drive-pr/scripts/lib/gh-conditional.ts`).

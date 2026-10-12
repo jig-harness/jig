@@ -96,13 +96,13 @@ What this module provides:
   [`maturity.yaml`](maturity.yaml).
 
 The self-tests for both reference gates are in
-[`scripts/freshness.test.ts`](../../scripts/freshness.test.ts). Groundwork runs
+[`scripts/freshness.test.ts`](../../scripts/freshness.test.ts). Jig runs
 this module on itself: `bun run gates` runs the repository's gate set in order,
 CI runs the same command on every pull request, and the order is stated in the
 root [`AGENTS.md`](../../AGENTS.md). The
-[`/groundwork:github-actions`](../../plugin/skills/github-actions/SKILL.md)
+[`/jig:github-actions`](../../plugin/skills/github-actions/SKILL.md)
 skill checks workflow changes against this module's pin-and-update invariant,
-and [`/groundwork:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) repairs a red
+and [`/jig:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) repairs a red
 gate run from its log and verifies the fix locally before pushing.
 
 Third-party automation integrity (core piece 7) is stated as the invariant,

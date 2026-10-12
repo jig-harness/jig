@@ -103,7 +103,7 @@ The model as a copyable narrative is [`templates/TELEMETRY.md`](templates/TELEME
 
 ### Runnable form
 
-Groundwork's [`drive-pr`](../../plugin/skills/drive-pr/README.md) skill measures
+Jig's [`drive-pr`](../../plugin/skills/drive-pr/README.md) skill measures
 the review process it runs, as scripts a repository can call on its own:
 
 | Script | What it measures |

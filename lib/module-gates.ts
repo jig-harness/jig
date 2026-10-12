@@ -1121,13 +1121,13 @@ export async function reflection(
   // existing protocol; Windows hard-links a prewritten file without requiring
   // symbolic-link privileges. Neither protocol reclaims a foreign/stale lock.
   const fileOwners = platform === "win32";
-  const ownerRecord = `groundwork-reflection-lock-v1 ${owner} ${randomUUID()}\n`;
+  const ownerRecord = `jig-reflection-lock-v1 ${owner} ${randomUUID()}\n`;
   const ownerFile = `${lock}.owner.${randomUUID()}`;
   const lockHolder = () => {
     if (!fileOwners) return readlinkSync(lock);
     const record = readFileSync(lock, "utf8");
     const match = record.match(
-      /^groundwork-reflection-lock-v1 ([1-9][0-9]*) [A-Za-z0-9-]+\n$/,
+      /^jig-reflection-lock-v1 ([1-9][0-9]*) [A-Za-z0-9-]+\n$/,
     );
     if (!match) throw new OwnerRecordError();
     return match[1] || "";

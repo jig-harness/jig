@@ -37,7 +37,7 @@ const fixtures = join(import.meta.dir, "tests/fixtures");
 const trackerPatterns = join(fixtures, "tracker-key-patterns.txt");
 const temporary: string[] = [];
 function temp(): string {
-  const path = mkdtempSync(join(tmpdir(), "groundwork-gates-"));
+  const path = mkdtempSync(join(tmpdir(), "jig-gates-"));
   temporary.push(path);
   return path;
 }
@@ -87,7 +87,7 @@ const cases: [string, string, string[], number][] = [
 for (const [gate, fixture, args, status] of cases)
   test(`${gate}: ${fixture} exits ${status}`, () => {
     expectSpawnExit(run(gate, args, join(fixtures, fixture)), status);
-    if (process.env.GROUNDWORK_BASH_PARITY === "1") {
+    if (process.env.JIG_BASH_PARITY === "1") {
       const legacy = safeSpawn(
         [
           "bash",
@@ -115,7 +115,7 @@ for (const [name, status] of [
       "main",
     ];
     expectSpawnExit(run("check-branch-protection", args, tmpdir()), status);
-    if (process.env.GROUNDWORK_BASH_PARITY === "1")
+    if (process.env.JIG_BASH_PARITY === "1")
       expectSpawnExit(
         safeSpawn([
           "bash",
@@ -244,9 +244,9 @@ test("the real patterns reject the original tracker keys and organization name, 
   write(
     "README.md",
     [
-      `Install from https://github.com/${name.toLowerCase()}/groundwork.git`,
-      `See https://github.com/${name.toLowerCase()}/groundwork/blob/main/README.md`,
-      `Hosted at https://github.com/${name.toLowerCase()}/groundwork.`,
+      `Install from https://github.com/${name.toLowerCase()}/jig.git`,
+      `See https://github.com/${name.toLowerCase()}/jig/blob/main/README.md`,
+      `Hosted at https://github.com/${name.toLowerCase()}/jig.`,
       "",
     ].join("\n"),
   );
@@ -254,7 +254,7 @@ test("the real patterns reject the original tracker keys and organization name, 
     "plugin/.claude-plugin/plugin.json",
     `{\n  "author": { "name": "${name}" }\n}\n`,
   );
-  write(".config/groundwork-overlay.yaml", `team: ${name}\n`);
+  write(".config/jig.yaml", `team: ${name}\n`);
   expectSpawnExit(check(), 0);
   for (const content of [
     `See ${["DOC", "1234"].join("-")}.\n`,
@@ -262,15 +262,15 @@ test("the real patterns reject the original tracker keys and organization name, 
     `export const STATE = "~/.${name.toLowerCase()}/state";\n`,
     `See https://github.com/${name.toLowerCase()}/other-repo.\n`,
     // The exemption ends at the repository name, not at a word boundary.
-    `See https://github.com/${name.toLowerCase()}/groundwork-other.\n`,
-    `See https://github.com/${name.toLowerCase()}/groundwork.github.io.\n`,
-    `See https://github.com/${name.toLowerCase()}/groundwork_x.\n`,
-    `See https://github.com/${name.toLowerCase()}/groundwork..private.\n`,
+    `See https://github.com/${name.toLowerCase()}/jig-other.\n`,
+    `See https://github.com/${name.toLowerCase()}/jig.github.io.\n`,
+    `See https://github.com/${name.toLowerCase()}/jig_x.\n`,
+    `See https://github.com/${name.toLowerCase()}/jig..private.\n`,
     // The exemption starts at the whole address, not inside another host.
-    `See https://notgithub.com/${name.toLowerCase()}/groundwork.\n`,
-    `See https://evil.github.com/${name.toLowerCase()}/groundwork.\n`,
+    `See https://notgithub.com/${name.toLowerCase()}/jig.\n`,
+    `See https://evil.github.com/${name.toLowerCase()}/jig.\n`,
     // An allowed occurrence exempts itself, not the line it sits on.
-    `https://github.com/${name.toLowerCase()}/groundwork, built at ${name}.\n`,
+    `https://github.com/${name.toLowerCase()}/jig, built at ${name}.\n`,
   ]) {
     write("notes.md", content);
     expectSpawnExit(check(), 1);

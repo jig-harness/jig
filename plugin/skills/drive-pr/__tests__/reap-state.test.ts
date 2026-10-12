@@ -1247,7 +1247,7 @@ describe("the untouched populations", () => {
 
 describe("computeAlreadyRelocated", () => {
   const legacyDir = "/repo/.git";
-  const computedDefault = "/home/user/.local/state/groundwork/drive-pr/abc123";
+  const computedDefault = "/home/user/.local/state/jig/drive-pr/abc123";
   const override = "/mnt/big-disk/drive-pr-state";
 
   it("is false on the plain no-override default path", () => {
@@ -1319,7 +1319,7 @@ describe("computeAlreadyRelocated", () => {
 
   it("is false when the override is nested beneath the DEFAULT dir, not just the legacy one", () => {
     // A subdirectory of the ordinary an earlier change default still sits under the
-    // tree an IDE or backup tool watching ~/.local/state/groundwork already pays the
+    // tree an IDE or backup tool watching ~/.local/state/jig already pays the
     // recursive-enumeration cost for — not a genuine relocation either.
     expect(
       computeAlreadyRelocated(
@@ -1366,7 +1366,7 @@ describe("resolveRealPathBestEffort", () => {
       computeAlreadyRelocated(
         resolveRealPathBestEffort(override),
         resolveRealPathBestEffort(legacy),
-        "/home/user/.local/state/groundwork/drive-pr/abc123",
+        "/home/user/.local/state/jig/drive-pr/abc123",
       ),
     ).toBe(false);
   });

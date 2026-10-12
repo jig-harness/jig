@@ -186,13 +186,13 @@ decodes it:
 | Trailing trailer | `… Verdict: deferred` as the last thing in the reply | `VERDICT_ENCODING=trailer`. Flattening a multi-line reply turns "on its own line" into "at the end of the body", so the trailer has to be last |
 | Forge label / emoji | a reaction or thread label | **not shipped** — no forge above models a verdict field. If yours does, fetch it and extend the exporter's `canon()`; a real field beats any body convention |
 
-**Groundwork takes no position on which of the two.** `token` is the exporter's
+**Jig takes no position on which of the two.** `token` is the exporter's
 *default*, not a recommendation — it is the form the
 [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/README.md)
 skill writes, and it has not run through enough review cycles to be called
 settled (see the [README](README.md#the-verdict-encoding)). Both are one variable apart,
 deliberately, so an adopter picking the other is not fighting the module. What
-groundwork does assert is the pair of properties below; those are what the
+Jig does assert is the pair of properties below; those are what the
 evidence supports, and they hold for any encoding including a forge field that
 makes this whole section unnecessary.
 
@@ -455,7 +455,7 @@ The human checkpoints (**merge**, **promote a reviewer to blocking**) are
 enforced by forge settings + the [HITL registry](templates/HITL-REGISTRY.md),
 not by a script — a bot must not hold those. **Mark Ready** is the one
 checkpoint a repository may delegate: an unattended review driver such as
-Groundwork's `drive-pr` marks a draft Ready at the point
+Jig's `drive-pr` marks a draft Ready at the point
 `pull_requests.mark_ready` declares (after its first review round by default,
 after a later round, or only at convergence), so reviewers that skip drafts
 spend their pass on a head the draft-reviewing reviewer has already cleaned. The driver's opt-out

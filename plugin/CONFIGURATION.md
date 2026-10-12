@@ -1,6 +1,6 @@
-# Configuration reference: `.config/groundwork-overlay.yaml`
+# Configuration reference: `.config/jig.yaml`
 
-The Groundwork skills hold the procedure; each repository holds its own
+The Jig skills hold the procedure; each repository holds its own
 values. Without one place listing those values, a repository adopts a skill
 by trial and error: an agent improvises what the repository never stated (how
 to name a branch, whether pull requests may stack), and a
@@ -25,10 +25,10 @@ Contents: [the file](#the-file) ·
 
 ## The file
 
-- **Location.** `.config/groundwork-overlay.yaml` at the root of the
+- **Location.** `.config/jig.yaml` at the root of the
   repository. The root is the nearest folder above the working directory that
-  holds `.git`; `GROUNDWORK_CONSUMER_ROOT` overrides it, and
-  `GROUNDWORK_OVERLAY` points the skills at a different file altogether.
+  holds `.git`; `JIG_CONSUMER_ROOT` overrides it, and
+  `JIG_OVERLAY` points the skills at a different file altogether.
 - **Format.** YAML. JSON is valid YAML, so a JSON file works too.
 - **Missing file.** `resolve-review-comments` and the tracker scripts of
   `do-item` refuse to run: an installed skill in a repository that has not
@@ -56,7 +56,7 @@ Contents: [the file](#the-file) ·
 
 ## What is derived, not declared
 
-Groundwork reads a fact from the repository when the repository already
+Jig reads a fact from the repository when the repository already
 states it, instead of asking for it twice. These have no field, or have a
 field only to override the derivation:
 
@@ -111,7 +111,7 @@ would otherwise fix, because every pushed fix summons the reviewers for
 another full round. This is the
 [decline ladder](skills/resolve-review-comments/references/triage-rubric.md#the-decline-ladder).
 Which rounds decline what is the repository's choice, in its own file:
-`.config/review-triage.yaml` (`GROUNDWORK_REVIEW_TRIAGE_CONFIG` names another
+`.config/review-triage.yaml` (`JIG_REVIEW_TRIAGE_CONFIG` names another
 file). Without the file the ladder is off and every finding the rubric
 accepts is fixed. A file that cannot be read, or that fails the checks below,
 also leaves the ladder off, and each verdict reports why. An unknown key is
@@ -269,7 +269,7 @@ The routing order and the gates are explained in
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `fleet_health.config` | path, relative to the root or absolute | `.config/fleet-health.yaml` | drive-pr | The fleet-health settings file, described [below](#the-fleet-health-file) |
-| `fleet_health.snapshot_dir` | folder; `~` is expanded, relative paths resolve against the root | `~/.local/state/groundwork/dashboard` | drive-pr | Where the fleet-health snapshot is read from. `DEV_DASHBOARD_DIR` overrides it |
+| `fleet_health.snapshot_dir` | folder; `~` is expanded, relative paths resolve against the root | `~/.local/state/jig/dashboard` | drive-pr | Where the fleet-health snapshot is read from. `DEV_DASHBOARD_DIR` overrides it |
 
 ### The fleet-health file
 
@@ -357,19 +357,19 @@ These are set per machine or per run, not committed:
 
 | Variable | What it does |
 |----------|--------------|
-| `GROUNDWORK_OVERLAY` | Path of the configuration file to read instead of the repository's own |
-| `GROUNDWORK_CONSUMER_ROOT` | The repository root, instead of the nearest folder holding `.git` |
+| `JIG_OVERLAY` | Path of the configuration file to read instead of the repository's own |
+| `JIG_CONSUMER_ROOT` | The repository root, instead of the nearest folder holding `.git` |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_STATE_DIR` | Where a drive keeps its rounds, locks and leases |
-| `GROUNDWORK_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
+| `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
-| `GROUNDWORK_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
-| `GROUNDWORK_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/groundwork/gh-cache` |
-| `GROUNDWORK_GH_CACHE` | `off` disables that cache |
+| `JIG_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
+| `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/jig/gh-cache` |
+| `JIG_GH_CACHE` | `off` disables that cache |
 | `GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30 |
 | `AWAIT_ROUND_CHECKS_MAX_AGE` | Seconds a still-waiting read of a pull request's checks may be reused while nothing on GitHub changed; default 300, `0` always reads |
-| `GROUNDWORK_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
+| `JIG_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
 | Others | A few knobs of a single skill, such as `REFLECT_THRESHOLD` of `resolve-review-comments`, are described where that skill's `SKILL.md` uses them |
 
@@ -460,7 +460,7 @@ do_item:
   execution_plan_block: execution-plan-v1
 fleet_health:
   config: .config/fleet-health.yaml
-  snapshot_dir: ~/.local/state/groundwork/dashboard
+  snapshot_dir: ~/.local/state/jig/dashboard
 adr:
   directory: docs/adr
   rules_file: docs/adr/rules.yaml

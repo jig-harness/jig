@@ -26,8 +26,8 @@ tracker with its context kept where the next session finds it
 repository's policy and handing it to the review loop
 ([M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md)).
 
-Groundwork maintains this procedure and ships it as the `groundwork` plugin.
-Each repository supplies its own values in `.config/groundwork-overlay.yaml`
+Jig maintains this procedure and ships it as the `jig` plugin.
+Each repository supplies its own values in `.config/jig.yaml`
 (see [Consumer configuration](#consumer-configuration)); the repository's own
 instructions supply its policy, label taxonomy and validation commands.
 
@@ -54,7 +54,7 @@ configuration from the working directory.
 ### Consumer configuration
 
 Every field except `issue_tracker.team` is optional. The skill reads them at
-run time from `.config/groundwork-overlay.yaml`:
+run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
@@ -192,7 +192,7 @@ the turn. Never pick on the user's behalf.
   change area has siblings may be better closed together with them in one PR.
   Step 4a checks and *suggests*; it never batches silently.
 - **Downstream**: this skill opens the PR and arms
-  `/groundwork:drive-pr`, which owns every review round from there.
+  `/jig:drive-pr`, which owns every review round from there.
 
 ## Workflow
 
@@ -203,8 +203,8 @@ the turn. Never pick on the user's behalf.
 **Renamed configuration section.** If the configuration the scripts read has
 a top-level `do_issue` section, stop before doing anything else and tell the
 user to rename it to `do_item` (its fields are unchanged). That file is
-`$GROUNDWORK_OVERLAY` when it is set, otherwise
-`.config/groundwork-overlay.yaml` under `$GROUNDWORK_CONSUMER_ROOT` (when set)
+`$JIG_OVERLAY` when it is set, otherwise
+`.config/jig.yaml` under `$JIG_CONSUMER_ROOT` (when set)
 or the repository root. The old name is not read, so continuing would run
 without the repository's routing, scouts and mandatory review gates. The
 scripts refuse it with the same instruction, and that refusal is not a
@@ -358,7 +358,7 @@ INTENT_CHAIN_JSON
 
 The script prints `{ path, sessionPath, pickupId, chars, arm, truncated, pointerErrors }`.
 `arm` is the Refocus calibration bucket: odd issue numbers are on and even
-ones off, unless `GROUNDWORK_REFOCUS=1|0` overrides it. When the arm is off,
+ones off, unless `JIG_REFOCUS=1|0` overrides it. When the arm is off,
 the snapshot is still written but nothing injects it. A non-zero exit never
 blocks the work: say in the status message that the snapshot was not written
 — or, when `pointerErrors` is non-empty, only partially (the content landed
@@ -575,7 +575,7 @@ routing below remain **exact**.
      `technical`, `legal`, `commercial`); otherwise use the plan gate's
      reason to name the responsible stakeholder. If a `hitl` issue carries no
      facet, add the fitting one when you comment. For a `hitl:technical`
-     architectural call, use `/groundwork:decide`, so the escalation
+     architectural call, use `/jig:decide`, so the escalation
      arrives as a fixed record: options, what would have to
      be true for each, and what would reverse the call.
 
@@ -780,7 +780,7 @@ routing below remain **exact**.
       only and breaks on PowerShell and `cmd.exe`):
 
       ```bash
-      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/groundwork:drive-pr --bots-only <PR>"
+      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
       ```
 
       The pass command (`claude -p "..."`) is Claude Code-specific; no other
@@ -978,7 +978,7 @@ snapshot mapping are **exact**.
    wrote as current.
 
    Let this write compute its arm normally from the epic's identifier. Do
-   not try to preserve a child's arm or work around a `GROUNDWORK_REFOCUS`
+   not try to preserve a child's arm or work around a `JIG_REFOCUS`
    override: the arm is a pure function of the identifier, so the next
    selected child re-derives its own arm when item 4 (or Step 3.5) writes
    for it. This fallback's arm only governs injection while no child is

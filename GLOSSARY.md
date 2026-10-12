@@ -1,6 +1,6 @@
 # Glossary
 
-Plain-language definitions of every term of art used in groundwork. Terms are
+Plain-language definitions of every term of art used in jig. Terms are
 capitalized as commonly written; cross-references are *italicized*.
 
 ## Core ideas
@@ -15,13 +15,13 @@ capitalized as commonly written; cross-references are *italicized*.
   rule is defined. Everything else *points* to it or is *generated* from it,
   so copies can't quietly disagree.
 - **Drift** — the gap that grows when two copies of the same fact evolve
-  independently (a doc says one thing, the code does another). Groundwork's
+  independently (a doc says one thing, the code does another). Jig's
   recurring answer: make one copy the *SSoT* and gate or generate the rest.
 - **Projection** — a consumer-specific view *generated* from an *SSoT* (a CI
   path-filter, a review-gate table, a tracker-label set derived from a
   change-area catalog). Because it is generated and *freshness-gated*, it
   cannot silently disagree with its source.
-- **Module** — groundwork's unit of adoption: one practice area (e.g.,
+- **Module** — Jig's unit of adoption: one practice area (e.g.,
   "generated-artifact freshness") packaged with its invariant, maturity
   levels, templates, and reference code. Modules adopt independently.
 - **Maturity level** — how deeply a module is adopted: **Lite** (minimum
@@ -51,7 +51,7 @@ capitalized as commonly written; cross-references are *italicized*.
   linting, type checks, tests, build).
 - **Enforcement ladder** — the ordered places a rule can live: written
   convention → editor/local script → *git hook* → *CI* → mandatory review
-  step. Each rung is harder to bypass. Groundwork treats "which rung is this
+  step. Each rung is harder to bypass. Jig treats "which rung is this
   rule on, and what promotes it?" as a first-class question — and the rung is
   what the *auditor* scores.
 - **Convention-only** — a rule that exists only as prose or habit, with no
@@ -60,7 +60,7 @@ capitalized as commonly written; cross-references are *italicized*.
   (pre-commit, pre-push, commit-msg). Managed by tools like lefthook, husky,
   or pre-commit.
 - **CI (continuous integration)** — the service that runs checks on every
-  push/PR (GitHub Actions, GitLab CI, …). In groundwork's model, CI is the
+  push/PR (GitHub Actions, GitLab CI, …). In Jig's model, CI is the
   *authority*: local hooks are conveniences that can be bypassed; CI closes
   the hole.
 - **Grep gate** — a deliberately simple check that searches the codebase for a
@@ -146,7 +146,7 @@ capitalized as commonly written; cross-references are *italicized*.
   summons the reviewers that wait for Ready. A human marks it Ready, or a
   *PR drive loop* does at the point the *pull-request policy* names.
 - **Integration branch** — the branch pull requests land on (often `main`),
-  where everyone's changes meet. Groundwork's tools read it from the
+  where everyone's changes meet. Jig's tools read it from the
   repository's default branch unless configuration names another.
 - **Developer Certificate of Origin (DCO)** — a short statement a
   contributor agrees to by adding a `Signed-off-by:` line to each commit,
@@ -174,16 +174,16 @@ capitalized as commonly written; cross-references are *italicized*.
   conflicts, the side that carries the *integration branch*'s changes, as
   opposed to the side carrying the work being brought in. Git's own names,
   "ours" and "theirs", swap meaning between a merge and a rebase, so
-  Groundwork's conflict tooling names each side by this role instead.
+  Jig's conflict tooling names each side by this role instead.
 - **Changelog** — a file listing each release's notable changes, newest
-  first. Groundwork's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
+  first. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
   one heading per plugin version, and an **Unreleased** heading for changes
   that no release carries yet.
 - **HITL (human-in-the-loop)** — a decision class that must be made by a
   human, never autonomously by an agent (merges, releases, destructive
   operations, scope expansions). Kept in an explicit registry.
 - **BWC (backward compatibility)** — keeping old interfaces working when
-  things change. Groundwork treats "when do we start paying for BWC?" as an
+  things change. Jig treats "when do we start paying for BWC?" as an
   explicit *disposition* with a flip condition (e.g., first real customer
   data), not an unstated assumption.
 - **De-scarring** — cleaning a finished document of review findings,
@@ -210,7 +210,7 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Design brief bundle** — the numbered set of Markdown files and images
   handed to an external design session as its only input.
 - **Claude Design** — the external design session a *design brief bundle* is
-  handed to. The design work happens there, not in the repository; Groundwork's
+  handed to. The design work happens there, not in the repository; Jig's
   `design-brief-builder` skill prepares the inputs and audits them
   ([design-brief-builder](plugin/skills/design-brief-builder/SKILL.md)).
 - **Tweaks** — the list of states (at least three meaningful ones, such as
@@ -225,7 +225,7 @@ capitalized as commonly written; cross-references are *italicized*.
   instead of drawing the author's solution.
 - **Decision sheet** — a self-contained HTML page for one call a human must
   make, rendered from a typed source: the question, the options, what would
-  have to be true for each, and a citation for every claim. Groundwork's
+  have to be true for each, and a citation for every claim. Jig's
   decision skill writes one when it escalates instead of ruling.
 - **Explainer sheet** — a cited, commit-dated page (HTML and Markdown) of how
   part of a system works today: the flow as numbered steps, claims grouped in
@@ -257,7 +257,7 @@ capitalized as commonly written; cross-references are *italicized*.
   operational step). A fired flag sends a call to a human instead of an agent
   ([decide](plugin/skills/decide/SKILL.md)) and widens the review a change gets.
 - **Epic** — an issue whose sub-issues are worked one at a time, each as its
-  own pull request, while the epic itself tracks the whole. Groundwork's
+  own pull request, while the epic itself tracks the whole. Jig's
   `do-item` skill picks up the next sub-issue and records the epic's order in
   a machine-readable execution plan
   ([do-item](plugin/skills/do-item/SKILL.md)).
@@ -309,7 +309,7 @@ capitalized as commonly written; cross-references are *italicized*.
   reason), **won't fix** (right, but deliberately declined, with a reason),
   **deferred** (with a filed follow-up), or *moot* — each leaving an audit
   trail. Scope expansion and overruling a human thread stay *HITL*.
-  Groundwork ships it as the `resolve-review-comments` skill.
+  Jig ships it as the `resolve-review-comments` skill.
 - **PR drive loop** — the procedure that wraps the *comment-resolution loop*
   for unattended work on one pull request. The comment-resolution loop already
   repeats *review rounds* until the reviewers settle; the drive loop runs each
@@ -318,7 +318,7 @@ capitalized as commonly written; cross-references are *italicized*.
   *self-inflicted findings*, checks for findings that appear only in a
   reviewer's summary, repair rounds for red CI and conflicts with the base,
   and round state that survives between invocations. It stops in exactly one
-  *terminal state* and never merges. Groundwork ships it as the `drive-pr`
+  *terminal state* and never merges. Jig ships it as the `drive-pr`
   skill, and the `do-item` skill starts it when it opens a pull request.
 - **Self-inflicted finding** — a review finding on a line one of the pull
   request's own commits last changed, usually a fix from an earlier round. The
@@ -411,11 +411,11 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Scout** — a small, cheap agent (fast model, read-only) sent ahead of
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
-- **Auditor** — groundwork's runnable assessment: parallel surveys of a target
+- **Auditor** — Jig's runnable assessment: parallel surveys of a target
   repo, stack detection, per-module maturity scoring, and a prioritized
   recommendations report. See [audit/](audit/).
 - **Backflow** — the standing rule that lessons learned in the repositories
-  that use Groundwork flow back into it (and Groundwork's improvements flow
+  that use Jig flow back into it (and Jig's improvements flow
   out to them), keeping both honest.
 - **SOLID** — five object-oriented design principles: single responsibility,
   open–closed, Liskov substitution, interface segregation and dependency
@@ -424,7 +424,7 @@ capitalized as commonly written; cross-references are *italicized*.
 ## Runnable tooling
 
 - **Plugin** — an installable bundle of skills and other agent extensions
-  that an agent tool loads in every session. Groundwork ships its skills and
+  that an agent tool loads in every session. Jig ships its skills and
   its review agent as one plugin for Claude Code and Codex, installed once
   per machine ([plugin/README.md](plugin/README.md)).
 - **Marketplace** — a catalog an agent tool installs plugins from; usually a
@@ -432,13 +432,13 @@ capitalized as commonly written; cross-references are *italicized*.
   own marketplace.
 - **Consumer overlay** — a repository's own values for a shared procedure,
   such as its gate command and reviewer names, kept in
-  `.config/groundwork-overlay.yaml` and read by the procedure when it runs.
+  `.config/jig.yaml` and read by the procedure when it runs.
   The procedure stays shared while the values belong to the consumer. Every
   field is in [plugin/CONFIGURATION.md](plugin/CONFIGURATION.md).
 - **Toolchain** — the runtime, compiler and checks used to build and test tools.
-- **Bun** — the runtime that executes Groundwork's TypeScript commands and tests,
+- **Bun** — the runtime that executes Jig's TypeScript commands and tests,
   installs their dependencies and bundles the tools.
-- **TypeScript** — JavaScript with checked type declarations; Groundwork checks
+- **TypeScript** — JavaScript with checked type declarations; Jig checks
   the types separately before running its commands.
 - **mise** — a tool that installs the exact runtime version recorded by a repository.
 - **Hard link** — another filesystem name for the same file. Creating the name
@@ -463,11 +463,11 @@ capitalized as commonly written; cross-references are *italicized*.
   alone ([drive-pr](plugin/skills/drive-pr/README.md)).
 - **Remote test box (Testbox)** — a disposable machine, warmed for one run, that
   re-runs a repository's heavy test and build checks away from the laptop. A
-  *validation plan* says when one is required; Groundwork's drive uses each box
+  *validation plan* says when one is required; Jig's drive uses each box
   once, because a reused box can sync stale state
   ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Lockfile** — the file a package manager writes to pin the exact version of
-  every dependency. When a merge conflicts in one, Groundwork's conflict tooling
+  every dependency. When a merge conflicts in one, Jig's conflict tooling
   regenerates it from the manifests instead of merging it by hand, and the CI
   fixer reinstalls from it ([resolve-conflicts](plugin/skills/resolve-conflicts/SKILL.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
@@ -492,12 +492,12 @@ capitalized as commonly written; cross-references are *italicized*.
   and its quota is a separate, easily exhausted budget from *REST*.
 - **ETag** — a version tag a web service returns with a resource. Sending it back
   on the next request lets the service answer "not modified" at no quota cost,
-  which is how Groundwork's polling loops watch an idle pull request cheaply
+  which is how Jig's polling loops watch an idle pull request cheaply
   ([conditional reads](plugin/skills/drive-pr/scripts/lib/gh-conditional.ts)).
 - **NDJSON (newline-delimited JSON)** — structured JSON records written one per
   line, so a command can consume them as a stream.
 - **ASCII (American Standard Code for Information Interchange)** — the basic
   character set containing English letters, digits and common punctuation.
 - **SHA (Secure Hash Algorithm)** — a family of content fingerprints; Git uses
-  one to identify a commit, and Groundwork's tools use SHA-256 to record
+  one to identify a commit, and Jig's tools use SHA-256 to record
   exactly which source a generated file was built from.

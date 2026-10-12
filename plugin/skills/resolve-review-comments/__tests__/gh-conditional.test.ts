@@ -129,8 +129,8 @@ const ENV_KEYS = [
   "HOME",
   "PATH",
   "GH_STUB_DIR",
-  "GROUNDWORK_GH_CACHE_DIR",
-  "GROUNDWORK_GH_CACHE",
+  "JIG_GH_CACHE_DIR",
+  "JIG_GH_CACHE",
   "GH_REPO",
   "GH_HOST",
   "GH_CALL_TIMEOUT",
@@ -183,9 +183,9 @@ beforeEach(() => {
   cacheDir = join(tmpRoot, `cache-${seq}`);
   process.env.PATH = `${binDir}:${savedEnv.PATH}`;
   process.env.GH_STUB_DIR = fixDir;
-  process.env.GROUNDWORK_GH_CACHE_DIR = cacheDir;
+  process.env.JIG_GH_CACHE_DIR = cacheDir;
   process.env.GH_CALL_TIMEOUT = "20";
-  delete process.env.GROUNDWORK_GH_CACHE;
+  delete process.env.JIG_GH_CACHE;
   delete process.env.GH_REPO;
   delete process.env.GH_HOST;
   process.chdir(repoA);
@@ -320,7 +320,7 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
   });
 
   it("never sends a conditional request when no cache directory is configured", async () => {
-    delete process.env.GROUNDWORK_GH_CACHE_DIR; // NODE_ENV=test ⇒ off
+    delete process.env.JIG_GH_CACHE_DIR; // NODE_ENV=test ⇒ off
     serve(PULL, pull("open", false, SHA));
     await ghConditionalGet(PULL);
     const again = await ghConditionalGet(PULL);
@@ -329,8 +329,8 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     expect(entryFiles()).toHaveLength(0);
   });
 
-  it("GROUNDWORK_GH_CACHE=off wins over an explicit directory", async () => {
-    process.env.GROUNDWORK_GH_CACHE = "off";
+  it("JIG_GH_CACHE=off wins over an explicit directory", async () => {
+    process.env.JIG_GH_CACHE = "off";
     serve(PULL, pull("open", false, SHA));
     await ghConditionalGet(PULL);
     await ghConditionalGet(PULL);
@@ -729,7 +729,7 @@ describe.skipIf(process.platform === "win32")("cachedRepoView", () => {
   });
 
   it("does not cache when caching is off", async () => {
-    delete process.env.GROUNDWORK_GH_CACHE_DIR;
+    delete process.env.JIG_GH_CACHE_DIR;
     await cachedRepoView(ARGS);
     await cachedRepoView(ARGS);
     expect(viewCalls()).toHaveLength(2);
@@ -746,29 +746,27 @@ describe.skipIf(process.platform === "win32")("cachedRepoView", () => {
 describe("ghCacheDir", () => {
   it("is off under NODE_ENV=test unless a directory is given — a suite that forgets to isolate itself runs uncached", () => {
     process.env.NODE_ENV = "test";
-    delete process.env.GROUNDWORK_GH_CACHE_DIR;
+    delete process.env.JIG_GH_CACHE_DIR;
     expect(ghCacheDir()).toBeNull();
   });
 
   it("uses an explicit directory even under NODE_ENV=test", () => {
     process.env.NODE_ENV = "test";
-    process.env.GROUNDWORK_GH_CACHE_DIR = "/somewhere/explicit";
+    process.env.JIG_GH_CACHE_DIR = "/somewhere/explicit";
     expect(ghCacheDir()).toBe("/somewhere/explicit");
   });
 
-  it("defaults to ~/.cache/groundwork/gh-cache outside a test run", () => {
+  it("defaults to ~/.cache/jig/gh-cache outside a test run", () => {
     process.env.NODE_ENV = "production";
     process.env.HOME = "/fake/home";
-    delete process.env.GROUNDWORK_GH_CACHE_DIR;
-    expect(ghCacheDir()).toBe(
-      join("/fake/home", ".cache", "groundwork", "gh-cache"),
-    );
+    delete process.env.JIG_GH_CACHE_DIR;
+    expect(ghCacheDir()).toBe(join("/fake/home", ".cache", "jig", "gh-cache"));
   });
 
-  it("GROUNDWORK_GH_CACHE=off beats both the default and an explicit directory", () => {
+  it("JIG_GH_CACHE=off beats both the default and an explicit directory", () => {
     process.env.NODE_ENV = "production";
-    process.env.GROUNDWORK_GH_CACHE = "off";
-    process.env.GROUNDWORK_GH_CACHE_DIR = "/somewhere/explicit";
+    process.env.JIG_GH_CACHE = "off";
+    process.env.JIG_GH_CACHE_DIR = "/somewhere/explicit";
     expect(ghCacheDir()).toBeNull();
   });
 });

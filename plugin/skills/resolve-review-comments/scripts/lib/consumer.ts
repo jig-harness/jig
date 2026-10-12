@@ -11,7 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { load } from "./yaml.ts";
 
 /** The consumer configuration file, relative to the repository root. */
-export const OVERLAY_RELPATH = ".config/groundwork-overlay.yaml";
+export const OVERLAY_RELPATH = ".config/jig.yaml";
 
 /** Where to read about adopting the skill, quoted in configuration errors. */
 export const ADOPTION_DOC =
@@ -37,12 +37,12 @@ export interface ReviewConfig {
 }
 
 /**
- * The repository the agent is working in: `GROUNDWORK_CONSUMER_ROOT` when
+ * The repository the agent is working in: `JIG_CONSUMER_ROOT` when
  * set, else the nearest ancestor of `cwd` holding `.git` (a directory in a
  * clone, a file in a linked worktree), else `cwd` itself.
  */
 export function consumerRoot(cwd = process.cwd()): string {
-  const explicit = process.env.GROUNDWORK_CONSUMER_ROOT;
+  const explicit = process.env.JIG_CONSUMER_ROOT;
   if (explicit !== undefined && explicit.trim() !== "")
     return resolve(explicit);
   let current = resolve(cwd);
@@ -137,9 +137,9 @@ export function siblingSkill(name: string, scriptDir: string): string {
   return join(dirname(dirname(scriptDir)), name);
 }
 
-/** The configuration file path: `GROUNDWORK_OVERLAY`, else the repository's own. */
+/** The configuration file path: `JIG_OVERLAY`, else the repository's own. */
 export function overlayPath(): string {
-  const override = process.env.GROUNDWORK_OVERLAY;
+  const override = process.env.JIG_OVERLAY;
   if (override !== undefined && override.trim() !== "") return override;
   return join(consumerRoot(), OVERLAY_RELPATH);
 }
@@ -153,14 +153,14 @@ export function readOverlay(): Record<string, unknown> {
   const path = overlayPath();
   if (!existsSync(path))
     throw new Error(
-      `Groundwork configuration not found: ${path}. This repository has not configured the review skill; add ${OVERLAY_RELPATH} (see ${ADOPTION_DOC}) or point GROUNDWORK_OVERLAY at a configuration file.`,
+      `Jig configuration not found: ${path}. This repository has not configured the review skill; add ${OVERLAY_RELPATH} (see ${ADOPTION_DOC}) or point JIG_OVERLAY at a configuration file.`,
     );
   let overlay: unknown;
   try {
     overlay = load(readFileSync(path, "utf8"));
   } catch (err) {
     throw new Error(
-      `Groundwork configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
+      `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
   if (!overlay || typeof overlay !== "object" || Array.isArray(overlay))

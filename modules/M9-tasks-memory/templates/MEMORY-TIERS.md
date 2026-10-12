@@ -63,7 +63,7 @@ private memory            promoted (proposed)          git-tracked shared memory
    work ("this service's client must be closed explicitly", "the staging seed
    omits X").
 2. **Propose** — a promotion step (a `/promote-memory`-style command, such as
-   Groundwork's
+   Jig's
    [`promote-memory`](https://github.com/docomply/jig/blob/main/plugin/skills/promote-memory/SKILL.md)
    skill) surfaces the lesson as a *candidate* for shared memory, rather than
    editing shared memory silently.

@@ -48,7 +48,7 @@ replacement.
 
 ## 3. Score modules on the enforcement ladder
 
-For each groundwork module (M0–M12), grade the target:
+For each Jig module (M0–M12), grade the target:
 
 - **absent** — the practice doesn't exist (mark "expected-absent" where the
   repo's shape makes the practice inapplicable — e.g. no deploy pipeline in

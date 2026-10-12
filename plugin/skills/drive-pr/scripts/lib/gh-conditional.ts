@@ -50,10 +50,10 @@
  * pins the two together; `resolve-review-comments/__tests__/gh-conditional.test.ts`
  * holds the behavioural suite.
  *
- * Cache: `$GROUNDWORK_GH_CACHE_DIR`, else `~/.cache/groundwork/gh-cache`. One small file
+ * Cache: `$JIG_GH_CACHE_DIR`, else `~/.cache/jig/gh-cache`. One small file
  * per (repo scope, request), overwritten in place, pruned to a bound — the
  * drive-pr state-dir lesson: an unbounded directory of tiny files is a
- * cost of its own. `GROUNDWORK_GH_CACHE=off` disables it. Under `NODE_ENV=test`
+ * cost of its own. `JIG_GH_CACHE=off` disables it. Under `NODE_ENV=test`
  * (which `bun test` sets) it is off unless a directory is given explicitly, so
  * a suite that forgets to isolate itself runs uncached rather than reading a
  * neighbour's answer.
@@ -88,13 +88,13 @@ const GIT_PROBE_TIMEOUT_SEC = 10;
 
 /** The cache directory, or null when caching is off. */
 export function ghCacheDir(): string | null {
-  if ((process.env.GROUNDWORK_GH_CACHE ?? "") === "off") return null;
-  const explicit = process.env.GROUNDWORK_GH_CACHE_DIR ?? "";
+  if ((process.env.JIG_GH_CACHE ?? "") === "off") return null;
+  const explicit = process.env.JIG_GH_CACHE_DIR ?? "";
   if (explicit !== "") return explicit;
   if (process.env.NODE_ENV === "test") return null;
   const home = process.env.HOME || homedir();
   if (!home) return null;
-  return join(home, ".cache", "groundwork", "gh-cache");
+  return join(home, ".cache", "jig", "gh-cache");
 }
 
 /** Where a `gh` call will run: the same `cwd`/`env` the call itself gets. */

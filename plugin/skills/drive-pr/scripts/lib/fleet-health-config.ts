@@ -4,7 +4,7 @@
  * starts — and the vocabulary it reads the tracker with.
  *
  * The file is the consumer's: `fleet_health.config` in
- * `.config/groundwork-overlay.yaml`, default `.config/fleet-health.yaml`. Its
+ * `.config/jig.yaml`, default `.config/fleet-health.yaml`. Its
  * schema is this module's. Optional sections:
  *
  *   labels:        # tracker labels the sensor reads
@@ -90,7 +90,7 @@ function stringAt(obj: unknown, ...path: string[]): string | null {
  * unparseable one is an error.
  */
 export function overlayContext(root: string): ConfigContext {
-  const override = process.env.GROUNDWORK_OVERLAY?.trim();
+  const override = process.env.JIG_OVERLAY?.trim();
   const path = override ? override : join(root, OVERLAY_RELPATH);
   if (!existsSync(path)) return { ...EMPTY_CONTEXT, root };
   let overlay: unknown;

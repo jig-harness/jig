@@ -63,7 +63,7 @@
  * test (resolve-review-comments' converge.ts takes the same interface for the
  * same reason).
  *
- *   drive.ts 123 --bots-only -- claude -p "/groundwork:drive-pr --bots-only 123"
+ *   drive.ts 123 --bots-only -- claude -p "/jig:drive-pr --bots-only 123"
  *
  * Exit codes mirror drive-status.ts, plus 6:
  *   0  converged (SHA-verified)
@@ -828,8 +828,8 @@ export function passTimeoutSeconds(): number {
  *
  * Both were defended on the same reasoning — "this is not a review round, and
  * a triage pass has nothing to do with it" — which is true of TRIAGE and false
- * of the PASS. The pass is a general agent with `/groundwork:fix-ci` and
- * `/groundwork:resolve-conflicts` available to it, and `base-sync.ts`'s exit-9
+ * of the PASS. The pass is a general agent with `/jig:fix-ci` and
+ * `/jig:resolve-conflicts` available to it, and `base-sync.ts`'s exit-9
  * row already documents the conflict procedure *for a pass to follow*. The
  * asymmetry that gave the game away: a conflict WITH findings already comes
  * back `ROUND_READY` and gets merged as part of that round, so the identical
@@ -902,7 +902,7 @@ function wholeEnv(raw: string | undefined, fallback: number): number {
 /**
  * What a repair pass is asked to do. Carried to the pass in its ENVIRONMENT,
  * never by rewriting the argv after `--`: that argv is opaque to this script
- * (`claude -p "/groundwork:drive-pr 4818"`, a Codex invocation, a shell wrapper), and a
+ * (`claude -p "/jig:drive-pr 4818"`, a Codex invocation, a shell wrapper), and a
  * driver that edited it would be guessing at another tool's command grammar.
  * Env is already this driver's channel to its pass — `DRIVE_PR_TARGET`,
  * `DRIVE_PR_SESSION`, `DRIVE_PR_REFLECT_DUE` all ride it — and works
@@ -2662,7 +2662,7 @@ async function main(): Promise<number> {
         "resolving threads on a different pull request. Name it explicitly, e.g.",
       );
       console.error(
-        `  drive.ts ${explicitPr} -- claude -p "/groundwork:drive-pr ${explicitPr}"`,
+        `  drive.ts ${explicitPr} -- claude -p "/jig:drive-pr ${explicitPr}"`,
       );
       return 2;
     }

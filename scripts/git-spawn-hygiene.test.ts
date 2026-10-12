@@ -16,7 +16,7 @@ const safeEnv = Object.fromEntries(
 // Exercise the complete suites: their Bun/script subprocesses also run git,
 // so isolating only the explicit `git init` calls would not protect the index.
 test("scratch suites preserve a sentinel repository under hook-style env", () => {
-  const sentinel = mkdtempSync(join(tmpdir(), "groundwork-git-sentinel-"));
+  const sentinel = mkdtempSync(join(tmpdir(), "jig-git-sentinel-"));
   const git = (...args: string[]) => {
     const result = spawnSync("git", ["-C", sentinel, ...args], {
       env: safeEnv,
@@ -53,7 +53,7 @@ test("scratch suites preserve a sentinel repository under hook-style env", () =>
     `;
     const result = spawnSync(process.execPath, ["-e", harness], {
       cwd: root,
-      env: { ...safeEnv, GROUNDWORK_BASH_PARITY: "0" },
+      env: { ...safeEnv, JIG_BASH_PARITY: "0" },
       timeout: 30_000,
     });
     expectSpawnExit(

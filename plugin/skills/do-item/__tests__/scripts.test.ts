@@ -42,7 +42,7 @@ function gitCleanEnv(): Record<string, string> {
     if (k === "LINEAR_API_KEY" || k === "LINEAR_API_TOKEN") continue;
     env[k] = v;
   }
-  env.GROUNDWORK_OVERLAY = OVERLAY;
+  env.JIG_OVERLAY = OVERLAY;
   return env;
 }
 
@@ -571,7 +571,7 @@ describe("catalog agent resolution", () => {
           input: '{"labels":["codearea:backend"]}',
           env: {
             ...gitCleanEnv(),
-            GROUNDWORK_OVERLAY: join(dir, "overlay.yaml"),
+            JIG_OVERLAY: join(dir, "overlay.yaml"),
           },
         },
       );
@@ -890,7 +890,7 @@ describe("get_issue.ts reads the issue through the tracker", () => {
         encoding: "utf8",
         env: {
           ...gitCleanEnv(),
-          GROUNDWORK_OVERLAY: join(dir, "overlay.yaml"),
+          JIG_OVERLAY: join(dir, "overlay.yaml"),
         },
       },
     );
@@ -1122,7 +1122,7 @@ describe("tracker.ts", () => {
     for (const op of ["states", "labels"]) {
       const r = spawnSync(process.execPath, [join(SCRIPTS, "tracker.ts"), op], {
         encoding: "utf8",
-        env: { ...gitCleanEnv(), GROUNDWORK_OVERLAY: overlay },
+        env: { ...gitCleanEnv(), JIG_OVERLAY: overlay },
       });
       expect({ op, status: r.status, stdout: r.stdout }).toEqual({
         op,

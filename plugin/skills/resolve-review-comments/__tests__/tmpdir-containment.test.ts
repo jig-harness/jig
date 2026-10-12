@@ -11,8 +11,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const SCOPED_ROOT = process.env.GROUNDWORK_TEST_TMPDIR;
-const SYSTEM_TMPDIR = process.env.GROUNDWORK_TEST_TMPDIR_SYSTEM;
+const SCOPED_ROOT = process.env.JIG_TEST_TMPDIR;
+const SYSTEM_TMPDIR = process.env.JIG_TEST_TMPDIR_SYSTEM;
 
 describe("temp-dir containment (this directory)", () => {
   it("the preload is applied when bun test runs with cwd here", () => {

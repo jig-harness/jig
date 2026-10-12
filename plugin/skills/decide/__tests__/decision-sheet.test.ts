@@ -1449,7 +1449,7 @@ describe("CLI: freshness, flags and the helper commands", () => {
     expect(JSON.parse(r.stdout).freshness.changed).toEqual([]);
   });
 
-  it("--require-fresh checks GROUNDWORK_CONSUMER_ROOT rather than the working directory", () => {
+  it("--require-fresh checks JIG_CONSUMER_ROOT rather than the working directory", () => {
     const consumer = staleRepo("src/a.ts#f");
     const elsewhere = repoWith({ "src/a.ts": "other" }).dir;
     const r = spawnSync(
@@ -1465,7 +1465,7 @@ describe("CLI: freshness, flags and the helper commands", () => {
       {
         cwd: elsewhere,
         encoding: "utf8",
-        env: { ...gitEnv, GROUNDWORK_CONSUMER_ROOT: consumer },
+        env: { ...gitEnv, JIG_CONSUMER_ROOT: consumer },
       },
     );
     expect(r.stderr).toBe("");

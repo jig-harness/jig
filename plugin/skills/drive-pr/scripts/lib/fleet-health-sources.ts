@@ -607,7 +607,7 @@ export function connectTracker(cfg: FleetHealthConfig): Tracker {
       "no issue_tracker.team in the consumer overlay, so issue keys cannot be read",
     );
   const path =
-    process.env.GROUNDWORK_OVERLAY?.trim() ||
+    process.env.JIG_OVERLAY?.trim() ||
     join(cfg.root ?? consumerRoot(), OVERLAY_RELPATH);
   const overlay: unknown = loadYaml(readFileSync(path, "utf8"));
   if (!isRecord(overlay))

@@ -1,6 +1,6 @@
 # Design principles
 
-Seven principles govern everything in groundwork. Each has its own page with
+Seven principles govern everything in jig. Each has its own page with
 rationale and concrete consequences:
 
 | # | Principle | One-liner |

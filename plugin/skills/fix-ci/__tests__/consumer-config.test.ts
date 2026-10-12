@@ -28,14 +28,14 @@ function touch(...files: string[]) {
 
 function overlay(text: string) {
   mkdirSync(join(repo, ".config"), { recursive: true });
-  writeFileSync(join(repo, ".config", "groundwork-overlay.yaml"), text);
+  writeFileSync(join(repo, ".config", "jig.yaml"), text);
 }
 
 function runConfig(): { code: number; out: string; err: string } {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env))
-    if (v !== undefined && k !== "GROUNDWORK_OVERLAY") env[k] = v;
-  env.GROUNDWORK_CONSUMER_ROOT = repo;
+    if (v !== undefined && k !== "JIG_OVERLAY") env[k] = v;
+  env.JIG_CONSUMER_ROOT = repo;
   const r = spawnSync(process.execPath, [SCRIPT], {
     cwd: repo,
     env,

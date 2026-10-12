@@ -1,7 +1,7 @@
 # TEMPLATE — copy to your repo (e.g. metrics-registry.yaml) and replace the
 # examples with the process metrics YOU roll up. This is the registry of process
 # metrics: each one names the wired event/query behind it (`source`) and who is
-# accountable for it (`owner`). Groundwork's no-dark-instruments gate
+# accountable for it (`owner`). Jig's no-dark-instruments gate
 # (modules/M11-process-observability/reference/no-dark-instruments/) FAILS if
 # any `source` is missing, empty, or
 # a placeholder (TODO / tbd / dark / none / fixme) — a metric CLAIMED but not
@@ -17,7 +17,7 @@
 #                 no-dark-instruments gate checks. NEVER leave this as TODO.
 #   owner         the team/role accountable for keeping it lit
 #   threshold     OPTIONAL — a target/alert value. The VALUE is repo-specific and
-#                 stays with your repo (groundwork ships the mechanism, not the
+#                 stays with your repo (Jig ships the mechanism, not the
 #                 number); omit or set per your context.
 
 version: 1

@@ -1,5 +1,5 @@
 {
-  "name": "groundwork",
+  "name": "jig",
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@types/bun": "1.4.2",

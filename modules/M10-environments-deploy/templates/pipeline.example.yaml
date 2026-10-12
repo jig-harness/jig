@@ -2,7 +2,7 @@
 # spine (see ./CI-ARCHITECTURE.md). It is NOT a runnable config for any one CI
 # provider; it is the shape, so you can see how the four workflows relate before
 # you translate it to GitHub Actions / GitLab CI / etc. (per-provider wiring is
-# in Groundwork's modules/M10-environments-deploy/mappings.md). Replace
+# in Jig's modules/M10-environments-deploy/mappings.md). Replace
 # <placeholders> and the tool names with yours.
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ verify_default_branch:
 # STAGE 2b — Freshness watchdog (self-healing). Scheduled, not per-PR. Fails when
 # the verified pointer lags too far behind the tip (verification has stalled),
 # so a freeze pages someone instead of silently shipping stale code.
-# See Groundwork's modules/M10-environments-deploy/reference/verified-pointer/.
+# See Jig's modules/M10-environments-deploy/reference/verified-pointer/.
 # ---------------------------------------------------------------------------
 verified_freshness_watchdog:
   on:
@@ -82,7 +82,7 @@ deploy_verified:
 
 # ---------------------------------------------------------------------------
 # STAGE 4 — Promotion to production. MANUAL + GATED. Never auto-fires. Ships the
-# already-verified, already-deployed build. Enforced by Groundwork's promote-safety lint
+# already-verified, already-deployed build. Enforced by Jig's promote-safety lint
 # (modules/M10-environments-deploy/reference/promote-safety/).
 # ---------------------------------------------------------------------------
 promote_to_production:

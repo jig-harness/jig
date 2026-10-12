@@ -181,7 +181,7 @@ interface CancellationRegistry {
   groups: Map<number, Set<symbol>>;
   handlers: Map<NodeJS.Signals, () => void>;
 }
-const registryKey = Symbol.for("groundwork.review.process-cancellation.v1");
+const registryKey = Symbol.for("jig.review.process-cancellation.v1");
 const globalRegistry = globalThis as typeof globalThis & {
   [key: symbol]: CancellationRegistry | undefined;
 };

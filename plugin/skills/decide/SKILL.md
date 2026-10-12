@@ -25,18 +25,18 @@ next session can find it.
 This skill is that contract. Its most valuable outcome is the cheapest one:
 **discovering the question was already settled** and citing the ADR
 ([architecture decision record](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) that settled it. The
-records themselves follow Groundwork's ADR practice module
+records themselves follow Jig's ADR practice module
 ([M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)):
 this skill checks a new question against them first, and hands a ruling
-that clears the [ADR bar](#phase-4--route-the-outcome) to `/groundwork:adr`.
+that clears the [ADR bar](#phase-4--route-the-outcome) to `/jig:adr`.
 
 > **This skill rules and routes. It does not implement.** The decision it
-> produces is an input to `/groundwork:do-item`, to the repository's own
+> produces is an input to `/jig:do-item`, to the repository's own
 > planning skill, or to whatever work follows — never a licence to start
 > editing the code the decision is about.
 
-Groundwork maintains this procedure and ships it in the `groundwork` plugin.
-Each repository supplies its own values in `.config/groundwork-overlay.yaml`
+Jig maintains this procedure and ships it in the `jig` plugin.
+Each repository supplies its own values in `.config/jig.yaml`
 (see [Consumer configuration](#consumer-configuration)); every value has a
 default, so the skill works in a repository that has configured nothing.
 
@@ -49,28 +49,28 @@ would expand the unset variable to an empty string.
 
 Run every command from the root of the repository the dilemma is about. Never
 `cd` into the skill directory: the scripts find the repository and its
-configuration from the working directory, or from `GROUNDWORK_CONSUMER_ROOT`
+configuration from the working directory, or from `JIG_CONSUMER_ROOT`
 when it is set.
 
 ### Consumer configuration
 
-The skill reads these fields from `.config/groundwork-overlay.yaml` at run
+The skill reads these fields from `.config/jig.yaml` at run
 time. Every one is optional.
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `adr.directory` | The directory holding the ADRs, named `ADR-NNNN-<slug>.md` (Groundwork module M5, ADR practice); shared with `/groundwork:adr` | Detected as `/groundwork:adr` does (`docs/adr`, `doc/adr`, `docs/decisions`, …), else `docs/adr` |
+| `adr.directory` | The directory holding the ADRs, named `ADR-NNNN-<slug>.md` (Jig module M5, ADR practice); shared with `/jig:adr` | Detected as `/jig:adr` does (`docs/adr`, `doc/adr`, `docs/decisions`, …), else `docs/adr` |
 | `decide.policy_files` | Instruction files whose `##` sections are standing policy | `[AGENTS.md]` |
 | `decide.rules_directory` | A directory of conditional rule files, one rule per `.md` file | `.claude/rules` |
 | `decide.glossary_file` | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line of aliases | `CONTEXT.md` |
 | `decide.architect_agent` | The subagent that rules in phase 3; a name your agent tool does not know (for example a Claude Code agent under Codex) falls back to the default | A fresh general-purpose subagent, briefed with the [architect mandate](#the-architect-mandate) |
 | `decide.escalation_labels` | Labels added to an issue alongside `hitl` and its `hitl:<stakeholder>` facets when a call is escalated (for example the label that routes it to an architect) | None |
-| `issue_tracker.*` | The issue tracker, as `/groundwork:do-item` reads it (adapter, team key, `file_command`, and the `hitl` label in `labels.hitl`) | No tracker: outcomes land in the reply only |
+| `issue_tracker.*` | The issue tracker, as `/jig:do-item` reads it (adapter, team key, `file_command`, and the `hitl` label in `labels.hitl`) | No tracker: outcomes land in the reply only |
 
 ### Tracker operations
 
 Reads of an issue and posted comments go through the tracker scripts of
-`/groundwork:do-item`, whose adapter `issue_tracker.adapter` selects. A
+`/jig:do-item`, whose adapter `issue_tracker.adapter` selects. A
 harness with a native integration for the same tracker may use it instead; the
 Linear forms are given as the adapter example.
 
@@ -218,7 +218,7 @@ Produce, briefly:
    migration), `api-change` (a published contract), `dpa-relevant` (personal
    data), `manual-ops` (a manual operational step) — because that decides who
    rules in phase 3. When the repository keeps a change-area catalog
-   (Groundwork module M3; `drive.change_areas_catalog`) and a file list
+   (Jig module M3; `drive.change_areas_catalog`) and a file list
    exists, resolve the flags from the catalog, not by eye.
 
 ---
@@ -237,7 +237,7 @@ to bottom and take the first row that matches:
 | Anything else | `escalated` | A human |
 
 `hitl` marks a human-in-the-loop decision; `hitl:<stakeholder>` names whose
-call it is (the label conventions `/groundwork:do-item` reads). A repository
+call it is (the label conventions `/jig:do-item` reads). A repository
 that names the label differently sets it in `issue_tracker.labels.hitl`; read
 `hitl` throughout as that label.
 
@@ -347,7 +347,7 @@ beyond this change** — when a reviewer six months from now needs it to judge
 unrelated work. Otherwise it is a decision note on the issue. A large corpus
 makes phase 1 slower and less precise for every future invocation, so an ADR
 per ruling is a direct tax on this skill's own best outcome. When an ADR is
-warranted, hand off to `/groundwork:adr` rather than hand-rolling the file
+warranted, hand off to `/jig:adr` rather than hand-rolling the file
 and its `adr-rules.yaml` entry.
 
 **Two disciplines that are easy to skip and expensive to miss:**
@@ -377,8 +377,8 @@ record so the implementing session inherits them.
   that states a question but frames no options yet. The outcome lands on that
   issue (phase 4).
 - **From a skill that has reached a genuine fork** — a planning skill's
-  human-decision step, `/groundwork:do-item` on an issue carrying
-  `hitl:technical`, a `groundwork:review-arbiter` escalation that turns out to
+  human-decision step, `/jig:do-item` on an issue carrying
+  `hitl:technical`, a `jig:review-arbiter` escalation that turns out to
   be an architectural question rather than a triage one.
 
 **Trigger on an explicit decision ask, not on the presence of a fork in the

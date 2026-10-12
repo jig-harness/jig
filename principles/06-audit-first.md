@@ -1,7 +1,7 @@
 # 6 — Audit-first brownfield entry
 
 The natural entry point for an existing project is not "adopt module M0" — it
-is **"tell me where I stand."** Groundwork therefore ships as a runnable
+is **"tell me where I stand."** Jig therefore ships as a runnable
 assessor ([audit/](../audit/)), not just reference material:
 
 1. **Fan out parallel read-only surveys** over the target repo, one per
@@ -21,7 +21,7 @@ assessor ([audit/](../audit/)), not just reference material:
 **Why.** Brownfield teams don't lack ideas; they lack a trustworthy picture of
 their own gaps and an ordering. An audit produces both, and re-running it
 periodically turns the same machinery into a **practices-drift regression
-check** — including on repos that already adopted groundwork.
+check** — including on repos that already adopted jig.
 
 **Consequences:**
 

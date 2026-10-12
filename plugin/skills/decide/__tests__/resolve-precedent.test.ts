@@ -706,14 +706,14 @@ describe("where the sources are read from", () => {
     }
   });
 
-  it("reads the paths from the repository's Groundwork configuration", () => {
+  it("reads the paths from the repository's Jig configuration", () => {
     const root = repoWithCustomLayout();
-    const saved = process.env.GROUNDWORK_OVERLAY;
-    delete process.env.GROUNDWORK_OVERLAY;
+    const saved = process.env.JIG_OVERLAY;
+    delete process.env.JIG_OVERLAY;
     try {
       mkdirSync(join(root, ".config"));
       writeFileSync(
-        join(root, ".config", "groundwork-overlay.yaml"),
+        join(root, ".config", "jig.yaml"),
         [
           "adr:",
           "  directory: docs/decisions",
@@ -741,18 +741,18 @@ describe("where the sources are read from", () => {
         "**Sources**: docs/decisions/, CLAUDE.md, .cursor/rules/, GLOSSARY.md",
       );
     } finally {
-      if (saved === undefined) delete process.env.GROUNDWORK_OVERLAY;
-      else process.env.GROUNDWORK_OVERLAY = saved;
+      if (saved === undefined) delete process.env.JIG_OVERLAY;
+      else process.env.JIG_OVERLAY = saved;
       rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("refuses a configured path outside the repository, and exits 2 on it", () => {
     const root = repoWithCustomLayout();
-    const saved = process.env.GROUNDWORK_OVERLAY;
+    const saved = process.env.JIG_OVERLAY;
     const overlay = join(root, "overlay.yaml");
     writeFileSync(overlay, "adr:\n  directory: ../elsewhere\n");
-    process.env.GROUNDWORK_OVERLAY = overlay;
+    process.env.JIG_OVERLAY = overlay;
     const origErr = console.error;
     const errors: string[] = [];
     console.error = (msg: string) => errors.push(msg);
@@ -764,8 +764,8 @@ describe("where the sources are read from", () => {
       expect(errors.join("\n")).toContain("adr.directory");
     } finally {
       console.error = origErr;
-      if (saved === undefined) delete process.env.GROUNDWORK_OVERLAY;
-      else process.env.GROUNDWORK_OVERLAY = saved;
+      if (saved === undefined) delete process.env.JIG_OVERLAY;
+      else process.env.JIG_OVERLAY = saved;
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -1507,7 +1507,7 @@ describe("worked example against this repository's own corpus", () => {
 
   it("runs as a CLI against this repository and exits 0", () => {
     const env = { ...process.env };
-    delete env.GROUNDWORK_OVERLAY;
+    delete env.JIG_OVERLAY;
     const proc = Bun.spawnSync(
       [process.execPath, SCRIPT, "markdown tables blank line", "--json"],
       { cwd: REPO_ROOT, env },
@@ -1518,12 +1518,12 @@ describe("worked example against this repository's own corpus", () => {
     expect(report.candidates.length).toBeGreaterThan(0);
   });
 
-  it("searches GROUNDWORK_CONSUMER_ROOT rather than the working directory", () => {
+  it("searches JIG_CONSUMER_ROOT rather than the working directory", () => {
     const env: Record<string, string | undefined> = {
       ...process.env,
-      GROUNDWORK_CONSUMER_ROOT: REPO_ROOT,
+      JIG_CONSUMER_ROOT: REPO_ROOT,
     };
-    delete env.GROUNDWORK_OVERLAY;
+    delete env.JIG_OVERLAY;
     const proc = Bun.spawnSync(
       [process.execPath, SCRIPT, "markdown tables blank line", "--json"],
       { cwd: mkdtempSync(join(tmpdir(), "precedent-elsewhere-")), env },

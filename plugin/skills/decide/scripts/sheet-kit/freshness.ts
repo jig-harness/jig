@@ -130,14 +130,14 @@ function git(args: string[], cwd: string) {
 }
 
 /**
- * The consumer repository's root: `GROUNDWORK_CONSUMER_ROOT` when set, else
+ * The consumer repository's root: `JIG_CONSUMER_ROOT` when set, else
  * the top of the repository at `cwd`, or `undefined` outside one. Found with
  * the same isolated environment as every other call here: a root discovered
  * through a hook's variables would point the whole check at another
  * repository.
  */
 export function repositoryRoot(cwd = process.cwd()): string | undefined {
-  const explicit = process.env.GROUNDWORK_CONSUMER_ROOT;
+  const explicit = process.env.JIG_CONSUMER_ROOT;
   if (explicit !== undefined && explicit.trim() !== "")
     return resolve(explicit);
   const result = git(["rev-parse", "--show-toplevel"], cwd);

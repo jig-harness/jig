@@ -108,7 +108,7 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
         {
           pid: 101,
           ppid: DRIVER,
-          args: `bun /home/dev/.claude/plugins/cache/groundwork/groundwork/0.3.0/skills/${skill}/scripts/helper.ts --once`,
+          args: `bun /home/dev/.claude/plugins/cache/jig/jig/0.3.0/skills/${skill}/scripts/helper.ts --once`,
         },
       ];
       expect(findPassChild(DRIVER, rows)).toBe(false);

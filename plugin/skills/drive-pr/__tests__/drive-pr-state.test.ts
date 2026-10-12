@@ -6490,7 +6490,7 @@ describe("drive-state.ts durability", () => {
       //
       // Both worktrees land on the SAME state dir because they share one
       // clone (`twoDrivers` leaves $DRIVE_PR_STATE_DIR unset so they resolve
-      // it themselves) — an earlier change's default, `~/.local/state/groundwork/drive-pr/
+      // it themselves) — an earlier change's default, `~/.local/state/jig/drive-pr/
       // <cloneKey>/`, keyed off `--git-common-dir` rather than the common
       // dir itself.
       const commonDir = resolve(
@@ -6506,7 +6506,7 @@ describe("drive-state.ts durability", () => {
         suiteHome,
         ".local",
         "state",
-        "groundwork",
+        "jig",
         "drive-pr",
         cloneKey(commonDir),
       );
@@ -6958,7 +6958,7 @@ describe("drive-state.ts durability", () => {
         // Both trees land on the same state dir because they share one clone
         // — these probes deliberately leave $DRIVE_PR_STATE_DIR unset so
         // that both resolve it themselves. an earlier change's default,
-        // `~/.local/state/groundwork/drive-pr/<cloneKey>/`, keyed off `--git-common-dir`
+        // `~/.local/state/jig/drive-pr/<cloneKey>/`, keyed off `--git-common-dir`
         // rather than the common dir itself.
         const commonDir = resolve(
           a,
@@ -6976,7 +6976,7 @@ describe("drive-state.ts durability", () => {
               suiteHome,
               ".local",
               "state",
-              "groundwork",
+              "jig",
               "drive-pr",
               cloneKey(commonDir),
             ),
@@ -8840,7 +8840,7 @@ describe("drive-state.ts durability", () => {
       // re-read `$HOME` from `process.env` after startup — an in-process
       // `process.env.HOME = fakeHome` before calling the fence is silently
       // ineffective, and the fence resolves and mutates the REAL developer's
-      // `~/.local/state/groundwork` instead (measured while writing this test: it did).
+      // `~/.local/state/jig` instead (measured while writing this test: it did).
       // Only a genuinely separate process picks up a faked `$HOME` cold, the
       // same reason `suiteHome`/`gitCleanEnv()` above route every
       // `homedir()`-sensitive probe in this file through a subprocess rather
@@ -8865,7 +8865,7 @@ describe("drive-state.ts durability", () => {
         fakeHome,
         ".local",
         "state",
-        "groundwork",
+        "jig",
         "drive-pr",
         createHash("sha256").update(cloneId).digest("hex").slice(0, 16),
       );
@@ -9060,7 +9060,7 @@ describe("drive-state.ts durability", () => {
       const { a, b, env } = twoDrivers("remote-mutation-lock-pr-wide");
       // Both worktrees land on the SAME state dir because they share one
       // clone (mirrors the stale-lease probe above) — an earlier change's default,
-      // `~/.local/state/groundwork/drive-pr/<cloneKey>/`, keyed off `--git-common-dir`
+      // `~/.local/state/jig/drive-pr/<cloneKey>/`, keyed off `--git-common-dir`
       // rather than the common dir itself.
       const commonDirRemoteLock = resolve(
         a,
@@ -9075,7 +9075,7 @@ describe("drive-state.ts durability", () => {
         suiteHome,
         ".local",
         "state",
-        "groundwork",
+        "jig",
         "drive-pr",
         cloneKey(commonDirRemoteLock),
       );
@@ -9241,7 +9241,7 @@ describe("drive-state.ts durability", () => {
         suiteHome,
         ".local",
         "state",
-        "groundwork",
+        "jig",
         "drive-pr",
         cloneKey(commonDirExceedsWait),
       );

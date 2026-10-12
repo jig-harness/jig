@@ -33,7 +33,7 @@ malformed constructs and a CRLF case, which the parser reads without executing.
 Changing their language would remove the behavior under test.
 
 Shell snippets in consumer templates remain examples of host wiring. They are
-not Groundwork's runnable gate implementations. No Bash gate or self-test
+not Jig's runnable gate implementations. No Bash gate or self-test
 remains in `scripts/`, `audit/` or module `reference/` outside fixtures.
 
 ## Reproducing a comparison

@@ -42,7 +42,7 @@ import { join } from "node:path";
  * loaded was this canonical file; `loadLadder` compares the resolved path it
  * was given against this file's own absolute path and falls back to that
  * resolved path verbatim otherwise, so a `--config PATH` override or
- * `$GROUNDWORK_REVIEW_TRIAGE_CONFIG` trial never gets attributed to the
+ * `$JIG_REVIEW_TRIAGE_CONFIG` trial never gets attributed to the
  * canonical source it did not use.
  */
 export const LADDER_CONFIG_RELPATH = ".config/review-triage.yaml";
@@ -917,7 +917,7 @@ function clauseNames(accept: AcceptClauses): string[] {
  * key — is multi-pass, so text a value INSERTS is re-read as template syntax
  * by every later iteration. `{config}` is the reachable vector, because its
  * value is an operator-supplied path (`--config`, or
- * `$GROUNDWORK_REVIEW_TRIAGE_CONFIG`): a config at `/tmp/{round}/review-triage.yaml`
+ * `$JIG_REVIEW_TRIAGE_CONFIG`): a config at `/tmp/{round}/review-triage.yaml`
  * had its injected `{round}` rewritten to the finding's round, silently
  * misattributing the decline to a file that does not exist; a path containing
  * an unknown token like `{trial}` instead survived to `resolveStance`'s
@@ -1174,13 +1174,13 @@ export function resolveStance(
  * Absolute path to the consumer's config (`.config/review-triage.yaml` in the
  * consumer repository).
  *
- * `$GROUNDWORK_REVIEW_TRIAGE_CONFIG` overrides it — for a probe of the
+ * `$JIG_REVIEW_TRIAGE_CONFIG` overrides it — for a probe of the
  * fail-open/fail-closed paths, and for trialling a retune against a
  * checked-out variant without editing the tracked file. Empty and unset both
  * take the default, the same `${VAR:-def}` semantics `envOrDefault` documents.
  */
 export function defaultConfigPath(): string {
-  const override = process.env.GROUNDWORK_REVIEW_TRIAGE_CONFIG;
+  const override = process.env.JIG_REVIEW_TRIAGE_CONFIG;
   if (override !== undefined && override.trim() !== "") return override;
   return join(consumerRoot(), LADDER_CONFIG_RELPATH);
 }

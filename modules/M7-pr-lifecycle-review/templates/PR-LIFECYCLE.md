@@ -6,7 +6,7 @@
 > (skills, gates, bots) are referenced, not restated.
 >
 > **On copying, repoint the links you adopted.** The links below point at
-> Groundwork's own copy of each gate, template and module. Point each one at
+> Jig's own copy of each gate, template and module. Point each one at
 > wherever you vendored that piece — the same path you set `M7` to in your CI
 > wiring — or at your own copy of the gate, or delete it if you did not adopt
 > that piece. A link to a gate you do not run, in the contract everyone is told
@@ -156,8 +156,8 @@ sets has reported, and the PR is still open.
 verdict export adapter, not by raw reply text — and the per-round
 [convergence check](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/review-convergence), whose exit code drives the
 loop. Both are wired in [`mappings.md`](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md).
-With Groundwork's plugin, `/groundwork:resolve-review-comments` runs one pass of
-this loop and `/groundwork:drive-pr` runs its rounds unattended
+With Jig's plugin, `/jig:resolve-review-comments` runs one pass of
+this loop and `/jig:drive-pr` runs its rounds unattended
 ([plugin](https://github.com/docomply/jig/blob/main/plugin/README.md)).
 
 ### 5. Gates green, then merge

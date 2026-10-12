@@ -8,7 +8,7 @@
  *       move every clone's state found under <dir> (a state root holding one
  *       subdirectory per clone, or one clone's directory) into the same-named
  *       subdirectory of --to, default the current state root
- *       (~/.local/state/groundwork/drive-pr). `~` is expanded.
+ *       (~/.local/state/jig/drive-pr). `~` is expanded.
  *
  * A repository that schedules `reap-state.ts --delete` (a launchd agent or a
  * crontab entry) names that schedule with DRIVE_PR_REAPER_LAUNCHD_LABEL or
@@ -1639,7 +1639,7 @@ export interface CliArgs {
 
 /** The default state root every clone's directory sits in. */
 export function defaultStateRootDir(): string {
-  return join(homedir(), ".local", "state", "groundwork", "drive-pr");
+  return join(homedir(), ".local", "state", "jig", "drive-pr");
 }
 
 /** `~` and `~/…` expanded, then made absolute against the cwd. */

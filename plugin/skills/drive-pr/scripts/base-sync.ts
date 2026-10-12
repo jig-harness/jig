@@ -40,7 +40,7 @@
  * WHAT IT NEVER DOES is leave the worktree mid-merge. A merge that does not
  * apply cleanly is aborted, the abort is VERIFIED, and the exit says so (9) —
  * an unattended driver resolving conflicts on its own would be doing the
- * intent-tracing work `/groundwork:resolve-conflicts` exists to keep deliberate.
+ * intent-tracing work `/jig:resolve-conflicts` exists to keep deliberate.
  * If the abort itself fails, that is exit 3 with the marker named, never a
  * quiet exit 9 over a wedged tree.
  *
@@ -94,7 +94,7 @@
  *      front and RE-CHECKED immediately before the merge, since the fetch and
  *      the tree-lock wait in between are long enough for the PR to close.
  *   9  The merge does not apply cleanly. The worktree is RESTORED. Hand it to
- *      `/groundwork:resolve-conflicts` (the sibling skill): intent-traced
+ *      `/jig:resolve-conflicts` (the sibling skill): intent-traced
  *      hunks, regenerate-don't-hand-merge for derived files, a dropped-change
  *      check, then this round's own validation plan (SKILL.md § 5), then push.
  *  11  This working tree's TREE lease is held by another live
@@ -1042,7 +1042,7 @@ async function main(): Promise<number> {
           ? `base-sync: ${drift.baseRef} conflicts with this branch over ${drift.overlapCount} shared file(s).`
           : `base-sync: ${drift.baseRef} conflicts with this branch (no file-level overlap was measured).`,
         "The worktree was restored — nothing is half-merged. Resolve it deliberately:",
-        `  git merge ${drift.baseRef}   # then /groundwork:resolve-conflicts`,
+        `  git merge ${drift.baseRef}   # then /jig:resolve-conflicts`,
         "Then run this round's validation plan (SKILL.md § 5) and push.",
       );
     }

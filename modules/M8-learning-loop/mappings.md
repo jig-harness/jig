@@ -14,7 +14,7 @@ runtimes. Replace `<placeholders>` with your values.
 | parity report | on a schedule (a weekly parity snapshot) | CI on a cron; its failure reopens a lever + feeds [M7](../M7-pr-lifecycle-review/) promotion |
 | reflection trigger | at the end of a review loop, once it converges | not a gate — a loop step whose exit code says whether to prompt (see § Reflection below) |
 
-The recipes run the gates from a pinned Groundwork checkout: each gate imports
+The recipes run the gates from a pinned Jig checkout: each gate imports
 the shared implementation in `lib/module-gates.ts`, so keep the module and
 `lib/` together and set `M8` to the module's path inside that checkout.
 
@@ -32,7 +32,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
-      M8: <groundwork-checkout>/modules/M8-learning-loop
+      M8: <jig-checkout>/modules/M8-learning-loop
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
       - run: bun test "$M8"/reference/corpus-lint/check-corpus.test.ts
@@ -41,7 +41,7 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     env:
-      M8: <groundwork-checkout>/modules/M8-learning-loop
+      M8: <jig-checkout>/modules/M8-learning-loop
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
       - run: ./scripts/parity-snapshot > parity.tsv      # from your telemetry
@@ -52,7 +52,7 @@ jobs:
 
 ```yaml
 variables:
-  M8: <groundwork-checkout>/modules/M8-learning-loop
+  M8: <jig-checkout>/modules/M8-learning-loop
 corpus-lint:
   rules: [{ changes: ['corpus.yaml', 'miss-taxonomy.yaml'] }]
   script:
@@ -109,8 +109,8 @@ The two companion cycles are runtime commands with a human-approval checkpoint.
 
 | Runtime | Reflection | Memory promotion |
 |---------|-----------|------------------|
-| Claude Code | a `/reflect` command appends to a feedback inbox; a `/review-reflection-feedback` command proposes scaffolding changes for human approval | Groundwork's [`/groundwork:promote-memory`](../../plugin/skills/promote-memory/SKILL.md) lifts private memory into the git-tracked docs, after checking it still holds |
-| Codex | an end-of-session hook writing to the inbox; a periodic review step | the same [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) skill, from the Groundwork plugin |
+| Claude Code | a `/reflect` command appends to a feedback inbox; a `/review-reflection-feedback` command proposes scaffolding changes for human approval | Jig's [`/jig:promote-memory`](../../plugin/skills/promote-memory/SKILL.md) lifts private memory into the git-tracked docs, after checking it still holds |
+| Codex | an end-of-session hook writing to the inbox; a periodic review step | the same [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) skill, from the Jig plugin |
 | Cursor / other | an end-of-session hook writing to the inbox; a periodic review step | a scripted promote step over the agent's memory store |
 
 ### Reflection: firing it on the round count

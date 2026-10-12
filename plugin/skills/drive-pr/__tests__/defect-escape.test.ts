@@ -1561,7 +1561,7 @@ describe("--ladder-only fails closed on an unresolvable marker", () => {
       if (v !== undefined && k !== "GIT_DIR" && k !== "GIT_WORK_TREE")
         env[k] = v;
     }
-    env.GROUNDWORK_REVIEW_TRIAGE_CONFIG = configPath;
+    env.JIG_REVIEW_TRIAGE_CONFIG = configPath;
     const r = spawnSync(
       process.execPath,
       [

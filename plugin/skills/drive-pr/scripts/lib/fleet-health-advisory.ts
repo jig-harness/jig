@@ -63,12 +63,7 @@ export const NO_ADVISORY: FleetHealthAdvisory = {
 };
 
 /** Where the snapshot is read from when the consumer names no directory. */
-export const DEFAULT_SNAPSHOT_SUBDIR = [
-  ".local",
-  "state",
-  "groundwork",
-  "dashboard",
-];
+export const DEFAULT_SNAPSHOT_SUBDIR = [".local", "state", "jig", "dashboard"];
 
 /** `~` and `~/…` expanded against `home`; a relative path is the consumer root's. */
 export function expandDir(raw: string, home: string = homedir()): string {
@@ -89,7 +84,7 @@ export function configuredSnapshotDir(): string | null {
 /**
  * The snapshot directory: `$DEV_DASHBOARD_DIR` (trimmed), else the
  * consumer's `fleet_health.snapshot_dir` (`~` expanded), else
- * `~/.local/state/groundwork/dashboard`. An unreadable overlay falls back to
+ * `~/.local/state/jig/dashboard`. An unreadable overlay falls back to
  * the default: the advisory is best-effort.
  */
 export function dashboardDir(

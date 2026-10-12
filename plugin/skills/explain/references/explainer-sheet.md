@@ -86,7 +86,7 @@ and compares each one against `verifiedAt.commit`. A clean result means no
 cited file changed; it does not mean the claims are true, and the render
 summary says so (`freshnessScope`). A bare `ADR-NNNN` resolves to its file
 in the ADR directory (`adr.directory`; when it is not set, the directory
-`/groundwork:adr` detects, else `docs/adr`). The citation rules
+`/jig:adr` detects, else `docs/adr`). The citation rules
 of the decision sheet apply unchanged
 ([`decision-sheet.md`](../../decide/references/decision-sheet.md#render-and-check),
 section "Render and check").
@@ -145,7 +145,7 @@ Linear adapter example: `mcp__linear__prepare_attachment_upload` with the
 returned header, then `mcp__linear__create_attachment_from_upload`). Remove an
 older explainer with the same title after the new one is attached, never
 before. Post the markdown as the comment, or a shorter comment that points to
-the sheet, through the tracker scripts of `/groundwork:do-item`
+the sheet, through the tracker scripts of `/jig:do-item`
 (`<skill-dir>/../do-item/scripts/tracker.ts comment <KEY>`). Never commit a
 rendered sheet to the repository.
 

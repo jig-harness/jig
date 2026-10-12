@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Reaper for drive-pr's own artifacts in `resolveStateDir`'s clone-wide state
- * directory — the default is `~/.local/state/groundwork/drive-pr/ <cloneKey>/`,
+ * directory — the default is `~/.local/state/jig/drive-pr/ <cloneKey>/`,
  * not the legacy `--git-common-dir` this reaper originally targeted; see the
  * module docs below for why that relocation happened and what it does and does
  * not change here. Meant to run from a scheduled (weekly) sweep, alongside a
@@ -287,8 +287,8 @@ const ENTRY_COUNT_WARN_THRESHOLD = 50_000;
  * IDE/backup/git-metadata blast radius the relocation exists to escape.
  * `isDescendantOf` checks ancestry, not just identity — and the SAME hazard
  * applies to `computedDefault`: an override nested beneath the ordinary default
- * (`~/.local/state/groundwork/drive-pr/<clone>/custom`) still sits under the
- * tree an IDE or backup tool watching `~/.local/state/groundwork` already pays
+ * (`~/.local/state/jig/drive-pr/<clone>/custom`) still sits under the
+ * tree an IDE or backup tool watching `~/.local/state/jig` already pays
  * the recursive-enumeration cost for, so it is not a genuine relocation either.
  */
 export function computeAlreadyRelocated(

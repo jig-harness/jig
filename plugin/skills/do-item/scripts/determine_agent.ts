@@ -3,7 +3,7 @@
  * Decide which agent(s) implement an issue, and which scouts gather context
  * first, from the issue's labels and title.
  *
- * The routing is the consumer's, read from `.config/groundwork-overlay.yaml`:
+ * The routing is the consumer's, read from `.config/jig.yaml`:
  *
  *   do_item:
  *     agents:

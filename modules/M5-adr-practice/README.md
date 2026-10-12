@@ -88,12 +88,12 @@ What this module provides:
   and [`maturity.yaml`](maturity.yaml).
 
 Each reference gate has a paired self-test beside it. The
-[`/groundwork:adr`](../../plugin/skills/adr/SKILL.md) skill is the runnable
+[`/jig:adr`](../../plugin/skills/adr/SKILL.md) skill is the runnable
 form of this practice: it writes a record, extracts its checkable rules into
 the rules catalog and validates them against the interpreter's format.
-[`/groundwork:decide`](../../plugin/skills/decide/SKILL.md) checks a new
+[`/jig:decide`](../../plugin/skills/decide/SKILL.md) checks a new
 question against the existing records first, and hands a ruling that clears
-its bar to `/groundwork:adr`.
+its bar to `/jig:adr`.
 
 Deliberately left out: one hand-written script per rule, because a per-rule
 script is what a rules catalog exists to replace; and the semantic,

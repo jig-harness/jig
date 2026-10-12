@@ -145,12 +145,12 @@ describe("mark-ready.ts", () => {
     const overlay = join(dir, "mark-ready-overlay.yaml");
     writeFileSync(overlay, "pull_requests:\n  mark_ready: 2\n");
     const early = await markReady(dir, stateDir, ["--round", "1"], {
-      GROUNDWORK_OVERLAY: overlay,
+      JIG_OVERLAY: overlay,
     });
     expect(early).toMatchObject({ outcome: "not-due", exitCode: 0 });
     expect(calls(dir)).toEqual([]);
     const due = await markReady(dir, stateDir, ["--round", "2"], {
-      GROUNDWORK_OVERLAY: overlay,
+      JIG_OVERLAY: overlay,
     });
     expect(due.outcome).toBe("marked");
     expect(calls(dir)).toEqual(["999"]);
@@ -797,7 +797,7 @@ describe("drive.ts loop control", () => {
     expect(skill.slice(entry, table)).not.toContain("drive-status.ts");
     // The arm command keeps the portable one-line `bun` form and --bots-only.
     expect(section).toContain(
-      'bun ${CLAUDE_SKILL_DIR}/scripts/drive.ts <PR> --bots-only -- claude -p "/groundwork:drive-pr --bots-only <PR>"',
+      'bun ${CLAUDE_SKILL_DIR}/scripts/drive.ts <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"',
     );
   });
 
@@ -1414,13 +1414,13 @@ describe("drive.ts loop control", () => {
   function withPolicy(dir: string, pullRequests: Record<string, unknown>) {
     const path = join(dir, "policy-overlay.json");
     const suite = loadYaml(
-      readFileSync(process.env.GROUNDWORK_OVERLAY as string, "utf8"),
+      readFileSync(process.env.JIG_OVERLAY as string, "utf8"),
     ) as Record<string, unknown>;
     writeFileSync(
       path,
       JSON.stringify({ ...suite, pull_requests: pullRequests }),
     );
-    return { env: { GROUNDWORK_OVERLAY: path } };
+    return { env: { JIG_OVERLAY: path } };
   }
 
   it("pull_requests.mark_ready: N waits for round N before marking Ready", async () => {
@@ -8072,7 +8072,7 @@ exit 0
     // whether or not drive.ts exports anything. So the override is blanked and
     // the driver has to resolve the directory itself, from a repository of
     // this probe's own — asserting the pass received exactly that repo's
-    // an earlier change default (`~/.local/state/groundwork/drive-pr/<cloneKey>`, keyed off this
+    // an earlier change default (`~/.local/state/jig/drive-pr/<cloneKey>`, keyed off this
     // repo's own `--git-common-dir`, never that directory itself newer)
     // pins BOTH halves ("something was exported" and "it is the right
     // directory"). Exporting an unrelated path would send the fence hunting
@@ -8097,7 +8097,7 @@ exit 0
       suiteHome,
       ".local",
       "state",
-      "groundwork",
+      "jig",
       "drive-pr",
       cloneKey(resolve(repo.dir, commonDir)),
     );

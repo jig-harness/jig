@@ -13,7 +13,7 @@
  * re-litigated is a measured source of rejected review findings.
  *
  * Where each source lives is the consumer's to say, in
- * `.config/groundwork-overlay.yaml` (`lib/overlay.ts`): `adr.directory`,
+ * `.config/jig.yaml` (`lib/overlay.ts`): `adr.directory`,
  * `decide.policy_files`, `decide.rules_directory` and `decide.glossary_file`,
  * each with a default (`docs/adr`, `AGENTS.md`, `.claude/rules`,
  * `CONTEXT.md`).
@@ -799,7 +799,7 @@ export function loadCorpus(
         `${sources.adrDirectory}/ADR-*.md, ${sources.policyFiles.join(", ")}, ` +
         `${sources.rulesDirectory}/*.md. Refusing to report "no precedent" ` +
         "from an empty corpus. Check --repo-root, or point adr.directory and " +
-        "decide.* in .config/groundwork-overlay.yaml at the sources.",
+        "decide.* in .config/jig.yaml at the sources.",
     );
   }
   return { docs, glossary: entries, glossaryFile: file, sources };
@@ -1215,10 +1215,7 @@ export function main(argv: string[], cwd: string, now: Date): number {
     }
     // A configuration the consumer wrote but that cannot be read is a usage
     // error, reported as such rather than as a crash.
-    if (
-      err instanceof Error &&
-      /groundwork|adr\.|decide\./i.test(err.message)
-    ) {
+    if (err instanceof Error && /jig|adr\.|decide\./i.test(err.message)) {
       console.error(`resolve-precedent: ${err.message}`);
       return 2;
     }

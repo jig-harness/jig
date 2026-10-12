@@ -7,7 +7,7 @@
 
 > Overall posture, urgent cross-repo risks, the most valuable shared
 > capability to establish, and the universal lessons that flow back into
-> Groundwork.
+> Jig.
 
 ## Audit basis
 
@@ -43,20 +43,20 @@ review lenses.
 > policy, and a minimal first slice. Keep existing executable services in
 > their own repos and integrate them rather than absorbing them.
 
-## Groundwork backflow
+## Jig backflow
 
-| Finding from live use | Universal lesson | Groundwork change or explicit no-port decision |
+| Finding from live use | Universal lesson | Jig change or explicit no-port decision |
 |-----------------------|------------------|-----------------------------------------------|
 | <…> | <…> | <…> |
 
-Also list improvements to Groundwork's own maintenance separately from module
+Also list improvements to Jig's own maintenance separately from module
 content, such as branch enforcement, status-freshness design, or auditor
 automation.
 
 ## Recommended sequence
 
 > Ordered actions with owner type, dependencies, and rough effort. Separate
-> immediate repo fixes, shared-capability work, and Groundwork backflow.
+> immediate repo fixes, shared-capability work, and Jig backflow.
 
 ## Human decisions requested
 

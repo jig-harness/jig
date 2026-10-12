@@ -34,7 +34,7 @@ function safeSpawn(
 }
 
 const root = resolve(import.meta.dir, "..");
-const temp = mkdtempSync(join(tmpdir(), "groundwork-freshness-"));
+const temp = mkdtempSync(join(tmpdir(), "jig-freshness-"));
 afterAll(() => rmSync(temp, { recursive: true, force: true }));
 function run(
   path: string,
@@ -55,7 +55,7 @@ function compare(
   env: Record<string, string> = {},
 ) {
   expectSpawnExit(run(path, args, cwd, env), status);
-  if (process.env.GROUNDWORK_BASH_PARITY === "1")
+  if (process.env.JIG_BASH_PARITY === "1")
     expectSpawnExit(
       safeSpawn(
         [
@@ -201,7 +201,7 @@ test("index generator preserves deterministic body; gate detects stale and missi
   const fresh = join(temp, "fresh-index.md");
   expectSpawnExit(run(`${m2}/triad/generate-index.ts`, [docs, fresh]), 0);
   const generated = readFileSync(fresh, "utf8");
-  if (process.env.GROUNDWORK_BASH_PARITY === "1") {
+  if (process.env.JIG_BASH_PARITY === "1") {
     const old = join(temp, "old-index.md");
     expectSpawnExit(
       safeSpawn([

@@ -406,7 +406,7 @@ export function listItems(block: string): string[] {
 // ── Calibration arm (plan W1 step 5) ────────────────────────────────────────
 
 /**
- * Whether Refocus is on for this work item. `GROUNDWORK_REFOCUS` forces it
+ * Whether Refocus is on for this work item. `JIG_REFOCUS` forces it
  * (`1`/`on`, `0`/`off`); otherwise the calibration splits by the parity of
  * the snapshot's `issue` number — odd is on. That is the unit a PR delivers:
  * the picked-up issue, a batch's anchor, or — when an epic is picked up — the
@@ -939,7 +939,7 @@ export function main(argv: string[]): number {
     chainDir = join(root, ".context", "intent-chain");
     out = join(chainDir, `${identifier}.md`);
   }
-  const rendered = renderIntentChain(input, process.env.GROUNDWORK_REFOCUS);
+  const rendered = renderIntentChain(input, process.env.JIG_REFOCUS);
   try {
     writeAtomic(out, rendered.text);
   } catch (err) {

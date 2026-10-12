@@ -34,7 +34,7 @@
  *               to the `list-unresolved-threads.ts` enumeration below.
  *
  *               Not a performance knob — it is the social boundary
- *               `/groundwork:resolve-review-comments` § Human threads draws, and this script
+ *               `/jig:resolve-review-comments` § Human threads draws, and this script
  *               resolves threads unattended, which is exactly the act that
  *               boundary governs: "a **human** thread you replied to but
  *               chose not to close on the author's behalf" is a DELIBERATE
@@ -510,7 +510,7 @@ async function main(): Promise<number> {
       let action: string;
       // `triage-thread.ts --leave-open` embeds LEAVE_OPEN_MARKER on a
       // deliberate choice not to resolve — usually a human thread, per
-      // `/groundwork:resolve-review-comments` § Human threads. This sweep is the OTHER reader of
+      // `/jig:resolve-review-comments` § Human threads. This sweep is the OTHER reader of
       // that same durable text (this file's own header: "the standalone-sweep
       // COUNTERPART... free to process the identical unresolved thread
       // later"), so without this check it would resolve a thread the other

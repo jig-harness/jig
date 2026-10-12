@@ -52,7 +52,7 @@ test("exclusion globs match native Windows separators and preserve POSIX literal
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 test("companion window boundaries preserve negative empty neighborhoods and reject invalid configuration", () => {
-  const root = mkdtempSync(join(tmpdir(), "groundwork-adr-window-"));
+  const root = mkdtempSync(join(tmpdir(), "jig-adr-window-"));
   try {
     const file = join(root, "fetch.ts");
     writeFileSync(

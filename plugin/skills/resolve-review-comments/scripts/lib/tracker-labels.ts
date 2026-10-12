@@ -1,6 +1,6 @@
 /**
  * The issue-tracker labels the skills act on, by role: the consumer's
- * `issue_tracker.labels` in `.config/groundwork-overlay.yaml`, with a default
+ * `issue_tracker.labels` in `.config/jig.yaml`, with a default
  * for every role.
  *
  * The skills read a handful of labels as process signals rather than as

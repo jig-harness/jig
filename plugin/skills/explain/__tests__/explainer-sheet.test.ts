@@ -696,9 +696,9 @@ describe("figure checks", () => {
 
   /**
    * A repository root holding the fixture's diagram source and no built
-   * figure. The suite preload points GROUNDWORK_OVERLAY at another
+   * figure. The suite preload points JIG_OVERLAY at another
    * repository's configuration, so it is unset here: these checks read the
-   * temporary root's own `.config/groundwork-overlay.yaml`, or none.
+   * temporary root's own `.config/jig.yaml`, or none.
    */
   function figureRoot(): { root: string; diagram: string } {
     const root = mkdtempSync(join(tmpdir(), "explainer-figures-"));
@@ -708,13 +708,13 @@ describe("figure checks", () => {
     return { root, diagram };
   }
   const withoutOverlayOverride = (check: () => void) => {
-    const saved = process.env.GROUNDWORK_OVERLAY;
-    delete process.env.GROUNDWORK_OVERLAY;
+    const saved = process.env.JIG_OVERLAY;
+    delete process.env.JIG_OVERLAY;
     try {
       check();
     } finally {
-      if (saved === undefined) delete process.env.GROUNDWORK_OVERLAY;
-      else process.env.GROUNDWORK_OVERLAY = saved;
+      if (saved === undefined) delete process.env.JIG_OVERLAY;
+      else process.env.JIG_OVERLAY = saved;
     }
   };
 
@@ -741,7 +741,7 @@ describe("figure checks", () => {
       const { root } = figureRoot();
       mkdirSync(join(root, ".config"));
       writeFileSync(
-        join(root, ".config/groundwork-overlay.yaml"),
+        join(root, ".config/jig.yaml"),
         "explain:\n  figure_build_command: scripts/build-figure.sh\n",
       );
       expect(() => loadFigures(parseSource(real()), root)).toThrow(

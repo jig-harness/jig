@@ -52,7 +52,7 @@ export class Scratch {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
       if (value === undefined || key.toUpperCase().startsWith("GIT_")) continue;
-      if (key.startsWith("GROUNDWORK_")) continue;
+      if (key.startsWith("JIG_")) continue;
       env[key] = value;
     }
     this.env = {
@@ -118,13 +118,13 @@ export class Scratch {
       "rev-parse",
       "--path-format=absolute",
       "--git-path",
-      "groundwork/conflicts.json",
+      "jig/conflicts.json",
     ).trim();
     return JSON.parse(readFileSync(path, "utf8"));
   }
 
   overlay(text: string): void {
-    this.write(".config/groundwork-overlay.yaml", text);
+    this.write(".config/jig.yaml", text);
   }
 
   cleanup(): void {

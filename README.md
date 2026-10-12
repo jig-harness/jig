@@ -1,9 +1,13 @@
-# groundwork
+![Jig](assets/brand/jig-frame.svg)
+
+# Jig
 
 **AI-native delivery practices — template, reference, and auditor.**
 
-Groundwork is a modular collection of software-delivery practices for teams that
-build and maintain software with AI coding agents. It is deliberately
+Jig is a modular collection of software-delivery practices for teams that
+build and maintain software with AI coding agents. A jig, in a workshop, holds
+the work and guides the tool so every cut comes out the same; these skills and
+gates do that for agents. It is deliberately
 **vendor-agnostic** (the principles matter, not the specific tools) and
 **tech-stack-flexible**. Its unifying idea: a repository should carry
 scaffolding that lets AI agents operate it well over time — and everything else
@@ -26,8 +30,8 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
    maturity rung at a time ([adoption/brownfield.md](adoption/brownfield.md)).
 3. **Reference** — cherry-pick a single pattern (e.g., generated-artifact
    freshness gates) from its module.
-4. **Shared tooling** — use Groundwork's agent skills in any repository without
-   copying them: install the `groundwork` plugin once per machine for Claude
+4. **Shared tooling** — use Jig's agent skills in any repository without
+   copying them: install the `jig` plugin once per machine for Claude
    Code or Codex and commit only your repository's values. See
    [plugin/README.md](plugin/README.md).
 
@@ -45,7 +49,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [profiles/](profiles/) | Module compositions: Solo/Lite, Team/Standard, Regulated/Strict |
 | [adoption/](adoption/) | Greenfield and brownfield adoption paths |
 | [seeds/](seeds/) | Imported source material, kept as-imported for provenance |
-| [plugin/](plugin/README.md) | The `groundwork` plugin: agent skills for Claude Code and Codex (the pull-request drive loop, issue pickup, review resolution, conflict resolution, and procedure skills), the `review-arbiter` agent, and [recommended third-party skills](plugin/RECOMMENDED-SKILLS.md) |
+| [plugin/](plugin/README.md) | The `jig` plugin: agent skills for Claude Code and Codex (the pull-request drive loop, issue pickup, review resolution, conflict resolution, and procedure skills), the `review-arbiter` agent, and [recommended third-party skills](plugin/RECOMMENDED-SKILLS.md) |
 | [tools/](tools/README.md) | Runnable development tools |
 
 ## Status
@@ -54,14 +58,14 @@ Every module (M0–M12) carries the full module contract, and the auditor scores
 the complete map. The plugin's version and what each release changed are in
 [CHANGELOG.md](CHANGELOG.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
-Groundwork is distilled from a production codebase built with AI agents, and
+Jig is distilled from a production codebase built with AI agents, and
 the repositories that use it keep feeding lessons back
 (see [principles/05-learning-loop.md](principles/05-learning-loop.md)).
 
 Private repo; publishing (whole or per-module) is a deferred decision. No
 license granted while private.
 
-## Working on Groundwork
+## Working on Jig
 
 Install [mise](https://mise.jdx.dev/) and run:
 
