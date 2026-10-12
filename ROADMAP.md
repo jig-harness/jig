@@ -256,6 +256,9 @@ below.
 - **Tracker planning.** Epic planning, batching and prioritisation as skills on
   the tracker interface, where the procedure is generic rather than one
   organization's workflow.
+- **More launcher providers.** A Herdr provider for
+  [tools/launcher/](tools/launcher/README.md), once its generic workspace
+  commands are separated from the product-specific setup they come with.
 - **Gates and workspace infrastructure.** The change-area resolver
   ([M3](modules/M3-change-area-catalog/README.md)), cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of

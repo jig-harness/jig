@@ -12,12 +12,14 @@ const root = join(import.meta.dir, "..");
 
 /**
  * Suites that need a POSIX system: they stand in for commands with Bash
- * scripts and read process state through `ps`, `/proc` and POSIX signals, so
+ * scripts and read process state through `ps`, `/proc` and POSIX signals, or
+ * (the launcher's) put a `/bin/sh` stub on `PATH` and check file modes, so
  * they cannot run on Windows. Windows runs every other suite.
  */
 export const POSIX_ONLY_SUITES = [
   "plugin/skills/drive-pr/**",
   "plugin/skills/do-item/**",
+  "tools/launcher/**",
 ];
 
 /**

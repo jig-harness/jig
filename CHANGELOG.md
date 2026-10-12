@@ -21,6 +21,14 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ### Added
 
+- `tools/launcher/`: the issue tracker's "open in coding agent" button, as a
+  machine-level tool. It assigns the issue to whoever opened it, saves the
+  issue to a context file that `/jig:do-item` reads, picks the repository
+  from the issue's label, and opens the workspace provider with the prompt
+  (Conductor first, where a routed issue's agent starts once you click
+  **Create**). Linear is the first tracker, behind a tracker interface.
+  `install.ts` wires it into Linear's desktop app; its configuration is
+  `~/.linear/launcher.yaml`.
 - Session reflection is planned: [design/reflection.md](design/reflection.md)
   describes the event log, the per-worktree journal, the `reflect` and
   `review-reflections` skills, the store contract and the filesystem, Notion

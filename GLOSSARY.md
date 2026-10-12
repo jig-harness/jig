@@ -490,6 +490,18 @@ capitalized as commonly written; cross-references are *italicized*.
   metrics need), and one implementation of that set for a particular tracker
   (Linear today). The skills call only the interface, so supporting a new
   tracker means writing an adapter, not editing the skills.
+- **Launcher** — the program an issue tracker's "open in coding agent" button
+  runs. Jig's assigns the issue to whoever opened it, saves the whole
+  issue to a file the agent reads, chooses the repository from the issue's
+  label and opens a workspace for the agent in a *workspace provider* (with
+  Conductor, a routed issue's agent starts once you confirm the new
+  workspace).
+- **Workspace provider** — the part of the *launcher* that opens the agent's
+  workspace in a particular app or host (Conductor today). Providers differ
+  only in that last step, so adding one does not change the rest of the
+  launcher.
+- **Deep link** — a web-style address (`conductor://…`) that opens a desktop
+  app at a given place, here with a prompt and a repository already filled in.
 - **Test shard** — one slice of a test suite's files, run as its own CI job
   so a long suite finishes in a fraction of the time on parallel machines.
 - **Validation plan** — the checks a change must pass, worked out from the files

@@ -19,9 +19,11 @@ Jig keeps those reusable command-line tools in one place.
 
 A command binds a named host behind an interface when it needs one. Host names,
 tracker policies, gate commands and organization-specific values arrive from
-consumer configuration, read at run time from the consumer repository.
+consumer configuration, read at run time: from the consumer repository, or for
+a machine-level command such as the launcher, from the user's home.
 [plugin/](plugin/README.md) installs and checks the plugin on a machine and
-tests its layout.
+tests its layout. [launcher/](launcher/README.md) wires an issue tracker's "open in
+coding agent" button to a workspace on this machine.
 
 ## Runtime choice
 
