@@ -41,6 +41,9 @@ changes are marked **Breaking** and say what a consumer changes.
   criterion and Jig's configuration exists, fits the audit's schema and has
   no unknown key in a Jig section (`scripts/check-audit-fit.ts`); the review policy flags a pull request that
   does not say what it changed in the audit.
+- AGENTS.md § Ways of working states the parallel-workspace rules, each with
+  its reason: reuse a branch before creating one, never move work with
+  `git stash`, install only with `bun install`.
 - AGENTS.md states Jig's own pull-request lifecycle: read the whole diff and
   run the gates before opening, open as a draft, mark it Ready after the first
   review round, merge only once a round after Ready has settled with the

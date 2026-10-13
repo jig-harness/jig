@@ -105,6 +105,19 @@ Read in this order when starting a session here:
   user-visible change in [CHANGELOG.md](CHANGELOG.md) ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)):
   under the new plugin version's heading when it changes `plugin/`, under
   **Unreleased** otherwise.
+- **Parallel workspaces.** Jig is worked in many
+  [worktrees](GLOSSARY.md) of one clone at once, each with its own agent
+  ([M12](modules/M12-parallel-agent-ergonomics/README.md)), so moves that
+  are harmless alone collide here. Reuse a branch before creating one
+  (`git fetch origin`, then `git branch -a` and the open pull requests; stop
+  if the fetch fails), or two agents on one item open two diverging
+  branches. When another worktree already has that branch checked out, its
+  agent owns the item: work there only after that agent has stopped and
+  handed it over, and never force a second checkout. Never move work with `git stash`: every
+  worktree shares its stack, so a stash pushed in one can be popped in
+  another; commit work in progress instead. Install only with `bun install`:
+  another package manager writes its own lockfile beside `bun.lock` and
+  installs versions the gates and CI do not test.
 - **Pull-request lifecycle** (Jig's own form of
   [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECYCLE.md)).
   Before opening, read your whole diff against `origin/main` as a reviewer
