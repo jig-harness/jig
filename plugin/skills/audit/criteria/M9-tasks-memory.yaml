@@ -26,6 +26,8 @@ criteria:
     observe:
       - "a memory home is named (a git-tracked dir or a runtime memory feature)"
       - "the what / how / in-session tiering is documented"
+      - "work state has one authoritative store, the tracker, with no second task store beside it"
+      - "handoffs another worktree, or a person not working in it, needs go on the tracker item, not in worktree scratch; a resumption file for the same worktree may stay there"
 
   - id: taxonomy-validated-ssot
     level: standard

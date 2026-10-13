@@ -16,36 +16,79 @@ either evaporates (a lasting decision left in an ephemeral task list) or clutter
 
 | Tier | Holds | Lifetime | Audience |
 |------|-------|----------|----------|
-| **What** — the tracker | team-visible units of work: epics and sub-issues, with the mandatory taxonomy (type, status, flags) | until the work is done | the team; cross-session |
-| **How** — persistent agent memory | the multi-session working knowledge for executing the *what*: the tactical plan, decisions made, gotchas discovered, where things are | across sessions, git-backed | the agents (and humans) working the item, now and next session |
-| **In-session** — the ephemeral task list | the moment-to-moment checklist an agent keeps while doing one focused stretch of work | one session; discard on completion | the agent, right now |
+| **What** — the tracker | team-visible units of work (epics and sub-issues, with the mandatory taxonomy) and everything another session needs about one of them: the tactical plan, decisions with their reasons, handoffs | until the work is done | the team: any session, worktree, tool or person |
+| **How** — persistent agent memory | durable knowledge about the codebase and its tooling, not about one work item: gotchas, where things are, what a command really does | across sessions; private first, then promoted into git-tracked docs | the agent, then the team once promoted |
+| **In-session** — the task list and worktree scratch | the moment-to-moment checklist for one focused stretch, and scratch files kept in a gitignored directory of the worktree | one session, or the worktree | this session, later sessions in the same worktree, and the person operating that worktree |
 
 A rule of thumb for which tier a note belongs in: *if it must outlive this
-session, it is not in-session*; *if another agent or a human needs it, it is not
-private*. Anything that clears both bars is a candidate for **promotion** (below).
+session, it is not in the task list*; *if a different worktree, or a person not
+working in this one, needs it, it is not in worktree scratch*: it goes on the tracker item. A lesson
+about the codebase that clears both bars is a candidate for **promotion**
+(below).
+
+The boundary that is easiest to misjudge is worktree scratch. It survives the
+session, so it feels durable, but only a session in that same worktree sees
+it, whichever agent runtime it uses: a sibling worktree, another clone or a
+colleague's machine never does. A note parked there is invisible to the
+reader most likely to need it.
+
+There is no fourth tier. Work state has exactly one authoritative store, the
+tracker, whatever it is built on: a hosted tracker, or a plan file kept in
+the repository and read through the same tracker interface. A second store
+beside it (a task database next to a hosted tracker, say) restates what the
+tracker already holds, drifts from it, and leaves two records that disagree.
+Agent memory holds knowledge about the code, not work state.
 
 ### What — the tracker
 
 The team-visible ledger. One epic or sub-issue per unit of work, each carrying
 its taxonomy. This is the tier the [issue templates](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/ISSUE-TEMPLATES.md) and the
-[label taxonomy](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml) govern. The tactical execution plan lives
-*on the issue* precisely so it is not trapped in a session.
+[label taxonomy](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml) govern. The tactical execution plan, the
+decisions taken on the item and every handoff live *on the issue*, precisely
+so they are not trapped in a session or a worktree.
 
 ### How — persistent, multi-session agent memory
 
-The working knowledge an agent accumulates while executing: what it tried, what
-it decided, the shape of the code it is touching. Kept in a durable, git-backed
-store (a `memory/` directory, or the agent runtime's memory feature — see
-[M9's mappings](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/mappings.md)) so it survives a session ending and is there
-when work resumes. This is *how* the work gets done, distinct from *what* the
-work is.
+The knowledge an agent accumulates about the codebase while working: the shape
+of the code, the traps it hit, what a command really does. It is about the
+code, not about one work item, so it outlives any single item. It starts in
+the agent runtime's memory feature, private to the agent, and the durable parts
+are promoted into git-tracked shared docs (see
+[M9's mappings](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/mappings.md)). This is *how* the work gets done, distinct from
+*what* the work is.
 
-### In-session — the ephemeral task list
+### In-session — the task list and worktree scratch
 
-The scratch checklist for one focused stretch (an agent's own todo list). It is
-fine for it to be lossy: when the stretch is done, the durable outcome has
-already been written up to the *what* or *how* tier, and the checklist is
-discarded. Do not store anything here that has to survive.
+The scratch checklist for one focused stretch (an agent's own todo list), and
+any scratch files the work needs, kept in a gitignored directory of the
+worktree. It is fine for both to be lossy: when the stretch is done, the
+durable outcome has already been written up to the *what* or *how* tier.
+Nothing that another worktree, or a person not working in this one, must
+read stays here.
+
+## Handoffs
+
+A handoff is the note one session leaves so another can carry on. When the
+next session may run in a different worktree or as a different person, the
+handoff goes on the tracker item as a comment, never in worktree scratch. It says what is done, what remains, what was decided and
+what is uncertain, and ends with the command that resumes the work:
+
+```md
+**Done** — what is finished, with evidence (commits, pull requests, check runs)
+**Remaining** — what is left, in priority order
+**Decisions** — what was decided, and why
+**Uncertain** — what is unknown or untested
+
+Resume: <the command or first step the next session runs>
+```
+
+Link to what already exists instead of restating it, and never paste a secret.
+
+A tool may also keep a resumption file in worktree scratch for the next session
+in the *same* worktree, such as a review loop's per-round notes or the token
+of the item it picked up. That file is a local working copy, not the handoff:
+whatever a different worktree or a person away from this one needs from it is
+published on the tracker item or the pull request.
 
 ## Memory promotion — private → shared
 

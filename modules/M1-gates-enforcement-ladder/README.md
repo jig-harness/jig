@@ -91,8 +91,10 @@ What this module provides:
   fix-and-stage pre-commit, pre-push grep gates then the heavy phase,
   commit-msg markers.
 - [`templates/ci-pr-gates.yml`](templates/ci-pr-gates.yml) — a GitHub Actions
-  pull-request workflow: grep gates with their self-tests first, a
-  detect-changes step, the gate set, tests on a parallel runner.
+  pull-request workflow: one resolver job that selects the work from the
+  change-area catalog ([M3](../M3-change-area-catalog/)), grep gates with
+  their self-tests first, the gate set, tests on a parallel runner, a timeout
+  on every job, and one aggregator job that is the only required check.
 - [`templates/suppression-registry.md`](templates/suppression-registry.md) —
   the registry page for suppression tokens and process markers.
 - [`reference/grep-gate/`](reference/grep-gate/) — the grep-gate convention

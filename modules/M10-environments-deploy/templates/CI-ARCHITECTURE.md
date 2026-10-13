@@ -46,10 +46,18 @@ they do not certify production-readiness.
 ### Stage 2 — post-merge verification advances the `verified` pointer
 
 After a merge lands on the default branch, a heavier suite runs against the
-*integrated* branch: full integration/end-to-end tests, a real migration against
-a production-like database, a smoke deploy to a throwaway environment. When (and
-only when) it passes, an automated step moves the **`verified` pointer** — a
-branch or tag, e.g. `refs/tags/verified` — to that commit.
+*integrated* branch: integration tests against real services, a real migration
+against a production-like database, the build of every deployable artifact, a
+smoke deploy to a throwaway environment. When (and only when) it passes, an
+automated step moves the **`verified` pointer** — a branch or tag, e.g.
+`refs/tags/verified` — to that commit.
+
+This suite runs on every push, so it holds exactly what the pointer must wait
+for: every check needed to trust the integrated state users depend on. When
+end-to-end tests are the only check of a critical journey, those tests belong
+here. What the pointer does not need, such as a slow full end-to-end sweep
+whose journeys other checks already cover, or coverage measurement, runs on a
+schedule (see [Where each suite runs](#where-each-suite-runs)).
 
 The pointer is the whole trick. It is a durable, inspectable record of "the
 newest commit we actually trust." Anyone — a human, a deploy job, a dashboard —
@@ -87,6 +95,28 @@ for a push to auto-promote to production. This is the last human checkpoint (a
 configuration, not habit: the [`promote-safety`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/promote-safety)
 lint fails a production deploy that auto-fires or ships a mutable ref.
 
+## Where each suite runs
+
+A suite runs per change only if a merge or the `verified` pointer waits for
+its answer, and the pointer waits for every check it needs to be trusted. A
+suite nothing waits for, such as a half-hour end-to-end sweep whose journeys
+other checks already cover, or a coverage sweep, costs its full price on every
+push and is read by no one at that moment. It runs on a schedule or on demand instead. A cheap
+proxy runs per change in its place: for example, "the end-to-end images still
+build" or "the suite still compiles".
+
+| Placement | What runs there | Example |
+|-----------|-----------------|---------|
+| Every pull request | the gates the merge waits for, selected by what changed | format, lint, types, unit tests, build |
+| Every push to the default branch | what the `verified` pointer waits for | integration tests against real services, migration replay, artifact build, end-to-end tests of journeys nothing else checks |
+| On a schedule | slow suites nothing waits for, and trends | the full end-to-end sweep against a deployed environment, nightly; coverage, weekly |
+| On demand | the scheduled suites, run by hand when a change needs them now | a dispatch with the suite name |
+
+Write the placement into the pipeline and check it: a heavy suite that gains a
+per-change trigger drifts back into everyone's wait. A scheduled suite reports
+its failures where someone will see them, and a schedule that silently stopped
+running counts as failing, not as passing.
+
 ## The environment kit that makes verification real
 
 Verification and preview are only as honest as the environments and data behind
@@ -120,7 +150,8 @@ contract:
 ## The contract, in one breath
 
 PR gates inform the human merge; post-merge verification advances an explicit
-`verified` pointer and a watchdog keeps that pointer honest; deploys ship only
+`verified` pointer and a watchdog keeps that pointer honest; suites neither
+waits for run on a schedule, not per change; deploys ship only
 what `verified` points at; and production is reached only by a gated, manual
 promotion that cannot auto-fire. Preview environments are disposable, and test
 data is seeded, isolated, and resettable.

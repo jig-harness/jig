@@ -22,10 +22,16 @@ system that keeps agent guidance findable, small, scoped, and single-sourced.
    overview, critical guardrails, quality gates, ways of working. Vendor-
    neutral so every agent runtime reads the same truth.
 2. **Tool-specific delta** (`CLAUDE.md`, `.cursorrules`, …) — only what is
-   specific to that runtime; everything else is a pointer to the universal
-   file.
+   specific to that runtime; everything else comes from the universal file,
+   through the runtime's import where it has one and a pointer where it has
+   none.
 3. **Per-directory files** — nested instruction files scoped to an app or
-   package; "closest file wins" for local conventions.
+   package. Runtimes add them to the parent's instructions rather than
+   replacing them; some let a nearer file override by placing it later, others
+   state no precedence at all. So the authoring rule does not lean on either:
+   a nested file extends its parent, and a contradiction between them is a
+   bug. Which files each runtime actually loads is observed, not assumed
+   ([mappings.md](mappings.md#what-each-runtime-loads)).
 4. **Conditional rules** — rule files with path patterns in their frontmatter,
    loaded into agent context only when matching files are edited. A rule
    without patterns is always loaded — that distinction must be documented in
@@ -57,8 +63,9 @@ system that keeps agent guidance findable, small, scoped, and single-sourced.
    guardrails, and keep it near 150 lines. Copy
    [`templates/GLOSSARY-skeleton.md`](templates/GLOSSARY-skeleton.md) to
    `GLOSSARY.md` and link it from `AGENTS.md`. This is **Lite**.
-2. Turn every runtime-specific file into a delta plus a pointer (where each
-   runtime reads from: [`mappings.md`](mappings.md)); add nested instruction
+2. Turn every runtime-specific file into a delta that imports the universal
+   file, or points to it where the runtime has no import (where each runtime
+   reads from: [`mappings.md`](mappings.md)); add nested instruction
    files where a directory's conventions differ; if you use conditional rules,
    copy [`templates/rules-README.md`](templates/rules-README.md) into the rules
    directory; write your dispositions from
@@ -98,8 +105,9 @@ What this module provides:
 - [`mappings.md`](mappings.md) (Claude Code, Codex, Cursor and Copilot file
   conventions) and the module's [maturity criteria](../../plugin/skills/audit/criteria/M0-instruction-architecture.yaml).
 
-Jig's own [`AGENTS.md`](../../AGENTS.md), `CLAUDE.md` pointer and
-nested `AGENTS.md` files are a working instance of this module.
+Jig's own [`AGENTS.md`](../../AGENTS.md), the `CLAUDE.md` files that
+import it, and the nested `AGENTS.md` files, each with a `CLAUDE.md` beside it
+that imports it, are a working instance of this module.
 
 Future: a generator for a per-agent model roster (the routing policy describes
 the pattern; the generate-and-check mechanism belongs with

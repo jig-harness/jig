@@ -6,12 +6,21 @@ mandatory taxonomy from [`label-taxonomy.yaml`](https://github.com/docomply/jig/
 a `status`, and zero or more `flags` — and both are tool-independent: paste them
 into whatever tracker you use, or wire them as that tracker's issue template.
 
-Two rules make these more than boilerplate:
+These rules make the skeletons more than boilerplate:
 
 - **The taxonomy fields are mandatory.** Every issue states its `type`, its
   `status`, and any `flags`. Flags are not decoration — each one *fires* a
   process (a `has-migration` flag fires the migration review; a `hitl` flag
   revokes autonomous merge). Leaving one off silently skips that process.
+- **A flag goes on the item that ships the change.** A flag that fires a gate
+  belongs on the sub-issue whose pull request makes the change, never on the
+  epic that contains it. On the epic, the gate fires for every child or for
+  none; on the child, it fires exactly where the change is.
+- **An epic is defined by its role, not by how many children it has.** An
+  epic states an outcome too large for one pull request, is the unit you
+  report progress on, and never becomes a pull request itself; it is an epic
+  before it is broken down, and stays one as sub-issues come and go. Its
+  `type` stays what the work is: an epic of fixes is a `bug`.
 - **Epics and sub-issues link both ways.** An epic lists its sub-issues; each
   sub-issue names its parent epic. A reader landing on either can reach the
   whole picture without a search.
@@ -25,7 +34,7 @@ Two rules make these more than boilerplate:
 
 - type: feature | bug | chore | spike
 - status: triage | todo | in-progress | in-review | blocked | done
-- flags: [<flag>, ...]        # e.g. [api-change] — each fires a process
+- flags: [<flag>, ...]        # rarely any: gate-firing flags go on the sub-issue that ships the change
 - formula: <phase-formula name, if this epic follows one>
 
 ## Problem / outcome
@@ -53,7 +62,7 @@ Two rules make these more than boilerplate:
 
 - type: feature | bug | chore | spike
 - status: triage | todo | in-progress | in-review | blocked | done
-- flags: [<flag>, ...]        # inherited from the epic + anything specific here
+- flags: [<flag>, ...]        # the flags this item's own change fires; not copied from the epic
 - epic: <EPIC-KEY>            # the parent — links back up
 
 ## Context

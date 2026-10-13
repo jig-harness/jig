@@ -25,15 +25,15 @@ criteria:
     score: absent
     evidence: "GLOSSARY.md (558 lines) is linked from AGENTS.md and gated by scripts/check-glossary-coverage.ts, but has no avoid aliases (grep -ci avoid GLOSSARY.md = 0); 'instance' is used in AGENTS.md but not defined, and instance/downstream/target repo/consumer repository compete"
   M0/tool-deltas-are-pointers:   # standard, requires convention
-    # Every tool-specific instruction file (CLAUDE.md, .cursor rules, copilot-instructions.md, ...) carries only runtime-specific content and points back to the universal file, duplicating none of it.
+    # Every tool-specific instruction file (CLAUDE.md, .cursor rules, copilot-instructions.md, ...) carries only runtime-specific content and brings in the universal file, duplicating none of it: through the runtime's import where it has one, a pointer only where it has none.
     # prior: convention: CLAUDE.md, modules/CLAUDE.md, plugin/CLAUDE.md are only `@AGENTS.md` plus a no-delta note; no other tool files (no .cursor/, copilot-instructions, GEMINI.md in git ls-files)
     score: convention
-    evidence: "CLAUDE.md, modules/CLAUDE.md, plugin/CLAUDE.md are `@AGENTS.md` pointers; git ls-files: no .cursor/, copilot-instructions.md, GEMINI.md or .claude/ rules"
+    evidence: "CLAUDE.md, modules/CLAUDE.md, plugin/CLAUDE.md import their AGENTS.md with an `@AGENTS.md` line; git ls-files: no .cursor/, copilot-instructions.md, GEMINI.md or .claude/ rules"
   M0/per-directory-instructions:   # standard, requires convention
-    # Directories whose conventions differ from the repo default carry their own nested instruction file, and the universal file states the closest-file-wins policy.
+    # Directories whose conventions differ from the repo default carry their own nested instruction file, and the universal file states that a nested file extends its parent and never contradicts it.
     # prior: convention: modules/AGENTS.md and plugin/AGENTS.md add to the root file; AGENTS.md 'Read in this order' step 2 sends agents to the instructions closest to what they change
     score: absent
-    evidence: "modules/AGENTS.md and plugin/AGENTS.md open with 'These add to the repository's AGENTS.md'; AGENTS.md 'Read in this order' step 2 sends agents to the closest instructions, but nothing states that the closest file wins on a conflict, which the criterion requires"
+    evidence: "modules/AGENTS.md and plugin/AGENTS.md open with 'These add to the repository's AGENTS.md'; AGENTS.md 'Read in this order' step 2 sends agents to the closest instructions, but nothing states that a nested file must not contradict its parent, which the criterion requires"
   M0/conditional-rules-documented:   # standard, requires convention
     # If a conditional-rules directory exists, its README documents the loading semantics — path-frontmatter rules load on match, frontmatter-less rules always load — and each rule is scoped to the narrowest paths that cover it.
     # prior: expected-absent: No conditional-rules directory: git ls-files has no .claude/rules, .cursor/rules or .agents/rules; the criterion applies only where such rules exist
@@ -511,7 +511,7 @@ criteria:
     # prior: expected-absent: The plugin is distributed from main with no environments; gates.yml re-runs the gates on push to main and strict required checks test the integrated tip
     # probe found: .github/workflows/gates.yml
     score: advisory
-    evidence: "The push-to-main run (change-areas.ts --all) is heavier than pull-request runs: all three platforms and the drive-pr shards for every change; it lives in gates.yml and nothing reads its result, since machines install from main on a version change"
+    evidence: "The push-to-main run (change-areas.ts --all) is heavier than pull-request runs: all three platforms and the drive-pr shards for every change; it lives in gates.yml and nothing reads its result, since machines install from main on a version change, so by the suite-placement observation it is a per-push suite nothing waits for"
   M10/verified-pointer-advances-on-verification:   # standard, requires mechanical
     # An explicit `verified` pointer (a branch or tag) is advanced only by the post-merge verification stage passing — never by a merge alone.
     # prior: expected-absent: No deploy target; the release pointer is a manually pushed v<version> tag (plugin/README.md § Release step 4)

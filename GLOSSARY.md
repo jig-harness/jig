@@ -277,6 +277,15 @@ capitalized as commonly written; cross-references are *italicized*.
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine.
+- **Worktree scratch** — working files an agent keeps in a gitignored
+  directory of its *worktree*. They outlive one session but only a session in
+  that same worktree sees them, so nothing another worktree, or a person not
+  working in it, needs belongs there
+  ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+- **Handoff** — the note one session leaves so another can carry on: what is
+  done, what remains, what was decided, what is uncertain, and the command
+  that resumes the work. It goes on the tracker item, never in *worktree
+  scratch* ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md#handoffs)).
 - **Monorepo** — one repository holding many applications/packages, usually
   with a shared task runner and shared quality gates.
 - **Verified pointer** — a branch or tag that a delivery pipeline advances only

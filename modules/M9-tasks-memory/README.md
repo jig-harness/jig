@@ -21,8 +21,9 @@ work can't skip a required step on the way to done.
 > contract gates; a `manual-ops` flag blocks *done* until an operator checklist
 > is complete; a `security-sensitive` flag fires a security review; a `hitl`
 > flag revokes autonomous execution/merge). A label that fires nothing is not
-> allowed. Work is tiered **what** (the tracker) / **how** (persistent
-> multi-session agent memory) / **in-session** (an ephemeral task list), and a
+> allowed. Work is tiered **what** (the tracker, which holds all work state) /
+> **how** (persistent agent memory about the code) / **in-session** (the task
+> list and worktree scratch), and a
 > durable lesson is **promoted** from private memory into git-tracked shared
 > memory through a review point. Recurring multi-phase work runs a **formula**
 > whose **required phases must be recorded before the item may close** (staging
@@ -42,11 +43,15 @@ concrete per-tracker, per-runtime wiring lives in [mappings.md](mappings.md).
    migration path in the [M3](../M3-change-area-catalog/) change-area catalog,
    the migration flag can be set automatically.
 2. **The three memory tiers** — *what* lives in the tracker (team-visible units
-   with the taxonomy), *how* lives in persistent multi-session agent memory (the
-   tactical plan, decisions, gotchas — git-backed so it survives a session), and
-   *in-session* is the ephemeral task list an agent keeps for one focused
-   stretch and then discards. Putting a lasting decision in the ephemeral tier is
-   how knowledge evaporates; the tiers are spelled out in
+   with the taxonomy, plus each item's tactical plan, decisions and handoffs),
+   *how* lives in persistent agent memory (durable knowledge about the code,
+   private first and promoted into git-tracked docs), and *in-session* is the
+   task list and worktree scratch an agent keeps for one focused stretch.
+   Putting a lasting decision in the ephemeral tier is how knowledge
+   evaporates; parking a handoff in worktree scratch hides it from every other
+   worktree; a second store for work state beside the tracker drifts from
+   it. The
+   tiers and the handoff format are spelled out in
    [`MEMORY-TIERS.md`](templates/MEMORY-TIERS.md).
 3. **Memory promotion** — private, per-session agent memory becomes reliable for
    the whole team only when a durable lesson is **promoted** into git-tracked

@@ -7,12 +7,23 @@
 #     so `--no-verify` and unfamiliar tooling cannot change what merges.
 #   - Grep gates run first and cheap, WITH their self-tests, so a broken
 #     gate fails loudly instead of passing silently.
-#   - A detect-changes step gates the expensive steps on whether relevant
-#     files actually changed (docs-only PRs stay fast).
+#   - ONE resolver job decides what this change needs, from the change-area
+#     catalog (Jig module M3). Every other job reads its outputs; no job
+#     re-derives "what changed" with its own path pattern, because copies of
+#     that pattern drift apart.
+#   - ONE aggregator job, `pr-gates`, is the only required status check. It
+#     runs whenever the run was not cancelled, fails when any selected job
+#     failed or was cancelled, and names the jobs that did. A job skipped
+#     because the change did not need it passes; a job skipped because the
+#     job it needs failed does not.
+#   - Every job has a timeout sized to its work.
 #   - Concurrency-cancel: a new push to the PR cancels the superseded run.
 #
-# Make the jobs required status checks in branch protection — that, not the
-# workflow file, is what makes them blocking.
+# Make `pr-gates`, and only it, the required status check in branch
+# protection. Never filter this workflow with `on.pull_request.paths`: a
+# workflow that does not run never reports, so the PR waits on it forever,
+# and GitHub counts a SKIPPED required job as passing. Selection happens
+# inside the workflow, and the aggregator turns it into one honest verdict.
 # GitLab CI equivalent: see ../mappings.md.
 name: PR quality gates
 
@@ -30,13 +41,40 @@ permissions:
   contents: read
 
 jobs:
+  # What does this change need? Answered once, on the smallest runner, before
+  # anything is installed beyond the resolver and its runtime. Fail closed: a
+  # changed file that matches no area counts as code, so every job gated on
+  # `code` runs. A job gated on one area's membership does not see an
+  # unmatched file; gate it on `code` as well, or make every file belong to an
+  # area (Jig's own gates check that).
+  changes:
+    runs-on: <smallest runner, e.g. ubuntu-latest>
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.resolve.outputs.code }}
+    steps:
+      - uses: actions/checkout@<pinned-sha>
+        with:
+          fetch-depth: 0    # the resolver diffs against the merge base
+      # The resolver's runtime: this job's environment is its own, so the
+      # install in gates-and-build below does not reach it.
+      - uses: jdx/mise-action@<pinned-sha>    # reads the Bun pin from mise.toml
+      - name: Resolve the changed files to areas
+        id: resolve
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # Writes `code=true|false` (and any per-area outputs your jobs need)
+        # to $GITHUB_OUTPUT, from the catalog. Jig's own resolver is
+        # scripts/change-areas.ts; any command that reads the catalog works.
+        run: <resolver command, e.g. bun scripts/change-areas.ts --base "$BASE_SHA">
+
   # One runner: cheap gates → toolchain setup → quality gate set → build.
-  # Sequential on purpose — the grep gates fail in seconds, before any
+  # Sequential on purpose: the grep gates fail in seconds, before any
   # dependency install is paid for.
   gates-and-build:
+    needs: changes
     runs-on: <runner, e.g. ubuntu-latest>
-    outputs:
-      code-changed: ${{ steps.changes.outputs.code }}
+    timeout-minutes: <sized to the work, e.g. 20>
     steps:
       - uses: actions/checkout@<pinned-sha>
         with:
@@ -57,91 +95,102 @@ jobs:
       - name: Gate — review markers on protected commits
         # CI-side re-check of the commit-msg marker (closes --no-verify):
         # every PR commit touching protected paths must carry the tag.
+        # Event values reach the script through env:, never by expanding
+        # ${{ }} inside run:, which would splice them into the shell source.
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
+          for c in $(git rev-list "origin/$BASE_REF..HEAD"); do
             # -m: for merge commits, diff against each parent individually —
             # without it, diff-tree emits no paths for a merge commit at all,
             # so a conflict resolution touching a protected path goes unchecked.
             if git diff-tree --no-commit-id --name-only -r -m "$c" | grep -qE '<^regex/for/protected/paths$>'; then
               git log -1 --format=%B "$c" | grep -qF '<[reviewed:your-process] tag>' || {
-                echo "ERROR: commit $c touches protected paths without the review marker"; exit 1; }
+                echo "::error::commit $c touches protected paths without the review marker"; exit 1; }
             fi
           done
 
-      # --- Detect changes: skip the expensive phase for docs-only PRs.
-      # Keep the path regex in ONE place (a sourced script) if more than one
-      # workflow needs it — inline copies drift.
-      - name: Detect file changes
-        id: changes
-        run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-          if echo "$CHANGED" | grep -E '<regex matching code paths>' | grep -vE '<regex matching docs/markdown>' > /dev/null; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-          fi
-
       # --- Toolchain + the canonical gate set (same order as everywhere:
       # format → lint → types → build; tests run on the parallel runner).
+      # Skipped when the resolver found nothing these steps check.
       - name: Setup toolchain
-        if: steps.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true'
         run: <install language runtime + dependencies>
       - name: Check formatting
-        if: steps.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true'
         run: <format check command>
       - name: Lint
-        if: steps.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true'
         run: <lint command>
       - name: Type check
-        if: steps.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true'
         run: <type check command>
       - name: Build
-        if: steps.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true'
         run: <build command, scoped to changed packages + dependents if your task runner supports it>
 
-  # Tests on a separate runner, in parallel with the build job.
+  # Tests on a separate runner, in parallel with the build job. Skipped as a
+  # whole when the change needs no tests; the aggregator tells that skip apart
+  # from a failure.
   tests:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: <runner, e.g. ubuntu-latest>
+    timeout-minutes: <sized to the work, e.g. 30>
     steps:
       - uses: actions/checkout@<pinned-sha>
-        with:
-          fetch-depth: 0
-      - name: Detect file changes
-        id: changes
-        run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-          if echo "$CHANGED" | grep -E '<regex matching code paths>' | grep -vE '<regex matching docs/markdown>' > /dev/null; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Setup toolchain
-        if: steps.changes.outputs.code == 'true'
         run: <install language runtime + dependencies>
       - name: Run tests
-        if: steps.changes.outputs.code == 'true'
         run: <test command, scoped to changed packages + dependents if your task runner supports it>
 
   # Advisory job pattern: a gate being trialed runs with continue-on-error so
   # it reports without blocking. Every advisory gate carries a promotion
   # condition + date in its comment — advisory-forever is a tracked smell.
+  # Leave it out of the aggregator's `needs` until it is promoted.
   # advisory-<new-gate>:
+  #   needs: changes
   #   runs-on: <runner>
+  #   timeout-minutes: <minutes>
   #   continue-on-error: true
   #   steps: ...   # promote to blocking when: <condition>, review by <date>
 
-  # Digest into the run's Job Summary (not a PR comment — pass/fail is
-  # already a required status check; this avoids notification noise).
-  summary:
-    runs-on: <runner, e.g. ubuntu-latest>
-    needs: [gates-and-build, tests]
-    if: always()
+  # The single required check. `!cancelled()` rather than `always()`:
+  # `always()` also runs when a newer push cancelled this run, and then reports
+  # a failure for a head that is already superseded. The verdict and the list
+  # of failed jobs also go to the run's Job Summary (not a PR comment: the
+  # required check already carries pass/fail, and comments add noise).
+  pr-gates:
+    needs: [changes, gates-and-build, tests]
+    if: ${{ !cancelled() }}
+    runs-on: <smallest runner, e.g. ubuntu-latest>
+    timeout-minutes: 5
     steps:
-      - name: Write summary
+      - name: Require every selected job
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          CHANGES: ${{ needs.changes.result }}
+          GATES_AND_BUILD: ${{ needs.gates-and-build.result }}
+          TESTS: ${{ needs.tests.result }}
         run: |
+          failed=""
+          [ "$CHANGES" = success ] || failed="$failed changes($CHANGES)"
+          [ "$GATES_AND_BUILD" = success ] || failed="$failed gates-and-build($GATES_AND_BUILD)"
+          # tests may be skipped only when the resolver said no code changed;
+          # a missing answer is a failure, not a reason to skip.
+          case "$CODE" in
+            true) [ "$TESTS" = success ] || failed="$failed tests($TESTS)" ;;
+            false) [ "$TESTS" = skipped ] || failed="$failed tests($TESTS)" ;;
+            *) failed="$failed changes(no code output)" ;;
+          esac
           {
             echo "## PR quality gates"
             echo ""
-            echo "- gates-and-build: ${{ needs.gates-and-build.result }}"
-            echo "- tests: ${{ needs.tests.result }}"
+            echo "- changes: $CHANGES (code: ${CODE:-unknown})"
+            echo "- gates-and-build: $GATES_AND_BUILD"
+            echo "- tests: $TESTS"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$failed" ]; then
+            echo "::error::required jobs did not pass:$failed"
+            exit 1
+          fi

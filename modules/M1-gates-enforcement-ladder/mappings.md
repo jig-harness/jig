@@ -27,7 +27,9 @@ module (`reference/grep-gate/`, `reference/commit-msg-marker/`) run with Bun and
 | Run on every PR | `on: pull_request` | `workflow: rules:` with `$CI_PIPELINE_SOURCE == "merge_request_event"` |
 | Concurrency-cancel superseded runs | `concurrency:` group keyed on PR number + `cancel-in-progress: true` | `interruptible: true` on jobs + "Auto-cancel redundant pipelines" (project setting, on by default) |
 | Cheap grep gates + self-tests | Steps at the top of the first job, before toolchain install | An early `gates` stage of small `script:` jobs |
-| Path filters / detect-changes | Inline `git diff --name-only` step writing a job output (portable), or the `paths` filter action | `rules: changes:` per job (native) |
+| Select the work for a change | One resolver job reads the change-area catalog and writes job outputs; every other job reads them with `needs:`. Never `on.pull_request.paths` on a workflow whose checks are required: a workflow that does not run never reports | `rules: changes:` per job, with the patterns generated from the catalog rather than copied into each job |
+| One required verdict | An aggregator job that `needs:` every selected job, runs on `if: ${{ !cancelled() }}`, fails when a selected job failed or was cancelled, and is the only required check. A skipped required job counts as passing, so the skips are judged here | "Pipelines must succeed" already judges the whole pipeline; a job left out by `rules:` is not run and not counted |
+| Bound every job | `timeout-minutes:` on each job, sized to its work | `timeout:` on each job |
 | Format → lint → types → build | Sequential steps in one job (one runner setup) | One job with sequential `script:` lines, or one stage per gate |
 | Tests in parallel | Second job, own runner | Job in the same stage as the build job |
 | Advisory (non-blocking) gate | `continue-on-error: true` on the job/step | `allow_failure: true` |

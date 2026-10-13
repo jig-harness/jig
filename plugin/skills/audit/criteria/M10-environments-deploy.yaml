@@ -42,6 +42,7 @@ criteria:
     observe:
       - "a workflow triggered on push to the default branch runs the heavier verification suite"
       - "it is separate from the pull_request gate workflow"
+      - "a suite runs per change only when a merge or the verified pointer waits for it; slow suites neither waits for run on a schedule or on demand"
     probe:
       files: &ci-config
         - ".github/workflows/*.yml"

@@ -56,6 +56,53 @@ changes are marked **Breaking** and say what a consumer changes.
   installed package, and the freshness test checks M2's committed example
   index.
 
+### Changed
+
+- M1's pull-request workflow template selects work in one resolver job
+  instead of a change-detection step copied into each job. Its single required
+  check is now an aggregator job that runs on `!cancelled()` (not `always()`),
+  fails when a selected job failed or was cancelled, and names the jobs that
+  did. Every job has a timeout, and event values reach scripts through `env:`.
+  The template says why a required workflow is never path-filtered at trigger
+  level: a skipped required job counts as passing.
+- Jig's own `gates` workflow: the `gates` check runs on `!cancelled()` and
+  names the jobs that failed, and every job has a timeout.
+- M10's CI architecture and pipeline templates run a suite per change only
+  when a merge or the `verified` pointer waits for it; slow suites nothing
+  waits for, such as a full end-to-end run or coverage, run on a schedule or
+  on demand with a cheap proxy per change. A new table says where each kind
+  of suite runs.
+- M9's issue templates put a gate-firing flag on the item that ships the
+  change, never on its epic, and define an epic by its role rather than by
+  how many children it has.
+- M9's memory tiers keep all work state on the tracker, give the in-session
+  tier its worktree scratch, warn that scratch is invisible to other
+  worktrees, and define a handoff: Done, Remaining, Decisions, Uncertain, then
+  a `Resume:` line. Work state has one authoritative store; a second one
+  beside it is ruled out.
+- M0 records which instruction files each agent runtime was observed to load.
+  An import is not a pointer, and a nested instruction file extends its
+  parent rather than relying on any runtime's precedence. Tool-specific files
+  import the universal file where the runtime can.
+- ROADMAP gains new modules (M13 pipeline economy, M14 testing strategy,
+  M15 contracts and error handling) and the corrected designs for the existing
+  modules.
+
+## [0.18.1] - 2026-10-13
+
+### Changed
+
+- `/jig:audit`'s M0 criteria follow the module: `tool-deltas-are-pointers`
+  observes an import of the universal file where the runtime supports one,
+  and `per-directory-instructions` observes that nested files extend their
+  parent rather than a closest-file-wins policy.
+- `/jig:audit` observes the practices M9 and M10 now teach: M9's
+  `memory-location-designated` looks for one authoritative work-state store
+  and handoffs on the tracker item (a resumption file for the same
+  worktree may stay in its scratch), and M10's
+  `verification-separated-from-pr-gates` looks for suites placed per change
+  only when a merge or the `verified` pointer waits for them.
+
 ## [0.18.0] - 2026-10-13
 
 The groundwork for batching several small issues into one pull request
@@ -633,7 +680,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/docomply/jig/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/docomply/jig/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/docomply/jig/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/docomply/jig/compare/v0.16.0...v0.16.1

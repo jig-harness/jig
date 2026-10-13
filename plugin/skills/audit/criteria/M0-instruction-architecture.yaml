@@ -48,9 +48,10 @@ criteria:
     statement: >-
       Every tool-specific instruction file (CLAUDE.md, .cursor rules,
       copilot-instructions.md, ...) carries only runtime-specific content
-      and points back to the universal file, duplicating none of it.
+      and brings in the universal file, duplicating none of it: through the
+      runtime's import where it has one, a pointer only where it has none.
     observe:
-      - "each tool-specific file opens with a pointer to the universal file"
+      - "each tool-specific file imports the universal file where its runtime supports an import (Claude Code: an @AGENTS.md line), and points to it otherwise"
       - "no rule text appears in both the universal file and a tool delta"
 
   - id: per-directory-instructions
@@ -58,11 +59,11 @@ criteria:
     requires: convention
     statement: >-
       Directories whose conventions differ from the repo default carry
-      their own nested instruction file, and the universal file states the
-      closest-file-wins policy.
+      their own nested instruction file, and the universal file states that
+      a nested file extends its parent and never contradicts it.
     observe:
       - "nested instruction files exist where apps/packages diverge"
-      - "universal file documents closest-file-wins"
+      - "universal file states that nested files extend it and that a contradiction is a bug"
 
   - id: conditional-rules-documented
     level: standard

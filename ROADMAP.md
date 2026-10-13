@@ -279,6 +279,111 @@ tracker-neutral catalog key are built. Done when:
 - `do-item`'s batch check names `/jig:work-batch`;
 - the audit skill's schema and fit check cover the `work_batch` section.
 
+### 14. M13 Pipeline economy
+
+A new module for the cost and speed of CI: spend CI only where it changes a
+merge decision, and never let a saving turn a failure into a pass. M1 decides
+what is checked; M13 decides how cheaply and quickly, without weakening it.
+
+- **Honest signal.** Every required check reports on every head: selection
+  happens inside the pipeline, behind one aggregator, never through trigger
+  path filters.
+- **The CI hold**, as a practice: a held head fails a required check rather
+  than skipping it, and only results that started after the release count.
+  drive-pr's `ci.hold_label` is its runnable side.
+- **Selection.** One resolver job per run, and gates selected by their own
+  subject, failing closed.
+- **Supersede and bound.** Concurrency keys that drop only covered runs,
+  timeouts on every job, and a bound on time spent waiting for a runner.
+- **Placement.** Per change, after merge, on a schedule or on demand.
+- **Caches.** Complete keys, one namespace, bounded retention, a reported hit
+  rate, and a trust boundary.
+- **Cost.** Runner sizing, one authoritative run of each check, and cost
+  measured with conditions that reopen a decision.
+- **Enforcement.** A workflow-convention lint as the reference gate.
+
+Done when the module, its criteria and the lint are in, and Jig's own workflows
+pass the lint.
+
+### 15. M14 Testing strategy
+
+No module states how to test yet. A new one covers:
+
+- test tiers with triggers and time budgets, with a slow end-to-end sweep run
+  per change only when a merge or the `verified` pointer must wait for it;
+- a check that a job which provisions a real dependency executed at least one
+  test;
+- test doubles that reject what the real dependency rejects;
+- an injected clock, and polling with a deadline instead of fixed sleeps;
+- predicates proven where they execute;
+- stale-test triage on a freshly fetched base, which `fix-ci` then follows;
+- coverage published as a trend rather than used as a per-change gate;
+- behaviour pins for dependency workarounds, and a canary on the next
+  runtime release.
+
+Done when the module, its criteria and the skip check are in.
+
+### 16. M15 Contracts and error handling
+
+A new module for the failures and interfaces that callers and stored data
+depend on:
+
+- never swallow an error, and keep its cause (Jig's own lint rules for this
+  move into the module as its reference);
+- typed failure channels, and branching on code or type rather than message
+  text;
+- one boundary that maps errors to responses;
+- a registry of error codes as the single source, with every copy generated;
+- migrations that are immutable once applied, with ledger integrity;
+- a published interface that is internal by default.
+
+Done when the module, its criteria and the migration gate are in.
+
+### 17. Corrected designs for the existing modules
+
+Practices a working repository validated, for modules that exist today:
+
+- **M1**:
+  - a gate reports passed, found violations, or could not decide, and never
+    passes on input it could not read;
+  - rules for writing gates that read documents;
+  - findings that name the rule, the place and the remedy;
+  - exceptions that fail once they suppress nothing;
+  - supply chain beyond action pins (release cooldown, install-script
+    allowlist, layered secret scanning);
+  - agent-runtime hooks as a rung of the ladder.
+- **M2**:
+  - a declared inventory of generated files with one generic check runner;
+  - regeneration after merge through a pull request;
+  - a check that each generator reaches every input;
+  - which numbers in prose may stay.
+- **M10 and M11**:
+  - the verified-pointer watchdog decides by cause and catches stalls in the
+    runner queue;
+  - the commit the gates passed is the commit shipped;
+  - a ledger of out-of-tree work that blocks promotion;
+  - a registry of external preconditions;
+  - a heartbeat in which a stopped schedule reads as red;
+  - one self-closing issue per cause of a scheduled failure.
+- **M6, M7 and M9**:
+  - an epic closes on an accepted verdict, not when its children reach zero;
+  - an acceptance stage;
+  - plan claims checked against the code before building;
+  - the execution-plan format the pickup skill reads;
+  - a post-merge stage;
+  - a lifecycle map with a check that every named skill exists.
+- **M0, M4, M5 and M8**:
+  - always-loaded context as a budget for each consuming runtime;
+  - model routing with family-alias pins and a generated roster;
+  - instructions that keep working in every runtime;
+  - the M4 items listed as future that have been validated;
+  - deferred promises in documents that point at live tracker items;
+  - an audit catalog;
+  - files that change only with an approved decision record.
+
+Done when each module states the practice with its mappings and criteria, and
+a re-audit of Jig scores them.
+
 ## Later
 
 - **Jira store for reflections.** One issue per finding, of a custom issue
@@ -350,3 +455,7 @@ These need a human decision before the work that depends on them starts.
 - **Plan-file tracker format**: one file for the whole plan, or one per item.
 - **Optional tracker operations**: whether the tracker interface's reporting
   operations may be optional for an adapter that cannot answer them.
+- **Resilience copies of critical rules**: whether a tool-specific instruction
+  file may keep a checked copy of a few named critical rules, so they still
+  bind when its import of the universal file is missing, or whether M0's
+  "duplicate nothing" criterion stands and only asks for the import.

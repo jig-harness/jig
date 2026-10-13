@@ -87,8 +87,8 @@ All must pass simultaneously. After fixing one issue, re-verify the others.
 
 ## Workspace context
 
-Each directory can have its own instruction file. The **closest file wins**
-for local conventions:
+Each directory can have its own instruction file. A nested file **extends**
+this one with local conventions; it never contradicts it:
 
 | Directory | Key focus |
 |-----------|-----------|

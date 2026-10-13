@@ -100,7 +100,7 @@ durable home. Any of these works.
 |------|------|
 | a git-tracked `memory/` directory | the shared, reviewable home promotion lands in; a promotion is an ordinary reviewed commit, so history and blame come free |
 | agent-runtime memory feature (Claude Code / Codex / Cursor memory files, or a project `AGENTS.md`/rules file) | the *how* tier an agent reads/writes across sessions; promote the durable parts into the git-tracked `memory/` |
-| a tracker document / wiki page per epic | an alternative *how*-tier home when the knowledge is work-item-scoped rather than repo-scoped |
+| a tracker comment, document or wiki page on the item or its epic | not a *how*-tier home: knowledge about one work item (its plan, decisions, handoffs) belongs to the *what* tier, on the item itself |
 
 Promotion from private to shared memory stays [HITL](../../GLOSSARY.md) whatever
 the home — the reflection/promotion *commands* live with
