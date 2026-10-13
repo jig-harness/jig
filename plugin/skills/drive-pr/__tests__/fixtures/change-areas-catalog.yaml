@@ -10,8 +10,9 @@ areas:
     paths: ["src/web/**"]
   delivery-tools:
     paths: ["tools/delivery/**", ".github/**"]
-    labels: [delivery-system]
-  ci:
+    tracker:
+      labels: [delivery-system]
+  ci: # the older spelling of the `tracker:` block
     paths: ["ci/**"]
     linear:
       labels: [delivery-system]

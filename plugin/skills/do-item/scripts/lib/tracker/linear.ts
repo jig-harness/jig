@@ -13,21 +13,24 @@
  */
 
 import { spawnSync } from "node:child_process";
-import type {
-  CanonicalState,
-  CommentFact,
-  FoundComment,
-  Issue,
-  IssueComment,
-  IssueComments,
-  IssueFact,
-  IssueState,
-  IssueSummary,
-  LabelledIssueState,
-  LedgerIssue,
-  StartedIssueActivity,
-  Tracker,
-  WindowSpec,
+import {
+  CLOSED_STATE_TYPES,
+  type CanonicalState,
+  type CommentFact,
+  type FoundComment,
+  type Issue,
+  type IssueComment,
+  type IssueComments,
+  type IssueFact,
+  type IssueState,
+  type IssueSummary,
+  type LabelledIssueState,
+  type LedgerIssue,
+  type PoolIssue,
+  type PoolQuery,
+  type StartedIssueActivity,
+  type Tracker,
+  type WindowSpec,
 } from "./port.ts";
 
 export const LINEAR_API = "https://api.linear.app/graphql";
@@ -652,6 +655,127 @@ export function parseLabelledNode(raw: unknown): LabelledIssueState {
   return { identifier: n.identifier, stateType: state.type, completedAt };
 }
 
+// ── Candidate pools ────────────────────────────────────────────────────────
+
+const OPEN = { state: { type: { nin: [...CLOSED_STATE_TYPES] } } };
+
+const POOL_FIELDS = `
+  identifier title url priority createdAt
+  state { id name type }
+  assignee { id name }
+  ${LABELS}
+  children(first: 1, filter: { state: { type: { nin: ${JSON.stringify(CLOSED_STATE_TYPES)} } } }) {
+    pageInfo { hasNextPage }
+    nodes { id }
+  }
+`;
+
+const POOL_QUERY = `
+query TrackerPool($filter: IssueFilter!, $after: String) {
+  issues(first: 100, after: $after, filter: $filter) {
+    pageInfo { hasNextPage endCursor }
+    nodes { ${POOL_FIELDS} }
+  }
+}`;
+
+const OPEN_CHILDREN_QUERY = `
+query TrackerOpenChildren($id: String!, $filter: IssueFilter!, $after: String) {
+  issue(id: $id) {
+    children(first: 100, after: $after, filter: $filter) {
+      pageInfo { hasNextPage endCursor }
+      nodes { ${POOL_FIELDS} }
+    }
+  }
+}`;
+
+const POOL_ISSUE_QUERY = `
+query TrackerPoolIssue($id: String!) { issue(id: $id) { ${POOL_FIELDS} } }`;
+
+/**
+ * Linear's issue filter for a pool. Each label clause is its own `and` entry:
+ * two `labels` keys in one object would leave only the last. "Carries none"
+ * is `every` + `nin`; `some` + `nin` would match any issue with one label
+ * outside the list, which is nearly all of them.
+ */
+export function poolFilter(
+  team: string,
+  query: PoolQuery,
+): Record<string, unknown> {
+  if (
+    query.withSomeOf.length === 0 ||
+    query.withSomeOf.some((l) => l.length === 0)
+  )
+    throw new Error(
+      "a pool query needs at least one non-empty label list; an empty one would read every open issue",
+    );
+  return {
+    and: [
+      { team: { key: { eq: team } } },
+      OPEN,
+      ...query.withSomeOf.map((l) => ({ labels: { name: { in: l } } })),
+      ...(query.withNoneOf === undefined || query.withNoneOf.length === 0
+        ? []
+        : [{ labels: { every: { name: { nin: query.withNoneOf } } } }]),
+    ],
+  };
+}
+
+/** Parse one pool node; a truncated label page is recorded, not fatal. */
+export function parsePoolIssue(raw: unknown): PoolIssue {
+  const n = record(raw, "pool issue");
+  const where = `pool issue ${typeof n.identifier === "string" ? n.identifier : "?"}`;
+  const labels = record(n.labels, `${where}.labels`);
+  if (!Array.isArray(labels.nodes))
+    throw new ShapeError(`${where}.labels: nodes missing`);
+  if (
+    !isRecord(labels.pageInfo) ||
+    typeof labels.pageInfo.hasNextPage !== "boolean"
+  )
+    throw new ShapeError(`${where}.labels.pageInfo: unreadable`);
+  const children = record(n.children, `${where}.children`);
+  if (
+    !Array.isArray(children.nodes) ||
+    !isRecord(children.pageInfo) ||
+    typeof children.pageInfo.hasNextPage !== "boolean"
+  )
+    throw new ShapeError(`${where}.children: unreadable`);
+  const priority = n.priority;
+  if (
+    typeof priority !== "number" ||
+    !Number.isInteger(priority) ||
+    priority < 0 ||
+    priority > 4
+  )
+    throw new ShapeError(`${where}.priority: expected an integer 0 to 4`);
+  const state = record(n.state, `${where}.state`);
+  const assignee =
+    n.assignee === null ? null : record(n.assignee, `${where}.assignee`);
+  return {
+    identifier: str(n.identifier, `${where}.identifier`),
+    title: str(n.title, `${where}.title`),
+    url: optStr(n.url, `${where}.url`),
+    priority,
+    createdAt: timestamp(n.createdAt, `${where}.createdAt`),
+    state: {
+      id: str(state.id, `${where}.state.id`),
+      name: str(state.name, `${where}.state.name`),
+      type: str(state.type, `${where}.state.type`),
+    },
+    assignee:
+      assignee === null
+        ? null
+        : {
+            id: str(assignee.id, `${where}.assignee.id`),
+            name: str(assignee.name, `${where}.assignee.name`),
+          },
+    labels: labels.nodes.map((l) =>
+      str(record(l, `${where}.labels[]`).name, `${where}.labels[].name`),
+    ),
+    hasOpenChildren: children.nodes.length > 0 || children.pageInfo.hasNextPage,
+    truncated: labels.pageInfo.hasNextPage ? ["labels"] : [],
+  };
+}
+
 function isoRange(w: WindowSpec): { gte: string; lt: string } {
   return {
     gte: new Date(w.sinceMs).toISOString(),
@@ -704,7 +828,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         throw err;
       }
       const issue = record(data, "data").issue;
-      return issue === null || issue === undefined ? null : parseIssue(issue);
+      return issue === null ? null : parseIssue(issue);
     },
 
     async listComments(key) {
@@ -1026,6 +1150,42 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         `'${label}' issues`,
       );
       return nodes.map(parseLabelledNode);
+    },
+
+    async openIssues(query) {
+      const nodes = await pageAll(
+        transport,
+        POOL_QUERY,
+        { filter: poolFilter(team, query) },
+        (d) => d.issues,
+        "open issues of the pool",
+      );
+      return nodes.map(parsePoolIssue);
+    },
+
+    async openChildren(key) {
+      if (keyRe.exec(key) === null)
+        throw new Error(`not a ${team} issue id: ${key}`);
+      const nodes = await pageAll(
+        transport,
+        OPEN_CHILDREN_QUERY,
+        { id: key, filter: { and: [{ team: { key: { eq: team } } }, OPEN] } },
+        (d) => record(d.issue, `issue ${key}`).children,
+        `open children of ${key}`,
+      );
+      return nodes.map(parsePoolIssue);
+    },
+
+    async poolIssue(key) {
+      let data: unknown;
+      try {
+        data = await transport(POOL_ISSUE_QUERY, { id: key });
+      } catch (err) {
+        if (err instanceof LinearApiError && err.notFound) return null;
+        throw err;
+      }
+      const issue = record(data, "data").issue;
+      return issue === null ? null : parsePoolIssue(issue);
     },
   };
   return tracker;

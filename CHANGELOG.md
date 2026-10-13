@@ -42,6 +42,41 @@ changes are marked **Breaking** and say what a consumer changes.
   no unknown key in a Jig section (`scripts/check-audit-fit.ts`); the review policy flags a pull request that
   does not say what it changed in the audit.
 
+## [0.18.0] - 2026-10-13
+
+The groundwork for batching several small issues into one pull request
+([design/work-batch.md](design/work-batch.md), [ROADMAP.md](ROADMAP.md) item
+13). Nothing a consumer has configured stops working.
+
+### Added
+
+- The tracker interface reads candidate pools: `openIssues` (a team's open
+  issues by label conditions, including "carries none of these"),
+  `openChildren` (the team's open children of one of its issues) and
+  `poolIssue`. Each issue comes with its priority, creation time, state and
+  assignee ids, labels, whether it has open children, and which nested lists
+  were truncated. The Linear adapter implements them, refuses an empty label
+  condition, which would read every open issue, and fails a read whose
+  priority or children page it cannot read.
+- [design/work-batch.md](design/work-batch.md): the design of a `work-batch`
+  skill, moved from a working repository that uses it.
+
+### Changed
+
+- The change-area catalog's tracker block is `tracker:` (`tracker.labels`,
+  `tracker.flags`), no longer `linear:`, in
+  [M3](modules/M3-change-area-catalog/README.md)'s specification, example
+  and template. `drive-pr`'s fleet-health sensor reads `tracker.labels` and
+  still reads the older `linear.labels`, so a catalog can be renamed at any
+  time. In the fields the sensor reads (`paths`, `generated` and its
+  sources, `labels`, and the `tracker:`/`linear:` blocks with their
+  `labels`), a value
+  that is present but not the expected shape, `null` included, is refused;
+  only an omitted field reads as empty. Other catalog fields are not
+  validated by the sensor.
+- The Linear adapter's `getIssue` fails a response that leaves out the
+  issue, instead of reporting the issue as missing.
+
 ## [0.17.0] - 2026-10-13
 
 The audit learns from its first live re-audit of Jig: it gathers the facts a
@@ -584,7 +619,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/docomply/jig/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/docomply/jig/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/docomply/jig/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/docomply/jig/compare/v0.15.0...v0.16.0

@@ -521,8 +521,9 @@ capitalized as commonly written; cross-references are *italicized*.
   Codex reads them only from its own agent folders.
 - **Tracker interface and adapter** — the small set of issue-tracker
   operations a skill is allowed to use (read an issue with its comments and
-  children, move it to a workflow state, comment, and the reads the delivery
-  metrics need), and one implementation of that set for a particular tracker
+  children, move it to a workflow state, comment, the reads the delivery
+  metrics need, and the open-issue reads a batch proposal ranks), and one
+  implementation of that set for a particular tracker
   (Linear today). The skills call only the interface, so supporting a new
   tracker means writing an adapter, not editing the skills.
 - **Launcher** — the program an issue tracker's "open in coding agent" button

@@ -24,7 +24,7 @@ The catalog is a single top-level map `areas:` keyed by kebab-case area ids
 | `notes` | optional | load-bearing semantics kept next to the data |
 | `review` | optional | `{ skills: [..] (≥1), notes? }` — mandatory review skills for this area |
 | `postDeploy` | optional | `[{ action, when, envs: [..], notes? }]` — post-deploy operational steps |
-| `linear` / tracker | optional | `{ labels?: [..], flags?: [..] }` — tracker labels/flags to derive |
+| `tracker` | optional | `{ labels?: [..], flags?: [..] }` — tracker labels/flags to derive, whichever tracker the repository uses |
 | `agent` | optional | owning-agent label (a closed enum) |
 
 Reserved-but-loosely-typed blocks (`ci`, `deploy`, `scaffolding`, `owner`) let
@@ -103,7 +103,7 @@ a non-empty diff.
 | Review-gate table | static | Markdown table: area → trigger paths → mandatory review skills |
 | Component directory | static | Markdown: apps / packages / infra grouped by `workspace`, with deploy tier + owning agent |
 | Post-deploy checklist | dynamic | Markdown checklist of `postDeploy` actions for the affected areas |
-| Tracker labels | dynamic | the union of `linear.labels`/`flags` for the affected areas |
+| Tracker labels | dynamic | the union of `tracker.labels` and `tracker.flags` for the affected areas |
 | JSON resolution | dynamic | `{ changedFiles, seedAreas, areas, flags, postDeploy }` for other tooling |
 
 ## The regex-mirror guard

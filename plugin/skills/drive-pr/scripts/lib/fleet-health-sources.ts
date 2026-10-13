@@ -405,15 +405,19 @@ export interface Classifier {
  *       paths: ["src/api/**"]          # globs that define membership
  *       generated: [{ source: [...] }] # optional: generator sources, also members
  *       labels: [delivery]             # optional: the area's tracker labels
- *                                      # (`linear: { labels: [...] }` is read too)
+ *                                      # (`tracker: { labels: [...] }` is read
+ *                                      # too, and its older spelling `linear:`)
  */
 export interface CatalogArea {
   globs: string[];
   labels: string[];
 }
 
+// Only an omitted field reads as empty. A present one, `null` included, must
+// have its shape: read as empty, a malformed area would silently drop its
+// paths or its delivery labels.
 function stringList(v: unknown, where: string): string[] {
-  if (v === undefined || v === null) return [];
+  if (v === undefined) return [];
   if (!Array.isArray(v) || !v.every((x) => typeof x === "string"))
     throw new Error(`${where}: expected a list of strings`);
   return v as string[];
@@ -426,22 +430,29 @@ export function parseCatalog(raw: unknown): Map<string, CatalogArea> {
   const out = new Map<string, CatalogArea>();
   for (const [key, area] of Object.entries(raw.areas)) {
     if (!isRecord(area)) throw new Error(`catalog area ${key}: not a mapping`);
-    const generated = area.generated ?? [];
+    const generated = area.generated === undefined ? [] : area.generated;
     if (!Array.isArray(generated))
       throw new Error(`catalog area ${key}.generated: expected a list`);
     const globs = [
       ...stringList(area.paths, `catalog area ${key}.paths`),
-      ...generated.flatMap((g, i) =>
-        stringList(
-          isRecord(g) ? g.source : undefined,
+      ...generated.flatMap((g, i) => {
+        if (!isRecord(g))
+          throw new Error(`catalog area ${key}.generated[${i}]: not a mapping`);
+        return stringList(
+          g.source,
           `catalog area ${key}.generated[${i}].source`,
-        ),
-      ),
+        );
+      }),
     ];
-    const tracker = isRecord(area.linear) ? area.linear.labels : undefined;
     const labels = [
       ...stringList(area.labels, `catalog area ${key}.labels`),
-      ...stringList(tracker, `catalog area ${key}.linear.labels`),
+      ...["tracker", "linear"].flatMap((block) => {
+        const b = area[block];
+        if (b === undefined) return [];
+        if (!isRecord(b))
+          throw new Error(`catalog area ${key}.${block}: not a mapping`);
+        return stringList(b.labels, `catalog area ${key}.${block}.labels`);
+      }),
     ];
     out.set(key, { globs, labels });
   }

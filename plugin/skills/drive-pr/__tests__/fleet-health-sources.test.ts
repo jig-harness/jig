@@ -42,6 +42,7 @@ import {
   globToRegExp,
   loadCatalogFile,
   makeClassifier,
+  parseCatalog,
 } from "../scripts/lib/fleet-health-sources.ts";
 
 const REPO = { owner: "o", name: "r" };
@@ -496,10 +497,53 @@ describe("the change-area classifier", () => {
     ).toBe(false);
   });
 
-  it("reads generated sources and the nested tracker-label form", () => {
+  it("reads generated sources and the nested tracker-label forms", () => {
     const catalog = loadCatalogFile(cfg.catalogPath);
     expect(catalog.get("api")?.globs).toContain("tools/codegen/**");
+    expect(catalog.get("delivery-tools")?.labels).toEqual(["delivery-system"]);
     expect(catalog.get("ci")?.labels).toEqual(["delivery-system"]);
+  });
+
+  it("refuses a tracker-label block that is not a mapping, in either spelling", () => {
+    for (const block of ["tracker", "linear"])
+      for (const value of [["delivery-system"], null])
+        expect(() =>
+          parseCatalog({
+            areas: {
+              ci: { paths: [".github/**"], [block]: value },
+            },
+          }),
+        ).toThrow(`catalog area ci.${block}: not a mapping`);
+  });
+
+  it("refuses a present-but-null field anywhere in an area, and reads an omitted one as empty", () => {
+    const cases: [Record<string, unknown>, string][] = [
+      [{ paths: null }, "catalog area ci.paths: expected a list of strings"],
+      [{ labels: null }, "catalog area ci.labels: expected a list of strings"],
+      [
+        { tracker: { labels: null } },
+        "catalog area ci.tracker.labels: expected a list of strings",
+      ],
+      [
+        { linear: { labels: null } },
+        "catalog area ci.linear.labels: expected a list of strings",
+      ],
+      [{ generated: null }, "catalog area ci.generated: expected a list"],
+      [{ generated: [null] }, "catalog area ci.generated[0]: not a mapping"],
+      [
+        { generated: [{ source: null }] },
+        "catalog area ci.generated[0].source: expected a list of strings",
+      ],
+    ];
+    for (const [area, message] of cases)
+      expect(() =>
+        parseCatalog({ areas: { ci: { paths: [".github/**"], ...area } } }),
+      ).toThrow(message);
+    expect(
+      parseCatalog({ areas: { ci: { tracker: {}, generated: [{}] } } }).get(
+        "ci",
+      ),
+    ).toEqual({ globs: [], labels: [] });
   });
 
   it("reports an unconfigured catalog, an unknown product area and a missing delivery label", async () => {

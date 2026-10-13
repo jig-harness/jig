@@ -23,6 +23,6 @@ areas:
     #   - action: "<operational step>"
     #     when: "<trigger>"
     #     envs: [staging, prod]
-    # linear:
+    # tracker:
     #   labels: [<tracker-label>]
     # agent: <owning-agent>

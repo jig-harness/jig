@@ -147,6 +147,48 @@ export interface LabelledIssueState {
   completedAt: string | null;
 }
 
+// ── Candidate pools ────────────────────────────────────────────────────────
+
+/** The state categories of an issue that is finished one way or another. */
+export const CLOSED_STATE_TYPES = [
+  "completed",
+  "canceled",
+  "duplicate",
+] as const;
+
+/**
+ * An issue as a candidate pool reads it: what deciding whether it may join a
+ * batch, and ranking it, takes. Ids sit beside names because a name can be
+ * renamed or shared (two people with one display name, several workflow
+ * states of one category), and a claim re-check compares ids.
+ */
+export interface PoolIssue {
+  identifier: string;
+  title: string;
+  url: string | null;
+  /** 0 = none, then 1 (urgent) to 4 (low). */
+  priority: number;
+  createdAt: string;
+  state: IssueState & { id: string };
+  assignee: { id: string; name: string } | null;
+  labels: string[];
+  /** The issue has at least one child that is not closed. */
+  hasOpenChildren: boolean;
+  /**
+   * Nested lists the read could not take in full; non-empty means partial.
+   * `labels` here means a label the caller tests for may be missing.
+   */
+  truncated: string[];
+}
+
+/** Which open issues a pool holds, by label. */
+export interface PoolQuery {
+  /** Each list must match: the issue carries at least one label of each. */
+  withSomeOf: string[][];
+  /** The issue carries none of these labels. */
+  withNoneOf?: string[];
+}
+
 export interface Tracker {
   /** The adapter name, as `issue_tracker.adapter` spells it. */
   readonly adapter: string;
@@ -200,4 +242,15 @@ export interface Tracker {
   ): Promise<LedgerIssue[]>;
   /** Every issue of a label, with its state. */
   labelledIssues(label: string): Promise<LabelledIssueState[]>;
+
+  // ── Candidate pools ──
+  /**
+   * This team's open issues matching `query`. Throws on an empty label list,
+   * which would otherwise widen the pool to every open issue.
+   */
+  openIssues(query: PoolQuery): Promise<PoolIssue[]>;
+  /** The open children, of this team, of one of this team's issues. */
+  openChildren(key: string): Promise<PoolIssue[]>;
+  /** One issue in pool form, whatever its state; `null` when it does not exist. */
+  poolIssue(key: string): Promise<PoolIssue | null>;
 }

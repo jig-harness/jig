@@ -15,3 +15,4 @@ back to the roadmap or are dropped.
 |--------|---------------|
 | [Session reflection](reflection.md) | 6, 7 |
 | [The audit experience](audit-experience.md) | 8 |
+| [Batching small issues](work-batch.md) | 13 |

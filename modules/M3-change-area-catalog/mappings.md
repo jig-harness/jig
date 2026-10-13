@@ -62,7 +62,7 @@ only provider-specific choices are the diff range the resolver reads
 
 ## Issue trackers (label / flag projection)
 
-Each area's `labels` (and process-driving `flags`, see the
+Each area's `tracker.labels` (and process-driving `tracker.flags`, see the
 [flag-label](../../GLOSSARY.md) concept and [M9](../M9-tasks-memory/)) become
 tracker labels applied to the PR/issue for the resolved areas.
 

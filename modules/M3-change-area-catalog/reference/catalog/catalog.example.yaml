@@ -26,7 +26,7 @@ areas:
     review:
       skills: [ui-review]
       notes: "Applies when user-facing components change."
-    linear:
+    tracker:
       labels: [area:web]
     agent: frontend
 
@@ -46,7 +46,7 @@ areas:
         when: "after new instances are healthy in each env"
         envs: [staging, prod]
         notes: "Runs against the deployed image, not the repo."
-    linear:
+    tracker:
       labels: [area:api]
     agent: backend
 
@@ -58,7 +58,7 @@ areas:
     workspace: ["packages/core-lib"]
     impliedBy: []                 # nothing implies it; it implies consumers via THEIR impliedBy
     deployTier: none
-    linear:
+    tracker:
       labels: [area:shared]
     agent: architect
 
@@ -70,7 +70,7 @@ areas:
     workspace: []                 # path-only area, no owning workspace dir
     impliedBy: []
     deployTier: none
-    linear:
+    tracker:
       labels: [area:infra]
     agent: platform
 
@@ -82,5 +82,5 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
-    linear:
+    tracker:
       labels: [area:docs]

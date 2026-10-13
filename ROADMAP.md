@@ -258,6 +258,27 @@ golden files from the Python linter then retire with the translation.
 Jira, and a plan file kept in the repository. Both wait on the open decisions
 below.
 
+### 13. Batching small issues into one pull request (`work-batch`)
+
+A `work-batch` skill that groups several small, independent issues from one
+area of the code into one pull request, with one commit for each, and drives
+it once: review cost is paid per pull request, so batching closes small
+issues faster than one pull request each. It moves from a working repository
+that uses it today, with that repository's labels turned into configuration;
+[design/work-batch.md](design/work-batch.md) has the procedure, the
+configuration and the build order. The tracker reads it needs and the
+tracker-neutral catalog key are built. Done when:
+
+- one catalog reader in the plugin, shared by `drive-pr` and `work-batch`,
+  matches paths to areas and reads each area's `tracker.labels` and
+  `tracker.flags`;
+- `work-batch` is in the plugin with its tests, reading every label through
+  configuration, and the working repository's copy is deleted;
+- no setting can remove a solo-only flag that the hitl or manual-ops label
+  roles or the catalog's `tracker.flags` supply;
+- `do-item`'s batch check names `/jig:work-batch`;
+- the audit skill's schema and fit check cover the `work_batch` section.
+
 ## Later
 
 - **Jira store for reflections.** One issue per finding, of a custom issue
@@ -269,8 +290,8 @@ below.
   with decisions and audits them; M0), with its paths as configuration; and a
   SOLID-principles review skill, once its generic procedure is separated from
   the stack-specific checks it carries.
-- **Tracker planning.** Epic planning, batching and prioritisation as skills on
-  the tracker interface, where the procedure is generic rather than one
+- **Tracker planning.** Epic planning and prioritisation as skills on the
+  tracker interface, where the procedure is generic rather than one
   organization's workflow.
 - **More launcher providers.** A Herdr provider for
   [tools/launcher/](tools/launcher/README.md), once its generic workspace
@@ -288,9 +309,7 @@ below.
   probe-for-free port fallback.
 - **Module consistency.** M6's stage gates require `status: accepted`, which
   M4's frontmatter schema does not define (it has `approved`), and M6's
-  templates lack M4's required fields: pick one vocabulary. M3's catalog keys
-  tracker labels under `linear:`; rename it to a tracker-neutral key with the
-  schema and fixtures. M3's two reference READMEs are correct but long and
+  templates lack M4's required fields: pick one vocabulary. M3's two reference READMEs are correct but long and
   hedged; rewrite them to state the rules plainly.
 - **Drive loop follow-ups.**
   - `drive-pr`'s CI-repair round should run `/jig:fix-ci`, but that

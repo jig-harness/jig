@@ -291,6 +291,15 @@ describe("Linear adapter: issue pickup", () => {
     expect(await t.getIssue("ENG-404")).toBeNull();
   });
 
+  it("returns null for an explicit null issue and fails an omitted one", async () => {
+    const empty = tracker(() => ({ issue: null }));
+    expect(await empty.t.getIssue("ENG-404")).toBeNull();
+    const omitted = tracker(() => ({}));
+    await expect(omitted.t.getIssue("ENG-1")).rejects.toThrow(
+      "expected an object",
+    );
+  });
+
   it("refuses a truncated child list rather than reporting it complete", async () => {
     const { t } = tracker(() => ({
       issue: { ...issueNode, children: page([], "c1") },
@@ -536,5 +545,158 @@ describe("Linear adapter: fleet metrics", () => {
       ]),
     }));
     await expect(t.labelledIssues("epic")).rejects.toThrow("completedAt");
+  });
+});
+
+describe("Linear adapter: candidate pools", () => {
+  const poolNode = (
+    identifier: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    identifier,
+    title: `t ${identifier}`,
+    url: `https://tracker.example/${identifier}`,
+    priority: 3,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    state: { id: "s-backlog", name: "Backlog", type: "backlog" },
+    assignee: null,
+    labels: labels("small", "area:docs"),
+    children: { pageInfo: { hasNextPage: false }, nodes: [] },
+    ...extra,
+  });
+
+  it("filters an open pool by team, open state and each label clause", async () => {
+    const { t, calls } = tracker(() => ({ issues: page([poolNode("ENG-4")]) }));
+    const got = await t.openIssues({
+      withSomeOf: [["area:docs"], ["xs", "small"]],
+    });
+    expect(got.map((i) => i.identifier)).toEqual(["ENG-4"]);
+    expect(calls[0]?.variables.filter).toEqual({
+      and: [
+        { team: { key: { eq: "ENG" } } },
+        { state: { type: { nin: ["completed", "canceled", "duplicate"] } } },
+        { labels: { name: { in: ["area:docs"] } } },
+        { labels: { name: { in: ["xs", "small"] } } },
+      ],
+    });
+  });
+
+  it("excludes labels with every-not-in, not some-not-in", async () => {
+    const { t, calls } = tracker(() => ({ issues: page([]) }));
+    await t.openIssues({
+      withSomeOf: [["area:docs"]],
+      withNoneOf: ["xs", "small", "large"],
+    });
+    const filter = calls[0]?.variables.filter as { and: unknown[] } | undefined;
+    expect(filter?.and.at(-1)).toEqual({
+      labels: { every: { name: { nin: ["xs", "small", "large"] } } },
+    });
+  });
+
+  it("refuses a pool query that would read every open issue", async () => {
+    const { t, calls } = tracker(() => ({ issues: page([]) }));
+    await expect(t.openIssues({ withSomeOf: [] })).rejects.toThrow(
+      "every open issue",
+    );
+    await expect(t.openIssues({ withSomeOf: [["a"], []] })).rejects.toThrow(
+      "every open issue",
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  it("reads ids beside names, open children, and a truncated label page", async () => {
+    const { t } = tracker(() => ({
+      issues: page([
+        poolNode("ENG-1", {
+          assignee: { id: "u-1", name: "Sam" },
+          labels: { pageInfo: { hasNextPage: true }, nodes: [{ name: "xs" }] },
+          children: { pageInfo: { hasNextPage: false }, nodes: [{ id: "c" }] },
+        }),
+        poolNode("ENG-2"),
+      ]),
+    }));
+    const [first, second] = await t.openIssues({ withSomeOf: [["xs"]] });
+    expect(first).toMatchObject({
+      state: { id: "s-backlog", name: "Backlog", type: "backlog" },
+      assignee: { id: "u-1", name: "Sam" },
+      hasOpenChildren: true,
+      truncated: ["labels"],
+    });
+    expect(second).toMatchObject({
+      assignee: null,
+      hasOpenChildren: false,
+      truncated: [],
+      labels: ["small", "area:docs"],
+    });
+  });
+
+  it("refuses a pool node it cannot read", async () => {
+    const { t } = tracker(() => ({
+      issues: page([
+        poolNode("ENG-1", { state: { name: "Backlog", type: "backlog" } }),
+      ]),
+    }));
+    await expect(t.openIssues({ withSomeOf: [["xs"]] })).rejects.toThrow(
+      "state.id",
+    );
+  });
+
+  it("reads an issue's open children across pages", async () => {
+    const { t, calls } = tracker((_call, n) => ({
+      issue: {
+        children:
+          n === 0 ? page([poolNode("ENG-2")], "c1") : page([poolNode("ENG-3")]),
+      },
+    }));
+    const got = await t.openChildren("ENG-1");
+    expect(got.map((i) => i.identifier)).toEqual(["ENG-2", "ENG-3"]);
+    expect(calls[0]?.variables.filter).toEqual({
+      and: [
+        { team: { key: { eq: "ENG" } } },
+        { state: { type: { nin: ["completed", "canceled", "duplicate"] } } },
+      ],
+    });
+    expect(calls[1]?.variables.after).toBe("c1");
+  });
+
+  it("refuses the children of another team's issue", async () => {
+    const { t, calls } = tracker(() => ({ issue: { children: page([]) } }));
+    await expect(t.openChildren("OPS-1")).rejects.toThrow("not a ENG issue");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses an unreadable children page or an out-of-range priority", async () => {
+    for (const extra of [
+      { children: { pageInfo: {}, nodes: [] } },
+      { priority: -1 },
+      { priority: 1.5 },
+      { priority: 5 },
+    ]) {
+      const { t } = tracker(() => ({
+        issues: page([poolNode("ENG-1", extra)]),
+      }));
+      await expect(t.openIssues({ withSomeOf: [["xs"]] })).rejects.toThrow(
+        "pool issue ENG-1",
+      );
+    }
+  });
+
+  it("reads one issue in pool form and reports a missing one as null", async () => {
+    const found = tracker(() => ({
+      issue: poolNode("ENG-9", {
+        state: { id: "s-d", name: "Done", type: "completed" },
+      }),
+    }));
+    expect((await found.t.poolIssue("ENG-9"))?.state.type).toBe("completed");
+    const missing = tracker(
+      () => new LinearApiError("Entity not found", 200, true),
+    );
+    expect(await missing.t.poolIssue("ENG-404")).toBeNull();
+    const empty = tracker(() => ({ issue: null }));
+    expect(await empty.t.poolIssue("ENG-404")).toBeNull();
+    const omitted = tracker(() => ({}));
+    await expect(omitted.t.poolIssue("ENG-9")).rejects.toThrow(
+      "expected an object",
+    );
   });
 });
