@@ -13,7 +13,12 @@ import { isMapping as isRecord } from "../../../resolve-review-comments/scripts/
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
-import { matchGlob, skillDir, VERSION_PATTERN } from "./repo.ts";
+import {
+  compareVersions,
+  matchGlob,
+  skillDir,
+  VERSION_PATTERN,
+} from "./repo.ts";
 
 export const LEVELS = ["lite", "standard", "strict"] as const;
 export type Level = (typeof LEVELS)[number];
@@ -316,6 +321,35 @@ export function rank(score: Score): number {
 
 /** What a module attains: a level, `none`, or `n/a` when its practice does not apply. */
 export type Attainment = Level | "none" | "n/a";
+
+/**
+ * The module as the catalog of plugin `version` held it: without the criteria
+ * a later version added (`since`). A record made then has no score for them,
+ * so they must not make its level incomplete. A bar changed since then is not
+ * recoverable from today's catalog and is read as it is now. `null` when the
+ * module had no criteria at that version: an empty catalog would otherwise
+ * attain every level and read as Strict.
+ */
+function moduleAsOf(module: Module, version: string): Module | null {
+  const criteria = module.criteria.filter(
+    (c) => c.since === undefined || compareVersions(c.since, version) <= 0,
+  );
+  return criteria.length > 0 ? { ...module, criteria } : null;
+}
+
+/**
+ * What a module attained in a record made with plugin `version`, measured
+ * against today's criteria without those a later version added; `null`, like
+ * an incomplete record, when the module had none then.
+ */
+export function attainedAsOf(
+  module: Module,
+  version: string,
+  scores: ReadonlyMap<string, Score>,
+): Attainment | null {
+  const then = moduleAsOf(module, version);
+  return then ? attained(then, scores) : null;
+}
 
 /**
  * The highest level a module attains: every criterion at that level and below

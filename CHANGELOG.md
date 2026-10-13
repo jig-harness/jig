@@ -42,6 +42,73 @@ changes are marked **Breaking** and say what a consumer changes.
   no unknown key in a Jig section (`scripts/check-audit-fit.ts`); the review policy flags a pull request that
   does not say what it changed in the audit.
 
+## [0.17.0] - 2026-10-13
+
+The audit learns from its first live re-audit of Jig: it gathers the facts a
+profile suggestion needs, shows the trend across past records and the gaps no
+recommendation covers, and warns when a session runs an older plugin than the
+one installed.
+
+### Added
+
+- `config-fit.ts` reports profile facts (human contributors in the last 90
+  days and year, CI files that name deploy, release or publish work,
+  compliance documents) and a `suggested_profile` with its reasons, lightest
+  first: Solo/Lite for one person and no such CI file, Team/Standard
+  otherwise, Regulated/Strict never on its own. The starter configuration
+  gains `review.repo_slug` and `pull_requests.stacking` where the repository
+  host proves them: stacking only from open pull requests based on another
+  open pull request's branch.
+- `config-fit.ts` warns (`fact:newer-plugin-installed`) when a newer version
+  of the plugin is installed beside the one running (a version folder whose
+  manifest names it): a session keeps the version it started with, so an
+  update reaches the next session.
+- The audit sheet:
+  - **Trend**: `report.ts render --prior <record> --history <record>…` shows
+    each module's level across past records, each measured against today's
+    criteria without those added after its plugin version (a changed pass
+    bar is read as it is now).
+  - **Uncovered gaps**: a criterion within the target that no recommendation
+    names and no held decline covers is marked in the map and listed;
+    `report.ts validate` warns about each.
+  - **Profile signals**: the report source's `profile.signals` lists facts
+    worth revisiting the profile for, shown beside the profile.
+  - "Decided by a probe" only for a score the probe wrote (`probe: `
+    evidence).
+  - **Conditional targets**: the profile's conditional targets, and those of
+    the profile it is heading to, are checkboxes beside the profile
+    selector, copied as `profile_conditions`; `apply-feedback` sets them in
+    the record.
+  - **Flag a score**: any criterion's score can be marked wrong with a note,
+    copied as `scores:`; `apply-feedback` prints it as a calibration note and
+    never changes the score.
+  - With a profile, "Since the last audit" counts and lists the criteria
+    still open within the target apart from those beyond it.
+  - **A guide inside the sheet**: what Jig and the audit are, the
+    enforcement ladder, the modules, the profiles with each one's
+    target per module, how the audit works and how to read the report. It
+    opens as its own view from the top bar (`#guide`), and is the last
+    section without a script and in print. A first audit opens with a
+    welcome that points to it.
+  - **Icons and explanations**: each criterion in the maturity map is an
+    icon for its rung (Lucide icons, inlined with their ISC licence, no
+    network request) with a popover giving the criterion, its score and
+    where it stands against the profile; every module ID is one chip with a
+    popover naming the module and what it solves.
+  - "Since the last audit" is a table with colour-coded changes and count
+    badges.
+
+### Changed
+
+- `record.ts apply-feedback` ranks the accepted work as the sheet's Start
+  here does (leverage × effort, then a quick win, then the report's order),
+  no longer configuration first and in adoption order.
+- A module the plugin added after an earlier audit reads as incomplete at
+  that audit, in the comparison and the trend, no longer as Strict.
+- M3's `consumer-view-generated` criterion accepts a view derived from the
+  catalog on every run, as CI area flags are, besides a committed copy with a
+  freshness gate, as the module's reference already did.
+
 ## [0.16.1] - 2026-10-13
 
 Faster tests and a CI that runs only what a pull request's changes need.
@@ -517,7 +584,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/docomply/jig/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/docomply/jig/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/docomply/jig/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/docomply/jig/compare/v0.14.0...v0.15.0

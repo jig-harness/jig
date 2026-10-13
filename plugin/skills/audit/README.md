@@ -24,7 +24,10 @@ added since, and it does not repeat a recommendation the team declined.
    unknown, refused or deprecated fields, wrong types, commands and paths that
    do not exist, required checks that never run, a tracker that cannot be
    reached, declared values the repository contradicts (`stacking: none` with
-   stacked pull requests open), and settings its shape suggests.
+   stacked pull requests open), and settings its shape suggests. It also
+   gathers what a profile suggestion rests on (how many people commit, CI
+   that deploys or publishes, documents that name a compliance regime) and
+   names the lightest profile those facts support.
 2. **Surveys.** Read-only surveys of the repository's practices, run in
    parallel where the agent can: agent scaffolding, documentation governance,
    automation and enforcement, review and learning loop.
@@ -45,15 +48,24 @@ added since, and it does not repeat a recommendation the team declined.
 6. **The audit sheet** ([format](references/report-sheet.md)): one
    self-contained HTML file, with the same report as Markdown beside it. It
    opens with the summary and a maturity map against the target, then the
-   moves that matter most, what changed since the last audit, the
-   recommendations by module, every criterion with its evidence,
+   moves that matter most, what changed since the last audit (with each
+   module's level across older records), the recommendations by module and
+   the gaps within the target none of them covers, every criterion with its
+   evidence,
    configuration fit (with a starter configuration where one helps), drift,
-   and exactly what was examined and what could not be checked.
+   and exactly what was examined and what could not be checked. Every mark
+   and module chip explains itself in a popover, and a guide inside the same
+   file explains Jig, its modules and profiles, and how to read the sheet,
+   for a reader who has never met Jig.
 7. **Decisions.** In the sheet the team marks each recommendation accept,
-   refine, decline (with a reason and when to revisit) or *this is wrong*,
-   and copies the decisions as one block. Pasted back to the agent,
-   `record.ts apply-feedback` records the declines and prints the accepted
-   work in adoption order.
+   take the lighter option, refine, decline (with a reason and when to
+   revisit) or *this is wrong*; can flag any criterion's score as wrong; and
+   can change the profile and which of its conditional targets apply. It
+   copies the decisions as one block. Pasted back to the agent,
+   `record.ts apply-feedback` records the declines, the profile and its
+   conditions, prints the accepted work ranked as the sheet's Start here
+   ranks it, and prints every *wrong* as a calibration note without
+   changing a score.
 
 The audit is read-only: it writes the record and nothing else. Applying a
 recommendation is a separate request (`/jig:audit apply <ref>`) that opens one
@@ -107,6 +119,7 @@ compares their committed records instead of auditing each again
 | [calibration/](calibration/) | Audit runs against real repositories, kept as worked examples |
 | `scripts/config-fit.ts` | Configuration fit (`--offline`, `--json`, `--draft` for a starter configuration) |
 | `scripts/report.ts` | `validate`, `render` and `extract` of the audit sheet |
+| `scripts/report/lucide/` | The icons the sheet draws, vendored from [Lucide](https://lucide.dev) under the ISC licence (its `LICENSE` beside them) |
 | `scripts/score.ts` | The scoring checklist, the draft record, and `--check` of the criteria |
 | `scripts/record.ts` | `check`, `compare`, `summary`, `portfolio` and `apply-feedback` over records |
 

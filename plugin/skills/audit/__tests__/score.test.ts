@@ -18,7 +18,11 @@ import {
   probedFiles,
   type Score,
 } from "../scripts/lib/criteria.ts";
-import { checkRecord, parseRecord } from "../scripts/lib/record.ts";
+import {
+  checkRecord,
+  decidedByProbe,
+  parseRecord,
+} from "../scripts/lib/record.ts";
 import { matchGlob } from "../scripts/lib/repo.ts";
 import { runScript, scratchRepo } from "./helpers.ts";
 
@@ -278,6 +282,10 @@ describe("the checklist and the draft record", () => {
       .find((l) => l.startsWith("| precommit-autofix-hooks "));
     expect(hooks).toContain("\\|husky\\|");
     expect(hooks?.split(/(?<!\\)\|/).length).toBe(8);
+    // The score a probe decided carries the probe's mark, as in the draft.
+    expect(hooks?.split(/(?<!\\)\|/)[6]?.trim()).toStartWith(
+      "probe: no tracked file matches",
+    );
   });
 
   test("the draft carries decided scores, prior answers and declines, and checks once filled", () => {
@@ -313,8 +321,13 @@ declined:
     expect(record.date).toBe("2026-10-12");
     expect(record.shape).toBe("library");
     expect(record.declined).toHaveLength(1);
-    expect(record.criteria.get("M1/precommit-autofix-hooks")?.score).toBe(
-      "absent",
+    const decided = record.criteria.get("M1/precommit-autofix-hooks");
+    expect(decided?.score).toBe("absent");
+    // Marked as the probe's, so the sheet can tell it from the agent's scores.
+    expect(decided?.evidence).toStartWith("probe: no tracked file matches");
+    expect(decidedByProbe(decided)).toBe(true);
+    expect(decidedByProbe(record.criteria.get("M1/ci-runs-gates-on-pr"))).toBe(
+      false,
     );
     expect(
       record.criteria.get("M0/universal-instruction-file")?.score,

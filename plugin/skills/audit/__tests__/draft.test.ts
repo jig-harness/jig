@@ -4,7 +4,11 @@
  */
 import { describe, expect, test } from "bun:test";
 import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
-import { draftConfig, type Suggestion } from "../scripts/lib/draft.ts";
+import {
+  draftConfig,
+  type Suggestion,
+  suggestionId,
+} from "../scripts/lib/draft.ts";
 import { checkConfig, loadSchema, parseSchema } from "../scripts/lib/schema.ts";
 
 const schema = loadSchema();
@@ -124,6 +128,29 @@ gates:
     expect(load(additions)).toEqual({
       review: { bots: ["example-review[bot]"] },
       gates: { command: "make check" },
+    });
+  });
+
+  test("a value that answers another finding takes that finding's id", () => {
+    const stacking: Suggestion = {
+      ...suggest("pull_requests.stacking", "branch"),
+      id: "contradiction:pull_requests.stacking",
+    };
+    expect(suggestionId(stacking)).toBe("contradiction:pull_requests.stacking");
+    expect(suggestionId(suggest("review.bots", ["a"], "a"))).toBe(
+      "suggestion:review.bots:a",
+    );
+    expect(
+      reread(
+        draftConfig(
+          [stacking, suggest("review.repo_slug", "example/web")],
+          schema,
+          null,
+        ),
+      ),
+    ).toEqual({
+      pull_requests: { stacking: "branch" },
+      review: { repo_slug: "example/web" },
     });
   });
 });

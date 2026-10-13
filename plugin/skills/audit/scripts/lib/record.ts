@@ -29,6 +29,7 @@ import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
 import {
   type Attainment,
   attained,
+  attainedAsOf,
   type Criterion,
   EXPECTED_ABSENT,
   meets,
@@ -506,7 +507,7 @@ export function compare(
   const priorScores = scoresOf(prior);
   const levels = modules.map((m) => ({
     module: `${m.module} ${m.name}`,
-    prior: attained(m, priorScores),
+    prior: attainedAsOf(m, prior.plugin_version, priorScores),
     current: attained(m, currentScores),
   }));
   return { criteria: changes, declined, newFields, levels };
@@ -561,6 +562,26 @@ export function renderComparison(c: Comparison, prior: AuditRecord): string {
       `| ${l.module} | ${l.prior ?? "incomplete"} | ${l.current ?? "incomplete"} |`,
     );
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * How the evidence of a score a probe decided begins. `score.ts` writes it on
+ * every `absent` its probe decided, and only there, so the sheet can tell a
+ * probe's score from the agent's: an agent that scores the criterion itself
+ * writes its own evidence in its place.
+ */
+export const PROBE_EVIDENCE = "probe: ";
+
+/** The evidence of a score a probe decided: the search it ran, marked as the probe's. */
+export const probeEvidence = (search: string): string =>
+  `${PROBE_EVIDENCE}${search}`;
+
+/** Whether a record's entry is a score its probe decided, by the mark `probeEvidence` writes. */
+export function decidedByProbe(entry: Scored | undefined): boolean {
+  return (
+    entry?.score === "absent" &&
+    (entry.evidence?.startsWith(PROBE_EVIDENCE) ?? false)
+  );
 }
 
 /** One YAML double-quoted scalar: JSON's string syntax is a subset of it. */

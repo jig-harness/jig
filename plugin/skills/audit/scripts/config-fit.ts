@@ -12,7 +12,10 @@
  *     cannot be reached;
  *   - declared values the repository contradicts, such as `stacking: none`
  *     with stacked pull requests open;
- *   - settings the repository's shape suggests but does not use.
+ *   - settings the repository's shape suggests but does not use;
+ *   - the facts a profile suggestion rests on (`lib/profile-facts.ts`):
+ *     contributors, deploy signals in CI, compliance documents, and the
+ *     lightest profile they support.
  *
  * Each suggested value comes with the fact it was read from, and together
  * they make a starter configuration (`lib/draft.ts`): a whole file for a
@@ -62,12 +65,24 @@ import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import {
   ghJson,
+  newerInstalledVersion,
   packageScripts,
+  pluginVersion,
   run,
   today,
   trackedFiles,
 } from "./lib/repo.ts";
 import { draftConfig, type Suggestion, suggestionId } from "./lib/draft.ts";
+import {
+  type OpenPull,
+  repoSlugSuggestion,
+  stackingSuggestion,
+} from "./lib/forge-suggestions.ts";
+import {
+  type ProfileFacts,
+  profileFactLines,
+  profileFacts,
+} from "./lib/profile-facts.ts";
 import {
   at,
   checkConfig,
@@ -82,6 +97,8 @@ export interface FitReport {
   configured: boolean;
   forge: "checked" | "unchecked" | "offline";
   facts: Record<string, string>;
+  /** What a profile suggestion rests on, and the suggestion; also summarised in `facts`. */
+  profile_facts?: ProfileFacts;
   findings: Finding[];
   declined: { finding: Finding; reason: string; revisit_when: string }[];
   /** The values the repository implies, each behind a `suggestion:` finding. */
@@ -733,6 +750,19 @@ function skillValidation(config: Config, path: string): Finding[] {
   return findings;
 }
 
+/** A newer plugin installed than this session runs: the audit would judge with old criteria. */
+function staleSession(): Finding[] {
+  const newer = newerInstalledVersion();
+  if (newer === null) return [];
+  return [
+    {
+      id: "fact:newer-plugin-installed",
+      severity: "warning",
+      message: `this session runs plugin ${pluginVersion()}, but ${newer} is installed: a session keeps the version it started with, so start a new session to audit with ${newer}`,
+    },
+  ];
+}
+
 /** The dotted paths of every value set in `config`. */
 function leafFields(config: Config, prefix = ""): string[] {
   return Object.entries(config).flatMap(([key, value]) =>
@@ -1119,6 +1149,9 @@ function mergedPullFindings(
   ];
 }
 
+/** How many open pull requests the stacking check reads. */
+const OPEN_PULL_LIMIT = 200;
+
 /** Whether the open pull requests and the repository fit `pull_requests.stacking`. */
 function stackingFindings(
   config: Config,
@@ -1134,9 +1167,9 @@ function stackingFindings(
       "--state",
       "open",
       "--limit",
-      "200",
+      String(OPEN_PULL_LIMIT),
       "--json",
-      "number,baseRefName",
+      "number,baseRefName,headRefName",
     ],
     root,
   );
@@ -1149,24 +1182,35 @@ function stackingFindings(
       },
     ];
   const findings: Finding[] = [];
-  const stacked = (
-    open.value as { number: number; baseRefName: string }[]
-  ).filter((p) => p.baseRefName !== base);
+  // Stacked: based on another open pull request's branch. A pull request into
+  // a release or backport branch targets another branch than the base too.
+  const pulls = open.value as OpenPull[];
+  const heads = new Set(pulls.map((p) => p.headRefName));
+  const stacked = pulls.filter(
+    (p) => p.baseRefName !== base && heads.has(p.baseRefName),
+  );
   report.facts.stacked_open_pulls = String(stacked.length);
+  // A full page may leave out the parent a pull request is based on, so one
+  // based on a branch no read pull request has may be stacked all the same.
+  const unresolved =
+    pulls.length >= OPEN_PULL_LIMIT
+      ? pulls.filter((p) => p.baseRefName !== base && !heads.has(p.baseRefName))
+      : [];
+  if (unresolved.length > 0) {
+    report.facts.stacked_open_pulls = `at least ${stacked.length}`;
+    findings.push({
+      id: "unchecked:stacked-open-pulls",
+      severity: "info",
+      message: `only ${OPEN_PULL_LIMIT} open pull requests were read, and ${unresolved.length} of them are based on a branch none of those is: whether they are stacked is unchecked`,
+    });
+  }
   const declaredStacking = at(config, "pull_requests.stacking");
   const stacking =
     typeof declaredStacking === "string" ? declaredStacking : "none";
   if (stacking === "none" && stacked.length > 0)
-    findings.push({
-      id: "contradiction:pull_requests.stacking",
-      severity: declaredStacking === undefined ? "suggestion" : "warning",
-      message: `${stacked.length} open pull request(s) target another branch than ${base} (${stacked
-        .slice(0, 5)
-        .map((p) => `#${p.number} → ${p.baseRefName}`)
-        .join(", ")}), but pull_requests.stacking is ${
-        declaredStacking === undefined ? "unset (none)" : "none"
-      }: declare native or branch, or stop stacking`,
-    });
+    findings.push(
+      ...stackedWithoutStacking(declaredStacking, base, stacked, report),
+    );
   if (stacking === "branch" && repo.deleteBranchOnMerge === false)
     findings.push({
       id: "contradiction:delete-branch-on-merge",
@@ -1175,6 +1219,29 @@ function stackingFindings(
         "pull_requests.stacking is branch, but the repository keeps head branches after merging, so GitHub does not retarget the layer above a merged one",
     });
   return findings;
+}
+
+/**
+ * Open pull requests stacked while `pull_requests.stacking` reads as none: a
+ * warning when the file says none, and a suggested value when it says nothing.
+ */
+function stackedWithoutStacking(
+  declared: unknown,
+  base: string,
+  stacked: OpenPull[],
+  report: FitReport,
+): Finding[] {
+  const finding = {
+    id: "contradiction:pull_requests.stacking",
+    message: `${stacked.length} open pull request(s) are based on another open pull request's branch, not ${base} (${stacked
+      .slice(0, 5)
+      .map((p) => `#${p.number} → ${p.baseRefName}`)
+      .join(", ")}), but pull_requests.stacking is ${
+      declared === undefined ? "unset (none)" : "none"
+    }: declare native or branch, or stop stacking`,
+  };
+  if (declared !== undefined) return [{ ...finding, severity: "warning" }];
+  return offer(report, [stackingSuggestion(base, stacked, finding)]);
 }
 
 /** Configured pull-request labels the repository does not have. */
@@ -1251,6 +1318,7 @@ function forgeChecks(
     ...mergedPullFindings(config, root, base, required, report),
     ...stackingFindings(config, root, base, repo, report),
     ...labelFindings(config, root, slug),
+    ...offer(report, repoSlugSuggestion(config, slug)),
   ];
 }
 
@@ -1475,6 +1543,7 @@ export async function configFit(opts: {
       message: `no ${OVERLAY_RELPATH}: drive-pr, the pull-request policy and the procedure skills run on their defaults; resolve-review-comments and do-item's tracker scripts refuse to run`,
     });
   report.findings.push(...machineLayers(config, schema));
+  report.findings.push(...staleSession());
   const files = trackedFiles(opts.root);
   report.findings.push(...integrationBranch(config, opts.root, report));
   if (!opts.offline) {
@@ -1490,6 +1559,8 @@ export async function configFit(opts: {
   if (report.facts.integration_branch === undefined)
     report.findings.push(unknownIntegrationBranch(opts.root, report));
   report.findings.push(...suggestions(config, opts.root, files, report));
+  report.profile_facts = profileFacts(opts.root, files);
+  Object.assign(report.facts, profileFactLines(report.profile_facts));
   applyDeclines(report, opts.recordPath);
   const draft = draftConfig(
     report.suggestions,

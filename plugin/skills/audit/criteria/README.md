@@ -49,7 +49,10 @@ Standard and Strict from documentation theater.
 
 A probe is a *necessary condition* the audit's `score.ts` tests against the
 repository's tracked files: when it does not hold, the criterion cannot be met
-at any rung, so the script scores it `absent` with its search as the evidence.
+at any rung, so the script scores it `absent` with its search as the evidence,
+beginning `probe: ` (`probe: no tracked file matches AGENTS.md, …`). That mark
+is how the audit sheet tells a probe's score from the agent's, so only the
+script writes it.
 When it holds, it proves only the precondition; the files it matched are
 evidence the agent still weighs. Give a criterion a probe only when its
 statement names a fact a file search can rule out: a fact that may live under

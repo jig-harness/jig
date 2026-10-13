@@ -10,7 +10,7 @@
  */
 import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export { trackedFiles } from "../../../adr/scripts/locate.ts";
@@ -99,19 +99,32 @@ export function skillDir(): string {
   return dirname(dirname(import.meta.dir));
 }
 
-/**
- * The plugin version this skill belongs to, from its manifest, or `null`
- * when neither manifest is beside it.
- */
-export function pluginVersion(): string | null {
+/** The version a plugin's manifest under `root` names, or `null` when neither manifest is there. */
+function manifestVersion(root: string): string | null {
   for (const manifest of [".claude-plugin", ".codex-plugin"]) {
-    const path = join(skillDir(), "..", "..", manifest, "plugin.json");
+    const path = join(root, manifest, "plugin.json");
     if (!existsSync(path)) continue;
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
     const version = isMapping(parsed) ? parsed.version : undefined;
     if (typeof version === "string") return version;
   }
   return null;
+}
+
+/**
+ * The plugin version this skill belongs to, from its manifest, or `null`
+ * when neither manifest is beside it.
+ */
+export function pluginVersion(): string | null {
+  return manifestVersion(join(skillDir(), "..", ".."));
+}
+
+/** Whether `dir` holds an installed plugin of `version`: a manifest that names it. */
+function installedAs(dir: string, version: string): boolean {
+  return (
+    statSync(dir, { throwIfNoEntry: false })?.isDirectory() === true &&
+    manifestVersion(dir) === version
+  );
 }
 
 /** Compare two `major.minor.patch` versions; a malformed one sorts first. */
@@ -143,4 +156,36 @@ export function today(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * A newer version of this plugin installed beside the one running, or
+ * `null`. Plugin caches keep each version in a folder named after it
+ * (`<plugin>/<version>/skills/…`); a session keeps the version it started
+ * with, so an update reaches the next session, not this one. A folder counts
+ * only with a manifest naming its version: an interrupted install or a stray
+ * file is nothing a restart could load. `pluginDir` is the running plugin's
+ * root; a checkout has no version folders beside it.
+ */
+export function newerInstalledVersion(
+  pluginDir = join(skillDir(), "..", ".."),
+  running = pluginVersion(),
+): string | null {
+  if (running === null) return null;
+  let siblings: string[];
+  try {
+    siblings = readdirSync(dirname(pluginDir));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  const newer = siblings
+    .filter(
+      (v) =>
+        VERSION_PATTERN.test(v) &&
+        compareVersions(v, running) > 0 &&
+        installedAs(join(dirname(pluginDir), v), v),
+    )
+    .sort(compareVersions);
+  return newer.at(-1) ?? null;
 }

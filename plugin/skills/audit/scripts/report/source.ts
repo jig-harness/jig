@@ -40,12 +40,26 @@ export interface Recommendation {
   lighter?: string;
 }
 
+/** A fact suggesting the team revisit its profile: more contributors, a deploy environment, a compliance document. */
+export interface ProfileSignal {
+  text: string;
+  evidence: string[];
+}
+
 export interface ReportSource {
   v: 1;
   repository: { name: string; url?: string };
   summary: string;
-  /** The profile the team declared (it is the record's), or one the audit suggests and why. */
-  profile?: { id: string; source: ProfileSource; why?: string };
+  /**
+   * The profile the team declared (it is the record's), or one the audit
+   * suggests and why, with the facts that suggest the project has outgrown it.
+   */
+  profile?: {
+    id: string;
+    source: ProfileSource;
+    why?: string;
+    signals?: ProfileSignal[];
+  };
   examined: { read: string[]; unchecked?: { what: string; why: string }[] };
   stack: { facet: string; detected: string; evidence: string }[];
   recommendations: Recommendation[];
@@ -126,12 +140,14 @@ function checkRecommendations(c: Checker, value: unknown): void {
 }
 
 function checkProfile(c: Checker, value: unknown): void {
-  if (!c.object(value, "$.profile", ["id", "source"], ["why"])) return;
+  if (!c.object(value, "$.profile", ["id", "source"], ["why", "signals"]))
+    return;
   c.pattern(value.id, PROFILE_ID, "$.profile.id", "a profile id");
   checkOneOf(c, value.source, PROFILE_SOURCES, "$.profile.source");
   if ("why" in value) c.text(value.why, "$.profile.why");
   else if (value.source === "suggested")
     c.fail("$.profile.why", "is required for a suggested profile");
+  if ("signals" in value) checkFacts(c, value.signals, "$.profile.signals");
 }
 
 function checkExamined(c: Checker, value: unknown): void {
@@ -160,10 +176,11 @@ function checkStack(c: Checker, value: unknown): void {
   });
 }
 
-function checkDrift(c: Checker, value: unknown): void {
-  if (!c.array(value, "$.drift", 1)) return;
+/** A list of facts, each a text with at least one piece of evidence: the drift found, the profile's signals. */
+function checkFacts(c: Checker, value: unknown, path: string): void {
+  if (!c.array(value, path, 1)) return;
   value.forEach((d, i) => {
-    const p = `$.drift[${i}]`;
+    const p = `${path}[${i}]`;
     if (c.object(d, p, ["text", "evidence"], [])) {
       c.text(d.text, `${p}.text`);
       c.texts(d.evidence, `${p}.evidence`, 1);
@@ -197,7 +214,7 @@ export function parseReportSource(value: unknown): ReportSource {
   checkExamined(c, value.examined);
   checkStack(c, value.stack);
   checkRecommendations(c, value.recommendations);
-  if ("drift" in value) checkDrift(c, value.drift);
+  if ("drift" in value) checkFacts(c, value.drift, "$.drift");
   if ("terms" in value) c.glossary(value.terms, "$.terms");
   if (c.problems.length > 0) throw new ReportSourceError(c.problems);
   return value as unknown as ReportSource;

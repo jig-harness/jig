@@ -36,7 +36,12 @@ import {
   probedFiles,
   type Score,
 } from "./lib/criteria.ts";
-import { parseRecord, RECORD_RELPATH, renderDraft } from "./lib/record.ts";
+import {
+  parseRecord,
+  probeEvidence,
+  RECORD_RELPATH,
+  renderDraft,
+} from "./lib/record.ts";
 import { isDate, pluginVersion, run, today, trackedFiles } from "./lib/repo.ts";
 
 const USAGE =
@@ -141,7 +146,7 @@ function checklistRow(c: Criterion, row?: Row): string {
       ? `${row.probe}: ${row.evidence}`
       : "";
   const score = absent ? "absent" : "";
-  const evidence = absent ? (row.evidence ?? "") : "";
+  const evidence = absent ? probeEvidence(row.evidence ?? "") : "";
   return `| ${c.id} | ${c.level} | ${c.requires} | ${cell(probe)} | ${score} | ${cell(evidence)} |`;
 }
 
@@ -190,7 +195,7 @@ function probeOutcomes(rows: Row[]): {
     if (row.probe === "absent")
       decided.set(row.key, {
         score: "absent",
-        evidence: `probe: ${row.evidence}`,
+        evidence: probeEvidence(row.evidence ?? ""),
       });
     else if (row.probe !== null && row.evidence)
       hints.set(row.key, `${row.probe}: ${row.evidence}`);

@@ -9,6 +9,7 @@
  *     commit: "<full sha>"
  *     report: "<fingerprint>"       # the report's recommendations (reportFingerprint)
  *     profile: team-standard        # optional: only when the reader changed it
+ *     profile_conditions: [M3, M12] # optional: the conditional targets that apply
  *     accept: [R1, R3]              # optional
  *     refine:                       # optional
  *       - { id: R2, note: "Use the existing lint job." }
@@ -16,18 +17,25 @@
  *       - { id: R4, refs: ["M5/<id>"], reason: "…", revisit_when: "…" }
  *     wrong:                        # optional
  *       - { id: R5, refs: ["M2/<id>"], note: "…" }
+ *     scores:                       # optional: criteria whose score is wrong
+ *       - { ref: "M3/<id>", note: "…" }
  *
  * A decline becomes an entry in the record's `declined:` list, or renews the
- * entry that already declines the same refs, and a profile choice sets
- * `profile:`. Accepted and refined recommendations become the
- * work, in adoption order. A wrong one is a calibration note: the audit
- * misjudged something, so the criterion's score is left for the agent to
- * re-examine and never changed here.
+ * entry that already declines the same refs, a profile choice sets
+ * `profile:`, and `profile_conditions` replaces the record's list (an empty
+ * one removes it). Accepted and refined recommendations become the work,
+ * ranked as the sheet's Start here ranks them. A wrong recommendation and a
+ * wrong score are calibration notes: the audit misjudged something, so the
+ * criterion's score is left for the agent to re-examine and never changed
+ * here.
  *
  * The block is checked against the audit it was written for: the report's
  * repository and the fingerprint of its recommendations, the record's commit
  * (and, for a sheet, the commit of the record it was rendered with), the
- * report's recommendation ids and each one's refs. A block written for another audit changes nothing.
+ * report's recommendation ids and each one's refs, the criteria the record
+ * scored, and the conditional targets of the profile that will apply (or of
+ * the record's heading-to profile, as the record itself allows). A block
+ * written for another audit changes nothing.
  */
 import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
 import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
@@ -35,7 +43,7 @@ import type { Module, Score } from "./criteria.ts";
 import { extractEmbedded } from "../../../decide/scripts/sheet-kit/html.ts";
 import { DATA_BLOCK_ID, parseEmbedded } from "../report/data.ts";
 import { LIGHTER_PREFIX } from "../report/feedback-text.ts";
-import { byValue } from "../report/model.ts";
+import { ranked } from "../report/model.ts";
 import {
   parseReportSource,
   type Recommendation as SourceRecommendation,
@@ -74,6 +82,8 @@ export interface Feedback {
   report: string;
   /** Present only when the reader chose a profile. */
   profile?: string;
+  /** Present only when the reader chose which conditional targets apply. */
+  profile_conditions?: string[];
   accept: string[];
   refine: { id: string; note?: string }[];
   decline: {
@@ -83,6 +93,8 @@ export interface Feedback {
     revisit_when: string;
   }[];
   wrong: { id: string; refs: string[]; note?: string }[];
+  /** Criteria whose score the reader says is wrong. */
+  scores: { ref: string; note: string }[];
 }
 
 const START = /^(\s*)audit_feedback:\s*(#.*)?$/;
@@ -91,6 +103,8 @@ const indentOf = (line: string): number =>
   line.length - line.trimStart().length;
 
 const isComment = (line: string): boolean => line.trimStart().startsWith("#");
+
+const CRITERION_REF = /^M\d+\/[a-z0-9-]+$/;
 
 /**
  * The `audit_feedback:` document within pasted text: its key's line and every
@@ -183,6 +197,50 @@ function parseWrong(raw: unknown, at: string): Feedback["wrong"][number] {
   };
 }
 
+function parseScore(raw: unknown, at: string): Feedback["scores"][number] {
+  const s = strictMapping(raw, ["ref", "note"], at);
+  if (typeof s.ref !== "string" || !CRITERION_REF.test(s.ref))
+    refuse(`${at}.ref: a criterion is M<n>/<id>`);
+  return { ref: s.ref, note: required(s.note, `${at}.note`) };
+}
+
+/** The values of `list` named more than once, each once. */
+const repeated = (list: readonly string[]): string[] => [
+  ...new Set(list.filter((v, i) => list.indexOf(v) !== i)),
+];
+
+function conditionsOf(v: unknown, at: string): string[] {
+  if (!Array.isArray(v)) refuse(`${at} must list modules (M<n>)`);
+  const modules = v.map((m, i) => {
+    if (typeof m !== "string" || !/^M\d+$/.test(m))
+      refuse(`${at}[${i}]: a module is M<n>`);
+    return m;
+  });
+  const twice = repeated(modules);
+  if (twice.length > 0) refuse(`${at}: ${twice.join(", ")} named twice`);
+  return modules;
+}
+
+/** The block's optional profile and conditional targets, each only when written. */
+function profileFields(
+  f: Record<string, unknown>,
+  at: string,
+): Pick<Feedback, "profile" | "profile_conditions"> {
+  return {
+    ...(f.profile === undefined
+      ? {}
+      : { profile: required(f.profile, `${at}.profile`) }),
+    ...(f.profile_conditions === undefined
+      ? {}
+      : {
+          profile_conditions: conditionsOf(
+            f.profile_conditions,
+            `${at}.profile_conditions`,
+          ),
+        }),
+  };
+}
+
 /** Every id the feedback decides, once per choice. */
 function choiceIds(f: Feedback): string[] {
   return [
@@ -197,17 +255,32 @@ const TOP_KEYS = [
   "commit",
   "report",
   "profile",
+  "profile_conditions",
   "accept",
   "refine",
   "decline",
   "wrong",
+  "scores",
 ];
+
+/** Why a parsed block cannot stand: an id in two choices, a criterion flagged twice. */
+function duplicates(feedback: Feedback): string[] {
+  const ids = repeated(choiceIds(feedback));
+  const refs = repeated(feedback.scores.map((s) => s.ref));
+  return [
+    ...(ids.length > 0
+      ? [`${ids.join(", ")}: one choice per recommendation`]
+      : []),
+    ...(refs.length > 0 ? [`${refs.join(", ")}: one note per criterion`] : []),
+  ];
+}
 
 /**
  * Parse a feedback block, tolerating text pasted around it. Throws
  * `FeedbackRefused` for a block that is not one: an unknown key, an id that
  * is not R<n> or appears in two choices, a decline without its refs, reason
- * or revisit condition.
+ * or revisit condition, a condition that is not a module or is named twice,
+ * a score flag without its criterion or note, or a criterion flagged twice.
  */
 export function parseFeedback(source: string): Feedback {
   const document = feedbackDocument(source);
@@ -229,9 +302,7 @@ export function parseFeedback(source: string): Feedback {
     repository: required(f.repository, `${at}.repository`),
     commit: required(f.commit, `${at}.commit`),
     report: required(f.report, `${at}.report`),
-    ...(f.profile === undefined
-      ? {}
-      : { profile: required(f.profile, `${at}.profile`) }),
+    ...profileFields(f, at),
     accept: listOf(f.accept, `${at}.accept`).map((id, i) =>
       idOf(id, `${at}.accept[${i}]`),
     ),
@@ -244,11 +315,12 @@ export function parseFeedback(source: string): Feedback {
     wrong: listOf(f.wrong, `${at}.wrong`).map((w, i) =>
       parseWrong(w, `${at}.wrong[${i}]`),
     ),
+    scores: listOf(f.scores, `${at}.scores`).map((s, i) =>
+      parseScore(s, `${at}.scores[${i}]`),
+    ),
   };
-  const ids = choiceIds(feedback);
-  const twice = ids.filter((id, i) => ids.indexOf(id) !== i);
-  if (twice.length > 0)
-    refuse(`${[...new Set(twice)].join(", ")}: one choice per recommendation`);
+  const problems = duplicates(feedback);
+  if (problems.length > 0) throw new FeedbackRefused(problems);
   return feedback;
 }
 
@@ -313,17 +385,24 @@ export interface WorkItem extends Recommendation {
   note?: string;
 }
 
+/** A criterion with what the record holds for it; a configuration finding has no score. */
+export interface Recorded {
+  ref: string;
+  statement: string | null;
+  score: Score | null;
+  evidence: string | null;
+}
+
 export interface CalibrationNote {
   id: string;
   title: string;
   note?: string;
-  /** Each ref with what the record holds for it; a configuration finding has no score. */
-  refs: {
-    ref: string;
-    statement: string | null;
-    score: Score | null;
-    evidence: string | null;
-  }[];
+  refs: Recorded[];
+}
+
+/** A criterion whose score the team says is wrong, with its note. */
+export interface ScoreNote extends Recorded {
+  note: string;
 }
 
 export interface FeedbackPlan {
@@ -338,11 +417,15 @@ export interface FeedbackPlan {
   /** Declines the record already holds exactly as written. */
   alreadyDeclined: string[];
   profile: { from: string | null; to: string } | null;
+  /** The record's `profile_conditions` and the list that replaces it, when the set changes. */
+  conditions: { from: string[]; to: string[] } | null;
   /** Drift the report found: fixed first, before any module work. */
   drift: ReportView["drift"];
   /** Accepted and refined recommendations, in the order to take them. */
   work: WorkItem[];
   wrong: CalibrationNote[];
+  /** Scores the team says are wrong: calibration notes, never changed here. */
+  scores: ScoreNote[];
 }
 
 const sameRefs = (a: readonly string[], b: readonly string[]): boolean => {
@@ -411,6 +494,31 @@ function conflictingDeclines(feedback: Feedback): string[] {
   });
 }
 
+/**
+ * The profile and conditional targets the block would leave the record
+ * with, checked as the record's own are: every condition is a conditional
+ * target of the profile that will apply, or of the heading-to profile.
+ */
+function profileProblems(feedback: Feedback, ctx: PlanContext): string[] {
+  const { profile, profile_conditions } = feedback;
+  if (profile === undefined && profile_conditions === undefined) return [];
+  return checkProfile(
+    {
+      ...ctx.record,
+      ...(profile === undefined ? {} : { profile }),
+      ...(profile_conditions === undefined ? {} : { profile_conditions }),
+    },
+    ctx.profiles,
+  );
+}
+
+/** A score flag on a criterion the record does not hold. */
+function unknownScores(feedback: Feedback, record: AuditRecord): string[] {
+  return feedback.scores
+    .filter((s) => !record.criteria.has(s.ref))
+    .map((s) => `${s.ref}: the record has no such criterion`);
+}
+
 function refusals(
   feedback: Feedback,
   ctx: PlanContext,
@@ -446,76 +554,84 @@ function refusals(
     ...staleDeclines(feedback, ctx.modules),
     ...conflictingDeclines(feedback),
     ...heldWork(feedback, ctx),
-    ...(feedback.profile === undefined
-      ? []
-      : checkProfile({ ...record, profile: feedback.profile }, ctx.profiles)),
+    ...profileProblems(feedback, ctx),
+    ...unknownScores(feedback, record),
   ];
 }
-
-/** Where a recommendation falls in adoption order; configuration-only ones first. */
-function adoptionRank(
-  refs: readonly string[],
-  order: readonly string[],
-): number {
-  const first = refs.find((r) => !r.startsWith("config/"));
-  if (first === undefined) return -1;
-  const at = order.indexOf(first.split("/")[0] ?? "");
-  return at < 0 ? order.length : at;
-}
-
-const idNumber = (id: string): number => Number(id.slice(1));
 
 /**
- * Order work by the adoption order of its first module ref (configuration
- * fixes first: they are the cheapest), then higher leverage, then smaller
- * effort, then the report's own numbering.
+ * The accepted and refined recommendations, ranked as the sheet ranks its
+ * Start here (`ranked`): leverage × effort, then a quick win, then the
+ * report's own order.
  */
-function byAdoption(order: readonly string[]) {
-  return (a: WorkItem, b: WorkItem): number =>
-    adoptionRank(a.refs, order) - adoptionRank(b.refs, order) ||
-    byValue(a, b) ||
-    idNumber(a.id) - idNumber(b.id);
-}
-
 function workOf(
   feedback: Feedback,
-  byId: ReadonlyMap<string, Recommendation>,
-  order: readonly string[],
+  recommendations: readonly Recommendation[],
 ): WorkItem[] {
-  const chosen: { id: string; choice: WorkItem["choice"]; note?: string }[] = [
-    ...feedback.accept.map((id) => ({ id, choice: "accept" as const })),
-    ...feedback.refine.map((r) => ({ ...r, choice: "refine" as const })),
-  ];
-  return chosen
-    .flatMap((c) => {
-      const rec = byId.get(c.id);
-      return rec ? [{ ...rec, ...c }] : [];
-    })
-    .sort(byAdoption(order));
+  const chosen = new Map<string, Pick<WorkItem, "choice" | "note">>([
+    ...feedback.accept.map(
+      (id) => [id, { choice: "accept" as const }] as const,
+    ),
+    ...feedback.refine.map(
+      (r) =>
+        [
+          r.id,
+          {
+            choice: "refine" as const,
+            ...(r.note === undefined ? {} : { note: r.note }),
+          },
+        ] as const,
+    ),
+  ]);
+  return ranked(
+    recommendations.flatMap((rec) => {
+      const c = chosen.get(rec.id);
+      return c ? [{ ...rec, ...c }] : [];
+    }),
+  );
+}
+
+/** What the record and the criteria hold for each ref. */
+function recordedFor(ctx: PlanContext): (ref: string) => Recorded {
+  const statements = new Map(
+    ctx.modules.flatMap((m) => m.criteria.map((c) => [c.key, c.statement])),
+  );
+  return (ref) => {
+    const entry = ctx.record.criteria.get(ref);
+    return {
+      ref,
+      statement: statements.get(ref) ?? null,
+      score: entry?.score ?? null,
+      evidence: entry?.evidence ?? null,
+    };
+  };
 }
 
 function calibrationOf(
   feedback: Feedback,
   ctx: PlanContext,
   byId: ReadonlyMap<string, Recommendation>,
-): CalibrationNote[] {
-  const statements = new Map(
-    ctx.modules.flatMap((m) => m.criteria.map((c) => [c.key, c.statement])),
-  );
-  return feedback.wrong.map((w) => ({
-    id: w.id,
-    title: byId.get(w.id)?.title ?? w.id,
-    ...(w.note === undefined ? {} : { note: w.note }),
-    refs: w.refs.map((ref) => {
-      const entry = ctx.record.criteria.get(ref);
-      return {
-        ref,
-        statement: statements.get(ref) ?? null,
-        score: entry?.score ?? null,
-        evidence: entry?.evidence ?? null,
-      };
-    }),
-  }));
+): Pick<FeedbackPlan, "wrong" | "scores"> {
+  const recorded = recordedFor(ctx);
+  return {
+    wrong: feedback.wrong.map((w) => ({
+      id: w.id,
+      title: byId.get(w.id)?.title ?? w.id,
+      ...(w.note === undefined ? {} : { note: w.note }),
+      refs: w.refs.map(recorded),
+    })),
+    scores: feedback.scores.map((s) => ({ ...recorded(s.ref), note: s.note })),
+  };
+}
+
+/** The conditional targets the block sets, when they differ from the record's. */
+function conditionsChange(
+  feedback: Feedback,
+  record: AuditRecord,
+): FeedbackPlan["conditions"] {
+  const to = feedback.profile_conditions;
+  const from = record.profile_conditions ?? [];
+  return to === undefined || sameRefs(from, to) ? null : { from, to };
 }
 
 function declinesOf(
@@ -554,10 +670,11 @@ function declinesOf(
 }
 
 /**
- * What recording `feedback` does: the declines to add, the profile change,
- * the ordered work and the calibration notes. Throws `FeedbackRefused` when
- * the block was not written for this audit, names a recommendation the
- * report does not have, or names refs or a profile that do not fit.
+ * What recording `feedback` does: the declines to add, the profile and
+ * conditional targets to set, the ordered work and the calibration notes.
+ * Throws `FeedbackRefused` when the block was not written for this audit,
+ * names a recommendation the report does not have, or names refs, criteria,
+ * a profile or conditions that do not fit.
  */
 export function planFeedback(
   feedback: Feedback,
@@ -575,15 +692,20 @@ export function planFeedback(
       to === undefined || to === ctx.record.profile
         ? null
         : { from: ctx.record.profile ?? null, to },
+    conditions: conditionsChange(feedback, ctx.record),
     drift: ctx.report.drift,
-    work: workOf(feedback, byId, ctx.profiles.order),
-    wrong: calibrationOf(feedback, ctx, byId),
+    work: workOf(feedback, ctx.report.recommendations),
+    ...calibrationOf(feedback, ctx, byId),
   };
 }
 
 /** Whether recording the plan changes the record. */
 export function changesRecord(plan: FeedbackPlan): boolean {
-  return plan.profile !== null || plan.declined.length > 0;
+  return (
+    plan.profile !== null ||
+    plan.conditions !== null ||
+    plan.declined.length > 0
+  );
 }
 
 /** Where a YAML comment starts in `text`, outside quoted scalars, or -1. */
@@ -610,16 +732,78 @@ function topLevel(lines: readonly string[], key: string): number {
   return lines.findIndex((l) => pattern.test(l));
 }
 
+/** Insert `line` after the first of the top-level `keys` the record has. */
+function insertAfter(lines: string[], keys: readonly string[], line: string) {
+  const after = keys.map((k) => topLevel(lines, k)).find((i) => i >= 0);
+  lines.splice((after ?? -1) + 1, 0, line);
+}
+
 function setProfile(lines: string[], id: string): void {
   const at = topLevel(lines, "profile");
   if (at >= 0) {
     lines[at] = `profile: ${id}${splitLine(lines[at] ?? "", "profile").tail}`;
     return;
   }
-  const after = ["shape", "commit"]
-    .map((k) => topLevel(lines, k))
-    .find((i) => i >= 0);
-  lines.splice((after ?? -1) + 1, 0, `profile: ${id}`);
+  insertAfter(lines, ["shape", "commit"], `profile: ${id}`);
+}
+
+/** The comments among `lines`: a comment line as it is, a comment at a line's end on a line of its own. */
+function commentsIn(lines: readonly string[], indent = ""): string[] {
+  return lines.flatMap((line) => {
+    if (isComment(line)) return [line];
+    const at = commentAt(line);
+    return at < 0 ? [] : [`${indent}${line.slice(at)}`];
+  });
+}
+
+/**
+ * Set `profile_conditions:` to `modules`: replace the key's value, in
+ * whichever form it is written (a flow list over several lines too), add the
+ * key after `profile:` when it is absent, or remove it for an empty list. The
+ * comments it carried stay.
+ */
+function setConditions(lines: string[], modules: readonly string[]): void {
+  const key = "profile_conditions";
+  const value = `${key}: [${modules.join(", ")}]`;
+  const at = topLevel(lines, key);
+  if (at < 0) {
+    if (modules.length > 0)
+      insertAfter(lines, ["profile", "shape", "commit"], value);
+    return;
+  }
+  const { value: was, tail } = splitLine(lines[at] ?? "", key);
+  // A block list's items belong to the key and go with it.
+  const first = was === "" ? nextContent(lines, at) : -1;
+  const items = first >= 0 && /^\s*-(\s|$)/.test(lines[first] ?? "");
+  const indent = items ? indentOf(lines[first] ?? "") : 0;
+  const end = items ? blockEnd(lines, first, indent) : flowEnd(lines, at, was);
+  const kept = commentsIn(lines.slice(at + 1, end), " ".repeat(indent));
+  const own =
+    modules.length > 0 ? [`${value}${tail}`] : tail ? [tail.trimStart()] : [];
+  lines.splice(at, end - at, ...own, ...kept);
+}
+
+/**
+ * The index after the line that closes the flow list `was`, the value that
+ * opens on line `at`; the line after `at` for any other value. Brackets inside
+ * a comment do not count.
+ */
+function flowEnd(lines: readonly string[], at: number, was: string): number {
+  if (!was.startsWith("[")) return at + 1;
+  let depth = 0;
+  for (let i = at; i < lines.length; i++) {
+    depth += bracketsOpened(i === at ? was : (lines[i] ?? ""));
+    if (depth <= 0) return i + 1;
+  }
+  return at + 1;
+}
+
+/** The brackets a line leaves open: each `[` before its comment adds one, each `]` takes one away. */
+function bracketsOpened(line: string): number {
+  const hash = commentAt(line);
+  const code = hash < 0 ? line : line.slice(0, hash);
+  const count = (pattern: RegExp) => code.match(pattern)?.length ?? 0;
+  return count(/\[/g) - count(/\]/g);
 }
 
 /** The index after the last line of the block list that starts at `first`, with its dashes at `indent`. */
@@ -682,11 +866,7 @@ function replaceItem(
   if (start === undefined)
     throw new Error(`declined: has no entry ${index + 1} to renew`);
   const end = items.starts[index + 1] ?? items.end;
-  const comments = lines.slice(start, end).flatMap((line) => {
-    if (isComment(line)) return [line];
-    const at = commentAt(line);
-    return at < 0 ? [] : [`${" ".repeat(indent)}${line.slice(at)}`];
-  });
+  const comments = commentsIn(lines.slice(start, end), " ".repeat(indent));
   lines.splice(
     start,
     end - start,
@@ -745,13 +925,14 @@ function extendDeclined(
 
 /**
  * The record's text with the plan's declines added to `declined:` and its
- * profile set. The text is edited line by line rather than re-serialised, so
- * every comment in the record is kept.
+ * profile and conditional targets set. The text is edited line by line
+ * rather than re-serialised, so every comment in the record is kept.
  */
 export function editRecordText(source: string, plan: FeedbackPlan): string {
   const eol = source.includes("\r\n") ? "\r\n" : "\n";
   const lines = source.split(/\r?\n/);
   if (plan.profile) setProfile(lines, plan.profile.to);
+  if (plan.conditions) setConditions(lines, plan.conditions.to);
   const entries = plan.declined
     .filter((d) => d.replaces === undefined)
     .map((d) => d.entry);
@@ -784,6 +965,23 @@ export function editRecordText(source: string, plan: FeedbackPlan): string {
   return lines.join(eol);
 }
 
+const refList = (refs: readonly string[]): string => `[${refs.join(", ")}]`;
+
+/** The profile and conditional targets an edited record does not read as the plan set them. */
+function profileEdited(after: AuditRecord, plan: FeedbackPlan): string[] {
+  const problems: string[] = [];
+  if (plan.profile && after.profile !== plan.profile.to)
+    problems.push(
+      `profile: reads ${after.profile ?? "nothing"}, not ${plan.profile.to}`,
+    );
+  const now = after.profile_conditions ?? [];
+  if (plan.conditions && !sameRefs(now, plan.conditions.to))
+    problems.push(
+      `profile_conditions: reads ${refList(now)}, not ${refList(plan.conditions.to)}`,
+    );
+  return problems;
+}
+
 /**
  * What is wrong with an edited record: it does not parse, it has a problem
  * `checkRecord` finds that the original did not, or it does not hold what the
@@ -803,13 +1001,12 @@ export function checkEdited(
     return [error instanceof Error ? error.message : String(error)];
   }
   const known = new Set(checkRecord(before, catalog.modules, catalog.profiles));
-  const problems = checkRecord(after, catalog.modules, catalog.profiles).filter(
-    (p) => !known.has(p),
-  );
-  if (plan.profile && after.profile !== plan.profile.to)
-    problems.push(
-      `profile: reads ${after.profile ?? "nothing"}, not ${plan.profile.to}`,
-    );
+  const problems = [
+    ...checkRecord(after, catalog.modules, catalog.profiles).filter(
+      (p) => !known.has(p),
+    ),
+    ...profileEdited(after, plan),
+  ];
   const added = plan.declined.filter((d) => d.replaces === undefined).length;
   if (after.declined.length !== before.declined.length + added)
     problems.push(
@@ -843,7 +1040,16 @@ export function checkEdited(
   return problems;
 }
 
-const refList = (refs: readonly string[]): string => `[${refs.join(", ")}]`;
+/** The conditional targets now recorded, and which began or stopped applying. */
+function conditionsLine(c: NonNullable<FeedbackPlan["conditions"]>): string {
+  const added = c.to.filter((m) => !c.from.includes(m));
+  const removed = c.from.filter((m) => !c.to.includes(m));
+  const what = [
+    ...(added.length > 0 ? [`now applies: ${added.join(", ")}`] : []),
+    ...(removed.length > 0 ? [`no longer applies: ${removed.join(", ")}`] : []),
+  ];
+  return `- profile_conditions: ${c.to.length > 0 ? refList(c.to) : "none"} (${what.join("; ")})`;
+}
 
 function recordedLines(
   plan: FeedbackPlan,
@@ -853,13 +1059,14 @@ function recordedLines(
   const changes = [
     ...plan.declined.map(
       (d) =>
-        `- ${d.replaces === undefined ? "declined" : "declined again"} ${d.id} ${refList(d.entry.refs)}: ${d.entry.reason} (revisit when ${d.entry.revisit_when})`,
+        `- ${d.replaces === undefined ? "declined" : "declined again"} ${d.id} ${refList(d.entry.refs)}: ${d.entry.reason} (revisit: ${d.entry.revisit_when})`,
     ),
     ...(plan.profile
       ? [
           `- profile: ${plan.profile.to} (was ${plan.profile.from ?? "not set"})`,
         ]
       : []),
+    ...(plan.conditions ? [conditionsLine(plan.conditions)] : []),
   ];
   const held = plan.alreadyDeclined.map(
     (id) => `- ${id}: already declined as written; not added again`,
@@ -898,12 +1105,16 @@ function workLines(work: readonly WorkItem[]): string[] {
   if (work.length === 0) return [];
   return [
     "",
-    "Work, in adoption order (each ready for /jig:audit apply <ref> or for filing):",
+    "Work, ranked as the sheet's Start here (each ready for /jig:audit apply <ref> or for filing):",
     ...work.map(
       (w, i) => `${i + 1}. ${w.id} ${refList(w.refs)} ${workText(w)}`,
     ),
   ];
 }
+
+/** A criterion as the record holds it: its statement, score and evidence. */
+const recordedText = (r: Recorded): string =>
+  `${r.ref}${r.statement ? ` (${r.statement})` : ""}: scored ${r.score ?? "nothing"}; evidence: ${r.evidence ?? "none"}`;
 
 function calibrationLines(wrong: readonly CalibrationNote[]): string[] {
   if (wrong.length === 0) return [];
@@ -915,9 +1126,21 @@ function calibrationLines(wrong: readonly CalibrationNote[]): string[] {
       ...w.refs.map((r) =>
         r.ref.startsWith("config/")
           ? `  ${r.ref}: a configuration finding; config-fit.ts decides it`
-          : `  ${r.ref}${r.statement ? ` (${r.statement})` : ""}: scored ${r.score ?? "nothing"}; evidence: ${r.evidence ?? "none"}`,
+          : `  ${recordedText(r)}`,
       ),
       `  the team's note: ${w.note ?? "none given"}`,
+    ]),
+  ];
+}
+
+function scoreLines(scores: readonly ScoreNote[]): string[] {
+  if (scores.length === 0) return [];
+  return [
+    "",
+    "This score is wrong (calibration notes: re-examine; the score is not changed):",
+    ...scores.flatMap((s) => [
+      `- ${recordedText(s)}`,
+      `  the team's note: ${s.note}`,
     ]),
   ];
 }
@@ -932,5 +1155,6 @@ export function renderPlan(
     ...driftLines(plan.drift),
     ...workLines(plan.work),
     ...calibrationLines(plan.wrong),
+    ...scoreLines(plan.scores),
   ].join("\n")}\n`;
 }

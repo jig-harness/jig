@@ -56,8 +56,17 @@ machine is reported as facts (`fact:user-layer`, `fact:environment-layer`),
 and a user file that sets a field only a repository may set is a warning
 (`fact:user-layer-refused`).
 
+If it warns `fact:newer-plugin-installed`, stop and tell the user: this
+session runs an older plugin than the one installed, and a session keeps the
+version it started with. Audit again in a new session.
+
 Keep its **Facts** section: the integration branch, its protection and the
-required checks are evidence for steps 2 and 3. Save its `--json` output to
+required checks are evidence for steps 2 and 3, and the profile facts (people
+committing in the last 90 days and the last year, automation counted apart;
+CI files that name deploy, release or publish work; documents whose path or first
+heading names a compliance regime; and the `suggested_profile` they support,
+also as `profile_facts` in the `--json` output) are what step 3 suggests a
+profile from. Save its `--json` output to
 the scratch folder as well (`config-fit.ts --json > <scratch>/fit.json`): the
 audit sheet shows it. When the repository has no configuration file, or the
 check suggests settings, the report includes a starter configuration
@@ -90,15 +99,19 @@ Fill every `score: null` with `absent`, `convention`, `advisory`,
 the host query, for settings outside the checkout). Score from the survey
 results; read the files yourself where a survey did not settle a criterion. A
 probe's `absent` stands unless you find what the probe could not see; then
-score it and say so in the evidence. Set `shape` (library, application,
+score it and replace the evidence with your own. Evidence beginning `probe: `
+marks a score the probe decided, and the sheet credits the probe only for
+that, so never begin your own evidence with it. Set `shape` (library, application,
 service, monorepo, documentation, …): it is what makes `expected-absent`
 defensible.
 
 Set `profile`, the maturity the team aims for (`${CLAUDE_SKILL_DIR}/profiles.yaml`:
 `solo-lite`, `team-standard`, `regulated-strict`). Keep the prior record's.
 On a first audit ask the user; when they do not know, leave it `null` and
-suggest one in the report from what you observed (contributors, deploy
-environments, a regulated domain), marked as suggested. List in
+suggest one in the report: take step 1's `suggested_profile` as the report's
+`profile` with `source: "suggested"`, and write its `why` from the facts the
+suggestion lists. Compliance documents never make the suggestion
+Regulated/Strict: say they were found and ask the user to consider it. List in
 `profile_conditions` the conditional targets the user says apply (for
 example `M12` when several agents work the repository in parallel
 workspaces), and set `heading_to` when the user says where the project is
@@ -108,8 +121,10 @@ market).
 Stay proportionate: the profile is the user's dial, not yours. When you
 suggest one, suggest the lightest that the facts you observed support, and
 never Strict by default. If the facts suggest the project has outgrown its
-declared profile, say so in the summary as a reason to revisit the dial,
-not as a finding.
+profile (more contributors, a deploy environment that appeared, a compliance
+document), list each in the report source's `profile.signals` with its
+evidence (step 5): the sheet shows them beside the profile as reasons to
+revisit the dial, never as findings.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" check <scratch>/jig-audit.next.yaml
@@ -153,16 +168,34 @@ each module's level and, with a profile, its target and gap. Recommend toward
 the target: the sheet groups what lies beyond it as *as you grow* (needed for
 `heading_to`) or *optional*, so write those only where they are worth knowing
 about. Give a recommendation a `lighter` option wherever a lighter way gets
-most of the benefit, usually writing the rule down before building a gate. Then:
+most of the benefit, usually writing the rule down before building a gate.
+Every gap within the target (a criterion there that does not meet its bar)
+should be moved by some recommendation's refs or left on purpose:
+`report.ts validate <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json`
+warns of each gap no recommendation covers, and the sheet lists them. Add a
+recommendation for each, or say in the summary why it is left.
+
+On a re-audit, the trend needs the older records, which the committed
+record's history holds. List the commits that changed it, and write the
+record at each (the most recent is `.config/jig-audit.yaml` itself, the
+`--prior`):
+
+```bash
+git log --format=%H -- .config/jig-audit.yaml
+git show <commit>:.config/jig-audit.yaml > <scratch>/jig-audit.<commit>.yaml
+```
+
+Then:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json \
   --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json \
-  [--prior .config/jig-audit.yaml] --out <folder>
+  [--prior .config/jig-audit.yaml [--history <scratch>/jig-audit.<commit>.yaml]…] \
+  --out <folder>
 ```
 
 It refuses a recommendation whose refs the record does not know or the team
-declined. It writes `jig-audit-<date>.html`, the audit sheet, and
+declined, and history it cannot order: a record dated after the prior, or two audits of one day (the same date, commit and scores are one audit, whatever decisions were recorded since). It writes `jig-audit-<date>.html`, the audit sheet, and
 `jig-audit-<date>.md`, the same report as text. Give the user the sheet's
 path: they read it in a browser, mark each recommendation **accept**,
 **refine**, **decline** (with a reason and a condition for revisiting) or
@@ -188,16 +221,23 @@ bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" apply-feedback <scratch>/decisions.y
 ```
 
 (`--dry-run` shows the plan without writing.) It refuses a block written for
-another repository, commit or report, and accepted or refined work on a
-criterion the record holds declined. Otherwise it adds each decline to the
-record's `declined` list with its reason and revisit condition (a decline of
-refs the record already declines renews that entry), sets the
-profile when the team changed it, and prints the accepted and refined work in
-adoption order. Offer to work through that list one recommendation at a time
-(step 8), or to file each as a tracker item. For each **this is wrong**,
-re-examine the criterion with the team's note, correct the score and its
-evidence in the record if they are right, and tell the user the audit
-misjudged it: that is a defect in Jig's criteria or probes, worth reporting.
+another repository, commit or report, accepted or refined work on a
+criterion the record holds declined, a `profile_conditions` module that is
+not a conditional target of the profile that will apply (or of
+`heading_to`'s), and a `scores` entry naming a criterion the record does not
+hold. Otherwise it adds each decline to the record's `declined` list with
+its reason and revisit condition (a decline of refs the record already
+declines renews that entry), sets the profile when the team changed it,
+replaces `profile_conditions` with the team's list when the block has one
+(removing it when the list is empty), and prints the accepted and refined
+work, ranked as the sheet's Start here ranks it. Offer to work through that
+list one recommendation at a time (step 8), or to file each as a tracker item. For each **this is
+wrong** on a recommendation, and each entry under `scores` (the team says a
+criterion's score itself is wrong), it prints a calibration note and leaves
+the score as it is: re-examine the criterion with the team's note, correct
+the score and its evidence in the record if they are right, and tell the
+user the audit misjudged it: that is a defect in Jig's criteria or probes,
+worth reporting.
 A decline the user gives in conversation instead goes under `declined` by
 hand, with the same fields (`revisit_after`, a date, is optional).
 

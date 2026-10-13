@@ -62,13 +62,69 @@ test("decisions copied from a sheet are recorded against that sheet", () => {
     ["M5/adrs-exist-numbered-from-template"],
   ]);
   expect(after.declined[0]?.revisit_when).toBe("a third maintainer joins");
-  // Configuration first, then modules in adoption order; the lighter choice
-  // reaches the work as its note.
-  const work = run.out.slice(run.out.indexOf("Work, in adoption order"));
-  expect(work.indexOf("R4")).toBeLessThan(work.indexOf("R1"));
+  // Ranked as the sheet's Start here; the lighter choice reaches the work as
+  // its note.
+  const work = run.out.slice(run.out.indexOf("Work, ranked as"));
+  expect(work.indexOf("R1")).toBeLessThan(work.indexOf("R3"));
+  expect(work.indexOf("R3")).toBeLessThan(work.indexOf("R4"));
   expect(work).toContain(
     "the lighter option: Pin the actions to commit hashes by hand now",
   );
   expect(work).toContain("(note: start with the release workflow)");
   expect(work).toContain("(the full action, not chosen: ");
+});
+
+test("conditional targets and wrong scores copied from a sheet are recorded against that sheet", () => {
+  const input = reportInput();
+  const sheet = join(dir, "sheet-conditions.html");
+  const record = join(dir, "jig-audit-conditions.yaml");
+  const decisions = join(dir, "decisions-conditions.yaml");
+  writeFileSync(sheet, renderReportHtml(input));
+  writeFileSync(record, recordText());
+  const scored = input.record.criteria.get("M3/consumer-view-generated");
+  writeFileSync(
+    decisions,
+    feedbackText(
+      {
+        repository: input.source.repository.name,
+        commit: input.record.commit,
+        report: reportFingerprint(input.source.recommendations),
+        date: input.record.date,
+        recommendations: input.source.recommendations,
+      },
+      {
+        profile: "team-standard",
+        conditions: ["M12"],
+        decisions: { R1: { choice: "accept" } },
+        scores: {
+          "M3/consumer-view-generated": "The docs build generates the view.",
+        },
+      },
+    ),
+  );
+
+  const run = runScript(
+    "record.ts",
+    ["apply-feedback", decisions, "--report", sheet, record],
+    dir,
+    cleanEnv(),
+  );
+  expect(run.err).toBe("");
+  expect(run.code).toBe(0);
+
+  const after = parseRecord(readFileSync(record, "utf8"), record);
+  expect(after.profile).toBe("team-standard");
+  expect(after.profile_conditions).toEqual(["M12"]);
+  // The score the team says is wrong is left for the agent to re-examine.
+  expect(after.criteria.get("M3/consumer-view-generated")).toEqual(scored);
+  expect(run.out).toContain("- profile_conditions: [M12] (now applies: M12)");
+  expect(run.out).toContain(
+    "This score is wrong (calibration notes: re-examine; the score is not changed):",
+  );
+  expect(run.out).toContain(
+    `- M3/consumer-view-generated (${input.modules.flatMap((m) => m.criteria).find((c) => c.key === "M3/consumer-view-generated")?.statement}): scored ${scored?.score}; evidence: ${scored?.evidence}`,
+  );
+  expect(run.out).toContain(
+    "  the team's note: The docs build generates the view.",
+  );
 });

@@ -410,6 +410,8 @@ declined:
   test("a catalog the configuration does not name is suggested", () => {
     const { report } = fit({ "docs/change-areas.yaml": "areas: {}\n" });
     expect(ids(report)).toContain("suggestion:drive.change_areas_catalog");
+    // Offline the forge names no repository, so none is suggested.
+    expect(ids(report)).not.toContain("suggestion:review.repo_slug");
   });
 
   test("offline, the starter still holds the gate command, and a declined suggestion leaves it", () => {
@@ -501,16 +503,22 @@ describe.skipIf(process.platform === "win32")("the forge", () => {
     ]),
     "--state merged": pulls(["build"], ["example-review", "a-person"]),
     "--state open": JSON.stringify([
-      { number: 7, baseRefName: "main" },
-      { number: 8, baseRefName: "eng-7-change" },
+      { number: 7, baseRefName: "main", headRefName: "eng-7-change" },
+      { number: 8, baseRefName: "eng-7-change", headRefName: "eng-8-more" },
+      // Into a release branch, which no open pull request is: not stacked.
+      { number: 9, baseRefName: "release-1.x", headRefName: "backport-fix" },
     ]),
     "label list": JSON.stringify([{ name: "agent-authored" }]),
     "users/example-review[bot]": JSON.stringify({ type: "Bot" }),
     ...over,
   });
 
-  function online(config: string, over?: Record<string, string>) {
-    const dir = repo({ ".config/jig.yaml": config });
+  function online(
+    config: string,
+    over?: Record<string, string>,
+    files: Record<string, string> = {},
+  ) {
+    const dir = repo({ ".config/jig.yaml": config, ...files });
     const bin = fakeGh(dir, answers(over));
     const env = cleanEnv({ PATH: withPath(bin) });
     const run = runScript("config-fit.ts", ["--json"], dir, env);
@@ -539,6 +547,29 @@ pull_requests:
     expect(all).not.toContain("derivation:pull_requests.labels:agent-authored");
     expect(all).toContain("contradiction:review.bots:ghost-review[bot]");
     expect(all).toContain("suggestion:issue_tracker.team");
+  });
+
+  test("a full page of open pull requests leaves a base it does not contain unchecked, not unstacked", () => {
+    const page = Array.from({ length: 200 }, (_, i) => ({
+      number: 100 + i,
+      baseRefName: "main",
+      headRefName: `eng-${100 + i}-change`,
+    }));
+    // Based on a pull request the page left out.
+    page[0] = { number: 100, baseRefName: "eng-1-older", headRefName: "x" };
+    const full = online("repository:\n  base_branch: main\n", {
+      "--state open": JSON.stringify(page),
+    });
+    expect(full.facts.stacked_open_pulls).toBe("at least 0");
+    expect(ids(full)).toContain("unchecked:stacked-open-pulls");
+    expect(ids(full)).not.toContain("contradiction:pull_requests.stacking");
+
+    // Below the limit the page is complete: an unknown base is not a stack.
+    const partial = online("repository:\n  base_branch: main\n", {
+      "--state open": JSON.stringify(page.slice(0, 199)),
+    });
+    expect(partial.facts.stacked_open_pulls).toBe("0");
+    expect(ids(partial)).not.toContain("unchecked:stacked-open-pulls");
   });
 
   test("list fields of the wrong type are reported, not fatal", () => {
@@ -578,6 +609,90 @@ pull_requests:
     expect(value("other-review")).toBeUndefined();
     expect(ids(report)).toContain("unchecked:review.bots:other-review");
     expect(ids(report)).not.toContain("suggestion:review.bots:other-review");
+  });
+
+  test("the repository's name and its stacking are suggested only where the file leaves them unset", () => {
+    const unset = online("repository:\n  base_branch: main\n");
+    const field = (r: Report, name: string) =>
+      r.suggestions.find((s) => s.field === name);
+    expect(field(unset, "review.repo_slug")).toMatchObject({
+      value: "example/web",
+      evidence: "the forge names this repository example/web",
+    });
+    expect(ids(unset)).toContain("suggestion:review.repo_slug");
+    expect(field(unset, "pull_requests.stacking")?.value).toBe("branch");
+    // The value answers the finding that reports the unset field, which keeps its id and message.
+    expect(ids(unset).filter((id) => id.includes("stacking"))).toEqual([
+      "contradiction:pull_requests.stacking",
+    ]);
+    expect(
+      unset.findings.find(
+        (f) => f.id === "contradiction:pull_requests.stacking",
+      ),
+    ).toEqual({
+      id: "contradiction:pull_requests.stacking",
+      severity: "suggestion",
+      message:
+        "1 open pull request(s) are based on another open pull request's branch, not main (#8 → eng-7-change), but pull_requests.stacking is unset (none): declare native or branch, or stop stacking",
+    });
+    const added = load(unset.draft ?? "") as Record<string, unknown>;
+    expect(checkConfig(added, loadSchema())).toEqual([]);
+    expect(added).toMatchObject({
+      review: { repo_slug: "example/web" },
+      pull_requests: { stacking: "branch" },
+    });
+
+    const set = online(`repository:
+  base_branch: main
+review:
+  repo_slug: example/web
+pull_requests:
+  stacking: none
+`);
+    expect(set.suggestions.map((s) => s.field)).not.toContain(
+      "review.repo_slug",
+    );
+    expect(set.suggestions.map((s) => s.field)).not.toContain(
+      "pull_requests.stacking",
+    );
+    expect(
+      set.findings.find((f) => f.id === "contradiction:pull_requests.stacking"),
+    ).toMatchObject({
+      severity: "warning",
+      message: expect.stringContaining("pull_requests.stacking is none:"),
+    });
+    expect(set.draft ?? "").not.toContain("repo_slug");
+  });
+
+  test("no stacked pull request, no stacking value; a declined contradiction drops it", () => {
+    const flat = online("repository:\n  base_branch: main\n", {
+      "--state open": JSON.stringify([
+        { number: 7, baseRefName: "main", headRefName: "eng-7-change" },
+        { number: 9, baseRefName: "release-1.x", headRefName: "backport-fix" },
+      ]),
+    });
+    expect(flat.suggestions.map((s) => s.field)).not.toContain(
+      "pull_requests.stacking",
+    );
+    const declined = online("repository:\n  base_branch: main\n", undefined, {
+      ".config/jig-audit.yaml": `version: 1
+plugin_version: 0.13.0
+date: 2026-01-02
+commit: abc
+criteria: {}
+declined:
+  - refs: [config/contradiction:pull_requests.stacking]
+    reason: The stacks are short-lived experiments.
+    revisit_when: Stacks reach review.
+`,
+    });
+    expect(declined.declined.map((d) => d.finding.id)).toEqual([
+      "contradiction:pull_requests.stacking",
+    ]);
+    expect(declined.suggestions.map((s) => s.field)).not.toContain(
+      "pull_requests.stacking",
+    );
+    expect(declined.draft ?? "").not.toContain("stacking");
   });
 
   test("branch stacking warns when merged branches are kept", () => {
@@ -656,6 +771,8 @@ pull_requests:
     expect(report.suggestions.map((s) => s.field)).toEqual([
       "review.bots",
       "issue_tracker.team",
+      "pull_requests.stacking",
+      "review.repo_slug",
       "drive.change_areas_catalog",
       "gates.command",
     ]);
@@ -667,9 +784,14 @@ pull_requests:
     expect(draft).toContain(`review:
   # example-review reviewed 3 of the last 3 merged pull requests
   bots: ["example-review[bot]"]
+  # the forge names this repository example/web
+  repo_slug: example/web
 issue_tracker:
   # 3 of the last 3 merged pull requests carry ENG-<n> issue keys
   team: ENG
+pull_requests:
+  # 1 open pull request(s) are based on another open pull request's branch, not main (#8 → eng-7-change): base-branch chaining; native instead if they are linked as a GitHub stack
+  stacking: branch
 drive:
   # docs/change-areas.yaml is tracked and named like a change-area catalog
   change_areas_catalog: docs/change-areas.yaml
@@ -680,8 +802,9 @@ gates:
     const parsed = load(draft) as Record<string, unknown>;
     expect(checkConfig(parsed, loadSchema())).toEqual([]);
     expect(parsed).toEqual({
-      review: { bots: ["example-review[bot]"] },
+      review: { bots: ["example-review[bot]"], repo_slug: "example/web" },
       issue_tracker: { team: "ENG" },
+      pull_requests: { stacking: "branch" },
       drive: { change_areas_catalog: "docs/change-areas.yaml" },
       gates: { command: "npm run test" },
     });
@@ -706,8 +829,9 @@ gates:
     expect(report.draft).not.toContain("repository:");
     const added = load(report.draft ?? "") as Record<string, unknown>;
     expect(added).toEqual({
-      review: { bots: ["example-review[bot]"] },
+      review: { bots: ["example-review[bot]"], repo_slug: "example/web" },
       issue_tracker: { team: "ENG" },
+      pull_requests: { stacking: "branch" },
     });
     expect(checkConfig(added, loadSchema())).toEqual([]);
   });

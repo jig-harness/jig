@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -21,14 +22,19 @@ import {
   type FeedbackInput,
   missingFields,
 } from "../scripts/report/feedback-text.ts";
+import { PROFILE_WHO } from "../scripts/report/guide-text.ts";
 import { renderReportHtml } from "../scripts/report/html.ts";
 import { renderReportMarkdown } from "../scripts/report/markdown.ts";
 import {
+  countsOf,
   horizonOf,
   inputProblems,
   mapRows,
   startHere,
   targetsOf,
+  trendOf,
+  trendSummary,
+  uncoveredGaps,
   worthWhen,
 } from "../scripts/report/model.ts";
 import {
@@ -41,9 +47,12 @@ import { cleanEnv, runScript, scratchRepo } from "./helpers.ts";
 import {
   COMMIT,
   FIT_PATH,
+  historyRecord,
   noProfile,
+  priorRecord,
   RECORD_PATH,
   rawSource,
+  recordAt,
   recordText,
   reportInput,
   SOURCE_PATH,
@@ -111,6 +120,35 @@ describe("the report source", () => {
       "$.profile.why: is required for a suggested profile",
       "$.recommendations: has a duplicate id",
     ]);
+  });
+
+  test("checks each signal to revisit the profile: a text and at least one piece of evidence", () => {
+    const profile = (s: Record<string, unknown>) =>
+      s.profile as Record<string, unknown>;
+    expect(
+      problemsOf((s) => {
+        profile(s).signals = [
+          { text: "A second deploy target appeared.", evidence: ["fly.toml"] },
+        ];
+      }),
+    ).toEqual([]);
+    expect(
+      problemsOf((s) => {
+        profile(s).signals = [
+          { text: " ", evidence: [] },
+          { text: "Five contributors this quarter.", evidence: ["x"], at: 1 },
+        ];
+      }),
+    ).toEqual([
+      "$.profile.signals[0].text: must be a non-empty string",
+      "$.profile.signals[0].evidence: needs at least 1 item(s)",
+      "$.profile.signals[1].at: unknown field",
+    ]);
+    expect(
+      problemsOf((s) => {
+        profile(s).signals = [];
+      }),
+    ).toEqual(["$.profile.signals: needs at least 1 item(s)"]);
   });
 
   test("accepts no recommendations, and leaves drift and terms optional", () => {
@@ -246,6 +284,56 @@ describe("the checks against the record and the fit report", () => {
       "record: heading_to: big-enterprise is not one of solo-lite, team-standard, regulated-strict",
       "$.profile.id: no-such is not one of solo-lite, team-standard, regulated-strict",
     ]);
+  });
+
+  test("refuse a history record newer than the audited one", () => {
+    expect(
+      inputProblems(
+        reportInput({
+          prior: priorRecord(),
+          history: [historyRecord(), recordAt("2026-11-02")],
+        }),
+      ),
+    ).toEqual([
+      "history: the record of 2026-11-02 (2026110) is newer than the audited record of 2026-10-12; give only older records",
+    ]);
+  });
+
+  test("refuse a prior newer than the audit, history newer than the prior, and two history records of one day", () => {
+    const otherCommit = (text: string) =>
+      text.replace(/^commit: "?(\w)/m, (m, c: string) =>
+        m.replace(c, c === "f" ? "e" : "f"),
+      );
+    expect(
+      inputProblems(
+        reportInput({
+          prior: recordAt("2026-11-02"),
+          history: [historyRecord()],
+        }),
+      ),
+    ).toEqual([
+      "prior: the record of 2026-11-02 (2026110) is newer than the audited record of 2026-10-12; give the last audit before it",
+    ]);
+    expect(
+      inputProblems(
+        reportInput({
+          prior: priorRecord(),
+          history: [recordAt("2026-08-01")],
+        }),
+      ),
+    ).toEqual([
+      "history: the record of 2026-08-01 (2026080) is newer than the prior record of 2026-07-19; give the latest as --prior and only older records as history",
+    ]);
+    const problems = inputProblems(
+      reportInput({
+        prior: priorRecord(),
+        history: [historyRecord(), otherCommit(historyRecord())],
+      }),
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(
+      /^history: the records 2026-04-02 \(\w{7}\) and 2026-04-02 \(\w{7}\) share a date, so the trend cannot order them; give one of them$/,
+    );
   });
 
   test("refuse an incomplete record", () => {
@@ -393,12 +481,249 @@ describe("the map", () => {
       ),
     ).toEqual([]);
   });
+
+  const uncovered = (input: ReturnType<typeof reportInput>) => {
+    const t = targetsOf(input);
+    const rows = mapRows(input, t);
+    return {
+      keys: uncoveredGaps(rows).map((c) => c.criterion.key),
+      count: countsOf(input, rows, t).uncovered,
+    };
+  };
+
+  test("finds the gaps no recommendation covers, and counts them", () => {
+    // R1 and R2 move three of the four gaps; nothing moves the glossary.
+    expect(uncovered(reportInput())).toEqual({
+      keys: ["M0/glossary-exists"],
+      count: 1,
+    });
+    expect(uncovered(reportInput({ source: noProfile }))).toEqual({
+      keys: [],
+      count: 0,
+    });
+  });
+
+  test("a gap is covered by any recommendation that names it, or left deliberately by a held decline", () => {
+    const covered = reportInput({
+      source: (s) => {
+        rec(s, 1).refs = [
+          ...(rec(s, 1).refs as string[]),
+          "M0/glossary-exists",
+        ];
+      },
+    });
+    expect(uncovered(covered).keys).toEqual([]);
+    const declined = reportInput({
+      record: recordText(
+        [],
+        '  - refs: ["M0/glossary-exists"]\n    reason: "Two maintainers share the words."\n    revisit_when: "a newcomer asks what a term means"',
+      ),
+    });
+    expect(uncovered(declined).keys).toEqual([]);
+  });
+});
+
+describe("the trend", () => {
+  const withHistory = (history: string[]) =>
+    reportInput({ prior: priorRecord(), history });
+
+  test("lists each module's level at every record, oldest first, only where it changed", () => {
+    const trend = trendOf(withHistory([historyRecord()]));
+    expect(trend?.points.map((p) => [p.date, p.current])).toEqual([
+      ["2026-04-02", false],
+      ["2026-07-19", false],
+      ["2026-10-12", true],
+    ]);
+    expect(trend?.rows).toEqual([
+      {
+        id: "M2",
+        module: "M2 Generated artifact freshness",
+        levels: [
+          { word: "none", move: null },
+          { word: "Lite", move: "up" },
+          { word: "Lite", move: null },
+        ],
+      },
+    ]);
+    expect(trend && trendSummary(trend)).toBe(
+      "1 module moved up since 2026-04-02.",
+    );
+  });
+
+  test("orders the records by date whatever order they are given in, and counts the prior record once", () => {
+    const older = recordAt("2026-01-05", {
+      "M2/derived-inventory-exists": "absent",
+    });
+    const trend = trendOf(withHistory([historyRecord(), priorRecord(), older]));
+    expect(trend?.points.map((p) => p.date)).toEqual([
+      "2026-01-05",
+      "2026-04-02",
+      "2026-07-19",
+      "2026-10-12",
+    ]);
+  });
+
+  test("says when a module fell, and when nothing ends where it started", () => {
+    // M0 attained Lite then: its three Lite criteria were met.
+    const higher = recordAt("2026-04-02", {
+      "M0/universal-instruction-file": "mechanical",
+      "M0/gates-and-guardrails-listed": "mechanical",
+      "M0/glossary-exists": "mechanical",
+    });
+    const fell = trendOf(withHistory([higher]));
+    expect(fell?.rows.map((r) => r.module)).toContain(
+      "M0 Instruction architecture",
+    );
+    expect(fell && trendSummary(fell)).toBe(
+      "1 module moved down since 2026-04-02.",
+    );
+    const same = trendOf(withHistory([recordAt("2026-04-02")]));
+    expect(same?.rows).toEqual([]);
+    expect(same && trendSummary(same)).toBe(
+      "No module's level changed since 2026-04-02.",
+    );
+  });
+
+  test("counts each audit once, and the prior record last on its own day", () => {
+    const sameDayAsPrior = recordAt("2026-07-19").replace(
+      /^commit: "?2026/m,
+      (m) => m.replace("2026", "1999"),
+    );
+    const input = withHistory([
+      historyRecord(),
+      historyRecord(),
+      sameDayAsPrior,
+      priorRecord(),
+    ]);
+    expect(inputProblems(input)).toEqual([]);
+    const points = trendOf(input)?.points ?? [];
+    expect(points.map((p) => p.date)).toEqual([
+      "2026-04-02",
+      "2026-07-19",
+      "2026-07-19",
+      "2026-10-12",
+    ]);
+    expect(points[2]?.commit).toBe(input.prior?.commit ?? "");
+  });
+
+  test("never counts the audited record as its own past, given as history on the prior's day", () => {
+    const now = recordAt("2026-10-12", {}, "0.15.0");
+    const prior = recordAt("2026-10-12", {
+      "M1/gate-set-documented": "absent",
+    }).replace(/^commit: "?2026/m, (m) => m.replace("2026", "1999"));
+    const input = reportInput({
+      record: now,
+      prior,
+      history: [historyRecord(), now],
+    });
+    expect(inputProblems(input)).toEqual([]);
+    const points = trendOf(input)?.points ?? [];
+    expect(
+      points.map((p) => [p.commit === input.record.commit, p.current]),
+    ).toEqual([
+      [false, false],
+      [false, false],
+      [true, true],
+    ]);
+  });
+
+  test("keeps a same-day re-audit of the same commit whose scores differ", () => {
+    const now = recordAt("2026-10-12", {}, "0.15.0");
+    const prior = recordAt(
+      "2026-10-12",
+      { "M1/gate-set-documented": "absent" },
+      "0.15.0",
+    );
+    const input = reportInput({
+      record: now,
+      prior,
+      history: [historyRecord()],
+    });
+    expect(input.prior?.commit).toBe(input.record.commit);
+    expect(inputProblems(input)).toEqual([]);
+    const trend = trendOf(input);
+    expect(
+      trend?.points.map((p) => [p.commit === input.record.commit, p.current]),
+    ).toEqual([
+      [false, false],
+      [true, false],
+      [true, true],
+    ]);
+  });
+
+  test("counts an audit once whether its record was committed before or after the team's decisions", () => {
+    const audit = recordAt("2026-07-19", {
+      "M1/gate-set-documented": "absent",
+    });
+    const input = reportInput({
+      prior: audit,
+      history: [historyRecord(), audit, audit],
+    });
+    const [decided, reordered] = [input.prior, input.history[2]];
+    if (!decided || !reordered) throw new Error("fixture records missing");
+    decided.profile_conditions = ["M3", "M12"];
+    decided.declined = [
+      {
+        refs: ["M1/gate-set-documented"],
+        reason: "not now",
+        revisit_when: "a second gate lands",
+      },
+    ];
+    reordered.profile_conditions = ["M12", "M3"];
+    expect(inputProblems(input)).toEqual([]);
+    expect(trendOf(input)?.points.map((p) => p.date)).toEqual([
+      "2026-04-02",
+      "2026-07-19",
+      "2026-10-12",
+    ]);
+  });
+
+  test("measures each record without the criteria added after its plugin version", () => {
+    const key = "M2/derived-inventory-exists";
+    const input = withHistory([historyRecord()]);
+    // A criterion the 0.15.0 catalog added, which the 0.14.0 records lack.
+    input.modules = input.modules.map((m) => ({
+      ...m,
+      criteria: m.criteria.map((c) =>
+        c.key === key ? { ...c, since: "0.15.0" } : c,
+      ),
+    }));
+    for (const r of [...input.history, input.prior]) r?.criteria.delete(key);
+    const words = trendOf(input)?.rows.flatMap((r) =>
+      r.levels.map((l) => l.word),
+    );
+    expect(words).not.toContain("incomplete");
+  });
+
+  test("names a change to or from n/a or incomplete apart from a level that came back", () => {
+    const input = withHistory([historyRecord()]);
+    input.history[0]?.criteria.delete("M2/derived-inventory-exists");
+    const trend = trendOf(input);
+    expect(trend?.rows[0]?.levels.map((l) => l.word)).toEqual([
+      "incomplete",
+      "Lite",
+      "Lite",
+    ]);
+    expect(trend && trendSummary(trend)).toBe(
+      "1 module changed to or from n/a or incomplete since 2026-04-02.",
+    );
+  });
+
+  test("is absent without a history", () => {
+    expect(trendOf(reportInput({ prior: priorRecord() }))).toBeNull();
+  });
 });
 
 const sectionIds = (html: string) =>
   [...html.matchAll(/<section class="sec[^"]*" id="([a-z]+)"/g)].map(
     (m) => m[1],
   );
+
+/** The words a reader sees: without the tips' and module popovers' text, and without tags. */
+const plain = (html: string) =>
+  html
+    .replace(/<span class="(?:tip|pop pop-m)"[^>]*>.*?<\/span>/g, "")
+    .replace(/<[^>]+>/g, "");
 
 describe("the sheet", () => {
   const html = renderReportHtml(reportInput());
@@ -414,6 +739,7 @@ describe("the sheet", () => {
       "drift",
       "examined",
       "terms",
+      "guide",
     ]);
   });
 
@@ -431,11 +757,120 @@ describe("the sheet", () => {
       "drift",
       "examined",
       "terms",
+      "guide",
     ]);
-    expect(again).toContain("Compared with the audit of 2026-07-19");
-    expect(again).toMatch(
-      /Fixed \(1\)<\/h3><ul class="chg"><li><code>M1\/gate-set-documented<\/code>/,
+    expect(again).toContain(
+      '<p class="intro">Compared with the audit of 2026-07-19 (plugin 0.14.0).</p><ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li>',
     );
+    // One row per criterion: the module's chip, the criterion linked to its
+    // detail, both scores as chips, and the change as a badge.
+    expect(again).toMatch(
+      /What changed \(1\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+    );
+  });
+
+  test("with older records, shows the trend in place of the levels table", () => {
+    const prior = priorRecord();
+    expect(renderReportHtml(reportInput({ prior }))).not.toContain("Trend");
+    const page = renderReportHtml(
+      reportInput({ prior, history: [historyRecord()] }),
+    );
+    const since = page.slice(
+      page.indexOf('id="since"'),
+      page.indexOf('id="recs"'),
+    );
+    expect(since).toContain(
+      '<h3 class="sev-h">Trend</h3><p class="trend-s">1 module moved up since 2026-04-02.</p>',
+    );
+    expect(since).toMatch(
+      /<th scope="col" title="20260402[0-9a-f]+">2026-04-02<\/th><th scope="col" title="20260719[0-9a-f]+">2026-07-19<\/th><th scope="col" title="63ddae6[0-9a-f]+">Now 2026-10-12<\/th>/,
+    );
+    expect(since).toMatch(
+      /<tr><th scope="row"><span class="pw mw"><a class="mchip" href="#d-M2"[^>]*>M2<\/a>.*?<\/span><\/span> Generated artifact freshness<\/th><td>none<\/td><td class="mv-up"><span aria-hidden="true">↑ <\/span><span class="vh">up to <\/span>Lite<\/td><td>Lite<\/td><\/tr>/,
+    );
+    expect(since).not.toContain("Levels that changed");
+  });
+
+  test("marks the gap no recommendation covers, counts it and lists it under the recommendations", () => {
+    // The legend's mark and the map's.
+    expect([...html.matchAll(/<span class="c c-absent gap unc"/g)].length).toBe(
+      2,
+    );
+    expect(html).toContain(
+      '<span class="vh">glossary-exists: absent; needed for the target, not met yet; a gap no recommendation covers</span>',
+    );
+    expect(html).toContain(
+      '<li class="unc-n"><a class="big" href="#uncovered">1</a>gap no recommendation covers</li>',
+    );
+    const recs = html.slice(
+      html.indexOf('id="recs"'),
+      html.indexOf('id="detail"'),
+    );
+    expect(recs).toMatch(
+      /<div class="uncov" id="uncovered"><h3 class="sev-h">Not covered by a recommendation \(1\)<\/h3>.*<li><span class="cref"><span class="pw mw"><a class="mchip" href="#d-M0"[^>]*>M0<\/a>.*?<\/span><\/span> <a href="#c-M0-glossary-exists"><code>glossary-exists<\/code><\/a><\/span> /,
+    );
+    // Before the folded groups, after the recommendations for now.
+    expect(recs.indexOf('id="uncovered"')).toBeLessThan(
+      recs.indexOf('id="h-optional"'),
+    );
+    expect(html).toMatch(
+      /<p class="cid">glossary-exists<\/p>.*?<span class="unct">a gap no recommendation covers<\/span>/,
+    );
+    const covered = renderReportHtml(
+      reportInput({
+        source: (s) => {
+          rec(s, 1).refs = [
+            ...(rec(s, 1).refs as string[]),
+            "M0/glossary-exists",
+          ];
+        },
+      }),
+    );
+    expect(covered).not.toContain('id="uncovered"');
+    expect(covered).not.toContain("unc-n");
+  });
+
+  test("lists the uncovered gaps even when the audit makes no recommendation", () => {
+    const page = renderReportHtml(
+      reportInput({
+        source: (s) => {
+          s.recommendations = [];
+        },
+      }),
+    );
+    expect(sectionIds(page)).toContain("recs");
+    expect(page).toContain("The audit makes no recommendation.");
+    expect(page).toContain("Not covered by a recommendation (4)");
+  });
+
+  test("shows the signals to revisit the profile beside it, and only when there are some", () => {
+    expect(html).not.toContain('id="signals"');
+    const page = renderReportHtml(
+      reportInput({
+        source: (s) => {
+          (s.profile as Record<string, unknown>).signals = [
+            {
+              text: "Seven people committed in the last quarter.",
+              evidence: ["git shortlog -sn --since=3.months"],
+            },
+          ];
+        },
+      }),
+    );
+    expect(page).toContain(
+      '<span class="pchip p-suggested">suggested</span> <a class="sig-l" href="#signals">worth revisiting</a>',
+    );
+    const summary = page.slice(
+      page.indexOf('id="summary"'),
+      page.indexOf('id="map"'),
+    );
+    expect(summary).toContain(
+      '<div class="signals" id="signals"><h3>Worth revisiting the profile</h3>',
+    );
+    expect(summary).toContain(
+      "<li><p>Seven people committed in the last quarter.</p>",
+    );
+    expect(summary).toContain("<code>git shortlog -sn --since=3.months</code>");
   });
 
   test("names the commit, the plugin and the suggested profile in the masthead", () => {
@@ -444,7 +879,25 @@ describe("the sheet", () => {
     expect(html).toContain(
       'Solo/Lite <span class="pchip p-suggested">suggested</span>',
     );
-    expect(html).not.toContain("Heading to");
+    const mast = html.slice(0, html.indexOf('id="summary"'));
+    expect(mast).not.toContain("Heading to");
+    // The profile's label opens the guide's part on profiles.
+    expect(mast).toMatch(
+      /<dt><span class="tw"><a class="term" href="#guide-profiles"[^>]*>Profile<\/a>/,
+    );
+  });
+
+  test("welcomes the reader of a first audit to the guide, and gives a re-audit only a link", () => {
+    const mast = (page: string) => page.slice(0, page.indexOf('id="summary"'));
+    expect(mast(html)).toContain(
+      '<div class="welcome" id="welcome"><p>This sheet shows where sindresorhus/execa stands on the delivery practices Jig describes, measured against the profile the team aims for, and what to do next. Besides its own record, nothing in the repository changes unless the team asks.</p><p><a href="#guide">New to Jig? Read the guide (5 min)</a></p></div>',
+    );
+    expect(mast(html)).not.toContain("How to read this report");
+    const again = mast(renderReportHtml(reportInput({ prior: priorRecord() })));
+    expect(again).not.toContain('id="welcome"');
+    expect(again).toContain(
+      '<p class="howto"><a href="#guide-read">How to read this report</a></p>',
+    );
   });
 
   test("greys the modules that do not apply and says why", () => {
@@ -460,7 +913,9 @@ describe("the sheet", () => {
     );
     expect(grow).toContain('class="grp grow"');
     expect(grow).toContain('<span class="tgt hd">Heading to: Standard</span>');
-    expect(grow).toContain("<dt>Heading to</dt><dd>Team/Standard</dd>");
+    expect(grow).toMatch(
+      />Heading to<\/a><span class="tip"[^>]*>[^<]*<\/span><\/span><\/dt><dd>Team\/Standard<\/dd>/,
+    );
   });
 
   /** The map's rows, without its legend. */
@@ -468,25 +923,137 @@ describe("the sheet", () => {
     page.slice(page.indexOf('<ol class="mmap">'), page.indexOf('id="start"'));
 
   test("never colours a criterion beyond the target as a gap", () => {
-    const rings = [...mapOf(html).matchAll(/<i class="c c-[a-z-]+ gap"/g)]
-      .length;
+    const rings = [
+      ...mapOf(html).matchAll(/<span class="c c-[a-z-]+ gap(?: unc)?">/g),
+    ].length;
     expect(rings).toBe(4);
     expect(renderReportHtml(reportInput({ source: noProfile }))).not.toMatch(
-      /<i class="c c-[a-z-]+ gap"/,
+      /<span class="c c-[a-z-]+ gap/,
     );
   });
 
   test("folds what is not for now under its own heading, saying why", () => {
     expect(html).toContain(
-      '<details class="later" id="h-optional" open data-fold><summary><span class="later-h">Optional</span> <span class="later-n">(2)</span></summary><p class="intro">Beyond what Solo/Lite asks for. Not needed for this profile: take one when the project needs it.</p>',
+      '<details class="later" id="h-optional" open data-fold><summary><span class="later-h">Optional</span> <span class="later-n">(2)</span></summary><p class="intro">Beyond what <span class="tw"><a class="term" href="#guide-profiles"',
+    );
+    expect(plain(html)).toContain(
+      "Beyond what Solo/Lite asks for. Not needed for this profile: take one when the project needs it.",
     );
     const grow = renderReportHtml(
       reportInput({ record: recordText(["heading_to: team-standard"]) }),
     );
-    expect(grow).toContain(
+    expect(plain(grow)).toContain(
       "Beyond what Solo/Lite asks for now; worth it as the project grows toward Team/Standard.",
     );
     expect(grow).not.toContain('id="h-optional"');
+  });
+
+  test("offers each profile's conditional targets beside the profile selector, checked as the record has them", () => {
+    const declared = renderReportHtml(
+      reportInput({
+        record: recordText([
+          "profile: team-standard",
+          "profile_conditions: [M12]",
+        ]),
+        source: noProfile,
+      }),
+    );
+    const picker = declared.slice(
+      declared.indexOf('<div class="psel" data-js hidden>'),
+    );
+    const fieldset = (id: string) =>
+      plain(
+        new RegExp(
+          `<fieldset class="conds" data-prof="${id}".*?</fieldset>`,
+        ).exec(picker)?.[0] ?? "",
+      );
+    expect(fieldset("team-standard")).toBe(
+      "Conditional targets that applyM12 Parallel agent ergonomics (Lite) applies when several agents work the repository in parallel workspacesM3 Change area catalog (Lite) applies when what a change implies is no longer obvious from its paths",
+    );
+    expect(picker).toMatch(
+      /<fieldset class="conds" data-prof="team-standard" hidden><legend>.*?<\/legend><label class="cond"><input type="checkbox" value="M12" checked><span><span class="pw mw"><span class="mchip">M12<\/span>/,
+    );
+    expect(picker).toMatch(
+      /<fieldset class="conds" data-prof="solo-lite" hidden><legend>.*?<\/legend><\/fieldset>/,
+    );
+    // A condition only the heading-to profile has is offered too, checked as the record has it.
+    const heading = renderReportHtml(
+      reportInput({
+        record: recordText([
+          "profile: solo-lite",
+          "heading_to: team-standard",
+          "profile_conditions: [M12]",
+        ]),
+        source: noProfile,
+      }),
+    );
+    const solo = heading.slice(
+      heading.indexOf('data-prof="solo-lite"'),
+      heading.indexOf("</fieldset>", heading.indexOf('data-prof="solo-lite"')),
+    );
+    expect(plain(solo)).toContain(
+      "M12 Parallel agent ergonomics (Lite) for Team/Standard, where the project is heading, applies when",
+    );
+    expect(solo).toContain(
+      '<input type="checkbox" value="M12" checked><span><span class="pw mw"><span class="mchip">M12</span>',
+    );
+    expect(solo).toContain('<input type="checkbox" value="M3">');
+  });
+
+  test("lets the reader flag any criterion's score as wrong, hidden until the script runs", () => {
+    const items = [
+      ...html.matchAll(/<li data-crit="([^"]+)" id="c-[^"]+">.*?<\/li>/g),
+    ];
+    expect(items.length).toBe(
+      reportInput().modules.flatMap((m) => m.criteria).length,
+    );
+    for (const m of items)
+      expect(m[0]).toContain(
+        '<div class="sw" data-js hidden><label class="swl"><input type="checkbox" data-sw><span>This score is wrong</span></label><label class="swn" hidden>Note<textarea data-swn rows="2"></textarea></label></div>',
+      );
+  });
+
+  test("counts the criteria still open within the target apart from those beyond it, and folds the latter", () => {
+    const since = (page: string) =>
+      page.slice(page.indexOf('id="since"'), page.indexOf('id="recs"'));
+    const suggested = since(
+      renderReportHtml(reportInput({ prior: priorRecord() })),
+    );
+    expect(suggested).toContain(
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+    );
+    expect(suggested).toMatch(
+      /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
+    );
+    expect(suggested).toMatch(
+      /<details class="later sm" id="since-beyond" open data-fold><summary><span class="later-h">Still open beyond the target<\/span> <span class="later-n">\(78\)<\/span><\/summary><p class="intro">Not met at either audit, and not needed for Solo\/Lite: its target does not reach them.<\/p><table class="chgt chg-t">.*?<span class="bd bd-beyond">Still open<\/span>/,
+    );
+    const declared = since(
+      renderReportHtml(
+        reportInput({
+          prior: priorRecord(),
+          record: recordText([
+            "profile: team-standard",
+            "profile_conditions: [M12]",
+          ]),
+          source: noProfile,
+        }),
+      ),
+    );
+    expect(declared).toContain(
+      '<li><span class="bd bd-open">Still open within the target <b>34</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>48</b></span></li>',
+    );
+    // Without a profile, every criterion still open is counted together and none is listed.
+    const none = since(
+      renderReportHtml(
+        reportInput({ prior: priorRecord(), source: noProfile }),
+      ),
+    );
+    expect(none).toContain(
+      '<li><span class="bd bd-open">Still open <b>82</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li>',
+    );
+    expect(none).not.toContain("Still open within");
+    expect(none).not.toContain("Still open beyond");
   });
 
   test("offers the lighter option only on a card that has one, and hides every choice until the script runs", () => {
@@ -511,6 +1078,31 @@ describe("the sheet", () => {
       .flatMap((r) => r.cells)
       .find((c) => c.criterion.id === "precommit-autofix-hooks");
     expect(cell?.score).toBe("absent");
+    expect(cell?.decidedBy).toBe("agent");
+  });
+
+  test("only an absent with the probe's mark is the probe's", () => {
+    const input = reportInput();
+    const by = Object.fromEntries(
+      mapRows(input, targetsOf(input))
+        .flatMap((r) => r.cells)
+        .filter((c) => c.criterion.probe && c.score === "absent")
+        .map((c) => [c.criterion.key, c.decidedBy]),
+    );
+    // A probe found the hook manager and the decision records missing; the
+    // agent read the workflow and found no commit-message check.
+    expect(by["M1/precommit-autofix-hooks"]).toBe("probe");
+    expect(by["M5/adrs-exist-numbered-from-template"]).toBe("probe");
+    expect(Object.values(by)).toContain("agent");
+    const raised = reportInput({
+      record: recordAt("2026-10-12", {
+        "M1/precommit-autofix-hooks": "convention",
+      }),
+    });
+    const cell = mapRows(raised, targetsOf(raised))
+      .flatMap((r) => r.cells)
+      .find((c) => c.criterion.key === "M1/precommit-autofix-hooks");
+    // Raised over the probe's evidence, the score is the agent's.
     expect(cell?.decidedBy).toBe("agent");
   });
 
@@ -564,16 +1156,190 @@ describe("the sheet", () => {
   });
 });
 
-/** An older record of the same repository: CI was not running the gates then. */
-function priorRecord(): string {
-  return readFileSync(RECORD_PATH, "utf8")
-    .replace('date: "2026-10-12"', 'date: "2026-07-19"')
-    .replace("plugin_version: 0.15.0", "plugin_version: 0.14.0")
-    .replace(
-      /(M1\/gate-set-documented:[^\n]*\n(?:\s+#[^\n]*\n)*\s+score:) convention/,
-      "$1 absent",
+describe("the marks and the chips", () => {
+  const input = reportInput();
+  const html = renderReportHtml(input);
+  const map = html.slice(
+    html.indexOf('<ol class="mmap">'),
+    html.indexOf('id="start"'),
+  );
+
+  test("gives every criterion one mark in the map, linked to its detail, with a popover that explains it", () => {
+    const criteria = input.modules.flatMap((m) => m.criteria);
+    const marks = [
+      ...map.matchAll(
+        /<a class="cw" href="#(c-[^"]+)" aria-describedby="(p-[^"]+)">(.*?)<\/a><span class="pop pop-c" role="tooltip" id="\2">/g,
+      ),
+    ];
+    expect(marks.length).toBe(criteria.length);
+    for (const m of marks) expect(html).toContain(`id="${m[1]}"`);
+    // Each mark draws its rung's icon and names itself for a reader who cannot see it.
+    expect(map).toContain(
+      '<a class="cw" href="#c-M0-glossary-exists" aria-describedby="p-c-M0-glossary-exists"><span class="c c-absent gap unc"><svg class="ic" aria-hidden="true"><use href="#lc-circle-dashed"/></svg></span><span class="vh">glossary-exists: absent; needed for the target, not met yet; a gap no recommendation covers</span></a>',
     );
-}
+    const pop =
+      /<span class="pop pop-c" role="tooltip" id="p-c-M0-glossary-exists">(.*?)<\/span><\/span>(?=<span class="pw|<\/span>)/.exec(
+        map,
+      )?.[1];
+    const text = (pop ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const glossary = criteria.find((c) => c.key === "M0/glossary-exists");
+    expect(text).toContain(`glossary-exists ${glossary?.statement}`);
+    expect(text).toContain("Level Lite");
+    expect(text).toContain("Requires convention or stronger");
+    expect(text).toContain("Score absent not there yet");
+    expect(text).toContain("Decided by");
+    expect(text).toContain(
+      "Needed for the target, not met yet. No recommendation covers it.",
+    );
+  });
+
+  test("draws each rung with its own icon, once in a sprite the marks point at", () => {
+    expect(html.match(/<symbol id="lc-/g)?.length).toBe(6);
+    for (const icon of [
+      "circle-dashed",
+      "file-text",
+      "eye",
+      "shield-check",
+      "circle-slash",
+      "circle-question-mark",
+    ])
+      expect(html).toContain(`<use href="#lc-${icon}"/>`);
+  });
+
+  test("renders every module as the same chip, with its name and purpose in a popover", () => {
+    const chips = [
+      ...html.matchAll(
+        /<span class="pw mw">(?:<a class="mchip" href="#d-(M\d+)" aria-describedby="(mp-\d+)">\1<\/a>|<span class="mchip">(M\d+)<\/span>)<span class="pop pop-m" role="tooltip" id="(mp-\d+)"><b>(M\d+) [^<]+<\/b> [^<]+<\/span><\/span>/g,
+      ),
+    ];
+    // In the map, the recommendation groups, the cards, the uncovered gaps, the detail and the guide.
+    expect(chips.length).toBeGreaterThan(50);
+    for (const c of chips) {
+      if (c[2]) expect(c[2]).toBe(c[4] as string);
+      expect(c[5]).toBe((c[1] ?? c[3]) as string);
+    }
+    const ids = chips.map((c) => c[4]);
+    expect(new Set(ids).size).toBe(ids.length);
+    // A criterion ref names its module by the chip, its criterion by the id alone.
+    expect(html).not.toMatch(/<code>M\d+\/[a-z-]+<\/code>/);
+  });
+
+  test("links the method's words to the guide", () => {
+    for (const section of [
+      "guide-profiles",
+      "guide-levels",
+      "guide-ladder",
+      "guide-read",
+      "guide-process",
+    ])
+      expect(html).toContain(`<a class="term" href="#${section}"`);
+  });
+
+  test("renders the same file every time", () => {
+    expect(renderReportHtml(reportInput())).toBe(html);
+  });
+});
+
+describe("the guide", () => {
+  const input = reportInput();
+  const html = renderReportHtml(input);
+  const guide = html.slice(
+    html.indexOf('<section class="sec guide" id="guide"'),
+  );
+
+  test("is the page's last section, with every part", () => {
+    expect(sectionIds(html).at(-1)).toBe("guide");
+    expect(
+      [
+        ...guide.matchAll(
+          /<section class="g-sec" id="([a-z-]+)"><h3>([^<]+)<\/h3>/g,
+        ),
+      ].map((m) => [m[1], m[2]]),
+    ).toEqual([
+      ["guide-what", "What this is"],
+      ["guide-idea", "The idea"],
+      ["guide-modules", "The modules"],
+      ["guide-profiles", "Profiles"],
+      ["guide-process", "How the audit works"],
+      ["guide-read", "How to read this report"],
+      ["guide-words", "Words used in this sheet"],
+    ]);
+    // The back link is the script's; without it the guide is a section like the others.
+    expect(guide).toContain('<p class="g-back" data-js hidden>');
+  });
+
+  test("lists every module with its purpose from the criteria files", () => {
+    for (const m of input.modules) expect(guide).toContain(m.purpose);
+    expect(
+      guide.match(/<ul class="g-mods">(.*?)<\/ul>/)?.[1]?.match(/<li>/g)
+        ?.length,
+    ).toBe(input.modules.length);
+  });
+
+  test("says who every shipped profile is for", () => {
+    expect(Object.keys(PROFILE_WHO).sort()).toEqual(
+      [...input.profiles.profiles.keys()].sort(),
+    );
+  });
+
+  test("shows each profile's target for each module as profiles.yaml sets it", () => {
+    const yaml = load(
+      readFileSync(join(import.meta.dir, "..", "profiles.yaml"), "utf8"),
+    ) as {
+      profiles: Record<
+        string,
+        {
+          name: string;
+          targets?: Record<string, string>;
+          conditional?: Record<string, { level: string; when: string }>;
+        }
+      >;
+    };
+    const table =
+      guide.match(/<table class="chgt g-pt">.*?<\/table>/)?.[0] ?? "";
+    const profiles = Object.values(yaml.profiles);
+    expect(
+      [...table.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map((m) => m[1]),
+    ).toEqual(["Module", ...profiles.map((p) => p.name)]);
+    const word = (level: string) =>
+      level.charAt(0).toUpperCase() + level.slice(1);
+    const rows = [...table.matchAll(/<tr><th scope="row">.*?<\/tr>/g)].map(
+      (r) => {
+        const [head, ...cells] = r[0]
+          .split(/<\/th>|<\/td>/)
+          .map((c) => plain(c).trim());
+        return { module: head?.split(" ")[0], cells: cells.filter(Boolean) };
+      },
+    );
+    expect(rows.map((r) => r.module)).toEqual(
+      input.modules
+        .map((m) => m.module)
+        .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))),
+    );
+    for (const row of rows)
+      expect(row.cells).toEqual(
+        profiles.map((p) => {
+          const target = p.targets?.[row.module as string];
+          const c = p.conditional?.[row.module as string];
+          if (target) return word(target);
+          return c ? `${word(c.level)}when ${c.when}` : "—";
+        }),
+      );
+  });
+
+  test("the Markdown copy says how to read it and points to the guide", () => {
+    const md = renderReportMarkdown(input);
+    expect(md).toContain(
+      "**How to read this.** Jig audits how a repository delivers changes:",
+    );
+    expect(md).toContain(
+      "[jig-audit-2026-10-12.html#guide](jig-audit-2026-10-12.html#guide).",
+    );
+    expect(md).toContain(
+      "The rungs, weakest first: **absent** (not there yet), **convention** (written down, kept by habit),",
+    );
+  });
+});
 
 describe("the Markdown copy", () => {
   const md = renderReportMarkdown(
@@ -615,6 +1381,92 @@ describe("the Markdown copy", () => {
 
   test("fences the starter configuration so nothing in it can close the fence", () => {
     expect(md).toContain("```yaml\n# Starter .config/jig.yaml");
+  });
+
+  test("lists the gaps no recommendation covers, and counts them", () => {
+    expect(md).toContain("- 1 gap no recommendation covers");
+    expect(md).toContain(
+      "### Not covered by a recommendation (1)\n\nCriteria within the target that do not meet their bar",
+    );
+    expect(md).toContain("- `M0/glossary-exists`: ");
+    expect(md).toMatch(
+      /\| \*\*glossary-exists\*\*: .* \| \*\*absent\*\* \(needed for the target, not met yet; a gap no recommendation covers\) \|/,
+    );
+  });
+
+  test("lists the criteria still open within the target, and only counts those beyond it", () => {
+    const text = renderReportMarkdown(reportInput({ prior: priorRecord() }));
+    expect(text).toContain(
+      [
+        "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
+        "",
+        "### What changed (1)",
+        "",
+        "| Module | Criterion | Before → after | Change |",
+        "|--------|-----------|----------------|--------|",
+        "| M1 Gates enforcement ladder | `gate-set-documented` | absent → convention | Fixed |",
+        "",
+        "### Still open within the target (4)",
+        "",
+        "| Module | Criterion | Before → after | Change |",
+        "|--------|-----------|----------------|--------|",
+        "| M0 Instruction architecture | `universal-instruction-file` | absent → absent | still open |",
+        "| M0 Instruction architecture | `gates-and-guardrails-listed` | absent → absent | still open |",
+        "| M0 Instruction architecture | `glossary-exists` | absent → absent | still open |",
+        "| M1 Gates enforcement ladder | `ci-runs-gates-on-pr` | advisory → advisory | still open |",
+        "",
+        "The 78 still open beyond the target are in Module detail, marked not needed for this profile.",
+      ].join("\n"),
+    );
+    const none = renderReportMarkdown(
+      reportInput({ prior: priorRecord(), source: noProfile }),
+    );
+    expect(none).toContain(
+      "Compared with the audit of 2026-07-19 (plugin 0.14.0): 82 still open, 36 unchanged and met.",
+    );
+    expect(none).not.toContain("Still open");
+    expect(none).not.toContain("beyond the target");
+  });
+
+  test("writes the trend as the sheet does", () => {
+    const text = renderReportMarkdown(
+      reportInput({ prior: priorRecord(), history: [historyRecord()] }),
+    );
+    expect(text).toContain(
+      [
+        "### Trend",
+        "",
+        "1 module moved up since 2026-04-02.",
+        "",
+        "Each module's level at every audit given, oldest first, for the modules whose level changed.",
+        "",
+        "| Module | 2026-04-02 | 2026-07-19 | Now 2026-10-12 |",
+        "|--------|---|---|---|",
+        "| M2 Generated artifact freshness | none | ↑ Lite | Lite |",
+      ].join("\n"),
+    );
+    expect(text).not.toContain("### Levels that changed");
+  });
+
+  test("names the signals to revisit the profile beside it", () => {
+    const text = renderReportMarkdown(
+      reportInput({
+        source: (s) => {
+          (s.profile as Record<string, unknown>).signals = [
+            { text: "A deploy workflow appeared.", evidence: ["deploy.yml"] },
+          ];
+        },
+      }),
+    );
+    expect(text).toContain(
+      "**Profile:** Solo/Lite (suggested; worth revisiting).",
+    );
+    expect(text).toContain(
+      "**Worth revisiting the profile.** Facts that suggest",
+    );
+    expect(text).toContain(
+      "- A deploy workflow appeared. *Evidence:* `deploy.yml`",
+    );
   });
 });
 
@@ -730,6 +1582,76 @@ describe("the decisions text", () => {
     );
   });
 
+  test("writes the conditional targets and the wrong scores, in module order", () => {
+    const head = [
+      "# Jig audit decisions: example/web at 1a2b3c4 (2026-10-13)",
+      "audit_feedback:",
+      "  v: 1",
+      '  repository: "example/web"',
+      '  commit: "1a2b3c4d5e6f7a8b9c0d"',
+      '  report: "0123456789ab"',
+    ];
+    const conditioned = { ...input, recordProfile: "team-standard" };
+    const text = feedbackText(conditioned, {
+      conditions: ["M12", "M3"],
+      decisions: { R1: { choice: "accept" } },
+      scores: {
+        "M12/worktree-hooks-wired": " Each agent has its own clone. ",
+        "M3/consumer-view-generated": 'The "docs" build generates it.',
+      },
+    });
+    expect(text).toBe(
+      [
+        ...head,
+        "  profile_conditions: [M3, M12]",
+        "  accept: [R1]",
+        "  scores:",
+        '    - { ref: "M3/consumer-view-generated", note: "The \\"docs\\" build generates it." }',
+        '    - { ref: "M12/worktree-hooks-wired", note: "Each agent has its own clone." }',
+      ].join("\n"),
+    );
+    expect(load(text)).toMatchObject({
+      audit_feedback: {
+        profile_conditions: ["M3", "M12"],
+        scores: [
+          {
+            ref: "M3/consumer-view-generated",
+            note: 'The "docs" build generates it.',
+          },
+          {
+            ref: "M12/worktree-hooks-wired",
+            note: "Each agent has its own clone.",
+          },
+        ],
+      },
+    });
+    // The record's own set is left out; an emptied one is written empty.
+    const recorded = { ...conditioned, recordConditions: ["M12", "M3"] };
+    expect(
+      feedbackText(recorded, { conditions: ["M3", "M12"], decisions: {} }),
+    ).toBe(head.join("\n"));
+    expect(feedbackText(recorded, { conditions: [], decisions: {} })).toBe(
+      [...head, "  profile_conditions: []"].join("\n"),
+    );
+    // A changed profile states the conditions that apply under it, when any do.
+    expect(
+      feedbackText(recorded, {
+        profile: "regulated-strict",
+        conditions: ["M12", "M3"],
+        decisions: {},
+      }),
+    ).toBe(
+      [
+        ...head,
+        "  profile: regulated-strict",
+        "  profile_conditions: [M3, M12]",
+      ].join("\n"),
+    );
+    expect(
+      feedbackText(conditioned, { profile: "solo-lite", decisions: {} }),
+    ).toBe([...head, "  profile: solo-lite"].join("\n"));
+  });
+
   test("names what a decision lacks before it can be copied", () => {
     expect(
       missingFields(input, {
@@ -740,11 +1662,16 @@ describe("the decisions text", () => {
           R4: { choice: "decline", reason: "x" },
           R5: { choice: "wrong" },
         },
+        scores: {
+          "M3/consumer-view-generated": " ",
+          "M1/gate-set-documented": "n",
+        },
       }),
     ).toEqual([
       { id: "R2", needs: ["note"] },
       { id: "R4", needs: ["revisit_when"] },
       { id: "R5", needs: ["note"] },
+      { id: "M3/consumer-view-generated", needs: ["note"] },
     ]);
   });
 });
@@ -768,6 +1695,39 @@ describe("the command line", () => {
       FIT_PATH,
     ]);
     expect(full.code).toBe(0);
+    // A gap no recommendation covers is a warning; the exit code stays 0.
+    expect(JSON.parse(full.out).uncovered).toEqual(["M0/glossary-exists"]);
+    expect(full.err).toContain(
+      "warning: M0/glossary-exists is within the Solo/Lite target and not met, and no recommendation covers it: ",
+    );
+  });
+
+  test("takes --history once per record, and only with --prior", () => {
+    const history = join(dir, "history.yaml");
+    writeFileSync(history, historyRecord());
+    const args = ["render", SOURCE_PATH, "--record", RECORD_PATH];
+    const alone = run([...args, "--history", history]);
+    expect(alone.code).toBe(2);
+    expect(alone.err).toContain("--history needs --prior");
+    const newer = join(dir, "newer.yaml");
+    writeFileSync(newer, recordAt("2026-12-01"));
+    const prior = join(dir, "prior.yaml");
+    writeFileSync(prior, priorRecord());
+    const refused = run([
+      ...args,
+      "--prior",
+      prior,
+      "--history",
+      history,
+      "--history",
+      newer,
+      "--out",
+      join(dir, "newer-out"),
+    ]);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("history: the record of 2026-12-01");
+    expect(existsSync(join(dir, "newer-out"))).toBe(false);
+    expect(run(["validate", SOURCE_PATH, "--history", history]).code).toBe(2);
   });
 
   test("exits 1 for a refused source and 2 for usage or an unreadable input", () => {
@@ -820,6 +1780,43 @@ describe("the command line", () => {
     expect(existsSync(out)).toBe(false);
   });
 
+  const SHEET = "jig-audit-2026-10-12.html";
+
+  /**
+   * Extract what a sheet in `out` embeds, write each part back to a file,
+   * render again into `again`, and return the data and both sheets.
+   */
+  function roundTrip(out: string, again: string) {
+    const extracted = run(["extract", join(out, SHEET)]);
+    expect(extracted.code).toBe(0);
+    const data = JSON.parse(extracted.out);
+    const write = (name: string, value: unknown) => {
+      const path = join(again, name);
+      writeFileSync(path, JSON.stringify(value));
+      return path;
+    };
+    mkdirSync(again, { recursive: true });
+    const args = [
+      "render",
+      write("source.json", data.source),
+      "--record",
+      write("record.yaml", data.record),
+      "--fit",
+      write("fit.json", data.fit),
+    ];
+    if (data.prior) args.push("--prior", write("prior.yaml", data.prior));
+    (data.history as unknown[]).forEach((h, i) => {
+      args.push("--history", write(`history-${i}.yaml`, h));
+    });
+    const second = run([...args, "--out", again]);
+    expect(second.code).toBe(0);
+    return {
+      data,
+      first: readFileSync(join(out, SHEET), "utf8"),
+      second: readFileSync(join(again, SHEET), "utf8"),
+    };
+  }
+
   test("renders the sheet and its copy, and extracts what it was rendered from", () => {
     const out = join(dir, "out");
     const r = run([
@@ -834,37 +1831,62 @@ describe("the command line", () => {
     ]);
     expect(r.code).toBe(0);
     expect(JSON.parse(r.out)).toEqual({
-      sheet: join(out, "jig-audit-2026-10-12.html"),
+      sheet: join(out, SHEET),
       markdown: join(out, "jig-audit-2026-10-12.md"),
     });
-    expect(readdirSync(out).sort()).toEqual([
-      "jig-audit-2026-10-12.html",
-      "jig-audit-2026-10-12.md",
-    ]);
-
-    const extracted = run(["extract", join(out, "jig-audit-2026-10-12.html")]);
-    expect(extracted.code).toBe(0);
-    const data = JSON.parse(extracted.out);
+    expect(readdirSync(out).sort()).toEqual([SHEET, "jig-audit-2026-10-12.md"]);
+    // Each part, written back to a file, renders the same sheet again.
+    const { data, first, second } = roundTrip(out, join(dir, "again"));
     expect(data.source).toEqual(rawSource());
     expect(data.prior).toBeNull();
-    // Each part, written back to a file, renders the same sheet again.
-    const again = join(dir, "again");
-    writeFileSync(join(dir, "source.json"), JSON.stringify(data.source));
-    writeFileSync(join(dir, "record.yaml"), JSON.stringify(data.record));
-    writeFileSync(join(dir, "fit.json"), JSON.stringify(data.fit));
-    const second = run([
+    expect(data.history).toEqual([]);
+    expect(second).toBe(first);
+  });
+
+  test("renders the trend from older records, and the same sheet again from what it extracts", () => {
+    const files = {
+      prior: join(dir, "trend-prior.yaml"),
+      older: join(dir, "trend-older.yaml"),
+      oldest: join(dir, "trend-oldest.yaml"),
+    };
+    writeFileSync(files.prior, priorRecord());
+    writeFileSync(files.older, historyRecord());
+    writeFileSync(
+      files.oldest,
+      recordAt("2026-01-05", { "M2/derived-inventory-exists": "absent" }),
+    );
+    const out = join(dir, "trend-out");
+    const r = run([
       "render",
-      join(dir, "source.json"),
+      SOURCE_PATH,
       "--record",
-      join(dir, "record.yaml"),
+      RECORD_PATH,
       "--fit",
-      join(dir, "fit.json"),
+      FIT_PATH,
+      "--prior",
+      files.prior,
+      "--history",
+      files.older,
+      "--history",
+      files.oldest,
       "--out",
-      again,
+      out,
     ]);
-    expect(second.code).toBe(0);
-    expect(readFileSync(join(again, "jig-audit-2026-10-12.html"), "utf8")).toBe(
-      readFileSync(join(out, "jig-audit-2026-10-12.html"), "utf8"),
+    expect(r.code).toBe(0);
+    const { data, first, second } = roundTrip(out, join(dir, "trend-again"));
+    // Embedded in the order given; the trend sorts them by date.
+    expect(data.history.map((h: { date: string }) => h.date)).toEqual([
+      "2026-04-02",
+      "2026-01-05",
+    ]);
+    expect(first).toContain(
+      '<p class="trend-s">1 module moved up since 2026-01-05.</p>',
+    );
+    expect(second).toBe(first);
+    expect(
+      readFileSync(join(out, "jig-audit-2026-10-12.md"), "utf8"),
+    ).toContain(
+      "| Module | 2026-01-05 | 2026-04-02 | 2026-07-19 | Now 2026-10-12 |",
     );
   });
 

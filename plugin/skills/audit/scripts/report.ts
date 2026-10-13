@@ -8,25 +8,28 @@
  * Usage (from anywhere inside the repository under audit):
  *   bun report.ts validate <source.json> [--record <path>] [--fit <fit.json>]
  *       the source alone; with --record, also against the record (and with
- *       --fit, against the configuration-fit report)
+ *       --fit, against the configuration-fit report), warning of each gap
+ *       within the target no recommendation covers
  *   bun report.ts render <source.json> [--record <path>] [--fit <fit.json>]
- *                        [--prior <record>] [--out <dir>]
+ *                        [--prior <record>] [--history <record>]… [--out <dir>]
  *       writes jig-audit-<date>.html and jig-audit-<date>.md into --out
  *       (default: a new temporary folder) and prints their paths
  *   bun report.ts extract <sheet.html>
- *       prints the source, record, fit report and prior record the sheet
- *       embeds, as JSON
+ *       prints the source, record, fit report, prior record and history
+ *       records the sheet embeds, as JSON
  *
  * --record defaults to the repository's .config/jig-audit.yaml; during an
  * audit, name the draft record of this run. --fit is the output of
  * `config-fit.ts --json`; --prior is the record of the last audit, which adds
- * the "since the last audit" section.
+ * the "since the last audit" section. --history, once per record, names
+ * older records of the same repository; with --prior, they add the trend of
+ * each module's level.
  *
  * A source is refused when it is malformed, when a recommendation names a
  * criterion the record did not score or a configuration finding the fit
- * report does not hold, when every ref of a recommendation is one the team
- * declined and still holds, when its profile disagrees with the record, or
- * when the record itself is incomplete.
+ * report does not hold, when any ref of a recommendation is one the team
+ * declined and still holds, when its profile disagrees with the record, when
+ * the record itself is incomplete, or when a history record is newer than it.
  *
  * Exit codes: 0 done; 1 the source was refused (nothing written); 2 usage,
  * or an input that cannot be read.
@@ -44,7 +47,13 @@ import { loadSchema } from "./lib/schema.ts";
 import { DATA_BLOCK_ID, parseEmbedded } from "./report/data.ts";
 import { renderReportHtml } from "./report/html.ts";
 import { fileStem, renderReportMarkdown } from "./report/markdown.ts";
-import { inputProblems, type ReportInput } from "./report/model.ts";
+import {
+  inputProblems,
+  mapRows,
+  type ReportInput,
+  targetsOf,
+  uncoveredGaps,
+} from "./report/model.ts";
 import {
   parseFit,
   parseReportSource,
@@ -55,19 +64,24 @@ class UsageError extends Error {}
 
 const USAGE = `usage:
   report.ts validate <source.json> [--record <path>] [--fit <fit.json>]
-  report.ts render <source.json> [--record <path>] [--fit <fit.json>] [--prior <record>] [--out <dir>]
+  report.ts render <source.json> [--record <path>] [--fit <fit.json>] [--prior <record> [--history <record>]...] [--out <dir>]
   report.ts extract <sheet.html>`;
 
 /** The flags each command accepts; every flag takes a value. */
 const COMMAND_FLAGS: Record<string, readonly string[]> = {
   validate: ["--record", "--fit"],
-  render: ["--record", "--fit", "--prior", "--out"],
+  render: ["--record", "--fit", "--prior", "--history", "--out"],
   extract: [],
 };
+
+/** The flag that may be given more than once, one record each time. */
+const REPEATABLE = "--history";
 
 interface Args {
   file: string;
   flags: Map<string, string>;
+  /** The older records `--history` names, in the order given. */
+  history: string[];
 }
 
 /** Check one flag against the command's and the ones already given, and return its value. */
@@ -91,16 +105,24 @@ function flagValue(
 /** One file and the command's flags; an unknown, repeated or empty flag is a usage error. */
 function parseArgs(command: string, args: string[]): Args {
   const flags = new Map<string, string>();
+  const history: string[] = [];
   const files: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] as string;
-    if (arg.startsWith("--"))
+    if (arg === REPEATABLE)
+      history.push(flagValue(command, arg, args[++i], new Map()));
+    else if (arg.startsWith("--"))
       flags.set(arg, flagValue(command, arg, args[++i], flags));
     else files.push(arg);
   }
   if (files.length !== 1)
     throw new UsageError(`${command} takes one file, not ${files.length}`);
-  return { file: files[0] as string, flags };
+  // The trend sits in the comparison with the last audit, which --prior adds.
+  if (history.length > 0 && !flags.has("--prior"))
+    throw new UsageError(
+      "--history needs --prior: the trend is part of the comparison with the last audit",
+    );
+  return { file: files[0] as string, flags, history };
 }
 
 function readText(path: string): string {
@@ -136,6 +158,7 @@ function readInput(args: Args): ReportInput {
     ),
     fit: fitPath ? parseFit(readJson(fitPath), fitPath) : null,
     prior: priorPath ? readRecord(priorPath) : null,
+    history: args.history.map(readRecord),
     modules,
     profiles: loadProfiles(modules),
     schema: loadSchema(),
@@ -166,11 +189,20 @@ function validate(args: Args): number {
     return 0;
   }
   const input = checked(readInput(args));
+  const targets = targetsOf(input);
+  const uncovered = uncoveredGaps(mapRows(input, targets));
+  // A gap no recommendation covers is a warning, not a refusal: the team may
+  // leave it deliberately, and the sheet lists it either way.
+  for (const c of uncovered)
+    console.error(
+      `warning: ${c.criterion.key} is within the ${targets.profile?.name ?? ""} target and not met, and no recommendation covers it: ${c.criterion.statement}`,
+    );
   console.log(
     JSON.stringify({
       ok: true,
       checked: input.fit ? "source, record, fit" : "source, record",
       recommendations: input.source.recommendations.length,
+      uncovered: uncovered.map((c) => c.criterion.key),
     }),
   );
   return 0;

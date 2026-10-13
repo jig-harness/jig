@@ -17,9 +17,9 @@ This is the design of [ROADMAP.md](../ROADMAP.md) item 8. Most of it is
 built, and the [audit skill](../plugin/skills/audit/README.md) documents what
 is: the audit sheet and its report source
 ([report-sheet.md](../plugin/skills/audit/references/report-sheet.md)), the
-decisions round trip, profiles as targets and the starter configuration. What
-is not built yet is the trend line in [re-audits](#re-audits),
-[greenfield](#greenfield) mode and the [calibration](#calibration) entries in
+decisions round trip, profiles as targets, the starter configuration, the
+trend line in [re-audits](#re-audits) and the [guide](#the-guide). What is
+not built yet is [greenfield](#greenfield) mode and the [calibration](#calibration) entries in
 the reflection store. When the item is finished, this design leaves the
 folder ([design/README.md](README.md)).
 
@@ -54,7 +54,7 @@ Contents: [the experience](#the-experience) ·
 4. **Hand over.** The team pastes the block to an agent. The agent runs
    `record.ts apply-feedback`. That validates the block against the record,
    writes each decline into the record's `declined:` list, and prints the
-   accepted work in adoption order. The agent then opens one pull request per
+   accepted work ranked as the sheet's Start here ranks it. The agent then opens one pull request per
    accepted recommendation (`/jig:audit apply <ref>`) or files them as
    tracker items.
 5. **Re-run.** The next audit compares against the record. The sheet then
@@ -174,8 +174,10 @@ order: [M1, M2, M0, M4, M5, M6, M7, M9, M12, M10, M3, M8, M11]
   target. A module whose criteria are all `expected-absent` has no gap,
   whatever the profile says. The repository's shape rules it out.
 - **Order**: [brownfield.md](../adoption/brownfield.md)'s default order,
-  extended to every module. Recommendations are ranked by leverage × effort
-  within that order, and drift fixes come first.
+  extended to every module, groups the recommendations by module. The work
+  to do (Start here, and the work `apply-feedback` prints) is ranked by
+  leverage × effort, then a quick win, then the report's order, and drift fixes come
+  first.
 - **A suggested profile**, when the team has none, comes from observable
   facts: number of contributors, a regulated-domain hint in the repository's
   own documents, deploy environments. The sheet marks it *suggested*, never
@@ -263,6 +265,31 @@ Choices live in `localStorage`, keyed by repository, commit and the report's
 fingerprint (a hash of every recommendation's fields), so a sheet regenerated
 for a new commit or a changed report starts clean.
 
+### The guide
+
+A first audit is often a team's first contact with Jig, and a report that
+assumes the reader knows the method is intimidating. So the sheet carries
+its own **guide**: a page inside the same file, always one click away in the
+top bar, that a reader returns to as often as they need. With a script it
+opens as its own view (`#guide`, with deep links to each part, and back to
+where the reader was); without one, and in print, it is the last section.
+
+It explains, in plain words and with the sheet's own icons and module chips:
+what Jig and the audit are; the enforcement ladder; the modules with their
+one-sentence purposes and what a module's Lite, Standard and Strict levels
+mean; the profiles, who each is for, and a table of each profile's
+target per module; how the audit works, from the configuration check to the
+decisions and the next audit; and how to read the report. It says plainly
+that a profile (the whole repository's aim) and a module's level (one
+module's rung) share words but are different things, and that the profile
+is the team's dial, never a grade.
+
+A first audit opens with a short welcome and a pointer to the guide; a
+re-audit keeps only a link. Every term of the method in the report links to
+its part of the guide. The guide is built from what the skill ships (the
+criteria files' purposes, `profiles.yaml`, its own text), so it cannot drift
+from the method it describes.
+
 ## Decisions and feedback
 
 The copy button writes one YAML block. YAML because the agent pastes it into
@@ -298,7 +325,8 @@ audit_feedback:
   `refs`, `reason` and `revisit_when`, the same shape a person writes today.
 - **Sets** `profile:` when the block changes it.
 - **Prints** the work: drift fixes first, then accepted and refined
-  recommendations in adoption order, each with its refs and note, ready for
+  recommendations ranked by leverage × effort, then a quick win, then the
+  report's order, each with its refs and note, ready for
   `apply <ref>` or for filing. A *wrong* is printed as a calibration finding
   (see [calibration](#calibration)). Its criterion's score in the record is
   left for the agent to re-examine, never flipped silently.

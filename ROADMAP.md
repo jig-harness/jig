@@ -195,21 +195,19 @@ database `init` created using only the two settings.
 
 ### 8. The audit experience: what is left
 
-The audit sheet, the decisions round trip, profiles as targets and the
-starter configuration are in the [audit skill](plugin/skills/audit/README.md).
+The audit sheet, the decisions round trip, profiles as targets, the trend
+across past records and the starter configuration are in the
+[audit skill](plugin/skills/audit/README.md).
 What its [design](design/audit-experience.md) still holds:
 
-- **Trend**: `report.ts render --history <record>…` draws each module's level
-  across past records, beside the comparison with the last audit.
 - **Greenfield**: an audit run at the end of the kickoff's repository
   bootstrap leads with the profile check and leaves out modules outside the
   profile; the kickoff family (item 3) calls it.
 - **Calibration into the reflection store**: each *this is wrong* decision
   becomes a finding about the `audit` skill once the store exists (item 6).
 
-Done when a re-audit of Jig shows the trend across its records, a kickoff
-run ends with the greenfield check, and a *wrong* decision reaches the
-reflection store.
+Done when a kickoff run ends with the greenfield check and a *wrong*
+decision reaches the reflection store.
 
 ## Next
 

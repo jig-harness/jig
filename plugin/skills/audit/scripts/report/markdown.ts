@@ -11,9 +11,9 @@ import {
   href,
   lit,
 } from "../../../decide/scripts/sheet-kit/markdown.ts";
-import { meets, type Score } from "../lib/criteria.ts";
-import type { Comparison } from "../lib/record.ts";
-import { FILE_STEM, LABEL } from "./labels.ts";
+import { EXPECTED_ABSENT, meets, RUNGS, type Score } from "../lib/criteria.ts";
+import type { Comparison, CriterionChange } from "../lib/record.ts";
+import { FILE_STEM, LABEL, plural } from "./labels.ts";
 import {
   attainedWord,
   type Cell,
@@ -24,16 +24,24 @@ import {
   levelChanges,
   mapRows,
   type ModuleRow,
+  moduleTitle,
   movedCriteria,
   type ReportInput,
   recsFor,
   SHOWN_CHANGES,
+  type StillOpen,
   sinceIntro,
   sinceLast,
   startHere,
+  stillOpenOf,
   type Targets,
+  type Trend,
+  type TrendRow,
   tally,
   targetsOf,
+  trendOf,
+  trendSummary,
+  uncoveredGaps,
   worthWhen,
 } from "./model.ts";
 import type { Fit, Recommendation } from "./source.ts";
@@ -47,7 +55,7 @@ function head(input: ReportInput, t: Targets): string[] {
     ? `[${lit(source.repository.name)}](${href(source.repository.url)})`
     : lit(source.repository.name);
   const p = t.profile
-    ? `${lit(t.profile.name)} (${LABEL[t.profile.source]})`
+    ? `${lit(t.profile.name)} (${LABEL[t.profile.source]}${t.profile.signals.length ? `; ${LABEL.signalsLink}` : ""})`
     : LABEL.noProfile;
   const meta = [
     `**${LABEL.audited}:** ${record.date}.`,
@@ -57,7 +65,29 @@ function head(input: ReportInput, t: Targets): string[] {
     ...(t.heading ? [`**${LABEL.headingTo}:** ${lit(t.heading.name)}.`] : []),
     ...(record.shape ? [`**${LABEL.shape}:** ${lit(record.shape)}.`] : []),
   ];
-  return [`# ${LABEL.titleOf} ${name}`, "", meta.join(" "), ""];
+  return [
+    `# ${LABEL.titleOf} ${name}`,
+    "",
+    meta.join(" "),
+    "",
+    `**${LABEL.howToReadHead}.** ${LABEL.howToRead} ${LABEL.guideIn} [${fileStem(input)}.html#guide](${fileStem(input)}.html#guide).`,
+    "",
+  ];
+}
+
+/** The facts that suggest revisiting the profile, as the sheet shows them beside it. */
+function signals(t: Targets): string[] {
+  const list = t.profile?.signals ?? [];
+  if (list.length === 0) return [];
+  return [
+    `**${LABEL.signalsHead}.** ${LABEL.signalsIntro}`,
+    "",
+    ...list.map(
+      (s) =>
+        `- ${lit(s.text)} *${LABEL.evidence}:* ${s.evidence.map(code).join(", ")}`,
+    ),
+    "",
+  ];
 }
 
 function inShort(input: ReportInput, rows: ModuleRow[], t: Targets): string[] {
@@ -73,7 +103,9 @@ function inShort(input: ReportInput, rows: ModuleRow[], t: Targets): string[] {
     out.push(
       `- ${n.atTarget} ${LABEL.ofWord} ${n.withTarget} ${LABEL.modulesAtTarget}`,
     );
-  return [...out, ""];
+  if (n.uncovered > 0)
+    out.push(`- ${n.uncovered} ${LABEL.uncoveredCount[plural(n.uncovered)]}`);
+  return [...out, "", ...signals(t)];
 }
 
 const rungCounts = (row: ModuleRow) =>
@@ -93,6 +125,10 @@ function targetCell(row: ModuleRow, t: Targets): string {
   return parts.length ? parts.join("; ") : "—";
 }
 
+/** The rungs and what each means: the sheet draws them as icons, the copy names them. */
+const rungLegend = () =>
+  `${LABEL.rungsLegend} ${([...RUNGS, EXPECTED_ABSENT] as const).map((r) => `**${LABEL.rung[r]}** (${LABEL.rungMeaning[r]})`).join(", ")}.`;
+
 function mapTable(rows: ModuleRow[], t: Targets): string[] {
   return [
     `## ${LABEL.map}`,
@@ -105,6 +141,8 @@ function mapTable(rows: ModuleRow[], t: Targets): string[] {
       (r) =>
         `| ${cell(r.title)}: ${cell(r.module.purpose)} | ${attainedWord(r.attained)} | ${targetCell(r, t)} | ${rungCounts(r)} |`,
     ),
+    "",
+    rungLegend(),
     "",
   ];
 }
@@ -135,42 +173,113 @@ function start(input: ReportInput, t: Targets): string[] {
   return out;
 }
 
-function changes(c: Comparison): string[] {
+/** Module titles by id, for the comparison's tables. */
+type Titles = ReadonlyMap<string, string>;
+
+const titlesOf = (input: ReportInput): Titles =>
+  new Map(input.modules.map((m) => [m.module, moduleTitle(m)]));
+
+const CHANGE_HEAD = `| ${LABEL.module} | ${LABEL.criterion} | ${LABEL.beforeAfter} | ${LABEL.change} |`;
+const CHANGE_RULE = "|--------|-----------|----------------|--------|";
+
+function changeLine(r: CriterionChange, word: string, titles: Titles): string {
+  const [module, id] = r.key.split("/") as [string, string];
+  return `| ${cell(titles.get(module) ?? module)} | ${code(id)} | ${rungWord(r.prior)} → ${rungWord(r.current)} | ${word} |`;
+}
+
+/** Every criterion that changed, worst first, as one table. */
+function changes(c: Comparison, titles: Titles): string[] {
+  const rows = SHOWN_CHANGES.flatMap((k) =>
+    c.criteria
+      .filter((r) => r.change === k)
+      .map((r) => changeLine(r, LABEL.changes[k], titles)),
+  );
+  if (rows.length === 0) return [];
+  return [
+    `### ${LABEL.changedHead} (${rows.length})`,
+    "",
+    CHANGE_HEAD,
+    CHANGE_RULE,
+    ...rows,
+    "",
+  ];
+}
+
+const trendWord = (l: TrendRow["levels"][number]) =>
+  l.move ? `${LABEL.moveArrow[l.move]} ${l.word}` : l.word;
+
+/** The trend as a table: a column per record, oldest first, then now. */
+function trendLines(t: Trend): string[] {
+  const out = [`### ${LABEL.trend}`, "", trendSummary(t), ""];
+  if (t.rows.length === 0) return out;
+  const heads = t.points.map((p) =>
+    p.current ? `${LABEL.now} ${p.date}` : p.date,
+  );
+  return [
+    ...out,
+    LABEL.trendIntro,
+    "",
+    `| ${LABEL.module} | ${heads.join(" | ")} |`,
+    `|--------|${heads.map(() => "---").join("|")}|`,
+    ...t.rows.map(
+      (r) => `| ${cell(r.module)} | ${r.levels.map(trendWord).join(" | ")} |`,
+    ),
+    "",
+  ];
+}
+
+function levelLines(input: ReportInput, c: Comparison): string[] {
+  const trend = trendOf(input);
+  // The trend holds the prior record's levels, so it takes the levels table's place.
+  if (trend) return trendLines(trend);
+  const levels = levelChanges(c, input.modules);
+  if (levels.length === 0) return [];
+  return [
+    `### ${LABEL.levelsChanged}`,
+    "",
+    `| ${LABEL.module} | ${LABEL.prior} | ${LABEL.now} |`,
+    "|--------|-------|-----|",
+    ...levels.map((l) => `| ${l.module} | ${l.prior} | ${l.current} |`),
+    "",
+  ];
+}
+
+/** The criteria still open within the target; those beyond it are only counted, as the sheet folds them. */
+function stillOpenLines(open: StillOpen | null, titles: Titles): string[] {
+  if (!open) return [];
   const out: string[] = [];
-  for (const change of SHOWN_CHANGES) {
-    const rows = c.criteria.filter((r) => r.change === change);
-    if (rows.length === 0) continue;
+  if (open.within.length)
     out.push(
-      `### ${LABEL.changes[change]} (${rows.length})`,
+      `### ${LABEL.stillOpenHead} (${open.within.length})`,
       "",
-      ...rows.map(
-        (r) =>
-          `- ${code(r.key)}: ${rungWord(r.prior)} → ${rungWord(r.current)}`,
-      ),
+      CHANGE_HEAD,
+      CHANGE_RULE,
+      ...open.within.map((r) => changeLine(r, LABEL.stillOpen, titles)),
       "",
     );
-  }
+  if (open.beyond.length)
+    out.push(
+      LABEL.stillOpenBeyondNote.replace("{n}", String(open.beyond.length)),
+      "",
+    );
   return out;
 }
 
-function since(input: ReportInput, c: Comparison): string[] {
+function since(
+  input: ReportInput,
+  c: Comparison,
+  open: StillOpen | null,
+): string[] {
+  const titles = titlesOf(input);
   const out = [
     `## ${LABEL.since}`,
     "",
-    sinceIntro(input.prior, c),
+    sinceIntro(input.prior, c, open),
     "",
-    ...changes(c),
+    ...changes(c, titles),
+    ...stillOpenLines(open, titles),
+    ...levelLines(input, c),
   ];
-  const levels = levelChanges(c, input.modules);
-  if (levels.length)
-    out.push(
-      `### ${LABEL.levelsChanged}`,
-      "",
-      `| ${LABEL.module} | ${LABEL.prior} | ${LABEL.now} |`,
-      "|--------|-------|-----|",
-      ...levels.map((l) => `| ${l.module} | ${l.prior} | ${l.current} |`),
-      "",
-    );
   if (c.declined.length)
     out.push(
       `### ${LABEL.declinedHead}`,
@@ -242,26 +351,53 @@ function horizonBlock(
   return out;
 }
 
-function recommendations(input: ReportInput, t: Targets): string[] {
-  if (input.source.recommendations.length === 0) return [];
+/** The gaps within the target no recommendation moves. */
+function uncoveredLines(rows: readonly ModuleRow[]): string[] {
+  const cells = uncoveredGaps(rows);
+  if (cells.length === 0) return [];
+  return [
+    `### ${LABEL.uncoveredHead} (${cells.length})`,
+    "",
+    LABEL.uncoveredIntro,
+    "",
+    ...cells.map(
+      (c) => `- ${code(c.criterion.key)}: ${lit(c.criterion.statement)}`,
+    ),
+    "",
+  ];
+}
+
+function recommendations(
+  input: ReportInput,
+  rows: readonly ModuleRow[],
+  t: Targets,
+): string[] {
+  const uncovered = uncoveredLines(rows);
+  const none = input.source.recommendations.length === 0;
+  if (none && uncovered.length === 0) return [];
   return [
     `## ${LABEL.recommendations}`,
     "",
+    ...(none ? [LABEL.noRecommendations, ""] : []),
     ...horizonBlock(input, t, "now"),
+    ...uncovered,
     ...horizonBlock(input, t, "grow"),
     ...horizonBlock(input, t, "optional"),
   ];
 }
 
+/** Where a criterion stands against the profile, when that matters. */
+function standingNote(c: Cell): string {
+  if (c.uncovered) return `${LABEL.gapLegend}; ${LABEL.uncoveredLegend}`;
+  if (c.gap) return LABEL.gapLegend;
+  const met = c.score !== null && meets(c.score, c.criterion.requires);
+  return c.inTarget === false && !met ? LABEL.notNeeded : "";
+}
+
 /** The score, with where it stands against the profile when that matters. */
 function scoreCell(c: Cell): string {
-  const met = c.score !== null && meets(c.score, c.criterion.requires);
-  const note = c.gap
-    ? ` (${LABEL.gapLegend})`
-    : c.inTarget === false && !met
-      ? ` (${LABEL.notNeeded})`
-      : "";
-  return `**${rungWord(c.score)}**${note}`;
+  const note = standingNote(c);
+  return `**${rungWord(c.score)}**${note ? ` (${note})` : ""}`;
 }
 
 function detail(rows: ModuleRow[]): string[] {
@@ -406,8 +542,10 @@ export function renderReportMarkdown(input: ReportInput): string {
     ...inShort(input, rows, t),
     ...mapTable(rows, t),
     ...start(input, t),
-    ...(comparison ? since(input, comparison) : []),
-    ...recommendations(input, t),
+    ...(comparison
+      ? since(input, comparison, stillOpenOf(comparison, rows, t))
+      : []),
+    ...recommendations(input, rows, t),
     ...detail(rows),
     ...config(input.fit),
     ...drift(input),

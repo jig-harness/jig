@@ -440,6 +440,35 @@ capitalized as commonly written; cross-references are *italicized*.
   team's profile, the moves to start with, and a choice per recommendation
   that the team copies to an agent as one block of decisions
   ([audit sheet](plugin/skills/audit/references/report-sheet.md)).
+- **Popover** — a small panel beside a mark on a page that explains it in
+  plain words, shown while the pointer rests on the mark or the keyboard
+  focus is on it, and hidden again on Escape. The *audit sheet* gives one to
+  each criterion's mark in its maturity map and to each module's chip.
+- **Audit guide** — the part of the *audit sheet* that explains Jig to a
+  reader who has never met it: the idea and the enforcement ladder, the
+  modules, the profiles and their targets, how the audit works and how to
+  read the sheet. It is one section of the same file, which the sheet's
+  script opens as a view of its own.
+- **Uncovered gap** — a maturity criterion within the target of the team's
+  profile that does not meet its bar, which no recommendation of the audit
+  moves and no held decline leaves on purpose. The *audit sheet* marks and
+  lists each one, so every gap is either addressed or visibly left.
+- **Profile signal** — an observed fact suggesting a project has outgrown
+  the profile it aims for, such as more contributors, a new deploy
+  environment or a compliance document. The *audit sheet* shows it beside the
+  profile as a reason to revisit that choice, never as a finding.
+- **Conditional target** — a level a *profile* asks of a module only when
+  the team says a stated condition holds ("several agents work the repository
+  in parallel workspaces"), because the need depends on how the team works,
+  not on its size. The *audit record* lists the ones that apply
+  (`profile_conditions`), and the *audit sheet* lets the team tick them.
+- **Calibration note** — what an audit prints when the team says one of its
+  judgements is wrong: a recommendation, or a criterion's score. It gives the
+  criterion's statement, recorded score and evidence beside the team's note,
+  for the agent to re-examine; the score itself is never changed by it.
+- **Trend** (audit) — each module's maturity level across the audit records
+  a repository committed over time, oldest first, shown in the *audit sheet*
+  for the modules whose level changed.
 - **Probe** — a precondition of a maturity criterion that a script can test
   from the repository's files ("some CI configuration exists"). When it does
   not hold the criterion is scored absent without further judgement; when it

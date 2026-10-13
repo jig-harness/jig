@@ -55,11 +55,14 @@ criteria:
     requires: mechanical
     statement: >-
       At least one consumer view (CI job selection, review-gate table, or
-      component directory) is a projection generated from the catalog and
-      carries a freshness gate that fails when the committed copy is stale.
+      component directory) is a projection generated from the catalog: either
+      derived on every run, so no copy exists to go stale, or committed with
+      a freshness gate that fails when the copy is stale.
     observe:
       - "a generator emits a consumer view from the catalog"
-      - "a CI drift check fails when the committed projection is out of date"
+      - "the view is derived at run time (for example CI area flags written
+        by the resolver on every run), or a CI drift check fails when the
+        committed projection is out of date"
 
   - id: ci-selection-resolver-driven
     level: strict

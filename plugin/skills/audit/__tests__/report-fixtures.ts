@@ -48,6 +48,38 @@ export function recordText(
   return out;
 }
 
+/**
+ * The calibration record as an audit of an earlier day would have written it:
+ * another date, commit and plugin version, and the scores `scores` names in
+ * place of the record's.
+ */
+export function recordAt(
+  date: string,
+  scores: Record<string, string> = {},
+  version = "0.14.0",
+): string {
+  let text = RECORD_TEXT.replace('date: "2026-10-12"', `date: "${date}"`)
+    .replace("plugin_version: 0.15.0", `plugin_version: ${version}`)
+    .replace(COMMIT, `${date.replaceAll("-", "")}${COMMIT.slice(8)}`);
+  for (const [key, score] of Object.entries(scores))
+    text = text.replace(
+      new RegExp(`(${key}:[^\\n]*\\n(?:\\s+#[^\\n]*\\n)*\\s+score:) \\S+`),
+      `$1 ${score}`,
+    );
+  return text;
+}
+
+/** An older record of the same repository: CI was not running the gates then. */
+export const priorRecord = (): string =>
+  recordAt("2026-07-19", { "M1/gate-set-documented": "absent" });
+
+/** An older record still: the library had not yet ruled out derived files, so M2 attained nothing. */
+export const historyRecord = (): string =>
+  recordAt("2026-04-02", {
+    "M1/gate-set-documented": "absent",
+    "M2/derived-inventory-exists": "absent",
+  });
+
 const modules = loadModules();
 const profiles = loadProfiles(modules);
 const schema = loadSchema();
@@ -59,6 +91,8 @@ export interface InputOptions {
   /** Findings to use in place of the fit report's own. */
   fitFindings?: { id: string; severity: string; message: string }[];
   prior?: string | null;
+  /** Older records' text, for the trend. */
+  history?: string[];
   today?: string;
 }
 
@@ -77,6 +111,9 @@ export function reportInput(o: InputOptions = {}): ReportInput {
     record: parseRecord(o.record ?? RECORD_TEXT, "record.yaml"),
     fit: o.fit === false ? null : fitWith(o.fitFindings),
     prior: o.prior ? parseRecord(o.prior, "prior.yaml") : null,
+    history: (o.history ?? []).map((h, i) =>
+      parseRecord(h, `history-${i}.yaml`),
+    ),
     modules,
     profiles,
     schema,

@@ -1,503 +1,625 @@
 # Jig audit record: written by /jig:audit, read by its next run.
 # Each criterion carries its level, pass bar and statement as comments.
 version: 1
-plugin_version: 0.15.0
-date: "2026-10-12"
-commit: 02b4184ad72b9c446c9e7a8647a2b42f7b5940f0
-shape: toolkit   # practice modules, Bun gates and an agent plugin released from main
-profile: team-standard   # Jig is maintained by people and agents together
-profile_conditions: [M12]   # several agents work it in parallel workspaces
+plugin_version: 0.17.0
+date: "2026-10-13"
+commit: a66ee2269e50bdb33434f8c3f741ac337ec86a65
+shape: "toolkit"   # library | application | service | monorepo | documentation | …
+profile: team-standard   # solo-lite | team-standard | regulated-strict; null when the team has not chosen
+profile_conditions: [M3, M12]
 criteria:
   # M0 instruction-architecture
   M0/universal-instruction-file:   # lite, requires convention
     # A vendor-neutral universal instruction file (AGENTS.md or equivalent) exists at the repo root and stays small (on the order of 150 lines).
+    # prior: convention: AGENTS.md at root (134 lines), vendor-neutral ('Compatible with Claude Code, Codex, Cursor'); root CLAUDE.md (9 lines) is an @AGENTS.md pointer
     score: convention
-    evidence: "AGENTS.md at root (134 lines), vendor-neutral ('Compatible with Claude Code, Codex, Cursor'); root CLAUDE.md (9 lines) is an @AGENTS.md pointer"
+    evidence: "AGENTS.md at root, 164 lines (134 at the prior audit), vendor-neutral ('Compatible with Claude Code, Codex, Cursor'); CLAUDE.md (9 lines) is an @AGENTS.md pointer; about the ~150-line bar"
   M0/gates-and-guardrails-listed:   # lite, requires convention
     # The universal instruction file lists the quality gates (runnable commands) and the critical guardrails.
+    # prior: convention: AGENTS.md 'Ways of working' lists `bun run gates` with ordered set matching scripts/gates.ts; guardrails: writing conventions, origin-reference rule, HITL list; plugin/AGENTS.md adds verify commands
     score: convention
-    evidence: "AGENTS.md 'Ways of working' lists `bun run gates` with ordered set matching scripts/gates.ts; guardrails: writing conventions, origin-reference rule, HITL list; plugin/AGENTS.md adds verify commands"
+    evidence: "AGENTS.md § Ways of working lists `bun run gates` with the ordered set matching scripts/gates.ts; guardrails in § Writing conventions (origin refs, scripts/check-no-tracker-refs.ts), the ratchet's Ratchet-Loosen rule, the HITL list; plugin/AGENTS.md § Verifying a change"
   M0/glossary-exists:   # lite, requires convention
     # A one-page domain glossary exists with canonical terms and explicit avoid-aliases, and the universal instruction file points to it.
+    # prior: absent: GLOSSARY.md (519 lines) exists, is linked from AGENTS.md and gated by scripts/check-glossary-coverage.ts, but carries no 'avoid' aliases (grep -ci avoid GLOSSARY.md = 0), so the criterion as stated is not met
     score: absent
-    evidence: "GLOSSARY.md (519 lines) exists, is linked from AGENTS.md and gated by scripts/check-glossary-coverage.ts, but carries no 'avoid' aliases (grep -ci avoid GLOSSARY.md = 0), so the criterion as stated is not met"
+    evidence: "GLOSSARY.md (558 lines) is linked from AGENTS.md and gated by scripts/check-glossary-coverage.ts, but has no avoid aliases (grep -ci avoid GLOSSARY.md = 0); 'instance' is used in AGENTS.md but not defined, and instance/downstream/target repo/consumer repository compete"
   M0/tool-deltas-are-pointers:   # standard, requires convention
     # Every tool-specific instruction file (CLAUDE.md, .cursor rules, copilot-instructions.md, ...) carries only runtime-specific content and points back to the universal file, duplicating none of it.
+    # prior: convention: CLAUDE.md, modules/CLAUDE.md, plugin/CLAUDE.md are only `@AGENTS.md` plus a no-delta note; no other tool files (no .cursor/, copilot-instructions, GEMINI.md in git ls-files)
     score: convention
-    evidence: "CLAUDE.md, modules/CLAUDE.md, plugin/CLAUDE.md are only `@AGENTS.md` plus a no-delta note; no other tool files (no .cursor/, copilot-instructions, GEMINI.md in git ls-files)"
+    evidence: "CLAUDE.md, modules/CLAUDE.md, plugin/CLAUDE.md are `@AGENTS.md` pointers; git ls-files: no .cursor/, copilot-instructions.md, GEMINI.md or .claude/ rules"
   M0/per-directory-instructions:   # standard, requires convention
     # Directories whose conventions differ from the repo default carry their own nested instruction file, and the universal file states the closest-file-wins policy.
-    score: convention
-    evidence: "modules/AGENTS.md and plugin/AGENTS.md add to the root file; AGENTS.md 'Read in this order' step 2 sends agents to the instructions closest to what they change"
+    # prior: convention: modules/AGENTS.md and plugin/AGENTS.md add to the root file; AGENTS.md 'Read in this order' step 2 sends agents to the instructions closest to what they change
+    score: absent
+    evidence: "modules/AGENTS.md and plugin/AGENTS.md open with 'These add to the repository's AGENTS.md'; AGENTS.md 'Read in this order' step 2 sends agents to the closest instructions, but nothing states that the closest file wins on a conflict, which the criterion requires"
   M0/conditional-rules-documented:   # standard, requires convention
     # If a conditional-rules directory exists, its README documents the loading semantics — path-frontmatter rules load on match, frontmatter-less rules always load — and each rule is scoped to the narrowest paths that cover it.
+    # prior: expected-absent: No conditional-rules directory: git ls-files has no .claude/rules, .cursor/rules or .agents/rules; the criterion applies only where such rules exist
     score: expected-absent
-    evidence: "No conditional-rules directory: git ls-files has no .claude/rules, .cursor/rules or .agents/rules; the criterion applies only where such rules exist"
+    evidence: "No conditional-rules directory: git ls-files has no .claude/rules, .cursor/rules or .agents/rules"
   M0/dispositions-with-flip-conditions:   # standard, requires convention
     # Behavioral defaults (dispositions) are written down, and every disposition states the condition under which it flips.
+    # prior: absent: git grep -il disposition outside templates/reference/fixtures hits only module docs, GLOSSARY.md, criteria yaml; no dispositions doc of Jig's own, none linked from AGENTS.md
     score: absent
-    evidence: "git grep -il disposition outside templates/reference/fixtures hits only module docs, GLOSSARY.md, criteria yaml; no dispositions doc of Jig's own, none linked from AGENTS.md"
+    evidence: "No dispositions document of Jig's own; defaults with flip conditions are scattered in AGENTS.md prose (Ratchet-Loosen only when a person asked, second implementation when a consumer needs it, HITL flag-don't-act); modules/M0-instruction-architecture/templates/dispositions.md is not applied"
   M0/instruction-freshness-checked:   # strict, requires mechanical
     # Countable facts and referenced paths in instruction files are verified against reality by a CI check that fails on drift.
+    # prior: convention: scripts/check-md-links.ts in `bun run gates` (required check 'gates') fails on broken Markdown links, but nothing re-derives countable facts such as AGENTS.md's ordered gate list against scripts/gates.ts, so the mechanical bar is not met
     score: convention
-    evidence: "scripts/check-md-links.ts in `bun run gates` (required check 'gates') fails on broken Markdown links, but nothing re-derives countable facts such as AGENTS.md's ordered gate list against scripts/gates.ts, so the mechanical bar is not met"
+    evidence: "scripts/check-md-links.ts (in scripts/gates.ts, required check) fails on broken Markdown links; nothing re-derives countable facts such as AGENTS.md's ordered gate list against scripts/gates.ts"
   M0/instruction-set-owned:   # strict, requires convention
     # The instruction set has a named owner and a stated review cadence.
+    # prior: absent: No CODEOWNERS (git ls-files), no owner or review cadence in or near AGENTS.md (git grep 'owner:|review cadence|last.review' on AGENTS files/README/ROADMAP: none)
     score: absent
-    evidence: "No CODEOWNERS (git ls-files), no owner or review cadence in or near AGENTS.md (git grep 'owner:|review cadence|last.review' on AGENTS files/README/ROADMAP: none)"
+    evidence: "No CODEOWNERS/OWNERS/MAINTAINERS in git ls-files; no owner or review cadence in AGENTS.md, README.md or ROADMAP.md"
   # M1 gates-enforcement-ladder
   M1/gate-set-documented:   # lite, requires convention
     # An ordered gate set (format, lint, types, tests, build) is stated in one canonical place and runnable with a single command.
+    # prior: convention: AGENTS.md § Ways of working lists the ordered set (format, lint, types, gate self-tests, build, links, tables, glossary, origin refs, changelog); package.json script gates runs scripts/gates.ts in that order
     score: convention
-    evidence: "AGENTS.md § Ways of working lists the ordered set (format, lint, types, gate self-tests, build, links, tables, glossary, origin refs, changelog); package.json script gates runs scripts/gates.ts in that order"
+    evidence: "AGENTS.md § Ways of working lists the gates in order, ending with the change-area check; scripts/gates.ts runs the same order; package.json gates runs bun scripts/gates.ts"
   M1/ci-runs-gates-on-pr:   # lite, requires mechanical
     # CI runs the gate set on every pull request and a failing run blocks the merge.
+    # prior: mechanical: .github/workflows/gates.yml (pull_request) runs bun run gates on ubuntu/macos/windows plus drive-pr shards; its gates job is a required check on main (gh api branches/main/protection, strict)
     # probe found: .github/workflows/gates.yml
     score: mechanical
-    evidence: ".github/workflows/gates.yml (pull_request) runs bun run gates on ubuntu/macos/windows plus drive-pr shards; its gates job is a required check on main (gh api branches/main/protection, strict)"
+    evidence: ".github/workflows/gates.yml (pull_request) always runs bun run gates on ubuntu, on macOS/Windows when the change touches code, and the drive-pr shards when that area is affected; the aggregator job gates fails unless every selected job passed; main requires gates and the AI review check (strict); admins not bound"
   M1/precommit-autofix-hooks:   # standard, requires mechanical
     # A managed pre-commit hook runs auto-fixing checks and re-stages what they fixed.
+    # prior: absent: probe: no tracked file matches lefthook.yml, lefthook.yaml, lefthook.toml, lefthook.json, .lefthook.yml, .lefthook.yaml, .config/lefthook.yml, .config/lefthook.yaml, .husky/**, .pre-commit-config.yaml, .githooks/**, .overcommit.yml, .rusty-hook.toml, .cargo-husky/**, **/pre-commit; no tracked package.json contains /"(simple-git-hooks|husky|pre-commit)"/; no tracked package.json, Makefile, GNUmakefile, justfile, Taskfile.y*ml, mise.toml, .mise.toml, **/*.sh contains /core\.hooksPath/
     score: absent
     evidence: "probe: no tracked file matches lefthook.yml, lefthook.yaml, lefthook.toml, lefthook.json, .lefthook.yml, .lefthook.yaml, .config/lefthook.yml, .config/lefthook.yaml, .husky/**, .pre-commit-config.yaml, .githooks/**, .overcommit.yml, .rusty-hook.toml, .cargo-husky/**, **/pre-commit; no tracked package.json contains /\"(simple-git-hooks|husky|pre-commit)\"/; no tracked package.json, Makefile, GNUmakefile, justfile, Taskfile.y*ml, mise.toml, .mise.toml, **/*.sh contains /core\\.hooksPath/"
   M1/grep-gates-tested-and-wired:   # standard, requires mechanical
     # The team's top codebase-wide rules (target: five or more) exist as grep-gate scripts, each with a paired self-test, wired into both the pre-push hook and CI.
+    # prior: convention: The check-* scripts have fixture self-tests in scripts/gates.test.ts and Jig's GritQL rules have fixtures in tools/quality/grit/fixtures; all run in required CI, but no pre-push hook runs them, so the local half is convention only
     score: convention
-    evidence: "The check-* scripts have fixture self-tests in scripts/gates.test.ts and Jig's GritQL rules have fixtures in tools/quality/grit/fixtures; all run in required CI, but no pre-push hook runs them, so the local half is convention only"
+    evidence: "Seven check scripts (scripts/check-*.ts, scripts/change-areas.ts) and six GritQL rules (tools/quality/grit/) have self-tests (scripts/gates.test.ts, scripts/change-areas.test.ts, tools/quality/grit.test.ts) and run under the required gates check; no pre-push hook, so the local half is convention"
   M1/escape-hatch-documented:   # standard, requires convention
     # The hook bypass (--no-verify) is documented next to the hooks, with when it is legitimate and the note that CI re-runs everything.
+    # prior: absent: grep no-verify/pre-push/lefthook/husky across AGENTS.md, plugin/AGENTS.md, modules/AGENTS.md finds nothing; there are no hooks to bypass
     score: absent
-    evidence: "grep no-verify/pre-push/lefthook/husky across AGENTS.md, plugin/AGENTS.md, modules/AGENTS.md finds nothing; there are no hooks to bypass"
+    evidence: "No hooks exist to bypass; --no-verify appears only in GLOSSARY.md and the module template, not in the AGENTS.md files"
   M1/third-party-automation-pinned-and-updated:   # standard, requires mechanical
     # Third-party CI automation is pinned to immutable revisions and an automated updater proposes pin changes through the normal gate set.
+    # prior: mechanical: gates.yml pins actions/checkout and jdx/mise-action to full SHAs; renovate.json5 pins digests for GitHub Actions, mise and Bun; Renovate's pull requests run the required gates check
     score: mechanical
-    evidence: "gates.yml pins actions/checkout and jdx/mise-action to full SHAs; renovate.json5 pins digests for GitHub Actions, mise and Bun; Renovate's pull requests run the required gates check"
+    evidence: "gates.yml pins actions/checkout and jdx/mise-action by SHA in every job; renovate.json5 pins digests for GitHub Actions; Renovate is live and its pull requests run the full required set"
   M1/suppression-token-registry:   # strict, requires convention
     # A single registry page lists every suppression token a live gate honors, with syntax, consuming gate, placement, and justification requirement, plus a registration rule for new tokens.
+    # prior: absent: No registry page; live tokens are scattered: biome-ignore comments, ! allow lines in scripts/tracker-key-patterns.txt, scripts/glossary-allowlist.txt (named only in passing in AGENTS.md)
     score: absent
-    evidence: "No registry page; live tokens are scattered: biome-ignore comments, ! allow lines in scripts/tracker-key-patterns.txt, scripts/glossary-allowlist.txt (named only in passing in AGENTS.md)"
+    evidence: "No registry page; live tokens are biome-ignore, fallow-ignore, @ts-expect-error (counted by tools/quality/ratchet.jsonc), ! allow lines in scripts/tracker-key-patterns.txt and scripts/glossary-allowlist.txt, and the Ratchet-Loosen trailer"
   M1/commit-msg-process-markers:   # strict, requires mechanical
     # Mandatory-review areas are enforced by a commit-msg hook requiring a review-marker tag when protected paths are staged, re-checked by a gate the committer cannot skip.
+    # prior: absent: No commit-msg hook and no marker convention; AGENTS.md § HITL names protected areas in prose; .config/ai-review.yaml high_risk_path_patterns only steer the AI reviewer
     score: absent
-    evidence: "No commit-msg hook and no marker convention; AGENTS.md § HITL names protected areas in prose; .config/ai-review.yaml high_risk_path_patterns only steer the AI reviewer"
+    evidence: "No commit-msg hook; modules/M1-gates-enforcement-ladder/reference/commit-msg-marker is reference only; .config/ai-review.yaml high_risk_path_patterns only steer the AI reviewer"
   M1/gate-self-tests-in-ci:   # strict, requires mechanical
     # CI runs each grep gate's self-test alongside the gate, so a silently broken gate fails the pipeline.
+    # prior: mechanical: scripts/gates.test.ts runs each check-* script against pass and fail fixtures in scripts/tests/fixtures/, in the bun run gates test step under the required gates check
     # probe found: .github/workflows/gates.yml
     score: mechanical
-    evidence: "scripts/gates.test.ts runs each check-* script against pass and fail fixtures in scripts/tests/fixtures/, in the bun run gates test step under the required gates check"
-  M1/advisory-gates-carry-promotion-conditions:   # strict, requires convention
-    # Every advisory (non-blocking) gate states its promotion condition and a review date; none is advisory indefinitely without one.
-    score: convention
-    evidence: "No continue-on-error/allow_failure in .github/workflows/gates.yml; rules at warn in biome.json and the flags in tsconfig.ratchet.json are ratcheted, and AGENTS.md § Ways of working states their promotion condition (promote at zero, which the ratchet reports)"
+    evidence: "scripts/gates.test.ts, scripts/change-areas.test.ts and tools/quality/grit.test.ts run in the gates test step under the required check; gates.test.ts also checks gates.yml against SEPARATE_SUITES and the catalog's area names"
   M1/existing-findings-ratcheted:   # strict, requires mechanical
     # A rule that still has findings is ratcheted rather than left advisory: a required gate fails a change that adds a finding to it or loosens its configuration, measured against the merge base, and a rule whose count reaches zero is promoted to blocking.
+    # prior: mechanical: bun run quality (modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts with tools/quality/ratchet.jsonc) runs inside bun run gates, the required gates check; it counts Biome warnings, GritQL rules, ratcheted compiler flags and suppression comments against the merge base and needs a Ratchet-Loosen trailer to loosen a rule
     score: mechanical
-    evidence: "bun run quality (modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts with tools/quality/ratchet.jsonc) runs inside bun run gates, the required gates check; it counts Biome warnings, GritQL rules, ratcheted compiler flags and suppression comments against the merge base and needs a Ratchet-Loosen trailer to loosen a rule"
+    evidence: "bun run quality (modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts with tools/quality/ratchet.jsonc) counts Biome findings, tsconfig.ratchet.json flags and suppressions against the merge base, needs a Ratchet-Loosen trailer to loosen a rule, and runs inside bun run gates under the required check"
+  M1/advisory-gates-carry-promotion-conditions:   # strict, requires convention
+    # Every advisory (non-blocking) gate states its promotion condition and a review date; none is advisory indefinitely without one.
+    # prior: convention: No continue-on-error/allow_failure in .github/workflows/gates.yml; rules at warn in biome.json and the flags in tsconfig.ratchet.json are ratcheted, and AGENTS.md § Ways of working states their promotion condition (promote at zero, which the ratchet reports)
+    score: convention
+    evidence: "No gate is advisory, so no review date is owed: no continue-on-error/allow_failure in .github/, and the warn-level Biome rules and tsconfig.ratchet.json flags are ratcheted (a change adding a finding fails the required gates check), which M1/existing-findings-ratcheted counts as not advisory; AGENTS.md § The ratchet adds their promotion condition, promote at zero"
   # M2 generated-artifact-freshness
   M2/derived-inventory-exists:   # lite, requires convention
     # Every committed derived file is listed in one canonical place together with the command that regenerates it.
+    # prior: absent: No inventory; committed derived files: plugin/skills/resolve-review-comments/scripts/lib/vendor/js-yaml.mjs (copy of js-yaml's build) and bun.lock; dist/ is ignored
     score: absent
-    evidence: "No inventory; committed derived files: plugin/skills/resolve-review-comments/scripts/lib/vendor/js-yaml.mjs (copy of js-yaml's build) and bun.lock; dist/ is ignored"
+    evidence: "No inventory; committed derived files are bun.lock and plugin/skills/resolve-review-comments/scripts/lib/vendor/js-yaml.mjs; plugin/README.md states the vendoring rule but lists no files or regenerate commands"
   M2/hand-editing-forbidden:   # lite, requires convention
     # Hand-editing derived files is documented as forbidden, and each derived file's header identifies it as generated with its regenerate command.
+    # prior: absent: vendor/js-yaml.mjs carries no generated marker or regenerate command; no hand-edit ban in AGENTS.md or plugin/AGENTS.md
     score: absent
-    evidence: "vendor/js-yaml.mjs carries no generated marker or regenerate command; no hand-edit ban in AGENTS.md or plugin/AGENTS.md"
+    evidence: "No hand-edit ban in AGENTS.md or plugin/AGENTS.md; js-yaml.mjs carries the upstream banner only; its regenerate command lives in a test comment in tools/plugin/plugin.test.ts"
   M2/committed-derived-full-triad:   # standard, requires mechanical
     # Every committed derived file has the full freshness triad: a regenerate script, a CI drift check that fails when the file is stale, and a pre-commit hook that regenerates and stages it when its inputs change.
+    # prior: absent: The vendored js-yaml has a drift test (tools/plugin/plugin.test.ts compares it with node_modules) but no regenerate script and no hook; bun.lock is checked only by bun install --frozen-lockfile in gates.yml
     score: absent
-    evidence: "The vendored js-yaml has a drift test (tools/plugin/plugin.test.ts compares it with node_modules) but no regenerate script and no hook; bun.lock is checked only by bun install --frozen-lockfile in gates.yml"
+    evidence: "js-yaml.mjs has a CI drift check (tools/plugin/plugin.test.ts compares it with node_modules) but no regenerate script and no hook; bun.lock is checked by --frozen-lockfile in gates.yml; no hook manager"
   M2/instruction-path-references-checked:   # standard, requires mechanical
     # A CI check verifies that repo paths referenced in instruction files resolve to existing files or directories.
+    # prior: absent: scripts/check-md-links.ts (in scripts/gates.ts, required CI) fails on unresolved Markdown link targets in all tracked Markdown, AGENTS.md files included; backticked paths, which the criterion includes, are not checked, so the criterion as stated is not met
     score: absent
-    evidence: "scripts/check-md-links.ts (in scripts/gates.ts, required CI) fails on unresolved Markdown link targets in all tracked Markdown, AGENTS.md files included; backticked paths, which the criterion includes, are not checked, so the criterion as stated is not met"
+    evidence: "scripts/check-md-links.ts checks only Markdown link targets; backticked paths in the AGENTS.md files are unchecked; modules/M2-generated-artifact-freshness/reference/prose-facts/check-referenced-paths.ts runs on fixtures only"
   M2/prose-facts-ci-checked:   # strict, requires mechanical
     # Derivable facts stated in prose (counts, rosters) are re-derived and compared by a CI check that commits no generated file.
+    # prior: convention: Some facts are re-derived in CI without a committed cache (manifest versions in scripts/check-changelog.ts, the 13-module count in plugin/skills/audit/__tests__/score.test.ts), but there is no registry of stated facts and README.md's counts are unchecked
     score: convention
-    evidence: "Some facts are re-derived in CI without a committed cache (manifest versions in scripts/check-changelog.ts, the 13-module count in plugin/skills/audit/__tests__/score.test.ts), but there is no registry of stated facts and README.md's counts are unchecked"
+    evidence: "Some facts are re-derived without a committed cache (manifest version vs CHANGELOG in scripts/check-changelog.ts, the module count in the audit tests); no registry of stated facts; README.md counts unchecked"
   M2/schema-artifacts-use-ephemeral-replay:   # strict, requires mechanical
     # Every schema-like committed artifact's drift check replays its source of truth from scratch in a throwaway environment, normalizes both sides identically, and compares.
+    # prior: expected-absent: No schema-like derived artifacts: no database, migrations, OpenAPI or generated types outside modules/*/reference examples
     score: expected-absent
-    evidence: "No schema-like derived artifacts: no database, migrations, OpenAPI or generated types outside modules/*/reference examples"
+    evidence: "No schema-like derived artifacts (no database, migrations, OpenAPI or generated types outside modules/*/reference examples)"
   M2/artifact-inventory-generated-and-gated:   # strict, requires mechanical
     # The derived-file inventory is itself a generated artifact with its own drift gate, so the inventory cannot silently omit a new derived file.
+    # prior: absent: No inventory exists, so none is generated or gated (see M2/derived-inventory-exists)
     score: absent
-    evidence: "No inventory exists, so none is generated or gated (see M2/derived-inventory-exists)"
+    evidence: "No inventory exists (see M2/derived-inventory-exists)"
   # M3 change-area-catalog
   M3/catalog-is-single-source:   # lite, requires convention
     # One catalog file is the single place that maps path patterns to named change-areas and their implications; consumers reference area names rather than re-listing the path patterns.
-    score: absent
-    evidence: ".config/ai-review.yaml states Jig has no live change-area catalog; path rules are hand-written in ai-review.yaml, scripts/gates.ts POSIX_ONLY_SUITES and plugin/AGENTS.md"
+    # prior: absent: .config/ai-review.yaml states Jig has no live change-area catalog; path rules are hand-written in ai-review.yaml, scripts/gates.ts POSIX_ONLY_SUITES and plugin/AGENTS.md
+    score: convention
+    evidence: ".config/change-areas.yaml is the one path-to-area map; gates.yml selects jobs by area name and the resolver's code flag, never by globs; .config/jig.yaml drive.change_areas_catalog points drive-pr and do-item at it; remaining glob copies in .config/ai-review.yaml and scripts/gates.ts SEPARATE_SUITES"
   M3/catalog-schema-validated:   # lite, requires mechanical
     # A check validates the catalog's structure: area ids are well-formed, every implied-by reference names an existing area, and no area implies itself.
-    score: absent
-    evidence: "No catalog file in Jig; plugin/skills/drive-pr/scripts/lib/change-areas-catalog.ts validates consumers' catalogs only"
+    # prior: absent: No catalog file in Jig; plugin/skills/drive-pr/scripts/lib/change-areas-catalog.ts validates consumers' catalogs only
+    score: mechanical
+    evidence: "scripts/change-areas.ts checks ids, unknown fields, required fields, closed value sets and dangling impliedBy; checkChangeAreas runs in scripts/gates.ts under the required check; negative cases in scripts/change-areas.test.ts"
   M3/catalog-graph-validated:   # standard, requires mechanical
     # A CI check enforces the graph invariants of the implied-by relation: referential integrity and no cycles.
-    score: absent
-    evidence: "No catalog, so no implied-by graph check (git ls-files for area/catalog outside modules/ and fixtures)"
+    # prior: absent: No catalog, so no implied-by graph check (git ls-files for area/catalog outside modules/ and fixtures)
+    score: mechanical
+    evidence: "scripts/change-areas.ts checks referential integrity, finds cycles and fails on any repository file in no area; runs in bun run gates and again in gates.yml's areas job"
   M3/workspace-coverage-gated:   # standard, requires mechanical
     # Every workspace directory on disk maps to at least one area, and each area's declared workspace exists and is matched by one of its own globs; a new unmapped workspace fails CI.
+    # prior: expected-absent: Single-package repository: package.json has no workspaces field and there are no apps/* or packages/* directories
     score: expected-absent
-    evidence: "Single-package repository: package.json has no workspaces field and there are no apps/* or packages/* directories"
+    evidence: "Single package: no workspaces field, no apps/* or packages/*; the stronger every-file-has-an-area check runs instead"
   M3/consumer-view-generated:   # standard, requires mechanical
     # At least one consumer view (CI job selection, review-gate table, or component directory) is a projection generated from the catalog and carries a freshness gate that fails when the committed copy is stale.
-    score: absent
-    evidence: "No generated consumer view; .config/ai-review.yaml path globs are hand-maintained"
+    # prior: absent: No generated consumer view; .config/ai-review.yaml path globs are hand-maintained
+    score: mechanical
+    evidence: "CI job selection is derived from .config/change-areas.yaml on every run: scripts/change-areas.ts writes the area flags gates.yml selects jobs by, so no copy exists to go stale"
   M3/ci-selection-resolver-driven:   # strict, requires mechanical
     # CI job selection is driven by the resolver (seed match + implied-by closure), so a change to a shared area mechanically triggers the jobs of every area that depends on it.
-    score: expected-absent
-    evidence: "gates.yml has no path filters or job selection: every pull request runs the full gate set and the drive-pr suite"
+    # prior: expected-absent: gates.yml has no path filters or job selection: every pull request runs the full gate set and the drive-pr suite
+    score: mechanical
+    evidence: "gates.yml's areas job runs scripts/change-areas.ts --base (path match plus impliedBy closure); the drive-pr shards are gated on the drive-pr area and the platform matrix on code; a shared lib change selects dependent areas (tested in scripts/change-areas.test.ts); a push to main resolves every area"
   M3/all-consumers-generated:   # strict, requires mechanical
     # Every consumer view is a generated projection with a freshness gate; no consumer re-hardcodes the catalog's path patterns.
+    # prior: absent: .config/ai-review.yaml rules[].paths and high_risk_path_patterns re-list path patterns by hand; the plugin/ version-bump rule is restated in plugin/AGENTS.md and plugin/README.md
     score: absent
-    evidence: ".config/ai-review.yaml rules[].paths and high_risk_path_patterns re-list path patterns by hand; the plugin/ version-bump rule is restated in plugin/AGENTS.md and plugin/README.md"
+    evidence: ".config/ai-review.yaml rules[].paths and high_risk_path_patterns are hand-written; scripts/gates.ts SEPARATE_SUITES repeats the drive-pr glob with no check against the catalog"
   M3/regex-shortcut-sync-checked:   # strict, requires mechanical
     # Any hand-maintained CI shortcut regex is checked against the catalog in both directions and against the union of files tracked at the current and base refs (the two directional checks alone can pass while a whole unmapped tracked file still slips through — see reference/regex-mirror/README.md).
-    score: expected-absent
-    evidence: "No hand-maintained CI shortcut regex in .github/workflows/gates.yml (no paths/paths-ignore/changed-files filters)"
+    # prior: expected-absent: No hand-maintained CI shortcut regex in .github/workflows/gates.yml (no paths/paths-ignore/changed-files filters)
+    score: mechanical
+    evidence: "gates.yml has no paths:/paths-ignore/regex shortcut; every selection decision comes from the resolver's output, which the criterion's own observe clause accepts"
   # M4 docs-governance
   M4/governance-model-written:   # lite, requires convention
     # A written governance model names the frontmatter fields, the status/lifecycle vocabulary, the de-scarring rule, and the authority hierarchy for resolving conflicts between docs.
+    # prior: absent: AGENTS.md § Writing conventions states de-scarring and the status-page roles (ROADMAP open only, CHANGELOG history), and modules/AGENTS.md the README contract; no frontmatter fields, status vocabulary or authority hierarchy is written down, so the criterion as stated is not met
     score: absent
-    evidence: "AGENTS.md § Writing conventions states de-scarring and the status-page roles (ROADMAP open only, CHANGELOG history), and modules/AGENTS.md the README contract; no frontmatter fields, status vocabulary or authority hierarchy is written down, so the criterion as stated is not met"
+    evidence: "AGENTS.md § Writing conventions has de-scarring and the ROADMAP-open-only / CHANGELOG roles; design/README.md gives the design lifecycle; modules/AGENTS.md the README contract; no frontmatter fields, status vocabulary or authority order written anywhere"
   M4/docs-start-from-template:   # lite, requires convention
     # New docs start from a schema-conformant template rather than a copied neighbor.
+    # prior: absent: No doc template for Jig's own docs; modules/AGENTS.md gives the module README order in prose only; modules/M4-docs-governance/templates/WIKI-SCHEMA.md is an example for adopters
     score: absent
-    evidence: "No doc template for Jig's own docs; modules/AGENTS.md gives the module README order in prose only; modules/M4-docs-governance/templates/WIKI-SCHEMA.md is an example for adopters"
+    evidence: "Templates exist only under modules/*/templates/ as adopter examples; no template for Jig's own docs, design/ has none"
   M4/frontmatter-machine-validated:   # standard, requires mechanical
     # A check validates every doc's frontmatter against the schema (required fields present, enum membership, date format) and runs in CI.
+    # prior: absent: Jig's own *.md outside fixtures/templates/seeds carry no frontmatter; closest is tools/plugin/plugin.test.ts checking SKILL.md name; M4 frontmatter-check not called from scripts/gates.ts
     score: absent
-    evidence: "Jig's own *.md outside fixtures/templates/seeds carry no frontmatter; closest is tools/plugin/plugin.test.ts checking SKILL.md name; M4 frontmatter-check not called from scripts/gates.ts"
+    evidence: "Only plugin SKILL.md and agent files carry frontmatter (the plugin manifest format, not a docs schema); scripts/gates.ts runs no frontmatter check"
   M4/index-generated-and-freshness-gated:   # standard, requires mechanical
     # The navigation index is generated from the tree and a CI drift gate fails when the committed index no longer matches what the generator produces.
+    # prior: convention: modules/README.md and README.md § Structure tables are hand-maintained; modules/AGENTS.md § Consistency to keep is prose; scripts/check-md-links.ts checks links only
     score: convention
-    evidence: "modules/README.md and README.md § Structure tables are hand-maintained; modules/AGENTS.md § Consistency to keep is prose; scripts/check-md-links.ts checks links only"
+    evidence: "README.md § Structure, modules/README.md, design/README.md and principles/README.md tables are hand-maintained; scripts/check-md-links.ts checks links only; README § Structure already omits design/"
   M4/authority-hierarchy-written:   # standard, requires convention
     # A single-valued authority hierarchy is written down so contradictions between docs resolve without a judgment call.
+    # prior: absent: grep authority|precedence|source of truth in own docs: only CLAUDE.md 'AGENTS.md the single source of truth' and PLAYBOOK.md 'map vs territory'; no ordered precedence for conflicting docs
     score: absent
-    evidence: "grep authority|precedence|source of truth in own docs: only CLAUDE.md 'AGENTS.md the single source of truth' and PLAYBOOK.md 'map vs territory'; no ordered precedence for conflicting docs"
+    evidence: "git grep authority|precedence|source of truth in Jig's own docs: only CLAUDE.md 'AGENTS.md the single source of truth' and PLAYBOOK.md 'map vs territory'; no ordered precedence"
   M4/descarring-lint-blocks-approval:   # strict, requires mechanical
     # A scar lint prevents a doc from reaching status approved while carrying review scars (strikethroughs, resolution phrasing, reviewer dialogue), with a self-test proving the lint still catches scars.
+    # prior: convention: De-scarring rule in AGENTS.md § Writing conventions; plugin/skills/descar exists; M4 reference/scar-lint runs only on its fixtures, not on Jig docs (grep scar-lint in scripts/ tools/ .github/ lib/: none)
     score: convention
-    evidence: "De-scarring rule in AGENTS.md § Writing conventions; plugin/skills/descar exists; M4 reference/scar-lint runs only on its fixtures, not on Jig docs (grep scar-lint in scripts/ tools/ .github/ lib/: none)"
+    evidence: "Rule in AGENTS.md § De-scarring and .config/ai-review.yaml architecture_invariants; plugin/skills/descar exists; modules/M4-docs-governance/reference/scar-lint scans only status: approved docs and Jig's docs carry no status, so it never runs on them"
   M4/stale-doc-gate:   # strict, requires mechanical
     # A CI check requires last_updated to advance in the same diff when a doc's body changes, so freshness metadata cannot silently lie.
+    # prior: absent: No last_updated field in any Jig doc; no diff-aware freshness check in scripts/ or .github/workflows/gates.yml
     score: absent
-    evidence: "No last_updated field in any Jig doc; no diff-aware freshness check in scripts/ or .github/workflows/gates.yml"
+    evidence: "No last_updated field in Jig's own docs; no diff-aware freshness check in scripts/ or .github/workflows/gates.yml"
   M4/wiki-lint-cadence-and-promotion:   # strict, requires mechanical
     # A scheduled wiki-lint runs the health checks (stale, broken links, orphans, retrospection backlog) and posts findings, and raw-to-compiled promotion (retrospection backlog) is tracked.
+    # prior: absent: .github/workflows/ holds only gates.yml (pull_request, push to main); no scheduled job; no retrospective or raw-notes backlog file in the tree
     score: absent
-    evidence: ".github/workflows/ holds only gates.yml (pull_request, push to main); no scheduled job; no retrospective or raw-notes backlog file in the tree"
+    evidence: ".github/workflows/gates.yml triggers on pull_request and push only, no schedule; no retrospective or raw-notes backlog (the reflection store is ROADMAP item 6, unbuilt)"
   # M5 adr-practice
   M5/adrs-exist-numbered-from-template:   # lite, requires convention
     # Decisions are captured as numbered ADR files from a shared template with consistent frontmatter (a decision date and a status).
+    # prior: absent: probe: no tracked file matches **/ADR-[0-9]*.md, **/*adr*/**/[0-9][0-9][0-9]*.md, **/*decision*/**/[0-9][0-9][0-9]*.md
     score: absent
     evidence: "probe: no tracked file matches **/ADR-[0-9]*.md, **/*adr*/**/[0-9][0-9][0-9]*.md, **/*decision*/**/[0-9][0-9][0-9]*.md"
   M5/amendment-discipline-documented:   # lite, requires convention
     # The evolution rule is written down: an approved ADR is amended (dated Amendments entry) or superseded, never silently rewritten.
+    # prior: absent: Amend-or-supersede is stated only as doctrine in modules/M5-adr-practice/README.md and templates; Jig's own AGENTS.md has no ADR conventions and Jig has no ADRs
     score: absent
-    evidence: "Amend-or-supersede is stated only as doctrine in modules/M5-adr-practice/README.md and templates; Jig's own AGENTS.md has no ADR conventions and Jig has no ADRs"
+    evidence: "Amend-or-supersede appears only as doctrine in modules/M5-adr-practice/README.md and plugin/skills/adr/SKILL.md; Jig's AGENTS.md has no decision-record convention"
   M5/numbering-gate-enforced:   # standard, requires mechanical
     # A check fails when two ADRs claim the same number, and it runs in CI (the authority), ideally mirrored in a pre-push hook.
+    # prior: absent: modules/M5-adr-practice/reference/numbering-gate/check-adr-numbers.ts is self-tested on fixtures only; not called by scripts/gates.ts; no hook manager config
     score: absent
-    evidence: "modules/M5-adr-practice/reference/numbering-gate/check-adr-numbers.ts is self-tested on fixtures only; not called by scripts/gates.ts; no hook manager config"
+    evidence: "modules/M5-adr-practice/reference/numbering-gate/check-adr-numbers.ts is self-tested on fixtures only; scripts/gates.ts does not call it; no hook manager"
   M5/adr-frontmatter-validated:   # standard, requires mechanical
     # ADR frontmatter is machine-validated, including the ADR-specific fields decision_date, supersedes, and superseded_by.
+    # prior: absent: No ADRs and no frontmatter checker run over Jig's docs (scripts/gates.ts runs links, tables, glossary, tracker refs, changelog only)
     score: absent
-    evidence: "No ADRs and no frontmatter checker run over Jig's docs (scripts/gates.ts runs links, tables, glossary, tracker refs, changelog only)"
+    evidence: "No decision records and no frontmatter checker in scripts/gates.ts"
   M5/supersession-metadata-used:   # standard, requires convention
     # Superseding a decision updates both files: the new ADR sets supersedes and the old one sets superseded_by plus a deprecated status.
+    # prior: absent: No ADR files in the tree, so no supersedes/superseded_by usage
     score: absent
-    evidence: "No ADR files in the tree, so no supersedes/superseded_by usage"
+    evidence: "No decision-record files, so no supersedes/superseded_by"
   M5/decisions-extracted-to-rules:   # strict, requires mechanical
     # Pattern-checkable ADR decisions are distilled into a machine-readable rules catalog, each rule citing its ADR, and a checker enforces them on changed code in CI.
+    # prior: absent: No decision-rules catalog for Jig; AGENTS.md rules turned into gates (scripts/check-no-tracker-refs.ts, check-md-tables.ts) cite no decision record
     score: absent
-    evidence: "No decision-rules catalog for Jig; AGENTS.md rules turned into gates (scripts/check-no-tracker-refs.ts, check-md-tables.ts) cite no decision record"
+    evidence: "No adr-rules.yaml outside modules/M5-adr-practice/templates/; Jig's gates cite no decision record"
   M5/numbering-gate-mirrored-both-rungs:   # strict, requires mechanical
     # The numbering gate runs both client-side (pre-push) and server-side (CI), so a duplicate cannot be pushed past a bypassed local hook.
+    # prior: absent: No pre-push hook (no hook manager config) and no CI numbering step in .github/workflows/gates.yml
     score: absent
-    evidence: "No pre-push hook (no hook manager config) and no CI numbering step in .github/workflows/gates.yml"
+    evidence: "No pre-push hook and no numbering step in .github/workflows/gates.yml"
   M5/rule-checker-self-tested:   # strict, requires mechanical
     # The ADR-rule checker ships with a self-test proving it still catches known violations, run in CI so a broken rule gate fails loudly.
+    # prior: absent: adr-rules-check.test.ts runs in CI only as a self-test of the reference example; Jig applies no decision-rule checker to its own code
     score: absent
-    evidence: "adr-rules-check.test.ts runs in CI only as a self-test of the reference example; Jig applies no decision-rule checker to its own code"
+    evidence: "adr-rules-check.test.ts runs only as a self-test of the reference example; no rule checker applied to Jig's code"
   # M6 feature-delivery-pipeline
   M6/pipeline-stages-documented:   # lite, requires convention
     # The pipeline stages — research spike, PRD, architecture, design-prototype loop, epic decomposition — are named in one document, with the per-stage review-then-de-scar rule stated.
+    # prior: absent: PLAYBOOK.md names the stages as doctrine for adopters; Jig's own process goes from roadmap item, through a design in design/ for large items (design/README.md), to pull request, without naming the M6 stages or the review-then-de-scar rule
     score: absent
-    evidence: "PLAYBOOK.md names the stages as doctrine for adopters; Jig's own process goes from roadmap item, through a design in design/ for large items (design/README.md), to pull request, without naming the M6 stages or the review-then-de-scar rule"
+    evidence: "PLAYBOOK.md § The feature pipeline is doctrine for adopters; Jig's own flow (roadmap item -> design/<x>.md for large items -> pull requests, design/README.md) names neither the M6 stages nor a review-then-de-scar rule"
   M6/stage-templates-committed:   # lite, requires convention
     # Committed templates exist for the PRD, the architecture doc, and the research note, and the pipeline doc points each stage at its template.
+    # prior: absent: PRD, architecture and research templates exist only under modules/M6-feature-delivery-pipeline/templates/ and seeds/ (examples); Jig's own process points no stage at them
     score: absent
-    evidence: "PRD, architecture and research templates exist only under modules/M6-feature-delivery-pipeline/templates/ and seeds/ (examples); Jig's own process points no stage at them"
+    evidence: "PRD, architecture and research templates exist only under modules/M6-feature-delivery-pipeline/templates/ and seeds/; no template for Jig's design/ docs"
   M6/artifact-from-template-gated:   # standard, requires mechanical
     # Each stage produces a named artifact from its committed template, and a required-sections check fails a stage artifact that is missing a required heading.
+    # prior: absent: No stage artifacts in the tree (git ls-files grep prd|architect|research: templates/seeds only); M6 reference/required-sections not called by scripts/gates.ts
     score: absent
-    evidence: "No stage artifacts in the tree (git ls-files grep prd|architect|research: templates/seeds only); M6 reference/required-sections not called by scripts/gates.ts"
+    evidence: "The closest stage artifacts, design/reflection.md and design/audit-experience.md, have no required-sections check; M6 reference/required-sections is not called by scripts/gates.ts"
   M6/per-stage-adversarial-review-contract:   # standard, requires convention
     # Per-stage adversarial review is a documented contract — a fresh-context, red-team critique clears before the next stage consumes the artifact, and acceptance (status: accepted) records that it happened.
+    # prior: absent: Only PR-level review exists (required check 'AI review (majordomo)', .config/ai-review.yaml); no review contract or record for stage artifacts
     score: absent
-    evidence: "Only PR-level review exists (required check 'AI review (majordomo)', .config/ai-review.yaml); no review contract or record for stage artifacts"
+    evidence: "Only pull-request review (.config/ai-review.yaml, required gates check); design/README.md requires no review of a design and designs carry no review record"
   M6/descarring-applied:   # standard, requires convention
     # Accepted artifacts are de-scarred — the finished document carries no review findings or reviewer dialogue, only the result.
+    # prior: convention: No stage artifacts, but the AGENTS.md de-scarring rule covers all docs; grep for scar markers (~~, addressed) in README, PLAYBOOK, GLOSSARY, principles/, modules/*/README.md found none
     score: convention
-    evidence: "No stage artifacts, but the AGENTS.md de-scarring rule covers all docs; grep for scar markers (~~, addressed) in README, PLAYBOOK, GLOSSARY, principles/, modules/*/README.md found none"
+    evidence: "AGENTS.md de-scarring rule and the ai-review invariant that approved documentation states current truth; grep for ~~ / addressed / per review over design/, ROADMAP, README, PLAYBOOK, principles/, modules/*/README.md finds no scars"
   M6/stage-gates-self-tested-in-ci:   # strict, requires mechanical
     # The required-sections gate and the stage-review-record gate each ship a self-test and run in CI, so a broken pipeline gate fails loudly.
+    # prior: absent: M6 reference/required-sections and stage-review-record are self-tested on fixtures in CI but never run on Jig docs; there are no stage docs to gate
     score: absent
-    evidence: "M6 reference/required-sections and stage-review-record are self-tested on fixtures in CI but never run on Jig docs; there are no stage docs to gate"
+    evidence: "M6 reference/required-sections and stage-review-record are self-tested via lib/module-gates.test.ts in CI but never run on Jig's docs"
   M6/epic-flag-labels-drive-gates:   # strict, requires mechanical
     # Epic decomposition sets flag labels on sub-issues, and those labels drive which downstream reviews and gates fire (via the tasks and change-area modules), not a reviewer's memory.
+    # prior: absent: .config/jig.yaml issue_tracker.labels has only followup/epic; no flag labels and no catalog choosing gates from labels; gates.yml runs one fixed set
     score: absent
-    evidence: ".config/jig.yaml issue_tracker.labels has only followup/epic; no flag labels and no catalog choosing gates from labels; gates.yml runs one fixed set"
+    evidence: ".config/jig.yaml issue_tracker.labels has only followup/epic; CI job selection (.config/change-areas.yaml, scripts/change-areas.ts) is driven by paths, not issue labels"
   M6/design-loop-feedback-contract:   # strict, requires convention
     # The design-prototype loop's feedback into requirements and architecture is a written contract — the prototype may reopen the PRD and the architecture rather than being a rendering step at the end.
-    score: expected-absent
-    evidence: "Jig has no user-interface product (CLI skills, gates and Markdown), so the design-prototype loop does not apply"
+    # prior: expected-absent: Jig has no user-interface product (CLI skills, gates and Markdown), so the design-prototype loop does not apply
+    score: absent
+    evidence: "Jig ships browser interfaces (the audit sheet with choices and copy, plugin/skills/audit/scripts/report/; decide's decision sheet), designed in design/audit-experience.md § The sheet; no written contract lets a prototype reopen the design (was expected-absent on the false premise that Jig has no user interface)"
   # M7 pr-lifecycle-review
   M7/lifecycle-documented:   # lite, requires convention
     # The PR lifecycle is written down once — open as a draft (or Ready, where the repository declares that no reviewer reviews drafts), self-review, review, resolve threads, Ready (by a human or an adopted review driver), human merges — and referenced by the instructions.
+    # prior: absent: AGENTS.md § Ways of working names feature branches and pull requests against main; .config/jig.yaml says a person merges; plugin/CONFIGURATION.md § pull_requests gives mark_ready. The lifecycle is not written down once, so the criterion as stated is not met
     score: absent
-    evidence: "AGENTS.md § Ways of working names feature branches and pull requests against main; .config/jig.yaml says a person merges; plugin/CONFIGURATION.md § pull_requests gives mark_ready. The lifecycle is not written down once, so the criterion as stated is not met"
+    evidence: "PLAYBOOK.md § The PR loop is general guidance that AGENTS.md never references; Jig's own practice differs (the last four PRs were opened Ready, no ready-for-review events) and .config/jig.yaml declares no open_as or mark_ready; no lifecycle page of Jig's own"
   M7/self-review-before-request:   # lite, requires convention
     # Authors are expected to read their own full diff and run the local gate set before requesting review.
+    # prior: absent: AGENTS.md § Ways of working and plugin/AGENTS.md § Verifying a change require local `bun run gates` before pushing; reading one's own full diff is stated nowhere, so the criterion as stated is not met
     score: absent
-    evidence: "AGENTS.md § Ways of working and plugin/AGENTS.md § Verifying a change require local `bun run gates` before pushing; reading one's own full diff is stated nowhere, so the criterion as stated is not met"
+    evidence: "AGENTS.md and plugin/AGENTS.md require `bun run gates` before pushing; nothing asks for reading one's own full diff (grep self-review|own diff in the AGENTS.md files: none)"
   M7/reviews-selected-by-change-area:   # standard, requires mechanical
     # Which mandatory reviews a PR needs is derived from the change-area catalog (a generated projection), not a hand-kept list or reviewer memory.
+    # prior: absent: .config/ai-review.yaml rules/high_risk_path_patterns are a hand-kept path list that steers reviewer attention, not required reviews; required checks are fixed (gates, AI review) on main
     score: absent
-    evidence: ".config/ai-review.yaml rules/high_risk_path_patterns are a hand-kept path list that steers reviewer attention, not required reviews; required checks are fixed (gates, AI review) on main"
+    evidence: ".config/change-areas.yaml selects CI jobs (scripts/change-areas.ts, gates.yml) but .config/ai-review.yaml says the catalog is not a review input; its high_risk_path_patterns and rule paths are a hand-kept list; no review is selected by change area"
   M7/automated-reviewer-comment-only-with-bar:   # standard, requires convention
     # Any automated reviewer runs comment-only, and a pre-committed precision bar for ever flipping it (or a lens) to blocking is written down.
+    # prior: absent: The AI review check is required on main and reports findings that can block; no posture or precision bar is written in .config/ai-review.yaml or AGENTS.md (grep precision|blocking|comment-only: none)
     score: absent
-    evidence: "The AI review check is required on main and reports findings that can block; no posture or precision bar is written in .config/ai-review.yaml or AGENTS.md (grep precision|blocking|comment-only: none)"
+    evidence: "The required AI review check ends 'neutral' and states it never blocks merge, so it is comment-only in practice, but only by the service's default: neither .config/ai-review.yaml nor AGENTS.md states the posture or a precision bar for making it blocking"
   M7/automated-review-source-independent:   # standard, requires mechanical
     # A secret-bearing or merge-relevant automated reviewer gets its runtime, prompts, and active policy from a pinned external source, separately hosted service, or target base branch — never the PR head it reviews.
+    # prior: mechanical: The reviewer is a hosted GitHub App; no workflow runs it from the pull request's head (.github/workflows has only gates.yml); .config/ai-review.yaml is resolved from the base branch
     score: mechanical
-    evidence: "The reviewer is a hosted GitHub App; no workflow runs it from the pull request's head (.github/workflows has only gates.yml); .config/ai-review.yaml is resolved from the base branch"
+    evidence: "Hosted GitHub App; .config/ai-review.yaml says the reviewer reads it from the base branch; .github/workflows/ has only gates.yml (pull_request, contents: read); the other two review bots are hosted apps with no in-repo config and are not required checks"
   M7/comment-resolution-loop-gated:   # standard, requires mechanical
     # Every review thread reaches a terminal state (addressed / rejected / deferred / moot) with an audit trail, and no PR merges with an open thread.
+    # prior: advisory: Closed outcome set enforced by plugin/skills/resolve-review-comments/scripts/reply-to-thread.ts and drive-pr's converged state needs 0 unresolved threads, but main does not require conversation resolution and no unresolved-threads check is required
     score: advisory
-    evidence: "Closed outcome set enforced by plugin/skills/resolve-review-comments/scripts/reply-to-thread.ts and drive-pr's converged state needs 0 unresolved threads, but main does not require conversation resolution and no unresolved-threads check is required"
+    evidence: "reply-to-thread.ts enforces the closed outcome set (91 of 91 author replies on the last four PRs carry a token) and drive-pr converges only at 0 unresolved threads, but main has required_conversation_resolution false and no unresolved-threads check; one merged PR had an open thread at merge"
   M7/moot-distinct-from-rejected:   # standard, requires convention
     # A finding whose anchored code no longer exists has its own terminal state, distinct from rejection, so a learning loop is not told the reviewer was wrong when it was right about deleted code.
+    # prior: convention: plugin/skills/resolve-review-comments/SKILL.md defines moot as distinct from rejected and asks the reply to name what superseded the finding; the token is tool-validated, the superseder text is not
     score: convention
-    evidence: "plugin/skills/resolve-review-comments/SKILL.md defines moot as distinct from rejected and asks the reply to name what superseded the finding; the token is tool-validated, the superseder text is not"
+    evidence: "plugin/skills/resolve-review-comments/SKILL.md defines moot as distinct from rejected and asks the reply to name what superseded the finding; the recent moot replies do; the tool checks the token, not that text"
   M7/verdict-declared-not-inferred:   # standard, requires convention
     # The author declares the terminal state in a machine-readable, anchored form at reply time, rather than leaving it to be reconstructed from prose.
+    # prior: mechanical: Anchored leading token **(accepted|rejected|wont-fix|deferred|moot)** checked in reply-to-thread.ts; decoded by plugin/skills/drive-pr/scripts/lib/outcome.ts into loop metrics, which count unparseable replies as unanswered
     score: mechanical
-    evidence: "Anchored leading token **(accepted|rejected|wont-fix|deferred|moot)** checked in reply-to-thread.ts; decoded by plugin/skills/drive-pr/scripts/lib/outcome.ts into loop metrics, which count unparseable replies as unanswered"
+    evidence: "reply-to-thread.ts anchors a leading **(accepted|rejected|wont-fix|deferred|moot)** token; drive-pr/scripts/lib/outcome.ts counts anything else as unanswered; all 91 recent replies are tokenised"
   M7/verdict-validated-at-write-time:   # strict, requires mechanical
     # The tool that posts thread replies validates the declared verdict as the reply is written, so a missing verdict fails immediately instead of becoming an unclassifiable row at export.
+    # prior: mechanical: reply-to-thread.ts rejects a reply with a missing or bare verdict before posting; --no-outcome is the explicit opt-out; wired for Jig through .config/jig.yaml review.bots
     score: mechanical
-    evidence: "reply-to-thread.ts rejects a reply with a missing or bare verdict before posting; --no-outcome is the explicit opt-out; wired for Jig through .config/jig.yaml review.bots"
+    evidence: "reply-to-thread.ts refuses a reply without an outcome token before posting; --no-outcome is the explicit opt-out"
   M7/review-loop-convergence-rules:   # strict, requires mechanical
     # The loop's stop condition distinguishes 'no open threads' from 'the reviewer has not reported yet', and re-checks that the PR is still open each round.
+    # prior: mechanical: plugin/skills/drive-pr/references/terminal-states.md and scripts/lib/status/evaluate.ts: the pull request being open is checked every pass; the reviewer must settle on the head before a zero-thread stop; terminal-states-consistency.ts runs in gates.yml
     score: mechanical
-    evidence: "plugin/skills/drive-pr/references/terminal-states.md and scripts/lib/status/evaluate.ts: the pull request being open is checked every pass; the reviewer must settle on the head before a zero-thread stop; terminal-states-consistency.ts runs in gates.yml"
+    evidence: "drive-pr scripts/lib/status/evaluate.ts re-checks closure every pass and waits for the reviewer to settle on the head; terminal-states-consistency.ts runs in gates.yml (drive-pr suite shard 1 when the area is affected, always on push to main)"
   M7/pr-target-wiring-fork-safe:   # standard, requires mechanical
     # No secret-bearing reviewer workflow checks out and runs untrusted fork code, and a lint enforces it.
+    # prior: convention: gates.yml uses pull_request with contents: read and no pull_request_target (grep .github: none), but modules/M7-pr-lifecycle-review/reference/pr-target-safety is not run over Jig's own workflows
     score: convention
-    evidence: "gates.yml uses pull_request with contents: read and no pull_request_target (grep .github: none), but modules/M7-pr-lifecycle-review/reference/pr-target-safety is not run over Jig's own workflows"
+    evidence: "gates.yml uses pull_request with contents: read and no pull_request_target; the areas job passes the base SHA through env; but modules/M7-pr-lifecycle-review/reference/pr-target-safety is not run over Jig's workflows"
   M7/human-ready-and-merge-enforced:   # strict, requires mechanical
     # Merging is mechanically reserved to humans — branch protection requires a human actor and green required checks. (Who may mark Ready is a convention, scored under hitl-registry-published: GitHub and GitLab let any writer take the draft-to-Ready transition.)
+    # prior: convention: main requires 0 approving reviews and does not bind admins; merges are human by habit, and the plugin's skills never merge (PLAYBOOK.md)
     score: convention
-    evidence: "main requires 0 approving reviews and does not bind admins; merges are human by habit, and the plugin's skills never merge (PLAYBOOK.md)"
+    evidence: "main requires 0 approving reviews, does not bind admins, no rulesets, allow_auto_merge false; the last four PRs were merged by their author; nothing mechanical requires a human actor"
   M7/pr-shape-policy-declared:   # standard, requires convention
     # How pull requests are shaped is declared once where the PR-opening agent reads it: whether they may stack and how, the maximum stack depth, branch naming, the issue link, and a size budget.
+    # prior: convention: .config/jig.yaml pull_requests.stacking: none; branch naming, issue link and size budget fall to the defaults documented in plugin/CONFIGURATION.md § pull_requests
     score: convention
-    evidence: ".config/jig.yaml pull_requests.stacking: none; branch naming, issue link and size budget fall to the defaults documented in plugin/CONFIGURATION.md § pull_requests"
+    evidence: ".config/jig.yaml pull_requests.stacking: none; the rest falls to plugin/CONFIGURATION.md defaults (branch {key_lower}-{slug}, issue_link closes), which Jig's practice does not follow (feature/<slug> branches, no Closes/Refs line)"
   M7/pr-final-target-resolvable:   # strict, requires mechanical
     # Every open PR's final integration target is resolvable by tooling, and the tool that opens PRs refuses one whose target is not: a stack the policy forbids, a base no open PR chain leads from, a stack deeper than allowed, or a change over the size budget without a stated reason.
+    # prior: convention: plugin/skills/do-item/scripts/pr-plan.ts refuses a policy violation (exit 3), but Jig's recent pull requests were not opened through it (their branch names do not follow its default pattern)
     score: convention
-    evidence: "plugin/skills/do-item/scripts/pr-plan.ts refuses a policy violation (exit 3), but Jig's recent pull requests were not opened through it (their branch names do not follow its default pattern)"
+    evidence: "do-item/scripts/pr-plan.ts refuses policy violations, but Jig's pull requests are not opened through it; all recent ones target main directly"
   M7/hitl-registry-published:   # strict, requires convention
     # The human-only decision classes (merge, promote a reviewer to blocking, expand scope, overrule a human, and mark Ready unless delegated to a review driver) are listed in one registry, and a hitl label revokes autonomous merge.
+    # prior: absent: AGENTS.md § Ways of working lists human decisions (publishing, licence, seed deletion, origin boundary) but not merge, Ready or reviewer promotion; no hitl label declared in .config/jig.yaml
     score: absent
-    evidence: "AGENTS.md § Ways of working lists human decisions (publishing, licence, seed deletion, origin boundary) but not merge, Ready or reviewer promotion; no hitl label declared in .config/jig.yaml"
+    evidence: "AGENTS.md's HITL line lists publishing, licence, seed deletion and the origin boundary only, not merge, Ready or reviewer promotion; a hitl label exists in the tracker but nothing ties it to merge"
   M7/reviewer-promotion-gated-on-measurement:   # strict, requires mechanical
     # Promoting a reviewer or lens from comment-only to blocking is gated on measured precision (from the M8 corpus / parity report), not a hunch.
+    # prior: absent: The AI review check is required on main with no recorded precision measurement; no parity report or review-loop baseline in the repository
     score: absent
-    evidence: "The AI review check is required on main with no recorded precision measurement; no parity report or review-loop baseline in the repository"
+    evidence: "No reviewer has been made blocking; no parity report or escape baseline exists (review-loop-baseline only as a drive-pr test fixture)"
   M7/review-gates-self-tested:   # strict, requires mechanical
     # The PR-target safety lint and the unresolved-threads gate each ship a self-test that runs in CI, so a broken review gate fails loudly.
+    # prior: absent: Neither a pull_request_target lint nor an unresolved-threads merge gate is applied to Jig; the module reference self-tests in CI cover examples, not Jig's own gates
     score: absent
-    evidence: "Neither a pull_request_target lint nor an unresolved-threads merge gate is applied to Jig; the module reference self-tests in CI cover examples, not Jig's own gates"
+    evidence: "Neither check-pr-target-safety nor check-threads-resolved is applied to Jig; their self-tests cover example fixtures only"
   # M8 learning-loop
   M8/flywheel-documented:   # lite, requires convention
     # The miss->lens flywheel is written down (classify, file with a durable id, pre-fix fixture, additive lens, validate, measure) and referenced by the instructions.
+    # prior: absent: No flywheel page of Jig's own; modules/M8-learning-loop/templates/FLYWHEEL.md and principles/05-learning-loop.md are doctrine for adopters; AGENTS.md § Learning from the repositories covers backflow, not Jig's own misses
     score: absent
-    evidence: "No flywheel page of Jig's own; modules/M8-learning-loop/templates/FLYWHEEL.md and principles/05-learning-loop.md are doctrine for adopters; AGENTS.md § Learning from the repositories covers backflow, not Jig's own misses"
+    evidence: "modules/M8-learning-loop/templates/FLYWHEEL.md and PLAYBOOK.md § The learning loop are adopter guidance; nothing in AGENTS.md describes a miss-to-lens loop for Jig's own misses"
   M8/miss-taxonomy-exists:   # lite, requires convention
     # A closed miss taxonomy exists and misses are classified against it, so recurring classes are countable rather than anecdotal.
+    # prior: absent: .config/jig.yaml review.taxonomy.categories is a finding-category list, not a miss taxonomy, and no misses are filed against it
     score: absent
-    evidence: ".config/jig.yaml review.taxonomy.categories is a finding-category list, not a miss taxonomy, and no misses are filed against it"
+    evidence: ".config/jig.yaml review.taxonomy.categories is a finding-category list; no miss taxonomy and no filed misses"
   M8/reflection-habit:   # lite, requires convention
     # A session-reflection step captures end-of-session feedback into an inbox for later processing (not lost at session end).
+    # prior: absent: drive-pr and resolve-review-comments point at a reflect step 'where the repository has one'; Jig has none yet: design/reflection.md plans the reflect skill and its store (ROADMAP.md items 6 and 7)
     score: absent
-    evidence: "drive-pr and resolve-review-comments point at a reflect step 'where the repository has one'; Jig has none yet: design/reflection.md plans the reflect skill and its store (ROADMAP.md items 6 and 7)"
+    evidence: "No reflect step or inbox: design/reflection.md is planned work (ROADMAP.md items 6 and 7)"
   M8/corpus-machine-readable:   # standard, requires mechanical
     # Misses live in a machine-readable corpus where every entry has a unique lever id, a valid taxonomy category, and a pinned pre-fix commit, and a lint validates it in CI.
+    # prior: absent: No corpus file outside modules/M8-learning-loop/templates and reference fixtures; corpus-lint is not run on Jig content
     score: absent
-    evidence: "No corpus file outside modules/M8-learning-loop/templates and reference fixtures; corpus-lint is not run on Jig content"
+    evidence: "No corpus of Jig's own; lib/module-gates.ts check-corpus is not run on Jig content"
   M8/lenses-additive:   # standard, requires convention
     # New coverage is added as numbered, additive lenses each linked to the lever that motivated it; existing lenses are not silently rewritten away.
+    # prior: absent: .config/ai-review.yaml rules carry slug ids, not numbered lenses tied to lever ids; no append-only convention is stated
     score: absent
-    evidence: ".config/ai-review.yaml rules carry slug ids, not numbered lenses tied to lever ids; no append-only convention is stated"
+    evidence: ".config/ai-review.yaml rules use slug ids, not numbered lenses tied to lever ids; no append-only convention"
   M8/scaffolding-changes-approved:   # standard, requires convention
     # Scaffolding / meta-spec changes proposed by reflection require human approval before they are applied.
+    # prior: absent: No reflection-to-proposal flow or approval step; the AGENTS.md human-decision list does not cover scaffolding changes
     score: absent
-    evidence: "No reflection-to-proposal flow or approval step; the AGENTS.md human-decision list does not cover scaffolding changes"
+    evidence: "No reflection-to-proposal flow; the AGENTS.md HITL list does not cover scaffolding changes"
   M8/validate-then-gate-enforced:   # strict, requires mechanical
     # A fixture may enter the blocking regression corpus (required: true) only with a recorded live validation, enforced by the corpus lint.
+    # prior: absent: No corpus of Jig's own, so no required fixtures; reference/corpus-lint is not applied to Jig
     score: absent
-    evidence: "No corpus of Jig's own, so no required fixtures; reference/corpus-lint is not applied to Jig"
+    evidence: "No corpus, so no required fixtures; check-corpus is not applied"
   M8/parity-measured:   # strict, requires mechanical
     # A parity report measures recall / precision / missed_blockers against oracles on a schedule; a missed blocker fails loudly and reviewer promotion to blocking is gated on measured precision.
+    # prior: absent: loop-metrics.ts, defect-escape.ts and fractal-metrics.ts report on demand only; no scheduled workflow (only gates.yml); no fleet_health or escape baseline configured in .config/jig.yaml
     score: absent
-    evidence: "loop-metrics.ts, defect-escape.ts and fractal-metrics.ts report on demand only; no scheduled workflow (only gates.yml); no fleet_health or escape baseline configured in .config/jig.yaml"
+    evidence: "loop-metrics.ts, fractal-metrics.ts and fleet-health.ts run on demand only; gates.yml has no schedule; .config/jig.yaml has no fleet_health or escape baseline"
   M8/learning-gates-self-tested:   # strict, requires mechanical
     # The corpus lint and the parity report each ship a self-test that runs in CI, so a broken learning-loop gate fails loudly.
+    # prior: absent: No learning-loop gate is applied to Jig; modules/M8-learning-loop/reference self-tests cover examples only
     score: absent
-    evidence: "No learning-loop gate is applied to Jig; modules/M8-learning-loop/reference self-tests cover examples only"
+    evidence: "No learning-loop gate applied to Jig; the module-gates self-tests cover examples only"
   M8/memory-promotion-tracked:   # strict, requires convention
     # Durable lessons are promoted from an agent's private memory into git-tracked, shared memory through a review point, not an automatic dump.
+    # prior: absent: plugin/skills/promote-memory exists, but Jig configures no promote_memory target and has no git-tracked memory store (no docs/retrospection)
     score: absent
-    evidence: "plugin/skills/promote-memory exists, but Jig configures no promote_memory target and has no git-tracked memory store (no docs/retrospection)"
+    evidence: "plugin/skills/promote-memory exists, but .config/jig.yaml has no promote_memory section and the default target docs/retrospection does not exist"
   M8/reflection-triggered-on-an-observable:   # strict, requires mechanical
     # Session reflection is prompted by an observable signal — such as a review whose FINAL round count, at convergence, met a threshold — rather than by the author remembering, and the signal is recorded so entries can be ranked.
+    # prior: advisory: resolve-review-comments' await-round.ts fires at convergence past REFLECT_THRESHOLD (default 3, configurable) but only prints a nudge: it writes no reflection record and Jig has no reflect step
     score: advisory
-    evidence: "resolve-review-comments' await-round.ts fires at convergence past REFLECT_THRESHOLD (default 3, configurable) but only prints a nudge: it writes no reflection record and Jig has no reflect step"
+    evidence: "resolve-review-comments/scripts/await-round.ts REFLECT_THRESHOLD (default 3) prints a nudge at convergence but writes no record; a recent PR ran 17 AI-review rounds and no reflection record exists"
   # M9 tasks-memory
   M9/taxonomy-documented:   # lite, requires convention
     # An issue taxonomy is written down once — a closed set of types and statuses plus named flag labels — and referenced by the instructions.
+    # prior: absent: .config/jig.yaml review.taxonomy (types, repos, sizes, categories, prefixes) and issue_tracker.labels (followup, epic) list labels; no statuses and no flag-to-process mapping are written down, so the criterion as stated is not met
     score: absent
-    evidence: ".config/jig.yaml review.taxonomy (types, repos, sizes, categories, prefixes) and issue_tracker.labels (followup, epic) list labels; no statuses and no flag-to-process mapping are written down, so the criterion as stated is not met"
+    evidence: ".config/jig.yaml review.taxonomy lists types/repos/sizes/categories and issue_tracker.labels followup and epic; no statuses and no flag label mapped to its process in the repository (the tracker's hitl label is described only in the tracker)"
   M9/memory-location-designated:   # lite, requires convention
     # A persistent, multi-session location for agent memory is designated (the how tier), distinct from the tracker and from in-session task lists.
+    # prior: absent: AGENTS.md names ROADMAP.md (open work) and CHANGELOG.md only; no agent-memory home is designated (grep -i memory AGENTS.md: none)
     score: absent
-    evidence: "AGENTS.md names ROADMAP.md (open work) and CHANGELOG.md only; no agent-memory home is designated (grep -i memory AGENTS.md: none)"
+    evidence: "No memory home: no memory mention in the AGENTS.md files and no promote_memory.target_dir in .config/jig.yaml"
   M9/taxonomy-validated-ssot:   # standard, requires mechanical
     # The taxonomy is a single validated source-of-truth file, and the label-taxonomy lint runs mechanically so it can't drift into folksonomy.
-    score: convention
-    evidence: ".config/jig.yaml is the single source and the skills refuse malformed labels when they read it; no label-taxonomy lint runs over it in CI"
+    # prior: convention: .config/jig.yaml is the single source and the skills refuse malformed labels when they read it; no label-taxonomy lint runs over it in CI
+    score: absent
+    evidence: "No taxonomy source of truth to validate: .config/jig.yaml has no closed set of statuses (see M9/taxonomy-documented). scripts/check-audit-fit.ts, in `bun run gates`, validates the label lists it does hold (each distinct and non-empty, ownership prefixes required), which is part of the lint, not the whole"
   M9/flag-labels-fire-gates:   # standard, requires mechanical
     # Flag labels actually fire process, not just categorize — e.g. a migration flag triggers a required check and a hitl flag is honoured.
+    # prior: convention: hitl is honoured as an agent instruction (plugin/skills/do-item/SKILL.md); pr-followup drives deferral filing; no label is wired to a required check
     score: convention
-    evidence: "hitl is honoured as an agent instruction (plugin/skills/do-item/SKILL.md); pr-followup drives deferral filing; no label is wired to a required check"
+    evidence: "hitl exists in the tracker and do-item/decide honour it in prose; pr-followup drives deferral filing; no label is wired to a required check"
   M9/memory-promotion-documented:   # standard, requires convention
     # The path that lifts a durable lesson from private per-session memory into git-tracked shared memory through a review point is documented.
+    # prior: convention: plugin/skills/promote-memory/SKILL.md documents private memory to checked, git-tracked docs as a reviewed step; available to Jig through the plugin, though Jig has no target store
     score: convention
-    evidence: "plugin/skills/promote-memory/SKILL.md documents private memory to checked, git-tracked docs as a reviewed step; available to Jig through the plugin, though Jig has no target store"
+    evidence: "plugin/skills/promote-memory/SKILL.md documents moving private memory into checked, git-tracked docs as a reviewed step; PLAYBOOK.md § The learning loop points to it; Jig configures no target"
   M9/taxonomy-gates-self-tested:   # strict, requires mechanical
     # The label-taxonomy lint and the required-phases gate each ship a self-test that runs in CI, so a broken tasks/memory gate fails loudly.
+    # prior: absent: No label-taxonomy or required-phases gate applied to Jig; module reference self-tests cover examples only
     score: absent
-    evidence: "No label-taxonomy or required-phases gate applied to Jig; module reference self-tests cover examples only"
+    evidence: "The taxonomy half has a self-tested gate (check-audit-fit), but there is no required-phases gate, so the criterion is not met"
   M9/required-phases-gate-closure:   # strict, requires mechanical
     # Required-phase formulas gate item closure — an item cannot reach a done state with a phase the formula marks required left unrecorded.
+    # prior: absent: No phase-formula file outside modules/M9-tasks-memory/templates; nothing gates the closure of tracker items
     score: absent
-    evidence: "No phase-formula file outside modules/M9-tasks-memory/templates; nothing gates the closure of tracker items"
+    evidence: "No phase formula outside modules/M9-tasks-memory/templates/phase-formula.yaml; nothing gates the closure of tracker items"
   M9/hitl-flag-revokes-autonomy:   # strict, requires mechanical
     # The hitl flag mechanically revokes autonomous execution/merge for the issue and its PR (the same rule M7 and M0 use).
+    # prior: convention: do-item treats hitl as a restriction in prose and no skill merges, but branch protection would not stop an automated merge (0 approvals, no actor restriction)
     score: convention
-    evidence: "do-item treats hitl as a restriction in prose and no skill merges, but branch protection would not stop an automated merge (0 approvals, no actor restriction)"
+    evidence: "The hitl label exists; no skill merges and allow_auto_merge is false, but branch protection would not stop an automated merge (0 approvals, admins not enforced)"
   # M10 environments-deploy
   M10/environments-and-deploy-documented:   # lite, requires convention
     # The deployable environments and the path from merge to production are written down once (a deploy runbook / CI-architecture doc), so where code goes and how it gets there is not tribal knowledge.
+    # prior: convention: plugin/README.md § Release a new version (bump both manifests, changelog, merge green, tag v<version>) and § Update, pin or remove; tools install from main; no environments exist
     score: convention
-    evidence: "plugin/README.md § Release a new version (bump both manifests, changelog, merge green, tag v<version>) and § Update, pin or remove; tools install from main; no environments exist"
+    evidence: "plugin/README.md § Release a new version and § Update, pin or remove ('What main means'); tools install from main when the version changes; no environments"
   M10/pr-gates-run-before-merge:   # lite, requires convention
     # Per-PR gates run on every pull request before merge, and the pipeline states that a green merge is not yet a production-ready fact.
-    score: absent
-    evidence: "The required gates check (strict) runs on every pull request via .github/workflows/gates.yml; nothing states that a green merge is not yet a production-ready fact (merging releases: the tools install from main), so the criterion's second half is not met"
+    # prior: absent: The required gates check (strict) runs on every pull request via .github/workflows/gates.yml; nothing states that a green merge is not yet a production-ready fact (merging releases: the tools install from main), so the criterion's second half is not met
+    score: convention
+    evidence: "The required gates check runs on every pull request; gates.yml's header and README.md now state that a pull request runs a subset and a push to main runs everything, so merged is distinguished from fully verified"
   M10/verification-separated-from-pr-gates:   # standard, requires mechanical
     # CI has a distinct post-merge verification stage that runs on the integrated default branch, separate from the per-PR gates.
+    # prior: expected-absent: The plugin is distributed from main with no environments; gates.yml re-runs the gates on push to main and strict required checks test the integrated tip
     # probe found: .github/workflows/gates.yml
-    score: expected-absent
-    evidence: "The plugin is distributed from main with no environments; gates.yml re-runs the gates on push to main and strict required checks test the integrated tip"
+    score: advisory
+    evidence: "The push-to-main run (change-areas.ts --all) is heavier than pull-request runs: all three platforms and the drive-pr shards for every change; it lives in gates.yml and nothing reads its result, since machines install from main on a version change"
   M10/verified-pointer-advances-on-verification:   # standard, requires mechanical
     # An explicit `verified` pointer (a branch or tag) is advanced only by the post-merge verification stage passing — never by a merge alone.
+    # prior: expected-absent: No deploy target; the release pointer is a manually pushed v<version> tag (plugin/README.md § Release step 4)
     score: expected-absent
-    evidence: "No deploy target; the release pointer is a manually pushed v<version> tag (plugin/README.md § Release step 4)"
+    evidence: "No deploy target; v<version> tags are pushed by hand after merge (plugin/README.md § Release) and serve only pinning"
   M10/deploys-verified-artifacts-only:   # standard, requires mechanical
     # Deploy jobs ship what the `verified` pointer points at, not a mutable branch or a moving tag (expected-absent for a library-shaped repo, which publishes rather than deploys environments).
+    # prior: expected-absent: No deploy jobs: the only workflow is .github/workflows/gates.yml
     score: expected-absent
-    evidence: "No deploy jobs: the only workflow is .github/workflows/gates.yml"
+    evidence: "No deploy jobs; .github/workflows/gates.yml is the only workflow"
   M10/freshness-watchdog-runs:   # standard, requires mechanical
     # A scheduled watchdog fails when the `verified` pointer lags the default-branch tip beyond a threshold, so a stalled verifier pages someone instead of silently shipping stale code.
+    # prior: expected-absent: No verified pointer and no scheduled workflow (gates.yml has only pull_request and push triggers)
     score: expected-absent
-    evidence: "No verified pointer and no scheduled workflow (gates.yml has only pull_request and push triggers)"
+    evidence: "No verified pointer; gates.yml triggers are pull_request and push to main only"
   M10/verify-and-promote-gates-self-tested-in-ci:   # strict, requires mechanical
     # The verified-pointer freshness gate and the promote-safety lint both run in CI, each with a self-test, so a broken deploy gate fails loudly.
+    # prior: expected-absent: No verify or promote stages; check-verified-fresh/check-promote-safety exist only as examples under modules/M10-environments-deploy/reference/
     score: expected-absent
-    evidence: "No verify or promote stages; check-verified-fresh/check-promote-safety exist only as examples under modules/M10-environments-deploy/reference/"
+    evidence: "No verify or promote stages; check-verified-fresh/check-promote-safety exist only under modules/M10-environments-deploy/reference/"
   M10/production-promotion-manual-and-gated:   # strict, requires mechanical
     # Promotion to production is a manual action behind an environment protection rule and cannot auto-fire on push (expected-absent for a library-shaped repo with no production environment).
+    # prior: expected-absent: No production environment; release is a manual version bump plus tag
     score: expected-absent
-    evidence: "No production environment; release is a manual version bump plus tag"
+    evidence: "No production environment; release is a version bump plus a hand-pushed tag"
   M10/ephemeral-envs-and-test-data-factory:   # strict, requires mechanical
     # Disposable preview environments are created and destroyed per PR, and a seeded, tenant-isolated, resettable test-data factory exists (expected-absent for a library-shaped repo with no runnable environment).
+    # prior: expected-absent: No runnable environment or tenant data; tests build scratch repositories (lib/test-tmpdir.ts)
     score: expected-absent
     evidence: "No runnable environment or tenant data; tests build scratch repositories (lib/test-tmpdir.ts)"
   # M11 process-observability
   M11/process-events-documented:   # lite, requires convention
     # The process events the team measures (review outcome + cost, gate pass/fail + duration, cycle times) are named and documented as a closed set, distinct from product analytics.
+    # prior: absent: No event schema of Jig's own; modules/M11-process-observability/templates/event-schema.yaml is an adopter template
     score: absent
-    evidence: "No event schema of Jig's own; modules/M11-process-observability/templates/event-schema.yaml is an adopter template"
+    evidence: "No event schema of Jig's own; modules/M11-process-observability/templates/event-schema.yaml is for adopters"
   M11/at-least-one-event-emitted:   # lite, requires convention
     # At least one process event is actually emitted by the machinery that runs the process (not merely described).
+    # prior: convention: drive-pr's drive.ts prints loop-metrics output (rounds, threads, outcome mix) when a drive stops, to standard output only: not a typed or stored event
     score: convention
-    evidence: "drive-pr's drive.ts prints loop-metrics output (rounds, threads, outcome mix) when a drive stops, to standard output only: not a typed or stored event"
+    evidence: "drive-pr/scripts/drive.ts prints loop metrics (rounds, threads, outcome mix) to stdout when a drive stops; not a typed or stored event"
   M11/metrics-registry-no-dark-instruments:   # standard, requires mechanical
     # A metrics registry exists where every metric declares a wired source and an owner, and a check fails the build if any source is missing, empty, or a placeholder (a dark instrument).
+    # prior: absent: No metrics registry outside modules/M11-process-observability/templates; no no-dark-instruments check in scripts/gates.ts
     score: absent
-    evidence: "No metrics registry outside modules/M11-process-observability/templates; no no-dark-instruments check in scripts/gates.ts"
+    evidence: "No metrics registry outside the module templates; no no-dark-instruments check in scripts/gates.ts"
   M11/review-and-gate-events-validated:   # standard, requires mechanical
     # Review outcomes and gate results are emitted as typed events and validated against the declared event schema by a lint.
+    # prior: absent: No review_completed or gate_result events are emitted; event-schema-lint exists only as a module reference
     score: absent
-    evidence: "No review_completed or gate_result events are emitted; event-schema-lint exists only as a module reference"
+    evidence: "No review_completed or gate_result events; event-schema-lint exists only as a module reference"
   M11/observability-gates-self-tested:   # strict, requires mechanical
     # The no-dark-instruments gate and the event-schema lint each ship a self-test that runs in CI, so a broken observability gate fails loudly.
+    # prior: absent: These gates are not applied to Jig; module reference self-tests cover examples only
     score: absent
-    evidence: "These gates are not applied to Jig; module reference self-tests cover examples only"
+    evidence: "These gates are not applied to Jig"
   M11/promotion-cites-recorded-measurement:   # strict, requires mechanical
     # Promoting a gate to blocking, or a reviewer/lens from comment-only to blocking, cites a recorded measurement from a provably live instrument (ties to M7's precision bar and M8's parity report).
+    # prior: absent: The AI review check is required without a recorded measurement; the escape baseline (drive.escape_baseline_doc default docs/review-loop-baseline.md) is absent, so loop metrics report 'unmeasured'
     score: absent
-    evidence: "The AI review check is required without a recorded measurement; the escape baseline (drive.escape_baseline_doc default docs/review-loop-baseline.md) is absent, so loop metrics report 'unmeasured'"
+    evidence: "No required check or reviewer carries a recorded measurement; the escape baseline is absent, so loop metrics report 'unmeasured'"
   M11/process-dashboards-reviewed:   # strict, requires convention
     # Dashboards for gate pass-rate, review-adoption, and reviewer cost exist, render from the registry, and are reviewed on a cadence.
+    # prior: absent: No dashboards or review cadence; fleet-health.ts and fractal-metrics.ts are not configured (.config/jig.yaml has no fleet_health) and no workflow runs them
     score: absent
-    evidence: "No dashboards or review cadence; fleet-health.ts and fractal-metrics.ts are not configured (.config/jig.yaml has no fleet_health) and no workflow runs them"
+    evidence: "No dashboards or review cadence; fleet-health.ts and fractal-metrics.ts are not configured and no workflow runs them"
   # M12 parallel-agent-ergonomics
   M12/branch-reuse-and-footgun-bans-written:   # lite, requires convention
     # The branch reuse-before-create rule and the shared-state footgun bans (no git stash across worktrees, no root install with the wrong package manager) are written down where agents will read them.
+    # prior: absent: AGENTS.md says only 'feature branches with pull requests against main'; no reuse-before-create rule and no stash or wrong-manager ban (git grep stash in AGENTS.md, */AGENTS.md, README.md: none), though Jig is worked in parallel worktrees
     score: absent
-    evidence: "AGENTS.md says only 'feature branches with pull requests against main'; no reuse-before-create rule and no stash or wrong-manager ban (git grep stash in AGENTS.md, */AGENTS.md, README.md: none), though Jig is worked in parallel worktrees"
+    evidence: "No branch-reuse rule, stash ban or package-manager ban in AGENTS.md, plugin/AGENTS.md, modules/AGENTS.md, README.md or tools/README.md, though plugin/skills/drive-pr/scripts/lib/state/lock.ts treats many worktrees on one clone as the normal case and tools/launcher opens a workspace per item"
   M12/port-allocation-convention-exists:   # lite, requires convention
     # A per-worktree port-allocation convention exists, so two worktrees do not default to the same port.
+    # prior: expected-absent: Jig runs no dev server or network service: git grep 'Bun.serve|createServer|listen(' over non-fixture/reference/template .ts finds nothing, so worktrees have no ports to share
     score: expected-absent
-    evidence: "Jig runs no dev server or network service: git grep 'Bun.serve|createServer|listen(' over non-fixture/reference/template .ts finds nothing, so worktrees have no ports to share"
+    evidence: "No listener in Jig's own code: git grep Bun.serve|createServer|.listen(|localhost: over non-fixture/reference/template .ts finds none; browser tests drive Chrome over file:// URLs"
   M12/port-allocation-scripted:   # standard, requires mechanical
     # Per-worktree port allocation is scripted and deterministic — the same worktree identity always maps to the same in-range port.
+    # prior: expected-absent: No port-bound process in Jig's own tooling; modules/M12-parallel-agent-ergonomics/reference/port-allocator/ is an example for other repositories
     score: expected-absent
-    evidence: "No port-bound process in Jig's own tooling; modules/M12-parallel-agent-ergonomics/reference/port-allocator/ is an example for other repositories"
+    evidence: "No port-bound process; modules/M12-parallel-agent-ergonomics/reference/port-allocator/ is an adopter example"
   M12/heavy-run-mutex-scripted-with-ci-bypass:   # standard, requires mechanical
     # Heavy build/test runs pass through a scripted cross-worktree mutex that serializes them on one machine and bypasses under CI.
+    # prior: absent: scripts/gates.ts spawns format/lint/types/tests/build with no lock; plugin/skills/drive-pr/scripts/lib/state/lock.ts guards per-PR drive state, not heavy runs
     score: absent
-    evidence: "scripts/gates.ts spawns format/lint/types/tests/build with no lock; plugin/skills/drive-pr/scripts/lib/state/lock.ts guards per-PR drive state, not heavy runs"
+    evidence: "scripts/gates.ts spawns format/lint/types/tests (--parallel, with Chrome)/build with no cross-worktree lock; drive-pr's state lock guards per-PR state, not heavy runs"
   M12/worktree-hooks-wired:   # standard, requires mechanical
     # Worktree create/remove hooks are wired — create allocates and surfaces the port slot, remove nudges reflection.
+    # prior: absent: No worktree create/remove hooks tracked: git ls-files has no workspace-tool config, .claude/settings, lefthook/husky/.githooks (only modules/M1-gates-enforcement-ladder/templates/lefthook.yml, a template)
     score: absent
-    evidence: "No worktree create/remove hooks tracked: git ls-files has no workspace-tool config, .claude/settings, lefthook/husky/.githooks (only modules/M1-gates-enforcement-ladder/templates/lefthook.yml, a template)"
+    evidence: "No tracked worktree create/remove hooks: no workspace-tool config, .claude/settings or hook manager; tools/launcher opens workspaces but allocates and nudges nothing"
   M12/utilities-self-tested-in-ci:   # strict, requires mechanical
     # The port allocator and the resource lock each ship a self-test that runs in CI, so a broken utility fails loudly instead of silently misallocating.
+    # prior: absent: Jig has no port allocator or heavy-run lock of its own to self-test
     score: absent
     evidence: "Jig has no port allocator or heavy-run lock of its own to self-test"
   M12/teardown-nudges-reflection-wired:   # strict, requires mechanical
     # The worktree teardown hook's reflection nudge is wired to the learning loop, so a session's lessons have a durable destination.
+    # prior: absent: No teardown hook is tracked (see M12/worktree-hooks-wired); ROADMAP.md lists a runnable form of M12's workspace lifecycle as open
     score: absent
-    evidence: "No teardown hook is tracked (see M12/worktree-hooks-wired); ROADMAP.md lists a runnable form of M12's workspace lifecycle as open"
+    evidence: "No teardown hook; ROADMAP.md lists M12's worktree removal asking for reflection as open"
   M12/footgun-bans-enforced-where-mechanizable:   # strict, requires mechanical
     # The footgun bans are enforced where mechanizable — e.g. a hook or lint rejects a root install with a package manager the repo did not declare.
+    # prior: absent: No hook rejects a root install with another package manager (only package.json packageManager and CI `bun install --frozen-lockfile`); lib/guarded-git-spawn.ts guards one GIT_DIR leak class only
     score: absent
-    evidence: "No hook rejects a root install with another package manager (only package.json packageManager and CI `bun install --frozen-lockfile`); lib/guarded-git-spawn.ts guards one GIT_DIR leak class only"
-declined: []
+    evidence: "Nothing rejects a root install with another package manager (only package.json packageManager, bun.lock and CI `bun install --frozen-lockfile`); lib/guarded-git-spawn.ts covers one GIT_DIR leak class"
+declined:
+  - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
+    reason: "Deferred."
+    revisit_when: "When Jig becomes available as a public open source project."

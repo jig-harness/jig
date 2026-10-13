@@ -1,9 +1,10 @@
 /**
  * The data a sheet embeds: the report source, the record, the
- * configuration-fit report and the prior record, exactly as they were read.
- * `report.ts extract` prints it, and each part can be written back to a file
- * and rendered again: a record is embedded as JSON, which YAML reads as it
- * is, so `parseRecord` accepts the extracted record unchanged.
+ * configuration-fit report, the prior record and the older records of the
+ * trend, exactly as they were read. `report.ts extract` prints it, and each
+ * part can be written back to a file and rendered again: a record is embedded
+ * as JSON, which YAML reads as it is, so `parseRecord` accepts the extracted
+ * record unchanged.
  */
 import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
 import { type AuditRecord, declinedData } from "../lib/record.ts";
@@ -21,6 +22,8 @@ export interface EmbeddedData {
   record: Record<string, unknown>;
   fit: Fit | null;
   prior: Record<string, unknown> | null;
+  /** The older records of the trend, in the order they were given. */
+  history: Record<string, unknown>[];
 }
 
 /** A record as plain data, in the shape of the file it came from. */
@@ -49,21 +52,30 @@ export function embeddedData(input: ReportInput): EmbeddedData {
     record: recordData(input.record),
     fit: input.fit,
     prior: input.prior ? recordData(input.prior) : null,
+    history: input.history.map(recordData),
   };
 }
 
-/** The embedded block of a sheet, checked for its four parts; their own checks run when they are rendered again. */
+/** The history of an embedded block; a sheet rendered without one has none. Null when it is not a list of records. */
+function historyOf(value: unknown): Record<string, unknown>[] | null {
+  if (value === undefined) return [];
+  return Array.isArray(value) && value.every(isMapping) ? value : null;
+}
+
+/** The embedded block of a sheet, checked for its parts; their own checks run when they are rendered again. */
 export function parseEmbedded(value: unknown): EmbeddedData {
+  const history = isMapping(value) ? historyOf(value.history) : null;
   if (
     !isMapping(value) ||
     value.v !== 1 ||
     !isMapping(value.source) ||
     !isMapping(value.record) ||
     !(value.fit === null || isMapping(value.fit)) ||
-    !(value.prior === null || isMapping(value.prior))
+    !(value.prior === null || isMapping(value.prior)) ||
+    history === null
   )
     throw new Error(
-      "the embedded data is not an audit sheet's: it needs v, source, record, fit and prior",
+      "the embedded data is not an audit sheet's: it needs v, source, record, fit, prior and a list of history records",
     );
-  return value as unknown as EmbeddedData;
+  return { ...(value as unknown as EmbeddedData), history };
 }

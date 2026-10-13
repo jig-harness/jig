@@ -20,6 +20,10 @@ export const LABEL = {
   noProfile: "none declared",
   headingTo: "Heading to",
   whySuggested: "Why this profile:",
+  signalsHead: "Worth revisiting the profile",
+  signalsIntro:
+    "Facts that suggest the project may have grown beyond this profile. The profile is the team's to choose; these are reasons to look at it again, not findings.",
+  signalsLink: "worth revisiting",
 
   inShort: "In short",
   criteriaMet: "criteria met",
@@ -30,10 +34,15 @@ export const LABEL = {
   quickWin: "Quick win",
   modulesAtTarget: "modules at their target",
   expectedAbsentCount: "do not apply to this shape",
+  uncoveredCount: {
+    one: "gap no recommendation covers",
+    many: "gaps no recommendation covers",
+  },
 
   map: "Maturity map",
-  mapIntro:
-    "One row per module, in the order to adopt them. Each square is one criterion, coloured by the rung of the enforcement ladder it reached.",
+  mapIntro: "One row per module, in the order to adopt them.",
+  /** The Markdown copy's legend before the rungs, weakest first. */
+  rungsLegend: "The rungs, weakest first:",
   module: "Module",
   level: "Level",
   target: "Target",
@@ -55,6 +64,10 @@ export const LABEL = {
   withinTarget: "within the target",
   withinHeading: "within the heading-to target",
   gapLegend: "needed for the target, not met yet",
+  uncoveredLegend: "a gap no recommendation covers",
+  uncoveredHead: "Not covered by a recommendation",
+  uncoveredIntro:
+    "Criteria within the target that do not meet their bar, and that no recommendation moves. Add a recommendation for each, or leave it deliberately and say why.",
 
   startHere: "Start here",
   topMoves: "The moves that matter most",
@@ -73,6 +86,17 @@ export const LABEL = {
     removed: "Removed",
   },
   stillOpen: "still open",
+  changedHead: "What changed",
+  change: "Change",
+  beforeAfter: "Before → after",
+  stillOpenWithin: "still open within {profile}",
+  stillOpenBeyond: "beyond it, not needed for this profile",
+  stillOpenHead: "Still open within the target",
+  stillOpenBeyondHead: "Still open beyond the target",
+  stillOpenBeyondWhy:
+    "Not met at either audit, and not needed for {profile}: its target does not reach them.",
+  stillOpenBeyondNote:
+    "The {n} still open beyond the target are in Module detail, marked not needed for this profile.",
   unchangedMet: "unchanged and met",
   levelsChanged: "Levels that changed",
   prior: "Before",
@@ -85,6 +109,26 @@ export const LABEL = {
     stale: "stale",
   },
   noChange: "Nothing changed.",
+  howToReadHead: "How to read this",
+  howToRead:
+    "Jig audits how a repository delivers changes: practices grouped in modules, each criterion scored on the enforcement ladder (absent, convention, advisory, mechanical), against the target of the profile the team aims for. Only a criterion within that target that is not met yet is a gap.",
+  guideIn:
+    "The guide in the HTML sheet explains the modules, the profiles and how the audit works:",
+  trend: "Trend",
+  trendIntro:
+    "Each module's level at every audit given, oldest first, for the modules whose level changed.",
+  moduleCount: { one: "module", many: "modules" },
+  movedUp: "moved up",
+  movedDown: "moved down",
+  movedOther: "changed to or from n/a or incomplete",
+  andWord: "and",
+  sinceWord: "since",
+  trendNone: "No module's level changed since {date}.",
+  trendSteady:
+    "No module ends at another level than on {date}; the ones below changed in between.",
+  /** Read before a level that rose or fell, where the arrow cannot be seen. */
+  moveWord: { up: "up to", down: "down to" },
+  moveArrow: { up: "↑", down: "↓" },
 
   horizon: {
     now: "For now",
@@ -117,7 +161,7 @@ export const LABEL = {
 
   detail: "Module detail",
   detailIntro:
-    "Every criterion of every module: its level, its pass bar, its score, how it was decided and the evidence. Open a module to see its criteria.",
+    "Every criterion of every module: its level, its pass bar, its score, whether a probe or the agent decided it, and the evidence. Open a module to see its criteria.",
   decidedBy: "Decided by",
   byProbe: "a probe",
   byAgent: "the agent",
@@ -176,7 +220,13 @@ export const LABEL = {
   notScoredMeaning: "no score in the record",
 } as const;
 
-/** The words only the HTML sheet writes: its contents bar, the choices, the tray and the script's messages. */
+/** Which form of a counted label a number takes. */
+export const plural = (n: number): "one" | "many" => (n === 1 ? "one" : "many");
+
+/**
+ * The words only the HTML sheet writes: its contents bar, the choices, the
+ * tray, the script's messages, the popovers and the way into the guide.
+ */
 export const SHEET_LABEL = {
   navContents: "Sheet contents",
   nav: {
@@ -190,6 +240,7 @@ export const SHEET_LABEL = {
     drift: "Drift",
     examined: "Examined",
     terms: "Terms",
+    guide: "Guide",
   },
   timeLeft: "~{n} min left",
   timeEnd: "End",
@@ -207,6 +258,13 @@ export const SHEET_LABEL = {
   clear: "Clear",
   profileChange: "Aim for a different profile",
   profileKeep: "Keep",
+  conditionsHead: "Conditional targets that apply",
+  appliesWhen: "applies when",
+  forHeading: "for {profile}, where the project is heading,",
+  conditionsChosen: "conditional targets",
+  noneWord: "none",
+  scoreWrong: "This score is wrong",
+  scoresFlagged: "Scores flagged wrong",
   goToCard: "Decide",
   trayLabel: "Your decisions",
   copy: "Copy decisions",
@@ -223,6 +281,36 @@ export const SHEET_LABEL = {
   and: "and",
   profileChosen: "profile",
   copyDraft: "Copy the starter configuration",
+
+  mapMarks:
+    "Each mark is one criterion: its icon and colour show the rung of the enforcement ladder it reached. Point at a mark, or move to it with the Tab key, to read what it asks and where it stands.",
+  levelAndTarget: "Level and target",
+  /** Inside a criterion's popover. */
+  pop: {
+    requires: "Requires",
+    orStronger: "or stronger",
+    score: "Score",
+  },
+  /** Where a criterion stands, in its popover. */
+  standing: {
+    gap: "Needed for the target, not met yet.",
+    uncovered: "No recommendation covers it.",
+    withinMet: "Within the target, and met.",
+    beyondMet: "Met, beyond what this profile asks for.",
+    notNeeded: "Not met yet, and not needed for this profile.",
+    met: "Meets its bar.",
+    notMet: "Does not meet its bar yet.",
+    na: "Does not apply to this repository's shape.",
+  },
+  sinceCompared: "Compared with the audit of {date} (plugin {version}).",
+  noScore: "none",
+  moveTo: "to",
+
+  welcome:
+    "This sheet shows where {repo} stands on the delivery practices Jig describes, measured against the profile the team aims for, and what to do next. Besides its own record, nothing in the repository changes unless the team asks.",
+  readGuide: "New to Jig? Read the guide (5 min)",
+  howToRead: "How to read this report",
+  backToReport: "Back to the report",
 } as const;
 
 /** The name of a rendered sheet and its Markdown copy, before the extension. */

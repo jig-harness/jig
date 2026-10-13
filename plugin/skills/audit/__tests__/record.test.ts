@@ -309,6 +309,28 @@ describe("comparing two audits", () => {
       { module: "M1 gates", prior: "none", current: "none" },
     ]);
   });
+
+  test("a module the prior plugin version did not have attains nothing then", () => {
+    const later = parseModule(
+      `module: M9
+name: later
+purpose: P.
+criteria:
+  - { id: only, level: lite, requires: mechanical, statement: O., observe: [o], since: 0.14.0 }
+`,
+      "M9.yaml",
+    );
+    const levels = compare(
+      record({}),
+      record({ "M9/only": "absent" }),
+      [later],
+      schema,
+      "2026-10-12",
+    ).levels;
+    expect(levels).toEqual([
+      { module: "M9 later", prior: null, current: "none" },
+    ]);
+  });
 });
 
 describe("the command line", () => {

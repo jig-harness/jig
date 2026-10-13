@@ -79,6 +79,7 @@ ESM
 PID
 # licence identifiers
 MIT
+ISC
 # vendor/product names
 PyYAML
 OpenAI

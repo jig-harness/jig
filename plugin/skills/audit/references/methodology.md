@@ -67,9 +67,10 @@ Every module M0–M12 carries [criteria](../criteria/README.md), so score
 **every** module by its criteria individually. The skill's `score.ts --draft`
 writes the record to fill in: one entry per criterion with its level and pass
 bar, where a criterion whose probe found its precondition missing is already
-scored `absent` with the search as evidence. Grade every other entry against
-the target with a file-path evidence note. A probe's `absent` stands unless you
-find what the probe could not see; then score it and say so in the evidence.
+scored `absent` with the search as evidence, marked `probe: `. Grade every
+other entry against the target with a file-path evidence note. A probe's
+`absent` stands unless you find what the probe could not see; then score it
+and write your own evidence in place of the probe's.
 Qualitative grading is the fallback only for a criterion the target's shape
 makes inapplicable (score it `expected-absent`). Also record
 **drift findings** — places

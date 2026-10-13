@@ -22,12 +22,14 @@
  *                 [<record>] [--dry-run] [--json] [--date YYYY-MM-DD]
  *       record the decisions the sheet's copy button wrote (read from
  *       standard input with -): each decline into declined:, a chosen
- *       profile into profile:, keeping every comment in the record; then
- *       print the accepted and refined work in adoption order and each
- *       "wrong" as a calibration note. Refuses a block written for another
- *       repository, commit or report, and accepted or refined work on a
- *       criterion the record holds declined. --dry-run writes nothing; --json
- *       prints the plan instead of the report.
+ *       profile into profile: and chosen conditional targets into
+ *       profile_conditions:, keeping every comment in the record; then
+ *       print the accepted and refined work, ranked as the sheet's Start
+ *       here ranks it, and each "wrong" recommendation or score as a
+ *       calibration note. Refuses a block written for another repository,
+ *       commit or report, and accepted or refined work on a criterion the
+ *       record holds declined. --dry-run writes nothing; --json prints the
+ *       plan instead of the report.
  *
  * Exit codes: 0 done; 1 check (or compare, for the current record) found the
  * record unfit to commit, or apply-feedback refused the feedback; 2 usage, an

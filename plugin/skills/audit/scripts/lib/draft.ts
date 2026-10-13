@@ -25,11 +25,19 @@ export interface Suggestion {
   message: string;
   /** Tells several suggestions for one field apart in their finding ids. */
   key?: string;
+  /**
+   * The finding's id when the value answers a finding of another kind, such
+   * as a contradiction the unset field leaves open; otherwise the id is
+   * `suggestion:<field>[:<key>]`.
+   */
+  id?: string;
 }
 
 /** The stable id of a suggestion's finding. */
 export function suggestionId(s: Suggestion): string {
-  return `suggestion:${s.field}${s.key === undefined ? "" : `:${s.key}`}`;
+  return (
+    s.id ?? `suggestion:${s.field}${s.key === undefined ? "" : `:${s.key}`}`
+  );
 }
 
 /** One field of the draft: its value and every fact behind it. */

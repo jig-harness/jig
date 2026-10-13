@@ -11,6 +11,7 @@
  *     commit: "<the record's full commit>"
  *     report: "<the fingerprint of the report's recommendations>"
  *     profile: team-standard           # only when the reader chose another profile than the record's
+ *     profile_conditions: [M3, M12]    # only when the reader's set differs from the record's, or the profile changed
  *     accept: [R1, R3]
  *     refine:
  *       - { id: R2, note: "…" }
@@ -18,13 +19,22 @@
  *       - { id: R4, refs: ["M5/…"], reason: "…", revisit_when: "…" }
  *     wrong:
  *       - { id: R5, refs: ["M2/…"], note: "…" }
+ *     scores:
+ *       - { ref: "M3/…", note: "…" }
+ *
+ * `profile_conditions` lists the conditional targets the reader says apply
+ * under the profile that will apply. It is written when that set differs
+ * from the record's, or when the reader changed the profile and the set is
+ * not empty; an empty list says none apply. `scores` lists the criteria
+ * whose score the reader says is wrong, each with the reader's note. Both
+ * are in module order (`byModule`).
  *
  * Taking a recommendation's lighter option is a refine whose note names it:
  * `lighter option: <the lighter text>`, then `; <the reader's note>` when
  * there is one. Every text value is written with JSON's string syntax, which
  * is a subset of YAML's double-quoted scalar, so any note reads back
- * unchanged. A list with no entries is left out. Ids follow the report's
- * order.
+ * unchanged. Any other list with no entries is left out. Ids follow the
+ * report's order.
  */
 
 /** The choices a card offers, in the order it shows them; `lighter` only on a card that has a lighter option. */
@@ -57,6 +67,8 @@ export interface FeedbackInput {
   date: string;
   /** The profile the record declares, if any. */
   recordProfile?: string;
+  /** The conditional targets the record says apply (`profile_conditions`). */
+  recordConditions?: readonly string[];
   recommendations: readonly {
     id: string;
     refs: readonly string[];
@@ -67,7 +79,11 @@ export interface FeedbackInput {
 export interface Picks {
   /** The profile the reader chose, if any. */
   profile?: string;
+  /** The conditional targets the reader says apply; the record's when absent. */
+  conditions?: readonly string[];
   decisions: Readonly<Record<string, Decision>>;
+  /** The criteria whose score the reader says is wrong, each with the reader's note. */
+  scores?: Readonly<Record<string, string>>;
 }
 
 /** The fields a decision needs before it can be copied. */
@@ -84,16 +100,32 @@ function needs(d: Decision): Needed[] {
   return [];
 }
 
-/** Every decision that cannot be copied yet, with what it lacks. */
+/**
+ * Modules by number, then criteria by id: the order the block lists
+ * conditions and scores in, so `M3` comes before `M12`.
+ */
+function byModule(a: string, b: string): number {
+  const n = (s: string) => Number(s.slice(1).split("/")[0]);
+  return n(a) - n(b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+const flagged = (picks: Picks) =>
+  Object.keys(picks.scores ?? {}).sort(byModule);
+
+/** Every decision and score flag that cannot be copied yet, with what it lacks. */
 export function missingFields(
   input: FeedbackInput,
   picks: Picks,
 ): { id: string; needs: Needed[] }[] {
-  return input.recommendations.flatMap((r) => {
+  const decisions = input.recommendations.flatMap((r) => {
     const d = picks.decisions[r.id];
     const lacking = d ? needs(d) : [];
     return lacking.length > 0 ? [{ id: r.id, needs: lacking }] : [];
   });
+  const scores = flagged(picks)
+    .filter((ref) => !filled(picks.scores?.[ref]))
+    .map((ref) => ({ id: ref, needs: ["note" as const] }));
+  return [...decisions, ...scores];
 }
 
 const q = (s: string | undefined) => JSON.stringify((s ?? "").trim());
@@ -121,6 +153,30 @@ function entry(
 /** The list a choice is copied under: a lighter option is a refine. */
 const listOf = (choice: Choice) => (choice === "lighter" ? "refine" : choice);
 
+/** The conditional targets that apply, when the block must say so. */
+function conditionsLine(input: FeedbackInput, picks: Picks): string[] {
+  const profileChanged =
+    !!picks.profile && picks.profile !== (input.recordProfile ?? "");
+  const was = [...new Set(input.recordConditions ?? [])].sort(byModule);
+  const now = [...new Set(picks.conditions ?? was)].sort(byModule);
+  const differs = now.join(",") !== was.join(",");
+  return differs || (profileChanged && now.length > 0)
+    ? [`  profile_conditions: [${now.join(", ")}]`]
+    : [];
+}
+
+/** The criteria whose score the reader says is wrong, each with its note. */
+function scoreLines(picks: Picks): string[] {
+  const refs = flagged(picks);
+  if (refs.length === 0) return [];
+  return [
+    "  scores:",
+    ...refs.map(
+      (ref) => `    - { ref: ${q(ref)}, note: ${q(picks.scores?.[ref])} }`,
+    ),
+  ];
+}
+
 /** The decisions block for the choices made, exactly as the sheet copies it. */
 export function feedbackText(input: FeedbackInput, picks: Picks): string {
   const out = [
@@ -133,6 +189,7 @@ export function feedbackText(input: FeedbackInput, picks: Picks): string {
   ];
   if (picks.profile && picks.profile !== (input.recordProfile ?? ""))
     out.push(`  profile: ${picks.profile}`);
+  out.push(...conditionsLine(input, picks));
   const chosen = (list: string) =>
     input.recommendations.filter((r) => {
       const d = picks.decisions[r.id];
@@ -147,5 +204,6 @@ export function feedbackText(input: FeedbackInput, picks: Picks): string {
     out.push(`  ${list}:`);
     for (const r of rows) out.push(entry(r, picks.decisions[r.id] as Decision));
   }
+  out.push(...scoreLines(picks));
   return out.join("\n");
 }
