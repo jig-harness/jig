@@ -27,7 +27,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { ExitError, sleep, testDelaySeconds } from "../cli.ts";
+import { ExitError, sleep, testDelaySeconds, testPacing } from "../cli.ts";
 
 /**
  * The hard ceiling on how long ONE `acquire()` may wait, whatever
@@ -127,10 +127,14 @@ const LOCK_HEARTBEAT_MAX_MS = 120_000;
  */
 export function lockHeartbeatMs(): number {
   const staleMs = lockStaleMinutes() * 60_000;
-  return Math.max(
+  const derived = Math.max(
     1_000,
     Math.min(LOCK_HEARTBEAT_MAX_MS, Math.floor(staleMs / 4)),
   );
+  // Test pacing seam: a test that watches a heartbeat refresh a held lock
+  // would otherwise sleep through at least one whole derived interval (15s at
+  // the smallest staleness window).
+  return testPacing("DRIVE_PR_LOCK_HEARTBEAT_MS", derived, 100);
 }
 
 export interface PathLock {

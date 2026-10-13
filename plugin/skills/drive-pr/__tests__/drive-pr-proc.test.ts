@@ -36,6 +36,22 @@ import {
 
 useDrivePrSuite();
 
+/**
+ * Run `fn` with `run()`'s SIGTERM-to-SIGKILL grace shortened to `ms` through
+ * its test pacing seam, which `run()` reads per call, so an in-process probe
+ * does not sleep through the production 2s.
+ */
+async function withKillGrace<T>(ms: number, fn: () => Promise<T>): Promise<T> {
+  const prior = process.env.DRIVE_PR_KILL_ESCALATE_MS;
+  process.env.DRIVE_PR_KILL_ESCALATE_MS = String(ms);
+  try {
+    return await fn();
+  } finally {
+    if (prior === undefined) delete process.env.DRIVE_PR_KILL_ESCALATE_MS;
+    else process.env.DRIVE_PR_KILL_ESCALATE_MS = prior;
+  }
+}
+
 describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
   // `announce-merge-ready.ts` and `reconcile-replied-threads.ts` used to each
   // spawn `summary-findings.ts --trusted-associations` to read this vocabulary
@@ -623,7 +639,10 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
           handle = h;
         },
       });
-      expect(await (handle as RunHandle).stop()).toBe(false);
+      // The child ends on the backstop SIGKILL after the grace, shortened here.
+      expect(await withKillGrace(200, () => (handle as RunHandle).stop())).toBe(
+        false,
+      );
       await done;
     } finally {
       Object.defineProperty(process, "platform", {
@@ -914,13 +933,13 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
 
     const killSpy = spyOn(process, "kill");
     try {
-      expect(await h.stop()).toBe(true);
-      // Past STOP_ESCALATE_MS (2s) plus slack: the unfixed code left a
-      // fresh `setTimeout(() => signalTree('SIGKILL'), STOP_ESCALATE_MS)`
-      // armed and uncleared for exactly this "already gone on the first
-      // check" case, firing a SIGKILL at a PGID the kernel may since have
-      // reassigned to an unrelated process.
-      await new Promise((r) => setTimeout(r, 2500));
+      expect(await withKillGrace(200, () => h.stop())).toBe(true);
+      // Past the grace plus slack: the unfixed code left a fresh
+      // `setTimeout(() => signalTree('SIGKILL'), grace)` armed and uncleared
+      // for exactly this "already gone on the first check" case, firing a
+      // SIGKILL at a PGID the kernel may since have reassigned to an
+      // unrelated process.
+      await new Promise((r) => setTimeout(r, 700));
       const staleKill = killSpy.mock.calls.some(
         (args) => args[0] === -pgid && args[1] === "SIGKILL",
       );
@@ -1007,6 +1026,11 @@ describe("sleep — abortable", () => {
  */
 describe("cancellation reaches a deadlined child", () => {
   const PROC = join(SCRIPTS, "lib", "proc.ts");
+  // How long each probe child sleeps before marking itself completed, and how
+  // long a probe waits after the kill before looking: long enough past the
+  // sleep that an absent marker means "killed", not "not written yet".
+  const CHILD_SLEEP_SEC = 1.5;
+  const OUTLIVE_MS = 2500;
 
   interface Probe {
     /** Did the child run to completion after the fixture was killed? */
@@ -1034,7 +1058,7 @@ describe("cancellation reaches a deadlined child", () => {
     // The child announces itself LIVE before sleeping, so the probe never races
     // the spawn: a TERM delivered before the child existed would leave nothing
     // to forward to and pass vacuously.
-    const script = `: > ${JSON.stringify(live)}; sleep 3; : > ${JSON.stringify(completed)}`;
+    const script = `: > ${JSON.stringify(live)}; sleep ${CHILD_SLEEP_SEC}; : > ${JSON.stringify(completed)}`;
     writeFileSync(
       join(dir, "fixture.ts"),
       [
@@ -1063,9 +1087,9 @@ describe("cancellation reaches a deadlined child", () => {
     const wasLive = existsSync(live);
     child.kill("SIGTERM");
     const exit = await ended;
-    // Outlive the child's own `sleep 3`: the assertion is that it never
+    // Outlive the child's own sleep: the assertion is that it never
     // completes, which is only meaningful once it would have.
-    await nap(4000);
+    await nap(OUTLIVE_MS);
 
     const result: Probe = {
       completed: existsSync(completed),
@@ -1122,8 +1146,8 @@ describe("cancellation reaches a deadlined child", () => {
     const liveB = join(dir, "liveB");
     const completedB = join(dir, "completedB");
     const phase2 = join(dir, "phase2-ready");
-    const scriptA = `: > ${JSON.stringify(liveA)}; sleep 3; : > ${JSON.stringify(completedA)}`;
-    const scriptB = `: > ${JSON.stringify(liveB)}; sleep 3; : > ${JSON.stringify(completedB)}`;
+    const scriptA = `: > ${JSON.stringify(liveA)}; sleep ${CHILD_SLEEP_SEC}; : > ${JSON.stringify(completedA)}`;
+    const scriptB = `: > ${JSON.stringify(liveB)}; sleep ${CHILD_SLEEP_SEC}; : > ${JSON.stringify(completedB)}`;
     writeFileSync(
       join(dir, "fixture.ts"),
       [
@@ -1161,9 +1185,9 @@ describe("cancellation reaches a deadlined child", () => {
         throw new Error("fixture child B never became live");
       child.kill("SIGTERM");
 
-      // Outlive child B's own `sleep 3`: the assertion is that it never
+      // Outlive child B's own sleep: the assertion is that it never
       // completes, which is only meaningful once it would have.
-      await nap(4000);
+      await nap(OUTLIVE_MS);
 
       expect(existsSync(completedA)).toBe(false);
       expect(existsSync(completedB)).toBe(false);
@@ -1331,7 +1355,7 @@ describe("run's output cap kills a runaway child", () => {
     const dir = mkdtempSync(join(tmpdir(), "drive-buffer-"));
     const completed = join(dir, "completed");
     // ~50 writes/sec of 64 bytes each — keeps going (SIGTERM trapped) through
-    // the full 1s deadline + 2s grace, but never accumulates more than a few
+    // the full 1s deadline and its grace, but never accumulates more than a few
     // hundred bytes before the deadline and a similar amount discarded after.
     const script = `trap '' TERM; while true; do printf '%064d' 0; sleep 0.02; done; : > ${JSON.stringify(completed)}`;
     writeFileSync(
@@ -1352,7 +1376,9 @@ describe("run's output cap kills a runaway child", () => {
 
     const out = execFileSync(process.execPath, [join(dir, "fixture.ts")], {
       cwd: dir,
-      env: gitCleanEnv(),
+      // The deadline's grace shortened from 2s to 500ms: still a window in
+      // which the child keeps writing, which is all this probe needs.
+      env: { ...gitCleanEnv(), DRIVE_PR_KILL_ESCALATE_MS: "500" },
       encoding: "utf8",
       timeout: 15_000,
     });
@@ -1371,8 +1397,8 @@ describe("run's output cap kills a runaway child", () => {
       bufferExceeded: false,
       completed: false,
     });
-    // The child kept writing through the deadline's own two-second grace, so
-    // `onChunk` must have seen — and discarded — further chunks.
+    // The child kept writing through the deadline's own grace, so `onChunk`
+    // must have seen — and discarded — further chunks.
     expect(result.discardedChunks as number).toBeGreaterThan(0);
     expect(result.discardedBytes as number).toBeGreaterThan(0);
     // Sanity, not the primary proof: at ~50 writes/sec this stays a few

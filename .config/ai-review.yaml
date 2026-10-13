@@ -61,5 +61,6 @@ rules:
     severity: medium
 
 # Jig has no generated output that contributors should regenerate, nor a
-# live change-area catalog or path-scoped rules corpus. Omit those optional
-# sections so their defaults do not point at misleading placeholder locations.
+# path-scoped rules corpus. Its change-area catalog (.config/change-areas.yaml)
+# selects CI jobs and is not a review input. Omit those optional sections so
+# their defaults do not point at misleading placeholder locations.

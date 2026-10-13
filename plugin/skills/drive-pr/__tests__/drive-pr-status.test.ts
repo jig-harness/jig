@@ -1690,10 +1690,11 @@ describe("drive-status.ts merge conflicts", () => {
     expect(r.exitCode).toBe(9);
     expect(Date.now() - started).toBeLessThan(15_000);
 
+    // One 1s poll is enough to show the control waits out its budget.
     const control = await probe(
       { threads: [], checkRuns: CONFLICTED_CHECKS },
-      ["--timeout", "10", "--interval", "5"],
-      { once: false },
+      ["--timeout", "2", "--interval", "1"],
+      { once: false, env: { DRIVE_PR_STATUS_MIN_INTERVAL: "1" } },
     );
     expect(control.state).toBe("AWAITING_REVIEWER");
     expect(control.exitCode).toBe(4);
@@ -4411,11 +4412,16 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
       dir,
       stateDir,
       HEAD,
-      // `--interval` has a floor of 5 and this probe needs strictly more than
-      // MAX_QUERY_ERRORS attempts, so the window cannot be shrunk below ~3
-      // intervals — see the per-test timeout below, which this is why.
-      ["--timeout", "20", "--interval", "5"],
-      { reconcile: true, once: false },
+      // This probe needs strictly more than MAX_QUERY_ERRORS attempts, so the
+      // window must hold at least three polls even when each iteration's
+      // spawns take seconds: 1s polls (the `--interval` floor lowered through
+      // its test pacing seam) in an 8s window.
+      ["--timeout", "8", "--interval", "1"],
+      {
+        reconcile: true,
+        once: false,
+        env: { DRIVE_PR_STATUS_MIN_INTERVAL: "1" },
+      },
     );
 
     expect(r.exitCode).toBe(4);
@@ -4427,16 +4433,16 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // three", not an exact count, which would pin poll timing rather than the
     // behaviour.
     expect(attempts).toBeGreaterThan(3);
-    // Explicit per-test budget, far above the suite's 30s default, and this
-    // probe is the most expensive one in the file — MEASURED at ~256s.
+    // Explicit per-test budget, far above the suite's 30s default: this
+    // probe is the most expensive one in the file under load.
     //
-    // Its logic is only ~20s (`--timeout 20`, and the run ends with the gate's
-    // own "gave up after 20s"). The rest is subprocess fan-out: >
+    // Its logic is only ~8s (`--timeout 8`, and the run ends with the gate's
+    // own "gave up after 8s"). The rest is subprocess fan-out: >
     // MAX_QUERY_ERRORS poll iterations is the irreducible floor for the
-    // assertion below, the `--interval` minimum of 5 sets the iteration count,
-    // and EACH iteration spawns a real sweep — `reconcile-replied-threads.ts`,
-    // which spawns `list-unresolved-threads.ts`, `resolve-thread.ts` and
-    // `summary-findings.ts` — on top of `evaluate()`'s own helper spawns.
+    // assertion below, and EACH iteration spawns a real sweep —
+    // `reconcile-replied-threads.ts`, which spawns `list-unresolved-threads.ts`,
+    // `resolve-thread.ts` and `summary-findings.ts` — on top of `evaluate()`'s
+    // own helper spawns.
     //
     // Kept at that price because the property is a twice-reported defect
     // and nothing
@@ -4469,17 +4475,16 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
       checkRuns: [DORMANT_ARM],
       liveProbeSaysClosedOnce: true,
     });
-    // The smallest window that reaches the retraction, which is one
-    // iteration: the branch `continue`s WITHOUT sleeping, so the second
-    // iteration's sweep happens immediately and only the ordinary `case 4`
-    // poll afterwards costs an interval. Sized at 6s rather than the 20s this
-    // started at, because a 20s probe exceeded the suite's 30s per-test
-    // ceiling under ordinary Conductor contention and read as a failure.
+    // The retraction takes one iteration: the branch `continue`s WITHOUT
+    // sleeping, so the second iteration's sweep happens immediately. An
+    // `--interval` as long as the whole `--timeout` never fits after that, so
+    // the ordinary `case 4` afterwards gives up instead of sleeping, while the
+    // 6s window still leaves the first iteration seconds to spare under load.
     const r = await probeIn(
       dir,
       stateDir,
       HEAD,
-      ["--timeout", "6", "--interval", "5"],
+      ["--timeout", "6", "--interval", "6"],
       { reconcile: true, once: false },
     );
 

@@ -119,9 +119,12 @@ Read in this order when starting a session here:
   gate self-tests, build, Markdown links resolve, blank line before tables, terms of art
   defined in the glossary (acronym proxy; escape hatch:
   `scripts/glossary-allowlist.txt`), no origin references, a changelog
-  entry for the current plugin version, and Jig's own audit record and
-  configuration fitting the audit skill. CI runs the same command on every PR
-  (`.github/workflows/gates.yml`). Scope differs per gate, and each check
+  entry for the current plugin version, Jig's own audit record and
+  configuration fitting the audit skill, and every file belonging to an area
+  of Jig's change-area catalog (`.config/change-areas.yaml`). CI runs the
+  same command on every PR (`.github/workflows/gates.yml`); the catalog
+  decides which of its jobs a PR needs. A new top-level file or directory
+  gets an area in the catalog in the same PR. Scope differs per gate, and each check
   script's header comment states exactly what it skips and why: the Markdown
   gates leave vendored material (`seeds/`), `templates/` and test `fixtures/`
   out, while the origin-reference gate covers everything, vendored material

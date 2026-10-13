@@ -36,3 +36,6 @@ issue_tracker:
 pull_requests:
   # One pull request per change against main; a person merges.
   stacking: none
+drive:
+  # The same catalog selects CI jobs (.github/workflows/gates.yml).
+  change_areas_catalog: .config/change-areas.yaml

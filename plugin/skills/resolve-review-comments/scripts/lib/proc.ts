@@ -221,6 +221,20 @@ export function registerCancellationGroup(pgid: number): () => void {
 const CANCEL_ESCALATE_MS = 250;
 
 /**
+ * Grace between the SIGTERM `run`'s deadline sends and its SIGKILL: two
+ * seconds, or less when `RRC_DEADLINE_GRACE_MS` asks for it. That variable
+ * exists to compress pacing in tests; it is not configuration. Clamped to
+ * [10ms, 2s], so it can never lengthen the grace or remove it; unset, empty or
+ * non-numeric leaves the two seconds in force.
+ */
+function deadlineGraceMs(): number {
+  const def = 2000;
+  const raw = process.env.RRC_DEADLINE_GRACE_MS ?? "";
+  if (!/^[0-9]+$/.test(raw)) return def;
+  return Math.min(def, Math.max(10, Number.parseInt(raw, 10)));
+}
+
+/**
  * Block this thread — the only sleep available to a signal handler that must
  * finish its work before the NEXT listener runs. `setTimeout` would not do:
  * the listeners registered after this one call `process.exit()`, which takes
@@ -570,7 +584,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
           child.stderr?.destroy();
           child.unref();
           settle(124);
-        }, 2000);
+        }, deadlineGraceMs());
       }, opts.timeoutSec * 1000);
     }
 

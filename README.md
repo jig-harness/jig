@@ -81,10 +81,15 @@ GitHub Actions runs the same command on Linux, macOS and Windows; there the
 long drive-pr suite runs in its own job, split into four parallel
 [test shards](GLOSSARY.md) on Linux and macOS, and Windows leaves out the
 POSIX-only suites ([scripts/gates.ts](scripts/gates.ts) says which and why).
-The tests use Bun's built-in runner; `bun run test` runs them alone (it sets
-the per-test timeout the slower suites need). `bun run format` formats
-TypeScript and configuration; `bun run build` bundles the command entry points
-into the ignored `dist/` directory.
+A pull request runs only the jobs its changes need, as Jig's
+[change-area catalog](.config/change-areas.yaml) resolves them: the drive-pr
+suite when the drive-pr skill or something it depends on changed, and macOS
+and Windows when anything outside documentation changed. Linux always runs
+the whole gate set, and a push to `main` runs everything.
+The tests use Bun's built-in runner; `bun run test` runs them alone, one test
+file per processor core at a time, with the per-test timeout the slower suites
+need. `bun run format` formats TypeScript and configuration; `bun run build`
+bundles the command entry points into the ignored `dist/` directory.
 
 The runnable-tool layout and non-JavaScript consumer runtime choice are in
 [tools/README.md](tools/README.md). The source checkout includes module-local

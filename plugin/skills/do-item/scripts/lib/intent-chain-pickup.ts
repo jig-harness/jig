@@ -34,6 +34,14 @@ const TEMPORARY_RE = /^\.tmp-\d+-[0-9a-f-]{36}$/;
 /** A lock is held for a few syscalls; one this old was left by a killed holder. */
 const LOCK_STALE_MS = 30 * 1000;
 const LOCK_WAIT_MS = 2000;
+/** `LOCK_WAIT_MS`, which a test pacing seam (not configuration) can only
+ * lower, so a probe that waits out a held lock need not sleep through it. */
+function lockWaitMs(): number {
+  const raw = process.env.DO_ITEM_LOCK_WAIT_MS ?? "";
+  return /^[0-9]+$/.test(raw)
+    ? Math.min(LOCK_WAIT_MS, Math.max(10, Number(raw)))
+    : LOCK_WAIT_MS;
+}
 const LOCK_FILE = ".lock";
 const PUBLISH_RETRIES = 3;
 
@@ -68,7 +76,7 @@ export interface PickupSnapshot {
 export function withFileLock<T>(
   lock: string,
   fn: () => T,
-  waitMs = LOCK_WAIT_MS,
+  waitMs = lockWaitMs(),
 ): T {
   const deadline = Date.now() + waitMs;
   const token = randomUUID();

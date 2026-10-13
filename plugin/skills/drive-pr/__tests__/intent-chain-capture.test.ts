@@ -488,6 +488,17 @@ describe("captureIntentChain — a branch that names no item", () => {
 });
 
 describe("captureIntentChain — first write wins", () => {
+  // A held pin lock is given up on after 200ms instead of the production 2s:
+  // the probes below need the wait to time out, not to take long.
+  const savedLockWait = process.env.DO_ITEM_LOCK_WAIT_MS;
+  beforeEach(() => {
+    process.env.DO_ITEM_LOCK_WAIT_MS = "200";
+  });
+  afterEach(() => {
+    if (savedLockWait === undefined) delete process.env.DO_ITEM_LOCK_WAIT_MS;
+    else process.env.DO_ITEM_LOCK_WAIT_MS = savedLockWait;
+  });
+
   it("keeps an existing pin on a re-arm, even after the source changed", () => {
     snapshot("ENG-7", "The original chain.");
     expect(captureIntentChain(base()).kind).toBe("captured");

@@ -42,6 +42,39 @@ changes are marked **Breaking** and say what a consumer changes.
   no unknown key in a Jig section (`scripts/check-audit-fit.ts`); the review policy flags a pull request that
   does not say what it changed in the audit.
 
+## [0.16.1] - 2026-10-13
+
+Faster tests and a CI that runs only what a pull request's changes need.
+Nothing in a consumer's configuration or a skill's behaviour changes.
+
+### Added
+
+- Jig's own change-area catalog, `.config/change-areas.yaml`
+  ([M3](modules/M3-change-area-catalog/README.md)), resolved by
+  `scripts/change-areas.ts`. CI selects its jobs from it: the drive-pr suite
+  runs when the drive-pr skill or something it depends on changed, and macOS
+  and Windows run the gate set when anything outside documentation changed;
+  Linux always runs the whole gate set, and a push to `main` runs everything.
+  `bun run gates` fails when the catalog is malformed or a file belongs to no
+  area. `.config/jig.yaml` names the catalog in `drive.change_areas_catalog`.
+
+### Changed
+
+- `bun run test` runs test files in parallel, one per processor core.
+- The longest test files of `drive-pr` and `resolve-review-comments` are
+  split into several shorter ones, so parallel runs and CI shards are no
+  longer held up by one file.
+- Fixed waits in the skills' scripts (final-CI polling, kill grace periods,
+  lock heartbeats and waits, polling intervals) can be shortened through
+  environment variables the test suites set; the production values are
+  unchanged and a variable can only lower its wait. They are internal test
+  settings, not configuration.
+
+### Fixed
+
+- The drive-pr test harness kept its own lock pacing out of the scripts it
+  spawned, so those tests waited at the production lock interval.
+
 ## [0.16.0] - 2026-10-13
 
 The audit's result becomes an **audit sheet**: a polished HTML report a team
@@ -484,7 +517,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/docomply/jig/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/docomply/jig/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/docomply/jig/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/docomply/jig/compare/v0.13.0...v0.14.0

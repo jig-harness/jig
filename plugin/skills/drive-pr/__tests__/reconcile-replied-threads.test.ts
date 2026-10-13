@@ -366,13 +366,14 @@ function runTs(
   args: string[],
   fixtureDir: string,
   stateDir: string,
+  ghDir = binDir,
 ): { stdout: string; stderr: string; exitCode: number } {
   const proc = Bun.spawnSync([process.execPath, script, ...args], {
     // The scratch git worktree, never this process's own cwd — see beforeAll.
     cwd: scratchWorktree,
     env: {
       ...scrubbedGitEnv(),
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: `${ghDir}:${process.env.PATH}`,
       RRT_FIXTURES: fixtureDir,
       DRIVE_PR_STATE_DIR: stateDir,
     },
@@ -390,8 +391,9 @@ function run(
   args: string[],
   fixtureDir: string,
   stateDir: string,
+  ghDir = binDir,
 ): { stdout: string; stderr: string; exitCode: number } {
-  return runTs(SCRIPT, args, fixtureDir, stateDir);
+  return runTs(SCRIPT, args, fixtureDir, stateDir, ghDir);
 }
 
 /**
@@ -1376,9 +1378,33 @@ describe("reconcile-replied-threads.ts", () => {
         Array.from({ length: 1000 }, (_, i) => ({ number: i + 1 })),
       ),
     );
-    const { stderr, exitCode } = run(["--all-open"], dir, stateDir);
+    // The sweep spawns list-unresolved-threads.ts once per PR, and each of
+    // those calls `gh` twice, so this test's cost is ~3000 process starts.
+    // The per-PR calls go through a lean `gh` that answers the two
+    // enumeration calls without the full stub's argument validation and jq
+    // (the other tests here cover those argument shapes); everything else,
+    // the `pr list` call included, still reaches the full stub.
+    const leanDir = join(dir, "lean-bin");
+    mkdirSync(leanDir);
+    const lean = join(leanDir, "gh");
+    writeFileSync(
+      lean,
+      `#!/bin/sh
+case "$1 $2" in
+  'repo view') printf 'example-org example-repo\\n' ;;
+  'api graphql') exec cat "$RRT_FIXTURES/threads.json" ;;
+  *) exec "${join(binDir, "gh")}" "$@" ;;
+esac
+`,
+    );
+    chmodSync(lean, 0o755);
+    const { stderr, exitCode } = run(["--all-open"], dir, stateDir, leanDir);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("exactly 1000 open PRs");
     expect(stderr).toContain("may be truncated");
-  }, 480000); // 180000 measured 271-293s actual (1000 sequential TS-script spawns) — too tight, tipped this from slow to flaky.
+    // Every one of the 1000 was still swept, and none failed, so the nonzero
+    // exit is the truncation warning's alone.
+    expect(stderr.match(/^#\d+: 0 unresolved threads$/gm)).toHaveLength(1000);
+    expect(stderr).not.toContain("could not enumerate");
+  }, 480000); // ~1000 sequential TS-script spawns: about 30s idle, several minutes on a loaded machine.
 });

@@ -99,12 +99,20 @@ describe("immutable pickup sources", () => {
     const lock = join(dir, "pickups", ".lock");
     writeFileSync(lock, "");
     // A held lock means prune cannot decide, so the expired source survives
-    // and a renewal cannot proceed until the holder is done.
-    prunePickups(dir);
-    expect(existsSync(file(token))).toBe(true);
-    expect(() => renewPickup(dir, token, { verify: true })).toThrow(
-      "timed out waiting",
-    );
+    // and a renewal cannot proceed until the holder is done. Each gives up
+    // after a 200ms wait instead of the production 2s.
+    const priorWait = process.env.DO_ITEM_LOCK_WAIT_MS;
+    process.env.DO_ITEM_LOCK_WAIT_MS = "200";
+    try {
+      prunePickups(dir);
+      expect(existsSync(file(token))).toBe(true);
+      expect(() => renewPickup(dir, token, { verify: true })).toThrow(
+        "timed out waiting",
+      );
+    } finally {
+      if (priorWait === undefined) delete process.env.DO_ITEM_LOCK_WAIT_MS;
+      else process.env.DO_ITEM_LOCK_WAIT_MS = priorWait;
+    }
     unlinkSync(lock);
     renewPickup(dir, token, { verify: true });
     prunePickups(dir);

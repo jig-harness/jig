@@ -170,6 +170,20 @@ const NO_CHECKS_GRACE = 120;
 // unchanged REST signal before `gh pr checks` is asked again.
 const DEFAULT_CHECKS_MAX_AGE = 300;
 
+/**
+ * Seconds slept between ticks: the `--interval`, or less when
+ * `AWAIT_ROUND_POLL_MS` asks for it. That variable exists to compress the
+ * loop's pacing in tests; it is not configuration. Clamped to
+ * [10ms, the interval], so it can never slow the loop down or turn it into a
+ * busy-spin; unset, empty or non-numeric leaves the interval in force.
+ */
+function pollSleepSeconds(interval: number): number {
+  const raw = process.env.AWAIT_ROUND_POLL_MS ?? "";
+  if (!isDigits(raw)) return interval;
+  const ms = Number.parseInt(raw, 10);
+  return Math.min(interval, Math.max(10, ms) / 1000);
+}
+
 // The flat timeout granted to the summary-findings.ts subprocess call when
 // no caller-declared external budget applies — the ordinary case for every
 // `--once` invocation except one bound by an outer wall-clock deadline (see
@@ -754,6 +768,7 @@ async function main(): Promise<number> {
   };
 
   const deadline = Date.now() + timeout * 1000;
+  const pollSeconds = pollSleepSeconds(interval);
   let queryErrors = 0;
   let noChecksSince: number | null = null;
 
@@ -768,7 +783,7 @@ async function main(): Promise<number> {
       console.error(`timed out after ${timeout}s waiting for checks to settle`);
       return false;
     }
-    await sleep(interval);
+    await sleep(pollSeconds);
     return true;
   };
 

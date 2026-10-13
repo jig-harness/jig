@@ -647,7 +647,12 @@ test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     const lock = `${inbox}.lock`;
     writeFileSync(lock, "jig-reflection-lock-v1 999999999 stale\n");
     chmodSync(lock, 0);
-    const outcome = await reflection([hard], env, "win32");
+    // Every retry, with a 1ms pause instead of the production 25ms.
+    const outcome = await reflection(
+      [hard],
+      { ...env, REFLECTION_LOCK_RETRY_MS: "1" },
+      "win32",
+    );
     chmodSync(lock, 0o644);
     expect(outcome.code).toBe(2);
     expect(outcome.stderr).toContain("stayed unreadable");

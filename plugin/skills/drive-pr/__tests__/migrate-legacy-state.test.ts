@@ -75,14 +75,21 @@ const SCRIPT = join(
   "migrate-legacy-state.ts",
 );
 
+/**
+ * For a probe whose lock is LIVE: one acquire attempt instead of the script's
+ * few-second wait on it. The refusal is the same, only sooner.
+ */
+const LIVE_LOCK_ENV = { DRIVE_PR_LOCK_TIMEOUT: "0" };
+
 function runMigrate(
   repo: string,
   home: string,
   args: string[] = ["--apply"],
+  env: Record<string, string> = {},
 ): { code: number; stdout: string; stderr: string } {
   const r = Bun.spawnSync(["bun", SCRIPT, ...args], {
     cwd: repo,
-    env: gitCleanEnv({ HOME: home }),
+    env: gitCleanEnv({ HOME: home, ...env }),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -389,7 +396,7 @@ describe("migrate-legacy-state.ts", () => {
     writeFileSync(legacyStateFile, '{"pr":4172}');
     mkdirSync(join(repo, ".git", "drive-pr-4172.json.lock"));
 
-    const r = runMigrate(repo, home);
+    const r = runMigrate(repo, home, ["--apply"], LIVE_LOCK_ENV);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("drive-pr-4172.json");
     expect(existsSync(legacyStateFile)).toBe(true);
@@ -481,7 +488,7 @@ describe("migrate-legacy-state.ts", () => {
     mkdirSync(join(repo, ".git", "drive-pr-4172.json.lock"));
     // Deliberately no drive-pr-4172.json — this IS the gap being probed.
 
-    const r = runMigrate(repo, home);
+    const r = runMigrate(repo, home, ["--apply"], LIVE_LOCK_ENV);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("drive-pr-4172.json");
 
@@ -529,7 +536,7 @@ describe("migrate-legacy-state.ts", () => {
     // Deliberately no drive-pr-4618.json and no other content anchor for
     // this PR — the remote-mutation lock is the family's ONLY trace.
 
-    const r = runMigrate(repo, home);
+    const r = runMigrate(repo, home, ["--apply"], LIVE_LOCK_ENV);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("drive-pr-remote-lock-4618");
 
@@ -573,7 +580,7 @@ describe("migrate-legacy-state.ts", () => {
     const legacyStateFile = join(repo, ".git", "drive-pr-4618.json");
     writeFileSync(legacyStateFile, '{"pr":4618}');
 
-    const r = runMigrate(repo, home);
+    const r = runMigrate(repo, home, ["--apply"], LIVE_LOCK_ENV);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("drive-pr-remote-lock-4618");
 

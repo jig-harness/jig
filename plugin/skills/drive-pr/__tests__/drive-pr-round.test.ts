@@ -2839,13 +2839,20 @@ describe("guarded-push.ts", () => {
     // The stub's `sleep` is a genuine grandchild, and it writes the marker
     // only if it lives to finish. Waiting past its full duration before
     // looking is what makes the absence of the marker mean "killed" rather
-    // than "not written yet".
+    // than "not written yet". The kill grace is shortened to 500ms, so the
+    // tree is gone by ~1.5s, well before the 3s sleep would finish.
     const r = await guardedPush(
       { threads: [] },
-      { slowPushSec: 6, env: { DRIVE_PR_PUSH_TIMEOUT: "1" } },
+      {
+        slowPushSec: 3,
+        env: {
+          DRIVE_PR_PUSH_TIMEOUT: "1",
+          DRIVE_PR_KILL_ESCALATE_MS: "500",
+        },
+      },
     );
     expect(r.exitCode).toBe(1);
-    await new Promise((res) => setTimeout(res, 9000));
+    await new Promise((res) => setTimeout(res, 3500));
     expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
       grandchildSurvived: false,
     });
@@ -2860,17 +2867,22 @@ describe("guarded-push.ts", () => {
     // exact leak the group kill exists to close.
     //
     // 'background' is what makes the child exit early: the grandchild's stdio
-    // goes to /dev/null, so nothing but bash holds the pipes.
+    // goes to /dev/null, so nothing but bash holds the pipes. The grace is
+    // shortened to 500ms — still ample for bash to exit on the SIGTERM
+    // first — and the 3s sleep still outlasts the kill.
     const r = await guardedPush(
       { threads: [] },
       {
-        slowPushSec: 6,
+        slowPushSec: 3,
         slowPushStyle: "background",
-        env: { DRIVE_PR_PUSH_TIMEOUT: "1" },
+        env: {
+          DRIVE_PR_PUSH_TIMEOUT: "1",
+          DRIVE_PR_KILL_ESCALATE_MS: "500",
+        },
       },
     );
     expect(r.exitCode).toBe(1);
-    await new Promise((res) => setTimeout(res, 9000));
+    await new Promise((res) => setTimeout(res, 3500));
     expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
       grandchildSurvived: false,
     });

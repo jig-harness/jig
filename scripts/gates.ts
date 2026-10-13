@@ -8,6 +8,7 @@ import { checkGlossary } from "./check-glossary-coverage.ts";
 import { checkTracker } from "./check-no-tracker-refs.ts";
 import { checkChangelog } from "./check-changelog.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
+import { checkChangeAreas } from "./change-areas.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -24,7 +25,8 @@ export const POSIX_ONLY_SUITES = [
 
 /**
  * Suites long enough to deserve their own CI job: the drive-pr suite takes
- * about twenty minutes in one process. CI runs it split across parallel jobs
+ * about twelve minutes one file at a time and a few with its files in
+ * parallel. CI runs it split across parallel jobs
  * (`.github/workflows/gates.yml`) and sets this variable in the gate job so
  * the suite does not run twice. Locally `bun run gates` runs everything.
  */
@@ -94,6 +96,7 @@ async function gates(): Promise<number> {
     checkTracker,
     checkChangelog,
     checkAuditFit,
+    checkChangeAreas,
   ]) {
     const status = await check(root);
     if (status) return status;

@@ -1004,6 +1004,18 @@ const TRANSIENT_LOCK_ERRORS = new Set(["ENOENT", "EPERM", "EBUSY", "EACCES"]),
   MAX_TRANSIENT_LOCK_RETRIES = 400,
   TRANSIENT_LOCK_RETRY_MS = 25;
 const errorCode = (e: unknown) => (e as NodeJS.ErrnoException).code ?? "";
+/**
+ * The pause between transient-lock retries. `REFLECTION_LOCK_RETRY_MS` is a
+ * test pacing seam, not configuration: a probe of the retry bound would
+ * otherwise sleep through every production pause. It only lowers the pause;
+ * unset or unusable keeps it.
+ */
+function transientLockRetryMs(env: Environment): number {
+  const raw = env.REFLECTION_LOCK_RETRY_MS ?? "";
+  return /^[0-9]+$/.test(raw)
+    ? Math.min(TRANSIENT_LOCK_RETRY_MS, Math.max(1, Number(raw)))
+    : TRANSIENT_LOCK_RETRY_MS;
+}
 export async function reflection(
   args: string[],
   env: Environment,
@@ -1013,7 +1025,8 @@ export async function reflection(
     change = env.CHANGE || "",
     threshold = env.ROUND_THRESHOLD || "3",
     timeout = env.LOCK_TIMEOUT || "30",
-    archive = env.ARCHIVE || "";
+    archive = env.ARCHIVE || "",
+    retryMs = transientLockRetryMs(env);
   let inbox = env.INBOX || "";
   if (!decisionFile) return error("no decision file given (arg or DECISION=)");
   if (!file(decisionFile))
@@ -1212,7 +1225,7 @@ export async function reflection(
             return error(
               `lock ${lock} stayed unreadable after ${MAX_TRANSIENT_LOCK_RETRIES} retries: ${String(busy)}`,
             );
-          await Bun.sleep(TRANSIENT_LOCK_RETRY_MS);
+          await Bun.sleep(retryMs);
           continue;
         }
         if (BigInt(waited) >= BigInt(timeout)) {

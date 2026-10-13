@@ -345,7 +345,33 @@ test("every suite the gate job leaves out runs in its own CI job", async () => {
     runs.some((run) => run.includes("terminal-states-consistency.ts")),
   ).toBe(true);
   // The required status check `gates` must wait for the separate job too.
-  expect(jobs.gates?.needs).toEqual(["platform-gates", "drive-pr-suite"]);
+  expect(jobs.gates?.needs).toEqual([
+    "areas",
+    "platform-gates",
+    "drive-pr-suite",
+  ]);
+});
+
+test("the workflow selects jobs by area names the change-area catalog defines", async () => {
+  const { CATALOG, readCatalog } = await import("./change-areas.ts");
+  const { load } = await import("js-yaml");
+  const workflow = readFileSync(
+    join(root, ".github/workflows/gates.yml"),
+    "utf8",
+  );
+  const { areas } = readCatalog(join(root, CATALOG)) as {
+    areas: Record<string, unknown>;
+  };
+  const named = [...workflow.matchAll(/'"([a-z0-9-]+)"'/g)].map((m) => m[1]);
+  expect(named.length).toBeGreaterThan(0);
+  for (const name of named) expect(Object.keys(areas)).toContain(name ?? "");
+  const jobs = (
+    load(workflow) as {
+      jobs: Record<string, { if?: string; needs?: string | string[] }>;
+    }
+  ).jobs;
+  expect(jobs["drive-pr-suite"]?.if).toContain('"drive-pr"');
+  expect(jobs["platform-gates"]?.needs).toBe("areas");
 });
 
 test("the changelog must carry the current plugin version", async () => {

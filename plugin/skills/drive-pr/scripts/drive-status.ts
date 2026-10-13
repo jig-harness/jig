@@ -228,7 +228,7 @@ import {
   verifyCheckoutIsPrHead,
   verifyOriginIsPrRepo,
 } from "./lib/base-drift.ts";
-import { fail, isDigits, runMain, sleep } from "./lib/cli.ts";
+import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
 import {
   fleetHealthLine,
   readFleetHealthAdvisory,
@@ -280,7 +280,11 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-const MIN_INTERVAL = 5;
+/**
+ * The `--interval` floor. Takes a test pacing seam (`testPacing`): a probe
+ * that must poll several times would otherwise spend 5s per poll asleep.
+ */
+const MIN_INTERVAL = testPacing("DRIVE_PR_STATUS_MIN_INTERVAL", 5, 1);
 const MAX_QUERY_ERRORS = 3;
 
 /**

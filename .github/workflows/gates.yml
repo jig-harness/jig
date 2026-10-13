@@ -2,6 +2,14 @@
 # drive-pr suite is long and POSIX-only, so it runs in its own job, split into
 # parallel shards on Linux and macOS (see SEPARATE_SUITES and
 # POSIX_ONLY_SUITES in scripts/gates.ts).
+#
+# Which jobs a pull request runs comes from Jig's change-area catalog
+# (.config/change-areas.yaml, resolved by scripts/change-areas.ts): the
+# drive-pr suite runs when the `drive-pr` area is affected, and macOS and
+# Windows run the gate set when anything outside documentation changed.
+# Linux always runs the whole gate set, and a push to main runs everything,
+# so a documentation change that breaks only on macOS or Windows (a file name
+# differing only by case, say) surfaces on main rather than on its PR.
 name: gates
 
 on:
@@ -17,12 +25,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  areas:
+    name: change areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      areas: ${{ steps.resolve.outputs.areas }}
+      code: ${{ steps.resolve.outputs.code }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The resolver diffs against the merge base with the base branch.
+          fetch-depth: 0
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: Resolve the changed files to areas
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            bun scripts/change-areas.ts --base "$BASE"
+          else
+            bun scripts/change-areas.ts --all
+          fi
+
   platform-gates:
     name: gates (${{ matrix.os }})
+    needs: areas
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(needs.areas.outputs.code == 'true' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     env:
       # The drive-pr-suite job below runs the drive-pr suite; on Windows the
@@ -42,6 +76,8 @@ jobs:
 
   drive-pr-suite:
     name: drive-pr suite (${{ matrix.os }}, ${{ matrix.shard }}/4)
+    needs: areas
+    if: contains(needs.areas.outputs.areas, '"drive-pr"')
     strategy:
       fail-fast: false
       matrix:
@@ -64,14 +100,24 @@ jobs:
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
 
   # Branch protection requires a check named `gates`; this job reports it,
-  # passing only when every platform and every shard passed.
+  # passing only when the areas resolved, every platform passed, and the
+  # drive-pr suite passed or was not needed.
   gates:
-    needs: [platform-gates, drive-pr-suite]
+    needs: [areas, platform-gates, drive-pr-suite]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require every platform and shard
+      - name: Require every selected job
         env:
+          AREAS: ${{ needs.areas.result }}
           PLATFORMS: ${{ needs.platform-gates.result }}
           DRIVE_PR: ${{ needs.drive-pr-suite.result }}
-        run: test "$PLATFORMS" = success && test "$DRIVE_PR" = success
+          DRIVE_PR_SELECTED: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') }}
+        run: |
+          test "$AREAS" = success
+          test "$PLATFORMS" = success
+          if [ "$DRIVE_PR_SELECTED" = true ]; then
+            test "$DRIVE_PR" = success
+          else
+            test "$DRIVE_PR" = skipped
+          fi

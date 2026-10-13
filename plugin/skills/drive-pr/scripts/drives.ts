@@ -104,7 +104,7 @@ import {
   claimLive,
   parseClaimText,
 } from "./lib/claim.ts";
-import { fail, isDigits, runMain, sleep } from "./lib/cli.ts";
+import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
 import {
   classifyDrive,
   type DoctorInput,
@@ -1138,9 +1138,13 @@ async function stop(stateDir: string, pr: string): Promise<number> {
   // window to that instant. Deadlined so a hung `ps` (OS/process-table trouble)
   // cannot block --stop indefinitely: on expiry `run()` reports a non-zero
   // code, which lands in the same fail-closed "could not verify" refusal below.
+  // The 10s deadline takes a test pacing seam (`testPacing`).
   const probe = await run(
     ["ps", "-o", "etime=", "-o", "command=", "-p", String(pid)],
-    { stderr: "ignore", timeoutSec: 10 },
+    {
+      stderr: "ignore",
+      timeoutSec: testPacing("DRIVE_PR_STOP_PS_TIMEOUT_SEC", 10, 1),
+    },
   );
   const parsed =
     probe.code === 0 ? /^\s*(\S+)\s+(\S.*)$/.exec(probe.stdout.trim()) : null;

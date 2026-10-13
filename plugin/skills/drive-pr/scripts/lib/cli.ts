@@ -85,6 +85,24 @@ export async function sleep(
 }
 
 /**
+ * A fixed pacing value (a poll, a heartbeat, a kill grace, a poll floor) that
+ * the test suite may lower through `envVar`, in the caller's own unit. A test
+ * pacing seam, not configuration: tests that exercise the paced path would
+ * otherwise sleep through the production value. It only ever lowers: digits
+ * only, clamped to [`floor`, `production`]; unset or unusable keeps
+ * `production`.
+ */
+export function testPacing(
+  envVar: string,
+  production: number,
+  floor: number,
+): number {
+  const raw = process.env[envVar] ?? "";
+  if (!/^[0-9]+$/.test(raw)) return production;
+  return Math.min(production, Math.max(floor, Number.parseInt(raw, 10)));
+}
+
+/**
  * Validated seconds for a test-only concurrency hook, 0 when the variable is
  * unset. Proving that two concurrent calls on the same key can never both
  * succeed needs a way to FORCE the overlap deterministically — two processes

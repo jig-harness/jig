@@ -72,6 +72,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
+import { testPacing } from "./lib/cli.ts";
 import { readTimeoutEnv } from "./lib/proc.ts";
 import {
   liveTargets,
@@ -88,8 +89,15 @@ const LOG_CAP_BYTES = 256 * 1024;
 const STDOUT_STALL_MS = 30_000;
 /** Total time one relayed write may take, however steadily it progresses. */
 const STDOUT_RELAY_MAX_MS = 60_000;
-/** Grace between SIGTERM and SIGKILL when the deadline fires. */
-const KILL_GRACE_MS = 10_000;
+/**
+ * Grace between SIGTERM and SIGKILL when the runner ends the command. This,
+ * `TRACK_POLL_MS` and `WAIT_POLL_MS` take a test pacing seam (`testPacing`).
+ */
+const KILL_GRACE_MS = testPacing(
+  "DRIVE_PR_FOREGROUND_WAIT_KILL_GRACE_MS",
+  10_000,
+  10,
+);
 const DEFAULT_DEADLINE_SEC = 5400;
 const DEADLINE_ENV = "DRIVE_PR_FOREGROUND_WAIT_TIMEOUT";
 /** Most bytes the runner retains in the log; the rest is dropped and said so. */
@@ -221,7 +229,9 @@ function signalPid(pid: number, signal: NodeJS.Signals): void {
 const WITNESS_GATE_ENV = "DRIVE_PR_FOREGROUND_WAIT_WITNESS_GATE";
 const WITNESS_POLL_MS = 100;
 /** How often the runner records the running command's tree. */
-const TRACK_POLL_MS = 2000;
+const TRACK_POLL_MS = testPacing("DRIVE_PR_FOREGROUND_WAIT_TRACK_MS", 2000, 10);
+/** How often `wait` re-checks whether the launch is still running. */
+const WAIT_POLL_MS = testPacing("DRIVE_PR_FOREGROUND_WAIT_POLL_MS", 2000, 10);
 
 /** The captured targets still live; empty once every one is witnessed dead. */
 function stillLive(targets: Target[]): Target[] {
@@ -641,7 +651,7 @@ async function wait(maxSec: number): Promise<number> {
   const dir = genDir(latest);
   const deadline = Date.now() + maxSec * 1000;
   while (running(dir) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
   }
   // Result first, then the log: a published result means the log is complete.
   const result = readResult(dir);

@@ -34,7 +34,7 @@ import {
   readTimeoutEnv,
   registerCancellationGroup,
 } from "../../../resolve-review-comments/scripts/lib/proc.ts";
-import { fail } from "./cli.ts";
+import { fail, testPacing } from "./cli.ts";
 
 // The review skill's process layer is the shared base: its timeout reader,
 // and its process-wide cancellation registry and signal forwarder, which
@@ -399,16 +399,24 @@ export interface RunOptions {
 }
 
 /**
+ * The SIGTERM-to-SIGKILL grace, 2s, through its test pacing seam
+ * (`testPacing`). Read per call by `stop()`, so an in-process test can set the
+ * seam around the one stop it exercises.
+ */
+const killEscalateMs = (): number =>
+  testPacing("DRIVE_PR_KILL_ESCALATE_MS", 2000, 10);
+
+/**
  * Grace between a SIGTERM and its SIGKILL escalation — shared by `stop()` and
  * `run()`'s own `timeoutSec` handling below, and exported so a caller that
  * needs to reason about how long a deadlined call can actually take to settle
  * (`renew-ready-mark`'s staleness-window validation has to add this on top of
  * `$GH_CALL_TIMEOUT`, since the call does not settle at the deadline — it
  * settles up to this many ms after it) reads the same constant `run()` actually
- * uses rather than a second hand-copied `2000`.
+ * uses rather than a second hand-copied `2000`. Read once, at import, so every
+ * bound derived from it agrees with the deadline that waits it.
  */
-export const KILL_ESCALATE_MS = 2000;
-const STOP_ESCALATE_MS = KILL_ESCALATE_MS;
+export const KILL_ESCALATE_MS = killEscalateMs();
 
 /**
  * How long `stop()` waits for the process GROUP to disappear after the
@@ -879,7 +887,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       let stopping: Promise<boolean> | undefined;
       // Cancel the pending backstop SIGKILL once termination is CONFIRMED —
       // never once a signal was merely sent. Left armed unconditionally, it
-      // fires `STOP_ESCALATE_MS` after a group that was ALREADY gone on the
+      // fires the kill grace after a group that was ALREADY gone on the
       // very first check: nothing else clears it in that path (`settle`
       // only clears the timer it finds live at 'close', which already fired
       // and resolved before `doStop` was ever called in this race), so it
@@ -899,10 +907,8 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
         // The grace, not the guarantee: `settle` clears this timer, and the
         // leader can close while a SIGTERM-ignoring descendant lives on, so
         // 'close' below fires an unconditional group SIGKILL as well.
-        stopEscalateTimer = setTimeout(
-          () => signalTree("SIGKILL"),
-          STOP_ESCALATE_MS,
-        );
+        const graceMs = killEscalateMs();
+        stopEscalateTimer = setTimeout(() => signalTree("SIGKILL"), graceMs);
         const pgid = child.pid;
         if (process.platform === "win32") {
           // Windows has no process groups to poll, and `signalTree`'s own
@@ -978,7 +984,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
         // Wait out the grace by watching for the group to go on its own — a
         // pass that exits promptly on SIGTERM should not be made to wait for
         // an escalation it never needed.
-        const deadline = Date.now() + STOP_ESCALATE_MS + STOP_WITNESS_MS;
+        const deadline = Date.now() + graceMs + STOP_WITNESS_MS;
         // Throttled to roughly once a second, independent of the 100ms
         // `groupGone()` poll: the zombie case does not change from one tick
         // to the next, and running `hasLiveGroupMember`'s heavier check

@@ -1118,7 +1118,8 @@ describe("drives.ts --stop", () => {
       });
       const r = await runDrives(["--stop", "550"], {
         stateDir,
-        env: { PATH: shim },
+        // A 1s deadline on the hung `ps` instead of the production 10s.
+        env: { PATH: shim, DRIVE_PR_STOP_PS_TIMEOUT_SEC: "1" },
       });
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toContain("could not verify");

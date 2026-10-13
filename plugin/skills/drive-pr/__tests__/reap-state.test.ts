@@ -98,13 +98,19 @@ function cleanEnv(extra: Record<string, string>): Record<string, string> {
 
 async function runReap(
   args: string[],
-  opts: { stateDir: string; ghDir?: string; cwd?: string },
+  opts: {
+    stateDir: string;
+    ghDir?: string;
+    cwd?: string;
+    env?: Record<string, string>;
+  },
 ) {
   const env = cleanEnv({
     DRIVE_PR_STATE_DIR: opts.stateDir,
     ...(opts.ghDir === undefined
       ? {}
       : { PATH: `${opts.ghDir}:${process.env.PATH ?? ""}` }),
+    ...opts.env,
   });
   const proc = Bun.spawn([process.execPath, REAP, ...args], {
     cwd: opts.cwd ?? repo,
@@ -1514,8 +1520,13 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
     for (let i = 0; i < OVER_THRESHOLD; i++) {
       writeFileSync(join(d, `unrecognised-junk-${i}`), "");
     }
+    // Only the identity probe stalls; every other git call (the worktree
+    // listing) reaches the real git, so the run spends its one deadline on
+    // the call under test.
+    const realGit = Bun.which("git");
+    if (realGit === null) throw new Error("git not on PATH");
     const slowGitDir = shimDir("slow-git", {
-      git: "sleep 30",
+      git: `case "$1" in rev-parse) sleep 30 ;; *) exec "${realGit}" "$@" ;; esac`,
       gh: 'echo \'{"state":"OPEN"}\'',
     });
 
@@ -1682,6 +1693,9 @@ describe("the delete-run lock — serialising the sweep and final snapshot publi
     const r = await runReap(["--delete", "--json"], {
       stateDir: d,
       ghDir: GH_OPEN(),
+      // One attempt against the live lock instead of waiting out the
+      // production cap on it: the refusal is the same, only sooner.
+      env: { DRIVE_PR_LOCK_TIMEOUT: "0" },
     });
 
     expect(r.exitCode).toBe(1);
@@ -1748,20 +1762,18 @@ describe("the delete-run lock — serialising the sweep and final snapshot publi
     // interval (or every direct `touchLock()` call, leaving the function
     // itself dead code) leaves the lock's mtime exactly where `acquire()`
     // left it — this test's own core assertion below.
-    const ghDir = ghShim("slow-merged", `sleep 30; echo '{"state":"MERGED"}'`);
+    const ghDir = ghShim("slow-merged", `sleep 15; echo '{"state":"MERGED"}'`);
 
     const proc = Bun.spawn([process.execPath, REAP, "--delete", "--json"], {
       cwd: repo,
       env: cleanEnv({
         DRIVE_PR_STATE_DIR: d,
-        // The smallest whole-minute value `lockStaleMinutes()` parses —
-        // 60s stale, 15s heartbeat (`lockHeartbeatMs()`'s own
-        // staleMs/4 formula) — fast enough to observe a real refresh
-        // without waiting out the default 10-minute window.
-        DRIVE_PR_LOCK_STALE_MIN: "1",
-        // Comfortably above the shim's own 30s sleep so `ghCall`'s
-        // deadline never fires first and short-circuits the wait this
-        // test depends on.
+        // A 500ms heartbeat, so a refresh is observable in a few seconds
+        // instead of a whole production interval.
+        DRIVE_PR_LOCK_HEARTBEAT_MS: "500",
+        // Comfortably above the shim's own sleep so `ghCall`'s deadline
+        // never fires first and short-circuits the wait this test depends
+        // on.
         GH_CALL_TIMEOUT: "50",
         PATH: `${ghDir}:${process.env.PATH ?? ""}`,
       }),
@@ -1776,20 +1788,20 @@ describe("the delete-run lock — serialising the sweep and final snapshot publi
       expect(existsSync(lockDir)).toBe(true);
       const initialMtimeMs = statSync(lockDir).mtimeMs;
 
-      // Past one heartbeat interval (15s), still inside the 30s slow gh
-      // call — nothing in `main()` besides the interval has run at all
-      // in this window.
-      await new Promise((r) => setTimeout(r, 17_000));
+      // Six heartbeat intervals, still well inside the slow gh call —
+      // nothing in `main()` besides the interval has run at all in this
+      // window. Without the heartbeat the mtime would be at least this old.
+      await new Promise((r) => setTimeout(r, 3_000));
 
       expect(existsSync(lockDir)).toBe(true);
       const refreshedMtimeMs = statSync(lockDir).mtimeMs;
       expect(refreshedMtimeMs).toBeGreaterThan(initialMtimeMs);
-      expect(Date.now() - refreshedMtimeMs).toBeLessThan(10_000);
+      expect(Date.now() - refreshedMtimeMs).toBeLessThan(2_000);
     } finally {
       proc.kill();
       await proc.exited;
     }
-  }, 45_000);
+  }, 30_000);
 });
 
 describe("an absent state directory ($DRIVE_PR_STATE_DIR pointed at a location nothing has written to yet)", () => {

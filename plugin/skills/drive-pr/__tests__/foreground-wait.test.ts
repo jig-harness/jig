@@ -45,6 +45,16 @@ const treeOf = (pid: number): number[] => {
 
 const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// The script's own pacing, shortened so a case waits on what it exercises
+// rather than on production polls and grace (`wait` re-checks every 2s, the
+// tracker records the tree every 2s, the kill grace is 10s). Every ordering a
+// case relies on is stated against these values where it is set up.
+const PACING = {
+  DRIVE_PR_FOREGROUND_WAIT_POLL_MS: "100",
+  DRIVE_PR_FOREGROUND_WAIT_TRACK_MS: "200",
+  DRIVE_PR_FOREGROUND_WAIT_KILL_GRACE_MS: "1000",
+};
+
 describe("foreground-wait.ts", () => {
   let cwd: string;
   beforeEach(() => {
@@ -79,14 +89,13 @@ describe("foreground-wait.ts", () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  const run = (...args: string[]) =>
-    Bun.spawnSync(["bun", SCRIPT, ...args], { cwd, stderr: "pipe" });
   const runWith = (env: Record<string, string>, ...args: string[]) =>
     Bun.spawnSync(["bun", SCRIPT, ...args], {
       cwd,
       stderr: "pipe",
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...PACING, ...env },
     });
+  const run = (...args: string[]) => runWith({}, ...args);
   const out = (r: ReturnType<typeof run>) => r.stdout.toString();
 
   test(
@@ -145,7 +154,10 @@ describe("foreground-wait.ts", () => {
     "concurrent launches: exactly one wins the claim",
     async () => {
       const procs = Array.from({ length: 4 }, () =>
-        Bun.spawn(["bun", SCRIPT, "launch", "--", "sleep", "30"], { cwd }),
+        Bun.spawn(["bun", SCRIPT, "launch", "--", "sleep", "30"], {
+          cwd,
+          env: { ...process.env, ...PACING },
+        }),
       );
       const codes = await Promise.all(procs.map((p) => p.exited));
       expect(codes.filter((c) => c === 0)).toHaveLength(1);
@@ -211,7 +223,7 @@ describe("foreground-wait.ts", () => {
       // Stand-in for the driver's pass group: its own leader, like drive.ts's pass.
       const pass = Bun.spawn(
         ["bun", SCRIPT, "launch", "--", "sh", "-c", "sleep 30; sleep 30"],
-        { cwd, detached: true },
+        { cwd, detached: true, env: { ...process.env, ...PACING } },
       );
       await pass.exited;
       const runner = pidOf("runner.pid") as number;
@@ -295,7 +307,8 @@ describe("foreground-wait.ts", () => {
         await sleepMs(50);
       }
       expect(stubborn).not.toBeNull();
-      // Well past the 2s deadline: the runner has signalled but may not publish.
+      // Well past the 2s deadline and its 1s kill grace: the runner has
+      // signalled but may not publish.
       await sleepMs(4000);
       expect(existsSync(join(latestGen(), "result.json"))).toBe(false);
       const still = run("wait", "--max-sec", "1");
@@ -312,11 +325,12 @@ describe("foreground-wait.ts", () => {
   test(
     "the deadline SIGTERMs a previously tracked descendant, so its cleanup handler runs",
     async () => {
-      // The descendant is observed by the periodic tracker before the deadline
-      // (2s), so termination must signal it although it is not newly seen.
+      // The descendant is observed by the periodic tracker (every 200ms) well
+      // before the 2s deadline, so termination must signal it although it is
+      // not newly seen.
       expect(
         runWith(
-          { DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "5" },
+          { DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "2" },
           "launch",
           "--",
           "sh",
@@ -334,15 +348,16 @@ describe("foreground-wait.ts", () => {
   test(
     "a command that exits on its own leaves no tracked descendant running when the result is published",
     async () => {
-      // The periodic tracker (2s) captures the descendant; the command then
-      // exits 0 while the descendant, with its output redirected, lives on.
+      // The periodic tracker (every 200ms) captures the descendant; the
+      // command then exits 0 while the descendant, with its output
+      // redirected, lives on.
       expect(
         run(
           "launch",
           "--",
           "sh",
           "-c",
-          `sleep 600 >/dev/null 2>&1 & echo $! > bg.pid; sleep 5; exit 0`,
+          `sleep 600 >/dev/null 2>&1 & echo $! > bg.pid; sleep 1.5; exit 0`,
         ).exitCode,
       ).toBe(0);
       const w = run("wait", "--max-sec", "60");
@@ -358,9 +373,10 @@ describe("foreground-wait.ts", () => {
   test(
     "a descendant recovered after a failed process snapshot still gets SIGTERM before SIGKILL",
     async () => {
-      // `ps` fails from before the deadline (5s) until released, so termination
+      // `ps` fails from before the deadline (3s) until released, so termination
       // cannot snapshot and signals only the command; the descendant was
-      // tracked earlier. Once `ps` recovers it must be TERMed, not killed cold.
+      // tracked earlier (every 200ms). Once `ps` recovers it must be TERMed,
+      // not killed cold.
       const shim = join(cwd, "shim");
       mkdirSync(shim);
       const flag = join(cwd, "psbroken");
@@ -372,7 +388,7 @@ describe("foreground-wait.ts", () => {
       expect(
         runWith(
           {
-            DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "5",
+            DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "3",
             PATH: `${shim}:${process.env.PATH}`,
           },
           "launch",
@@ -382,9 +398,9 @@ describe("foreground-wait.ts", () => {
           `sh -c 'trap "echo term > termed.marker; exit 0" TERM; while :; do :; done' >/dev/null 2>&1 & wait`,
         ).exitCode,
       ).toBe(0);
-      await sleepMs(3500); // tracked at 2s, before the deadline
+      await sleepMs(1000); // tracked within 200ms, before the deadline
       writeFileSync(flag, "");
-      await sleepMs(5000); // deadline fires with `ps` broken
+      await sleepMs(3500); // deadline fires with `ps` broken
       rmSync(flag);
       const w = run("wait", "--max-sec", "40");
       expect(w.exitCode).toBe(30);

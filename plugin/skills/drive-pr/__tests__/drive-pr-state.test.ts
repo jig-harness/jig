@@ -4954,10 +4954,12 @@ describe("drive-state.ts durability", () => {
       then: () => Promise<void> | void,
     ) {
       const signal = join(d, `${name}-is-holding`);
+      // `then()` acts in this process the moment the signal appears, so the
+      // stall only has to outlast a 10ms poll and that action.
       const running = state(d, ["bump-round", "999", "--head", "bbb"], {
         DRIVE_PR_SESSION: String(sessionPid),
         DRIVE_PR_UPDATE_TEST_SIGNAL: signal,
-        DRIVE_PR_UPDATE_TEST_DELAY: "3",
+        DRIVE_PR_UPDATE_TEST_DELAY: "1.5",
       });
       const deadline = Date.now() + 8000;
       while (!existsSync(signal)) {
@@ -5902,7 +5904,9 @@ describe("drive-state.ts durability", () => {
         t: process.env.DRIVE_PR_LOCK_TIMEOUT,
         s: process.env.DRIVE_PR_LOCK_STALE_MIN,
       };
-      process.env.DRIVE_PR_LOCK_TIMEOUT = "1";
+      // One immediate attempt per acquire: the failure path is the subject,
+      // not how long it waits before failing.
+      process.env.DRIVE_PR_LOCK_TIMEOUT = "0";
       process.env.DRIVE_PR_LOCK_STALE_MIN = "60";
       try {
         const events = ["exit", "SIGINT", "SIGTERM"] as const;
@@ -6712,7 +6716,7 @@ describe("drive-state.ts durability", () => {
               ...sessionless,
               DRIVE_PR_STATE_DIR: d,
               DRIVE_PR_UPDATE_TEST_SIGNAL: signal,
-              DRIVE_PR_UPDATE_TEST_DELAY: "5",
+              DRIVE_PR_UPDATE_TEST_DELAY: "1.5",
             },
             stdout: "pipe",
             stderr: "pipe",
@@ -6779,7 +6783,7 @@ describe("drive-state.ts durability", () => {
             ...sessionless,
             DRIVE_PR_STATE_DIR: d,
             DRIVE_PR_UPDATE_TEST_SIGNAL: signal,
-            DRIVE_PR_UPDATE_TEST_DELAY: "5",
+            DRIVE_PR_UPDATE_TEST_DELAY: "1.5",
           },
           stdout: "pipe",
           stderr: "pipe",
@@ -7764,7 +7768,7 @@ describe("drive-state.ts durability", () => {
               ...sessionless,
               DRIVE_PR_STATE_DIR: d,
               DRIVE_PR_UPDATE_TEST_SIGNAL: signal,
-              DRIVE_PR_UPDATE_TEST_DELAY: "5",
+              DRIVE_PR_UPDATE_TEST_DELAY: "1.5",
             },
             stdout: "pipe",
             stderr: "pipe",

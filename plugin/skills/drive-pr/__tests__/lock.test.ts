@@ -157,8 +157,11 @@ describe("lock.ts single-instance mutex", () => {
 
     const signal = join(dir, "about-to-read-generation");
     process.env.DRIVE_PR_LOCK_ACQUIRE_TEST_SIGNAL = signal;
-    process.env.DRIVE_PR_LOCK_ACQUIRE_TEST_DELAY = "1";
-    process.env.DRIVE_PR_LOCK_TIMEOUT = "2";
+    // The swap below runs in this process the moment the signal appears, so
+    // half a second of stall is ample; one attempt is all the probe needs,
+    // since the stalled attempt is the one that must restore the replacement.
+    process.env.DRIVE_PR_LOCK_ACQUIRE_TEST_DELAY = "0.5";
+    process.env.DRIVE_PR_LOCK_TIMEOUT = "0";
     const contender = createLock(file, "test", "999");
     const acquiring = contender.acquire();
 
@@ -584,7 +587,8 @@ describe("lock.ts single-instance mutex", () => {
 
     process.env.DRIVE_PR_LOCK_RECOVERING_TEST_SIGNAL = signal;
     process.env.DRIVE_PR_LOCK_RECOVERING_TEST_DELAY = "1";
-    process.env.DRIVE_PR_LOCK_TIMEOUT = "2";
+    // One attempt: the stalled attempt is the one whose removal must refuse.
+    process.env.DRIVE_PR_LOCK_TIMEOUT = "0";
     const contender = createLock(file, "test", "999");
     const acquiring = contender.acquire();
 

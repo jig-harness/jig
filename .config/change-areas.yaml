@@ -1,0 +1,119 @@
+# Jig's change-area catalog (module M3): the one place that maps this
+# repository's paths to named change-areas. The CI workflow reads area names
+# from scripts/change-areas.ts, never these globs: the drive-pr suite runs
+# when the `drive-pr` area is affected, and the gate set runs on every
+# operating system when any area outside the `docs` category is.
+#
+# Every tracked file belongs to at least one area (`bun run gates` fails
+# otherwise). When unsure whether one area depends on another, add the
+# `impliedBy` edge: a redundant CI job is cheap, a skipped one is not.
+#
+# Field reference: modules/M3-change-area-catalog/reference/catalog/README.md.
+# `category` is one of skill, library, tooling, infra, docs; `deployTier` is
+# `plugin` for what ships in a plugin version and `none` otherwise.
+
+areas:
+  drive-pr:
+    title: "drive-pr skill"
+    category: skill
+    paths: ["plugin/skills/drive-pr/**"]
+    workspace: []
+    # Its scripts import or spawn the other two skills' scripts, and its
+    # tests run with the shared test preloads and the toolchain.
+    impliedBy: [resolve-review-comments, do-item, shared-lib, toolchain]
+    deployTier: plugin
+
+  resolve-review-comments:
+    title: "resolve-review-comments skill"
+    category: skill
+    paths: ["plugin/skills/resolve-review-comments/**"]
+    workspace: []
+    impliedBy: [shared-lib, toolchain]
+    deployTier: plugin
+
+  do-item:
+    title: "do-item skill"
+    category: skill
+    paths: ["plugin/skills/do-item/**"]
+    workspace: []
+    impliedBy: [resolve-review-comments, shared-lib, toolchain]
+    deployTier: plugin
+
+  plugin:
+    title: "The plugin: other skills, agents, manifests and documentation"
+    category: skill
+    paths: ["plugin/**", ".claude-plugin/**", ".agents/**"]
+    workspace: []
+    impliedBy: [shared-lib, toolchain]
+    deployTier: plugin
+
+  shared-lib:
+    title: "Shared library and test preloads"
+    category: library
+    paths: ["lib/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+
+  gates:
+    title: "Repository gates and their self-tests"
+    category: tooling
+    paths: ["scripts/**"]
+    workspace: []
+    impliedBy: [shared-lib, toolchain]
+    deployTier: none
+
+  tools:
+    title: "Machine-level tools"
+    category: tooling
+    paths: ["tools/**"]
+    workspace: []
+    impliedBy: [shared-lib, toolchain]
+    deployTier: none
+
+  module-reference:
+    title: "Module reference code and templates"
+    category: tooling
+    paths: ["modules/*/reference/**", "modules/*/templates/**"]
+    workspace: []
+    impliedBy: [shared-lib, toolchain]
+    deployTier: none
+
+  toolchain:
+    title: "Toolchain, configuration and CI"
+    category: infra
+    paths:
+      - "package.json"
+      - "bun.lock"
+      - "bunfig.toml"
+      - "mise.toml"
+      - "tsconfig.json"
+      - "tsconfig.ratchet.json"
+      - "biome.json"
+      - ".fallowrc.jsonc"
+      - "renovate.json5"
+      - ".gitattributes"
+      - ".gitignore"
+      - ".github/**"
+      - ".config/**"
+    workspace: []
+    impliedBy: []
+    deployTier: none
+
+  docs:
+    title: "Documentation and vendored seed material"
+    category: docs
+    paths:
+      - "*.md"
+      - "modules/*.md"
+      - "modules/*/*.md"
+      - "adoption/**"
+      - "assets/**"
+      - "audit/**"
+      - "design/**"
+      - "principles/**"
+      - "profiles/**"
+      - "seeds/**"
+    workspace: []
+    impliedBy: []
+    deployTier: none

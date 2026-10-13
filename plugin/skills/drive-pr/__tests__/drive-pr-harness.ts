@@ -567,6 +567,13 @@ const SUITE_ENV_OVERRIDES = [
   "JIG_OVERLAY",
 ] as const;
 let priorSuiteEnv: Map<string, string | undefined>;
+/**
+ * The suite's own test pacing seams while it runs, empty outside it. Set on
+ * `process.env` like every override above, and also carried through
+ * `gitCleanEnv()`, whose `DRIVE_PR_*` scrub would otherwise drop them from
+ * every spawn built on it.
+ */
+let suitePacing: Record<string, string> = {};
 /** Scratch repos for the probes that read local HEAD and the working tree. */
 export let scratchClean: { dir: string; head: string };
 export let scratchOther: { dir: string; head: string };
@@ -615,6 +622,9 @@ export function gitCleanEnv(): Record<string, string> {
     }
     env[k] = v;
   }
+  // The suite's own pacing seams are set by `useDrivePrSuite()`, not inherited
+  // from a drive, so the scrub above must not drop them.
+  Object.assign(env, suitePacing);
   // Set AFTER the copy, unconditionally, so it wins over whatever the real
   // process.env carries — see `suiteHome`'s own doc comment for why.
   env.HOME = suiteHome;
@@ -970,7 +980,8 @@ export function useDrivePrSuite(): void {
     // syscalls, same interleavings — while removing only the sleeping. A test
     // that needs the production pacing sets its own value in its spawn env
     // (per-call env wins over this inherited default).
-    process.env.DRIVE_PR_LOCK_RETRY_MS = "25";
+    suitePacing = { DRIVE_PR_LOCK_RETRY_MS: "25" };
+    Object.assign(process.env, suitePacing);
     // The consumer configuration every probe reads: the reviewer app the
     // fixtures post as, the base branch the scratch repositories carry, and
     // the plan command the round-plan probes stub.
@@ -2040,6 +2051,7 @@ exit 1
     // Guarded because bun runs afterAll even when beforeAll THREW, in which
     // case the map was never built — an unguarded iteration would replace the
     // real beforeAll failure with a TypeError from teardown.
+    suitePacing = {};
     if (priorSuiteEnv) {
       for (const [key, value] of priorSuiteEnv) {
         if (value === undefined) delete process.env[key];
@@ -2554,7 +2566,7 @@ export async function probe(
    * genuinely terminal returns promptly then — a `4` polls to `--timeout` —
    * which is the difference a conflict probe has to be able to observe.
    */
-  opts: { once?: boolean } = {},
+  opts: { once?: boolean; env?: Record<string, string> } = {},
 ): Promise<ProbeResult> {
   const { dir, stateDir } = writeFixture(f);
   return probeIn(dir, stateDir, f.head ?? HEAD, extraArgs, opts);

@@ -52,8 +52,8 @@ JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates
 bun test --timeout 60000 plugin/skills/<skill>/__tests__/<file>.test.ts
 ```
 
-The drive-pr suite takes about twenty minutes in one process; run the test
-files for what you changed and let CI's shards run the whole suite. Inside a
-running drive, clear the inherited `DRIVE_PR_*` variables first
+The drive-pr suite takes a few minutes even with its files in parallel; run
+the test files for what you changed and let CI's shards run the whole suite.
+Inside a running drive, clear the inherited `DRIVE_PR_*` variables first
 (`env $(env | grep -o '^DRIVE_PR_[A-Z_]*' | sed 's/^/-u /') bun test …`), or
 the drive-status tests read the drive's own state.

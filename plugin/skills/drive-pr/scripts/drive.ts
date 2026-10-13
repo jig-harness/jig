@@ -161,7 +161,14 @@ import {
   parseClaimText,
   stagingLive,
 } from "./lib/claim.ts";
-import { fail, isDigits, runMain, shellQuote, sleep } from "./lib/cli.ts";
+import {
+  fail,
+  isDigits,
+  runMain,
+  shellQuote,
+  sleep,
+  testPacing,
+} from "./lib/cli.ts";
 import { FinalCiWait } from "./lib/final-ci-wait.ts";
 import {
   type AccountIdentity,
@@ -707,7 +714,7 @@ async function waitAtMailboxCheckpoint(
       );
       return "pause-timeout";
     }
-    await sleep(Math.min(2, pauseMaxSec));
+    await sleep(Math.min(MAILBOX_POLL_SECONDS, pauseMaxSec));
   }
 }
 
@@ -861,9 +868,25 @@ const CONFLICT_REPAIR_ROUNDS_DEFAULT = 1;
  *
  * The bound exists because that particular wait has a state it cannot escape:
  * see the branch that reads it. `0` restores the unbounded wait.
+ *
+ * The poll and the two waits below are test pacing seams (`testPacing`, in
+ * milliseconds), not configuration.
  */
-const FINAL_CI_POLL_SECONDS = 10;
+const FINAL_CI_POLL_SECONDS =
+  testPacing("DRIVE_PR_FINAL_CI_POLL_MS", 10_000, 10) / 1000;
 const FINAL_CI_WITNESS_POLLS_DEFAULT = 180;
+/**
+ * How long a drive lets GitHub schedule the workflows that removing the CI
+ * hold label triggers before it re-reads the evidence.
+ */
+const UNLABEL_SETTLE_SECONDS =
+  testPacing("DRIVE_PR_UNLABEL_SETTLE_MS", 5_000, 10) / 1000;
+/**
+ * How often a paused drive, and a drive waiting out a usage wall, re-reads
+ * its mailbox for a resume or stop.
+ */
+const MAILBOX_POLL_SECONDS =
+  testPacing("DRIVE_PR_MAILBOX_POLL_MS", 2_000, 10) / 1000;
 
 export function finalCiWitnessPolls(): number {
   return wholeEnv(
@@ -3431,7 +3454,7 @@ async function main(): Promise<number> {
           console.error(
             "CI hold label removed; waiting for full CI on the converged head",
           );
-          await sleep(5);
+          await sleep(UNLABEL_SETTLE_SECONDS);
           continue;
         }
 
@@ -4946,7 +4969,7 @@ async function main(): Promise<number> {
                 plan.ms - (performance.now() - quotaWaitStartedAt);
               if (remainingMs > 0) {
                 await sleep(
-                  Math.min(2, remainingMs / 1000),
+                  Math.min(MAILBOX_POLL_SECONDS, remainingMs / 1000),
                   quotaSleepAbort.signal,
                 );
               }
