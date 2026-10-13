@@ -21,6 +21,17 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ### Added
 
+- Jig as a software factory: [FACTORY.md](FACTORY.md), which replaces
+  `PLAYBOOK.md`, starts from what a factory of AI agents runs on, the
+  repository's scaffolding for context, verification and kept knowledge, and
+  which modules build each part, and how Jig fits an organization's own
+  tools and values (modules, configuration layers, the tracker interface
+  with Linear as its first adapter). It then maps the stations at the
+  design-and-planning level (a feature or an epic) and the execution level
+  (one work item), with what runs each station, what stays with a person,
+  what is not built yet and what Jig leaves to the platform underneath. The
+  README introduces the idea, and the glossary defines *software factory* and
+  *PR (pull request)*.
 - `tools/launcher/`: the issue tracker's "open in coding agent" button, as a
   machine-level tool. It assigns the issue to whoever opened it, saves the
   issue to a context file that `/jig:do-item` reads, picks the repository

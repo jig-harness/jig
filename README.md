@@ -14,6 +14,39 @@ scaffolding that lets AI agents operate it well over time — and everything els
 (quality gates, documentation governance, review systems, learning loops) both
 feeds that scaffolding and benefits from it.
 
+## Jig as a software factory
+
+A [software factory](GLOSSARY.md) takes work in a standard form, passes it
+through the same stations and checks every time, and measures what comes out.
+A factory whose stations are run by AI agents cannot work without agent
+scaffolding underneath it, and building that scaffolding is most of what Jig
+provides:
+
+- **Context**: what an agent knows when a session starts: layered
+  instruction files, rules that load only where they apply, a glossary, what
+  each kind of change implies, governed documentation.
+- **Verification**: guides that steer an agent before it acts (instructions,
+  templates, recorded decisions) and catches that stop what slips through
+  (tested gates with CI as the authority, freshness checks, layered review),
+  each rule on a named rung of the enforcement ladder.
+- **Knowledge**: decisions, facts and lessons kept explicit and versioned, so
+  the next session starts where the last one ended, and significant misses
+  become validated checks.
+
+Each module states one part as a tool-independent rule, with
+maturity levels for projects of any size, templates and tested reference
+gates; the audit measures how far a repository has come. It fits the way an
+organization already works: its values belong in configuration, not code, and
+tool bindings go behind interfaces where Jig has built them (the issue
+tracker's first adapter is Linear; another tracker is a new adapter); the
+exceptions still open are listed in [ROADMAP.md](ROADMAP.md) item 10. On top of the
+scaffolding, the plugin's skills run the factory's stations at two levels:
+**design and planning** (a feature or an epic: `explain`, `decide`, `adr`,
+`design-brief-builder`, `review`) and **execution** (one work item:
+`do-item` picks it up, `drive-pr` runs its review rounds unattended, a person
+merges, follow-ups go back to the tracker). [FACTORY.md](FACTORY.md) maps
+it all, including what is not built yet and what stays your own platform.
+
 New to these ideas? Every term of art used in this repo is defined in plain
 language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 "SSoT" or "enforcement ladder" is unfamiliar.
@@ -40,7 +73,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | Path | What it holds |
 |------|---------------|
 | [GLOSSARY.md](GLOSSARY.md) | Plain-language definitions of every term of art |
-| [PLAYBOOK.md](PLAYBOOK.md) | The end-to-end delivery narrative (feature pipeline + PR loop) |
+| [FACTORY.md](FACTORY.md) | Jig as a software factory: the scaffolding it runs on, and its stations at the design-and-planning and execution levels |
 | [ROADMAP.md](ROADMAP.md) | Open work, in priority order |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How a change to Jig is made, checked and merged |

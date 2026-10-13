@@ -15,6 +15,13 @@ make, use the entry's term instead.
 - **Scaffolding** — everything in a repo that exists to guide agents (and
   humans): instruction files, *skills*, *rules*, glossaries, checkers. Not the
   product code itself.
+- **Software factory** — a way of producing software in which work enters in a
+  standard form, passes through the same stations and checks every time, and
+  comes out measured, so output stays predictable as volume grows. When AI
+  agents run the stations, the factory depends on the repository's
+  *scaffolding* for context, verification and kept knowledge; Jig provides the
+  practices to build that scaffolding and skills that run the stations. See
+  [FACTORY.md](FACTORY.md).
 - **SSoT (single source of truth)** — the one authoritative place a fact or
   rule is defined. Everything else *points* to it or is *generated* from it,
   so copies can't quietly disagree.
@@ -168,6 +175,9 @@ make, use the entry's term instead.
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
+- **PR (pull request)** — a proposed change to a repository, opened so it can
+  be reviewed and checked before it is merged into the *integration branch*.
+  Most of Jig's execution process runs around one.
 - **Draft PR** — a pull request opened in "not ready for review" state so CI
   and the reviewers that read drafts can run before it is marked Ready, which
   summons the reviewers that wait for Ready. A human marks it Ready, or a

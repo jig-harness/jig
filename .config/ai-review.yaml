@@ -79,7 +79,7 @@ rules:
     attention: "Review module changes against Jig's module contract. README changes must stay plain-language-first and describe the invariant before tooling; mappings must separate tool choices from the invariant; maturity criteria must be observable and use the enforcement ladder; templates and reference material must remain copyable, portable, and internally linked."
     severity: high
   - id: ip-scrub-and-portability
-    paths: ["modules/**", "plugin/**", "README.md", "PLAYBOOK.md", "ROADMAP.md", "CHANGELOG.md", "principles/**/*.md", "profiles/**/*.md", "adoption/**/*.md"]
+    paths: ["modules/**", "plugin/**", "README.md", "FACTORY.md", "ROADMAP.md", "CHANGELOG.md", "principles/**/*.md", "profiles/**/*.md", "adoption/**/*.md"]
     attention: "Flag product-domain content, customer data, names of the organizations Jig learned from, or examples that could cross Jig's origin boundary. Flag values presented as universal mechanisms, and mechanisms that make a consumer depend on access to any particular organization's repository."
     severity: high
   - id: markdown-governance
