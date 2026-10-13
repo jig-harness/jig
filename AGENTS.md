@@ -159,6 +159,21 @@ Read in this order when starting a session here:
   Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out
   the long drive-pr suite; run its test files for what you changed, and let
   CI's shards run the rest.
+- **Derived files** ([generated artifacts](GLOSSARY.md), M2) are never edited
+  by hand: regenerate them. Each row's drift check catches the failure named
+  there. The example indexes open with a "generated" header naming their
+  generator. `bun.lock` and the vendored parser cannot carry one, since each
+  must stay byte for byte what its generator writes, so this list is their
+  marker.
+
+  | File | Regenerate | Drift check |
+  | --- | --- | --- |
+  | `bun.lock` | `bun install` after changing `package.json` | CI installs with `bun install --frozen-lockfile`, which fails when the lockfile no longer matches `package.json`; it does not catch an edit that keeps them in agreement |
+  | `plugin/skills/resolve-review-comments/scripts/lib/vendor/js-yaml.mjs` and its `js-yaml.LICENSE` | after updating `js-yaml`, copy `node_modules/js-yaml/dist/js-yaml.mjs` and `node_modules/js-yaml/LICENSE` (as `js-yaml.LICENSE`) into that folder | `tools/plugin/plugin.test.ts` compares both with the installed `js-yaml` |
+  | `modules/M2-generated-artifact-freshness/reference/triad/fixture/docs/index.md` | `bun modules/M2-generated-artifact-freshness/reference/triad/generate-index.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs` | `scripts/freshness.test.ts` runs `check-index-fresh.ts` against it |
+  | `modules/M4-docs-governance/reference/index/fixtures/docs/INDEX.md` | `bun exec "DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts"` (Bun's shell sets the variable on every operating system) | `generate-index.test.ts` beside the generator compares it with a fresh generation |
+
+  A new derived file gets a row here in the pull request that adds it.
 - **The ratchet** (`bun run quality`; M1's
   [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md))
   fails a change that adds a finding to a rule at `warn` in `biome.json`, to

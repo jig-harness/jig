@@ -49,6 +49,12 @@ changes are marked **Breaking** and say what a consumer changes.
   review round, merge only once a round after Ready has settled with the
   required checks green, and a person merges. `.config/jig.yaml` declares
   `drive.reviews_drafts: true`, the fact the draft-first order rests on.
+- AGENTS.md lists Jig's derived files (`bun.lock`, the vendored YAML parser
+  and the two example indexes in M2 and M4) with the command that regenerates
+  each and the check that catches drift, and forbids editing them by hand. The
+  plugin test now also checks the vendored parser's licence against the
+  installed package, and the freshness test checks M2's committed example
+  index.
 
 ## [0.18.0] - 2026-10-13
 

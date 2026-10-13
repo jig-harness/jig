@@ -957,17 +957,16 @@ if (query.includes("node(id:$threadId)")) {
 
 test("the vendored YAML parser is the pinned js-yaml build", () => {
   // The plugin cache has no node_modules, so the skill ships js-yaml's own
-  // ESM build. When the dependency is updated, refresh the copy with:
-  //   cp node_modules/js-yaml/dist/js-yaml.mjs plugin/skills/resolve-review-comments/scripts/lib/vendor/
-  const vendored = join(
-    root,
-    "plugin",
-    "skills",
-    skill,
-    "scripts/lib/vendor/js-yaml.mjs",
+  // ESM build with its licence. AGENTS.md's Derived files rule says how to
+  // refresh both when the dependency is updated.
+  const vendor = join(root, "plugin", "skills", skill, "scripts/lib/vendor");
+  const pinned = join(root, "node_modules/js-yaml");
+  expect(readFileSync(join(vendor, "js-yaml.mjs"), "utf8")).toBe(
+    readFileSync(join(pinned, "dist/js-yaml.mjs"), "utf8"),
   );
-  const pinned = join(root, "node_modules/js-yaml/dist/js-yaml.mjs");
-  expect(readFileSync(vendored, "utf8")).toBe(readFileSync(pinned, "utf8"));
+  expect(readFileSync(join(vendor, "js-yaml.LICENSE"), "utf8")).toBe(
+    readFileSync(join(pinned, "LICENSE"), "utf8"),
+  );
 });
 
 test("plugin cancellation registrations release only their own ownership", () => {

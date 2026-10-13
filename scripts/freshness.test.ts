@@ -224,6 +224,8 @@ test("index generator preserves deterministic body; gate detects stale and missi
     compare(`${m2}/triad/check-index-fresh.ts`, [docs, old], 1);
   }
   expectSpawnExit(run(`${m2}/triad/check-index-fresh.ts`, [docs, fresh]), 0);
+  // The committed example index is itself a derived file and must stay fresh.
+  expectSpawnExit(run(`${m2}/triad/check-index-fresh.ts`, [docs]), 0);
   const again = join(temp, "again.md");
   run(`${m2}/triad/generate-index.ts`, [docs, again]);
   expect(readFileSync(again, "utf8")).toBe(generated);
