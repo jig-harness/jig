@@ -1,5 +1,7 @@
 # Valid taxonomy — must PASS. Unique ids across the whole file; types and
-# statuses are closed, non-empty lists; every flag declares what it fires.
+# statuses are closed, non-empty lists; every flag declares what it fires,
+# which item it goes on (scope) and when it applies; a flag's requires names
+# another label defined here.
 version: 1
 
 types:
@@ -15,22 +17,62 @@ statuses:
   - id: todo
   - id: in-progress
   - id: in-review
-  - id: blocked
+  - id: ops-pending
   - id: done
+  - id: canceled
 
 flags:
+  - id: epic
+    scope: container
+    fires: [status-roll-up, acceptance-review]
+    apply_when:
+      - the issue is the unit progress is reported on
+      - its outcome needs more than one pull request
+    do_not_apply_when:
+      - the issue is one deliverable split into parts
+    notes: >-
+      a flag, not a type: an epic keeps its real type.
+      - this dash line is folded text, not a list entry
+      scope: and this line is text too, not a field
   - id: has-migration
+    scope: shipping-item
     fires: migration-review
+    apply_when: the change adds or alters a schema or data migration
+    do_not_apply_when: [the item is an epic and only some sub-issues carry the change]
     notes: a schema/data migration is present; the migration review gate is mandatory
   - id: api-change
+    scope: shipping-item
     fires: contract-gates
+    apply_when:
+      - a public interface changes
     notes: a public interface changed; the contract/compatibility gates are mandatory
   - id: manual-ops
+    scope: shipping-item
     fires: blocks-done-until-operator-checklist
-    notes: a human operator step is required; the item cannot reach done until the checklist is complete
+    apply_when:
+      - shipping the change needs a step a person performs outside the code
+    notes: |
+      a human operator step is required; the item cannot reach done until the
+      checklist is complete
   - id: security-sensitive
+    scope: shipping-item
     fires: security-review
-    notes: touches auth, secrets, or untrusted input; a security review is mandatory
+    apply_when: the change touches auth, secrets, or untrusted input
   - id: hitl
+    scope: shipping-item
     fires: revoke-autonomy
+    apply_when:
+      - a person must decide or act before the item can merge
     notes: revokes autonomous execution/merge for this item; a human must act
+  - id: hitl-legal
+    scope: shipping-item
+    fires: legal-review
+    requires: hitl
+    apply_when:
+      - the decision a person must make is a legal one
+  - id: migration-backfill
+    scope: shipping-item
+    fires: backfill-checklist
+    requires: [has-migration, manual-ops]
+    apply_when:
+      - the migration needs existing data rewritten by an operator

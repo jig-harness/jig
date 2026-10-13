@@ -49,6 +49,55 @@ criteria:
       - "at least one flag label is wired to a required check or blocking rule"
       - "the wiring is derived where possible from the M3 change-area catalog"
 
+  - id: gate-flags-scoped-to-shipping-item
+    level: standard
+    requires: convention
+    statement: >-
+      A flag label that fires a gate goes on the work item whose change ships,
+      never on the epic that contains it, the epic flag marks the container
+      without replacing its type, and every copy of the taxonomy's key sets
+      equals its source.
+    observe:
+      - "the taxonomy or the instructions state, per gate flag, that it goes on the shipping item, not its container (a declared scope field is convention evidence; mechanical needs a check that refuses a gate flag on a container item)"
+      - "epic is a flag, not a type: an epic of fixes keeps the bug type"
+      - "labels carry durable classification only; pending operational state lives in the tracker's status or a ledger, not a label"
+      - "every copy of the taxonomy's key sets (a configuration's type list, an issue template's flag table) is checked for exact equality with the taxonomy; a check over the configuration's copies alone counts for those copies only"
+    since: 0.19.0
+
+  - id: epic-closure-requires-acceptance
+    level: standard
+    requires: convention
+    statement: >-
+      An epic closes when its newest verdict accepts that its designed scope
+      is delivered, or on a recorded human waiver that cannot override a
+      rejection, never on its count of open children; tails it was never
+      scoped to finish are linked back and given a comment naming the epic
+      before they are extracted and it closes.
+    observe:
+      - "the instructions or the closing tool name the verdict or waiver an epic needs to close, that only the newest verdict counts, and that a waiver does not override a rejecting verdict"
+      - "open children the epic was never scoped to finish (sign-offs, operator steps, review debt) are linked back, given a comment naming the epic, then unparented and moved to a standing destination before closure"
+      - "a tool that refuses to close an epic without the verdict or waiver counts as mechanical"
+    since: 0.19.0
+
+  - id: issues-prioritized-at-creation
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every path that files an issue sets its priority and category at
+      creation, the priority from one shared severity mapping and the
+      category supplied with the finding and validated against one category
+      list; it validates the mandatory taxonomy before the write, and appends to an
+      existing container when one fits; the ranked shortlist a person picks
+      from is computed, not hand-kept.
+    observe:
+      - "one severity mapping is the source for the priority every filing path sets (a deferral script, an issue template, a scheduled-failure reporter)"
+      - "the filing path requires a category for each issue and checks it against one category list; a category derived from severity is not credited"
+      - "the filing path refuses an issue missing a mandatory taxonomy group before writing it"
+      - "the filing path looks up an open container for the same source and type and appends to it, filing a new issue only when none fits"
+      - "the share of filed issues carrying no priority is measured over the issues the filing paths create (by a scheduled report, a tracker query or export, or drive-pr's fractal-metrics.ts for open follow-ups), so a filing path that skips priority shows up"
+      - "the ranked shortlist is reproducible from a tracker snapshot and a committed weights file; a ranker that is only planned or documented is not credited"
+    since: 0.19.0
+
   - id: memory-promotion-documented
     level: standard
     requires: convention

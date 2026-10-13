@@ -24,7 +24,8 @@ added since, and it does not repeat a recommendation the team declined.
    unknown, refused or deprecated fields, wrong types, commands and paths that
    do not exist, required checks that never run, a tracker that cannot be
    reached, declared values the repository contradicts (`stacking: none` with
-   stacked pull requests open), and settings its shape suggests. It also
+   stacked pull requests open), tracker labels its label taxonomy does not
+   define, and settings its shape suggests. It also
    gathers what a profile suggestion rests on (how many people commit, CI
    that deploys or publishes, documents that name a compliance regime) and
    names the lightest profile those facts support.

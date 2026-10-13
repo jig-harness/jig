@@ -50,6 +50,8 @@ beside it:
 
 plugin/skills/resolve-review-comments/scripts/lib/vendor/js-yaml.LICENSE
   js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
+lib/vendor/js-yaml.LICENSE
+  js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
 plugin/skills/decide/scripts/ste-lint/LICENSE
   ste-lint, MIT License, Copyright (c) 2026 Dustin Yuchen Teng
 plugin/skills/audit/scripts/report/lucide/LICENSE

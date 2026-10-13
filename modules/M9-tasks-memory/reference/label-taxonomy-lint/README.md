@@ -14,6 +14,9 @@ stay process triggers, not folksonomy (labels that decorate but drive nothing).
 | every label `id:` (in `types`, `statuses`, or `flags`) is **unique** across the file | a duplicate id makes a reference to it ambiguous |
 | `types:` and `statuses:` are **closed, non-empty** lists | they are the mandatory vocabulary every issue draws from; an absent or empty list classifies nothing |
 | every `flags:` entry declares a **non-empty `fires:`** | a flag label with no process trigger is folksonomy — the one thing this module bans |
+| every `flags:` entry declares **`scope:`**, either `shipping-item` (the work item whose change ships: a sub-issue, or an item with no children) or `container` (the container itself, such as an epic) | it makes "gate flags go on the item whose change ships, never on the container holding it" checkable per flag |
+| every `flags:` entry declares a **non-empty `apply_when:`**; an optional `do_not_apply_when:` is non-empty when present | they make applying a flag a written rule rather than habit |
+| every id in a flag's optional **`requires:`** is a type or another flag in the same file | it keeps a dependent label (a facet of another flag) from appearing alone |
 | no **unknown** top-level keys | the schema is closed (`version` / `types` / `statuses` / `flags`) so it can't quietly grow a fourth meaning |
 
 The `fires:` rule is the heart: it is what makes a label a *trigger* (a
@@ -21,8 +24,13 @@ The `fires:` rule is the heart: it is what makes a label a *trigger* (a
 
 ## Mechanism
 
-Portable Bun + TypeScript (no shell utilities required). It reads the top-level keys and every
-`- ` list entry, then checks each against the table above.
+Portable Bun + TypeScript (no shell utilities required). It parses the file
+as YAML, then checks the top-level keys and every list entry against the
+table above. Any YAML spelling of an entry is read alike: flow or block,
+quoted or plain keys, a nested list or a folded multi-line text. A field must
+be a single text or a list of non-empty texts, and an `id:` a single text;
+any other value (a null list member, a list-valued id) is reported rather
+than read as absent. No mapping may repeat a key.
 
 ```sh
 TAXONOMY=label-taxonomy.yaml bun ./check-label-taxonomy.ts
@@ -49,5 +57,7 @@ Run the self-test with `bun test ./check-label-taxonomy.test.ts` (and run the sh
 `bun test ../../../../lib/module-gates.test.ts` from this directory).
 
 The native gate uses the shared implementation in Jig’s
-[`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and
-`lib/` together in the pinned Jig checkout when adopting it.
+[`lib/module-gates.ts`](../../../../lib/module-gates.ts), which parses the
+taxonomy with the js-yaml build vendored in `lib/vendor/`, which rejects a
+repeated key. Keep the module and `lib/`, its `vendor/` folder included,
+together when adopting it, as a pinned Jig checkout does.

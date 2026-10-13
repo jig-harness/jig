@@ -12,6 +12,9 @@
  *     cannot be reached;
  *   - declared values the repository contradicts, such as `stacking: none`
  *     with stacked pull requests open;
+ *   - configured tracker labels that the repository's label taxonomy
+ *     (`label-taxonomy.yaml`) does not define, and a `review.taxonomy.types`
+ *     that differs from the taxonomy's types;
  *   - settings the repository's shape suggests but does not use;
  *   - the facts a profile suggestion rests on (`lib/profile-facts.ts`):
  *     contributors, deploy signals in CI, compliance documents, and the
@@ -63,6 +66,7 @@ import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts"
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { parseRecord, RECORD_RELPATH } from "./lib/record.ts";
+import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
 import {
   ghJson,
   newerInstalledVersion,
@@ -1545,6 +1549,8 @@ export async function configFit(opts: {
   report.findings.push(...machineLayers(config, schema));
   report.findings.push(...staleSession());
   const files = trackedFiles(opts.root);
+  if (report.configured)
+    report.findings.push(...taxonomyFindings(config, opts.root, files));
   report.findings.push(...integrationBranch(config, opts.root, report));
   if (!opts.offline) {
     report.findings.push(...forgeChecks(config, opts.root, report));

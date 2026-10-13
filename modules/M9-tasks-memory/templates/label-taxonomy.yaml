@@ -19,6 +19,28 @@
 # flag with no `fires:` is decoration and the lint rejects it. Many flags are
 # derivable from your change-area catalog (M3): if a path touches a migration,
 # the `has-migration` flag can be applied automatically rather than by hand.
+#
+# Each flag also says where and when it applies:
+#   scope              required; exactly one of
+#                        shipping-item  the flag goes on the work item whose
+#                                       change ships (a sub-issue, or an item
+#                                       with no children), never on the
+#                                       container that holds it
+#                        container      the flag marks the container itself
+#                                       (the `epic` flag)
+#   apply_when         required; the conditions under which the flag goes on
+#                      an item (a list, or one condition)
+#   do_not_apply_when  optional; the cases that look like they qualify but do
+#                      not, and what to do instead
+#   requires           optional; label ids (types or other flags in this file)
+#                      that must be present whenever this flag is, for a label
+#                      that only means something beside another
+#
+# Labels carry durable classification only, never mutable operational state.
+# "This item will need a step a person performs outside the code" is a flag:
+# it stays true for the item's whole life. "Such a step is pending right now"
+# is state: it belongs to the item's status in the tracker (`ops-pending`) or
+# to a ledger, which change as the work moves; a label would go stale.
 
 version: 1
 
@@ -37,46 +59,101 @@ types:
 
 # ---------------------------------------------------------------------------
 # statuses — CLOSED. Where the issue is in its lifecycle. Exactly one per issue.
+# The names map one-to-one to do-item's canonical states (hyphens here,
+# underscores there); `issue_tracker.states` (Jig's plugin/CONFIGURATION.md) maps
+# them to your tracker's own names. Blocking is not a status: it is a relation
+# between two items, read live from the tracker.
 # ---------------------------------------------------------------------------
 statuses:
   - id: triage
     notes: filed, not yet accepted or estimated
+  - id: backlog
+    notes: accepted, not yet planned for now
   - id: todo
     notes: accepted and ready to start
   - id: in-progress
     notes: actively being worked
   - id: in-review
     notes: implementation complete, under review
-  - id: blocked
-    notes: cannot proceed until a dependency clears
+  - id: ops-pending
+    notes: merged, waiting on a step outside the code that a person performs
   - id: done
     notes: terminal — shipped and verified
+  - id: canceled
+    notes: terminal — closed without completing; counted as abandoned, not done
+  - id: duplicate
+    notes: terminal — closed as a copy of another item; counted as abandoned, not done
 
 # ---------------------------------------------------------------------------
 # flags — each FIRES a named process. Zero or more per issue. These are the
 # process triggers; adding one is a policy decision, not a convenience label.
 # ---------------------------------------------------------------------------
 flags:
+  - id: epic
+    scope: container
+    fires: [status-roll-up, acceptance-review]
+    apply_when:
+      - the issue is the unit progress is reported on
+      - its outcome needs more than one pull request
+    do_not_apply_when:
+      - the issue is one deliverable split into parts for convenience (a split, not an epic), however many children it has
+      - the issue is a mid-tree grouping under an epic that is the real reporting unit
+    notes: >-
+      its status rolls up from its sub-issues, and it closes on an accepting
+      review verdict that its designed scope is delivered, or on a recorded
+      human waiver — never on a count of open children. A flag, not a type:
+      an epic keeps its real type (a defect epic stays `bug`).
+
   - id: has-migration
+    scope: shipping-item
     fires: migration-review
+    apply_when:
+      - the change adds or alters a schema or data migration
+    do_not_apply_when:
+      - the item is an epic and only some of its sub-issues carry the change — flag those sub-issues instead
     notes: a schema/data migration is present; the migration review gate is mandatory before merge
 
   - id: api-change
+    scope: shipping-item
     fires: contract-gates
+    apply_when:
+      - the change alters a public interface
+    do_not_apply_when:
+      - the item is an epic and only some of its sub-issues carry the change — flag those sub-issues instead
     notes: a public interface changed; the contract/backward-compatibility gates are mandatory
 
   - id: security-sensitive
+    scope: shipping-item
     fires: security-review
-    notes: touches auth, secrets, or untrusted input; a security review is mandatory
+    apply_when:
+      - the change touches auth, secrets, or untrusted input
+    do_not_apply_when:
+      - the item is an epic and only some of its sub-issues carry the change — flag those sub-issues instead
+    notes: a security review is mandatory
 
   - id: manual-ops
+    scope: shipping-item
     fires: blocks-done-until-operator-checklist
-    notes: a human operator step is required (a data backfill, a feature-flag flip); the issue cannot reach done until the checklist is complete
+    apply_when:
+      - shipping the change needs a step a person performs outside the code (a data backfill, a feature-flag flip)
+    do_not_apply_when:
+      - the item is an epic and only some of its sub-issues need the step — flag those sub-issues instead
+    notes: >-
+      the issue cannot reach done until the checklist is complete; while the
+      step is pending after merge, the issue's status is `ops-pending`
 
   - id: docs-required
+    scope: shipping-item
     fires: blocks-done-until-docs-updated
-    notes: the change alters documented behaviour; the issue cannot reach done until the docs are updated
+    apply_when:
+      - the change alters documented behaviour
+    notes: the issue cannot reach done until the docs are updated
 
   - id: hitl
+    scope: shipping-item
     fires: revoke-autonomy
-    notes: human-in-the-loop — revokes autonomous execution/merge for this issue and its PR; a person must act (shared with M7's HITL registry)
+    apply_when:
+      - a person must decide or act before the item's change can merge
+    notes: >-
+      human-in-the-loop — revokes autonomous execution/merge for this issue
+      and its PR; a person must act (shared with M7's HITL registry)

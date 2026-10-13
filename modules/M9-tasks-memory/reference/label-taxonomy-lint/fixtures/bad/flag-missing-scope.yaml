@@ -1,0 +1,16 @@
+# BAD — the `has-migration` flag declares no `scope:`. Without it nobody can
+# check whether the flag sits on the item whose change ships or on its container.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: has-migration
+    fires: migration-review
+    apply_when: the change adds or alters a schema or data migration

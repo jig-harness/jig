@@ -16,4 +16,6 @@ priorities:
 
 flags:
   - id: has-migration
+    scope: shipping-item
+    apply_when: the change needs this process
     fires: migration-review

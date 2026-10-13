@@ -145,13 +145,14 @@ so skipping never changes what merges.
 [Generated artifacts](GLOSSARY.md) (M2) are never edited by hand: regenerate
 them. Each row's drift check catches the failure named there. The example
 indexes open with a "generated" header naming their generator. `bun.lock` and
-the vendored parser cannot carry one, since each must stay byte for byte what
+the vendored parsers cannot carry one, since each must stay byte for byte what
 its generator writes, so this list is their marker.
 
 | File | Regenerate | Drift check |
 | --- | --- | --- |
 | `bun.lock` | `bun install` after changing `package.json` | CI installs with `bun install --frozen-lockfile`, which fails when the lockfile no longer matches `package.json`; it does not catch an edit that keeps them in agreement |
 | `plugin/skills/resolve-review-comments/scripts/lib/vendor/js-yaml.mjs` and its `js-yaml.LICENSE` | after updating `js-yaml`, copy `node_modules/js-yaml/dist/js-yaml.mjs` and `node_modules/js-yaml/LICENSE` (as `js-yaml.LICENSE`) into that folder | `tools/plugin/plugin.test.ts` compares both with the installed `js-yaml` |
+| `lib/vendor/js-yaml.mjs` and its `js-yaml.LICENSE` (a second copy, because `lib/` is vendored without `plugin/`) | the same copy, into `lib/vendor/` | `lib/module-gates.test.ts` compares both with the installed `js-yaml` |
 | `plugin/LICENSE` and `plugin/NOTICE` | `cp LICENSE NOTICE plugin/` after changing either (the plugin installs only `plugin/`) | `scripts/check-licences.ts` compares them with the root files |
 | `high_risk_path_patterns` in `.config/ai-review.yaml` | `bun scripts/review-risk.ts --write` after changing a `reviewRisk: high` area | the gates' `review-risk` check compares it with the catalog |
 | `modules/M2-generated-artifact-freshness/reference/triad/fixture/docs/index.md` | `bun modules/M2-generated-artifact-freshness/reference/triad/generate-index.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs` | `scripts/freshness.test.ts` runs `check-index-fresh.ts` against it |

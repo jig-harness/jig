@@ -1020,13 +1020,13 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>81</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
     );
     expect(suggested).toMatch(
-      /<details class="later sm" id="since-beyond" open data-fold><summary><span class="later-h">Still open beyond the target<\/span> <span class="later-n">\(78\)<\/span><\/summary><p class="intro">Not met at either audit, and not needed for Solo\/Lite: its target does not reach them.<\/p><table class="chgt chg-t">.*?<span class="bd bd-beyond">Still open<\/span>/,
+      /<details class="later sm" id="since-beyond" open data-fold><summary><span class="later-h">Still open beyond the target<\/span> <span class="later-n">\(81\)<\/span><\/summary><p class="intro">Not met at either audit, and not needed for Solo\/Lite: its target does not reach them.<\/p><table class="chgt chg-t">.*?<span class="bd bd-beyond">Still open<\/span>/,
     );
     const declared = since(
       renderReportHtml(
@@ -1041,7 +1041,7 @@ describe("the sheet", () => {
       ),
     );
     expect(declared).toContain(
-      '<li><span class="bd bd-open">Still open within the target <b>34</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>48</b></span></li>',
+      '<li><span class="bd bd-open">Still open within the target <b>37</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>48</b></span></li>',
     );
     // Without a profile, every criterion still open is counted together and none is listed.
     const none = since(
@@ -1050,7 +1050,7 @@ describe("the sheet", () => {
       ),
     );
     expect(none).toContain(
-      '<li><span class="bd bd-open">Still open <b>82</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li>',
+      '<li><span class="bd bd-open">Still open <b>85</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li>',
     );
     expect(none).not.toContain("Still open within");
     expect(none).not.toContain("Still open beyond");
@@ -1398,7 +1398,7 @@ describe("the Markdown copy", () => {
     const text = renderReportMarkdown(reportInput({ prior: priorRecord() }));
     expect(text).toContain(
       [
-        "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
+        "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 81 beyond it, not needed for this profile; 36 unchanged and met.",
         "",
         "### What changed (1)",
         "",
@@ -1415,14 +1415,14 @@ describe("the Markdown copy", () => {
         "| M0 Instruction architecture | `glossary-exists` | absent → absent | still open |",
         "| M1 Gates enforcement ladder | `ci-runs-gates-on-pr` | advisory → advisory | still open |",
         "",
-        "The 78 still open beyond the target are in Module detail, marked not needed for this profile.",
+        "The 81 still open beyond the target are in Module detail, marked not needed for this profile.",
       ].join("\n"),
     );
     const none = renderReportMarkdown(
       reportInput({ prior: priorRecord(), source: noProfile }),
     );
     expect(none).toContain(
-      "Compared with the audit of 2026-07-19 (plugin 0.14.0): 82 still open, 36 unchanged and met.",
+      "Compared with the audit of 2026-07-19 (plugin 0.14.0): 85 still open, 36 unchanged and met.",
     );
     expect(none).not.toContain("Still open");
     expect(none).not.toContain("beyond the target");

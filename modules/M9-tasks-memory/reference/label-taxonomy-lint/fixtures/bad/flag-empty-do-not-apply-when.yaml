@@ -1,0 +1,19 @@
+# BAD — the `has-migration` flag declares `do_not_apply_when:` with nothing in
+# it. The field is optional, but present it must name a condition.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: has-migration
+    scope: shipping-item
+    fires: migration-review
+    apply_when:
+      - the change adds or alters a schema or data migration
+    do_not_apply_when: []

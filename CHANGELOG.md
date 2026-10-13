@@ -98,6 +98,49 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.19.0] - 2026-10-13
+
+### Added
+
+- M9 states the work-item rules
+  ([README § Work-item rules](modules/M9-tasks-memory/README.md#work-item-rules)):
+  an epic closes on an accepted verdict or a recorded waiver, never on its
+  count of open children, and hands off its tails with a link back; a flag
+  that fires a gate goes on the item that ships the change; labels carry
+  durable classification only; every filing path sets priority and category
+  at birth, the priority from one severity mapping and the category checked
+  against one category list; copies of the taxonomy's key sets are
+  checked for exact equality; prioritization is computed and a person picks.
+- `/jig:audit` scores new M9 criteria: `gate-flags-scoped-to-shipping-item`,
+  `epic-closure-requires-acceptance` and `issues-prioritized-at-creation`.
+  A declared flag scope counts as convention, and a ranker that is only
+  planned is not credited.
+- `/jig:audit`'s configuration check compares the explicitly configured
+  `issue_tracker.labels` (and the older `review.taxonomy.epic_label` and
+  `provenance_label`) and `review.taxonomy.types` with the repository's
+  `label-taxonomy.yaml`, when it has one. A taxonomy whose sections are
+  malformed leaves the labels unchecked rather than reading as empty.
+
+### Changed
+
+- M9's label-taxonomy lint requires every flag to declare its `scope`
+  (`shipping-item` or `container`) and `apply_when`, and accepts
+  `do_not_apply_when` and `requires` (labels a flag may only appear with).
+  **Breaking** for a taxonomy copied from the template: add `scope` and
+  `apply_when` to each flag. The lint now parses the file as YAML with
+  js-yaml, vendored in `lib/vendor/`, so every spelling of an entry is
+  checked, a repeated key is rejected, and a field that is not text (a null
+  list member, a list-valued id) is reported rather than read as absent.
+  A copy of `lib/` must now include its `vendor/` folder.
+- M9's taxonomy template gains an `epic` flag, and its statuses are
+  `do-item`'s canonical states (`backlog`, `ops-pending`, `canceled` and
+  `duplicate` added; `blocked`, a relation between items, removed).
+- `/jig:do-item` closes an epic only on its newest verdict accepting it, or
+  on a waiver while that verdict is not a rejection, including when every
+  sub-issue is done; without either it moves the epic to `in_review`. An
+  extracted tail gets its backlink and a comment naming the epic before it
+  leaves the epic.
+
 ## [0.18.3] - 2026-10-13
 
 ### Fixed
@@ -780,7 +823,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.18.3...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/docomply/jig/compare/v0.18.3...v0.19.0
 [0.18.3]: https://github.com/docomply/jig/compare/v0.18.2...v0.18.3
 [0.18.2]: https://github.com/docomply/jig/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/docomply/jig/compare/v0.18.0...v0.18.1

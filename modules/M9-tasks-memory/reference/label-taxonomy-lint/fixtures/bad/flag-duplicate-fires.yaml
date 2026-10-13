@@ -13,5 +13,7 @@ statuses:
 
 flags:
   - id: hitl
+    scope: shipping-item
+    apply_when: the change needs this process
     fires:
     fires: security-review

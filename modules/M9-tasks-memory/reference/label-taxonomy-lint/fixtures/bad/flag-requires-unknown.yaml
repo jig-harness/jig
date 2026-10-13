@@ -1,0 +1,24 @@
+# BAD — the `hitl-legal` flag requires `legal`, which this file does not
+# define, so the label it depends on can never be present.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: hitl
+    scope: shipping-item
+    fires: revoke-autonomy
+    apply_when: a person must decide before the item can merge
+  - id: hitl-legal
+    scope: shipping-item
+    fires: legal-review
+    apply_when: the decision is a legal one
+    requires:
+      - hitl
+      - legal

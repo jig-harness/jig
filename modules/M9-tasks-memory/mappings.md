@@ -18,8 +18,9 @@ is an **option**, not a requirement: pick one row per column. Replace
 Point one `M9` variable at wherever you vendored the module and build every path
 from it; a bare `reference/...` resolves from the repo root and will not be
 found. Each gate imports the shared implementation in `lib/module-gates.ts`, so
-vendor the module together with `lib/` (a pinned Jig checkout keeps the
-two in place).
+vendor the module together with `lib/`, its `vendor/` folder included (a
+pinned Jig checkout keeps them in place). The label-taxonomy lint reads the
+taxonomy with the js-yaml build in `lib/vendor/`.
 
 ### GitHub Actions
 
@@ -89,6 +90,37 @@ repository's [configuration](../../plugin/CONFIGURATION.md#issue_tracker).
 The tracker-agnostic contract the gate needs is small: a `status:` and the
 completed phase ids, one per line. Any tracker that can export those (a saved
 view, an API query) can be gated — the export is the only per-tracker adapter.
+
+## Issue trackers — the work-item rules
+
+The [work-item rules](README.md#work-item-rules) need three things from a
+tracker: a priority every filing path can set, a marker for the container
+(the `epic` flag), and a place to record an epic's
+[acceptance verdict](../../GLOSSARY.md) or waiver before it closes.
+
+| Tracker | Priority at birth | Epic marker | Verdict or waiver before close |
+|---------|-------------------|-------------|--------------------------------|
+| GitHub issues | no native priority: a single-valued project field (or a `priority:` label set) written on create | an `epic` label; sub-issues for the children | a comment carrying a verdict marker line; a workflow on `issues: closed` reopens an epic without one |
+| GitLab issues | scoped labels (`priority::2`, a paid tier), single-valued by construction; on the free tier, a `priority-` label set the filing path keeps to one | epics (a paid tier) or an `epic` label | a comment marker; a webhook or scheduled job reopens an epic closed without one |
+| Jira | the built-in Priority field, required on create by the field configuration | the Epic issue type replaces the bug or feature type, so record the real type in a field; or keep the real type and add an `epic` label | a workflow validator on the closing transition requires the verdict field or a waiver comment |
+| Linear | the built-in priority (0 none, 1 urgent to 4 low), set on create | an `epic` label, keeping the real type label | a comment marker; [`do-item`](../../plugin/skills/do-item/SKILL.md) Step 5a asks for it before extracting tails and closing |
+
+Whatever the tracker, keep the [severity mapping](../../GLOSSARY.md) in one
+committed file, and have each filing path read it or test its own copy against
+it. Jig's deferral path (`resolve-review-comments`' `defer-batch.ts`) does
+neither yet. Its priorities are a fixed table in the script, and its tests
+compare that table with the skill's own test fixture, never with a
+repository's committed mapping. So a repository that changes its mapping
+changes nothing the deferral path files, and no check fails to say so: keep
+the mapping at the table's values, or check the copy yourself.
+
+The category list works the same way in Jig's tooling: it is
+`review.taxonomy.categories` in `.config/jig.yaml`
+([configuration reference](../../plugin/CONFIGURATION.md)), and the deferral
+path checks every category it files against that list plus `unknown`. So a
+finding the reviewer left uncategorized is filed as `unknown` even when the
+list does not name it, and any other category outside the list is refused
+before anything is written.
 
 ## Persistent-memory homes (the *how* tier + promotion)
 

@@ -382,6 +382,18 @@ criteria:
     # Flag labels actually fire process, not just categorize — e.g. a migration flag triggers a required check and a hitl flag is honoured.
     score: absent
     evidence: "No label is wired to any check. main.yml has no 'labeled' trigger and no label conditions."
+  M9/gate-flags-scoped-to-shipping-item:   # standard, requires convention
+    # A flag label that fires a gate goes on the work item whose change ships, never on the epic that contains it, the epic flag marks the container without replacing its type, and every copy of the taxonomy's key sets equals its source.
+    score: absent
+    evidence: "No flag label fires a process and no taxonomy is written down (see M9/taxonomy-documented), so nothing says which item carries one."
+  M9/epic-closure-requires-acceptance:   # standard, requires convention
+    # An epic closes when its newest verdict accepts that its designed scope is delivered, or on a recorded human waiver that cannot override a rejection, never on its count of open children; tails it was never scoped to finish are linked back and given a comment naming the epic before they are extracted and it closes.
+    score: absent
+    evidence: "No closure rule: issues are closed manually on GitHub (see M9/required-phases-gate-closure)."
+  M9/issues-prioritized-at-creation:   # standard, requires mechanical
+    # Every path that files an issue sets its priority and category at creation, the priority from one shared severity mapping and the category supplied with the finding and validated against one category list; it validates the mandatory taxonomy before the write, and appends to an existing container when one fits; the ranked shortlist a person picks from is computed, not hand-kept.
+    score: absent
+    evidence: "No priority labels in the forge's near-default label set (see M9/taxonomy-documented)."
   M9/memory-promotion-documented:   # standard, requires convention
     # The path that lifts a durable lesson from private per-session memory into git-tracked shared memory through a review point is documented.
     score: absent

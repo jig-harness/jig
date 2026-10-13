@@ -350,6 +350,124 @@ fix_ci:
     );
   });
 
+  describe("labels against the label taxonomy", () => {
+    const taxonomy = `version: 1
+types:
+  - id: feature
+  - id: bug
+statuses:
+  - id: todo
+flags:
+  - id: epic
+    scope: container
+  - id: hitl
+    scope: shipping-item
+`;
+    const labels = `issue_tracker:
+  labels:
+    epic: epic
+    hitl: hitl
+    manual_ops: ops-step
+    bug: [bug, "type:bug", defect]
+    extractable_tails: ["hitl:legal"]
+review:
+  taxonomy:
+    types: [feature, chore]
+`;
+    const taxonomyIds = (r: Report) =>
+      ids(r).filter((id) => /taxonomy/.test(id));
+
+    test("no taxonomy, or one only under templates, checks nothing", () => {
+      const { report } = fit({
+        ".config/jig.yaml": labels,
+        "templates/label-taxonomy.yaml": taxonomy,
+      });
+      expect(taxonomyIds(report)).toEqual([]);
+    });
+
+    test("a configured label the taxonomy lacks, and a differing type copy, warn", () => {
+      const { report } = fit({
+        ".config/jig.yaml": labels,
+        "docs/label-taxonomy.yaml": taxonomy,
+      });
+      // epic, hitl, the facet hitl:legal and the group-prefixed type:bug are
+      // defined; the defaulted followup label is not the repository's choice
+      // and is not checked.
+      expect(taxonomyIds(report).sort()).toEqual([
+        "taxonomy:issue_tracker.labels.bug",
+        "taxonomy:issue_tracker.labels.manual_ops",
+        "taxonomy:review.taxonomy.types",
+      ]);
+      const message = (id: string) =>
+        report.findings.find((f) => f.id === id)?.message ?? "";
+      expect(message("taxonomy:issue_tracker.labels.bug")).toContain(
+        "defect, which docs/label-taxonomy.yaml",
+      );
+      const types = message("taxonomy:review.taxonomy.types");
+      expect(types).toContain("not in docs/label-taxonomy.yaml: chore");
+      expect(types).toContain("missing from the configuration: bug");
+    });
+
+    test("two taxonomies, or one that cannot be parsed, leave the labels unchecked", () => {
+      const two = fit({
+        ".config/jig.yaml": labels,
+        "label-taxonomy.yaml": taxonomy,
+        "docs/label-taxonomy.yml": taxonomy,
+      }).report;
+      expect(two.findings.filter((f) => /taxonomy/.test(f.id))).toEqual([
+        expect.objectContaining({
+          id: "unchecked:label-taxonomy",
+          severity: "info",
+        }),
+      ]);
+      const broken = fit({
+        ".config/jig.yaml": labels,
+        "label-taxonomy.yaml": "types: [unclosed\n",
+      }).report;
+      expect(broken.findings.filter((f) => /taxonomy/.test(f.id))).toEqual([
+        expect.objectContaining({
+          id: "unchecked:label-taxonomy",
+          severity: "warning",
+        }),
+      ]);
+      for (const malformed of [
+        "types: feature\nstatuses:\n  - id: todo\n",
+        "types:\n  - id: [feature, bug]\n",
+        "types:\n  - id: feature\nflags: false\n",
+        "types:\n  - id: 1\n",
+        "types:\n  - id: feature\nflags:\n  - id: true\n",
+      ]) {
+        const report = fit({
+          ".config/jig.yaml": labels,
+          "label-taxonomy.yaml": malformed,
+        }).report;
+        expect(report.findings.filter((f) => /taxonomy/.test(f.id))).toEqual([
+          expect.objectContaining({ id: "unchecked:label-taxonomy" }),
+        ]);
+      }
+    });
+
+    test("an id is trimmed, as the taxonomy lint reads it", () => {
+      const { report } = fit({
+        ".config/jig.yaml":
+          "issue_tracker:\n  labels:\n    bug: bug\nreview:\n  taxonomy:\n    types: [feature, bug]\n",
+        "label-taxonomy.yaml": 'types:\n  - id: feature\n  - id: " bug "\n',
+      });
+      expect(taxonomyIds(report)).toEqual([]);
+    });
+
+    test("the older review.taxonomy label fields are checked too", () => {
+      const { report } = fit({
+        ".config/jig.yaml":
+          "review:\n  taxonomy:\n    epic_label: initiative\n    provenance_label: epic\n",
+        "label-taxonomy.yaml": taxonomy,
+      });
+      expect(ids(report).filter((id) => id.startsWith("taxonomy:"))).toEqual([
+        "taxonomy:review.taxonomy.epic_label",
+      ]);
+    });
+  });
+
   test("a clean file passes, and the integration branch must be known", () => {
     const { code, report } = fit({
       ".config/jig.yaml":

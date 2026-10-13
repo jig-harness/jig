@@ -869,7 +869,10 @@ routing below remain **exact**.
    operational or legal step remains (an operator checklist, a drill, a
    verification, a sign-off), in which case transition it to `ops_pending`.
    Nothing else moves statuses; deployment state comes from git, not from the
-   tracker.
+   tracker. An issue that itself carries the configured epic label (an epic
+   with no sub-issues, worked whole in Step 4a) reaches `done` only with the
+   closing authorization in Step 5a; without one, transition it to
+   `in_review` and report that it waits for an accepting verdict or a waiver.
 
    **`manual-ops` — surface the operator checklist and park in `ops_pending`,
    not `done` (Step 4a and 4b):** when the issue carries `manual-ops`, the
@@ -1039,13 +1042,14 @@ data flow, not an executable harness API.
 > remaining open child is a tail the epic was never scoped to finish — one
 > carrying a label in the repository's `extractable_tails` list (by default a
 > `hitl:legal` sign-off, `manual-ops` or `hitl:tactical` operations work, or
-> `pr-followup` review debt) — extract each (remove it from the epic, link it
-> back to the epic, and move it to the repository's standing destination for
-> that kind of work, if it has one) and close the epic. This requires an
-> accepting verdict from the repository's epic acceptance review, or a human
-> waiver recorded on the epic: "every child is closed or extractable" is not
+> `pr-followup` review debt) — extract each (link it back to the epic,
+> comment on it naming the epic it came from, then remove it from the epic and
+> move it to the repository's standing destination for that kind of work, if
+> it has one) and close the epic. This requires the epic's closing
+> authorization (defined below): "every child is closed or extractable" is not
 > itself the authorization, because sub-issues marked done whose code never
-> landed are a recurring failure. If the repository has a tool that performs
+> landed are a recurring failure. A waiver stands in for a review nobody ran;
+> it never overrides a rejecting verdict. If the repository has a tool that performs
 > the check, move, link and close, run it rather than doing the moves by
 > hand.
 
@@ -1171,8 +1175,15 @@ data flow, not an executable harness API.
    |-----------|--------|
    | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
    | `keep_in_progress` | Go to Step 4b |
-   | `extract_and_close_eligible` | Verify the epic has an accepting verdict from the repository's epic acceptance review, or a recorded human waiver; if so, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no verdict or waiver yet |
-   | `set_status` | Transition the parent: `tracker.ts transition <KEY> <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
+   | `extract_and_close_eligible` | Verify the epic's closing authorization (below); if it has one, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no accepting verdict or waiver yet |
+   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (`listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `tracker.ts transition <KEY> <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
+
+   **Closing authorization.** An epic may close only when its newest verdict
+   from the repository's epic acceptance review accepts it, or when a person
+   has recorded a waiver on it and its newest verdict, if there is one, is not
+   a rejection. An accepting verdict that a later rejection superseded does
+   not count, and a waiver never overrides a rejection. A count of done
+   children is never the authorization, whichever verdict above produced it.
 
    **`manual-ops` guard on parent completion.** When `decision.parentState`
    is `ops_pending` because the parent itself carries `manual-ops` (every

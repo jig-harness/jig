@@ -45,7 +45,9 @@ configuration schema (`${CLAUDE_SKILL_DIR}/config-schema.yaml`) and against the
 repository: unknown, refused and deprecated fields, wrong types, what the
 skills' own validation rejects, commands and paths that do not exist, required
 checks that never run, a tracker that cannot be reached, declared values the
-repository contradicts, and settings its shape suggests. Each finding has an id
+repository contradicts, tracker labels its label taxonomy
+(`label-taxonomy.yaml`) does not define or a `review.taxonomy.types` that
+differs from it (`taxonomy:<field>`), and settings its shape suggests. Each finding has an id
 (`config/<id>`). Exit 1 means at least one error; it is a finding, not a reason
 to stop. Without network access or `gh`, add `--offline`; the forge and
 tracker questions are then reported as unchecked, never as passing.

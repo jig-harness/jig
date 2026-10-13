@@ -301,7 +301,28 @@ make, use the entry's term instead.
   own pull request, while the epic itself tracks the whole. Jig's
   `do-item` skill picks up the next sub-issue and records the epic's order in
   a machine-readable execution plan
-  ([do-item](plugin/skills/do-item/SKILL.md)).
+  ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
+  (an outcome too large for one pull request, and the unit progress is
+  reported on), not by how many children it has, and it closes on an
+  *acceptance verdict*, never on a count of open children
+  ([M9](modules/M9-tasks-memory/README.md#work-item-rules)).
+- **Acceptance verdict** — the recorded outcome of reviewing whether an
+  *epic*'s designed scope is delivered: accepting (with or without follow-ups)
+  or rejecting. An accepting verdict, or a *waiver*, is what lets an epic close
+  ([M9](modules/M9-tasks-memory/README.md#an-epic-closes-on-an-accepted-verdict)).
+- **Waiver** — a person's recorded decision, on the *epic* itself, to close it
+  without an *acceptance verdict*. It stands in for a review nobody ran and
+  never overrides a rejecting one.
+- **Tail** — an open child of an *epic* that the epic was never scoped to
+  finish, such as a legal sign-off, an operator step or review debt. At
+  closure a tail is linked back and given a comment naming the epic, then
+  unparented and moved to the standing destination for its kind.
+- **Shipping item** — the work item whose own pull request carries a change,
+  as opposed to the *epic* that contains it. A *flag label* that fires a gate
+  goes on the shipping item.
+- **Severity mapping** — the one table that turns a finding's severity into
+  the tracker priority it is filed with, shared by every
+  path that files an issue so they cannot disagree.
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a

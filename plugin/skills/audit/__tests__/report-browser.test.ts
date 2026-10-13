@@ -582,7 +582,7 @@ describe("since the last audit", () => {
     ).toEqual([
       "Fixed 1",
       "Still open within the target 4",
-      "Still open beyond the target 78",
+      "Still open beyond the target 81",
       "Unchanged and met 36",
     ]);
     const fixed = page.locator("#since .chg-t .bd-fixed");

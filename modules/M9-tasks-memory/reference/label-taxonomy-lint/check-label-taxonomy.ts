@@ -11,7 +11,20 @@
 //      nothing, so an issue could carry no type or no status at all).
 //   3. every entry under `flags:` declares a NON-EMPTY `fires:` — a flag label
 //      with no process trigger is folksonomy, which this module bans.
-//   4. no UNKNOWN top-level keys (the schema is version/types/statuses/flags).
+//   4. every flag declares `scope:` as exactly `shipping-item` or `container` —
+//      which makes "gate flags go on the item whose change ships, never on the
+//      container holding it" checkable per flag.
+//   5. every flag declares a NON-EMPTY `apply_when:`, and a `do_not_apply_when:`,
+//      when present, is non-empty — applying a flag is a rule, not habit.
+//   6. every id a flag `requires:` is a type or another flag in the same file —
+//      a dependent label never appears without the label it depends on.
+//   7. no UNKNOWN top-level keys (the schema is version/types/statuses/flags),
+//      and no entry repeats a field.
+//
+// The file is read with a full YAML parser that rejects a repeated key, so
+// every spelling of an entry (flow or block, quoted or plain) is checked alike.
+// A field must be a text or a list of non-empty texts; anything else (a null
+// list member, a list-valued id, a number) is reported, never read as absent.
 //
 // Portable: Bun + TypeScript. No shell utilities.
 //

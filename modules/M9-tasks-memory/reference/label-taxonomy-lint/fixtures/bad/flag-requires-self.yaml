@@ -1,0 +1,17 @@
+# BAD — the `hitl` flag requires itself, which constrains nothing.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: hitl
+    scope: shipping-item
+    fires: revoke-autonomy
+    apply_when: a person must decide before the item can merge
+    requires: [hitl]

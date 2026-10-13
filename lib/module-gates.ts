@@ -1,9 +1,12 @@
 /** Portable gates over exported files. Keep the original line-oriented formats
  * intentionally narrow: adopting a full YAML parser would change gate behavior.
- * The one exception is the PR-target safety lint, which reads GitHub Actions
- * workflows with Bun's YAML parser: a workflow can spell the same step through
- * folded scalars, quoted keys, flow mappings and anchors, and the lint must see
- * the value GitHub sees. */
+ * Two gates read full YAML instead, because their files can spell one value
+ * through folded scalars, quoted keys, flow collections and anchors, and the
+ * gate must see the value every other reader sees. The PR-target safety lint
+ * reads GitHub Actions workflows with Bun's YAML parser. The label-taxonomy lint
+ * reads the taxonomy with js-yaml, vendored in `vendor/` beside this file,
+ * which rejects a repeated key where Bun's parser keeps the last one; vendoring
+ * `lib/` alone therefore keeps that check. */
 import {
   accessSync,
   chmodSync,
@@ -23,6 +26,7 @@ import {
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join, isAbsolute } from "node:path";
+import { load as loadYaml } from "./vendor/js-yaml.mjs";
 
 export interface Result {
   code: number;
@@ -682,60 +686,189 @@ function entries(
   emit();
   return { keys, entries: records };
 }
+const TAXONOMY_KEYS = ["version", "types", "statuses", "flags"];
+const FLAG_SCOPES = ["shipping-item", "container"];
+const isMapping = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+/**
+ * A field's values: one text, or a list of texts. An absent, null or empty
+ * field has none. `undefined` means the field holds something else (a number,
+ * a mapping, a list with a null or empty member), which the caller reports
+ * rather than reading as absent.
+ */
+function textValues(value: unknown): string[] | undefined {
+  if (value === undefined || value === null) return [];
+  if (typeof value === "string") return value.trim() ? [value.trim()] : [];
+  if (!Array.isArray(value)) return undefined;
+  const items = value.map((item) =>
+    typeof item === "string" ? item.trim() : "",
+  );
+  return items.every(Boolean) ? items : undefined;
+}
+/** What is wrong with one flag on its own. */
+function flagProblems(entry: Record<string, unknown>, id: string): string[] {
+  const problems: string[] = [];
+  const values = (name: string) => {
+    const found = textValues(entry[name]);
+    if (!found)
+      problems.push(
+        `flag '${id}' has a '${name}:' that is not a text or a list of non-empty texts`,
+      );
+    return found;
+  };
+  if (values("fires")?.length === 0)
+    problems.push(
+      `flag '${id}' declares no 'fires:' (a flag label with no process trigger is folksonomy)`,
+    );
+  const scope = values("scope");
+  if (scope?.length === 0)
+    problems.push(
+      `flag '${id}' declares no 'scope:' (${FLAG_SCOPES.join(" or ")}: which item the flag goes on)`,
+    );
+  else if (scope && (scope.length > 1 || !FLAG_SCOPES.includes(scope[0] || "")))
+    problems.push(
+      `flag '${id}' has scope '${scope.join(", ")}' (must be ${FLAG_SCOPES.join(" or ")})`,
+    );
+  if (values("apply_when")?.length === 0)
+    problems.push(
+      `flag '${id}' declares no 'apply_when:' (when the flag applies must be a rule, not habit)`,
+    );
+  if (
+    Object.hasOwn(entry, "do_not_apply_when") &&
+    values("do_not_apply_when")?.length === 0
+  )
+    problems.push(`flag '${id}' has an empty 'do_not_apply_when:'`);
+  values("requires");
+  return problems;
+}
+/** A flag's `requires:` must name other labels this file defines. */
+function requiresProblems(
+  flags: { id: string; entry: Record<string, unknown> }[],
+  labels: Set<string>,
+): string[] {
+  return flags.flatMap(({ id, entry }) =>
+    (textValues(entry.requires) || []).flatMap((required) => {
+      if (required === id) return [`flag '${id}' requires itself`];
+      return labels.has(required)
+        ? []
+        : [
+            `flag '${id}' requires '${required}', which is not a type or flag in this file`,
+          ];
+    }),
+  );
+}
+/** One section's entries: its list, or a problem saying why it has none. */
+function sectionEntries(
+  doc: Record<string, unknown>,
+  section: string,
+): { list: unknown[]; problem?: string } {
+  const value = doc[section],
+    required = section !== "flags";
+  if (value === undefined && required)
+    return {
+      list: [],
+      problem: `missing required top-level key '${section}:'`,
+    };
+  if (value !== undefined && value !== null && !Array.isArray(value))
+    return { list: [], problem: `'${section}:' is not a list` };
+  const list = Array.isArray(value) ? value : [];
+  return required && !list.length
+    ? {
+        list,
+        problem: `'${section}:' is empty (must be a closed, non-empty list)`,
+      }
+    : { list };
+}
+type TaxonomyEntry = { id: string; entry: Record<string, unknown> };
+/** One entry with its id, or the problem that keeps it from having one. */
+function taxonomyEntry(
+  section: string,
+  entry: unknown,
+): TaxonomyEntry | string {
+  if (!isMapping(entry)) return `a '${section}' entry is not a mapping`;
+  const id = typeof entry.id === "string" ? entry.id.trim() : "";
+  if (id) return { id, entry };
+  return [undefined, null, ""].includes(entry.id as string)
+    ? `a '${section}' entry has no id`
+    : `a '${section}' entry has an id that is not a single name`;
+}
+/** Ids defined more than once across the file, once per repeat. */
+function duplicateIds(entries: TaxonomyEntry[]): string[] {
+  const seen = new Set<string>();
+  return entries.flatMap(({ id }) => {
+    if (seen.has(id)) return [`duplicate label id '${id}'`];
+    seen.add(id);
+    return [];
+  });
+}
+/** Every problem in a parsed taxonomy, and how many entries each section has. */
+function taxonomyProblems(doc: unknown) {
+  const count: Record<string, number> = {};
+  if (!isMapping(doc))
+    return {
+      count,
+      problems: [
+        "the file is not a mapping (schema is version/types/statuses/flags)",
+      ],
+    };
+  const problems = Object.keys(doc)
+    .filter((key) => !TAXONOMY_KEYS.includes(key))
+    .map(
+      (key) =>
+        `unknown top-level key '${key}:' (schema is version/types/statuses/flags)`,
+    );
+  const entries = new Map<string, TaxonomyEntry[]>();
+  for (const section of ["types", "statuses", "flags"]) {
+    const { list, problem } = sectionEntries(doc, section);
+    if (problem) problems.push(problem);
+    count[section] = list.length;
+    const found = list.map((entry) => taxonomyEntry(section, entry));
+    problems.push(...found.filter((f) => typeof f === "string"));
+    entries.set(
+      section,
+      found.filter((f) => typeof f !== "string"),
+    );
+  }
+  const all = [...entries.values()].flat(),
+    flags = entries.get("flags") || [],
+    labels = new Set(
+      [...(entries.get("types") || []), ...flags].map((e) => e.id),
+    );
+  problems.push(...duplicateIds(all));
+  for (const { id, entry } of flags) problems.push(...flagProblems(entry, id));
+  problems.push(...requiresProblems(flags, labels));
+  return { count, problems };
+}
+/** A YAML parse failure as a lint problem; a repeated key names the key. */
+function yamlProblem(e: unknown, raw: string): string {
+  const { reason, mark, message } = e as {
+    reason?: string;
+    mark?: { line: number; column: number };
+    message?: string;
+  };
+  if (reason !== "duplicated mapping key" || !mark)
+    return `not valid YAML: ${reason || message || String(e)}`;
+  const at = (raw.split("\n")[mark.line] || "").slice(mark.column);
+  const key = at.match(/^["']?([^"':]+)["']?\s*:/)?.[1] || at.trim();
+  return mark.column === 0
+    ? `duplicate top-level key '${key}:'`
+    : `duplicate '${key}:' field on line ${mark.line + 1}`;
+}
 function labelTaxonomy(args: string[], env: Environment): Result {
   const path = args[0] || env.TAXONOMY || "label-taxonomy.yaml";
   if (!file(path)) return error(`taxonomy not found: ${path}`);
-  const parsed = entries(path, ["id", "fires"]);
-  const seen = new Set<string>(),
-    keys = new Set<string>(),
-    count: Record<string, number> = {};
-  let out = "",
-    errors = 0;
-  const fail = (s: string) => {
-    out += `  - ${s}\n`;
-    errors++;
-  };
-  // Traverse key and entry records in source order to preserve diagnostics.
-  for (const line of lines(path)) {
-    const top = line.match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:/);
-    if (!top) continue;
-    const key = top[1] || "";
-    if (keys.has(key)) fail(`duplicate top-level key '${key}:'`);
-    keys.add(key);
-    if (!["version", "types", "statuses", "flags"].includes(key))
-      fail(
-        `unknown top-level key '${key}:' (schema is version/types/statuses/flags)`,
-      );
+  const raw = readFileSync(path, "utf8");
+  let count: Record<string, number> = {},
+    problems: string[];
+  try {
+    ({ count, problems } = taxonomyProblems(loadYaml(raw)));
+  } catch (e) {
+    problems = [yamlProblem(e, raw)];
   }
-  for (const entry of parsed.entries) {
-    const { section, duplicate } = entry,
-      id = entry.fields.id || "",
-      fires = entry.fields.fires || "";
-    if (duplicate) {
-      fail(`a '${section}' entry has a duplicate '${duplicate}:' field`);
-      continue;
-    }
-    if (!id) {
-      fail(`a '${section}' entry has no id`);
-      continue;
-    }
-    if (seen.has(id)) fail(`duplicate label id '${id}'`);
-    else seen.add(id);
-    count[section] = (count[section] || 0) + 1;
-    if (section === "flags" && (missing(fires) || fires === "[]"))
-      fail(
-        `flag '${id}' declares no 'fires:' (a flag label with no process trigger is folksonomy)`,
-      );
-  }
-  for (const req of ["types", "statuses"]) {
-    if (!keys.has(req)) fail(`missing required top-level key '${req}:'`);
-    else if (!count[req])
-      fail(`'${req}:' is empty (must be a closed, non-empty list)`);
-  }
-  return errors
+  return problems.length
     ? result(
         1,
-        `${out}\nLabel-taxonomy lint FAILED: ${errors} problem(s) in ${path}\n`,
+        `${problems.map((p) => `  - ${p}\n`).join("")}\nLabel-taxonomy lint FAILED: ${problems.length} problem(s) in ${path}\n`,
       )
     : result(
         0,

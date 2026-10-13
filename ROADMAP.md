@@ -351,8 +351,7 @@ Practices a working repository validated, for modules that exist today:
   - a registry of external preconditions;
   - a heartbeat in which a stopped schedule reads as red;
   - one self-closing issue per cause of a scheduled failure.
-- **M6, M7 and M9**:
-  - an epic closes on an accepted verdict, not when its children reach zero;
+- **M6 and M7**:
   - an acceptance stage;
   - plan claims checked against the code before building;
   - the execution-plan format the pickup skill reads;

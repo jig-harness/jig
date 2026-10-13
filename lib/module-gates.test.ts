@@ -753,3 +753,87 @@ test("reflection accepts CRLF exported records", async () => {
   writeFileSync(record, readFileSync(hard, "utf8").replace(/\n/g, "\r\n"));
   expect((await reflection([record], env)).code).toBe(0);
 });
+test("the label-taxonomy lint reads every YAML spelling of an entry and rejects what is not text", async () => {
+  const head = "types:\n  - id: feature\nstatuses:\n  - id: todo\n";
+  const flag = "    scope: shipping-item\n    apply_when: always\n";
+  const lint = (body: string) =>
+    gates["check-label-taxonomy"]?.([written("label-taxonomy.yaml", body)], {});
+  const cases: [string, number, string][] = [
+    [
+      `${head}flags: [{id: has-migration}]\n`,
+      1,
+      "flag 'has-migration' declares no 'fires:'",
+    ],
+    [`${head}flags: false\n`, 1, "'flags:' is not a list"],
+    [`${head}"flags":\n  - id: hitl\n`, 1, "flag 'hitl' declares no 'fires:'"],
+    [`${head}"extra": 1\n`, 1, "unknown top-level key 'extra:'"],
+    [
+      `${head}flags:\n  -\n    id: hitl\n    fires: review\n${flag}`,
+      0,
+      "flags=1",
+    ],
+    [
+      `${head}flags:\n  - id: hitl\n    fires: [null]\n${flag}`,
+      1,
+      "'fires:' that is not a text",
+    ],
+    [
+      `${head}flags:\n  - id: hitl\n    fires: review\n    scope: shipping-item\n    apply_when:\n      - ~\n`,
+      1,
+      "'apply_when:' that is not a text",
+    ],
+    [
+      `types:\n  - id: [feature, bug]\n${head.slice(head.indexOf("statuses"))}`,
+      1,
+      "id that is not a single name",
+    ],
+    [
+      `types:\n  - id: 1\n${head.slice(head.indexOf("statuses"))}`,
+      1,
+      "id that is not a single name",
+    ],
+    [
+      `types:\n  - id: " feature "\n${head.slice(head.indexOf("statuses"))}`,
+      0,
+      "types=1",
+    ],
+    [
+      `types:\n  - id: "api,change"\nstatuses:\n  - id: todo\nflags:\n  - id: hitl\n    fires: review\n${flag}    requires: ["api,change"]\n`,
+      0,
+      "flags=1",
+    ],
+  ];
+  for (const [body, code, expected] of cases) {
+    const run = await lint(body);
+    expect({ body, code: run?.code }).toEqual({ body, code });
+    expect(run?.stdout).toContain(expected);
+  }
+});
+test("the label-taxonomy lint rejects a repeated key where only lib/ was vendored", async () => {
+  const vendored = join(temporary(), "lib");
+  mkdirSync(join(vendored, "vendor"), { recursive: true });
+  for (const name of ["module-gates.ts", "vendor/js-yaml.mjs"])
+    writeFileSync(
+      join(vendored, name),
+      readFileSync(join(import.meta.dir, name)),
+    );
+  const copy = await import(join(vendored, "module-gates.ts"));
+  const taxonomy = written(
+    "label-taxonomy.yaml",
+    "types:\n  - id: feature\nstatuses:\n  - id: todo\nflags:\n  - id: hitl\n    fires:\n    fires: review\n    scope: shipping-item\n    apply_when: a person decides\n",
+  );
+  const run = await copy.gates["check-label-taxonomy"]([taxonomy], {});
+  expect(run.code).toBe(1);
+  expect(run.stdout).toContain("duplicate 'fires:' field on line 8");
+});
+test("lib/'s vendored YAML parser is the pinned js-yaml build", () => {
+  // Vendored so the gates need no node_modules; CONTRIBUTING.md § Derived
+  // files says how to refresh it when the dependency is updated.
+  const pinned = join(import.meta.dir, "..", "node_modules", "js-yaml");
+  expect(
+    readFileSync(join(import.meta.dir, "vendor", "js-yaml.mjs"), "utf8"),
+  ).toBe(readFileSync(join(pinned, "dist", "js-yaml.mjs"), "utf8"));
+  expect(
+    readFileSync(join(import.meta.dir, "vendor", "js-yaml.LICENSE"), "utf8"),
+  ).toBe(readFileSync(join(pinned, "LICENSE"), "utf8"));
+});

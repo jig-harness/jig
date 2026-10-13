@@ -475,6 +475,18 @@ criteria:
     # prior: convention: hitl is honoured as an agent instruction (plugin/skills/do-item/SKILL.md); pr-followup drives deferral filing; no label is wired to a required check
     score: convention
     evidence: "hitl exists in the tracker and do-item/decide honour it in prose; pr-followup drives deferral filing; no label is wired to a required check"
+  M9/gate-flags-scoped-to-shipping-item:   # standard, requires convention
+    # A flag label that fires a gate goes on the work item whose change ships, never on the epic that contains it, the epic flag marks the container without replacing its type, and every copy of the taxonomy's key sets equals its source.
+    score: absent
+    evidence: "Jig keeps no label taxonomy of its own: .config/jig.yaml names the epic and pr-followup labels only, and neither AGENTS.md nor plugin/AGENTS.md says which item carries a gate flag; the rule is stated in modules/M9-tasks-memory (README § Work-item rules, templates), which describes the practice for adopters"
+  M9/epic-closure-requires-acceptance:   # standard, requires convention
+    # An epic closes when its newest verdict accepts that its designed scope is delivered, or on a recorded human waiver that cannot override a rejection, never on its count of open children; tails it was never scoped to finish are linked back and given a comment naming the epic before they are extracted and it closes.
+    score: absent
+    evidence: "At the audited commit, plugin/skills/do-item/SKILL.md Step 5a (extract-and-close rule) asks for an accepting verdict or a recorded human waiver before an epic closes and links extracted tails back, but does not require the newest verdict, does not stop a waiver overriding a rejection, asks for no provenance comment on a tail, and its set_status row transitions without the check; no tool refuses the close mechanically"
+  M9/issues-prioritized-at-creation:   # standard, requires mechanical
+    # Every path that files an issue sets its priority and category at creation, the priority from one shared severity mapping and the category supplied with the finding and validated against one category list; it validates the mandatory taxonomy before the write, and appends to an existing container when one fits; the ranked shortlist a person picks from is computed, not hand-kept.
+    score: convention
+    evidence: "Review deferrals file through resolve-review-comments/scripts/defer-batch.ts, which sets priority from SEVERITY_TO_PRIORITY, requires a category independent of severity (a review category or unknown), refuses a type outside review.taxonomy.types and appends to the open batch; other filing (issue_tracker.file_command) sets no priority mechanically; Jig has no .config/fleet-health.yaml or .config/review-triage.yaml, so fractal-metrics.ts cannot measure the priority-less share; no computed ranker produces a shortlist"
   M9/memory-promotion-documented:   # standard, requires convention
     # The path that lifts a durable lesson from private per-session memory into git-tracked shared memory through a review point is documented.
     # prior: convention: plugin/skills/promote-memory/SKILL.md documents private memory to checked, git-tracked docs as a reviewed step; available to Jig through the plugin, though Jig has no target store

@@ -1,0 +1,17 @@
+# BAD — the `has-migration` flag's `scope:` is neither `shipping-item` nor
+# `container`, the only two places a flag can go.
+version: 1
+
+types:
+  - id: feature
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: has-migration
+    scope: anywhere
+    fires: migration-review
+    apply_when: the change adds or alters a schema or data migration
