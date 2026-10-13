@@ -3,6 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 module: M8
 name: learning-loop
+purpose: >-
+  A miss that slipped through review becomes a durable check, so the same
+  class of miss does not recur.
 criteria:
   - id: flywheel-documented
     level: lite

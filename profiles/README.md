@@ -10,7 +10,12 @@ profile's target resolves to concrete criteria: "M1 Lite" means passing every
 `level: lite` criterion in
 [`M1-gates-enforcement-ladder.yaml`](../plugin/skills/audit/criteria/M1-gates-enforcement-ladder.yaml),
 and likewise per module — the criteria live only there (single source of
-truth), so profiles name levels, never restate criteria. The
+truth), so profiles name levels, never restate criteria. The levels below
+are also in machine-readable form, in
+[`plugin/skills/audit/profiles.yaml`](../plugin/skills/audit/profiles.yaml),
+with the order to adopt modules in: the audit reads that file to show each
+module's target and what is left to reach it. This page keeps the reasoning;
+the file and this page change together. The
 [audit skill](../plugin/skills/audit/README.md) reads the same criteria to
 score a repository and reports the level each module attains.
 

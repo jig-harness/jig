@@ -3,6 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 module: M7
 name: pr-lifecycle-review
+purpose: >-
+  Who reviews what, when a pull request is ready and who may merge are written
+  down and enforced, and automated reviewers earn their power.
 criteria:
   - id: lifecycle-documented
     level: lite

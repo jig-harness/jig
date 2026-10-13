@@ -53,16 +53,18 @@ export function scratchRepo(files: Record<string, string>): string {
   return root;
 }
 
-/** Run one of the audit's scripts in `cwd`. */
+/** Run one of the audit's scripts in `cwd`, with `input` on its standard input. */
 export function runScript(
   script: string,
   args: string[],
   cwd: string,
   env: Record<string, string> = cleanEnv(),
+  input = "",
 ): { code: number; out: string; err: string } {
   const r = spawnSync(process.execPath, [join(SCRIPTS, script), ...args], {
     cwd,
     env,
+    input,
     encoding: "utf8",
     timeout: 60_000,
   });

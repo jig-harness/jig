@@ -11,6 +11,8 @@ on the enforcement ladder (see the
 ```yaml
 module: M1                        # module id
 name: gates-enforcement-ladder    # module directory suffix
+purpose: >-                       # one plain-language sentence: what the module solves
+  Stated rules become checks, ordered from convention to hard gate.
 criteria:
   - id: ci-runs-gates-on-pr       # stable slug, unique within the module
     level: lite                   # level where this first becomes required:

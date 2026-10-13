@@ -3,6 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 module: M3
 name: change-area-catalog
+purpose: >-
+  One catalog says what kind of change touches which paths and what must
+  follow, instead of path lists copied across CI, review and deploy.
 criteria:
   - id: catalog-is-single-source
     level: lite

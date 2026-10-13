@@ -62,7 +62,8 @@ Contents: [the file](#the-file) ·
   [schema](skills/audit/config-schema.yaml) and against the repository:
   unknown, refused, deprecated and mistyped fields, commands and paths that do
   not exist, required checks that never run, and declared values the
-  repository contradicts;
+  repository contradicts; with `--draft` it prints a starter file instead,
+  each value the repository implies with the fact it came from;
   `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
   prints the review skill's values or what is missing;
   `bun <plugin>/skills/do-item/scripts/pr-plan.ts open` prints the pull-request

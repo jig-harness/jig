@@ -7,6 +7,9 @@
 # scored by module M12.
 module: M1
 name: gates-enforcement-ladder
+purpose: >-
+  Stated rules become checks, ordered from convention to hard gate, so what
+  nobody checks does not quietly erode.
 criteria:
   - id: gate-set-documented
     level: lite

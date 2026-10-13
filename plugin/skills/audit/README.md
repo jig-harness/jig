@@ -7,8 +7,10 @@ a document look the same as practices a check enforces, a gate that quietly
 stopped running goes unnoticed, and every review of the practices starts from
 nothing because no one wrote down what the last one found.
 
-`/jig:audit` points an agent at a repository and returns a report with
-prioritized, actionable recommendations. It is the brownfield entry point
+`/jig:audit` points an agent at a repository and returns an audit sheet: a
+polished HTML report of where the repository stands against the profile the
+team aims for, with prioritized, actionable recommendations the team accepts,
+refines or declines in place and hands back to the agent. It is the brownfield entry point
 ([principle 6](https://github.com/docomply/jig/blob/main/principles/06-audit-first.md)),
 and because it records what it found in the repository itself, every later run
 is a regression check: it reports what was fixed, what slipped, and what Jig
@@ -32,13 +34,26 @@ added since, and it does not repeat a recommendation the team declined.
    out carries a *probe*: when the fact is missing, the script scores it
    `absent` itself.
 4. **The record.** `.config/jig-audit.yaml` in the audited repository: the
-   plugin version, the date and commit, each criterion's score and evidence,
-   and the recommendations the team declined, each with its reason and the
-   condition for revisiting it. The next audit compares against it.
-5. **The report**, in the [report template](references/report-template.md)'s
-   structure: executive summary, detected stack, configuration fit, module
-   scores and levels, changes since the last audit, ranked gaps, drift, and an
-   adoption sequence.
+   plugin version, the date and commit, the profile the team aims for, each
+   criterion's score and evidence, and the recommendations the team
+   declined, each with its reason and the condition for revisiting it. The
+   next audit compares against it.
+5. **Profiles as targets.** [profiles.yaml](profiles.yaml) gives each profile
+   (Solo/Lite, Team/Standard, Regulated/Strict) a target level per module and
+   the order to adopt modules in, so the audit shows each module's target and
+   the criteria left to reach it.
+6. **The audit sheet** ([format](references/report-sheet.md)): one
+   self-contained HTML file, with the same report as Markdown beside it. It
+   opens with the summary and a maturity map against the target, then the
+   moves that matter most, what changed since the last audit, the
+   recommendations by module, every criterion with its evidence,
+   configuration fit (with a starter configuration where one helps), drift,
+   and exactly what was examined and what could not be checked.
+7. **Decisions.** In the sheet the team marks each recommendation accept,
+   refine, decline (with a reason and when to revisit) or *this is wrong*,
+   and copies the decisions as one block. Pasted back to the agent,
+   `record.ts apply-feedback` records the declines and prints the accepted
+   work in adoption order.
 
 The audit is read-only: it writes the record and nothing else. Applying a
 recommendation is a separate request (`/jig:audit apply <ref>`) that opens one
@@ -55,10 +70,12 @@ settings (branch protection, required checks, recent pull requests) and the
 tracker adapter for one read; without them it marks those questions
 unchecked.
 
-Commit the record it writes. Run the audit again after a few weeks of work, or
-after updating the plugin: the report then starts with what changed.
+Open the audit sheet it writes, mark your decisions, press **Copy
+decisions** and paste them back into the session. Commit the record. Run the
+audit again after a few weeks of work, or after updating the plugin: the
+sheet then starts with what changed.
 
-To decline a recommendation, keep it in the record:
+A decline is kept in the record (the sheet writes this for you):
 
 ```yaml
 declined:
@@ -81,15 +98,17 @@ compares their committed records instead of auditing each again
 |------|---------------|
 | [SKILL.md](SKILL.md) | The procedure the agent follows |
 | [config-schema.yaml](config-schema.yaml) | Every `.config/jig.yaml` field: type, readers, `since`, deprecation |
+| [profiles.yaml](profiles.yaml) | Each profile's target level per module, and the adoption order |
 | [criteria/](criteria/README.md) | Each module's maturity criteria and probes, and their format |
 | [references/methodology.md](references/methodology.md) | The audit method, step by step |
 | [references/survey-prompts/](references/survey-prompts/) | One read-only survey prompt per practice area |
-| [references/report-template.md](references/report-template.md) | The structure of the report |
+| [references/report-sheet.md](references/report-sheet.md) | The report source an audit writes, and the sheet rendered from it |
 | [references/portfolio-methodology.md](references/portfolio-methodology.md), [portfolio-report-template.md](references/portfolio-report-template.md) | The comparison pass over several repositories |
 | [calibration/](calibration/) | Audit runs against real repositories, kept as worked examples |
-| `scripts/config-fit.ts` | Configuration fit (`--offline`, `--json`) |
+| `scripts/config-fit.ts` | Configuration fit (`--offline`, `--json`, `--draft` for a starter configuration) |
+| `scripts/report.ts` | `validate`, `render` and `extract` of the audit sheet |
 | `scripts/score.ts` | The scoring checklist, the draft record, and `--check` of the criteria |
-| `scripts/record.ts` | `check`, `compare`, `summary` and `portfolio` over records |
+| `scripts/record.ts` | `check`, `compare`, `summary`, `portfolio` and `apply-feedback` over records |
 
 ## Changing it
 

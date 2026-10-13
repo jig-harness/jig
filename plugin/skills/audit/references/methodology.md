@@ -80,13 +80,22 @@ cheap to fix and misleads every agent session until it is.
 
 ## 4. Synthesize the report
 
-Merge into [report-template.md](report-template.md)'s structure:
+Write the report source ([report-sheet.md](report-sheet.md)) and render the
+audit sheet from it. The source holds what the record does not:
 
-1. practice inventory mapped to the module map (what exists, where);
-2. gap analysis ranked by **leverage × effort**, each item with evidence and
-   a concrete next action in the target's own toolchain;
+1. a summary a newcomer can read, and what was examined and what could not
+   be checked;
+2. recommendations ranked by **leverage × effort**, each with evidence, the
+   refs that would decline it, and a concrete next action in the target's own
+   toolchain;
 3. drift/contradiction findings;
-4. a recommended adoption sequence (which modules, which maturity rung first).
+4. the terms a reader needs.
+
+The sheet adds the rest from the record: each module's level, its target
+under the team's [profile](../profiles.yaml) and the criteria left to reach
+it, in the profile file's adoption order, which is
+[brownfield adoption](https://github.com/docomply/jig/blob/main/adoption/brownfield.md)'s
+default order (fix drift first, then the modules one rung at a time).
 
 Rules: no finding without file-path evidence; distinguish *verified* facts
 from *unchecked* counts; keep the executive summary readable by someone who

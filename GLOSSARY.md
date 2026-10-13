@@ -434,6 +434,12 @@ capitalized as commonly written; cross-references are *italicized*.
   commit, each maturity criterion's score with its evidence, and the
   recommendations the team declined, each with a reason and a condition for
   revisiting it. The next audit compares against it.
+- **Audit sheet** — the self-contained HTML page an audit ends in, rendered
+  from the *audit record* and a *report source* (the agent's JSON summary,
+  recommendations, drift and what it examined): the maturity map against the
+  team's profile, the moves to start with, and a choice per recommendation
+  that the team copies to an agent as one block of decisions
+  ([audit sheet](plugin/skills/audit/references/report-sheet.md)).
 - **Probe** — a precondition of a maturity criterion that a script can test
   from the repository's files ("some CI configuration exists"). When it does
   not hold the criterion is scored absent without further judgement; when it

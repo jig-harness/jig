@@ -8,6 +8,9 @@
 # the deploy machinery counting against it. The auditor calibrates by repo shape.
 module: M10
 name: environments-deploy
+purpose: >-
+  Merged and verified are kept apart, so only an integrated, verified state
+  reaches users.
 criteria:
   - id: environments-and-deploy-documented
     level: lite

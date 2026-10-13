@@ -14,3 +14,4 @@ back to the roadmap or are dropped.
 | Design | Roadmap items |
 |--------|---------------|
 | [Session reflection](reflection.md) | 6, 7 |
+| [The audit experience](audit-experience.md) | 8 |

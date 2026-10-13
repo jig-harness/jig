@@ -7,6 +7,9 @@
 # gap. The auditor should mark M12 not-applicable for single-checkout workflows.
 module: M12
 name: parallel-agent-ergonomics
+purpose: >-
+  Several agents can work one repository in parallel without colliding over
+  ports, heavy runs or branches.
 criteria:
   - id: branch-reuse-and-footgun-bans-written
     level: lite

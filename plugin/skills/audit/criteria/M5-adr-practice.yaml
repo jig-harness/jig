@@ -3,6 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 module: M5
 name: adr-practice
+purpose: >-
+  Significant decisions are recorded once, numbered and append-only, so they
+  are not re-argued or silently broken later.
 criteria:
   - id: adrs-exist-numbered-from-template
     level: lite

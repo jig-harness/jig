@@ -29,6 +29,8 @@
 #   read_by   the skills that read the field (CONFIGURATION.md's "Read by")
 #   repository_only  true for a field that describes one repository: the user
 #             file refuses it (CONFIGURATION.md § Configuration layers)
+#   default   the value a skill uses when the field is absent, where that is
+#             one fixed value; a starter configuration never writes it
 #   deprecated  the message a re-run prints: what to use instead
 #   since     the plugin version that added the field; fields older than the
 #             audit skill carry none
@@ -145,6 +147,7 @@ fields:
   pull_requests.stacking:
     type: enum
     values: [none, native, branch]
+    default: none
     read_by: [do-item]
   pull_requests.max_stack_depth:
     type: integer
@@ -158,14 +161,17 @@ fields:
     type: integer
     min: 1
     values: [converged, never]
+    default: 1
     read_by: [drive-pr]
   pull_requests.branch_name:
     type: string
     pattern: "\\{key(_lower)?\\}"
+    default: "{key_lower}-{slug}"
     read_by: [do-item]
   pull_requests.issue_link:
     type: enum
     values: [closes, refs, none]
+    default: closes
     read_by: [do-item]
   pull_requests.size_budget:
     type: integer
@@ -212,6 +218,7 @@ fields:
   issue_tracker.adapter:
     type: enum
     values: [linear]
+    default: linear
     read_by: [do-item, drive-pr, decide]
   issue_tracker.team:
     type: string
@@ -289,6 +296,7 @@ fields:
     read_by: [do-item]
   do_item.execution_plan_block:
     type: string
+    default: execution-plan-v1
     read_by: [do-item]
 
   fleet_health.config:

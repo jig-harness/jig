@@ -3,6 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 module: M6
 name: feature-delivery-pipeline
+purpose: >-
+  An idea becomes shipped work through named stages, each with its own
+  artifact and review, rather than decisions made inside a pull request.
 criteria:
   - id: pipeline-stages-documented
     level: lite

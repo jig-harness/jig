@@ -3,6 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 module: M11
 name: process-observability
+purpose: >-
+  The delivery process itself is measured, so decisions about gates and
+  reviewers rest on data.
 criteria:
   - id: process-events-documented
     level: lite

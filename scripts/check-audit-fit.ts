@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { configFit } from "../plugin/skills/audit/scripts/config-fit.ts";
 import { loadModules } from "../plugin/skills/audit/scripts/lib/criteria.ts";
+import { loadProfiles } from "../plugin/skills/audit/scripts/lib/profiles.ts";
 import {
   checkRecord,
   parseRecord,
@@ -29,7 +30,11 @@ export async function checkAuditFit(
       readFileSync(join(root, RECORD_RELPATH), "utf8"),
       RECORD_RELPATH,
     );
-    for (const p of checkRecord(record, loadModules(criteriaDir)))
+    const modules = loadModules(criteriaDir);
+    // A test's own criteria have no profiles; the shipped ones always do.
+    const profiles =
+      criteriaDir === undefined ? loadProfiles(modules) : undefined;
+    for (const p of checkRecord(record, modules, profiles))
       problems.push(`${RECORD_RELPATH}: ${p}`);
     const report = await configFit({
       root,

@@ -50,6 +50,7 @@ export interface Field {
   exists?: "required" | "expected";
   read_by: string[];
   repository_only?: boolean;
+  default?: unknown;
   deprecated?: string;
   since?: string;
 }
@@ -86,6 +87,7 @@ const FIELD_KEYS = new Set([
   "exists",
   "read_by",
   "repository_only",
+  "default",
   "deprecated",
   "since",
 ]);
@@ -174,6 +176,11 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
       ? "exists is required or expected"
       : null,
   flag("repository_only"),
+  (e) =>
+    e.default !== undefined &&
+    typeProblem(e.default, e.type as FieldType, e as unknown as Field) !== null
+      ? "default must be a value the field accepts"
+      : null,
   flag("nullable"),
   flag("distinct"),
   flag("nonempty"),
@@ -229,6 +236,16 @@ export const SCHEMA_PATH = join(skillDir(), "config-schema.yaml");
 
 export function loadSchema(path = SCHEMA_PATH): Schema {
   return parseSchema(load(readFileSync(path, "utf8")));
+}
+
+/** The value at a dotted path of a configuration, or undefined. */
+export function at(config: Record<string, unknown>, path: string): unknown {
+  let node: unknown = config;
+  for (const part of path.split(".")) {
+    if (!isRecord(node)) return undefined;
+    node = node[part];
+  }
+  return node;
 }
 
 /** Edit distance, for the "did you mean" on an unknown key. */

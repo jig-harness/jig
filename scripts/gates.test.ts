@@ -388,7 +388,7 @@ test("check-audit-fit passes on Jig and fails until a new criterion is scored", 
   mkdirSync(criteria);
   writeFileSync(
     join(criteria, "M1-gates.yaml"),
-    "module: M1\nname: gates\ncriteria:\n  - { id: a, level: lite, requires: convention, statement: A., observe: [a] }\n",
+    "module: M1\nname: gates\npurpose: P.\ncriteria:\n  - { id: a, level: lite, requires: convention, statement: A., observe: [a] }\n",
   );
   const record = (criteria: string) =>
     `version: 1\nplugin_version: 0.0.0\ndate: "2026-01-01"\ncommit: abc\nshape: library\ncriteria:\n${criteria}`;

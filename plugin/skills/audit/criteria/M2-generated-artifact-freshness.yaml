@@ -3,6 +3,9 @@
 # observable repo fact, scored absent → convention → mechanical.
 module: M2
 name: generated-artifact-freshness
+purpose: >-
+  Files and facts derived from other files are kept fresh mechanically, so
+  nobody acts on a stale copy.
 criteria:
   - id: derived-inventory-exists
     level: lite

@@ -22,6 +22,7 @@
  *
  * Exit codes: 0 done; 1 --check found a fault; 2 usage or an unreadable input.
  */
+import { loadProfiles } from "./lib/profiles.ts";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
@@ -275,6 +276,7 @@ function writeDraft(
       pluginVersion: version,
       date: args.date ?? today(),
       commit: head.stdout.trim(),
+      profileIds: [...loadProfiles(modules).profiles.keys()],
     }),
   );
   const open = rows.length - decided.size;

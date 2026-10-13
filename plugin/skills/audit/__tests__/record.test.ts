@@ -11,10 +11,13 @@ import {
   type AuditRecord,
   checkRecord,
   compare,
+  declinedData,
+  declinedEntryLines,
   parseRecord,
   renderPortfolio,
 } from "../scripts/lib/record.ts";
 import { parseSchema } from "../scripts/lib/schema.ts";
+import { recordData } from "../scripts/report/data.ts";
 import { runScript } from "./helpers.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "jig-record-"));
@@ -24,6 +27,7 @@ const modules: Module[] = [
   parseModule(
     `module: M1
 name: gates
+purpose: P.
 criteria:
   - { id: fixed, level: lite, requires: convention, statement: F., observe: [f] }
   - { id: slipped, level: lite, requires: convention, statement: S., observe: [s] }
@@ -141,10 +145,87 @@ test("a configuration finding whose id holds spaces can be declined", () => {
   ]);
 });
 
+test("a declined entry is written back with every key it was read with", () => {
+  const r = record(
+    {},
+    'declined:\n  - { refs: [M1/x], reason: r, revisit_when: w, owner: maintainers, "see also": [M1/y] }\n',
+  );
+  const lines = declinedEntryLines(
+    r.declined[0] as AuditRecord["declined"][number],
+  );
+  const again = record({}, `declined:\n${lines.join("\n")}\n`);
+  expect(again.declined).toEqual(r.declined);
+  expect(r.declined[0]?.other).toEqual({
+    owner: "maintainers",
+    "see also": ["M1/y"],
+  });
+});
+
+test("a declined entry's kept keys are embedded beside its defined ones and read back unchanged", () => {
+  const r = record(
+    {},
+    "declined:\n  - { refs: [M1/x], reason: r, revisit_when: w, revisit_after: 2026-03-01, owner: maintainers }\n",
+  );
+  const data = r.declined.map(declinedData);
+  expect(data[0]).toEqual({
+    refs: ["M1/x"],
+    reason: "r",
+    revisit_when: "w",
+    revisit_after: "2026-03-01",
+    owner: "maintainers",
+  });
+  expect(recordData(r).declined).toEqual(data);
+  const again = record({}, `declined: ${JSON.stringify(data)}\n`);
+  expect(again.declined).toEqual(r.declined);
+});
+
+test.each([
+  ["an unquoted date", "reviewed_on: 2026-10-01"],
+  ["an infinite number", "weight: .inf"],
+  ["a date inside a list", "seen: [2026-10-01]"],
+])("a declined entry's kept key holding %s is refused", (_, field) => {
+  expect(() =>
+    record(
+      {},
+      `declined:\n  - { refs: [M1/x], reason: r, revisit_when: w, ${field} }\n`,
+    ),
+  ).toThrow(/quote a date/);
+});
+
+test.each([
+  ["a cycle", "loop: &l [1, *l]"],
+  ["a shared node", "a: &n [1], b: [*n, *n]"],
+  [
+    "an exponential expansion",
+    `n0: &n0 [x], ${Array.from({ length: 40 }, (_, i) => `n${i + 1}: &n${i + 1} [*n${i}, *n${i}]`).join(", ")}`,
+  ],
+])(
+  "a declined entry's kept key repeating %s through an alias is refused",
+  (_, field) => {
+    expect(() =>
+      record(
+        {},
+        `declined:\n  - { refs: [M1/x], reason: r, revisit_when: w, ${field} }\n`,
+      ),
+    ).toThrow(/YAML alias/);
+  },
+);
+
+test.each([
+  ["a scalar alias", "a: &s text, b: *s", { a: "text", b: "text" }],
+  ["an alias to refs", "see_also: *r", { see_also: ["M1/x"] }],
+])("a declined entry's kept key holding %s is kept", (_, field, kept) => {
+  const r = record(
+    {},
+    `declined:\n  - { refs: &r [M1/x], reason: r, revisit_when: w, ${field} }\n`,
+  );
+  expect(r.declined[0]?.other).toEqual(kept);
+});
+
 test("moving into or out of expected-absent is a reclassification, not a fix or regression", () => {
   const m = [
     parseModule(
-      "module: M1\nname: g\ncriteria:\n  - { id: a, level: lite, requires: mechanical, statement: A., observe: [a] }\n  - { id: b, level: lite, requires: mechanical, statement: B., observe: [b] }\n",
+      "module: M1\nname: g\npurpose: P.\ncriteria:\n  - { id: a, level: lite, requires: mechanical, statement: A., observe: [a] }\n  - { id: b, level: lite, requires: mechanical, statement: B., observe: [b] }\n",
       "M1.yaml",
     ),
   ];
@@ -285,6 +366,15 @@ criteria: {}
     );
     expect(portfolio.code).toBe(0);
     expect(portfolio.out).toContain("| Criterion | Requires | web | api |");
+    writeFileSync(
+      b,
+      complete
+        .replace("shape: library", "shape: library\nprofile: enterprise")
+        .replace("criteria: {}", `criteria:\n${scored}`),
+    );
+    const unknownProfile = runScript("record.ts", ["compare", a, b], scratch);
+    expect(unknownProfile.code).toBe(1);
+    expect(unknownProfile.err).toContain("profile: enterprise is not one of");
   });
 
   test("usage errors exit 2", () => {

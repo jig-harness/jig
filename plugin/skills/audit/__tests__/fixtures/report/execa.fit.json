@@ -1,0 +1,24 @@
+{
+  "file": ".config/jig.yaml",
+  "configured": false,
+  "forge": "checked",
+  "facts": {
+    "integration_branch": "main",
+    "branch_protection": "none",
+    "required_checks": "none"
+  },
+  "findings": [
+    {
+      "id": "missing-file",
+      "severity": "info",
+      "message": "no .config/jig.yaml: drive-pr, the pull-request policy and the procedure skills run on their defaults; resolve-review-comments and do-item's tracker scripts refuse to run"
+    },
+    {
+      "id": "suggestion:gates.command",
+      "severity": "suggestion",
+      "message": "set gates.command: npm run test, the repository's whole local check, so the review and CI skills run it before every push"
+    }
+  ],
+  "declined": [],
+  "draft": "# Starter .config/jig.yaml: values this repository implies.\ngates:\n  command: npm run test   # package.json:19 runs lint, unit and type tests\n"
+}

@@ -14,12 +14,20 @@
  *     with stacked pull requests open;
  *   - settings the repository's shape suggests but does not use.
  *
+ * Each suggested value comes with the fact it was read from, and together
+ * they make a starter configuration (`lib/draft.ts`): a whole file for a
+ * repository without one, the fields to add for a repository with one.
+ *
  * Read-only: it runs `git` and, unless `--offline`, read-only `gh` calls and
  * one tracker read. A question it cannot answer is reported as unchecked,
- * never as a pass.
+ * never as a pass. It never writes the configuration; the starter is printed.
  *
  * Usage (from anywhere inside the repository under audit):
- *   bun config-fit.ts [--offline] [--json] [--record <path>]
+ *   bun config-fit.ts [--offline] [--json | --draft] [--record <path>]
+ *
+ *   --json   the whole report, the starter configuration included (`draft`)
+ *   --draft  only the starter configuration, or a line saying there is
+ *            nothing to suggest; exits 0 whatever the findings
  *
  * A finding the audit record declines (`config/<id>` in its `declined` refs)
  * is listed as declined instead of reported again, until its revisit date.
@@ -37,7 +45,7 @@ import {
   userLayerEnabled,
 } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, normalize } from "node:path";
+import { isAbsolute, join, normalize, relative } from "node:path";
 import {
   consumerRoot,
   OVERLAY_RELPATH,
@@ -59,7 +67,9 @@ import {
   today,
   trackedFiles,
 } from "./lib/repo.ts";
+import { draftConfig, type Suggestion, suggestionId } from "./lib/draft.ts";
 import {
+  at,
   checkConfig,
   type Field,
   type Finding,
@@ -74,6 +84,10 @@ export interface FitReport {
   facts: Record<string, string>;
   findings: Finding[];
   declined: { finding: Finding; reason: string; revisit_when: string }[];
+  /** The values the repository implies, each behind a `suggestion:` finding. */
+  suggestions: Suggestion[];
+  /** A starter configuration, or its additions, when anything is suggested. */
+  draft?: string;
 }
 
 type Config = Record<string, unknown>;
@@ -86,16 +100,6 @@ function texts(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((v): v is string => typeof v === "string" && v !== "")
     : [];
-}
-
-/** The value at a dotted path, or undefined. */
-function at(config: Config, path: string): unknown {
-  let node: unknown = config;
-  for (const part of path.split(".")) {
-    if (!isRecord(node)) return undefined;
-    node = node[part];
-  }
-  return node;
 }
 
 /** A word, or a separator between commands. */
@@ -981,8 +985,40 @@ function likelyReviewBot(login: string, count: number): boolean {
   );
 }
 
+/**
+ * The login the review skills match for `login`: the forge's GraphQL drops a
+ * bot's `[bot]` suffix, and the skills match `review.bots` against the REST
+ * login, which carries it. The suffix is added only when the forge confirms
+ * the account is a bot, and the login stays as it is only when the forge says
+ * there is no such bot; any other answer leaves it unknown (`null`).
+ */
+function restLogin(login: string, root: string): string | null {
+  const user = ghJson(["api", `users/${login}[bot]`], root);
+  if (!user.ok) return /\bHTTP 404\b/.test(user.reason) ? login : null;
+  const type =
+    typeof user.value === "object" && user.value !== null
+      ? (user.value as { type?: unknown }).type
+      : undefined;
+  return type === "Bot" ? `${login}[bot]` : null;
+}
+
+/** Record `suggestions` on the report, and the finding each one makes. */
+function offer(report: FitReport, suggestions: Suggestion[]): Finding[] {
+  report.suggestions.push(...suggestions);
+  return suggestions.map((s) => ({
+    id: suggestionId(s),
+    severity: "suggestion",
+    message: s.message,
+  }));
+}
+
 /** Declared review bots that never reviewed, or, with none declared, likely ones. */
-function reviewBotFindings(config: Config, pulls: Pull[]): Finding[] {
+function reviewBotFindings(
+  config: Config,
+  pulls: Pull[],
+  root: string,
+  report: FitReport,
+): Finding[] {
   const authors = reviewerCounts(pulls);
   const declaredBots = texts(at(config, "review.bots"));
   const findings: Finding[] = declaredBots
@@ -993,14 +1029,30 @@ function reviewBotFindings(config: Config, pulls: Pull[]): Finding[] {
       message: `review.bots names ${bot}, which reviewed or commented on none of the last ${pulls.length} merged pull requests`,
     }));
   if (declaredBots.length > 0) return findings;
-  for (const [login, count] of authors)
-    if (likelyReviewBot(login, count))
-      findings.push({
-        id: `suggestion:review.bots:${login}`,
-        severity: "suggestion",
-        message: `${login} reviewed ${count} of the last ${pulls.length} merged pull requests: list it in review.bots so the review skills work its threads`,
+  const likely = [...authors].filter(([login, count]) =>
+    likelyReviewBot(login, count),
+  );
+  const bots: Suggestion[] = [];
+  const unchecked: Finding[] = [];
+  for (const [login, count] of likely) {
+    const evidence = `${login} reviewed ${count} of the last ${pulls.length} merged pull requests`;
+    const rest = restLogin(login, root);
+    if (rest === null)
+      unchecked.push({
+        id: `unchecked:review.bots:${login}`,
+        severity: "info",
+        message: `${evidence}, but whether it is a bot could not be read, so the login review.bots needs is unchecked: no value is suggested`,
       });
-  return findings;
+    else
+      bots.push({
+        field: "review.bots",
+        key: login,
+        value: [rest],
+        evidence,
+        message: `${evidence}: list it in review.bots so the review skills work its threads`,
+      });
+  }
+  return [...findings, ...offer(report, bots), ...unchecked];
 }
 
 /** The issue key a pull request's title or head branch carries, if any. */
@@ -1012,7 +1064,7 @@ function issueKeyOf(pull: Pull): string | undefined {
 }
 
 /** With no tracker team set, the team most recent pull requests name. */
-function trackerTeamSuggestion(config: Config, pulls: Pull[]): Finding[] {
+function trackerTeamSuggestion(config: Config, pulls: Pull[]): Suggestion[] {
   if (at(config, "issue_tracker.team") !== undefined) return [];
   const keys = new Map<string, number>();
   for (const p of pulls) {
@@ -1021,11 +1073,13 @@ function trackerTeamSuggestion(config: Config, pulls: Pull[]): Finding[] {
   }
   const [team, count] = [...keys].sort((a, b) => b[1] - a[1])[0] ?? [];
   if (!team || !count || count < Math.max(3, pulls.length / 3)) return [];
+  const evidence = `${count} of the last ${pulls.length} merged pull requests carry ${team}-<n> issue keys`;
   return [
     {
-      id: "suggestion:issue_tracker.team",
-      severity: "suggestion",
-      message: `${count} of the last ${pulls.length} merged pull requests carry ${team}-<n> issue keys: set issue_tracker.team: ${team} so the skills recognise them`,
+      field: "issue_tracker.team",
+      value: team,
+      evidence,
+      message: `${evidence}: set issue_tracker.team: ${team} so the skills recognise them`,
     },
   ];
 }
@@ -1036,6 +1090,7 @@ function mergedPullFindings(
   root: string,
   base: string,
   required: Set<string>,
+  report: FitReport,
 ): Finding[] {
   const pulls = mergedPulls(base, root);
   if (pulls === null)
@@ -1059,8 +1114,8 @@ function mergedPullFindings(
   const checks = Array.isArray(declared) ? texts(declared) : [...required];
   return [
     ...checksThatNeverRan(checks, pulls),
-    ...reviewBotFindings(config, pulls),
-    ...trackerTeamSuggestion(config, pulls),
+    ...reviewBotFindings(config, pulls, root, report),
+    ...offer(report, trackerTeamSuggestion(config, pulls)),
   ];
 }
 
@@ -1193,7 +1248,7 @@ function forgeChecks(
   const { required, findings } = requiredChecks(slug, base, root, report);
   return [
     ...findings,
-    ...mergedPullFindings(config, root, base, required),
+    ...mergedPullFindings(config, root, base, required, report),
     ...stackingFindings(config, root, base, repo, report),
     ...labelFindings(config, root, slug),
   ];
@@ -1224,50 +1279,99 @@ async function trackerCheck(config: Config): Promise<Finding[]> {
   }
 }
 
-function suggestions(config: Config, root: string, files: string[]): Finding[] {
-  const findings: Finding[] = [];
-  if (at(config, "drive.change_areas_catalog") === undefined) {
-    const catalog = files.find(
-      (f) =>
-        /(^|\/)change[-_]?areas?\.ya?ml$/i.test(f) &&
-        !/(^|\/)(fixtures?|templates?)\//.test(f),
-    );
-    if (catalog)
-      findings.push({
-        id: "suggestion:drive.change_areas_catalog",
+/** A tracked file named like a change-area catalog, when none is configured. */
+function catalogSuggestion(config: Config, files: string[]): Suggestion[] {
+  if (at(config, "drive.change_areas_catalog") !== undefined) return [];
+  const catalog = files.find(
+    (f) =>
+      /(^|\/)change[-_]?areas?\.ya?ml$/i.test(f) &&
+      !/(^|\/)(fixtures?|templates?)\//.test(f),
+  );
+  if (catalog === undefined) return [];
+  return [
+    {
+      field: "drive.change_areas_catalog",
+      value: catalog,
+      evidence: `${catalog} is tracked and named like a change-area catalog`,
+      message: `${catalog} looks like a change-area catalog: set drive.change_areas_catalog to it so reviews and agent routing use it`,
+    },
+  ];
+}
+
+/** A command that runs the repository's checks, and what shows it. */
+type Gate = { command: string; evidence: string };
+
+/** The package script that runs the repository's checks, with its runner. */
+function scriptGate(root: string): Gate | null {
+  const scripts = packageScripts(root) ?? {};
+  const name = ["gates", "check", "ci", "verify", "validate", "test"].find(
+    (n) => Object.hasOwn(scripts, n),
+  );
+  if (name === undefined) return null;
+  const found = detectPackageManager(root).found;
+  const manager = found?.name ?? "npm";
+  const runner = found
+    ? `, and ${found.lockfile} makes ${manager} its package manager`
+    : "";
+  return {
+    command: `${manager} run ${name}`,
+    evidence: `package.json defines a "${name}" script${runner}`,
+  };
+}
+
+/** The make target that runs the repository's checks. */
+function makeGate(root: string): Gate | null {
+  const makefile = makefileOf(root);
+  if (makefile === undefined) return null;
+  const text = readFileSync(join(root, makefile), "utf8");
+  const target = ["gates", "check", "ci", "verify"].find((t) =>
+    new RegExp(`^${t}\\s*:`, "m").test(text),
+  );
+  if (target === undefined) return null;
+  return {
+    command: `make ${target}`,
+    evidence: `${makefile} defines a "${target}" target`,
+  };
+}
+
+/** With no gate command set, the one the repository's shape names. */
+function gateFindings(
+  config: Config,
+  root: string,
+  report: FitReport,
+): Finding[] {
+  if (at(config, "gates.command") !== undefined) return [];
+  const gate = scriptGate(root) ?? makeGate(root);
+  if (gate === null)
+    return [
+      {
+        id: "suggestion:gates.command",
         severity: "suggestion",
-        message: `${catalog} looks like a change-area catalog: set drive.change_areas_catalog to it so reviews and agent routing use it`,
-      });
-  }
-  if (at(config, "gates.command") === undefined) {
-    const scripts = packageScripts(root) ?? {};
-    const name = ["gates", "check", "ci", "verify", "validate", "test"].find(
-      (n) => Object.hasOwn(scripts, n),
-    );
-    const manager = detectPackageManager(root).found?.name ?? "npm";
-    const makefile = makefileOf(root);
-    const target =
-      makefile === undefined
-        ? undefined
-        : ["gates", "check", "ci", "verify"].find((t) =>
-            new RegExp(`^${t}\\s*:`, "m").test(
-              readFileSync(join(root, makefile), "utf8"),
-            ),
-          );
-    const command = name
-      ? `${manager} run ${name}`
-      : target
-        ? `make ${target}`
-        : null;
-    findings.push({
-      id: "suggestion:gates.command",
-      severity: "suggestion",
-      message: command
-        ? `set gates.command: ${command}, the repository's whole local check, so the review and CI skills run it before every push`
-        : "no single command runs the repository's checks: add one and set gates.command to it (resolve-review-comments requires it)",
-    });
-  }
-  return findings;
+        message:
+          "no single command runs the repository's checks: add one and set gates.command to it (resolve-review-comments requires it)",
+      },
+    ];
+  return offer(report, [
+    {
+      field: "gates.command",
+      value: gate.command,
+      evidence: gate.evidence,
+      message: `set gates.command: ${gate.command}, the repository's whole local check, so the review and CI skills run it before every push`,
+    },
+  ]);
+}
+
+/** The settings the repository's own files suggest. */
+function suggestions(
+  config: Config,
+  root: string,
+  files: string[],
+  report: FitReport,
+): Finding[] {
+  return [
+    ...offer(report, catalogSuggestion(config, files)),
+    ...gateFindings(config, root, report),
+  ];
 }
 
 function integrationBranch(
@@ -1344,12 +1448,17 @@ export async function configFit(opts: {
   recordPath: string;
 }): Promise<FitReport> {
   const report: FitReport = {
-    file: opts.file,
+    // Relative to the repository when inside it: a report is shared, and the
+    // auditor's own folders are not part of it.
+    file: relative(opts.root, opts.file).startsWith("..")
+      ? opts.file
+      : relative(opts.root, opts.file),
     configured: existsSync(opts.file),
     forge: opts.offline ? "offline" : "unchecked",
     facts: {},
     findings: [],
     declined: [],
+    suggestions: [],
   };
   const schema = loadSchema();
   let config: Config = {};
@@ -1378,36 +1487,49 @@ export async function configFit(opts: {
       message:
         "offline: branch protection, required checks, pull requests, labels and the tracker are unchecked",
     });
-  if (report.facts.integration_branch === undefined) {
-    const hasOrigin =
-      run("git", ["remote", "get-url", "origin"], { cwd: opts.root }).code ===
-      0;
-    report.findings.push(
-      !hasOrigin
-        ? {
-            id: "unchecked:integration-branch",
-            severity: "info",
-            message:
-              "the clone has no origin remote, so the integration branch is unchecked",
-          }
-        : report.forge !== "checked"
-          ? {
-              id: "unchecked:integration-branch",
-              severity: "info",
-              message:
-                "the clone has no origin/HEAD and the forge was not read, so the integration branch is unchecked",
-            }
-          : {
-              id: "derivation:integration-branch",
-              severity: "error",
-              message:
-                "the integration branch is unknown: set repository.base_branch, or give this clone an origin/HEAD (git remote set-head origin --auto)",
-            },
-    );
-  }
-  report.findings.push(...suggestions(config, opts.root, files));
+  if (report.facts.integration_branch === undefined)
+    report.findings.push(unknownIntegrationBranch(opts.root, report));
+  report.findings.push(...suggestions(config, opts.root, files, report));
+  applyDeclines(report, opts.recordPath);
+  const draft = draftConfig(
+    report.suggestions,
+    schema,
+    report.configured ? config : null,
+  );
+  if (draft !== undefined) report.draft = draft;
+  return report;
+}
 
-  const declined = declinedRefs(opts.recordPath);
+/** Why the integration branch is unknown: unchecked, or an error when it could have been read. */
+function unknownIntegrationBranch(root: string, report: FitReport): Finding {
+  if (run("git", ["remote", "get-url", "origin"], { cwd: root }).code !== 0)
+    return {
+      id: "unchecked:integration-branch",
+      severity: "info",
+      message:
+        "the clone has no origin remote, so the integration branch is unchecked",
+    };
+  if (report.forge !== "checked")
+    return {
+      id: "unchecked:integration-branch",
+      severity: "info",
+      message:
+        "the clone has no origin/HEAD and the forge was not read, so the integration branch is unchecked",
+    };
+  return {
+    id: "derivation:integration-branch",
+    severity: "error",
+    message:
+      "the integration branch is unknown: set repository.base_branch, or give this clone an origin/HEAD (git remote set-head origin --auto)",
+  };
+}
+
+/**
+ * Move the findings the audit record declines to `declined`, and drop their
+ * suggestions, so the starter configuration leaves them out too.
+ */
+function applyDeclines(report: FitReport, recordPath: string): void {
+  const declined = declinedRefs(recordPath);
   const date = today();
   report.findings = report.findings.filter((finding) => {
     const entry = declined.get(finding.id);
@@ -1424,7 +1546,10 @@ export async function configFit(opts: {
     });
     return false;
   });
-  return report;
+  const kept = new Set(report.findings.map((f) => f.id));
+  report.suggestions = report.suggestions.filter((s) =>
+    kept.has(suggestionId(s)),
+  );
 }
 
 const SECTIONS: [Finding["severity"], string][] = [
@@ -1452,44 +1577,90 @@ export function render(report: FitReport): string {
     for (const f of rows) lines.push(`- \`config/${f.id}\`: ${f.message}`);
     lines.push("");
   }
-  if (report.declined.length > 0) {
-    lines.push(`## Declined (${report.declined.length})`, "");
-    for (const d of report.declined)
-      lines.push(
-        `- \`config/${d.finding.id}\`: ${d.reason} Revisit when: ${d.revisit_when}`,
-      );
-    lines.push("");
-  }
+  lines.push(...closingSections(report));
   if (report.findings.every((f) => f.severity === "info"))
     lines.push("Nothing to fix.", "");
   return lines.join("\n");
 }
 
-export async function main(argv = process.argv.slice(2)): Promise<number> {
-  let offline = false;
-  let json = false;
-  let recordPath: string | undefined;
+/** The report's declined findings and its starter configuration, when present. */
+function closingSections(report: FitReport): string[] {
+  const lines: string[] = [];
+  if (report.declined.length > 0)
+    lines.push(
+      `## Declined (${report.declined.length})`,
+      "",
+      ...report.declined.map(
+        (d) =>
+          `- \`config/${d.finding.id}\`: ${d.reason} Revisit when: ${d.revisit_when}`,
+      ),
+      "",
+    );
+  if (report.draft !== undefined)
+    lines.push(
+      "## Starter configuration",
+      "",
+      "```yaml",
+      report.draft.trimEnd(),
+      "```",
+      "",
+    );
+  return lines;
+}
+
+/** What `--draft` prints when the repository implies nothing to add. */
+export const NOTHING_TO_SUGGEST =
+  "Nothing to suggest: the configuration already holds every value the repository implies.";
+
+const USAGE =
+  "usage: config-fit.ts [--offline] [--json | --draft] [--record <path>]";
+
+interface Options {
+  offline: boolean;
+  output: "markdown" | "json" | "draft";
+  recordPath?: string | undefined;
+}
+
+/** The command line's options, or what is wrong with it. */
+function parseArgs(argv: string[]): Options | string {
+  const options: Options = { offline: false, output: "markdown" };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--offline") offline = true;
-    else if (arg === "--json") json = true;
+    if (arg === "--offline") options.offline = true;
+    else if (
+      (arg === "--json" || arg === "--draft") &&
+      options.output === "markdown"
+    )
+      options.output = arg === "--json" ? "json" : "draft";
     else if (arg === "--record" && argv[i + 1] !== undefined)
-      recordPath = argv[++i];
-    else {
-      console.error(
-        `unknown argument ${arg}\nusage: config-fit.ts [--offline] [--json] [--record <path>]`,
-      );
-      return 2;
-    }
+      options.recordPath = argv[++i];
+    else return `unexpected argument ${arg}`;
+  }
+  return options;
+}
+
+export async function main(argv = process.argv.slice(2)): Promise<number> {
+  const options = parseArgs(argv);
+  if (typeof options === "string") {
+    console.error(`${options}\n${USAGE}`);
+    return 2;
   }
   const root = consumerRoot();
   const report = await configFit({
     root,
     file: overlayPath(),
-    offline,
-    recordPath: recordPath ?? join(root, RECORD_RELPATH),
+    offline: options.offline,
+    recordPath: options.recordPath ?? join(root, RECORD_RELPATH),
   });
-  console.log(json ? JSON.stringify(report, null, 2) : render(report));
+  if (options.output === "draft") {
+    process.stdout.write(report.draft ?? `${NOTHING_TO_SUGGEST}\n`);
+    return 0;
+  }
+  console.log(
+    options.output === "json"
+      ? JSON.stringify(report, null, 2)
+      : render(report),
+  );
   return report.findings.some((f) => f.severity === "error") ? 1 : 0;
 }
 

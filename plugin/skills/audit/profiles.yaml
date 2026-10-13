@@ -1,0 +1,62 @@
+# The maturity each profile aims for, module by module: the machine-readable
+# form of profiles/README.md, which keeps the reasoning. The audit reads it to
+# show each module's target and the criteria between what a repository
+# attains and that target.
+#
+#   profiles.<id>.name         the name people use
+#   profiles.<id>.targets      module -> level (lite | standard | strict)
+#   profiles.<id>.conditional  module -> { level, when }: a target that applies
+#                              only when the team says `when` holds (the
+#                              record's profile_conditions lists those modules)
+#   order                      every module, in the order to adopt them: the
+#                              brownfield default (adoption/brownfield.md),
+#                              extended to every module
+version: 1
+
+profiles:
+  solo-lite:
+    name: Solo/Lite
+    targets: { M0: lite, M1: lite, M2: lite }
+
+  team-standard:
+    name: Team/Standard
+    targets:
+      M0: standard
+      M1: standard
+      M2: standard
+      M4: standard
+      M5: standard
+      M6: standard
+      M7: standard
+      M9: standard
+    conditional:
+      M12:
+        level: lite
+        when: several agents work the repository in parallel workspaces
+      M3:
+        level: lite
+        when: what a change implies is no longer obvious from its paths
+
+  regulated-strict:
+    name: Regulated/Strict
+    targets:
+      M0: strict
+      M1: strict
+      M2: strict
+      M4: strict
+      M5: strict
+      M6: strict
+      M7: strict
+      M8: standard
+      M9: strict
+      M10: standard
+      M11: standard
+    conditional:
+      M12:
+        level: lite
+        when: several agents work the repository in parallel workspaces
+      M3:
+        level: lite
+        when: what a change implies is no longer obvious from its paths
+
+order: [M1, M2, M0, M4, M5, M6, M7, M9, M12, M10, M3, M8, M11]

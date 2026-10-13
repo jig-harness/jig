@@ -56,7 +56,7 @@ describe("the shipped criteria", () => {
     ).toBe(1);
     writeFileSync(
       join(dir, "M0-empty.yaml"),
-      "module: M0\nname: empty\ncriteria: []\n",
+      "module: M0\nname: empty\npurpose: P.\ncriteria: []\n",
     );
     const run = runScript("score.ts", ["--check", "--criteria", dir], scratch);
     expect(run.code).toBe(1);
@@ -66,7 +66,7 @@ describe("the shipped criteria", () => {
 
   test("a module has one file, named after what it declares", () => {
     const one = (module: string, name: string) =>
-      `module: ${module}\nname: ${name}\ncriteria:\n  - { id: a, level: lite, requires: convention, statement: A., observe: [a] }\n`;
+      `module: ${module}\nname: ${name}\npurpose: P.\ncriteria:\n  - { id: a, level: lite, requires: convention, statement: A., observe: [a] }\n`;
     const twice = join(scratch, "twice");
     mkdirSync(twice);
     writeFileSync(join(twice, "M1-a.yaml"), one("M1", "a"));
@@ -93,6 +93,7 @@ describe("the shipped criteria", () => {
 describe("criteria format", () => {
   const base = `module: M1
 name: example
+purpose: P.
 criteria:
   - id: one
     level: lite
@@ -210,6 +211,7 @@ describe("levels", () => {
   const m = parseModule(
     `module: M9
 name: x
+purpose: P.
 criteria:
   - { id: a, level: lite, requires: convention, statement: A., observe: [a] }
   - { id: b, level: standard, requires: mechanical, statement: B., observe: [b] }

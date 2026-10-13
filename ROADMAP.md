@@ -193,9 +193,27 @@ Done when the conformance suite passes against a local fake of the Notion API
 and against a live scratch database, and a repository reflects into a
 database `init` created using only the two settings.
 
+### 8. The audit experience: what is left
+
+The audit sheet, the decisions round trip, profiles as targets and the
+starter configuration are in the [audit skill](plugin/skills/audit/README.md).
+What its [design](design/audit-experience.md) still holds:
+
+- **Trend**: `report.ts render --history <record>…` draws each module's level
+  across past records, beside the comparison with the last audit.
+- **Greenfield**: an audit run at the end of the kickoff's repository
+  bootstrap leads with the profile check and leaves out modules outside the
+  profile; the kickoff family (item 3) calls it.
+- **Calibration into the reflection store**: each *this is wrong* decision
+  becomes a finding about the `audit` skill once the store exists (item 6).
+
+Done when a re-audit of Jig shows the trend across its records, a kickoff
+run ends with the greenfield check, and a *wrong* decision reaches the
+reflection store.
+
 ## Next
 
-### 8. Delegated merge (`pull_requests.merge: auto-on-converged`)
+### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
 Lets a converged drive arm the forge's auto-merge for the exact head it
 certified. It relaxes "a human merges", so the doctrine change is approved on
@@ -216,7 +234,7 @@ before it opens as a pull request the design must guarantee that:
   maturity criteria) changes in the same pull request, in the direction the
   decision picks.
 
-### 9. Values the skills still assume
+### 10. Values the skills still assume
 
 Move into configuration when a consumer needs them:
 
@@ -227,7 +245,7 @@ Move into configuration when a consumer needs them:
 - summary-finding severity is parsed only for the reviewers whose comment
   formats the drive already knows.
 
-### 10. Jig's own Simplified Technical English linter
+### 11. Jig's own Simplified Technical English linter
 
 `decide`'s `ste-lint` is a faithful TypeScript translation of a third-party
 Python linter, kept output-identical to it. Rewrite it as Jig's own
@@ -237,7 +255,7 @@ today), and keep crediting the original
 ([Credits](plugin/RECOMMENDED-SKILLS.md#credits)). The parity record and the
 golden files from the Python linter then retire with the translation.
 
-### 11. More tracker adapters
+### 12. More tracker adapters
 
 Jira, and a plan file kept in the repository. Both wait on the open decisions
 below.

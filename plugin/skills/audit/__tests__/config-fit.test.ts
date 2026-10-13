@@ -1,8 +1,20 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandProblems, commandSegments } from "../scripts/config-fit.ts";
+import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import {
+  commandProblems,
+  commandSegments,
+  NOTHING_TO_SUGGEST,
+} from "../scripts/config-fit.ts";
+import { checkConfig, loadSchema } from "../scripts/lib/schema.ts";
 import {
   cleanEnv,
   fakeGh,
@@ -27,6 +39,13 @@ interface Report {
   facts: Record<string, string>;
   findings: { id: string; severity: string; message: string }[];
   declined: { finding: { id: string } }[];
+  suggestions: {
+    field: string;
+    key?: string;
+    value: unknown;
+    evidence: string;
+  }[];
+  draft?: string;
 }
 
 function fit(
@@ -392,6 +411,63 @@ declined:
     const { report } = fit({ "docs/change-areas.yaml": "areas: {}\n" });
     expect(ids(report)).toContain("suggestion:drive.change_areas_catalog");
   });
+
+  test("offline, the starter still holds the gate command, and a declined suggestion leaves it", () => {
+    const files = {
+      "package.json": '{"scripts":{"test":"true"}}',
+      "bun.lock": "",
+    };
+    const dir = repo(files);
+    const run = runScript("config-fit.ts", ["--offline", "--draft"], dir);
+    expect(run.code).toBe(0);
+    expect(run.out).toEndWith(`gates:
+  # package.json defines a "test" script, and bun.lock makes bun its package manager
+  command: "bun run test"
+`);
+    // Written as the repository's file, the draft passes and leaves nothing to suggest.
+    mkdirSync(join(dir, ".config"));
+    writeFileSync(join(dir, ".config", "jig.yaml"), run.out);
+    const again = runScript(
+      "config-fit.ts",
+      ["--offline", "--json"],
+      dir,
+      cleanEnv({ JIG_USER_LAYER: "off" }),
+    );
+    const report = JSON.parse(again.out) as Report;
+    expect(ids(report, "error")).toEqual([]);
+    expect(ids(report, "warning")).toEqual([]);
+    expect(report.draft).toBeUndefined();
+    expect(runScript("config-fit.ts", ["--offline", "--draft"], dir).out).toBe(
+      `${NOTHING_TO_SUGGEST}\n`,
+    );
+
+    const declined = fit({
+      ...files,
+      ".config/jig-audit.yaml": `version: 1
+plugin_version: 0.13.0
+date: 2026-01-02
+commit: abc
+criteria: {}
+declined:
+  - refs: [config/suggestion:gates.command]
+    reason: Checks run in CI only.
+    revisit_when: The team adds local hooks.
+`,
+    }).report;
+    expect(declined.suggestions).toEqual([]);
+    expect(declined.draft).toBeUndefined();
+  });
+
+  test("--draft exits 0 whatever the findings, and does not combine with --json", () => {
+    const dir = repo({
+      ".config/jig.yaml": "gates:\n  command: true\n",
+      Makefile: "check:\n\ttrue\n",
+    });
+    const run = runScript("config-fit.ts", ["--offline", "--draft"], dir);
+    expect(run.code).toBe(0);
+    expect(run.out).toBe(`${NOTHING_TO_SUGGEST}\n`);
+    expect(runScript("config-fit.ts", ["--draft", "--json"], dir).code).toBe(2);
+  });
 });
 
 describe.skipIf(process.platform === "win32")("the forge", () => {
@@ -429,6 +505,7 @@ describe.skipIf(process.platform === "win32")("the forge", () => {
       { number: 8, baseRefName: "eng-7-change" },
     ]),
     "label list": JSON.stringify([{ name: "agent-authored" }]),
+    "users/example-review[bot]": JSON.stringify({ type: "Bot" }),
     ...over,
   });
 
@@ -482,6 +559,25 @@ pull_requests:
         (f) => f.id === "contradiction:pull_requests.stacking",
       )?.severity,
     ).toBe("suggestion");
+  });
+
+  test("a suggested reviewer gains [bot] only when the forge says it is a bot, and keeps its login only when the forge says it is not", () => {
+    const report = online("repository:\n  base_branch: main\n", {
+      "--state merged": pulls(
+        ["build"],
+        ["example-review", "alice-review", "other-review"],
+      ),
+      "users/alice-review[bot]": "!gh: Not Found (HTTP 404)",
+      "users/other-review[bot]": "!HTTP 502: Bad Gateway",
+    });
+    const value = (key: string) =>
+      report.suggestions.find((s) => s.key === key)?.value;
+    expect(value("example-review")).toEqual(["example-review[bot]"]);
+    expect(value("alice-review")).toEqual(["alice-review"]);
+    // A lookup that failed confirms nothing: no value, and the login is unchecked.
+    expect(value("other-review")).toBeUndefined();
+    expect(ids(report)).toContain("unchecked:review.bots:other-review");
+    expect(ids(report)).not.toContain("suggestion:review.bots:other-review");
   });
 
   test("branch stacking warns when merged branches are kept", () => {
@@ -547,6 +643,73 @@ pull_requests:
       "branches/main/protection": "!HTTP 403: forbidden",
     });
     expect(protectedUnknown.facts.branch_protection).toStartWith("unchecked");
+  });
+
+  test("an unconfigured repository gets a whole starter file from what it shows", () => {
+    const dir = repo({
+      "package.json": '{"scripts":{"test":"true"}}',
+      "docs/change-areas.yaml": "areas: {}\n",
+    });
+    const env = cleanEnv({ PATH: withPath(fakeGh(dir, answers())) });
+    const run = runScript("config-fit.ts", ["--json"], dir, env);
+    const report = JSON.parse(run.out) as Report;
+    expect(report.suggestions.map((s) => s.field)).toEqual([
+      "review.bots",
+      "issue_tracker.team",
+      "drive.change_areas_catalog",
+      "gates.command",
+    ]);
+    const draft = report.draft ?? "";
+    expect(draft).toStartWith("# Jig configuration for this repository");
+    expect(draft).toContain(
+      "# Generated by /jig:audit config-fit; review before committing.",
+    );
+    expect(draft).toContain(`review:
+  # example-review reviewed 3 of the last 3 merged pull requests
+  bots: ["example-review[bot]"]
+issue_tracker:
+  # 3 of the last 3 merged pull requests carry ENG-<n> issue keys
+  team: ENG
+drive:
+  # docs/change-areas.yaml is tracked and named like a change-area catalog
+  change_areas_catalog: docs/change-areas.yaml
+gates:
+  # package.json defines a "test" script
+  command: "npm run test"
+`);
+    const parsed = load(draft) as Record<string, unknown>;
+    expect(checkConfig(parsed, loadSchema())).toEqual([]);
+    expect(parsed).toEqual({
+      review: { bots: ["example-review[bot]"] },
+      issue_tracker: { team: "ENG" },
+      drive: { change_areas_catalog: "docs/change-areas.yaml" },
+      gates: { command: "npm run test" },
+    });
+    // The finding ids and messages stay as they were.
+    expect(ids(report)).toContain("suggestion:review.bots:example-review");
+    expect(ids(report)).toContain("suggestion:issue_tracker.team");
+    // The Markdown report shows the same draft in its own section.
+    const text = runScript("config-fit.ts", [], dir, env).out;
+    expect(text).toContain(
+      `## Starter configuration\n\n\`\`\`yaml\n${draft}\`\`\``,
+    );
+  });
+
+  test("a configured repository gets only the fields it does not set", () => {
+    const report = online(`repository:
+  base_branch: main
+gates:
+  command: "true"
+`);
+    expect(report.draft).toStartWith("# Add to .config/jig.yaml:\nreview:\n");
+    expect(report.draft).not.toContain("gates:");
+    expect(report.draft).not.toContain("repository:");
+    const added = load(report.draft ?? "") as Record<string, unknown>;
+    expect(added).toEqual({
+      review: { bots: ["example-review[bot]"] },
+      issue_tracker: { team: "ENG" },
+    });
+    expect(checkConfig(added, loadSchema())).toEqual([]);
   });
 
   test("a tracker without credentials cannot be reached", () => {

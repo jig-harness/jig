@@ -3,6 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 module: M9
 name: tasks-memory
+purpose: >-
+  Tracker labels drive the process instead of decorating it, and what an agent
+  learns survives between sessions.
 criteria:
   - id: taxonomy-documented
     level: lite

@@ -52,6 +52,8 @@ export interface Criterion {
 export interface Module {
   module: string;
   name: string;
+  /** One plain-language sentence: what the module solves. */
+  purpose: string;
   file: string;
   criteria: Criterion[];
 }
@@ -160,18 +162,20 @@ function parseCriterion(
 export function parseModule(text: string, file: string): Module {
   const raw = load(text);
   if (!isRecord(raw)) throw new Error(`${file}: must be a mapping`);
-  const { module, name, criteria } = raw;
+  const { module, name, purpose, criteria } = raw;
   if (typeof module !== "string" || !/^M\d+$/.test(module))
     throw new Error(`${file}: module must be M<n>`);
   if (typeof name !== "string" || name === "")
     throw new Error(`${file}: name is required`);
+  if (typeof purpose !== "string" || purpose.trim() === "")
+    throw new Error(`${file}: purpose is required`);
   if (!Array.isArray(criteria))
     throw new Error(`${file}: criteria must be a list`);
   const seen = new Set<string>();
   const parsed = criteria.map((c, i) =>
     parseCriterion(c, `${file}: criteria[${i}]`, module, seen),
   );
-  return { module, name, file, criteria: parsed };
+  return { module, name, purpose: purpose.trim(), file, criteria: parsed };
 }
 
 function moduleNumber(name: string): number {

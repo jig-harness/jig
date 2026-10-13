@@ -19,7 +19,11 @@ import {
   STACKING_MODES,
   TITLE_FORMATS,
 } from "../../drive-pr/scripts/lib/pr-policy.ts";
-import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
+import {
+  DEFAULT_ADAPTER,
+  parseTrackerConfig,
+} from "../../do-item/scripts/lib/tracker/config.ts";
+import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import {
   CANONICAL_STATES,
   knownAdapters,
@@ -146,6 +150,23 @@ describe("the reading skills", () => {
     expect(field("issue_tracker.adapter")?.values).toEqual(knownAdapters());
   });
 
+  test("use the defaults the schema lists", () => {
+    const policy = parsePrPolicy({});
+    const defaults = Object.fromEntries(
+      schema.fields
+        .filter((f) => f.default !== undefined)
+        .map((f) => [f.path, f.default]),
+    );
+    expect(defaults).toEqual({
+      "pull_requests.stacking": policy.stacking,
+      "pull_requests.mark_ready": policy.markReady,
+      "pull_requests.branch_name": policy.branchName,
+      "pull_requests.issue_link": policy.issueLink,
+      "issue_tracker.adapter": DEFAULT_ADAPTER,
+      "do_item.execution_plan_block": DEFAULT_BLOCK,
+    });
+  });
+
   test("read the fields the schema lists in their strict maps", () => {
     expect(under("pull_requests").sort()).toEqual([...KNOWN_KEYS].sort());
     expect(under("issue_tracker.labels").sort()).toEqual(
@@ -219,5 +240,14 @@ describe("the schema's own format", () => {
     expect(() =>
       parseSchema(withField({ type: "list", items: { type: "list" } })),
     ).toThrow("a list needs items");
+  });
+  test("a default is a value the field accepts", () => {
+    expect(() =>
+      parseSchema(withField({ type: "enum", values: ["a"], default: "b" })),
+    ).toThrow("default must be a value the field accepts");
+    expect(
+      parseSchema(withField({ type: "integer", min: 1, default: 1 })).fields[0]
+        ?.default,
+    ).toBe(1);
   });
 });

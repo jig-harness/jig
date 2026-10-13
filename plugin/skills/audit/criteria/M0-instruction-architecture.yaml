@@ -6,6 +6,9 @@
 # any name, so no file search can rule either out.
 module: M0
 name: instruction-architecture
+purpose: >-
+  Agents and new contributors find one set of instructions, in one vocabulary,
+  close to where they work, instead of duplicated files that drift apart.
 criteria:
   - id: universal-instruction-file
     level: lite

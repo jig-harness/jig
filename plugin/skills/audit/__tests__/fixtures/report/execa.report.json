@@ -1,0 +1,145 @@
+{
+  "v": 1,
+  "repository": {
+    "name": "sindresorhus/execa",
+    "url": "https://github.com/sindresorhus/execa"
+  },
+  "summary": "A mature, well-tested library with almost no written delivery process. Its CI runs a nine-leg test matrix, the linter and a link checker on every pull request, but main is unprotected, so none of it can stop a merge. There is no agent instruction file, no hooks and no written release process; product documentation is excellent, and nothing derived is committed.",
+  "profile": {
+    "id": "solo-lite",
+    "source": "suggested",
+    "why": "Two maintainers, one package, no deploy environments: Solo/Lite asks for the three practices a repository of this size gains most from, and nothing it would have to staff."
+  },
+  "examined": {
+    "read": [
+      "package.json, .npmrc and the test, lint and type scripts",
+      "the CI workflow, .github/workflows/main.yml",
+      "readme.md, docs/ and the files under .github/",
+      "the last 100 merged pull requests and their reviews",
+      "the branch and rulesets endpoints of the repository host"
+    ],
+    "unchecked": [
+      {
+        "what": "Branch protection details",
+        "why": "the protection endpoint needs admin rights; the branch endpoint said protected: false and the rulesets endpoint returned none."
+      }
+    ]
+  },
+  "stack": [
+    {
+      "facet": "Repository shape",
+      "detected": "single-package library, no build step",
+      "evidence": "package.json"
+    },
+    {
+      "facet": "Language and runtime",
+      "detected": "JavaScript (ESM) with hand-written TypeScript declarations; Node 22 or later",
+      "evidence": "package.json; index.d.ts"
+    },
+    {
+      "facet": "Package manager",
+      "detected": "npm, without a lockfile; npm scripts",
+      "evidence": ".npmrc; package.json:19-22"
+    },
+    {
+      "facet": "CI",
+      "detected": "GitHub Actions, one workflow, three operating systems by three Node versions",
+      "evidence": ".github/workflows/main.yml"
+    },
+    {
+      "facet": "Hook manager",
+      "detected": "none",
+      "evidence": "probe: no hook-manager configuration tracked"
+    },
+    {
+      "facet": "Repository host enforcement",
+      "detected": "main unprotected, no rulesets",
+      "evidence": "config-fit.ts, public branch read"
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "R1",
+      "refs": ["M1/ci-runs-gates-on-pr"],
+      "title": "Make the existing CI a merge gate",
+      "finding": "main is unprotected, and the workflow runs lint and the link check only on the ubuntu, Node 26 leg of the matrix.",
+      "action": "Move lint and the link check into their own always-run job, then require that job and the test matrix on main with a ruleset.",
+      "evidence": [".github/workflows/main.yml:31-37", "branch endpoint: protected false"],
+      "leverage": "high",
+      "effort": "small",
+      "quick_win": true
+    },
+    {
+      "id": "R2",
+      "refs": [
+        "M0/universal-instruction-file",
+        "M0/gates-and-guardrails-listed",
+        "M10/environments-and-deploy-documented"
+      ],
+      "title": "Write down the gate set and the release steps",
+      "finding": "npm test is the gate set, but no document says so; releases are visible only as version commits and tags.",
+      "action": "Add a short AGENTS.md that names npm test as the gate set, the habit of adding a regression test with every fix, and the release steps.",
+      "evidence": ["package.json:19", "commit 63ddae6 and tag v10.1.0"],
+      "leverage": "high",
+      "effort": "small"
+    },
+    {
+      "id": "R3",
+      "refs": ["M1/third-party-automation-pinned-and-updated"],
+      "title": "Pin the workflow's actions and keep them updated",
+      "finding": "Every uses: line names a mutable major tag, and there is no Dependabot or Renovate configuration.",
+      "action": "Pin each action to a commit hash and add .github/dependabot.yml for github-actions.",
+      "lighter": "Pin the actions to commit hashes by hand now, and add the updater when the workflow starts to change often.",
+      "evidence": [".github/workflows/main.yml:9-30"],
+      "leverage": "medium",
+      "effort": "small",
+      "quick_win": true
+    },
+    {
+      "id": "R4",
+      "refs": ["config/suggestion:gates.command"],
+      "title": "Name the whole local check in the Jig configuration",
+      "finding": "npm run test runs lint, the unit tests and the type tests in one command.",
+      "action": "Set gates.command: npm run test in .config/jig.yaml, so the review and CI skills run it before every push.",
+      "evidence": ["package.json:19"],
+      "leverage": "low",
+      "effort": "small",
+      "quick_win": true
+    },
+    {
+      "id": "R5",
+      "refs": ["M5/adrs-exist-numbered-from-template"],
+      "title": "Record why the toolchain changed",
+      "finding": "The switch from ava to node:test left no rationale: the commit is titled Tweaks.",
+      "action": "Start a docs/decisions/ folder with a numbered template and record the test-runner decision as its first entry.",
+      "lighter": "Write the reason for the next toolchain change in its pull request description, with no decision-record files.",
+      "evidence": ["package.json:21", "git log -S 'node --test'"],
+      "leverage": "low",
+      "effort": "medium"
+    }
+  ],
+  "drift": [
+    {
+      "text": "The test runner is node --test under c8, not ava as the earlier hand-run audit says; the switch left no rationale.",
+      "evidence": ["package.json:21"]
+    },
+    {
+      "text": "The coverage service waits for 6 uploads while the matrix now uploads 9.",
+      "evidence": [".github/codecov.yml", ".github/workflows/main.yml:5-8"]
+    },
+    {
+      "text": "npm test and CI run different sets: CI adds the link check, and lint runs on every machine locally but on one leg in CI.",
+      "evidence": ["package.json:19", ".github/workflows/main.yml:31-37"]
+    }
+  ],
+  "terms": [
+    {
+      "term": "Merge gate",
+      "meaning": "A check that must pass before a pull request can merge."
+    },
+    {
+      "term": "Matrix leg",
+      "meaning": "One combination of operating system and Node version that the CI workflow runs."
+    }
+  ]
+}

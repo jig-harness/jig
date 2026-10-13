@@ -5,6 +5,8 @@ plugin_version: 0.15.0
 date: "2026-10-12"
 commit: 02b4184ad72b9c446c9e7a8647a2b42f7b5940f0
 shape: toolkit   # practice modules, Bun gates and an agent plugin released from main
+profile: team-standard   # Jig is maintained by people and agents together
+profile_conditions: [M12]   # several agents work it in parallel workspaces
 criteria:
   # M0 instruction-architecture
   M0/universal-instruction-file:   # lite, requires convention

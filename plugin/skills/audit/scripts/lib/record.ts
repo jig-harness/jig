@@ -7,6 +7,9 @@
  *   date: 2026-10-12
  *   commit: <full sha>          # the commit audited
  *   shape: library              # what the repository is; calibrates expected-absent
+ *   profile: team-standard      # optional: the profile the team aims for (profiles.yaml)
+ *   profile_conditions: [M12]   # optional: the conditional targets that apply
+ *   heading_to: regulated-strict  # optional: the profile the project is growing toward
  *   criteria:
  *     M1/ci-runs-gates-on-pr:
  *       score: mechanical       # absent | convention | advisory | mechanical | expected-absent
@@ -21,6 +24,7 @@
  * findings (`config/<finding id>`).
  */
 import { isMapping as isRecord } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import type { Profiles } from "./profiles.ts";
 import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
 import {
   type Attainment,
@@ -43,7 +47,16 @@ export interface Declined {
   reason: string;
   revisit_when: string;
   revisit_after?: string;
+  /** Keys the entry carries that the record does not define, kept so rewriting the entry keeps them. */
+  other?: Record<string, unknown>;
 }
+
+const DECLINED_KEYS = new Set([
+  "refs",
+  "reason",
+  "revisit_when",
+  "revisit_after",
+]);
 
 export interface AuditRecord {
   version: 1;
@@ -51,6 +64,10 @@ export interface AuditRecord {
   date: string;
   commit: string;
   shape?: string;
+  profile?: string;
+  profile_conditions?: string[];
+  /** The profile the project is growing toward, when the team names one. */
+  heading_to?: string;
   criteria: Map<string, { score: Score | null; evidence: string | null }>;
   declined: Declined[];
 }
@@ -61,6 +78,34 @@ const text = (v: unknown): v is string =>
 /** A YAML date without quotes parses as a Date; read both forms as text. */
 function isoDate(v: unknown): unknown {
   return v instanceof Date ? v.toISOString().slice(0, 10) : v;
+}
+
+/** The record's optional `profile` and `profile_conditions`. */
+function parseProfileFields(
+  raw: Record<string, unknown>,
+  file: string,
+): Pick<AuditRecord, "profile" | "profile_conditions" | "heading_to"> {
+  if (raw.profile !== undefined && raw.profile !== null && !text(raw.profile))
+    throw new Error(`${file}: profile must be a profile id`);
+  if (
+    raw.heading_to !== undefined &&
+    raw.heading_to !== null &&
+    !text(raw.heading_to)
+  )
+    throw new Error(`${file}: heading_to must be a profile id`);
+  const conditions = raw.profile_conditions ?? [];
+  if (
+    !Array.isArray(conditions) ||
+    !conditions.every((m) => typeof m === "string" && /^M\d+$/.test(m))
+  )
+    throw new Error(`${file}: profile_conditions must list modules (M<n>)`);
+  return {
+    ...(text(raw.profile) ? { profile: raw.profile } : {}),
+    ...(text(raw.heading_to) ? { heading_to: raw.heading_to } : {}),
+    ...(conditions.length > 0
+      ? { profile_conditions: conditions as string[] }
+      : {}),
+  };
 }
 
 type Scored = { score: Score | null; evidence: string | null };
@@ -83,12 +128,58 @@ function parseCriteria(raw: unknown, file: string): Map<string, Scored> {
   return criteria;
 }
 
+/** What a declined entry's ref names: a criterion or a configuration finding. */
+export const DECLINED_REF = /^(M\d+\/[a-z0-9-]+|config\/.+)$/;
+
+function isJsonValue(v: unknown): boolean {
+  if (v === null || typeof v === "string" || typeof v === "boolean")
+    return true;
+  if (typeof v === "number") return Number.isFinite(v);
+  if (Array.isArray(v)) return v.every(isJsonValue);
+  return isRecord(v) && Object.values(v).every(isJsonValue);
+}
+
+/**
+ * Whether a list or mapping is reached twice. YAML aliases share one node, so
+ * a few lines can name a cycle or an exponentially large expansion; walking
+ * each node once keeps the check, and the JSON written afterwards, bounded.
+ */
+function sharesNode(v: unknown, seen: Set<object>): boolean {
+  if (typeof v !== "object" || v === null) return false;
+  if (seen.has(v)) return true;
+  seen.add(v);
+  return Object.values(v).some((item) => sharesNode(item, seen));
+}
+
+/**
+ * A declined entry's keys the record does not define. They are written back
+ * and embedded as JSON, so a value JSON cannot hold as it is (a YAML date, an
+ * infinite number, a list or mapping an alias repeats across these keys) would
+ * come back changed, and is refused. A scalar alias resolves to a plain value
+ * and is kept.
+ */
+function keptKeys(d: Record<string, unknown>, at: string): [string, unknown][] {
+  const other = Object.entries(d).filter(([k]) => !DECLINED_KEYS.has(k));
+  const seen = new Set<object>();
+  for (const [key, value] of other) {
+    if (sharesNode(value, seen))
+      throw new Error(
+        `${at}.${key} repeats a list or mapping through a YAML alias; write the value out`,
+      );
+    if (!isJsonValue(value))
+      throw new Error(
+        `${at}.${key} must be text, a finite number, true, false, null, or a list or mapping of those; quote a date`,
+      );
+  }
+  return other;
+}
+
 function parseDeclined(d: unknown, at: string): Declined {
   if (!isRecord(d)) throw new Error(`${at} must be a mapping`);
   if (!Array.isArray(d.refs) || d.refs.length === 0 || !d.refs.every(text))
     throw new Error(`${at}.refs must list criteria or config findings`);
   for (const ref of d.refs as string[])
-    if (!/^(M\d+\/[a-z0-9-]+|config\/.+)$/.test(ref))
+    if (!DECLINED_REF.test(ref))
       throw new Error(
         `${at}.refs: ${ref} is neither M<n>/<id> nor config/<finding>`,
       );
@@ -101,11 +192,13 @@ function parseDeclined(d: unknown, at: string): Declined {
     (typeof after !== "string" || !isDate(after))
   )
     throw new Error(`${at}.revisit_after must be a calendar date, YYYY-MM-DD`);
+  const other = keptKeys(d, at);
   return {
     refs: d.refs as string[],
     reason: d.reason,
     revisit_when: d.revisit_when,
     ...(typeof after === "string" ? { revisit_after: after } : {}),
+    ...(other.length > 0 ? { other: Object.fromEntries(other) } : {}),
   };
 }
 
@@ -139,6 +232,7 @@ export function parseRecord(source: string, file: string): AuditRecord {
     date,
     commit: raw.commit,
     ...(text(raw.shape) ? { shape: raw.shape } : {}),
+    ...parseProfileFields(raw, file),
     criteria,
     declined: declinedRaw.map((d, i) =>
       parseDeclined(d, `${file}: declined[${i}]`),
@@ -147,25 +241,74 @@ export function parseRecord(source: string, file: string): AuditRecord {
 }
 
 /** What makes a record unfit to commit: unscored or unknown criteria, scores without evidence. */
-export function checkRecord(record: AuditRecord, modules: Module[]): string[] {
-  const problems: string[] = [];
+export function checkRecord(
+  record: AuditRecord,
+  modules: Module[],
+  profiles?: Profiles,
+): string[] {
   const known = new Set(modules.flatMap((m) => m.criteria.map((c) => c.key)));
-  for (const key of known) {
-    const entry = record.criteria.get(key);
-    if (!entry) problems.push(`${key}: missing`);
-    else if (entry.score === null) problems.push(`${key}: not scored`);
-    else if (!text(entry.evidence)) problems.push(`${key}: no evidence`);
-  }
-  for (const key of record.criteria.keys())
-    if (!known.has(key))
-      problems.push(`${key}: not a criterion of this plugin version`);
-  for (const d of record.declined)
-    for (const ref of d.refs)
-      if (ref.startsWith("M") && !known.has(ref))
-        problems.push(
-          `declined ${ref}: not a criterion of this plugin version`,
-        );
-  return problems;
+  return [
+    ...(profiles ? checkProfile(record, profiles) : []),
+    ...[...known].flatMap((key) => entryProblems(key, record)),
+    ...[...record.criteria.keys()]
+      .filter((key) => !known.has(key))
+      .map((key) => `${key}: not a criterion of this plugin version`),
+    ...record.declined
+      .flatMap((d) => d.refs)
+      .filter((ref) => ref.startsWith("M") && !known.has(ref))
+      .map((ref) => `declined ${ref}: not a criterion of this plugin version`),
+  ];
+}
+
+/** What is missing from one criterion's entry in the record. */
+function entryProblems(key: string, record: AuditRecord): string[] {
+  const entry = record.criteria.get(key);
+  if (!entry) return [`${key}: missing`];
+  if (entry.score === null) return [`${key}: not scored`];
+  if (!text(entry.evidence)) return [`${key}: no evidence`];
+  return [];
+}
+
+/** The record's profile names a shipped profile, and its conditions are that profile's. */
+export function checkProfile(
+  record: AuditRecord,
+  profiles: Profiles,
+): string[] {
+  const heading =
+    record.heading_to !== undefined && !profiles.profiles.has(record.heading_to)
+      ? [
+          `heading_to: ${record.heading_to} is not one of ${[...profiles.profiles.keys()].join(", ")}`,
+        ]
+      : [];
+  return [...heading, ...checkDeclaredProfile(record, profiles)];
+}
+
+function checkDeclaredProfile(
+  record: AuditRecord,
+  profiles: Profiles,
+): string[] {
+  if (record.profile === undefined)
+    return record.profile_conditions?.length
+      ? ["profile_conditions: set without a profile"]
+      : [];
+  const profile = profiles.profiles.get(record.profile);
+  if (!profile)
+    return [
+      `profile: ${record.profile} is not one of ${[...profiles.profiles.keys()].join(", ")}`,
+    ];
+  // The conditions apply to the heading-to profile too, so one that only
+  // the profile the project grows into makes conditional is the team's to state.
+  const heading =
+    record.heading_to === undefined
+      ? undefined
+      : profiles.profiles.get(record.heading_to);
+  return (record.profile_conditions ?? [])
+    .filter((m) => !profile.conditional.has(m) && !heading?.conditional.has(m))
+    .map((m) =>
+      heading
+        ? `profile_conditions: neither ${profile.name} nor ${heading.name} has a conditional target for ${m}`
+        : `profile_conditions: ${profile.name} has no conditional target for ${m}`,
+    );
 }
 
 /** The scored criteria of a record, as `attained` reads them. */
@@ -285,6 +428,28 @@ function declinedStatus(
       why: `revisit date ${entry.revisit_after} has passed`,
     };
   return { entry, status: "held", why: `held until: ${entry.revisit_when}` };
+}
+
+/**
+ * The criterion refs of `record`'s declined entries the team still holds on
+ * `today`, with the condition each waits for. Configuration refs are left to
+ * config-fit, which decides whether a decline hides its finding.
+ */
+export function heldCriteria(
+  record: AuditRecord,
+  modules: readonly Module[],
+  today: string,
+): Map<string, string> {
+  const all = new Map<string, Criterion>(
+    modules.flatMap((m) => m.criteria.map((c) => [c.key, c] as const)),
+  );
+  const scores = scoresOf(record);
+  const held = new Map<string, string>();
+  for (const entry of record.declined)
+    if (declinedStatus(entry, all, scores, today).status === "held")
+      for (const ref of entry.refs)
+        if (!ref.startsWith("config/")) held.set(ref, entry.revisit_when);
+  return held;
 }
 
 /**
@@ -422,18 +587,34 @@ function draftCriterion(
   return out;
 }
 
+/** A declined entry in the shape of the file it came from: its kept keys beside the defined ones. */
+export function declinedData(d: Declined): Record<string, unknown> {
+  const { other, ...defined } = d;
+  return { ...defined, ...other };
+}
+
+/** One declined entry as block-list lines, its dash after `indent`. */
+export function declinedEntryLines(d: Declined, indent = "  "): string[] {
+  const out = [
+    `${indent}- refs: [${d.refs.map(quote).join(", ")}]`,
+    `${indent}  reason: ${quote(d.reason)}`,
+    `${indent}  revisit_when: ${quote(d.revisit_when)}`,
+  ];
+  if (d.revisit_after)
+    out.push(`${indent}  revisit_after: ${quote(d.revisit_after)}`);
+  // JSON is YAML, so a value of any shape `parseDeclined` keeps is written
+  // on one line and read back as it was.
+  for (const [key, value] of Object.entries(d.other ?? {}))
+    out.push(
+      `${indent}  ${/^[A-Za-z_][\w-]*$/.test(key) ? key : quote(key)}: ${JSON.stringify(value)}`,
+    );
+  return out;
+}
+
 /** The prior record's declined entries, carried over unchanged. */
 function draftDeclined(declined: Declined[]): string[] {
   if (declined.length === 0) return ["declined: []"];
-  const out = ["declined:"];
-  for (const d of declined) {
-    out.push(`  - refs: [${d.refs.map(quote).join(", ")}]`);
-    out.push(`    reason: ${quote(d.reason)}`);
-    out.push(`    revisit_when: ${quote(d.revisit_when)}`);
-    if (d.revisit_after)
-      out.push(`    revisit_after: ${quote(d.revisit_after)}`);
-  }
-  return out;
+  return ["declined:", ...declined.flatMap((d) => declinedEntryLines(d))];
 }
 
 /**
@@ -451,6 +632,8 @@ export function renderDraft(opts: {
   pluginVersion: string;
   date: string;
   commit: string;
+  /** The ids a `profile:` may name, for the draft's comment. */
+  profileIds?: readonly string[];
 }): string {
   const out = [
     "# Jig audit record: written by /jig:audit, read by its next run.",
@@ -460,6 +643,11 @@ export function renderDraft(opts: {
     `date: ${quote(opts.date)}`,
     `commit: ${opts.commit}`,
     `shape: ${opts.prior?.shape ? quote(opts.prior.shape) : "null"}   # library | application | service | monorepo | documentation | …`,
+    `profile: ${opts.prior?.profile ?? "null"}   # ${opts.profileIds?.join(" | ") ?? "a profile id from profiles.yaml"}; null when the team has not chosen`,
+    ...(opts.prior?.heading_to ? [`heading_to: ${opts.prior.heading_to}`] : []),
+    ...(opts.prior?.profile_conditions?.length
+      ? [`profile_conditions: [${opts.prior.profile_conditions.join(", ")}]`]
+      : []),
     "criteria:",
   ];
   for (const m of opts.modules) {

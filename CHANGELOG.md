@@ -42,6 +42,74 @@ changes are marked **Breaking** and say what a consumer changes.
   no unknown key in a Jig section (`scripts/check-audit-fit.ts`); the review policy flags a pull request that
   does not say what it changed in the audit.
 
+## [0.16.0] - 2026-10-13
+
+The audit's result becomes an **audit sheet**: a polished HTML report a team
+reads, decides on and hands back to the agent. A repository declares the
+profile it aims for, and the audit recommends toward that target and no
+further.
+
+### Added
+
+- The audit sheet ([format](plugin/skills/audit/references/report-sheet.md)):
+  `report.ts render` turns the report source an audit writes, the record and
+  the configuration-fit report into one self-contained HTML file and the same
+  report as Markdown. It opens with the summary and a maturity map against the
+  target, then the moves that matter most, what changed since the last audit,
+  the recommendations grouped as *now*, *as you grow* and *optional*, every
+  criterion with how it was decided and its evidence, configuration fit with a
+  starter configuration, drift, and what was examined and what could not be
+  checked. Each recommendation can be accepted, taken in its lighter form,
+  refined, declined with a reason and a revisit condition, or marked *this is
+  wrong*; **Copy decisions** writes them as one block for the agent.
+  `report.ts validate` and `extract` check a source and recover everything a
+  sheet was rendered from.
+- [`profiles.yaml`](plugin/skills/audit/profiles.yaml): each profile's
+  target level per module, conditional targets (M12 when agents work in
+  parallel workspaces, M3 when a change's implications stop being obvious)
+  and the order to adopt modules in. The record gains `profile:` and
+  `profile_conditions:`; `record.ts check` refuses an unknown profile or
+  condition, and `record.ts summary` shows the target and the gap.
+- Each module's criteria file states its `purpose` in one sentence.
+- Proportion: the record's `heading_to` names the profile a project is
+  growing toward, and a recommendation may name a `lighter` option. The audit
+  recommends toward the declared profile and no further; without one it
+  suggests the lightest profile the repository's facts support.
+- `record.ts apply-feedback <file|-> --report <source.json|sheet.html>`
+  records the decisions copied from the audit sheet: it refuses a block written for
+  another repository, commit or report (and an option it does not know, and
+  accepted or refined work on a criterion the record holds declined), adds
+  each decline to the record's `declined` list, or renews the entry that
+  already declines the same refs, with every comment in the file and every
+  other key of the entry kept (two declines of the same refs in one block must
+  agree; a kept key's value must be one JSON can hold, so a date in one is
+  quoted), sets the
+  profile when
+  the team changed it, and prints the accepted and refined work in adoption
+  order, after the report's drift, and each *this is wrong* as a calibration
+  note.
+- `config-fit.ts --draft` prints a starter `.config/jig.yaml` (or the
+  additions to an existing one) from the values the repository implies, each
+  with the evidence it came from, never a default (a review bot whose
+  account type cannot be read is reported unchecked, not suggested); an addition to a section
+  the file already has says to merge it there. `--json` carries it as
+  `draft`. The configuration schema gains `default`.
+
+### Changed
+
+- **Breaking:** a key of a `declined` entry in `.config/jig-audit.yaml`
+  beyond `refs`, `reason`, `revisit_when` and `revisit_after` is now kept, so
+  its value must be text, a finite number, `true`, `false`, `null`, or a list
+  or mapping of those, and no list or mapping may appear twice among one
+  entry's kept keys (a YAML alias to one does that; an alias to text or a
+  number is fine); every `record.ts` command refuses the record otherwise.
+  Before updating, quote a date in such a key (`reviewed_on: "2026-10-01"`),
+  replace an infinite number, and write out a repeated list or mapping.
+- `/jig:audit` ends with the audit sheet instead of a report written from
+  `references/report-template.md`, which is gone: the sheet's Markdown copy is
+  the text form. The skill asks for the team's profile on a first audit and
+  records the decisions pasted back from the sheet.
+
 ## [0.15.0] - 2026-10-12
 
 The auditor becomes a plugin skill, `/jig:audit`, that a repository runs again
@@ -416,7 +484,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/docomply/jig/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/docomply/jig/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/docomply/jig/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/docomply/jig/compare/v0.12.0...v0.13.0

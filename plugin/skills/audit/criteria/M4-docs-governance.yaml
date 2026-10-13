@@ -3,6 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 module: M4
 name: docs-governance
+purpose: >-
+  Documentation has a lifecycle, metadata and generated navigation, so people
+  and agents can tell current pages from stale ones.
 criteria:
   - id: governance-model-written
     level: lite
