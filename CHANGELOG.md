@@ -52,6 +52,11 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ### Changed
 
+- Jig's own CI (`.github/workflows/gates.yml`) runs every job on Blacksmith
+  runners instead of GitHub-hosted ones: Linux on `ubuntu-2404`, macOS on
+  `macos-latest` (Apple Silicon), Windows on `windows-2025`. The per-platform
+  jobs are now named `gates (linux|macos|windows)`; the required `gates` check
+  is unchanged. `.github/actionlint.yaml` declares the runner labels.
 - M1's pull-request workflow template selects work in one resolver job
   instead of a change-detection step copied into each job. Its single required
   check is now an aggregator job that runs on `!cancelled()` (not `always()`),

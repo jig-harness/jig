@@ -10,6 +10,10 @@
 # Linux always runs the whole gate set, and a push to main runs everything,
 # so a documentation change that breaks only on macOS or Windows (a file name
 # differing only by case, say) surfaces on main rather than on its PR.
+#
+# Every job runs on Blacksmith runners (https://docs.blacksmith.sh), which the
+# Blacksmith GitHub App provides to this repository; GitHub-hosted runners
+# draw on the account's Actions budget instead.
 name: gates
 
 on:
@@ -27,7 +31,7 @@ concurrency:
 jobs:
   areas:
     name: change areas
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     outputs:
       areas: ${{ steps.resolve.outputs.areas }}
@@ -56,8 +60,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.areas.outputs.code == 'true' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
-    runs-on: ${{ matrix.os }}
+        include: ${{ fromJSON(needs.areas.outputs.code == 'true' && '[{"os":"linux","runner":"blacksmith-4vcpu-ubuntu-2404"},{"os":"macos","runner":"blacksmith-6vcpu-macos-latest"},{"os":"windows","runner":"blacksmith-4vcpu-windows-2025"}]' || '[{"os":"linux","runner":"blacksmith-4vcpu-ubuntu-2404"}]') }}
+    runs-on: ${{ matrix.runner }}
     # Windows takes the longest, about 8 minutes.
     timeout-minutes: 20
     env:
@@ -86,9 +90,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [linux, macos]
         shard: [1, 2, 3, 4]
-    runs-on: ${{ matrix.os }}
+        include:
+          - os: linux
+            runner: blacksmith-2vcpu-ubuntu-2404
+          - os: macos
+            runner: blacksmith-6vcpu-macos-latest
+    runs-on: ${{ matrix.runner }}
     # A shard takes up to about 3 minutes.
     timeout-minutes: 15
     steps:
@@ -114,7 +123,7 @@ jobs:
   gates:
     needs: [areas, platform-gates, drive-pr-suite]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - name: Require every selected job
