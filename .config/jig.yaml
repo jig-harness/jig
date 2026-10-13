@@ -39,3 +39,7 @@ pull_requests:
 drive:
   # The same catalog selects CI jobs (.github/workflows/gates.yml).
   change_areas_catalog: .config/change-areas.yaml
+  # The AI reviewer reviews drafts, so pull requests open as drafts and
+  # drive-pr marks them Ready after the first round
+  # (AGENTS.md § Ways of working, Pull-request lifecycle).
+  reviews_drafts: true

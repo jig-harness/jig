@@ -105,6 +105,20 @@ Read in this order when starting a session here:
   user-visible change in [CHANGELOG.md](CHANGELOG.md) ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)):
   under the new plugin version's heading when it changes `plugin/`, under
   **Unreleased** otherwise.
+- **Pull-request lifecycle** (Jig's own form of
+  [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECYCLE.md)).
+  Before opening, read your whole diff against `origin/main` as a reviewer
+  would and run `bun run gates`. Open the pull request as a draft: Jig's AI
+  reviewer reviews drafts (`drive.reviews_drafts: true`), so the reviewers
+  that skip drafts spend their pass on a head it has already cleaned. Drive
+  the review with `/jig:drive-pr`, which marks the pull request Ready after
+  the first round (`pull_requests.mark_ready`), or one pass at a time with
+  `/jig:resolve-review-comments`, marking it Ready yourself once that first
+  round has settled. Every thread ends with a declared outcome and is
+  resolved. The pull request may merge once a round after Ready has settled:
+  every reviewer has reported on the current head, no thread or summary
+  finding is left unanswered, and the required checks are green. A person
+  merges; an agent never does.
 - **Toolchain.** Runnable tooling and gates are written in Bun + TypeScript:
   Bun runs natively on macOS, Linux and Windows, where Bash runs only through
   a compatibility layer and its standard utilities behave differently on macOS

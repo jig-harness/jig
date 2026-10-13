@@ -41,6 +41,11 @@ changes are marked **Breaking** and say what a consumer changes.
   criterion and Jig's configuration exists, fits the audit's schema and has
   no unknown key in a Jig section (`scripts/check-audit-fit.ts`); the review policy flags a pull request that
   does not say what it changed in the audit.
+- AGENTS.md states Jig's own pull-request lifecycle: read the whole diff and
+  run the gates before opening, open as a draft, mark it Ready after the first
+  review round, merge only once a round after Ready has settled with the
+  required checks green, and a person merges. `.config/jig.yaml` declares
+  `drive.reviews_drafts: true`, the fact the draft-first order rests on.
 
 ## [0.18.0] - 2026-10-13
 
