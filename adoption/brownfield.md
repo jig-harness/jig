@@ -12,7 +12,7 @@ Improving an existing project. The entry point is an **audit**, not a module.
    reality actively mislead every agent session; fixing them is cheap and
    pays immediately. Drift fixes are usually an audit's highest-value quick
    wins.
-3. **Adopt modules in the report's order, one rung at a time** — "adopted"
+3. **Adopt modules in the report's order, one maturity level at a time** — "adopted"
    means "reached Lite," then climb. The default leverage ordering when the
    report doesn't say otherwise: **M1** (gates — makes everything else
    checkable) → **M2** (freshness — stops the rot) → **M0** (instructions —
@@ -35,5 +35,5 @@ Improving an existing project. The entry point is an **audit**, not a module.
 - **Baselines before blocking**: new gates start advisory on a brownfield
   codebase (existing violations grandfathered or burned down first), with a
   promotion condition attached — advisory-forever is drift (principle 4).
-- **One concern per change**: adopt via small PRs scoped to one module rung,
-  not a big-bang "process PR" nobody can review.
+- **One concern per change**: adopt via small PRs scoped to one module's next
+  maturity level, not a big-bang "process PR" nobody can review.

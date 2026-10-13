@@ -21,6 +21,8 @@
 !(?<![-+.\w])https://github\.com/docomply/jig(\.git)?(?![-\w])(?!\.[-.\w])
 # The publisher fields of the plugin and marketplace manifests.
 !^(plugin/\.(claude|codex)-plugin/plugin|\.claude-plugin/marketplace)\.json:\s*"(author|owner|developerName)":\s*(\{\s*"name":\s*)?"Docomply"
+# The licensor named in the copyright lines of the licence files.
+!^((plugin/)?NOTICE|LICENSE-MIT-0):Copyright 2026 Docomply$
 # This repository's own values as a consumer of its skills: real account,
 # team and repository names, which is what configuration is for.
 !^\.config/jig\.yaml:.*

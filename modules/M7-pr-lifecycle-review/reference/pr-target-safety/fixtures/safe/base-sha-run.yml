@@ -1,0 +1,14 @@
+# SAFE: pull_request_target with an explicit checkout of the BASE sha and a
+# run: step. The expression names the base side of the pull request, so the
+# code that runs is the repository's own.
+name: shadow-review
+on: pull_request_target
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - run: ./tools/review --diff-only

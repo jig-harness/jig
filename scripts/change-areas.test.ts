@@ -82,6 +82,10 @@ test("the schema and graph checks reject malformed catalogs", () => {
   expect(problems({ a: { ...area(["x"]), deployTier: "prod" } })).toContain(
     'deployTier `"prod"`',
   );
+  expect(problems({ a: { ...area(["x"]), reviewRisk: "low" } })).toContain(
+    'reviewRisk `"low"`',
+  );
+  expect(problems({ a: { ...area(["x"]), reviewRisk: "high" } })).toBe("");
   expect(problems({ a: area([]) })).toContain("at least one glob");
   const { title: _, ...untitled } = area(["x"]);
   expect(problems({ a: untitled })).toContain("`title` is missing");

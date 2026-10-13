@@ -77,7 +77,8 @@ MR
 OSS
 ESM
 PID
-# licence identifiers
+# licence identifiers, and the licence file's name
+LICENSE
 MIT
 ISC
 # vendor/product names

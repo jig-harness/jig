@@ -25,9 +25,9 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
    kickoff methodology ([seeds/project-kickoff/](seeds/project-kickoff/)) with
    day-one module adoption.
 2. **Brownfield upgrade** — improving an existing project: start with an
-   **audit** ([`/jig:audit`](plugin/skills/audit/README.md)) that scores the target repo against the module
+   **audit** ([`/jig:audit`](plugin/skills/audit/README.md)) that scores the repository against the module
    map and produces a prioritized, actionable report, then adopt modules one
-   maturity rung at a time ([adoption/brownfield.md](adoption/brownfield.md)).
+   maturity level at a time ([adoption/brownfield.md](adoption/brownfield.md)).
 3. **Reference** — cherry-pick a single pattern (e.g., generated-artifact
    freshness gates) from its module.
 4. **Shared tooling** — use Jig's agent skills in any repository without
@@ -43,6 +43,9 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [PLAYBOOK.md](PLAYBOOK.md) | The end-to-end delivery narrative (feature pipeline + PR loop) |
 | [ROADMAP.md](ROADMAP.md) | Open work, in priority order |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How a change to Jig is made, checked and merged |
+| [docs/](docs/README.md) | Jig's own documents: kinds, decision records, defaults |
+| [design/](design/README.md) | Designs of roadmap items, until they are built |
 | [principles/](principles/) | The seven design principles behind everything here |
 | [modules/](modules/) | The 13 practice modules (M0–M12), each independently adoptable |
 | [profiles/](profiles/) | Module compositions: Solo/Lite, Team/Standard, Regulated/Strict |
@@ -61,8 +64,19 @@ Jig is distilled from a production codebase built with AI agents, and
 the repositories that use it keep feeding lessons back
 (see [principles/05-learning-loop.md](principles/05-learning-loop.md)).
 
-Private repo; publishing (whole or per-module) is a deferred decision. No
-license granted while private.
+The repository is private; whether and when to publish it, whole or per
+module, is still open.
+
+## Licence
+
+Jig is licensed under the [Apache License 2.0](LICENSE). The template files
+under `modules/*/templates/`, which other repositories copy into their own,
+are under [MIT No Attribution](LICENSE-MIT-0), so a copy needs no notice.
+[NOTICE](NOTICE) lists those templates and the third-party code the plugin
+vendors, each with its licence. Contributions from outside the maintainers
+sign off each commit under the
+[Developer Certificate of Origin](GLOSSARY.md)
+([CONTRIBUTING.md](CONTRIBUTING.md#outside-contributions)).
 
 ## Working on Jig
 

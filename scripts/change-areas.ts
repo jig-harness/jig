@@ -17,6 +17,7 @@ export const CATALOG = ".config/change-areas.yaml";
 const AREA_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const CATEGORIES = ["skill", "library", "tooling", "infra", "docs"];
 const DEPLOY_TIERS = ["plugin", "none"];
+const REVIEW_RISKS = ["high"];
 
 export interface Area {
   title: string;
@@ -25,6 +26,8 @@ export interface Area {
   workspace: string[];
   impliedBy: string[];
   deployTier: string;
+  /** `high` puts the area's paths in the AI reviewer's high-risk list. */
+  reviewRisk?: string;
 }
 export type Catalog = Record<string, Area>;
 
@@ -83,6 +86,7 @@ const FIELDS: Record<
     required: false,
     check: (v) => (typeof v === "string" ? null : "`notes` is not text"),
   },
+  reviewRisk: { required: false, check: oneOf("reviewRisk", REVIEW_RISKS) },
 };
 
 /** Read the catalog file; throws when it cannot be read or parsed. */
@@ -259,7 +263,8 @@ export function changedFiles(root: string, base: string): string[] {
     .filter(Boolean);
 }
 
-function validCatalog(root: string): Catalog {
+/** The repository's catalog; throws when it cannot be read or is invalid. */
+export function validCatalog(root: string): Catalog {
   const doc = readCatalog(join(root, CATALOG));
   const problems = catalogProblems(doc);
   if (problems.length) throw new Error(`${CATALOG}: ${problems.join("; ")}`);

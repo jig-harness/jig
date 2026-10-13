@@ -1,14 +1,20 @@
 // Canonical ordered gate set: self-tests first, then repository checks.
+// `--fast` runs only the steps that take seconds (format, lint, types and the
+// repository checks), for the pre-push hook (lefthook.yml); CI runs them all.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { checkLinks } from "./check-md-links.ts";
+import { checkInstructionPaths } from "./check-instruction-paths.ts";
 import { checkTables } from "./check-md-tables.ts";
 import { checkGlossary } from "./check-glossary-coverage.ts";
 import { checkTracker } from "./check-no-tracker-refs.ts";
+import { checkLicences } from "./check-licences.ts";
 import { checkChangelog } from "./check-changelog.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
 import { checkChangeAreas } from "./change-areas.ts";
+import { checkWorkflowSafety } from "./check-workflow-safety.ts";
+import { checkReviewRisk } from "./review-risk.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -66,21 +72,52 @@ function configuredIgnores(): string[] {
   return bunfig.test?.pathIgnorePatterns ?? [];
 }
 
-async function gates(): Promise<number> {
-  const skipped = skippedSuites(process.platform, process.env);
-  if (skipped.length)
-    console.log(`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`);
-  const test = testArgs(skipped, configuredIgnores());
-  for (const args of [
+/** The repository checks, run after the `bun` steps in both modes. */
+export const CHECKS = [
+  checkLinks,
+  checkInstructionPaths,
+  checkTables,
+  checkGlossary,
+  checkTracker,
+  checkLicences,
+  checkWorkflowSafety,
+  checkChangelog,
+  checkAuditFit,
+  checkChangeAreas,
+  checkReviewRisk,
+];
+
+/** What a run executes, in order: the `bun` steps, then the repository checks. */
+export function plan(
+  fast: boolean,
+  test: string[],
+): { steps: string[][]; checks: typeof CHECKS } {
+  const quick = [
     ["run", "format:check"],
     ["run", "lint"],
     ["run", "typecheck"],
-    ["run", "deadcode"],
-    ["run", "audit"],
-    ["run", "quality"],
-    test,
-    ["run", "build"],
-  ]) {
+  ];
+  if (fast) return { steps: quick, checks: CHECKS };
+  return {
+    steps: [
+      ...quick,
+      ["run", "deadcode"],
+      ["run", "audit"],
+      ["run", "quality"],
+      test,
+      ["run", "build"],
+    ],
+    checks: CHECKS,
+  };
+}
+
+async function gates(fast: boolean): Promise<number> {
+  const skipped = fast ? [] : skippedSuites(process.platform, process.env);
+  if (skipped.length)
+    console.log(`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`);
+  const test = testArgs(skipped, configuredIgnores());
+  const { steps, checks } = plan(fast, test);
+  for (const args of steps) {
     const child = Bun.spawn([process.execPath, ...args], {
       cwd: root,
       stdout: "inherit",
@@ -89,19 +126,11 @@ async function gates(): Promise<number> {
     const status = await child.exited;
     if (status) return status;
   }
-  for (const check of [
-    checkLinks,
-    checkTables,
-    checkGlossary,
-    checkTracker,
-    checkChangelog,
-    checkAuditFit,
-    checkChangeAreas,
-  ]) {
+  for (const check of checks) {
     const status = await check(root);
     if (status) return status;
   }
-  console.log("all gates passed");
+  console.log(fast ? "fast gates passed" : "all gates passed");
   return 0;
 }
-if (import.meta.main) cli(gates);
+if (import.meta.main) cli(() => gates(process.argv.includes("--fast")));

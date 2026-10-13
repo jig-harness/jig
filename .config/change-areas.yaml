@@ -11,6 +11,10 @@
 # Field reference: modules/M3-change-area-catalog/reference/catalog/README.md.
 # `category` is one of skill, library, tooling, infra, docs; `deployTier` is
 # `plugin` for what ships in a plugin version and `none` otherwise.
+# `reviewRisk: high` (optional, Jig's own) puts the area's paths in the AI
+# reviewer's high-risk list: scripts/review-risk.ts writes them into
+# .config/ai-review.yaml, and the gates fail when the two differ. A file may
+# belong to several areas, so a narrow area can mark part of a broader one.
 
 areas:
   drive-pr:
@@ -47,6 +51,29 @@ areas:
     impliedBy: [shared-lib, toolchain]
     deployTier: plugin
 
+  plugin-manifests:
+    title: "The plugin manifests: name, version and description"
+    category: skill
+    paths: ["plugin/.claude-plugin/**", "plugin/.codex-plugin/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: plugin
+    reviewRisk: high
+
+  audit-scoring:
+    title: "How the audit scores: its scripts, criteria, schema and method"
+    category: skill
+    paths:
+      - "plugin/skills/audit/scripts/**"
+      - "plugin/skills/audit/config-schema.yaml"
+      - "plugin/skills/audit/references/methodology.md"
+      - "plugin/skills/audit/references/survey-prompts/**"
+      - "plugin/skills/audit/criteria/M*.yaml"
+    workspace: []
+    impliedBy: []
+    deployTier: plugin
+    reviewRisk: high
+
   shared-lib:
     title: "Shared library and test preloads"
     category: library
@@ -62,6 +89,7 @@ areas:
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: none
+    reviewRisk: high
 
   tools:
     title: "Machine-level tools"
@@ -72,9 +100,18 @@ areas:
     deployTier: none
 
   module-reference:
-    title: "Module reference code and templates"
+    title: "Module reference code"
     category: tooling
-    paths: ["modules/*/reference/**", "modules/*/templates/**"]
+    paths: ["modules/*/reference/**"]
+    workspace: []
+    impliedBy: [shared-lib, toolchain]
+    deployTier: none
+    reviewRisk: high
+
+  module-templates:
+    title: "Module templates"
+    category: tooling
+    paths: ["modules/*/templates/**"]
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: none
@@ -87,6 +124,7 @@ areas:
       - "bun.lock"
       - "bunfig.toml"
       - "mise.toml"
+      - "lefthook.yml"
       - "tsconfig.json"
       - "tsconfig.ratchet.json"
       - "biome.json"
@@ -100,17 +138,55 @@ areas:
     impliedBy: []
     deployTier: none
 
+  ci:
+    title: "CI workflows"
+    category: infra
+    paths: [".github/workflows/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    reviewRisk: high
+
+  review-config:
+    title: "The AI reviewer's configuration and the catalog it is derived from"
+    category: infra
+    paths: [".config/ai-review.yaml", ".config/change-areas.yaml"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    reviewRisk: high
+
+  instructions:
+    title: "Agent instruction files"
+    category: docs
+    paths:
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "CONTRIBUTING.md"
+      - "modules/AGENTS.md"
+      - "modules/CLAUDE.md"
+      - "plugin/AGENTS.md"
+      - "plugin/CLAUDE.md"
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    reviewRisk: high
+
   docs:
     title: "Documentation and vendored seed material"
     category: docs
     paths:
       - "*.md"
+      - "LICENSE"
+      - "LICENSE-MIT-0"
+      - "NOTICE"
       - "modules/*.md"
       - "modules/*/*.md"
       - "adoption/**"
       - "assets/**"
       - "audit/**"
       - "design/**"
+      - "docs/**"
       - "principles/**"
       - "profiles/**"
       - "seeds/**"

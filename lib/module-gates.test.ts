@@ -288,7 +288,7 @@ test("workflow lint reads flow-mapping refs and fails closed on bad directory in
   const expr = (body: string) => `\${{ ${body} }}`;
   for (const checkout of [
     `with: { ref: '${expr("github.event.pull_request.head.sha")}' }`,
-    `with: { path: x, repository: ${expr("github.event.pull_request.head.repo.full_name")} }`,
+    `with: { path: x, repository: "${expr("github.event.pull_request.head.repo.full_name")}" }`,
     `with: {"ref": "${expr("github.head_ref")}"}`,
   ]) {
     const workflow = written(
@@ -297,7 +297,7 @@ test("workflow lint reads flow-mapping refs and fails closed on bad directory in
     );
     expect(prTargetSafety([workflow], {}).code).toBe(1);
   }
-  const flowCheckout = `      - uses: actions/checkout@v4\n        with: { ref: \${{ github.event.pull_request.head.sha }} }\n`;
+  const flowCheckout = `      - uses: actions/checkout@v4\n        with: { ref: "\${{ github.event.pull_request.head.sha }}" }\n`;
   for (const step of [
     "      - { run: make test }\n",
     "      - { name: build, run: make test }\n",
@@ -351,6 +351,93 @@ test("workflow lint reads flow-mapping refs and fails closed on bad directory in
   } finally {
     chmodSync(locked, 0o755);
   }
+});
+test("workflow lint reads inputs in any case, only under with:, and the parsed trigger", () => {
+  const head = `\${{ github.event.pull_request.head.sha }}`;
+  const workflow = (on: string, step: string) =>
+    written(
+      "case.yml",
+      `on: ${on}\njobs:\n  j:\n    steps:\n${step}      - run: make test\n`,
+    );
+  const checkout = (inputs: string) =>
+    `      - uses: actions/checkout@v4\n        with: { ${inputs} }\n`;
+  for (const inputs of [`REF: '${head}'`, `Repository: '${head}'`])
+    expect(
+      prTargetSafety([workflow("pull_request_target", checkout(inputs))], {})
+        .code,
+    ).toBe(1);
+  // A value named ref outside with: is data, not a checkout.
+  const envOnly = `      - env: { repository: '${head}' }\n        run: echo ready\n`;
+  expect(
+    prTargetSafety([workflow("pull_request_target", envOnly)], {}).code,
+  ).toBe(0);
+  // An escaped trigger is the same trigger once parsed.
+  expect(
+    prTargetSafety(
+      [workflow('"pull_request_\\u0074arget"', checkout(`ref: '${head}'`))],
+      {},
+    ).code,
+  ).toBe(1);
+  expect(
+    prTargetSafety(
+      [workflow("[push, pull_request]", checkout(`ref: '${head}'`))],
+      {},
+    ).code,
+  ).toBe(0);
+});
+test("workflow lint counts any ref outside the base side as untrusted and reads folded values", () => {
+  const lint = (checkout: string, step = "      - run: make test\n") =>
+    prTargetSafety(
+      [
+        written(
+          "wf.yml",
+          `on: pull_request_target\njobs:\n  j:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ${checkout}\n${step}`,
+        ),
+      ],
+      {},
+    ).code;
+  const expr = (body: string) => `\${{ ${body} }}`;
+  const base = expr("github.event.pull_request.base.sha");
+  for (const unsafe of [
+    `ref: ${expr("env.PR_SHA")}`,
+    `ref: ${expr("github.event.pull_request['head']['sha']")}`,
+    `ref: refs/pull/${expr("github.event.pull_request.number")}/merge`,
+    "ref: refs/pull/7/head",
+    `ref: ${expr("steps.pr.outputs.sha")}`,
+    `ref: ${expr("github.event.pull_request.base.sha || github.head_ref")}`,
+    `ref: ${base}-${expr("github.head_ref")}`,
+    `repository: ${expr("github.event.pull_request.base.repo.owner.login")}/x`,
+    `ref: \${{ github.event.pull_request.base.sha`,
+  ])
+    expect(lint(unsafe)).toBe(1);
+  for (const safe of [
+    `ref: ${base}`,
+    `ref: \${{github.base_ref}}`,
+    `ref: ${expr("github.sha")}`,
+    `repository: ${expr("github.repository")}`,
+    "ref: main",
+    "path: base",
+  ])
+    expect(lint(safe)).toBe(0);
+  const head = `ref: ${expr("github.event.pull_request.head.sha")}`;
+  expect(
+    lint(head, "      - uses: >-\n          ./.github/actions/review\n"),
+  ).toBe(1);
+  expect(
+    lint(head, "      - uses: |\n          ./.github/actions/review\n"),
+  ).toBe(1);
+  expect(
+    lint(head, "      - uses: >-\n          actions/setup-node@v4\n"),
+  ).toBe(0);
+  expect(lint(head, "    defaults:\n      run:\n        shell: bash\n")).toBe(
+    0,
+  );
+  expect(
+    prTargetSafety(
+      [written("broken.yml", "on: pull_request_target\njobs: [\n")],
+      {},
+    ).code,
+  ).toBe(2);
 });
 test("review heading needs a boundary after Review", () => {
   const artifact = (heading: string) =>

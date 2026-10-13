@@ -155,10 +155,16 @@ What this module provides:
 - [`mappings.md`](mappings.md) (CI path filters, tracker labels, deploy tiers)
   and the module's [maturity criteria](../../plugin/skills/audit/criteria/M3-change-area-catalog.yaml).
 
-Deliberately left out: a runnable resolver, catalog validator and projection
-emitters. A change-area resolver is a structured-data and graph job best
-written in the language the target repository already uses, so the module
-specifies it instead of shipping one; only the regex → catalog check, which
-needs no resolver, is runnable here. The other three guard checks are
-documented recipes. All area names, deploy tiers and post-deploy actions are
-neutral examples.
+Jig's own catalog (`.config/change-areas.yaml`) is a working instance:
+[`scripts/change-areas.ts`](../../scripts/change-areas.ts) validates it,
+checks that every file belongs to an area, and resolves a pull request's
+changed files to the areas that select its CI jobs. Read it as a worked
+example; it knows only the fields Jig's catalog uses.
+
+Deliberately left out: a portable resolver, catalog validator and projection
+emitters for other repositories. A change-area resolver is a structured-data
+and graph job best written in the language the consumer repository already
+uses, so the module specifies it instead of shipping one; only the regex →
+catalog check, which needs no resolver, is runnable here as a reference. The
+other three guard checks are documented recipes. All area names, deploy tiers
+and post-deploy actions are neutral examples.

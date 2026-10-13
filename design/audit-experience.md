@@ -1,14 +1,14 @@
 # The audit experience: design
 
-**What problem this solves.** `/jig:audit` scores a repository well, but a
-result that reaches people only as a Markdown report and a YAML record works
-for the agent that wrote it. It does not work as well for the team deciding what to
+**What problem this solves.** `/jig:audit` scored a repository well, but a
+result that reached people only as a Markdown report and a YAML record worked
+for the agent that wrote it. It did not work as well for the team deciding what to
 do next. On a first audit especially, the team needs to see what was examined,
 how mature the repository is against the profile it wants, which few moves
 matter most, and a quick way to accept, decline or adjust each
-recommendation. Without that, adoption depends on someone reading a long
+recommendation. Without that, adoption depended on someone reading a long
 report and turning it into instructions by hand, and declined recommendations
-come back on every re-run because nobody recorded them. With it, the audit
+came back on every re-run because nobody recorded them. With it, the audit
 ends in a polished report the team can share. The team marks its decisions in
 that report and copies them to an agent, which records the declines and starts
 the accepted work.
@@ -54,9 +54,9 @@ Contents: [the experience](#the-experience) ·
 4. **Hand over.** The team pastes the block to an agent. The agent runs
    `record.ts apply-feedback`. That validates the block against the record,
    writes each decline into the record's `declined:` list, and prints the
-   accepted work ranked as the sheet's Start here ranks it. The agent then opens one pull request per
-   accepted recommendation (`/jig:audit apply <ref>`) or files them as
-   tracker items.
+   accepted work ranked as the sheet's Start here ranks it. The agent then applies the accepted
+   recommendations together, in as few pull requests as possible
+   (`/jig:audit apply <ref> …`), or files them as tracker items.
 5. **Re-run.** The next audit compares against the record. The sheet then
    opens with what changed since: fixed, regressed, new, added by Jig. It does
    not repeat a declined recommendation until its condition holds.
@@ -79,7 +79,7 @@ Contents: [the experience](#the-experience) ·
 - **Adoption paths** (`adoption/`):
   - Brownfield: the sheet orders accepted work by
     [brownfield.md](../adoption/brownfield.md)'s ladder. Fix drift first, then
-    the modules in its default order, one rung at a time.
+    the modules in its default order, one maturity level at a time.
   - Greenfield: the audit becomes the [check](#greenfield) that a new
     repository reached its profile.
 
@@ -280,8 +280,8 @@ one-sentence purposes and what a module's Lite, Standard and Strict levels
 mean; the profiles, who each is for, and a table of each profile's
 target per module; how the audit works, from the configuration check to the
 decisions and the next audit; and how to read the report. It says plainly
-that a profile (the whole repository's aim) and a module's level (one
-module's rung) share words but are different things, and that the profile
+that a profile (the whole repository's aim) and a module's maturity level
+(how far one module is adopted) share words but are different things, and that the profile
 is the team's dial, never a grade.
 
 A first audit opens with a short welcome and a pointer to the guide; a

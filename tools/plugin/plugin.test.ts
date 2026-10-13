@@ -957,7 +957,7 @@ if (query.includes("node(id:$threadId)")) {
 
 test("the vendored YAML parser is the pinned js-yaml build", () => {
   // The plugin cache has no node_modules, so the skill ships js-yaml's own
-  // ESM build with its licence. AGENTS.md's Derived files rule says how to
+  // ESM build with its licence. CONTRIBUTING.md § Derived files says how to
   // refresh both when the dependency is updated.
   const vendor = join(root, "plugin", "skills", skill, "scripts/lib/vendor");
   const pinned = join(root, "node_modules/js-yaml");

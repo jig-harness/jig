@@ -36,25 +36,19 @@ changes are marked **Breaking** and say what a consumer changes.
   [design/](design/README.md) holds the designs of roadmap items until they
   are built.
 - Every pull request re-evaluates the audit skill against its change
-  ([AGENTS.md § Ways of working](AGENTS.md#ways-of-working-in-this-repo)).
+  ([CONTRIBUTING.md](CONTRIBUTING.md#keeping-the-auditor-current)).
   `bun run gates` fails until Jig's own audit record scores every current
   criterion and Jig's configuration exists, fits the audit's schema and has
   no unknown key in a Jig section (`scripts/check-audit-fit.ts`); the review policy flags a pull request that
   does not say what it changed in the audit.
-- AGENTS.md § Ways of working states the parallel-workspace rules, each with
-  its reason: reuse a branch before creating one, never move work with
-  `git stash`, install only with `bun install`.
-- AGENTS.md states Jig's own pull-request lifecycle: read the whole diff and
+- The parallel-workspace rules are written down, each with its reason: reuse
+  a branch before creating one, never move work with `git stash`, install
+  only with `bun install`.
+- Jig's own pull-request lifecycle is written down: read the whole diff and
   run the gates before opening, open as a draft, mark it Ready after the first
   review round, merge only once a round after Ready has settled with the
   required checks green, and a person merges. `.config/jig.yaml` declares
   `drive.reviews_drafts: true`, the fact the draft-first order rests on.
-- AGENTS.md lists Jig's derived files (`bun.lock`, the vendored YAML parser
-  and the two example indexes in M2 and M4) with the command that regenerates
-  each and the check that catches drift, and forbids editing them by hand. The
-  plugin test now also checks the vendored parser's licence against the
-  installed package, and the freshness test checks M2's committed example
-  index.
 
 ### Changed
 
@@ -87,6 +81,79 @@ changes are marked **Breaking** and say what a consumer changes.
 - ROADMAP gains new modules (M13 pipeline economy, M14 testing strategy,
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
+
+## [0.18.2] - 2026-10-13
+
+The work from Jig's audit of 2026-10-13, a lean AGENTS.md (it keeps the
+rules every session needs and points to [CONTRIBUTING.md](CONTRIBUTING.md)
+and [docs/](docs/README.md) for the detail), and Jig's licence. No consumer
+change.
+
+### Added
+
+- Jig is licensed under the Apache License 2.0 ([LICENSE](LICENSE)), with the
+  module templates under MIT No Attribution ([LICENSE-MIT-0](LICENSE-MIT-0))
+  so a repository can copy them without a notice. [NOTICE](NOTICE) names the
+  licensor, the template files and the vendored third-party code with its
+  licences; the plugin carries copies of LICENSE and NOTICE, and
+  `package.json` and both plugin manifests declare the licence.
+  `scripts/check-licences.ts` in the gates keeps NOTICE complete and the
+  plugin's copies identical. Outside contributions sign off under the
+  Developer Certificate of Origin.
+- [CONTRIBUTING.md](CONTRIBUTING.md): how a change to Jig is made: one
+  cohesive pull request per piece of work, the parallel-workspace rules, the
+  pull-request lifecycle, the toolchain, the gates and the ratchet, local
+  hooks, the derived files with their regenerate commands and drift checks,
+  and keeping the auditor current.
+- [docs/README.md](docs/README.md): Jig's own documents: their kinds, how
+  each changes, which one wins when two disagree, and how decision records
+  change. [docs/dispositions.md](docs/dispositions.md) lists Jig's defaults,
+  each with the condition that changes it.
+- [docs/adr/](docs/adr/): Jig's first decision records: the Bun and
+  TypeScript toolchain, the plugin as its directory shipped in versions, and
+  a person merging every pull request.
+- [design/README.md](design/README.md) maps Jig's delivery stages to M6,
+  requires a fresh-context review of a design before it is built, and gives
+  the skeleton a new design starts from.
+- New repository checks in `bun run gates`: M7's PR-target safety lint over
+  Jig's workflows (`scripts/check-workflow-safety.ts`); the paths the
+  instruction files and CONTRIBUTING.md name in code spans exist
+  (`scripts/check-instruction-paths.ts`); and the AI reviewer's high-risk
+  paths match the change-area catalog (`scripts/review-risk.ts`).
+- The change-area catalog's optional `reviewRisk: high` marks the areas whose
+  paths `scripts/review-risk.ts --write` writes into `.config/ai-review.yaml`.
+  New narrow areas carry those paths, and `module-reference` splits from
+  `module-templates`.
+- Local git hooks (`lefthook.yml`, lefthook pinned in `mise.toml`): a commit
+  formats its staged files, a push runs `bun scripts/gates.ts --fast`.
+- `.config/ai-review.yaml` states that every automated reviewer only
+  comments, and the measured precision a reviewer must reach before it may
+  block.
+- GLOSSARY.md names the words to avoid: **Consumer repository** and
+  **Issue** are defined, and terms with rival words carry an *Avoid* line.
+
+### Changed
+
+- `/jig:audit apply` takes several recommendations and groups them into as
+  few pull requests as possible, one unless part of the work needs its own
+  decision; it leaves the audit record's scores to the next audit.
+- M7's PR-target safety lint reads each workflow as parsed YAML: checkout
+  inputs in any letter case and only under `with:`, the trigger from the
+  parsed `on:`, and any reference outside the base side counts as untrusted.
+  A workflow that does not parse fails with exit 2.
+- M2's referenced-paths check skips slash commands, quoted shell text and
+  fenced code written with tildes or indented, and resolves a bare folder
+  name against the folders git lists.
+- `decide`'s worked example against Jig's own corpus expects the approved
+  toolchain decision record as the precedent.
+- The plugin test checks the vendored YAML parser's licence, and the
+  freshness test checks M2's committed example index.
+- `scripts/check-branch-protection.ts` checks Jig's branch policy: the
+  `gates` check required, every review thread resolved before merging, no
+  force-push or deletion. An approving review, administrator enforcement and
+  an up-to-date branch are reported, not required, and remediation keeps them
+  as they are. CONTRIBUTING.md states the policy; `main` now requires
+  resolved threads.
 
 ## [0.18.1] - 2026-10-13
 
@@ -680,7 +747,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.18.2...HEAD
+[0.18.2]: https://github.com/docomply/jig/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/docomply/jig/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/docomply/jig/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/docomply/jig/compare/v0.16.1...v0.17.0

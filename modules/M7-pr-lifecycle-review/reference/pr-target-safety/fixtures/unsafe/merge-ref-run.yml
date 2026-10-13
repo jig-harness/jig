@@ -1,0 +1,13 @@
+# UNSAFE: checks out the pull request's merge ref, which contains the fork's
+# code merged into the base, then runs it with the job's secrets in scope.
+name: shadow-review
+on: pull_request_target
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+      - run: npm ci && ./tools/review

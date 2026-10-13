@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { remediation } from "./check-branch-protection.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
+import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 
@@ -133,13 +134,11 @@ for (const [fixture, needle] of [
   ["unprotected", "FAIL  required CI status check(s) configured"],
   ["unprotected", "FAIL  force-push disallowed"],
   ["unprotected", "FAIL  branch deletion disallowed"],
-  ["unprotected", "0/7 controls satisfied"],
+  ["unprotected", "0/4 controls satisfied"],
   ["partial", "FAIL  required conversation resolution"],
-  ["partial", "FAIL  administrator enforcement"],
-  ["partial", "PASS  at least one required human review"],
-  ["partial", "PASS  required status checks are strict"],
+  ["partial", "not required by policy: strict checks on, approving reviews 1"],
   ["partial", "release-bot"],
-  ["compliant", "7/7 controls satisfied"],
+  ["compliant", "4/4 controls satisfied"],
 ])
   test(`branch report includes ${needle}`, () =>
     expect(
@@ -157,6 +156,36 @@ test("offline branch audit needs no origin", () =>
     ),
     0,
   ));
+test("an unstrict branch with no required review or admin enforcement complies", () => {
+  const input = JSON.parse(
+    readFileSync(join(fixtures, "branch-protection/compliant.json"), "utf8"),
+  );
+  input.required_status_checks.strict = false;
+  input.required_pull_request_reviews.required_approving_review_count = 0;
+  input.enforce_admins.enabled = false;
+  const file = join(temp(), "jig-policy.json");
+  writeFileSync(file, JSON.stringify(input));
+  const result = run("check-branch-protection", ["--input", file]);
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain(
+    "not required by policy: strict checks off, approving reviews 0, administrator enforcement off",
+  );
+  expect(remediation(input)).toMatchObject({
+    required_status_checks: { strict: false },
+    enforce_admins: false,
+    required_pull_request_reviews: { required_approving_review_count: 0 },
+  });
+});
+test("remediation keeps pull-request review protection off when it is off", () => {
+  const input = JSON.parse(
+    readFileSync(join(fixtures, "branch-protection/compliant.json"), "utf8"),
+  );
+  input.required_pull_request_reviews = null;
+  input.required_conversation_resolution.enabled = false;
+  expect(remediation(input).required_pull_request_reviews).toBeNull();
+  delete input.required_pull_request_reviews;
+  expect(remediation(input).required_pull_request_reviews).toBeNull();
+});
 test("remediation preserves stricter review and app-bound checks", () => {
   const input = JSON.parse(
     readFileSync(join(fixtures, "branch-protection/compliant.json"), "utf8"),
@@ -310,6 +339,20 @@ test("the test step leaves out POSIX-only suites on Windows and separate suites 
   for (const suite of [...POSIX_ONLY_SUITES, ...SEPARATE_SUITES])
     expect(windows).toContain(suite);
   expect(testArgs([], ["**/fixtures/**"])).toEqual(["run", "test"]);
+  // The pre-push hook's fast set: format, lint and types, then every
+  // repository check; the full set starts the same way and adds the rest.
+  const { plan, CHECKS } = await import("./gates.ts");
+  const full = plan(false, ["run", "test"]);
+  const fast = plan(true, ["run", "test"]);
+  expect(fast.steps).toEqual([
+    ["run", "format:check"],
+    ["run", "lint"],
+    ["run", "typecheck"],
+  ]);
+  expect(full.steps.slice(0, fast.steps.length)).toEqual(fast.steps);
+  expect(full.steps).toContainEqual(["run", "test"]);
+  expect(fast.checks).toEqual(CHECKS);
+  expect(full.checks).toEqual(CHECKS);
   // Bun replaces the configured ignore list, so it must be passed along.
   expect(testArgs(["suite/**"], ["**/fixtures/**"])).toEqual([
     "run",
@@ -403,6 +446,181 @@ test("the changelog must carry the current plugin version", async () => {
   manifest("codex", "1.3.0");
   expect(checkChangelog(dir)).toBe(1);
   expect(checkChangelog(root)).toBe(0);
+});
+
+test("Jig's workflows pass the PR-target safety lint, and an unsafe one fails it", () => {
+  expect(checkWorkflowSafety(root)).toBe(0);
+  const fixtures = join(
+    root,
+    "modules/M7-pr-lifecycle-review/reference/pr-target-safety/fixtures",
+  );
+  const dir = temp();
+  const workflows = join(dir, ".github/workflows");
+  mkdirSync(workflows, { recursive: true });
+  expect(checkWorkflowSafety(dir)).toBe(0);
+  writeFileSync(
+    join(workflows, "review.yml"),
+    readFileSync(join(fixtures, "unsafe/folded-ref-run.yml")),
+  );
+  expect(checkWorkflowSafety(dir)).toBe(1);
+  expect(checkWorkflowSafety(join(dir, "missing"))).toBe(0);
+});
+
+test("the paths Jig's instruction files name exist", () => {
+  const gate = "check-instruction-paths";
+  expectSpawnExit(run(gate, [root]), 0);
+  const dir = temp();
+  mkdirSync(join(dir, "lib/templates"), { recursive: true });
+  writeFileSync(join(dir, "lib/templates/a.md"), "");
+  writeFileSync(join(dir, "lib/cli.ts"), "");
+  const agents = join(dir, "AGENTS.md");
+  writeFileSync(
+    agents,
+    "Run `lib/cli.ts`, then `/review` or `/jig:audit`; keep `templates/` apart.\n",
+  );
+  expectSpawnExit(run(gate, [dir]), 0);
+  writeFileSync(agents, "Run `lib/missing.ts`.\n");
+  expectSpawnExit(run(gate, [dir]), 1);
+  mkdirSync(join(dir, "fixtures"));
+  writeFileSync(join(dir, "fixtures/AGENTS.md"), "Run `lib/missing.ts`.\n");
+  writeFileSync(agents, "Nothing named.\n");
+  expectSpawnExit(run(gate, [dir]), 0);
+});
+
+test("the licence files hold together, and each gap fails", () => {
+  const gate = "check-licences";
+  expectSpawnExit(run(gate, [root]), 0);
+  const dir = temp();
+  const put = (path: string, text = "x\n") => {
+    mkdirSync(join(dir, path, ".."), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  };
+  const notice = (templates: string[], licences: string[]) =>
+    `Jig\n\nTemplates:\n\n${templates.join("\n")}\n\nThird-party code:\n\n${licences.map((l) => `${l}\n  a library`).join("\n")}\n`;
+  const write = (templates: string[], licences: string[]) => {
+    for (const f of ["NOTICE", "plugin/NOTICE"])
+      put(f, notice(templates, licences));
+  };
+  for (const f of ["LICENSE", "LICENSE-MIT-0", "plugin/LICENSE"])
+    put(f, "licence\n");
+  put("modules/M0-a/templates/a.md");
+  put("plugin/x/vendor/lib.mjs");
+  put("plugin/x/vendor/lib.LICENSE");
+  write(["modules/M0-a/templates/a.md"], ["plugin/x/vendor/lib.LICENSE"]);
+  expectSpawnExit(run(gate, [dir]), 0);
+  // A template NOTICE does not list.
+  put("modules/M0-a/templates/b.md");
+  expectSpawnExit(run(gate, [dir]), 1);
+  write(
+    ["modules/M0-a/templates/a.md", "modules/M0-a/templates/b.md"],
+    ["plugin/x/vendor/lib.LICENSE"],
+  );
+  expectSpawnExit(run(gate, [dir]), 0);
+  // The plugin's copy drifts from the root file.
+  put("plugin/LICENSE", "other\n");
+  expectSpawnExit(run(gate, [dir]), 1);
+  put("plugin/LICENSE", "licence\n");
+  // A licence file NOTICE does not list, and a vendor folder without one.
+  put("plugin/y/LICENSE");
+  put("plugin/z/vendor/lib.mjs");
+  const result = run(gate, [dir]);
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("plugin/y/LICENSE is not listed");
+  expect(result.stderr.toString()).toContain("plugin/z/vendor/: vendored code");
+  rmSync(join(dir, "plugin/y"), { recursive: true });
+  rmSync(join(dir, "plugin/z"), { recursive: true });
+  // Seeds and fixtures are out of scope, vendored code included.
+  put("tests/fixtures/vendor/lib.mjs");
+  put("tests/fixtures/vendor/LICENSE");
+  put("seeds/s/vendor/lib.mjs");
+  expectSpawnExit(run(gate, [dir]), 0);
+  // A listed path with a space in it.
+  put("modules/M0-a/templates/my template.md");
+  const templates = [
+    "modules/M0-a/templates/a.md",
+    "modules/M0-a/templates/b.md",
+    "modules/M0-a/templates/my template.md",
+  ];
+  write(templates, ["plugin/x/vendor/lib.LICENSE"]);
+  expectSpawnExit(run(gate, [dir]), 0);
+  // A listed path with a space in it that is gone is still listed.
+  rmSync(join(dir, "modules/M0-a/templates/my template.md"));
+  const gone = run(gate, [dir]);
+  expectSpawnExit(gone, 1);
+  expect(gone.stderr.toString()).toContain(
+    "modules/M0-a/templates/my template.md is listed as a template but does not exist",
+  );
+  put("modules/M0-a/templates/my template.md");
+  put("plugin/s p/vendor/lib.mjs");
+  put("plugin/s p/vendor/LICENSE");
+  write(templates, [
+    "plugin/x/vendor/lib.LICENSE",
+    "plugin/s p/vendor/LICENSE",
+  ]);
+  expectSpawnExit(run(gate, [dir]), 0);
+  rmSync(join(dir, "plugin/s p"), { recursive: true });
+  const removed = run(gate, [dir]);
+  expectSpawnExit(removed, 1);
+  expect(removed.stderr.toString()).toContain(
+    "licence file plugin/s p/vendor/LICENSE does not exist",
+  );
+  write(templates, ["plugin/x/vendor/lib.LICENSE"]);
+  // An entry after a blank line is still in its list.
+  const spacedEntries = [
+    {
+      extra: "\nmodules/M0-a/templates/gone.md\n",
+      problem:
+        "modules/M0-a/templates/gone.md is listed as a template but does not exist",
+    },
+    {
+      extra: "\n\nplugin/gone/LICENSE\n",
+      problem: "licence file plugin/gone/LICENSE does not exist",
+    },
+  ];
+  for (const { extra, problem } of spacedEntries) {
+    const text = notice(templates, ["plugin/x/vendor/lib.LICENSE"]);
+    const at = extra.includes("templates")
+      ? text.indexOf("\n\nThird-party")
+      : text.length;
+    for (const f of ["NOTICE", "plugin/NOTICE"])
+      put(f, text.slice(0, at) + "\n" + extra + text.slice(at));
+    const spaced = run(gate, [dir]);
+    expectSpawnExit(spaced, 1);
+    expect(spaced.stderr.toString()).toContain(problem);
+  }
+  write(templates, ["plugin/x/vendor/lib.LICENSE"]);
+  // A listed path that contains the third-party heading's words.
+  put("modules/M0-a/templates/Third-party code notes.md");
+  write(
+    [...templates, "modules/M0-a/templates/Third-party code notes.md"],
+    ["plugin/x/vendor/lib.LICENSE"],
+  );
+  expectSpawnExit(run(gate, [dir]), 0);
+  rmSync(join(dir, "modules/M0-a/templates/Third-party code notes.md"));
+  write(templates, ["plugin/x/vendor/lib.LICENSE"]);
+  // A listed file that is not a licence does not cover its vendor folder.
+  write(templates, ["plugin/x/vendor/lib.LICENSE", "plugin/q/vendor/lib.mjs"]);
+  put("plugin/q/vendor/lib.mjs");
+  const unlicensed = run(gate, [dir]);
+  expectSpawnExit(unlicensed, 1);
+  expect(unlicensed.stderr.toString()).toContain(
+    "plugin/q/vendor/lib.mjs is listed as a licence but is not a licence file",
+  );
+  expect(unlicensed.stderr.toString()).toContain(
+    "plugin/q/vendor/: vendored code",
+  );
+  rmSync(join(dir, "plugin/q"), { recursive: true });
+  write(templates, ["plugin/x/vendor/lib.LICENSE"]);
+  // A listed licence deleted but not yet staged is missing.
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  expectSpawnExit(safeSpawn(["git", "-C", dir, "add", "-A"]), 0);
+  expectSpawnExit(run(gate, [dir]), 0);
+  rmSync(join(dir, "plugin/x/vendor/lib.LICENSE"));
+  const deleted = run(gate, [dir]);
+  expectSpawnExit(deleted, 1);
+  expect(deleted.stderr.toString()).toContain(
+    "licence file plugin/x/vendor/lib.LICENSE does not exist",
+  );
 });
 
 test("check-audit-fit passes on Jig and fails until a new criterion is scored", async () => {

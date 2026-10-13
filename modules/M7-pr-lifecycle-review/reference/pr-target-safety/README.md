@@ -27,15 +27,36 @@ results back via artifacts.
 The lint flags a workflow only when **all three** hold:
 
 1. it is triggered by `pull_request_target`; and
-2. it checks out an untrusted head/fork ref (a `ref:` / `repository:` line
-   referencing `github.event.pull_request.head.*` or `github.head_ref`); and
-3. it contains at least one `run:` step (an execution path).
+2. it checks out a ref it cannot show to be the base: a `ref:` or
+   `repository:` input (under a `with:`, in any letter case) naming a
+   `pull/` ref, or holding any `${{ }}`
+   expression other than the base side of the pull request
+   (`github.event.pull_request.base.sha`, `.base.ref`, `.base.repo.full_name`,
+   `github.base_ref`, `github.sha`, `github.ref`, `github.ref_name`,
+   `github.repository`, `github.repository_owner`,
+   `github.event.repository.full_name` or `.default_branch`); and
+3. it has an execution path: a `run:` step, or a local action (`uses: ./…`)
+   loaded from the checkout.
 
 Omit any one and it passes: a `pull_request_target` job that checks out only the
 base is safe; running fork code on plain `pull_request` is safe; a
-`pull_request_target` job with no `run:` step has no execution path. It is
+`pull_request_target` job with neither a `run:` step nor a local action has
+no execution path. It is
 deliberately **high-recall** — a false positive costs a two-line review; a
-false negative costs a leaked secret.
+false negative costs a leaked secret. That is why point 2 lists what is safe
+rather than what is not: the head reaches a checkout through many spellings
+(an `env.` variable, a step output, bracket access, the merge ref), and every
+one of them is outside the list.
+
+The lint reads each workflow with Bun's YAML parser, so a value is judged as
+GitHub sees it, whether it is written folded, quoted, escaped, in a flow
+mapping or through an anchor; the trigger is read from the parsed `on:` as
+well as the raw text. A file that does not parse fails the lint with exit 2.
+
+A literal `ref:` or `repository:` passes: under `pull_request_target` the
+workflow file comes from the base branch, so a literal was written by the
+base's maintainers, not by the pull request. The lint looks for values the
+pull request controls.
 
 ## Mirror it on both rungs
 
@@ -54,21 +75,28 @@ WORKFLOWS_DIR=.github/workflows bun ./check-pr-target-safety.ts
 |------|------|
 | `check-pr-target-safety.ts` | the gate; `WORKFLOWS_DIR` or file args select inputs |
 | `check-pr-target-safety.test.ts` | paired self-test |
-| `fixtures/safe/` | base-only checkout, plain `pull_request`, data-only labeler — must pass |
-| `fixtures/unsafe/` | `pull_request_target` + untrusted checkout + `run:` — must fail |
+| `fixtures/safe/` | base-only checkout, explicit base sha, plain `pull_request`, data-only labeler — must pass |
+| `fixtures/unsafe/` | `pull_request_target` + untrusted checkout (head, fork, merge ref, `env.` indirection) + a `run:` step or local action — must fail |
 
 Run the self-test with `bun test ./check-pr-target-safety.test.ts` (and run the shared cases with
 `bun test ../../../../lib/module-gates.test.ts` from this directory).
 
 ## Known limits
 
-Line-oriented pattern matching, not a YAML evaluator: it will not catch untrusted
-execution smuggled purely through a third-party `uses:` action (no `run:`
-step), and it treats the presence of `pull_request_target` anywhere in the file
-as "triggered by it." Both bias toward over-flagging, which is the right
-direction for a security gate; a precise-parse version belongs in whatever
-language the repo already uses (see [M3](../../../M3-change-area-catalog/)'s
-same reasoning about graph jobs).
+It parses the workflow but does not evaluate it. What it does not see:
+
+- untrusted code a `run:` script fetches itself (`git fetch` of a pull
+  request ref, `gh pr checkout`), or a third-party action that executes the
+  checkout with no `run:` step and no local action;
+- which job a checkout and an execution path belong to: any untrusted checkout
+  and any execution path in the same file count together;
+- the trigger's context: the text `pull_request_target` anywhere in the file
+  counts as "triggered by it," beside the parsed `on:`.
+
+The last two over-flag, which is the right direction for a security gate; the
+first is a gap to close by review. The lint also runs from the tree it checks,
+so a pull request that weakens it is checked by its weakened copy; a reviewer
+of the change to the lint is the control there.
 
 The native gate uses the shared implementation in Jig’s
 [`lib/module-gates.ts`](../../../../lib/module-gates.ts). Keep the module and

@@ -42,7 +42,9 @@ README links its file.
 - **`templates/`** are copied into other repositories: links in them are
   absolute (`https://github.com/docomply/jig/blob/main/…`) because a
   relative link breaks once copied. The Markdown gates skip `templates/`, so
-  check those links by hand.
+  check those links by hand. Templates are licensed MIT No Attribution, so
+  a copy needs no notice: a new template file gets its line in the root
+  [NOTICE](../NOTICE).
 - **`mappings.md`** names real tools per ecosystem; a row is a fact a reader
   can check, so keep it current when a tool renames or retires a feature.
 

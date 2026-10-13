@@ -68,9 +68,9 @@ added since, and it does not repeat a recommendation the team declined.
    changing a score.
 
 The audit is read-only: it writes the record and nothing else. Applying a
-recommendation is a separate request (`/jig:audit apply <ref>`) that opens one
-pull request for that one recommendation, through `do-item`'s pull-request
-policy.
+recommendation is a separate request (`/jig:audit apply <ref> …`) that applies
+the accepted recommendations together, in one pull request unless part of the
+work needs its own decision, through `do-item`'s pull-request policy.
 
 ## Run it
 

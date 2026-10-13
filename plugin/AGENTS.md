@@ -42,8 +42,10 @@ once.
   not bring in a skill, or its procedure text, that came from a public skill
   collection; recommend it in [RECOMMENDED-SKILLS.md](RECOMMENDED-SKILLS.md)
   with credit instead. A permissively licensed library a skill depends on is a
-  different case: vendor it with its licence notice beside it and name it in
-  the skill's documentation, as `decide`'s `ste-lint` port does.
+  different case: vendor it with its licence notice beside it, list that
+  licence file in the repository's `NOTICE` (copied here as
+  [NOTICE](NOTICE)), and name it in the skill's documentation, as `decide`'s
+  `ste-lint` port does.
 
 ## Verifying a change
 

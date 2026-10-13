@@ -1,0 +1,17 @@
+# UNSAFE: the head sha reaches the checkout through an environment variable
+# rather than directly on the `ref:` line. Any expression outside the base side
+# of the pull request counts as untrusted, so the indirection is caught.
+name: shadow-review
+on: pull_request_target
+
+env:
+  PR_SHA: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PR_SHA }}
+      - run: npm ci && ./tools/review

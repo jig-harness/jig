@@ -31,7 +31,7 @@ Two design rules:
 | File | Role |
 |------|------|
 | `check-stated-counts.ts` | `<prose-file> <source-dir> <noun>`: fails when a stated count ("N guides total", "available" or "listed") disagrees with the number of Markdown files under the directory, recursively, `index.md` excluded |
-| `check-referenced-paths.ts` | `<prose-file>...`: fails when a Markdown link or code-span path in prose resolves to no file. Only references containing a `/` are checked; fenced code is skipped; a link starting with `/` resolves from the repository root, other links from the prose file's directory, and a code-span path from either that directory or the working directory |
+| `check-referenced-paths.ts` | `<prose-file>...`: fails when a Markdown link or code-span path in prose resolves to no file. Only references containing a `/` are checked; fenced code (backtick or tilde fences, indented up to three spaces) is skipped, and in code spans so are quoted text (escaped quotes included), words with a quote or a caret (shell fragments) and slash commands (`/review`); a link starting with `/` resolves from the repository root, other links from the prose file's directory, and a code-span path from either that directory or the working directory (a leading `/` included), where a bare folder name (`templates/`) also resolves when a folder of that name holds a repository file anywhere beneath it (the files git lists, so ignored local folders do not count; outside a git checkout, every file outside `.git` and `node_modules`) |
 | `fixture/` | A tiny instruction file + guides directory both checks pass against |
 
 Both exit 0 when every stated copy agrees, 1 on drift, and 2 on a usage error

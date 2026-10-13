@@ -5,7 +5,7 @@ is **"tell me where I stand."** Jig therefore ships as a runnable
 assessor (the [audit skill](../plugin/skills/audit/README.md), `/jig:audit`), not
 just reference material:
 
-1. **Fan out parallel read-only surveys** over the target repo, one per
+1. **Fan out parallel read-only surveys** over the audited repository, one per
    practice area (agent scaffolding, docs governance, automation and
    enforcement, review and learning loop; tasks, memory, environments and CI
    are covered inside the last two).

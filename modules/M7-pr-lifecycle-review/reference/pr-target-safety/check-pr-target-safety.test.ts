@@ -3,9 +3,13 @@ import { join } from "node:path";
 const fixture = (name: string) => join(import.meta.dir, "fixtures", name);
 const cases: [string, number, string][] = [
   ["safe/base-checkout-review.yml", 0, "token"],
+  ["safe/base-sha-run.yml", 0, "token"],
   ["safe/labeler-data-only.yml", 0, "token"],
   ["safe/plain-pull-request.yml", 0, "token"],
+  ["unsafe/env-indirect-ref-run.yml", 1, "token"],
+  ["unsafe/folded-local-action.yml", 1, "token"],
   ["unsafe/folded-ref-run.yml", 1, "token"],
+  ["unsafe/merge-ref-run.yml", 1, "token"],
   ["unsafe/fork-repo-run.yml", 1, "token"],
   ["unsafe/head-sha-run.yml", 1, "token"],
   ["unsafe/local-action-run.yml", 1, "token"],

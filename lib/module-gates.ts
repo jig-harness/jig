@@ -1,5 +1,9 @@
 /** Portable gates over exported files. Keep the original line-oriented formats
- * intentionally narrow: adopting a full YAML parser would change gate behavior. */
+ * intentionally narrow: adopting a full YAML parser would change gate behavior.
+ * The one exception is the PR-target safety lint, which reads GitHub Actions
+ * workflows with Bun's YAML parser: a workflow can spell the same step through
+ * folded scalars, quoted keys, flow mappings and anchors, and the lint must see
+ * the value GitHub sees. */
 import {
   accessSync,
   chmodSync,
@@ -508,79 +512,127 @@ export function roundConverged(args: string[], env: Environment): Result {
     `Round ${round} settled with all ${expected} named reviewers reported and no open threads — the loop may stop.`,
   );
 }
-export function prTargetSafety(args: string[], env: Environment): Result {
-  const dir = env.WORKFLOWS_DIR || ".github/workflows";
-  let files = args;
-  if (!files.length) {
-    try {
-      if (!statSync(dir).isDirectory())
-        return error(`workflows path is not a directory: ${dir}`);
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (code === "ENOENT" || code === "ENOTDIR")
-        return result(
-          0,
-          `OK — ${dir} does not exist (no workflows to check)\n`,
-        );
-      return error(`cannot inspect ${dir}: ${String(e)}`);
-    }
-    try {
-      files = readdirSync(dir)
-        .filter((f) => /\.ya?ml$/.test(f))
-        .map((f) => join(dir, f));
-    } catch (e) {
-      return error(`cannot scan ${dir}: ${String(e)}`);
-    }
+/** Expression contexts that name the base side of a pull request. Under
+ * `pull_request_target` a `ref:`/`repository:` value is trusted only when every
+ * expression in it is one of these. Anything else (the head, an `env.` or step
+ * output indirection, bracket access, an operator) counts as untrusted, and so
+ * does a `pull/` ref, so a spelling the lint does not know over-flags rather
+ * than passes. */
+const BASE_CONTEXT =
+  /^github\.(?:base_ref|sha|ref|ref_name|repository|repository_owner|event\.repository\.(?:full_name|default_branch)|event\.pull_request\.base\.(?:sha|ref|repo\.full_name))$/;
+const untrustedRef = (value: string) =>
+  /(?:^|\/)pull\//.test(value) ||
+  value
+    .replace(/\$\{\{([\s\S]*?)\}\}/g, (_, body: string) =>
+      BASE_CONTEXT.test(body.trim()) ? "" : "${{",
+    )
+    .includes("${{");
+interface WorkflowShape {
+  untrusted: boolean;
+  executes: boolean;
+}
+const SCRIPT_TYPES = new Set(["string", "number", "boolean"]);
+/** Whether a `with:` map (a step's or a reusable-workflow call's inputs)
+ * selects an untrusted `ref` or `repository`. GitHub matches input names
+ * without regard to case, so `REF` counts as `ref`. */
+function untrustedInputs(inputs: unknown): boolean {
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs))
+    return false;
+  return Object.entries(inputs).some(
+    ([key, value]) =>
+      ["ref", "repository"].includes(key.toLowerCase()) &&
+      value != null &&
+      untrustedRef(String(value)),
+  );
+}
+/** Record what one mapping of a parsed workflow contributes: inputs under its
+ * `with:` that select untrusted code, or one of the two ways a job runs
+ * checked-out code, a `run:` script and a local `uses: ./` action. Only `with:`
+ * inputs are read, so an `env:` value named `ref` is data, not a checkout. */
+function mappingShape(map: Record<string, unknown>, shape: WorkflowShape) {
+  for (const [key, value] of Object.entries(map))
+    if (key.toLowerCase() === "with" && untrustedInputs(value))
+      shape.untrusted = true;
+  const local =
+    typeof map.uses === "string" && map.uses.trim().startsWith("./");
+  if (local || SCRIPT_TYPES.has(typeof map.run)) shape.executes = true;
+}
+/** Whether a parsed workflow's `on:` names `pull_request_target`, written as
+ * one event, a list of events or a map keyed by event. */
+function privilegedTrigger(doc: unknown): boolean {
+  if (!doc || typeof doc !== "object") return false;
+  const on = (doc as Record<string, unknown>).on;
+  const events =
+    typeof on === "string"
+      ? [on]
+      : Array.isArray(on)
+        ? on.map(String)
+        : on && typeof on === "object"
+          ? Object.keys(on)
+          : [];
+  return events.includes("pull_request_target");
+}
+function workflowShape(
+  node: unknown,
+  shape: WorkflowShape,
+  seen: Set<object>,
+): void {
+  if (!node || typeof node !== "object" || seen.has(node)) return;
+  seen.add(node);
+  if (!Array.isArray(node))
+    mappingShape(node as Record<string, unknown>, shape);
+  for (const child of Object.values(node)) workflowShape(child, shape, seen);
+}
+/** The workflow files under `dir`; a missing folder holds none, and one that
+ * cannot be read is an error result. */
+function workflowFiles(dir: string): string[] | Result {
+  try {
+    if (!statSync(dir).isDirectory())
+      return error(`workflows path is not a directory: ${dir}`);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR")
+      return result(0, `OK — ${dir} does not exist (no workflows to check)\n`);
+    return error(`cannot inspect ${dir}: ${String(e)}`);
   }
+  try {
+    return readdirSync(dir)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .map((f) => join(dir, f));
+  } catch (e) {
+    return error(`cannot scan ${dir}: ${String(e)}`);
+  }
+}
+/** Whether one workflow is fork-unsafe, or an error result when it cannot be
+ * read as YAML. */
+function unsafeWorkflow(path: string): boolean | Result {
+  if (!file(path)) return error(`not a file: ${path}`);
+  const raw = readFileSync(path, "utf8");
+  const shape = { untrusted: false, executes: false };
+  let doc: unknown;
+  try {
+    doc = Bun.YAML.parse(raw);
+  } catch (e) {
+    return error(`cannot parse ${path} as YAML: ${String(e)}`);
+  }
+  workflowShape(doc, shape, new Set());
+  // The raw text also counts, so a trigger spelling the parsed check does not
+  // know over-flags rather than passes.
+  const privileged =
+    privilegedTrigger(doc) || raw.includes("pull_request_target");
+  return privileged && shape.untrusted && shape.executes;
+}
+export function prTargetSafety(args: string[], env: Environment): Result {
+  const files = args.length
+    ? args
+    : workflowFiles(env.WORKFLOWS_DIR || ".github/workflows");
+  if (!Array.isArray(files)) return files;
   let out = "";
   for (const path of files) {
-    if (!file(path)) return error(`not a file: ${path}`);
-    const raw = readFileSync(path, "utf8");
-    let block = false,
-      blockIndent = 0,
-      untrusted = false;
-    const bad = (s: string) =>
-      /github\.event\.pull_request\.head\.(sha|ref|repo)|github\.head_ref/.test(
-        s,
-      );
-    for (const rawLine of raw.split("\n")) {
-      const line = rawLine.replace(/\s+#.*$/, ""),
-        indent = line.match(/^\s*/)?.[0].length || 0;
-      if (block) {
-        if (!line.trim()) continue;
-        if (indent > blockIndent) {
-          if (bad(line)) untrusted = true;
-          continue;
-        }
-        block = false;
-      }
-      for (const flow of line.matchAll(
-        /[{,]\s*["']?(?:ref|repository)["']?\s*:\s*((?:\$\{\{.*?\}\}|[^,}])*)/g,
-      ))
-        if (bad(flow[1] || "")) untrusted = true;
-      const m = line.match(
-        /^\s*(?:-\s+)?["']?(ref|repository)["']?\s*:\s*(.*)$/,
-      );
-      if (m) {
-        const value = m[2] || "";
-        if (bad(value)) untrusted = true;
-        if (/^[|>]/.test(value) || !value) {
-          block = true;
-          blockIndent = indent;
-        }
-      }
-    }
-    const executes = raw
-      .split("\n")
-      .map((l) => l.replace(/(^|\s+)#.*$/, ""))
-      .some((l) =>
-        /(?:^\s*(?:-\s+)?|[{,]\s*)["']?(?:run["']?\s*:|uses["']?\s*:\s*["']?\.\/)/.test(
-          l,
-        ),
-      );
-    if (raw.includes("pull_request_target") && untrusted && executes) {
-      out += `UNSAFE ${path}\n  pull_request_target + checkout of untrusted head/fork code + a run: step.\n  A forked PR can exfiltrate this job's secrets.\n  Fix: under pull_request_target, check out the BASE ref only and treat\n       fork code as data; run the PR's own code on the pull_request\n       trigger (no secrets) and pass results back via artifacts.\n\n`;
-    }
+    const unsafe = unsafeWorkflow(path);
+    if (typeof unsafe !== "boolean") return unsafe;
+    if (unsafe)
+      out += `UNSAFE ${path}\n  pull_request_target + checkout of untrusted head/fork code + a run: step or local action.\n  A forked PR can exfiltrate this job's secrets.\n  Fix: under pull_request_target, check out the BASE ref only and treat\n       fork code as data; run the PR's own code on the pull_request\n       trigger (no secrets) and pass results back via artifacts.\n\n`;
   }
   return out
     ? result(

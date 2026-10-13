@@ -12,20 +12,6 @@ Background on how the module map came about is in
 
 ## Now
 
-### 1. Licence
-
-Apache-2.0 for the repository, MIT-0 for the templates (skeletons other
-repositories paste in without carrying a notice), with the organization that
-publishes Jig as the licensor. The MIT-0 exception names the template
-files themselves, not a directory, so it holds after item 2 moves them into
-skills and item 3 merges M6's with the kickoff's. A `LICENSE` at the root and a copy in `plugin/` (the plugin installs
-only that directory), a `NOTICE` naming the vendored js-yaml and `ste-lint`
-code and their licences, `license` fields in `package.json` and both
-manifests, a licence section in the README, and a gate that every vendored
-directory carries its licence file. The origin-reference gate's allowed
-places gain `LICENSE` and `NOTICE`, which name the licensor. Outside contributions, once accepted,
-use a [Developer Certificate of Origin](GLOSSARY.md) sign-off.
-
 ### 2. Skill assets live in the plugin
 
 The plugin installs only `plugin/`, so a skill cannot read anything under
@@ -449,9 +435,9 @@ in that consumer's configuration.
 
 These need a human decision before the work that depends on them starts.
 
-- **Publishing.** Jig is private. The licence is chosen (item 1);
-  whether and when to open the repository, whole or per module, is still a
-  human decision.
+- **Publishing.** Jig is private, under the Apache-2.0 licence with MIT-0
+  templates; whether and when to open the repository, whole or per module,
+  is still a human decision.
 - **Plan-file tracker format**: one file for the whole plan, or one per item.
 - **Optional tracker operations**: whether the tracker interface's reporting
   operations may be optional for an adapter that cannot answer them.

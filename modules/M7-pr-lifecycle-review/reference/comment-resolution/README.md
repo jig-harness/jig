@@ -63,7 +63,7 @@ superseded it" `moot` becomes the frictionless way to dismiss anything.
 
 ### On the state labels
 
-The four states are semantic, not lexical — an adopting repo whose tooling emits
+The four states are semantic, not lexical — a consumer repository whose tooling emits
 different words (`accepted` for `addressed`, say) maps them **in the exporter**,
 which is already forge-specific. What must not vary is that the set is *closed*:
 an unrecognised state fails rather than passing silently, which is what makes a

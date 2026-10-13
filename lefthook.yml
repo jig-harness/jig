@@ -1,0 +1,28 @@
+# Jig's git hooks (M1's lefthook template): the fast local rung of the gates.
+# Install once per clone, which covers every worktree of it:
+#   mise install && lefthook install
+#
+# Local hooks give feedback before CI does; they are not the authority. CI
+# runs `bun run gates` on every pull request, which includes every check
+# below, so `git commit --no-verify` or `git push --no-verify` never changes
+# what merges. Skipping is fine for a work-in-progress commit or push, or
+# when a hook itself is broken (fix it next); never to get a failing change
+# past a check you have not read.
+
+pre-commit:
+  commands:
+    # Fix-and-stage: format and apply Biome's safe fixes to the staged files,
+    # then re-stage them, so a commit goes out formatted.
+    biome:
+      glob: "*.{ts,json}"
+      timeout: 60s
+      run: bun x biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true
+
+pre-push:
+  commands:
+    # Format, lint, types and the repository checks (scripts/gates.ts
+    # --fast): seconds, not the minutes the tests and build take in CI.
+    fast-gates:
+      timeout: 5m
+      run: bun scripts/gates.ts --fast

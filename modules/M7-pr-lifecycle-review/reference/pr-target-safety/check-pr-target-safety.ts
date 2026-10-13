@@ -15,11 +15,13 @@
 //
 // What this flags — a workflow where ALL THREE hold:
 //   1. it is triggered by `pull_request_target`, AND
-//   2. it checks out an untrusted head/fork ref (a `ref:`/`repository:` line
-//      referencing github.event.pull_request.head.* or github.head_ref), AND
-//   3. it has at least one `run:` step (code execution).
+//   2. it checks out a ref it cannot show to be the base (a `ref:`/`repository:`
+//      value naming a `pull/` ref or holding any expression outside the base
+//      side of the pull request; the list is in the README), AND
+//   3. it has an execution path: a `run:` step or a local `uses: ./` action.
 // High-recall by design: a false positive is a two-line review; a false
 // negative is a leaked secret. A workflow that omits any of the three passes.
+// Workflows are read with Bun's YAML parser; one that does not parse exits 2.
 //
 // Conventions (see ../../../M1-gates-enforcement-ladder/reference/grep-gate):
 // exit 0 on pass, 1 on an unsafe workflow (per-file report), 2 on a usage

@@ -70,6 +70,21 @@ function compare(
 }
 const m1 = "modules/M1-gates-enforcement-ladder/reference";
 const m2 = "modules/M2-generated-artifact-freshness/reference";
+/** The paths the referenced-paths check reports missing in `page`, in order;
+ * any report means exit 1. */
+function unresolved(page: string, cwd = root): string[] {
+  const result = run(
+    `${m2}/prose-facts/check-referenced-paths.ts`,
+    [page],
+    cwd,
+  );
+  const reported = String(result.stderr)
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.replace(/^.*?:\d+ {2}/, ""));
+  expectSpawnExit(result, reported.length ? 1 : 0);
+  return reported;
+}
 for (const [fixture, status] of [
   ["clean", 0],
   ["bad", 1],
@@ -149,6 +164,73 @@ test("count and referenced-path fixtures, drift and omission", () => {
     "```sh\n`absent/path.md`\n```\n[URL](https://example.com/path)\n`<name>/missing`\n",
   );
   compare(`${m2}/prose-facts/check-referenced-paths.ts`, [prose], 0);
+  // Slash commands and shell text in code spans are not paths.
+  writeFileSync(
+    prose,
+    '`/review` `/tool:skill` `sed \'s/^/-u /\'` `"a/b"` `echo "a/b c/d e/f"` `echo "a/b \\"c/d e/f\\""`\n',
+  );
+  compare(`${m2}/prose-facts/check-referenced-paths.ts`, [prose], 0);
+  // Tilde fences and fences indented up to three spaces hide their contents.
+  writeFileSync(
+    prose,
+    "~~~sh\n`absent/path.md`\n~~~\n   ```\n`absent/path.md`\n   ```\n",
+  );
+  compare(`${m2}/prose-facts/check-referenced-paths.ts`, [prose], 0);
+  // A fence closes only on its own character and length, so a backtick fence
+  // inside a tilde fence, or a short one inside a longer one, stays content.
+  writeFileSync(
+    prose,
+    "~~~\n```\n~~~\n`absent/path.md`\n````\n```\n````\n`absent/folder/`\n",
+  );
+  expect(unresolved(prose)).toEqual(["absent/path.md", "absent/folder/"]);
+  // A backtick run with a backtick after it is a code span, not a fence, so
+  // what follows it is still checked; a tilde fence's info string may hold one.
+  writeFileSync(
+    prose,
+    "```example```\n[missing](absent/path.md)\n~~~ `x`\n`absent/inside/`\n~~~\n",
+  );
+  expect(unresolved(prose)).toEqual(["absent/path.md"]);
+  // Each line names a path that does not exist, and each is reported.
+  writeFileSync(
+    prose,
+    [
+      "[missing](absent/)",
+      "`absent/folder/`",
+      "[guide](docs/author's.md)",
+      "[guide](docs/a^b.md)",
+      '`echo "a/b" absent/path.md`',
+    ].join("\n"),
+  );
+  expect(unresolved(prose)).toEqual([
+    "absent/",
+    "absent/folder/",
+    "docs/author's.md",
+    "docs/a^b.md",
+    "absent/path.md",
+  ]);
+});
+test("a bare folder name in a code span resolves as a folder anywhere under the base", () => {
+  const repo = join(temp, "folders");
+  expectSpawnExit(safeSpawn(["git", "init", "-q", repo]), 0);
+  mkdirSync(join(repo, "modules/one/templates"), { recursive: true });
+  writeFileSync(join(repo, "modules/one/templates/a.md"), "");
+  mkdirSync(join(repo, "node_modules/pkg/vendored"), { recursive: true });
+  writeFileSync(join(repo, "node_modules/pkg/vendored/a.js"), "");
+  // An ignored folder is local state, not the repository.
+  writeFileSync(join(repo, ".gitignore"), "local/\nnode_modules/\n");
+  mkdirSync(join(repo, "local/ghost"), { recursive: true });
+  writeFileSync(join(repo, "local/ghost/a.md"), "");
+  const page = join(repo, "AGENTS.md");
+  writeFileSync(
+    page,
+    "Keep `templates/` and `modules/` apart.\n`templtes/` `vendored/` `one/templates/x/` `ghost/`\n",
+  );
+  expect(unresolved(page, repo)).toEqual([
+    "templtes/",
+    "vendored/",
+    "one/templates/x/",
+    "ghost/",
+  ]);
 });
 test("root-relative Markdown links resolve against the repository root", () => {
   const repo = join(temp, "links");
@@ -163,6 +245,10 @@ test("root-relative Markdown links resolve against the repository root", () => {
   compare(gate, [page], 1);
   writeFileSync(page, "[hosts](/etc/hosts)\n");
   compare(gate, [page], 1);
+  // A rooted code-span path resolves from the repository or the base, never
+  // from the filesystem root.
+  writeFileSync(page, "`/etc/hosts` `/docs/example.md`\n");
+  expect(unresolved(page, repo)).toEqual(["/etc/hosts"]);
 });
 test("relative Markdown links resolve from the document's directory only", () => {
   const repo = join(temp, "relative-links");

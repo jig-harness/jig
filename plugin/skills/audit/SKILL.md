@@ -1,7 +1,7 @@
 ---
 name: audit
 description: "Audit a repository against Jig's practice modules: check its Jig configuration against the repository, score every module's maturity criteria with file-path evidence against the profile the team aims for, compare with the committed record of the last audit, and report prioritized recommendations as an HTML audit sheet the team marks its decisions in; records those decisions when they are pasted back; read-only unless asked to apply a recommendation. Use to see where a repository stands, to re-check it for drift, or to compare several repositories."
-argument-hint: "[apply <ref>] | [portfolio <name>=<record> ...] | (paste an audit_feedback block)"
+argument-hint: "[apply <ref> ...] | [portfolio <name>=<record> ...] | (paste an audit_feedback block)"
 allowed-tools: "Read Write Edit Grep Glob Agent Bash(bun *) Bash(git *) Bash(gh *)"
 ---
 
@@ -30,7 +30,7 @@ need history. The method in detail is in
 - No argument: audit the repository (steps 1–6).
 - A pasted `audit_feedback:` block (the audit sheet's **Copy decisions**):
   record the team's decisions and plan the accepted work (step 7).
-- `apply <ref>`: apply one recommendation of the last audit (step 8).
+- `apply <ref> …`: apply recommendations of the last audit (step 8).
 - `portfolio <name>=<record> …`: compare several repositories' records
   (step 9).
 
@@ -230,8 +230,8 @@ its reason and revisit condition (a decline of refs the record already
 declines renews that entry), sets the profile when the team changed it,
 replaces `profile_conditions` with the team's list when the block has one
 (removing it when the list is empty), and prints the accepted and refined
-work, ranked as the sheet's Start here ranks it. Offer to work through that
-list one recommendation at a time (step 8), or to file each as a tracker item. For each **this is
+work, ranked as the sheet's Start here ranks it. Offer to apply that list
+together (step 8), or to file it as tracker items. For each **this is
 wrong** on a recommendation, and each entry under `scores` (the team says a
 criterion's score itself is wrong), it prints a calibration note and leaves
 the score as it is: re-examine the criterion with the team's note, correct
@@ -241,23 +241,33 @@ worth reporting.
 A decline the user gives in conversation instead goes under `declined` by
 hand, with the same fields (`revisit_after`, a date, is optional).
 
-## 8. Apply one recommendation (only when asked)
+## 8. Apply recommendations (only when asked)
 
-Applying is a separate step, never part of an audit, and covers exactly one
-recommendation per pull request. For `apply <ref>`:
+Applying is a separate step, never part of an audit. For `apply <ref> …`:
 
-1. Read the recommendation for `<ref>` from this session's report source, or
-   from a saved sheet the user names (`report.ts extract <sheet.html>`). The
-   record holds scores and declined recommendations, not the recommendations
+1. Read each recommendation from this session's report source, or from a
+   saved sheet the user names (`report.ts extract <sheet.html>`). The record
+   holds scores and declined recommendations, not the recommendations
    themselves, so without a report run the audit first (steps 1–5).
-2. Create a branch and plan the pull request with `do-item`'s policy:
+2. Group them into as few pull requests as possible: one, unless part of
+   the work needs its own decision by a person or the change would exceed the
+   repository's size budget; then split by area, never one pull request per
+   recommendation. Recommendations of one audit touch the same few files (the
+   instruction file, the changelog, the configuration), so separate pull
+   requests conflict with each other at every merge. Put new practice detail
+   in the document it belongs to and link it from the instruction file,
+   rather than growing the instruction file.
+3. Leave the audit record's scores of existing criteria as they are: the
+   record scores the commit it audited, and the next audit scores the change.
+   Name in the pull request description the criteria each recommendation
+   targets. A change that adds, renames or removes a criterion updates those
+   criteria's entries in the record too, scored against the audited commit.
+4. Create a branch and plan each pull request with `do-item`'s policy:
    `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" open` (and
    `branch` first when the change belongs to a tracker item). Follow what it
    prints: base, draft or Ready, labels, title convention, template.
-3. Make the change, run the repository's gates, and open the pull request.
+5. Make the change, run the repository's gates, and open the pull request.
    Offer `/jig:drive-pr` on it.
-
-Never batch several recommendations into one pull request.
 
 ## 9. Several repositories
 

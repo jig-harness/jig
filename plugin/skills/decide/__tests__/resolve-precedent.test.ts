@@ -1479,14 +1479,15 @@ describe("main", () => {
 
 describe("worked example against this repository's own corpus", () => {
   // The acceptance criterion made mechanical: a question this repository
-  // settled must come back settled. This repository keeps its settled policy
-  // in AGENTS.md and has no ADR directory, so the precedent is a policy
-  // section. If the toolchain stance is ever reworded away this SHOULD go red
-  // and be re-pointed — a precedent pass that stops finding the canonical
-  // precedent is broken in the one way the hermetic tests cannot see.
+  // settled must come back settled. This repository records the toolchain
+  // decision as an ADR in docs/adr, so the precedent is that record, ahead of
+  // the AGENTS.md section that restates it. If the record is ever superseded
+  // or reworded away this SHOULD go red and be re-pointed — a precedent pass
+  // that stops finding the canonical precedent is broken in the one way the
+  // hermetic tests cannot see.
   const corpus = () => loadCorpus(REPO_ROOT, { ...DEFAULT_PRECEDENT_SOURCES });
 
-  it("ranks the toolchain policy first for the Bash-or-TypeScript question, by a clear margin", () => {
+  it("ranks the toolchain decision first for the Bash-or-TypeScript question, by a clear margin", () => {
     const report = resolvePrecedent({
       repoRoot: REPO_ROOT,
       query: "Bash or Bun TypeScript for runnable tooling",
@@ -1494,10 +1495,13 @@ describe("worked example against this repository's own corpus", () => {
       corpus: corpus(),
     });
     expect(report.verdict).toBe("precedent-candidates");
-    expect(report.candidates[0]?.file).toBe("AGENTS.md");
-    expect(report.candidates[0]?.title).toBe(
-      "AGENTS.md § Ways of working in this repo",
+    expect(report.candidates[0]?.file).toBe(
+      "docs/adr/ADR-0001-bun-typescript-toolchain.md",
     );
+    expect(report.candidates[0]?.kind).toBe("adr");
+    // Superseding the record keeps its file and wording and changes only its
+    // status, which the ranking does not use: only this assertion notices.
+    expect(report.candidates[0]?.status).toBe("approved");
     // A top hit that barely outscores the runner-up is a coin flip dressed as
     // a ruling; the margin is the part that makes `already-decided` safe.
     expect(report.candidates[0]?.score ?? 0).toBeGreaterThan(

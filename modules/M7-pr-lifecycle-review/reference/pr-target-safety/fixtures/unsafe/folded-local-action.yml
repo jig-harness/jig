@@ -1,0 +1,15 @@
+# UNSAFE: an untrusted head-sha checkout, then a local action whose `uses:`
+# value is a folded scalar. Folded, it reads `./.github/actions/review`, which
+# is loaded from the attacker-controlled checkout, so the gate must catch it.
+name: shadow-review
+on: pull_request_target
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: >-
+          ./.github/actions/review

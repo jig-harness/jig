@@ -1,5 +1,16 @@
-// Read-only host audit. Prints proposed remediation; never changes settings.
-// Offline JSON fixtures need neither a network connection nor a Git origin.
+// Read-only host audit of `main`'s branch protection against Jig's policy.
+// Prints proposed remediation; never changes settings. Offline JSON fixtures
+// need neither a network connection nor a Git origin. Reading the live setting
+// needs an administrator's `gh` login, which CI's token lacks, so this runs by
+// hand rather than in the gates.
+//
+// The policy: the `gates` check is required, every review thread is resolved
+// before merging, and `main` cannot be force-pushed or deleted. Deliberately
+// not required: an approving review (a person merges, and is the reviewer who
+// approves; docs/adr/ADR-0003-a-person-merges.md), administrator enforcement,
+// and an up-to-date branch ("strict" checks), which turns every merge into a
+// pull, a push and another full CI run on each open pull request. Those
+// settings are reported, never failed, and remediation keeps them as they are.
 import { readFileSync } from "node:fs";
 import { cli } from "../lib/cli.ts";
 
@@ -14,64 +25,44 @@ function field(root: Json, path: string): unknown {
     return value[key];
   }, root);
 }
-export function evaluateProtection(value: unknown): {
-  status: number;
-  lines: string[];
-} {
-  if (!object(value))
-    throw new Error(
-      "expected a JSON object from the branch-protection response",
-    );
-  const types: Record<string, string> = {
-    "required_status_checks.contexts": "array",
-    "required_status_checks.strict": "boolean",
-    "required_pull_request_reviews.required_approving_review_count": "number",
-    "required_conversation_resolution.enabled": "boolean",
-    "enforce_admins.enabled": "boolean",
-    "allow_force_pushes.enabled": "boolean",
-    "allow_deletions.enabled": "boolean",
-    restrictions: "object",
-    "required_pull_request_reviews.bypass_pull_request_allowances": "object",
-  };
-  for (const [path, type] of Object.entries(types)) {
+const FIELD_TYPES: Record<string, string> = {
+  "required_status_checks.contexts": "array",
+  "required_status_checks.strict": "boolean",
+  "required_pull_request_reviews.required_approving_review_count": "number",
+  "required_conversation_resolution.enabled": "boolean",
+  "enforce_admins.enabled": "boolean",
+  "allow_force_pushes.enabled": "boolean",
+  "allow_deletions.enabled": "boolean",
+  restrictions: "object",
+  "required_pull_request_reviews.bypass_pull_request_allowances": "object",
+};
+function hasType(found: unknown, type: string): boolean {
+  if (type === "array") return Array.isArray(found);
+  if (type === "object") return object(found);
+  return typeof found === type;
+}
+/** Throw when a field the report reads has the wrong type. */
+function checkTypes(value: Json): void {
+  for (const [path, type] of Object.entries(FIELD_TYPES)) {
     const found = field(value, path);
-    if (
-      found != null &&
-      !(type === "array"
-        ? Array.isArray(found)
-        : type === "object"
-          ? object(found)
-          : typeof found === type)
-    )
+    if (found != null && !hasType(found, type))
       throw new Error(
         `branch-protection JSON has unexpected field types: ${path} must be ${type}`,
       );
   }
-  const controls: [string, boolean][] = [
+}
+const contexts = (value: Json) =>
+  (field(value, "required_status_checks.contexts") ?? []) as unknown[];
+/** The settings Jig's policy requires, each with whether it holds. */
+function controls(value: Json): [string, boolean][] {
+  return [
     [
       "required CI status check(s) configured",
-      (
-        (field(value, "required_status_checks.contexts") ?? []) as unknown[]
-      ).includes("gates"),
-    ],
-    [
-      "required status checks are strict",
-      field(value, "required_status_checks.strict") === true,
-    ],
-    [
-      "at least one required human review",
-      ((field(
-        value,
-        "required_pull_request_reviews.required_approving_review_count",
-      ) ?? 0) as number) >= 1,
+      contexts(value).includes("gates"),
     ],
     [
       "required conversation resolution",
       field(value, "required_conversation_resolution.enabled") === true,
-    ],
-    [
-      "administrator enforcement",
-      field(value, "enforce_admins.enabled") === true,
     ],
     [
       "force-push disallowed",
@@ -82,38 +73,60 @@ export function evaluateProtection(value: unknown): {
       field(value, "allow_deletions.enabled") === false,
     ],
   ];
-  const lines = controls.map(
-    ([label, pass]) => `  ${pass ? "PASS" : "FAIL"}  ${label}`,
-  );
-  lines.push(
-    `  required checks: ${((field(value, "required_status_checks.contexts") ?? []) as unknown[]).join(", ") || "none"}`,
-  );
-  for (const [label, path] of [
-    ["restrictions", "restrictions"],
-    [
-      "PR review bypass_pull_request_allowances",
-      "required_pull_request_reviews.bypass_pull_request_allowances",
-    ],
-  ]) {
-    const actors = field(value, path ?? "");
-    const names: string[] = [];
-    if (actors != null) {
-      if (!object(actors)) throw new Error(`invalid actors: ${path}`);
-      for (const key of ["users", "teams", "apps"]) {
-        const entries = actors[key] ?? [];
-        if (!Array.isArray(entries))
-          throw new Error(`${path}.${key} must be an array`);
-        for (const entry of entries) {
-          if (!object(entry)) throw new Error(`invalid ${path}.${key} actor`);
-          names.push(String(entry[key === "users" ? "login" : "slug"] ?? ""));
-        }
-      }
-    }
-    lines.push(`  bypass actors (${label}): ${names.join(", ") || "none"}`);
-  }
-  const satisfied = controls.filter(([, pass]) => pass).length;
-  lines.push(`${satisfied}/7 controls satisfied`);
-  return { status: satisfied === 7 ? 0 : 1, lines };
+}
+const onOff = (on: boolean) => (on ? "on" : "off");
+/** The settings the policy leaves free, reported as they are. */
+function unrequired(value: Json): string {
+  const reviews = (field(
+    value,
+    "required_pull_request_reviews.required_approving_review_count",
+  ) ?? 0) as number;
+  return `  not required by policy: strict checks ${onOff(field(value, "required_status_checks.strict") === true)}, approving reviews ${reviews}, administrator enforcement ${onOff(field(value, "enforce_admins.enabled") === true)}`;
+}
+/** The users, teams and apps an actor map at `path` names. */
+function actorNames(value: Json, path: string): string[] {
+  const actors = field(value, path);
+  if (actors == null) return [];
+  if (!object(actors)) throw new Error(`invalid actors: ${path}`);
+  return ["users", "teams", "apps"].flatMap((key) => {
+    const entries = actors[key] ?? [];
+    if (!Array.isArray(entries))
+      throw new Error(`${path}.${key} must be an array`);
+    return entries.map((entry) => {
+      if (!object(entry)) throw new Error(`invalid ${path}.${key} actor`);
+      return String(entry[key === "users" ? "login" : "slug"] ?? "");
+    });
+  });
+}
+const BYPASS_ACTORS = [
+  ["restrictions", "restrictions"],
+  [
+    "PR review bypass_pull_request_allowances",
+    "required_pull_request_reviews.bypass_pull_request_allowances",
+  ],
+] as const;
+export function evaluateProtection(value: unknown): {
+  status: number;
+  lines: string[];
+} {
+  if (!object(value))
+    throw new Error(
+      "expected a JSON object from the branch-protection response",
+    );
+  checkTypes(value);
+  const checks = controls(value);
+  const lines = [
+    ...checks.map(([label, pass]) => `  ${pass ? "PASS" : "FAIL"}  ${label}`),
+    `  required checks: ${contexts(value).join(", ") || "none"}`,
+    unrequired(value),
+    ...BYPASS_ACTORS.map(
+      ([label, path]) =>
+        `  bypass actors (${label}): ${actorNames(value, path).join(", ") || "none"}`,
+    ),
+  ];
+  const satisfied = checks.filter(([, pass]) => pass).length;
+  lines.push(`${satisfied}/${checks.length} controls satisfied`);
+  return { status: satisfied === checks.length ? 0 : 1, lines };
 }
 export function remediation(value: Json): Json {
   const checks = object(value.required_status_checks)
@@ -121,7 +134,7 @@ export function remediation(value: Json): Json {
     : {};
   const reviews = object(value.required_pull_request_reviews)
     ? value.required_pull_request_reviews
-    : {};
+    : null;
   const actors = (source: unknown): unknown => {
     if (source == null) return null;
     if (!object(source)) throw new Error("invalid actor map");
@@ -141,7 +154,7 @@ export function remediation(value: Json): Json {
     }))) as Json[];
   return {
     required_status_checks: {
-      strict: true,
+      strict: checks.strict ?? false,
       contexts: [
         ...new Set([...((checks.contexts ?? []) as string[]), "gates"]),
       ].sort(),
@@ -149,12 +162,11 @@ export function remediation(value: Json): Json {
         ? existing
         : [...existing, { context: "gates", app_id: null }],
     },
-    enforce_admins: true,
-    required_pull_request_reviews: {
-      required_approving_review_count: Math.max(
+    enforce_admins: field(value, "enforce_admins.enabled") ?? false,
+    // `null` keeps pull-request review protection off; an object turns it on.
+    required_pull_request_reviews: reviews && {
+      required_approving_review_count:
         (reviews.required_approving_review_count ?? 0) as number,
-        1,
-      ),
       dismiss_stale_reviews: reviews.dismiss_stale_reviews ?? false,
       require_code_owner_reviews: reviews.require_code_owner_reviews ?? false,
       require_last_push_approval: reviews.require_last_push_approval ?? false,
@@ -189,62 +201,90 @@ function gh(args: string[]) {
     throw new Error(result.stderr.toString() || "gh api failed or timed out");
   return result;
 }
-export function checkProtection(args: string[]): number {
+/** The `--input` file and the positional owner/repo and branch. */
+function parseArgs(args: string[]): { input: string; positional: string[] } {
   let input = "";
   const positional: string[] = [];
   for (let index = 0; index < args.length; index++) {
-    if (args[index] === "--input") {
-      input = args[++index] ?? "";
-      if (!input) throw new Error("--input requires a file");
-    } else positional.push(args[index] ?? "");
+    if (args[index] !== "--input") {
+      positional.push(args[index] ?? "");
+      continue;
+    }
+    input = args[++index] ?? "";
+    if (!input) throw new Error("--input requires a file");
   }
   if (positional.length > 2 || positional.some((arg) => arg.startsWith("-")))
     throw new Error(
       "usage: check-branch-protection.ts [--input FILE|-] [owner/repo] [branch]",
     );
-  let [repo, branch] = positional;
-  let raw: string;
-  if (input) {
-    raw = readFileSync(input === "-" ? 0 : input, "utf8");
-    repo ||= "(offline input)";
-    branch ||= "main";
-  } else {
-    if (!repo) {
-      const remote = Bun.spawnSync(["git", "remote", "get-url", "origin"]);
-      if (remote.exitCode !== 0)
-        throw new Error("cannot determine origin; pass owner/repo explicitly");
-      repo = remote.stdout
-        .toString()
-        .trim()
-        .replace(
-          /^(git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/)/,
-          "",
-        )
-        .replace(/\.git$/, "");
-    }
-    if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo))
-      throw new Error("could not parse an owner/repo from origin");
-    branch ||= gh([`repos/${repo}`, "--jq", ".default_branch"])
+  return { input, positional };
+}
+/** The owner/repo of the `origin` remote. */
+function originRepo(): string {
+  const remote = Bun.spawnSync(["git", "remote", "get-url", "origin"]);
+  if (remote.exitCode !== 0)
+    throw new Error("cannot determine origin; pass owner/repo explicitly");
+  return remote.stdout
+    .toString()
+    .trim()
+    .replace(
+      /^(git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/)/,
+      "",
+    )
+    .replace(/\.git$/, "");
+}
+/** The live protection of `branch` (its default branch when empty). */
+function fetchProtection(
+  repo: string,
+  branch: string,
+): { branch: string; raw: string } {
+  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo))
+    throw new Error("could not parse an owner/repo from origin");
+  const name =
+    branch ||
+    gh([`repos/${repo}`, "--jq", ".default_branch"])
       .stdout.toString()
       .trim();
-    const response = gh([
-      `repos/${repo}/branches/${encodeURIComponent(branch)}/protection`,
-    ]);
-    raw = response.exitCode === 0 ? response.stdout.toString() : "{}";
-  }
+  const response = gh([
+    `repos/${repo}/branches/${encodeURIComponent(name)}/protection`,
+  ]);
+  return {
+    branch: name,
+    raw: response.exitCode === 0 ? response.stdout.toString() : "{}",
+  };
+}
+function printRemediation(repo: string, branch: string, value: Json): void {
+  console.log("Recommended remediation — review, then a human runs:");
+  console.log(
+    `gh api --method PUT repos/${repo}/branches/${encodeURIComponent(branch)}/protection --input protection-remediation.json`,
+  );
+  console.log("Save this payload as protection-remediation.json:");
+  console.log(JSON.stringify(remediation(value), null, 2));
+}
+/** Where the protection comes from: the `--input` file, or the forge. */
+function protectionSource(
+  input: string,
+  [repoArg, branchArg]: string[],
+): { repo: string; branch: string; raw: string } {
+  if (input)
+    return {
+      repo: repoArg || "(offline input)",
+      branch: branchArg || "main",
+      raw: readFileSync(input === "-" ? 0 : input, "utf8"),
+    };
+  const repo = repoArg || originRepo();
+  return { repo, ...fetchProtection(repo, branchArg ?? "") };
+}
+export function checkProtection(args: string[]): number {
+  const { input, positional } = parseArgs(args);
+  const { repo, branch, raw } = protectionSource(input, positional);
   const value: unknown = JSON.parse(raw);
   const result = evaluateProtection(value);
   console.log(
     `Branch protection recheck — ${repo}@${branch}\n${result.lines.join("\n")}`,
   );
-  if (result.status && !input && object(value)) {
-    console.log("Recommended remediation — review, then a human runs:");
-    console.log(
-      `gh api --method PUT repos/${repo}/branches/${encodeURIComponent(branch ?? "main")}/protection --input protection-remediation.json`,
-    );
-    console.log("Save this payload as protection-remediation.json:");
-    console.log(JSON.stringify(remediation(value), null, 2));
-  }
+  if (result.status && !input && object(value))
+    printRemediation(repo, branch, value);
   return result.status;
 }
 if (import.meta.main) cli(() => checkProtection(process.argv.slice(2)));

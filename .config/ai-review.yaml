@@ -1,5 +1,34 @@
 # Review configuration for Jig. The reviewer resolves this file from the
 # base branch, so a pull request cannot weaken the policy that reviews it.
+#
+# Posture: every automated reviewer on Jig's pull requests, this one and the
+# review bots alike, only comments. This reviewer's required check ends
+# neutral whatever it finds, and the bots post comments without a check, so
+# none of them blocks a merge. Each finding is decided in the review loop,
+# and a person merges.
+#
+# Bar to block: a reviewer, or one of its rules, may become blocking only when
+# at least 90% of its own findings prove real over at least 30 of its own
+# answered findings on consecutive pull requests. The sample is exactly the
+# reviewer or rule being promoted: findings from other reviewers, or from the
+# same reviewer's other rules, count in neither the numerator nor the
+# denominator. A finding is real when its thread ended accepted, deferred or
+# wont-fix, and false when it ended rejected; moot findings do not count.
+# The per-thread record comes from
+# plugin/skills/resolve-review-comments/scripts/list-unresolved-threads.ts
+# <PR> --include-resolved, one line per thread with its author and replies:
+# keep the threads the candidate opened, and take each one's outcome from its
+# last reply that opens with an outcome token and comes from an owner, member
+# or collaborator (authorAssociation OWNER, MEMBER or COLLABORATOR), so an
+# outsider's reply cannot change the count. A thread marked commentsTruncated
+# shows only its first 100 replies: read the rest before counting it, or
+# leave it out and say so with the numbers. A rule is measured the same
+# way over the threads that name it; a rule whose threads do not name it
+# cannot be measured on this record and stays comment-only.
+# plugin/skills/drive-pr/scripts/loop-metrics.ts --json totals outcomes over
+# all reviewers together, so it cannot give one reviewer's count. The person
+# who proposes the promotion measures it and records the numbers in that pull
+# request; making a reviewer blocking is a person's decision.
 platform_description: "Jig — a vendor-agnostic toolkit for AI-native software-delivery practices: reusable practice modules, Bun/TypeScript quality gates, a repository auditor, and agent skills shipped as a plugin for Claude Code and Codex"
 
 architecture_invariants: |-
@@ -20,15 +49,29 @@ exclude_pathspecs:
   - ":(exclude,glob)**/_generated/**"
   - ":(exclude,glob)seeds/**"
 
+# Generated from the change-area catalog's areas marked `reviewRisk: high`
+# (.config/change-areas.yaml) by `bun scripts/review-risk.ts --write`. Never
+# edit it by hand: the gates fail when this list and the catalog differ.
 high_risk_path_patterns:
-  - source: '^\.config/ai-review\.yaml$'
-  - source: '^((plugin|modules)/)?(AGENTS|CLAUDE)\.md$'
-  - source: '^plugin/\.(claude|codex)-plugin/'
-  - source: '^\.github/workflows/'
+  - source: '^plugin/\.claude-plugin/'
+  - source: '^plugin/\.codex-plugin/'
+  - source: '^plugin/skills/audit/scripts/'
+  - source: '^plugin/skills/audit/config-schema\.yaml$'
+  - source: '^plugin/skills/audit/references/methodology\.md$'
+  - source: '^plugin/skills/audit/references/survey-prompts/'
+  - source: '^plugin/skills/audit/criteria/M[^/]*\.yaml$'
   - source: '^scripts/'
-  - source: '^plugin/skills/audit/(scripts/|config-schema\.yaml$|references/(methodology\.md$|survey-prompts/))'
-  - source: '^modules/M[0-9]+-[^/]+/reference/'
-  - source: '^plugin/skills/audit/criteria/M[0-9]+-[^/]+\.yaml$'
+  - source: '^modules/[^/]*/reference/'
+  - source: '^\.github/workflows/'
+  - source: '^\.config/ai-review\.yaml$'
+  - source: '^\.config/change-areas\.yaml$'
+  - source: '^AGENTS\.md$'
+  - source: '^CLAUDE\.md$'
+  - source: '^CONTRIBUTING\.md$'
+  - source: '^modules/AGENTS\.md$'
+  - source: '^modules/CLAUDE\.md$'
+  - source: '^plugin/AGENTS\.md$'
+  - source: '^plugin/CLAUDE\.md$'
 
 rules:
   - id: module-contract
@@ -60,7 +103,8 @@ rules:
     attention: "Ensure templates are neutral copyable skeletons and reference material contains portable mechanisms rather than local policy values. Keep fixture changes aligned with the documented contract and paired self-test expectations."
     severity: medium
 
-# Jig has no generated output that contributors should regenerate, nor a
-# path-scoped rules corpus. Its change-area catalog (.config/change-areas.yaml)
-# selects CI jobs and is not a review input. Omit those optional sections so
-# their defaults do not point at misleading placeholder locations.
+# Jig has no generated output for the reviewer to skip, nor a path-scoped
+# rules corpus. Its change-area catalog (.config/change-areas.yaml) selects CI
+# jobs, and reaches the reviewer only through the generated
+# high_risk_path_patterns above. Omit those optional sections so their
+# defaults do not point at misleading placeholder locations.

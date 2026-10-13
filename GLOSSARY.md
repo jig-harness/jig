@@ -3,6 +3,10 @@
 Plain-language definitions of every term of art used in jig. Terms are
 capitalized as commonly written; cross-references are *italicized*.
 
+Where several words compete for one idea, the entry's term is the one to use
+and its *Avoid* line names the rivals. When you meet a rival in a change you
+make, use the entry's term instead.
+
 ## Core ideas
 
 - **AI-native delivery** — building and maintaining software with AI coding
@@ -26,9 +30,18 @@ capitalized as commonly written; cross-references are *italicized*.
   levels, templates, and reference code. Modules adopt independently.
 - **Maturity level** — how deeply a module is adopted: **Lite** (minimum
   useful), **Standard** (production teams), **Strict** (regulated/compliance
-  posture). Brownfield projects climb one level at a time.
+  posture). Brownfield projects climb one level at a time. *Avoid*: tier
+  (*tiered review* and deploy tiers use it), rung (a step of the
+  *enforcement ladder*).
 - **Profile** — a recommended composition of modules and maturity levels for a
   project shape: Solo/Lite, Team/Standard, Regulated/Strict.
+- **Consumer repository** — a repository that uses Jig in any of its ways:
+  through the *plugin*'s skills, by adopting modules, or by taking one
+  reference pattern. Where it configures Jig, it gives its own values (its
+  *consumer overlay*). Jig states the general pattern; a consumer repository
+  holds one concrete, tested implementation of it, and what it learns comes
+  back as *backflow*. Short form: consumer. *Avoid*: instance, downstream
+  repository, target repository, adopting repository.
 - **Invariant** — the tool-independent statement of a practice ("every
   committed generated file has a drift check"), as opposed to any particular
   tool that implements it.
@@ -53,7 +66,8 @@ capitalized as commonly written; cross-references are *italicized*.
   convention → editor/local script → *git hook* → *CI* → mandatory review
   step. Each rung is harder to bypass. Jig treats "which rung is this
   rule on, and what promotes it?" as a first-class question — and the rung is
-  what the *auditor* scores.
+  what the *auditor* scores. *Avoid*: level for a rung (a module's
+  *maturity level* uses it).
 - **Convention-only** — a rule that exists only as prose or habit, with no
   mechanical check. A tracked state, not a resting place.
 - **Git hook** — a script that runs automatically at a git event
@@ -165,6 +179,10 @@ capitalized as commonly written; cross-references are *italicized*.
   contributor agrees to by adding a `Signed-off-by:` line to each commit,
   certifying that they wrote the change or otherwise have the right to submit
   it under the project's licence.
+- **NOTICE file** — the file beside a project's `LICENSE` that names its
+  copyright holder and lists the parts under other licences: here the
+  templates under MIT No Attribution and the vendored third-party code. The
+  Apache License requires anyone who redistributes the project to keep it.
 - **Forge** — the service that hosts a repository and its pull requests,
   reviews and checks (GitHub, GitLab, …).
 - **Stacked pull request** — a pull request based on another open pull
@@ -276,7 +294,8 @@ capitalized as commonly written; cross-references are *italicized*.
   ([do-item](plugin/skills/do-item/SKILL.md)).
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
-  in parallel on one machine.
+  in parallel on one machine. *Avoid*: workspace for the checkout itself; a
+  workspace is what a *workspace provider* opens around a worktree.
 - **Worktree scratch** — working files an agent keeps in a gitignored
   directory of its *worktree*. They outlive one session but only a session in
   that same worktree sees them, so nothing another worktree, or a person not
@@ -426,15 +445,16 @@ capitalized as commonly written; cross-references are *italicized*.
   it survives the session and reaches other agents.
 - **Skill** — a packaged, named procedure an agent can invoke (a review
   checklist, a migration workflow). The unit of codified "how we do this
-  here."
+  here." *Avoid*: command, slash command: `/jig:<name>` is how a skill is
+  invoked, not what it is.
 - **Rule (conditional rule)** — an instruction file that loads into agent
   context only when files matching its path patterns are being edited — the
   scoped counterpart of an always-loaded instruction file.
 - **Scout** — a small, cheap agent (fast model, read-only) sent ahead of
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
-- **Auditor** — Jig's runnable assessment: parallel surveys of a target
-  repo, stack detection, per-module maturity scoring, and a prioritized
+- **Auditor** — Jig's runnable assessment: parallel surveys of a
+  repository, stack detection, per-module maturity scoring, and a prioritized
   recommendations report, recorded in the audited repository so a re-run
   reports what changed. Runs as the `jig` plugin's `/jig:audit`; see the
   [audit skill](plugin/skills/audit/README.md).
@@ -528,6 +548,9 @@ capitalized as commonly written; cross-references are *italicized*.
   instructions and tool list that a skill or session hands one narrow job to.
   A plugin can ship subagents beside its skills; Claude Code loads them,
   Codex reads them only from its own agent folders.
+- **Issue** — one unit of work in the issue tracker: what `/jig:do-item` picks
+  up and a pull request closes. Skills say *item* for short. *Avoid*: ticket,
+  card, task.
 - **Tracker interface and adapter** — the small set of issue-tracker
   operations a skill is allowed to use (read an issue with its comments and
   children, move it to a workflow state, comment, the reads the delivery

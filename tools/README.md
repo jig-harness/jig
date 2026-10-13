@@ -31,7 +31,7 @@ Use the exact Bun version in [mise.toml](../mise.toml), including when the targe
 repository uses another language. Run `mise install`, `bun install
 --frozen-lockfile` in the Jig checkout, then `mise exec -- bun <gate.ts>`
 with that checkout's mise configuration active. The runtime belongs to the
-Jig tooling; it does not change the target repository's application
+Jig tooling; it does not change the consumer repository's application
 language or package manager.
 
 Jig ships bundled commands plus a runtime pin. That avoids a separate

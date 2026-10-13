@@ -1105,7 +1105,7 @@ function workLines(work: readonly WorkItem[]): string[] {
   if (work.length === 0) return [];
   return [
     "",
-    "Work, ranked as the sheet's Start here (each ready for /jig:audit apply <ref> or for filing):",
+    "Work, ranked as the sheet's Start here (ready for /jig:audit apply <ref> ..., together, or for filing):",
     ...work.map(
       (w, i) => `${i + 1}. ${w.id} ${refList(w.refs)} ${workText(w)}`,
     ),
