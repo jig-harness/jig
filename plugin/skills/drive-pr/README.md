@@ -189,6 +189,50 @@ The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 `drive.ts` sets for its own passes) are documented where they act, in
 [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
 
+### The background time limit
+
+None of the limits above bounds the whole drive, but the harness that starts
+it can. In Claude Code, a session that runs unattended (`claude -p`, the Agent
+SDK, a cloud or scheduled session) stops a background command after 30
+minutes, or after the `timeout` the agent passes with `run_in_background`, and
+by default never later than 2 hours (the machine can raise that ceiling, see
+below). A `claude -p` run whose prompt is passed as text
+rather than with `--input-format stream-json` uses 10 minutes instead of 30.
+From Claude Code 2.1.288, a local terminal session, the desktop app and the
+editor extensions have no such limit; from 2.1.285 to 2.1.287 the limit
+applies in every session. A drive is ten rounds of up to 90 minutes each, so
+an agent that starts it without a `timeout` sees it stopped at the default
+limit, partway through a round, with no exit state of its own.
+
+Stopping the driver stops its pass, and the pass's agent context is lost;
+nothing else is rolled back. Edits in the worktree, local commits not yet
+pushed, and anything already pushed or posted stay where they are. Before
+re-arming, check `git status --short` for uncommitted work and
+`git rev-list --count @{u}..HEAD` for unpushed commits, and finish or discard
+them. The next drive recovers the stale locks and resumes at the same round
+from the saved state, and a Ready mark already made stays made.
+
+Two settings raise the limit to 8 hours, and both are needed for a drive
+longer than 2 hours:
+
+- The skills tell the agent to pass `timeout: 28800000` (8 hours) when it
+  spawns the driver.
+- The machine raises the harness's ceiling: set `BASH_MAX_TIMEOUT_MS` to
+  `28800000` in the `env` block of `~/.claude/settings.json` (or in the
+  environment of whatever launches the session). Without it the agent's
+  `timeout` is held to 2 hours. Leave `BASH_DEFAULT_TIMEOUT_MS` alone: it also
+  sets the default timeout of every foreground command.
+
+Eight hours does not cover every drive the driver itself allows. A quota
+sleep can last up to `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (6 hours by default)
+between passes, and a long `--max-rounds` adds 90 minutes a round, so such a
+drive is stopped at 8 hours all the same. Re-arm it after the checks above;
+it resumes where it stopped.
+
+Both variables are read when a session starts, so a drive already running
+keeps its old limit, and a harness other than Claude Code has its own. Claude
+Code needs version 2.1.285 or later for them to take effect.
+
 ## When to reach for it
 
 - **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/jig:do-item` run arms the drive when it opens the draft PR. Typing `/jig:drive-pr [PR]` in a session does the same thing: the agent starts the driver below in the background, reports its log path, and stops — it does not work a round itself.

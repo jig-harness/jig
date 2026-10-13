@@ -813,7 +813,13 @@ routing below remain **exact**.
       is Claude Code, the only one with a documented pass command. Spawning
       is then mandatory: an emitted but unspawned command reintroduces the
       human-memory delay this step removes, and a `hitl` issue cleared this
-      run is no reason to withhold it. Report the task handle. The drive
+      run is no reason to withhold it. Pass the Bash call's `timeout` of
+      `28800000` (8 hours) with `run_in_background`: in an unattended session
+      Claude Code stops a background command after 30 minutes without it (10
+      in a `claude -p` run whose prompt is passed as text), and
+      after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
+      [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
+      Report the task handle. The drive
       works the draft immediately (some review bots review drafts, others
       skip them) and marks the PR Ready at the point
       `pull_requests.mark_ready` declares (after the first completed round

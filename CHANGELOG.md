@@ -82,6 +82,23 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.18.3] - 2026-10-13
+
+### Fixed
+
+- A drive armed from an unattended Claude Code session (`claude -p`, the Agent
+  SDK, a cloud or scheduled session) was stopped after 30 minutes (10 in a
+  `claude -p` run whose prompt is passed as text), partway through a round,
+  because the harness limits background commands to that unless the agent
+  passes a `timeout`, and to 2 hours at most. `/jig:drive-pr`
+  and `/jig:do-item` now tell the agent to spawn the driver with a `timeout` of
+  8 hours. The ceiling is the machine's to raise: set `BASH_MAX_TIMEOUT_MS` to
+  `28800000`. A drive longer than 8 hours (a long quota sleep, many rounds)
+  is still stopped there and resumes when re-armed. [drive-pr's README](plugin/skills/drive-pr/README.md#the-background-time-limit)
+  explains the limit, what a stopped drive leaves behind and how to resume it,
+  and [CONFIGURATION.md](plugin/CONFIGURATION.md#environment-variables) lists
+  the variable.
+
 ## [0.18.2] - 2026-10-13
 
 The work from Jig's audit of 2026-10-13, a lean AGENTS.md (it keeps the
@@ -747,7 +764,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.18.2...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.18.3...HEAD
+[0.18.3]: https://github.com/docomply/jig/compare/v0.18.2...v0.18.3
 [0.18.2]: https://github.com/docomply/jig/compare/v0.18.1...v0.18.2
 [0.18.1]: https://github.com/docomply/jig/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/docomply/jig/compare/v0.17.0...v0.18.0

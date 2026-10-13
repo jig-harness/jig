@@ -536,6 +536,26 @@ could forge or forget.
    bun ${CLAUDE_SKILL_DIR}/scripts/drive.ts <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
    ```
 
+   **exact** — Pass the Bash call's `timeout` of `28800000` (8 hours) with
+   `run_in_background`; a drive runs up to `--max-rounds` rounds of up to 90
+   minutes each, so it outlives the harness's default. Eight hours does not
+   cover every drive: a quota sleep (up to `DRIVE_PR_QUOTA_MAX_SLEEP_SEC`,
+   default 6 hours) or a long `--max-rounds` can take it past that, and it is
+   then stopped like any other limit stops it. Claude Code, in a
+   session that runs unattended (`claude -p`, the Agent SDK, a cloud or
+   scheduled session), stops a background command after 30 minutes (10 in a
+   `claude -p` run whose prompt is passed as text) unless `timeout` says
+   otherwise, and holds `timeout` to 2 hours unless the environment variable
+   `BASH_MAX_TIMEOUT_MS` is raised (to `28800000`). The limit exists from
+   Claude Code 2.1.285: from 2.1.288 a local terminal session has no such
+   limit, and from 2.1.285 to 2.1.287 every session does. When the limit fires it stops the driver mid-round. The pass's agent
+   context is lost, but its edits and unpushed commits stay in the worktree:
+   check `git status --short` and `git rev-list --count @{u}..HEAD` before
+   re-arming. The next drive recovers the stale locks and resumes from the
+   saved state.
+   Do not raise `BASH_DEFAULT_TIMEOUT_MS` instead: it also becomes every
+   foreground command's default.
+
    `--bots-only` is always on: an unattended sweep never acts on human threads
    (§ 2). Forward the invocation's own drive flags — `--keep-draft`,
    `--max-rounds N`, `--handoff-at …` — to `drive.ts` **before** the `--`, and
