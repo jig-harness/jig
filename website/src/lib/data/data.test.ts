@@ -31,9 +31,9 @@ const read = (path: string) => readFileSync(join(root, path), "utf8");
 describe("modules", () => {
   const index = parseModuleIndex(read("modules/README.md"));
 
-  test("the index lists all thirteen modules with the skills that run them", () => {
+  test("the index lists all fourteen modules with the skills that run them", () => {
     expect(index.map((m) => m.id)).toEqual(
-      Array.from({ length: 13 }, (_, i) => `M${i}`),
+      Array.from({ length: 14 }, (_, i) => `M${i}`),
     );
     expect(index.find((m) => m.id === "M7")?.skills).toContain("drive-pr");
     expect(index.find((m) => m.id === "M0")?.skills).toEqual([]);
@@ -86,7 +86,7 @@ test("every criteria file parses as the audit reads it, and M7 has the most", ()
       return [module, criteria.length] as const;
     }),
   );
-  expect(counts.size).toBe(13);
+  expect(counts.size).toBe(14);
   expect(Math.max(...counts.values())).toBe(counts.get("M7") ?? -1);
 });
 

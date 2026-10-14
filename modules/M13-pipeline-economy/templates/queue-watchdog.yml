@@ -1,0 +1,91 @@
+# Queue-stall watchdog — GitHub Actions skeleton (Jig module M13).
+#
+# Copy to .github/workflows/queue-watchdog.yml and replace every <placeholder>.
+# The SHAPE is the point:
+#
+#   - A job's `timeout-minutes` counts only the time it runs, never the time
+#     it waits for a runner, so a job stuck in the queue fails nothing. This
+#     workflow checks the queue on a schedule and fails when any job has
+#     waited for a runner longer than the bound, so the failure is visible.
+#   - It collects the jobs of every queued, in-progress AND waiting run: a
+#     run that has started, or waits for an environment's approval, can still
+#     hold jobs that no runner has picked up.
+#   - GitHub returns at most 1,000 runs for a search by status. A status with
+#     more runs than that fails the step instead of leaving the oldest runs,
+#     the likeliest stalls, out of the check.
+#   - It runs on a different pool from the one it watches. On the pool that
+#     has stalled, the watchdog's own job waits in the same queue and reports
+#     nothing; set `runs-on` to another pool (for self-hosted runners, the
+#     hosted ones), or run the same commands from outside the provider.
+#   - Every 15 minutes is about 96 short runs a day; a longer interval
+#     costs less and notices later.
+#   - It only detects. Whether a stall also cancels the run, pages someone or
+#     only shows a red run is the team's decision; see the reference README.
+#   - Least privilege: it reads Actions data and nothing else.
+#   - It excludes its own run. Its jobs are queued only briefly, but a busy
+#     runner pool must not make the watchdog report itself.
+#
+# The script and why it counts `queued` and not `waiting`:
+#   https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/queue-watchdog/README.md
+# The practice:
+#   https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md
+name: Queue watchdog
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+# A newer scheduled check supersedes an older one still running; scheduled
+# runs all use the default branch's watchdog, so they cover one another. A
+# manual run may come from another ref with other code, so it gets a group of
+# its own and neither cancels nor is cancelled.
+concurrency:
+  group: queue-watchdog-${{ github.event_name == 'schedule' && 'schedule' || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  queue-watchdog:
+    runs-on: <a pool other than the one watched, e.g. ubuntu-latest>
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@<pinned-sha>
+      # The script runs from a pinned Jig checkout: it imports helpers from
+      # across that repository, so a lone copy does not resolve its imports.
+      # github.token reads only this repository, so a private Jig repository
+      # needs a read-only credential for it (a fine-grained token with
+      # Contents: read, or a deploy key through `ssh-key`); drop `token`
+      # when Jig is public.
+      - uses: actions/checkout@<pinned-sha>
+        with:
+          repository: <owner/name of the Jig repository>
+          ref: <pinned Jig commit>
+          token: ${{ secrets.<read-only token for the Jig repository> }}
+          persist-credentials: false
+          path: jig
+      # mise reads the tool pins of its working directory, so point it at the
+      # Jig checkout: that installs Jig's Bun pin, not this repository's tools.
+      - uses: jdx/mise-action@<pinned-sha>
+        with:
+          working_directory: jig
+      - name: Fail on jobs queued past the bound
+        # Context values reach the script through env:, never through
+        # ${{ }} inside run:, which would splice them into the shell source.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SELF_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          for STATUS in queued in_progress waiting; do
+            export STATUS
+            gh api --paginate "repos/$REPO/actions/runs?status=$STATUS&per_page=100" \
+              --jq 'if .total_count > 1000 then error("over 1000 runs are \(env.STATUS): the listing would leave some out") else .workflow_runs[].id end'
+          done | sort -u | { grep -vx "$SELF_RUN_ID" || true; } | while read -r RUN; do
+            gh api --paginate "repos/$REPO/actions/runs/$RUN/jobs?filter=latest&per_page=100"
+          done | jq -s '.' > jobs.json
+          bun jig/modules/M13-pipeline-economy/reference/queue-watchdog/find-queue-stalls.ts --max-wait-minutes 45 jobs.json

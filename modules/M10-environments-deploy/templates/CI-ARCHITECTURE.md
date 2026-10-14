@@ -146,22 +146,19 @@ quietly ship something other than what the gate approved. So:
 A suite runs per change only if a merge or the `verified` pointer waits for
 its answer, and the pointer waits for every check it needs to be trusted. A
 suite nothing waits for, such as a half-hour end-to-end sweep whose journeys
-other checks already cover, or a coverage sweep, costs its full price on every
-push and is read by no one at that moment. It runs on a schedule or on demand instead. A cheap
-proxy runs per change in its place: for example, "the end-to-end images still
-build" or "the suite still compiles".
+other checks already cover, or a coverage sweep, runs on a schedule or on
+demand instead, with a cheap proxy per change in its place (for example,
+"the end-to-end images still build").
 
-| Placement | What runs there | Example |
-|-----------|-----------------|---------|
-| Every pull request | the gates the merge waits for, selected by what changed | format, lint, types, unit tests, build |
-| Every push to the default branch | what the `verified` pointer waits for | integration tests against real services, migration replay, artifact build, end-to-end tests of journeys nothing else checks |
-| On a schedule | slow suites nothing waits for, and trends | the full end-to-end sweep against a deployed environment, nightly; coverage, weekly |
-| On demand | the scheduled suites, run by hand when a change needs them now | a dispatch with the suite name |
-
-Write the placement into the pipeline and check it: a heavy suite that gains a
-per-change trigger drifts back into everyone's wait. A scheduled suite reports
-its failures where someone will see them, and a schedule that silently stopped
-running counts as failing, not as passing.
+The placement table, per change, after merge, on a schedule and on demand,
+is Jig's
+[M13 placement table](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md#6-place);
+fill in your own suites in the copy of its
+[pipeline-economy template](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/templates/PIPELINE-ECONOMY.md).
+Write the placement into the pipeline and check it: a heavy suite that gains
+a per-change trigger drifts back into everyone's wait. A scheduled suite
+reports its failures where someone will see them, and a schedule that
+silently stopped running counts as failing, not as passing.
 
 ## The environment kit that makes verification real
 

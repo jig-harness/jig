@@ -400,7 +400,7 @@ criteria: {}
     const json = JSON.parse(
       runScript("record.ts", ["compare", a, b, "--json"], scratch).out,
     );
-    expect(json.levels).toHaveLength(13);
+    expect(json.levels).toHaveLength(14);
     const portfolio = runScript(
       "record.ts",
       ["portfolio", `web=${a}`, `api=${b}`],

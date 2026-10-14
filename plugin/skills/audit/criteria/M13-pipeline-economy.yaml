@@ -1,0 +1,122 @@
+# Machine-evaluable criteria for M13 (pipeline economy).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# A repository without CI has no pipeline to economize: score the module
+# expected-absent there, and score M1's criteria instead.
+module: M13
+name: pipeline-economy
+purpose: >-
+  CI is spent only where it changes a merge decision, and no saving turns a
+  failure into a pass.
+criteria:
+  - id: superseded-pr-runs-cancelled
+    level: lite
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      A new push to a pull request cancels that pull request's runs for the
+      older head, so CI is not spent on a head no one will merge.
+    observe:
+      - "every pull-request workflow declares a concurrency group keyed by the pull request (or its ref) with cancel-in-progress, or the provider's equivalent (GitLab: interruptible jobs with auto-cancel)"
+      - "the group is not shared with runs that check something the surviving run does not"
+
+  - id: every-job-has-timeout
+    level: lite
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      Every CI job declares its own timeout, below the provider's default
+      limit, so a hung job fails at a bound the team chose instead of holding
+      a runner until that limit.
+    observe:
+      - "each job carries timeout-minutes (GitHub Actions), timeout (GitLab CI) or the provider's equivalent"
+      - "each value is below the provider's default job limit (360 minutes on GitHub-hosted runners)"
+
+  - id: no-required-pipeline-path-filtered
+    level: lite
+    requires: convention
+    since: 0.25.0
+    statement: >-
+      No workflow that reports a required check is filtered by changed paths
+      at its trigger; selection happens inside the run, so every head gets a
+      verdict.
+    observe:
+      - "the workflows behind the required checks have no on.pull_request.paths / paths-ignore (or the provider's trigger-level equivalent)"
+      - "path-dependent work is selected by jobs inside the workflow instead"
+
+  - id: resolver-drives-selection
+    level: standard
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      One resolver job per run reads the change-area catalog and decides which
+      jobs the change needs; every other job reads its answer, and a changed
+      file no area matches selects every job or fails the change.
+    observe:
+      - "one small job runs the catalog resolver and publishes its result (job outputs on GitHub Actions), or the jobs' change rules are generated from the catalog, or the resolver writes a child pipeline that the parent waits for (GitLab CI)"
+      - "the other jobs' conditions come from the resolver's answer or the catalog, not from path patterns written by hand per job"
+      - "an unmatched file selects every job, or a gate fails the change until the file belongs to an area (fail closed)"
+
+  - id: aggregate-required-check
+    level: standard
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      One verdict is the required check (an aggregator job, or the provider's
+      own verdict on the whole pipeline): it is given whenever the run was not
+      cancelled, fails when a selected job failed, was cancelled or was
+      skipped because a job it needs failed, and passes a job skipped only
+      because the change did not need it.
+    observe:
+      - "where each job reports its own check (GitHub Actions), an aggregator job needs every selected job, runs on !cancelled() (not always()), and compares each needed job's result with whether the resolver selected it"
+      - "where the provider judges the whole pipeline (GitLab CI's \"Pipelines must succeed\"), that built-in verdict is the required check, no job that must block is allowed to fail, and a child pipeline mirrors its status to its trigger job"
+      - "the merge rule requires that one verdict, not the individual jobs"
+
+  - id: heavy-non-gating-suites-scheduled
+    level: standard
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      A slow suite that no merge and no verified pointer waits for runs on a
+      schedule or on demand, and a cheap per-change proxy runs in its place.
+    observe:
+      - "the slow suite's workflow triggers on a schedule, on manual dispatch, or both, not on every pull request"
+      - "a per-change job checks a cheap proxy of it (the suite still compiles, its images still build)"
+      - "a suite is waited for when it is a required check on the default branch, the required aggregator needs it, or the verified pointer advances only after it succeeds; a branch with no required check still waits for what its verified pointer needs"
+      - "a suite is fast only when the repository's written record classifies its speed so: the record names it fast, or states a duration threshold its recorded CI durations stay below; where a suite runs (a placement table such as PIPELINE-ECONOMY.md's) classifies nothing; a suite the record names slow, or whose recorded durations exceed the stated threshold, is slow even when the record also names it fast; durations without a stated threshold classify nothing, the auditor never estimates, and an unclassified suite counts as slow"
+      - "the criterion covers each suite nothing waits for that is not classified fast; expected-absent when no such suite exists"
+
+  - id: workflow-conventions-linted
+    level: strict
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      A lint over the CI configuration fails a job without a timeout, a
+      required workflow filtered at its trigger, an aggregator that runs on
+      always(), and a concurrency key that drops runs it does not cover.
+    observe:
+      - "a script or rule set reads the workflow files and checks these conventions"
+      - "it runs in CI on changes to the workflow files, with its own self-test"
+
+  - id: ci-cost-measured
+    level: strict
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      CI time or cost is measured per workflow and job from the provider's
+      records, so a decision about what to run where cites a number.
+    observe:
+      - "a job or script collects run durations or billable minutes per workflow and job"
+      - "the result is published on a cadence (a report, a dashboard, an issue)"
+
+  - id: queue-stall-watchdog
+    level: strict
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      A watchdog fails loudly when runs wait for a runner longer than a set
+      bound, because job timeouts do not count time spent in the queue.
+    observe:
+      - "a scheduled job reads queued runs or jobs and their wait time from the provider"
+      - "a wait over the bound fails the job or opens an alert someone sees"

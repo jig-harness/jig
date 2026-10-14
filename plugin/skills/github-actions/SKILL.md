@@ -205,6 +205,11 @@ set `if-no-files-found: error` so an empty upload fails (example:
 
 ### Phase 3: Performance
 
+These checks apply Jig module
+[M13 (pipeline economy)](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md):
+spend CI only where it changes a merge decision, and never let a saving turn
+a failure into a pass.
+
 **3.1 Cache configuration**
 
 Check that the package manager's dependency cache is configured, and the task
@@ -220,8 +225,10 @@ really depends on another's result.
 
 **3.3 Redundant operations**
 
-- Coverage: collect it once, in one stage (usually the PR gates), not again
-  in post-merge verification.
+- Coverage: collect it in one place, never again in post-merge
+  verification. When no merge waits for the figure, that place is a
+  schedule (M13's placement table); only a coverage threshold that gates the
+  merge belongs in the PR gates.
 - Build: do not build the same thing twice in one workflow.
 - Checkout: use `fetch-depth: 0` only when the job needs the git history.
 

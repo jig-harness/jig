@@ -161,6 +161,10 @@ checks that every file belongs to an area, and resolves a pull request's
 changed files to the areas that select its CI jobs. Read it as a worked
 example; it knows only the fields Jig's catalog uses.
 
+How CI uses the resolver (one resolver job per run, gates selected by their
+own area, an unmatched file selecting everything) is
+[M13 pipeline economy](../M13-pipeline-economy/README.md#2-select).
+
 Deliberately left out: a portable resolver, catalog validator and projection
 emitters for other repositories. A change-area resolver is a structured-data
 and graph job best written in the language the consumer repository already

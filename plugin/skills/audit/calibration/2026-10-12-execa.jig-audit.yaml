@@ -564,4 +564,41 @@ criteria:
     # The footgun bans are enforced where mechanizable — e.g. a hook or lint rejects a root install with a package manager the repo did not declare.
     score: expected-absent
     evidence: "No footguns to enforce: one package manager (npm, no packageManager field, package-lock=false in .npmrc) and no parallel agents."
+  # M13 pipeline-economy
+  M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
+    # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.
+    score: absent
+    evidence: ".github/workflows/main.yml (the only workflow) declares no concurrency group, so every push to a pull request runs all nine matrix legs to the end"
+  M13/every-job-has-timeout:   # lite, requires mechanical
+    # Every CI job declares its own timeout, below the provider's default limit, so a hung job fails at a bound the team chose instead of holding a runner until that limit.
+    score: absent
+    evidence: ".github/workflows/main.yml (the only workflow) sets no timeout-minutes on its job, so each leg may run to GitHub's 360-minute default"
+  M13/no-required-pipeline-path-filtered:   # lite, requires convention
+    # No workflow that reports a required check is filtered by changed paths at its trigger; selection happens inside the run, so every head gets a verdict.
+    score: convention
+    evidence: ".github/workflows/main.yml triggers on push and pull_request with no paths or paths-ignore; nothing checks it"
+  M13/resolver-drives-selection:   # standard, requires mechanical
+    # One resolver job per run reads the change-area catalog and decides which jobs the change needs; every other job reads its answer, and a changed file no area matches selects every job or fails the change.
+    score: absent
+    evidence: "No change-area catalog or resolver job; main.yml runs the whole matrix for every change, selecting steps only by matrix leg"
+  M13/aggregate-required-check:   # standard, requires mechanical
+    # One verdict is the required check (an aggregator job, or the provider's own verdict on the whole pipeline): it is given whenever the run was not cancelled, fails when a selected job failed, was cancelled or was skipped because a job it needs failed, and passes a job skipped only because the change did not need it.
+    score: absent
+    evidence: "No aggregator job: main.yml has one matrix job whose nine legs report separately"
+  M13/heavy-non-gating-suites-scheduled:   # standard, requires mechanical
+    # A slow suite that no merge and no verified pointer waits for runs on a schedule or on demand, and a cheap per-change proxy runs in its place.
+    score: absent
+    evidence: "main has no required check (scored under M1) and no verified pointer, so nothing waits for the suites main.yml runs on each pull request (lint, types, unit tests, link check); no record classifies a suite as fast, so each counts as slow, and none runs on a schedule"
+  M13/workflow-conventions-linted:   # strict, requires mechanical
+    # A lint over the CI configuration fails a job without a timeout, a required workflow filtered at its trigger, an aggregator that runs on always(), and a concurrency key that drops runs it does not cover.
+    score: absent
+    evidence: "No lint reads .github/workflows/"
+  M13/ci-cost-measured:   # strict, requires mechanical
+    # CI time or cost is measured per workflow and job from the provider's records, so a decision about what to run where cites a number.
+    score: absent
+    evidence: "No job or script collects CI durations or minutes"
+  M13/queue-stall-watchdog:   # strict, requires mechanical
+    # A watchdog fails loudly when runs wait for a runner longer than a set bound, because job timeouts do not count time spent in the queue.
+    score: absent
+    evidence: "No scheduled workflow"
 declined: []

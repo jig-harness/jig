@@ -198,6 +198,20 @@ make, use the entry's term instead.
   `deployTier` is not `none`, read directly off the schema field (unlike
   *code area*, which is repo-chosen). Used by `checkFilterCodeAreaCoverage`
   to decide whether a file's resolved areas actually gate a deploy.
+- **Pipeline economy** — spending *CI* only where its answer changes a merge
+  decision, without letting a saving turn a failure into a pass (module M13).
+  It decides how cheaply and how fast checks run, never which checks exist.
+- **Aggregator job** — the one CI job a repository requires before merging,
+  which waits for every other job and turns their results into one verdict.
+  It exists because a job skipped by its condition counts as passing: the
+  aggregator tells a job the change did not need from a job that never ran.
+- **Concurrency group** — a key under which a CI provider lets only one run
+  proceed at a time; a newer run with the same key cancels or displaces the
+  older one. Safe only when the surviving run checks everything the displaced
+  run would have.
+- **Queue stall** — a CI job waiting for a machine to run on, for longer than
+  any job should. Job timeouts do not count that wait, so only a separate
+  watchdog notices it.
 
 ## Process
 

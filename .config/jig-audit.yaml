@@ -684,6 +684,43 @@ criteria:
     # prior: absent: No hook rejects a root install with another package manager (only package.json packageManager and CI `bun install --frozen-lockfile`); lib/guarded-git-spawn.ts guards one GIT_DIR leak class only
     score: absent
     evidence: "Nothing rejects a root install with another package manager (only package.json packageManager, bun.lock and CI `bun install --frozen-lockfile`); lib/guarded-git-spawn.ts covers one GIT_DIR leak class"
+  # M13 pipeline-economy
+  M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
+    # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.
+    score: mechanical
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: gates.yml, the only workflow pull requests run, declares concurrency group gates-${{ github.ref }} with cancel-in-progress: true; a push to main checks every area, so a newer main run covers a cancelled one"
+  M13/every-job-has-timeout:   # lite, requires mechanical
+    # Every CI job declares its own timeout, below the provider's default limit, so a hung job fails at a bound the team chose instead of holding a runner until that limit.
+    score: mechanical
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: every job in .github/workflows/ carries timeout-minutes sized to its work: gates.yml areas 5, gate-set 20, drive-pr-suite shards 15 at about 3, website 10, gates 5; nightly.yml platform-gates 20 with Windows at about 8, drive-pr-suite shards 15, website 10; website.yml deploy 10"
+  M13/no-required-pipeline-path-filtered:   # lite, requires convention
+    # No workflow that reports a required check is filtered by changed paths at its trigger; selection happens inside the run, so every head gets a verdict.
+    score: convention
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: gates.yml, which reports the required gates check, triggers on pull_request and push to main with no paths or paths-ignore, and selects jobs inside the run from the areas job; nothing checks this mechanically"
+  M13/resolver-drives-selection:   # standard, requires mechanical
+    # One resolver job per run reads the change-area catalog and decides which jobs the change needs; every other job reads its answer, and a changed file no area matches selects every job or fails the change.
+    score: mechanical
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: gates.yml: the areas job runs scripts/change-areas.ts over .config/change-areas.yaml and publishes areas; drive-pr-suite and website read needs.areas.outputs.areas, and gate-set runs on every change; an unmatched file fails change-areas --check, which the gate set runs, until it belongs to an area"
+  M13/aggregate-required-check:   # standard, requires mechanical
+    # One verdict is the required check (an aggregator job, or the provider's own verdict on the whole pipeline): it is given whenever the run was not cancelled, fails when a selected job failed, was cancelled or was skipped because a job it needs failed, and passes a job skipped only because the change did not need it.
+    score: mechanical
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: gates.yml: the gates job needs areas, gate-set, drive-pr-suite and website, runs on !cancelled(), requires success of areas and gate-set, and success of drive-pr-suite and website when the areas job selected them, skipped otherwise; main's branch protection requires the gates check"
+  M13/heavy-non-gating-suites-scheduled:   # standard, requires mechanical
+    # A slow suite that no merge and no verified pointer waits for runs on a schedule or on demand, and a cheap per-change proxy runs in its place.
+    score: mechanical
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: nightly.yml runs the gate set on macOS and Windows, the drive-pr suite on macOS and the website parser tests on both, on a daily schedule and workflow_dispatch; its header says nothing waits for it and names the per-platform run the slowest part of CI; the gates aggregator needs only gates.yml's Linux jobs and there is no verified pointer; the per-change proxy is the same gate set, drive-pr suite and website tests on Linux in gates.yml"
+  M13/workflow-conventions-linted:   # strict, requires mechanical
+    # A lint over the CI configuration fails a job without a timeout, a required workflow filtered at its trigger, an aggregator that runs on always(), and a concurrency key that drops runs it does not cover.
+    score: absent
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: no lint checks these conventions; scripts/check-workflow-safety.ts reads .github/workflows/ for pull_request_target safety only, so timeouts, trigger filters, aggregator conditions and concurrency keys hold by review only"
+  M13/ci-cost-measured:   # strict, requires mechanical
+    # CI time or cost is measured per workflow and job from the provider's records, so a decision about what to run where cites a number.
+    score: absent
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: no job or script collects CI durations or billed minutes per workflow or job"
+  M13/queue-stall-watchdog:   # strict, requires mechanical
+    # A watchdog fails loudly when runs wait for a runner longer than a set bound, because job timeouts do not count time spent in the queue.
+    score: absent
+    evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: no watchdog: nightly.yml, the only scheduled workflow, runs suites and reads no queue times; modules/M13-pipeline-economy/reference/queue-watchdog/ is an example for other repositories"
 declined:
   - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
     reason: "Deferred."

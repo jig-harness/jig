@@ -192,7 +192,10 @@ What this module provides:
   pull-request workflow: one resolver job that selects the work from the
   change-area catalog ([M3](../M3-change-area-catalog/)), grep gates with
   their self-tests first, the gate set, tests on a parallel runner, a timeout
-  on every job, and one aggregator job that is the only required check.
+  on every job, and one aggregator job that is the only required check. Why
+  it has that shape, and how to keep a pipeline cheap without weakening it,
+  is [M13 pipeline economy](../M13-pipeline-economy/README.md): M1 decides
+  what is checked, M13 how cheaply and how fast.
 - [`templates/suppression-registry.md`](templates/suppression-registry.md) —
   the registry page for suppression tokens and process markers.
 - [`reference/grep-gate/`](reference/grep-gate/) — the grep-gate convention

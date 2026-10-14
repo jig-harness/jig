@@ -269,6 +269,11 @@ Each reference gate is a standalone Bun script with a self-test and fixtures.
   implementation belongs to each repository's stack.
 - **Delivery telemetry.** Gate-pass dashboards and deploy metrics belong with
   [M11](../M11-process-observability/).
+- **Where each suite runs, and what it costs.** Per change, after merge, on
+  a schedule or on demand is decided by
+  [M13 pipeline economy](../M13-pipeline-economy/README.md#6-place)'s
+  placement table, which this module's verified pointer feeds: a suite runs
+  after merge when the pointer waits for it.
 - **A rollout-assertion script.** The post-deploy identity check depends on
   the platform (a Kubernetes cluster, a serverless host, a static-file host),
   so the module states its conditions and their order, and

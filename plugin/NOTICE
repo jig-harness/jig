@@ -24,6 +24,8 @@ modules/M11-process-observability/templates/metrics-registry.yaml
 modules/M12-parallel-agent-ergonomics/templates/WORKTREE-ERGONOMICS.md
 modules/M12-parallel-agent-ergonomics/templates/branch-discipline.md
 modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md
+modules/M13-pipeline-economy/templates/PIPELINE-ECONOMY.md
+modules/M13-pipeline-economy/templates/queue-watchdog.yml
 modules/M3-change-area-catalog/templates/catalog.yaml
 modules/M4-docs-governance/templates/WIKI-SCHEMA.md
 modules/M4-docs-governance/templates/frontmatter-schema.yaml

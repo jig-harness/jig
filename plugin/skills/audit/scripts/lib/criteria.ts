@@ -64,7 +64,7 @@ export interface Module {
 }
 
 export const CRITERIA_DIR = join(skillDir(), "criteria");
-export const MODULE_COUNT = 13;
+export const MODULE_COUNT = 14;
 
 const CRITERION_KEYS = new Set([
   "id",

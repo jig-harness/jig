@@ -39,13 +39,13 @@ const repo = (files: Record<string, string>) => {
 };
 
 describe("the shipped criteria", () => {
-  test("all thirteen modules carry well-formed criteria", () => {
+  test("all fourteen modules carry well-formed criteria", () => {
     const run = runScript("score.ts", ["--check"], scratch);
     expect(run.code).toBe(0);
-    expect(run.out).toContain("All 13 modules");
+    expect(run.out).toContain("All 14 modules");
     const modules = loadModules();
     expect(modules.map((m) => m.module)).toEqual(
-      Array.from({ length: 13 }, (_, n) => `M${n}`),
+      Array.from({ length: 14 }, (_, n) => `M${n}`),
     );
     // Every file is named after its module.
     for (const m of modules)

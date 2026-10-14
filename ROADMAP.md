@@ -263,31 +263,23 @@ Done when:
 - `do-item`'s batch check names `/jig:work-batch`;
 - the audit skill's schema and fit check cover the `work_batch` section.
 
-### 14. M13 Pipeline economy
+### 14. M13 Pipeline economy: the rest of the module
 
-A new module for the cost and speed of CI: spend CI only where it changes a
-merge decision, and never let a saving turn a failure into a pass. M1 decides
-what is checked; M13 decides how cheaply and quickly, without weakening it.
+[M13](modules/M13-pipeline-economy/README.md) states honest signal,
+selection, superseding, bounds, ordering and placement. Still to come:
 
-- **Honest signal.** Every required check reports on every head: selection
-  happens inside the pipeline, behind one aggregator, never through trigger
-  path filters.
 - **The CI hold**, as a practice: a held head fails a required check rather
   than skipping it, and only results that started after the release count.
   drive-pr's `ci.hold_label` is its runnable side.
-- **Selection.** One resolver job per run, and gates selected by their own
-  subject, failing closed.
-- **Supersede and bound.** Concurrency keys that drop only covered runs,
-  timeouts on every job, and a bound on time spent waiting for a runner.
-- **Placement.** Per change, after merge, on a schedule or on demand.
 - **Caches.** Complete keys, one namespace, bounded retention, a reported hit
   rate, and a trust boundary.
 - **Cost.** Runner sizing, one authoritative run of each check, and cost
   measured with conditions that reopen a decision.
-- **Enforcement.** A workflow-convention lint as the reference gate.
+- **Enforcement.** A workflow-convention lint as the reference gate behind
+  M13's Strict level.
 
-Done when the module, its criteria and the lint are in, and Jig's own workflows
-pass the lint.
+Done when these are in the module with their criteria, and Jig's own
+workflows pass the lint.
 
 ### 15. M14 Testing strategy
 

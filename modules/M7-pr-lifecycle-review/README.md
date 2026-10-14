@@ -299,6 +299,10 @@ change; the practice references above would not.
 - **Precision-bar values and their measurement wiring.** They belong with
   [M8](../M8-learning-loop/) (the measurement) and
   [M11](../M11-process-observability/) (the emission).
+- **What CI spends on a pull request.** Cancelling the runs of a superseded
+  head, selecting jobs by what changed, and the
+  [CI hold](../../GLOSSARY.md) between review rounds are
+  [M13 pipeline economy](../M13-pipeline-economy/README.md).
 
 ### Future
 

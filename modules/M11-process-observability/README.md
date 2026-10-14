@@ -143,3 +143,6 @@ and M11 owns the emission, registry and dashboard side.
 - **A required backend.** Telemetry backends (product-analytics tools, data
   warehouses, CI-native metrics) appear only as options in
   [mappings.md](mappings.md).
+- **CI time and cost.** Measuring what each workflow and job costs, so a
+  decision about what runs where cites a number, is
+  [M13 pipeline economy](../M13-pipeline-economy/README.md)'s Strict level.

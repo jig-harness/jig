@@ -5,7 +5,7 @@ level, for a project shape. Profiles are starting points, not contracts — the
 [audit](../plugin/skills/audit/README.md) report's recommendations override generic profile advice
 for brownfield projects.
 
-Every module (M0–M12) carries machine-readable maturity criteria, so a
+Every module (M0–M13) carries machine-readable maturity criteria, so a
 profile's target resolves to concrete criteria: "M1 Lite" means passing every
 `level: lite` criterion in
 [`M1-gates-enforcement-ladder.yaml`](../plugin/skills/audit/criteria/M1-gates-enforcement-ladder.yaml),
@@ -42,7 +42,9 @@ rules and a CI that runs the gates; nothing else pays for itself yet.
 Production software, multiple contributors (human or agent). M0–M2 Standard;
 **M4 Standard** (docs governance); **M5 Standard** (ADRs); **M6/M7 Standard**
 (delivery pipeline + PR lifecycle with layered review); **M9 Lite→Standard**
-(tracker labels that drive process); **M12** if using parallel agent
+(tracker labels that drive process); **M13 Lite** (superseded runs
+cancelled, a timeout on every job, no required pipeline filtered by paths);
+**M12** if using parallel agent
 workspaces. M3 (change-area catalog) once the repo is big enough that "what
 does this change imply?" stops being obvious.
 
@@ -53,7 +55,9 @@ Everything in Team/Standard at Strict where defined, plus: **M1 Strict**
 freshness checked, a named owner), **M7 Strict** (HITL decision registry,
 merge reserved to humans), **M8** (learning loop with regression corpus), **M10 Standard+**
 (verify-then-promote, environment separation), **M11** (process
-observability/audit trails). Compliance artifacts (data-processing registers,
+observability/audit trails) and **M13 Lite**. M13 Standard selects jobs
+from M3's change-area catalog, so neither profile's audit target goes past
+M13 Lite; a repository with a catalog has what Standard needs. Compliance artifacts (data-processing registers,
 threat models) are out of Jig's scope but hook into M4's governance and
 M9's flag labels (e.g., a "privacy-relevant" label firing a register-update
 gate).

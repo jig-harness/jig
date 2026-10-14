@@ -1,0 +1,7 @@
+{
+  "total_count": 2,
+  "jobs": [
+    { "id": 12, "run_id": 1200, "name": "build", "status": "queued", "created_at": "2026-01-01T11:40:00Z" },
+    { "id": 13, "run_id": 1200, "name": "test", "status": "pending", "created_at": "2026-01-01T06:00:00Z" }
+  ]
+}

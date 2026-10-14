@@ -16,7 +16,7 @@
  *       The prior record defaults to .config/jig-audit.yaml when it exists;
  *       its declined recommendations are carried over.
  *   bun score.ts --check
- *       check the criteria themselves: all 13 modules present, each with
+ *       check the criteria themselves: all 14 modules present, each with
  *       well-formed criteria. Needs no repository.
  *   --criteria <dir> reads the criteria from another directory.
  *

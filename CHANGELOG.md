@@ -119,6 +119,38 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.25.0] - 2026-10-14
+
+A new practice module, M13 Pipeline economy: spend CI only where it changes
+a merge decision, and never let a saving turn a failure into a pass.
+
+### Added
+
+- [M13 Pipeline economy](modules/M13-pipeline-economy/README.md): six
+  sub-invariants (honest signal first, select, supersede, bound, order and
+  parallelize, place), their GitHub Actions and GitLab CI mappings, a
+  copyable policy page with the placement table, and a queue-stall watchdog
+  (a reference check with its self-test and a scheduled workflow), because
+  job timeouts do not count time spent waiting for a runner.
+- `/jig:audit` scores M13's nine criteria (Lite: superseded pull-request
+  runs cancelled, a timeout on every job, no required pipeline filtered by
+  paths at its trigger; Standard: a catalog resolver drives selection, one
+  aggregated required check, slow suites nothing waits for on a schedule;
+  Strict: the conventions linted, CI cost measured, a queue-stall watchdog).
+  Team/Standard and Regulated/Strict aim for M13 Lite, so a re-audit reports
+  M13's criteria as added by Jig.
+
+### Changed
+
+- The execa calibration record scores M13's criteria against the same
+  commit, so the audit's tests read a complete record.
+- `/jig:github-actions`' performance checks name M13 as the practice they
+  apply, and collect coverage on a schedule unless a coverage threshold
+  gates the merge.
+- M10's CI-ARCHITECTURE template links to M13's placement table instead of
+  carrying its own copy; M1, M3, M7, M10 and M11 link to M13 where they
+  touch it.
+
 ## [0.24.0] - 2026-10-14
 
 The plugin reads the change-area catalog through one reader.
@@ -1188,7 +1220,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/docomply/jig/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/docomply/jig/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/docomply/jig/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/docomply/jig/compare/v0.21.0...v0.22.0
