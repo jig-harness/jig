@@ -53,6 +53,22 @@ DOCS_DIR=docs bun check-descarring-scars.ts
 `ALLOWLIST` is a space-separated list; a file is skipped when its path
 contains any entry (so `docs/review/` covers that directory). Exit codes: 0 no scars, 1 scars found, 2 an unreadable file.
 
+## Named files that are not scanned
+
+A file named on the command line that is not promoted (its `status` is not
+`approved`) is not scanned, and the lint says so instead of reporting it
+clean. "Not scanned" and "scanned, no scars" must read differently: a caller
+checking a draft before promoting it would otherwise take `OK` as evidence.
+
+| Named files | Output | Exit |
+| --- | --- | --- |
+| none promoted | `NOT SCANNED — N named file(s) were not scanned for scars …; this is not evidence they are clean`, then the files | 0 |
+| some promoted, no scars | `OK — no scars in approved docs`, then `NOTE — N of the named file(s) were not scanned …` and the skipped files | 0 |
+| scars found, some not promoted | the scar report, then the same `NOTE` | 1 |
+
+A run over the whole tree (no files named) reports plain `OK`: drafts there
+are out of scope by design, not something the caller asked about.
+
 ## Enforcement posture
 
 Start **advisory** (`continue-on-error` in CI) while precision is proven on your
@@ -68,5 +84,5 @@ is the blocking version tied to promotion into `approved`.
 | File | Role |
 |------|------|
 | `check-descarring-scars.ts` | the lint; code-masking + anchored scar detection |
-| `check-descarring-scars.test.ts` | paired self-test |
+| `check-descarring-scars.test.ts` | paired self-test, asserting the output as well as the exit code |
 | `fixtures/` | clean, scarred, draft, documents-syntax, and descar_allow docs |

@@ -132,10 +132,11 @@ not evidence they are absent.
 
 **A lint that scans only promoted documents never scans a draft**, including
 one you name explicitly. Check how the repository's lint reports such a file:
-some print a distinct "not scanned" line, but M4's reference lint skips it
-silently and still prints `OK`. For a draft under the pre-promotion exception,
-treat the lint as absent and do a full manual S1 to S4 read before promoting
-it.
+M4's reference lint prints `NOT SCANNED` when no named file is promoted, and
+a `NOTE` listing the skipped files beside its `OK` or scar report; a lint that
+prints only `OK` for a draft has said nothing about it. For a draft under the
+pre-promotion exception, treat the lint as absent and do a full manual S1 to
+S4 read before promoting it.
 
 **S4 has no lint and cannot have one.** Build a *reading list*, and treat it as
 exactly that: not a verdict, and imprecise by construction:

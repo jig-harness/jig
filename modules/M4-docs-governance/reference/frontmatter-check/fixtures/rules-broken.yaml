@@ -1,0 +1,22 @@
+# A schema whose path rules cannot be evaluated: the check must fail on it.
+required:
+  - title
+status:
+  values: [draft, approved, archived]
+tags:
+  - plan
+path_rules:
+  - id: bad-pattern
+    paths: [docs/archive/]
+    forbidden_body_patterns:
+      - id: unclosed
+        pattern: "(unclosed"
+        message: never compiles
+  - id: widens
+    paths: [docs/archive/]
+    allowed_values:
+      status: [archived, retired]
+  - id: typo-key
+    paths: [./docs/archive/]
+    alowed_values:
+      status: [archived]

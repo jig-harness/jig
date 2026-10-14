@@ -212,6 +212,26 @@ make, use the entry's term instead.
   resolving contradictions between documents (e.g. generated ground truth >
   decision records > feature docs). Turns "which doc wins?" from a judgment
   call into a lookup.
+- **Path-scoped rule** — a *frontmatter* rule that applies only to the
+  documents under a path prefix, for a subtree whose vocabulary differs from
+  the rest (a runbook directory that must name its service, an archive that
+  may hold only archived documents). It can narrow the tree's vocabulary,
+  never widen it ([frontmatter check](modules/M4-docs-governance/reference/frontmatter-check/README.md#path-scoped-rules)).
+- **Orphan document** — a document no other document lists under `related:`
+  in its frontmatter. Ordinary Markdown links are not counted, so an orphan
+  may still be linked from a page body; it is a candidate for a declared
+  relation or for retiring, not proof that nothing leads to it. An *orphan
+  report* lists them as a warning, never a failure
+  ([index generator](modules/M4-docs-governance/reference/index/README.md#orphan-report)).
+- **Sticky stamping** — how a generator dates the documents it writes: the
+  `last_updated` date advances, in UTC, only when the output changed, and
+  otherwise keeps the date the file already carries. It keeps generated
+  documents honest without rewriting files whose only change is the date
+  ([stamp](modules/M4-docs-governance/reference/stamp/README.md)).
+- **Codemod** — a one-shot script that rewrites many files mechanically, such
+  as bringing every document's frontmatter into line before a validator is
+  tightened. Run as survey, plan, then apply, one commit per kind of change
+  ([M4 adoption](modules/M4-docs-governance/README.md#adoption-steps)).
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).

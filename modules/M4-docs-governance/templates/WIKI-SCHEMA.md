@@ -44,11 +44,54 @@ tags: [backend, performance, database]
 ---
 ```
 
+`last_updated` moves with the document: a change to a doc's body must advance
+it in the same change (a CI gate checks the diff). A generator that writes into
+this tree advances the date only when its output changed, in UTC.
+
+Some subtrees carry extra rules, declared under `path_rules:` in the schema:
+fields their documents must carry, values narrowed from the tree's
+vocabulary, and body text they must not contain outside code fences.
+
+### Supported YAML subset
+
+The frontmatter check reads an explicit subset of YAML, not full YAML, and
+rejects anything outside it with the line number, rather than guessing at a
+value. Write inside it:
+
+- **Read:** YAML's whitespace (a space or a tab, so U+00A0 is content) and
+  line breaks (a line feed, a carriage return and line feed, or a carriage
+  return on its own); `key: value` plain scalars,
+  one per line; trailing comments (a `#`
+  outside quotes, at the start of the value or after a space); quoted scalars,
+  whose quotes come off and whose content is never decoded (no YAML escapes,
+  though a double-quoted value may hold only the escapes YAML defines),
+  a quote opening one only as a value's or list member's first character (so
+  an apostrophe inside a plain value is text); inline lists `[a, b]` and
+  block sequences (`key:` then `- item` lines indented under the key, all at
+  one indentation); block scalars with a header of `|`, `>`, `|-`, `|+`, `>-`,
+  `>+`, or those with an indentation digit before the sign, read with YAML's
+  indentation, folding and line-ending rules (a comment indented less than
+  the content ends the block); and `null`, `~` or an empty
+  value, read as absent.
+- **Rejected:** characters YAML does not allow (control characters other than tab), tabs in indentation, anchors and aliases (`&a`, `*a`),
+  explicit tags (`!!str`), explicit keys (`? key`), quoted keys, flow mappings
+  (`{a: b}`), nested mappings, a plain value continued on the next line,
+  containing `: `, or starting with a reserved character (`@`, `` ` ``, `%`,
+  `]`, `}`, `,`) or `- ` (quote it), a plain list member containing brackets
+  or braces, duplicate keys, an unterminated quoted scalar, list members at
+  column 0, a block scalar as a list member (`- |`), and any other
+  block-scalar header.
+
+The checker's self-test is the exhaustive list, a fixture for each construct
+([frontmatter check](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/reference/frontmatter-check/README.md#supported-yaml-subset)).
+
 ## Navigation is generated
 
 `INDEX.md` is regenerated from the tree (see `reference/index/`); never edit it
 by hand. A freshness gate fails when the committed index no longer matches the
-tree. Pages with no incoming links are orphans; the wiki lint reports them.
+tree. The same generator writes `.orphans.md`: the pages no other page lists
+under `related:`. Orphans are a warning to link or retire a page, never a
+failure.
 
 ## De-scarring rule
 
@@ -89,14 +132,13 @@ append findings to `log.md`:
 | Index drift | files not in `INDEX.md` | warning |
 | Stale content | `last_updated` > 6 months on active docs | warning |
 | Broken links | internal links to missing files | error |
-| Orphaned pages | no incoming links | warning |
+| Orphaned pages | listed in no page's `related:` (`.orphans.md`) | warning |
 | Missing frontmatter | required fields absent | error |
 | Contradictions | conflicting claims across docs (manual) | critical |
 | Retrospection backlog | raw entries not yet promoted | info |
 
-Index drift and missing frontmatter are automated by the generator and
-checker; the rest, orphans included, are a documented cadence until
-mechanized.
+Index drift, orphans and missing frontmatter are automated by the generator
+and checker; the rest are a documented cadence until mechanized.
 
 ## Naming conventions
 

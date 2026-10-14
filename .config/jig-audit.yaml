@@ -231,6 +231,10 @@ criteria:
     # prior: convention: modules/README.md and README.md § Structure tables are hand-maintained; modules/AGENTS.md § Consistency to keep is prose; scripts/check-md-links.ts checks links only
     score: convention
     evidence: "README.md § Structure, modules/README.md, design/README.md and principles/README.md tables are hand-maintained; scripts/check-md-links.ts checks links only; README § Structure already omits design/"
+  M4/frontmatter-subset-declared:   # standard, requires mechanical
+    # The frontmatter check either reads documents with a full YAML parser, or states the subset of YAML it reads and rejects every construct outside it with an error instead of guessing at a value.
+    score: absent
+    evidence: "No frontmatter check runs on Jig's own docs (see M4/frontmatter-machine-validated): scripts/gates.ts calls none, and Jig's docs outside fixtures, templates and seeds carry no frontmatter; the subset reader exists only as modules/M4-docs-governance/reference, an example for adopters"
   M4/authority-hierarchy-written:   # standard, requires convention
     # A single-valued authority hierarchy is written down so contradictions between docs resolve without a judgment call.
     # prior: absent: grep authority|precedence|source of truth in own docs: only CLAUDE.md 'AGENTS.md the single source of truth' and PLAYBOOK.md 'map vs territory'; no ordered precedence for conflicting docs
@@ -246,6 +250,18 @@ criteria:
     # prior: absent: No last_updated field in any Jig doc; no diff-aware freshness check in scripts/ or .github/workflows/gates.yml
     score: absent
     evidence: "No last_updated field in Jig's own docs; no diff-aware freshness check in scripts/ or .github/workflows/gates.yml"
+  M4/generators-stamp-sticky-utc:   # strict, requires mechanical
+    # Every generator that writes a dated document into the docs tree stamps last_updated with the UTC date, and advances it only when its output changed.
+    score: expected-absent
+    evidence: "No generator writes a dated document into Jig's docs: scripts/review-risk.ts --write writes .config/ai-review.yaml, and the M2/M4 generators write only their fixtures; Jig's docs carry no last_updated (see M4/stale-doc-gate)"
+  M4/orphan-report-generated:   # strict, requires mechanical
+    # The index generator also writes a report of the documents no other document lists as related, and the freshness gate covers that report; orphans themselves warn and never fail.
+    score: absent
+    evidence: "No generated index or orphan report for Jig's own docs: README.md § Structure and modules/README.md are hand-maintained tables, no doc carries a related: list, and scripts/check-md-links.ts checks link targets only"
+  M4/path-rules-enforce-subtree-vocabulary:   # strict, requires mechanical
+    # Where a subtree of the docs tree requires frontmatter fields or values that differ from the rest of the tree, path-scoped rules in the schema enforce them in the frontmatter check, and a rule that cannot be evaluated fails the check.
+    score: expected-absent
+    evidence: "Jig's docs carry no frontmatter, so no subtree requires fields or values that differ from the rest; design/README.md states a lifecycle for designs in prose (a design leaves when built), which is not a frontmatter vocabulary"
   M4/wiki-lint-cadence-and-promotion:   # strict, requires mechanical
     # A scheduled wiki-lint runs the health checks (stale, broken links, orphans, retrospection backlog) and posts findings, and raw-to-compiled promotion (retrospection backlog) is tracked.
     # prior: absent: .github/workflows/ holds only gates.yml (pull_request, push to main); no scheduled job; no retrospective or raw-notes backlog file in the tree

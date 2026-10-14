@@ -191,6 +191,10 @@ criteria:
     # The navigation index is generated from the tree and a CI drift gate fails when the committed index no longer matches what the generator produces.
     score: convention
     evidence: "The readme.md:90-118 Documentation nav is maintained by hand and currently complete (22/22 docs/*.md). lychee checks link and anchor integrity only, and only on the ubuntu/node26 leg (main.yml:35). No index generator or drift gate."
+  M4/frontmatter-subset-declared:   # standard, requires mechanical
+    # The frontmatter check either reads documents with a full YAML parser, or states the subset of YAML it reads and rejects every construct outside it with an error instead of guessing at a value.
+    score: absent
+    evidence: "No frontmatter check exists (see M4/frontmatter-machine-validated), so none states or enforces what it reads."
   M4/authority-hierarchy-written:   # standard, requires convention
     # A single-valued authority hierarchy is written down so contradictions between docs resolve without a judgment call.
     score: absent
@@ -203,6 +207,18 @@ criteria:
     # A CI check requires last_updated to advance in the same diff when a doc's body changes, so freshness metadata cannot silently lie.
     score: absent
     evidence: "No last_updated field in any doc and no diff-aware freshness check in .github/workflows/main.yml."
+  M4/generators-stamp-sticky-utc:   # strict, requires mechanical
+    # Every generator that writes a dated document into the docs tree stamps last_updated with the UTC date, and advances it only when its output changed.
+    score: expected-absent
+    evidence: "No generator writes into docs/: package.json scripts build, lint and test only, and no doc carries a last_updated date to stamp."
+  M4/orphan-report-generated:   # strict, requires mechanical
+    # The index generator also writes a report of the documents no other document lists as related, and the freshness gate covers that report; orphans themselves warn and never fail.
+    score: absent
+    evidence: "No index generator and no related: lists; the readme.md:90-118 nav is hand-maintained (see M4/index-generated-and-freshness-gated)."
+  M4/path-rules-enforce-subtree-vocabulary:   # strict, requires mechanical
+    # Where a subtree of the docs tree requires frontmatter fields or values that differ from the rest of the tree, path-scoped rules in the schema enforce them in the frontmatter check, and a rule that cannot be evaluated fails the check.
+    score: expected-absent
+    evidence: "docs/ is one flat set of product pages with no frontmatter; no subtree requires fields or values of its own."
   M4/wiki-lint-cadence-and-promotion:   # strict, requires mechanical
     # A scheduled wiki-lint runs the health checks (stale, broken links, orphans, retrospection backlog) and posts findings, and raw-to-compiled promotion (retrospection backlog) is tracked.
     score: absent

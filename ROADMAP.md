@@ -354,7 +354,6 @@ Practices a working repository validated, for modules that exist today:
 - **M0, M4, M5 and M8**:
   - model routing with family-alias pins and a generated roster;
   - instructions that keep working in every runtime;
-  - the M4 items listed as future that have been validated;
   - deferred promises in documents that point at live tracker items;
   - an audit catalog;
   - files that change only with an approved decision record.

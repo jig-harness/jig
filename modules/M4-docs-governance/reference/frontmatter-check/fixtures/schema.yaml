@@ -13,7 +13,7 @@ required:
   - lifecycle      # retention horizon (enum below)
   - last_updated   # YYYY-MM-DD
   - owner          # accountable function (enum below)
-  - tags           # bracketed list; each must be in `tags:` below (max 8)
+  - tags           # a list ([a, b] or one `- tag` line each); each in `tags:` below (max 8)
 
 # Required for NEW docs only (git --diff-filter=A). Existing docs are grandfathered.
 required_new:
@@ -145,3 +145,34 @@ tag_merge:
   critical: null
   "high-priority": null
   complete: null
+
+# Path-scoped rules: extra rules for the documents under a path prefix, for a
+# subtree whose vocabulary differs from the rest of the tree. A rule applies to
+# a document whose repository-relative path starts with one of its `paths`.
+#   required_fields          fields every document there must carry
+#   allowed_values           narrows a field's values there (for an enum
+#                            above, only to a subset of its `values`)
+#   forbidden_body_patterns  a regular expression (JavaScript syntax) that
+#                            must not match a body line outside fenced code
+# A rule the checker cannot evaluate (an unknown key, a wrong type, a pattern
+# that does not compile, a prefix that matches no document) fails the check.
+# The rules below are neutral examples: adapt the prefixes and fields to your
+# tree, then uncomment them. Left as they are, they would fail the check
+# wherever docs/runbooks/ or docs/archive/ holds no document.
+# path_rules:
+#   - id: runbooks-name-their-service
+#     paths: [docs/runbooks/]
+#     message: an operator follows a runbook literally, so it names its service and holds no placeholder
+#     required_fields: [service]
+#     allowed_values:
+#       type: [runbook]
+#     forbidden_body_patterns:
+#       - id: no-todo
+#         pattern: "\\bTODO\\b"
+#         message: a runbook carries no TODO placeholder
+#   - id: archive-holds-archived-docs
+#     paths: [docs/archive/]
+#     message: a document moved under archive/ is archived
+#     allowed_values:
+#       status: [archived]
+#       lifecycle: [archive]

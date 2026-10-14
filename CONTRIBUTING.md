@@ -166,6 +166,7 @@ its generator writes, so this list is their marker.
 | `high_risk_path_patterns` in `.config/ai-review.yaml` | `bun scripts/review-risk.ts --write` after changing a `reviewRisk: high` area | the gates' `review-risk` check compares it with the catalog |
 | `modules/M2-generated-artifact-freshness/reference/triad/fixture/docs/index.md` | `bun modules/M2-generated-artifact-freshness/reference/triad/generate-index.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs` | `scripts/freshness.test.ts` runs `check-index-fresh.ts` against it |
 | `modules/M4-docs-governance/reference/index/fixtures/docs/INDEX.md` | `bun exec "DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts"` (Bun's shell sets the variable on every operating system) | `generate-index.test.ts` beside the generator compares it with a fresh generation |
+| `modules/M4-docs-governance/reference/index/fixtures/docs/.orphans.md` | the same command as `INDEX.md`, which writes both; its date is sticky, so it changes only when the report's content does | `generate-index.test.ts` compares it with a fresh generation dated another day |
 
 A new derived file gets a row here in the pull request that adds it.
 

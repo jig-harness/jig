@@ -119,6 +119,120 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.23.0] - 2026-10-14
+
+### Added
+
+- M4's stale `last_updated` gate
+  ([reference/stale-last-updated/](modules/M4-docs-governance/reference/stale-last-updated/README.md)):
+  a diff that changes a document's body must advance `last_updated`, or leave
+  it at today's UTC date. It runs over a CI diff range (old side at the merge
+  base for `A...B`) or the staged changes in a pre-commit hook, skips a file
+  a merge carries unchanged from one side, and prints a `SKIP` note in CI when
+  no range is given. It compares the two sides' bodies and their dates as the
+  shared frontmatter reader parses them, never a patch. A renamed document is
+  compared with its old path and only an added one is exempt. Frontmatter
+  removed, left unclosed or unreadable on the new side fails, so does a
+  document that is not a regular file on both sides (replaced by a symlink),
+  and only a calendar date counts as a bump. Two cases have no date to hold:
+  a document with no frontmatter on either side passes, and an old side the
+  reader rejects has no date, so the commit that corrects it passes on any
+  calendar date. A side it cannot read, an unresolvable, one-sided or doubled
+  range (in every mode), `--staged` with `--range=`, a named path outside the
+  repository, or an unknown option exits 2. A body line starting
+  `last_updated:` or a comment added to the date is not a bump.
+- Sticky UTC stamping for generators
+  ([reference/stamp/](modules/M4-docs-governance/reference/stamp/README.md)):
+  a generator writing into the docs tree advances `last_updated` only when its
+  output changed, so it neither breaks the stale gate nor churns dates. It
+  reads the date through the shared reader and refuses frontmatter that
+  never closes or that reader reports an error in, with or without a
+  `last_updated` line, or a `last_updated` whose value continues past its key
+  line, rather than stamping it half-replaced.
+- M4's index generator writes an orphan report, `.orphans.md`, beside
+  `INDEX.md`: the documents no other document lists under `related:`. It is a
+  warning, never a failure; `--check` fails when either file is stale, and
+  the report's date is sticky so the check gives the same answer on any day.
+  A `related:` entry starting with `/` resolves from the repository root,
+  report links resolve from the report's own directory, and the report's
+  frontmatter values can be set through `ORPHANS_*` variables.
+- Path-scoped frontmatter rules: `path_rules:` in the schema adds required
+  fields, narrowed values and forbidden body text (outside code fences) for
+  the documents under a path prefix. A rule that cannot be evaluated, or
+  whose prefix matches no document in the tree, fails the check. The schema
+  template carries neutral examples, commented out for adopters to adapt.
+- M4's adoption steps say to bring existing docs into line with a codemod
+  (survey, plan, then apply, one commit per mapping family, singletons to a
+  triage list) before tightening a validator.
+- `/jig:audit` scores new M4 criteria: `frontmatter-subset-declared`,
+  `generators-stamp-sticky-utc`, `orphan-report-generated` and
+  `path-rules-enforce-subtree-vocabulary` (expected-absent where no subtree
+  needs rules of its own). `stale-doc-gate` names what its check must
+  observe.
+- The glossary defines *path-scoped rule*, *orphan document*, *sticky
+  stamping* and *codemod*.
+
+### Changed
+
+- M4's frontmatter reader reads an explicit YAML subset and reports each
+  construct outside it (tabs in indentation, anchors, tags, explicit or
+  quoted keys, flow mappings, nested mappings, multi-line plain values,
+  duplicate keys, unterminated quotes, values starting with a character YAML
+  reserves, escapes YAML does not define in a double-quoted value, characters YAML
+  does not allow such as control characters) as a violation with its line,
+  instead of guessing. Whitespace is YAML's (space and tab, so U+00A0 is
+  content) and a carriage return on its own ends a line, in every M4 script
+  that reads a document: the stale gate, sticky stamping and the scar lint
+  find the same frontmatter and lines the reader does. Block scalars keep YAML's indentation, folding and
+  chomping. The self-test checks block scalars and one-line values (plain,
+  quoted, in a list) against a YAML parser over every combination of a set of
+  line shapes and characters. Trailing comments are cut
+  quote-aware, `null`, `~` and blank
+  values count as absent for a required field, and `tags` may be a block
+  sequence as well as `[a, b]`. The subset is listed in the checker's
+  README and the `WIKI-SCHEMA.md` template. **Breaking** for docs using a
+  construct outside the subset: rewrite it inside the subset (the README
+  lists both sides).
+- M4's frontmatter checker parses the whole schema with js-yaml from
+  `lib/vendor/` and reads every section from the result, so any YAML spelling
+  counts (`required: [title]` included) and a section of the wrong shape fails
+  the check instead of dropping its checks. **Breaking** for a copy of
+  `reference/` without Jig's `lib/vendor/` beside the `modules/` folder that
+  holds it (Jig's own layout): the checker exits 2 there; vendor `lib/` or run
+  it from a pinned Jig checkout. `last_updated` and `decision_date` must be
+  calendar dates, not only `YYYY-MM-DD` in shape. A section set to `null`
+  is a schema error, not an omitted one, and a schema that cannot be read
+  exits 2. The generated `INDEX.md`, which has no frontmatter, is left out:
+  the file at the generator's index path (`$OUT`, else `INDEX.md` in
+  `$DOCS_DIR`) that opens with its marker; the marker exempts nothing at any
+  other path. A schema section
+  must be a mapping where one is expected: a date
+  or binary value is an error. `NEW_DOCS` lists one path per line, and an
+  entry naming no checked file fails the check. **Breaking** for a
+  space-separated `NEW_DOCS` of more than one file: put one path per line.
+- M4's CI recipes ([mappings.md](modules/M4-docs-governance/mappings.md))
+  pass the base branch and file names as data, never into the shell program;
+  check renamed documents at their new path; check every document when the
+  schema changes; select their own work instead of filtering the GitHub
+  trigger, so the check reports on every pull request; and name the scripts
+  under `<m4>`, a Jig checkout or a copy that keeps Jig's layout. File lists
+  come from `git diff -z` through a file, so names with spaces or non-ASCII
+  characters survive and a failing `git diff` stops the step; the pathspec
+  `'docs/*.md'` covers documents directly under `docs/`, which
+  `'docs/**/*.md'` misses; and a vendored checker's paths (`VENDORED`) feed
+  both the work selector and the whole-tree comparison.
+- M4's index generator and scar lint refuse a document whose frontmatter is
+  present but outside the subset (exit 2) rather than reading part of it. The
+  index leaves out only the generated index and report (a nested `INDEX.md`
+  is a document), writes each title and description as one table cell,
+  rejects an unknown argument, and refuses `OUT` and `ORPHANS` naming one
+  file. An ADR's `decision_date` needs a value; only `supersedes` and
+  `superseded_by` may be `~`, and a blank one is missing.
+- M4's scar lint reports a named file it did not scan (not `status:
+  approved`): `NOT SCANNED` when none of the named files is promoted, and a
+  `NOTE` listing the skipped files beside `OK` or the scar report. A run over
+  the whole tree still prints plain `OK`. `/jig:descar` says so.
+
 ## [0.22.0] - 2026-10-14
 
 M0 states that instructions must reach each runtime, and that what every
@@ -1035,7 +1149,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/docomply/jig/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/docomply/jig/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/docomply/jig/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/docomply/jig/compare/v0.19.1...v0.20.0

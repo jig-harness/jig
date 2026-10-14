@@ -37,22 +37,33 @@ Knowledge moves up three layers, each promoting into the next:
    fixing the vocabulary: a closed set of doc **types**, **statuses**,
    **lifecycle** horizons, and **owners**, a canonical **tag** list, and a
    "did-you-mean" suggestion map that steers common wrong values toward the
-   canonical one instead of blindly rejecting. Validated by a blocking check.
+   canonical one instead of blindly rejecting. Validated by a blocking check
+   that reads an explicit, documented subset of YAML and rejects anything
+   outside it rather than guessing.
+   [Path-scoped rules](../../GLOSSARY.md) add requirements for a subtree
+   whose vocabulary differs from the rest (a runbook directory, an archive).
 2. **Generated index + freshness gate** — a script walks the tree, reads each
    doc's frontmatter, and regenerates `INDEX.md` (grouped, sorted). A drift
    gate fails when the committed index no longer
    matches the tree — this is [M2](../M2-generated-artifact-freshness/)'s
-   freshness triad applied to navigation.
-3. **De-scarring rule + scar lint** — an approved doc is a clean statement of
+   freshness triad applied to navigation. The same generator writes an
+   [orphan report](../../GLOSSARY.md): the documents no other document lists
+   as related, a warning that never blocks.
+3. **Honest freshness dates** — a diff-aware gate requires `last_updated` to
+   advance whenever a doc's body changes. Generators that write into the docs
+   tree stamp the date [sticky](../../GLOSSARY.md): advanced in UTC only when
+   their output changed, so they neither break the gate nor churn dates.
+4. **De-scarring rule + scar lint** — an approved doc is a clean statement of
    current truth; review findings and correction traces (strikethroughs,
    "addressed as suggested", reviewer-dialogue blocks) are *scars* that belong
    in the review thread, the tracking issue, or a light `## Version history` —
-   never the artifact. A lint detects scars in changed approved docs.
-4. **Authority hierarchy** — a written precedence order for resolving
+   never the artifact. A lint detects scars in changed approved docs, and
+   reports a named draft as not scanned rather than clean.
+5. **Authority hierarchy** — a written precedence order for resolving
    contradictions between docs (generated ground-truth > decision records >
    domain references > feature docs > historical retrospection), so "which doc
    wins?" is never a judgment call.
-5. **Activity log + wiki-lint cadence** — `log.md` journals every ingest and
+6. **Activity log + wiki-lint cadence** — `log.md` journals every ingest and
    lint run; a periodic lint table (index drift, stale >6mo, broken links,
    orphans, missing frontmatter, contradictions, retrospection backlog) keeps
    the tree healthy, its findings appended to the log.
@@ -64,10 +75,13 @@ Knowledge moves up three layers, each promoting into the next:
   from a template rather than a copied neighbor. Enforcement may be
   convention-only.
 - **Standard** — frontmatter is machine-validated in CI (required fields, enum
-  membership, date format); the index is generated with a freshness gate; the
-  authority hierarchy is written. De-scarring is at least an advisory lint.
+  membership, date format), by a check that states the YAML subset it reads;
+  the index is generated with a freshness gate; the authority hierarchy is
+  written. De-scarring is at least an advisory lint.
 - **Strict** — de-scarring lint blocks promotion to `approved`; a stale-doc
-  gate requires `last_updated` to advance when a doc's body changes; the
+  gate requires `last_updated` to advance when a doc's body changes, and
+  generators stamp their dates sticky in UTC; the orphan report is generated
+  with the index; the
   wiki-lint cadence runs on a schedule and posts to the log; raw → compiled
   promotion (retrospection backlog) is tracked.
 
@@ -82,10 +96,21 @@ Knowledge moves up three layers, each promoting into the next:
    changed docs, generate the index with [`reference/index/`](reference/index/)
    and gate its freshness, and run [`reference/scar-lint/`](reference/scar-lint/)
    as at least an advisory check. This is **Standard**.
-3. Make the scar lint block promotion to `approved`, add a check that
-   `last_updated` advances when a doc's body changes, schedule the wiki-lint
-   table, and track the backlog of raw notes awaiting promotion. This is
-   **Strict**.
+3. Before tightening any validator (a new required field, a narrowed enum,
+   path rules, the YAML subset), bring the existing docs into line with a
+   one-shot [codemod](../../GLOSSARY.md) first, or the tightened check blocks
+   every docs pull request on day one. Run it as **survey** (a histogram of
+   every field's current values), **plan** (a read-only diff per mapping
+   family, such as one for status values and one for lifecycle values), then
+   **apply**, one commit per mapping family, so each can be reverted on its
+   own. Values that occur once or twice go to a triage list for a person to
+   decide; they are never corrected automatically.
+4. Make the scar lint block promotion to `approved`, run
+   [`reference/stale-last-updated/`](reference/stale-last-updated/) in CI and
+   the pre-commit hook, stamp generated docs with
+   [`reference/stamp/`](reference/stamp/), add path rules where a subtree
+   needs them, schedule the wiki-lint table, and track the backlog of raw
+   notes awaiting promotion. This is **Strict**.
 
 ## Status
 
@@ -99,13 +124,19 @@ What this module provides:
   neutral canonical tag list, the "did you mean" suggestions and a tag merge
   map.
 - [`reference/frontmatter-check/`](reference/frontmatter-check/) — validates
-  every doc's frontmatter against that schema, read at run time.
-- [`reference/index/`](reference/index/) — generates `INDEX.md` from
-  frontmatter, with a `--check` freshness gate.
+  every doc's frontmatter against that schema, read at run time, including
+  its path-scoped rules, and documents the YAML subset it reads.
+- [`reference/index/`](reference/index/) — generates `INDEX.md` and the
+  orphan report from frontmatter, with a `--check` freshness gate over both.
+- [`reference/stale-last-updated/`](reference/stale-last-updated/) — fails a
+  diff that changes a doc's body without advancing `last_updated`, over a CI
+  diff range or the staged changes.
+- [`reference/stamp/`](reference/stamp/) — sticky UTC stamping of
+  `last_updated` for generators.
 - [`reference/scar-lint/`](reference/scar-lint/) — finds scars in approved
-  docs, with code masked first.
-- [`reference/docs.ts`](reference/docs.ts) — the small frontmatter reader the
-  three scripts share.
+  docs, with code masked first, and reports named files it did not scan.
+- [`reference/docs.ts`](reference/docs.ts) — the frontmatter reader the
+  scripts share: the YAML subset, with an error for each construct outside it.
 - [`mappings.md`](mappings.md) (CI providers, hook managers, schema formats)
   and the module's [maturity criteria](../../plugin/skills/audit/criteria/M4-docs-governance.yaml).
 
@@ -118,11 +149,11 @@ promotes a lesson from an agent's private memory into this docs tree.
 Deliberately left out: a tag-merge normalizer and a full canonical tag
 taxonomy, because a tag list is a repository's domain values; the schema
 template shows the mechanism (a canonical list plus a merge map) with neutral
-tags.
+tags. The frontmatter codemod is a procedure (adoption step 3), not a
+reference script, for the same reason: its mapping tables are a repository's
+values.
 
-Future: orphan reporting in the index generator (its design is in
-[`reference/index/README.md`](reference/index/README.md#orphan-reporting-extension)),
-the diff-aware stale-`last_updated` gate (sketched in
-[`reference/frontmatter-check/README.md`](reference/frontmatter-check/README.md#the-stale-last_updated-gate-futurestrict)),
-a schema for `connections/` pages, and a scheduled wiki-lint workflow; the
-lint table runs as a manual cadence until then.
+Future: a schema for `connections/` pages; a scheduled wiki-lint workflow
+(the lint table runs as a manual cadence until then); and a path rule that
+requires each document under a prefix to have a row in that directory's
+README.
