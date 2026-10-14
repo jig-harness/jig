@@ -94,9 +94,11 @@ design. Run all with one command: `bun run gates`. The set, in order:
    matching the catalog's `reviewRisk: high` areas
    (`bun scripts/review-risk.ts --write` regenerates them).
 
-CI runs the same command on every pull request
+CI runs the same command on Linux for every pull request
 (`.github/workflows/gates.yml`); the catalog decides which of its jobs a pull
-request needs. A new top-level file or directory gets an area in the catalog
+request needs. macOS and Windows run once a day against `main`
+(`.github/workflows/nightly.yml`), and on demand from the Actions tab for a
+branch likely to break on one of them. A new top-level file or directory gets an area in the catalog
 in the same pull request.
 
 Scope differs per gate, and each check script's header comment states exactly

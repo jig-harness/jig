@@ -63,11 +63,17 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ### Changed
 
-- Jig's own CI (`.github/workflows/gates.yml`) runs every job on Blacksmith
-  runners instead of GitHub-hosted ones: Linux on `ubuntu-2404`, macOS on
-  `macos-latest` (Apple Silicon), Windows on `windows-2025`. The per-platform
-  jobs are now named `gates (linux|macos|windows)`; the required `gates` check
-  is unchanged. `.github/actionlint.yaml` declares the runner labels.
+- Jig's own CI runs on Linux only for pull requests and pushes to `main`.
+  macOS and Windows move to a new nightly workflow
+  (`.github/workflows/nightly.yml`) that runs the gate set on both and the
+  drive-pr suite on macOS against `main` once a day, or on demand for any
+  branch. The Linux gate job is now `gate-set`; the required `gates` check is
+  unchanged.
+- Jig's own CI runs every job on Blacksmith runners instead of GitHub-hosted
+  ones: Linux on `ubuntu-2404` (`gates.yml`), and in the nightly run macOS on
+  `macos-latest` (Apple Silicon) and Windows on `windows-2025`. The gate jobs
+  are named `gates (linux|macos|windows)`; the required `gates` check is
+  unchanged. `.github/actionlint.yaml` declares the runner labels.
 - M1's pull-request workflow template selects work in one resolver job
   instead of a change-detection step copied into each job. Its single required
   check is now an aggregator job that runs on `!cancelled()` (not `always()`),
@@ -97,6 +103,13 @@ changes are marked **Breaking** and say what a consumer changes.
 - ROADMAP gains new modules (M13 pipeline economy, M14 testing strategy,
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
+
+## [0.19.1] - 2026-10-14
+
+### Changed
+
+- The plugin's README says a suite too long for the gate job gets its own
+  sharded job in both the gates workflow and the nightly workflow.
 
 ## [0.19.0] - 2026-10-13
 
@@ -823,7 +836,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/docomply/jig/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/docomply/jig/compare/v0.18.3...v0.19.0
 [0.18.3]: https://github.com/docomply/jig/compare/v0.18.2...v0.18.3
 [0.18.2]: https://github.com/docomply/jig/compare/v0.18.1...v0.18.2

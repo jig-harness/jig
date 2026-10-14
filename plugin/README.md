@@ -568,7 +568,8 @@ of the plugin:
   [scripts/gates.ts](../scripts/gates.ts), with the reason, so Windows CI
   leaves it out; a suite too long for the gate job goes in `SEPARATE_SUITES`
   and gets its own sharded job in
-  [the gates workflow](../.github/workflows/gates.yml).
+  [the gates workflow](../.github/workflows/gates.yml) and
+  [the nightly workflow](../.github/workflows/nightly.yml).
 - **Agents:** put them in `plugin/agents/<name>.md` with `name: <name>` in
   the frontmatter. Claude Code loads that folder without a manifest entry;
   do not add an `agents` key to the manifest, which would replace the

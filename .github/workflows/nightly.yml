@@ -1,0 +1,81 @@
+# Once a day, the gate set and the drive-pr suite run on macOS and Windows
+# against main. Pull requests and pushes to main run on Linux only
+# (gates.yml): a run on every platform per change costs several times the
+# Linux run and is the slowest part of it, while what breaks only on macOS or
+# Windows is rare enough that finding it within a day is soon enough.
+#
+# The drive-pr suite is POSIX-only, so it runs on macOS here, split into
+# parallel shards; on Windows the gate script leaves out the POSIX-only suites
+# on its own (see SEPARATE_SUITES and POSIX_ONLY_SUITES in scripts/gates.ts).
+#
+# Nothing waits for this run. GitHub notifies whoever last changed the
+# schedule when it fails; workflow_dispatch runs it on demand, against any
+# branch, before merging a change that is likely to break on one of these
+# platforms.
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platform-gates:
+    name: gates (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            runner: blacksmith-6vcpu-macos-latest
+          - os: windows
+            runner: blacksmith-4vcpu-windows-2025
+    runs-on: ${{ matrix.runner }}
+    # Windows takes the longest, about 8 minutes.
+    timeout-minutes: 20
+    env:
+      # The drive-pr-suite job below runs the drive-pr suite; on Windows the
+      # gate script also leaves out the POSIX-only suites on its own.
+      JIG_GATES_SKIP_SEPARATE_SUITES: "1"
+      # Every runner image has Google Chrome, so a sheet's browser checks
+      # fail here when it is missing instead of being skipped with a warning.
+      JIG_REQUIRE_BROWSER: "1"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The ratchet and fallow's audit compare against the merge base
+          # with main, which a shallow checkout does not have.
+          fetch-depth: 0
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Run gate set
+        run: bun run gates
+
+  drive-pr-suite:
+    name: drive-pr suite (macos, ${{ matrix.shard }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    runs-on: blacksmith-6vcpu-macos-latest
+    # A shard takes up to about 3 minutes.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The summary-findings tests position a reviewer against real commits
+          # of this repository, which a shallow checkout does not have.
+          fetch-depth: 0
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Run this shard of the drive-pr suite
+        run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/

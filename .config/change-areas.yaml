@@ -1,8 +1,9 @@
 # Jig's change-area catalog (module M3): the one place that maps this
 # repository's paths to named change-areas. The CI workflow reads area names
 # from scripts/change-areas.ts, never these globs: the drive-pr suite runs
-# when the `drive-pr` area is affected, and the gate set runs on every
-# operating system when any area outside the `docs` category is.
+# when the `drive-pr` area is affected. The gate set runs on Linux for every
+# change whatever its areas, and the nightly workflow runs it on macOS and
+# Windows without reading this catalog.
 #
 # Every tracked file belongs to at least one area (`bun run gates` fails
 # otherwise). When unsure whether one area depends on another, add the

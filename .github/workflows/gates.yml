@@ -1,15 +1,17 @@
-# The same native Bun gate set runs on every supported operating system. The
-# drive-pr suite is long and POSIX-only, so it runs in its own job, split into
-# parallel shards on Linux and macOS (see SEPARATE_SUITES and
-# POSIX_ONLY_SUITES in scripts/gates.ts).
+# Every pull request and every push to main runs the gate set on Linux. The
+# drive-pr suite is long, so it runs in its own job, split into parallel
+# shards (see SEPARATE_SUITES in scripts/gates.ts).
 #
 # Which jobs a pull request runs comes from Jig's change-area catalog
 # (.config/change-areas.yaml, resolved by scripts/change-areas.ts): the
-# drive-pr suite runs when the `drive-pr` area is affected, and macOS and
-# Windows run the gate set when anything outside documentation changed.
-# Linux always runs the whole gate set, and a push to main runs everything,
-# so a documentation change that breaks only on macOS or Windows (a file name
-# differing only by case, say) surfaces on main rather than on its PR.
+# drive-pr suite runs when the `drive-pr` area is affected. A push to main
+# runs everything.
+#
+# macOS and Windows run nothing here: the nightly workflow (nightly.yml) runs
+# the gate set and the drive-pr suite on them against main once a day, so a
+# change that breaks only there (a file name differing only by case, a
+# POSIX-only assumption) surfaces on main within a day rather than on its
+# pull request.
 #
 # Every job runs on Blacksmith runners (https://docs.blacksmith.sh), which the
 # Blacksmith GitHub App provides to this repository; GitHub-hosted runners
@@ -35,7 +37,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       areas: ${{ steps.resolve.outputs.areas }}
-      code: ${{ steps.resolve.outputs.code }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -54,22 +55,16 @@ jobs:
             bun scripts/change-areas.ts --all
           fi
 
-  platform-gates:
-    name: gates (${{ matrix.os }})
+  gate-set:
+    name: gates (linux)
     needs: areas
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.areas.outputs.code == 'true' && '[{"os":"linux","runner":"blacksmith-4vcpu-ubuntu-2404"},{"os":"macos","runner":"blacksmith-6vcpu-macos-latest"},{"os":"windows","runner":"blacksmith-4vcpu-windows-2025"}]' || '[{"os":"linux","runner":"blacksmith-4vcpu-ubuntu-2404"}]') }}
-    runs-on: ${{ matrix.runner }}
-    # Windows takes the longest, about 8 minutes.
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     env:
-      # The drive-pr-suite job below runs the drive-pr suite; on Windows the
-      # gate script also leaves out the POSIX-only suites on its own.
+      # The drive-pr-suite job below runs the drive-pr suite.
       JIG_GATES_SKIP_SEPARATE_SUITES: "1"
-      # Every runner image has Google Chrome, so a sheet's browser checks
-      # fail here when it is missing instead of being skipped with a warning.
+      # The runner image has Google Chrome, so a sheet's browser checks fail
+      # here when it is missing instead of being skipped with a warning.
       JIG_REQUIRE_BROWSER: "1"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -84,20 +79,14 @@ jobs:
         run: bun run gates
 
   drive-pr-suite:
-    name: drive-pr suite (${{ matrix.os }}, ${{ matrix.shard }}/4)
+    name: drive-pr suite (linux, ${{ matrix.shard }}/4)
     needs: areas
     if: contains(needs.areas.outputs.areas, '"drive-pr"')
     strategy:
       fail-fast: false
       matrix:
-        os: [linux, macos]
         shard: [1, 2, 3, 4]
-        include:
-          - os: linux
-            runner: blacksmith-2vcpu-ubuntu-2404
-          - os: macos
-            runner: blacksmith-6vcpu-macos-latest
-    runs-on: ${{ matrix.runner }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     # A shard takes up to about 3 minutes.
     timeout-minutes: 15
     steps:
@@ -116,12 +105,12 @@ jobs:
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
 
   # Branch protection requires a check named `gates`; this job reports it,
-  # passing only when the areas resolved, every platform passed, and the
+  # passing only when the areas resolved, the gate set passed, and the
   # drive-pr suite passed or was not needed. It runs on `!cancelled()`, not
   # `always()`: `always()` also runs when a newer push cancelled this run, and
   # would then report a failure for a head that is already superseded.
   gates:
-    needs: [areas, platform-gates, drive-pr-suite]
+    needs: [areas, gate-set, drive-pr-suite]
     if: ${{ !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
@@ -129,13 +118,13 @@ jobs:
       - name: Require every selected job
         env:
           AREAS: ${{ needs.areas.result }}
-          PLATFORMS: ${{ needs.platform-gates.result }}
+          GATE_SET: ${{ needs.gate-set.result }}
           DRIVE_PR: ${{ needs.drive-pr-suite.result }}
           DRIVE_PR_SELECTED: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') }}
         run: |
           failed=""
           [ "$AREAS" = success ] || failed="$failed areas($AREAS)"
-          [ "$PLATFORMS" = success ] || failed="$failed platform-gates($PLATFORMS)"
+          [ "$GATE_SET" = success ] || failed="$failed gate-set($GATE_SET)"
           if [ "$DRIVE_PR_SELECTED" = true ]; then
             [ "$DRIVE_PR" = success ] || failed="$failed drive-pr-suite($DRIVE_PR)"
           else

@@ -362,37 +362,353 @@ test("the test step leaves out POSIX-only suites on Windows and separate suites 
   ]);
 });
 
+type SuiteJob = {
+  env?: Record<string, string>;
+  if?: string;
+  needs?: string | string[];
+  strategy?: { matrix?: Record<string, unknown> } & Record<string, unknown>;
+  steps?: ({ if?: string; run?: string } & Record<string, unknown>)[];
+} & Record<string, unknown>;
+
+// Whether a job runs and whether its failure reaches the run's result are set
+// by its condition and its dependencies: a skipped dependency skips the job.
+type SuiteContract = { if?: string; needs?: string };
+
+// A job counts as running a suite only when every key of its workflow, every
+// key it carries, every key of its strategy and every key of the suite's step
+// is on an allowlist — every scope whose settings a step inherits — and
+// the keys that decide whether it runs hold exactly the values the workflow
+// intends. An allowlist rather than a list of rejected keys, because each key
+// GitHub adds or a workflow uses that this check does not know — a job- or
+// step-level `continue-on-error`, a workflow- or job-level `defaults` shell,
+// a `container`, an `env`
+// a test runner reads — is one more way to keep the job green while the suite
+// does not run or its failures are suppressed. The condition and the
+// dependencies must equal the contract; the matrix may hold nothing but the
+// shard list, so no include, exclude or extra dimension can change which jobs
+// run. The suite's step carries a name and a command and nothing else, and its
+// whole command must be one of two shapes: the suite's directory alone, or
+// every shard of it. Any other text — an extra option such as a test-name
+// filter, shell syntax, a fixed shard — does not count, because nothing
+// proves it still runs every test in the directory. A sharded command must
+// take its shard from the job's matrix, and the matrix must list every shard
+// from 1 to the command's total.
+//
+// The check reads the workflow's settings, not what its commands do: an
+// earlier step that puts another `bun` first on the PATH or deletes the
+// suite's directory changes what the suite step runs without changing a key
+// read here. Such a step is a deliberate edit to the workflow's commands, and
+// review of the workflow catches it, as it does any other change to them.
+const SUITE_WORKFLOW_KEYS = new Set([
+  "name",
+  "on",
+  "permissions",
+  "concurrency",
+  "jobs",
+]);
+const SUITE_JOB_KEYS = new Set([
+  "name",
+  "needs",
+  "if",
+  "strategy",
+  "runs-on",
+  "timeout-minutes",
+  "steps",
+]);
+const SUITE_STRATEGY_KEYS = new Set(["fail-fast", "matrix"]);
+const SUITE_STEP_KEYS = new Set(["name", "run"]);
+
+const onlyKeys = (value: object, allowed: Set<string>) =>
+  Object.keys(value).every((key) => allowed.has(key));
+
+function suiteJobShapeAllowed(job: SuiteJob, contract: SuiteContract) {
+  if (!onlyKeys(job, SUITE_JOB_KEYS)) return false;
+  if (job.if !== contract.if || job.needs !== contract.needs) return false;
+  const strategy = job.strategy;
+  if (strategy === undefined) return true;
+  if (!onlyKeys(strategy, SUITE_STRATEGY_KEYS)) return false;
+  const matrix = strategy.matrix;
+  return (
+    matrix === undefined ||
+    (Object.keys(matrix).length === 1 && "shard" in matrix)
+  );
+}
+
+function runsEveryShard(run: string, dir: string, shards: unknown): boolean {
+  const sharded = run.match(
+    new RegExp(
+      `^bun run test --shard=\\$\\{\\{ matrix\\.shard \\}\\}/([1-9][0-9]*) \\./${dir.replace(/[.]/g, "\\.")}$`,
+    ),
+  );
+  if (!sharded) return false;
+  const total = Number(sharded[1]);
+  return (
+    Array.isArray(shards) &&
+    shards.length === total &&
+    shards.every((shard, i) => shard === i + 1)
+  );
+}
+
+function runsSuite(job: SuiteJob, dir: string, contract: SuiteContract = {}) {
+  if (!suiteJobShapeAllowed(job, contract)) return false;
+  const shards = job.strategy?.matrix?.shard;
+  return (job.steps ?? []).some(
+    (step) =>
+      onlyKeys(step, SUITE_STEP_KEYS) &&
+      typeof step.run === "string" &&
+      (step.run.trim() === `bun run test ./${dir}` ||
+        runsEveryShard(step.run.trim(), dir, shards)),
+  );
+}
+
+type SuiteWorkflow = { jobs?: Record<string, SuiteJob> } & Record<
+  string,
+  unknown
+>;
+
+// Whether a workflow runs at all is set by its triggers, so they must equal
+// the workflow's intended ones exactly: a dropped schedule or a path filter
+// on a pull request trigger stops the suite running with every job intact.
+type WorkflowContract = SuiteContract & { on: unknown };
+
+function workflowRunsSuite(
+  workflow: SuiteWorkflow,
+  job: string,
+  dir: string,
+  contract: WorkflowContract,
+) {
+  return (
+    onlyKeys(workflow, SUITE_WORKFLOW_KEYS) &&
+    Bun.deepEquals(workflow.on, contract.on, true) &&
+    runsSuite(workflow.jobs?.[job] ?? {}, dir, contract)
+  );
+}
+
+// On pull requests the drive-pr suite runs when its area is affected, after
+// the job that resolves the areas; every night it runs unconditionally.
+const DRIVE_PR_AREA = `contains(needs.areas.outputs.areas, '"drive-pr"')`;
+const PR_SUITE: SuiteContract = { needs: "areas", if: DRIVE_PR_AREA };
+const PR_TRIGGERS = { pull_request: null, push: { branches: ["main"] } };
+const NIGHTLY_TRIGGERS = {
+  schedule: [{ cron: "17 3 * * *" }],
+  workflow_dispatch: null,
+};
+
+test("a suite counts as run only by an allowlisted job and command", async () => {
+  const { SEPARATE_SUITES } = await import("./gates.ts");
+  for (const suite of SEPARATE_SUITES) {
+    const dir = suite.replace(/\*\*$/, "");
+    const sharded = `bun run test --shard=\${{ matrix.shard }}/4 ./${dir}`;
+    const all = { strategy: { matrix: { shard: [1, 2, 3, 4] } } };
+    expect(runsSuite({ steps: [{ run: `bun run test ./${dir}` }] }, dir)).toBe(
+      true,
+    );
+    expect(runsSuite({ ...all, steps: [{ run: sharded }] }, dir)).toBe(true);
+    for (const run of [
+      `echo ./${dir}`,
+      `bun run test ./scripts/ # ./${dir}`,
+      `bun run test ./scripts/; echo ./${dir}`,
+      `bun run test ./scripts/ && echo ./${dir}`,
+      `bun run test ./scripts/\necho ./${dir}`,
+      `bun run test "./scripts/" ./${dir}`,
+      `bun run test --test-name-pattern=NOTHING ./${dir}`,
+      `bun run test ./${dir} ./scripts/`,
+      `bun run test --shard=1/4 ./${dir}`,
+    ])
+      expect(runsSuite({ ...all, steps: [{ run }] }, dir)).toBe(false);
+    for (const shard of [[1], [1, 2, 3], [1, 2, 3, 3], [2, 3, 4, 5], "1"])
+      expect(
+        runsSuite(
+          { strategy: { matrix: { shard } }, steps: [{ run: sharded }] },
+          dir,
+        ),
+      ).toBe(false);
+    expect(
+      runsSuite({ ...all, steps: [{ if: "always()", run: sharded }] }, dir),
+    ).toBe(false);
+    // A job condition or dependencies other than the intended ones, or a
+    // matrix that can drop or add combinations, does not count either.
+    expect(
+      runsSuite({ ...all, steps: [{ run: sharded }] }, dir, PR_SUITE),
+    ).toBe(false);
+    expect(
+      runsSuite(
+        { ...all, if: DRIVE_PR_AREA, steps: [{ run: sharded }] },
+        dir,
+        PR_SUITE,
+      ),
+    ).toBe(false);
+    expect(
+      runsSuite(
+        { ...all, ...PR_SUITE, steps: [{ run: sharded }] },
+        dir,
+        PR_SUITE,
+      ),
+    ).toBe(true);
+    for (const condition of ["false", `${DRIVE_PR_AREA} && false`])
+      expect(
+        runsSuite(
+          { ...all, ...PR_SUITE, if: condition, steps: [{ run: sharded }] },
+          dir,
+          PR_SUITE,
+        ),
+      ).toBe(false);
+    // A dependency that can be skipped skips the suite with it.
+    for (const needs of ["skipped-job", ["areas", "skipped-job"], ["areas"]])
+      expect(
+        runsSuite(
+          { ...all, ...PR_SUITE, needs, steps: [{ run: sharded }] },
+          dir,
+          PR_SUITE,
+        ),
+      ).toBe(false);
+    expect(
+      runsSuite(
+        { ...all, needs: "skipped-job", steps: [{ run: sharded }] },
+        dir,
+      ),
+    ).toBe(false);
+    expect(
+      runsSuite({ ...all, if: "false", steps: [{ run: sharded }] }, dir),
+    ).toBe(false);
+    for (const extra of [
+      { exclude: [{ shard: 4 }] },
+      { include: [{ shard: 5 }] },
+      { os: ["linux"] },
+    ])
+      expect(
+        runsSuite(
+          {
+            strategy: { matrix: { shard: [1, 2, 3, 4], ...extra } },
+            steps: [{ run: sharded }],
+          },
+          dir,
+        ),
+      ).toBe(false);
+    // Any key outside the allowlist does not count, whether on the job, its
+    // strategy or the suite's step: each is a way to keep the job green while
+    // the suite's failures are suppressed or it runs something else.
+    for (const extra of [
+      { "continue-on-error": true },
+      { defaults: { run: { shell: "bash {0} || true" } } },
+      { env: { BUN_OPTIONS: "--bail" } },
+      { container: "alpine" },
+    ])
+      expect(
+        runsSuite({ ...all, ...extra, steps: [{ run: sharded }] }, dir),
+      ).toBe(false);
+    expect(
+      runsSuite(
+        {
+          strategy: { ...all.strategy, "max-parallel": 1, extra: true },
+          steps: [{ run: sharded }],
+        },
+        dir,
+      ),
+    ).toBe(false);
+    for (const extra of [
+      { "continue-on-error": true },
+      { shell: "bash {0} || true" },
+      { env: { BUN_OPTIONS: "--bail" } },
+      { "working-directory": "plugin" },
+    ])
+      expect(
+        runsSuite({ ...all, steps: [{ ...extra, run: sharded }] }, dir),
+      ).toBe(false);
+    expect(
+      runsSuite(
+        {
+          ...all,
+          name: "suite",
+          "runs-on": "linux",
+          "timeout-minutes": 15,
+          steps: [{ name: "Run the suite", run: sharded }],
+        },
+        dir,
+      ),
+    ).toBe(true);
+  }
+});
+
+// The same holds one scope up: a workflow-level setting reaches every step of
+// every job.
+test("a suite counts as run only in an allowlisted workflow", async () => {
+  const { SEPARATE_SUITES } = await import("./gates.ts");
+  for (const suite of SEPARATE_SUITES) {
+    const dir = suite.replace(/\*\*$/, "");
+    const sharded = `bun run test --shard=\${{ matrix.shard }}/4 ./${dir}`;
+    const all = { strategy: { matrix: { shard: [1, 2, 3, 4] } } };
+    const workflow = {
+      name: "nightly",
+      on: NIGHTLY_TRIGGERS,
+      permissions: { contents: "read" },
+      concurrency: { group: "nightly", "cancel-in-progress": true },
+      jobs: { suite: { ...all, steps: [{ run: sharded }] } },
+    };
+    const nightly = { on: NIGHTLY_TRIGGERS };
+    expect(workflowRunsSuite(workflow, "suite", dir, nightly)).toBe(true);
+    expect(workflowRunsSuite(workflow, "other", dir, nightly)).toBe(false);
+    for (const extra of [
+      { defaults: { run: { shell: 'bash -c "exit 0" {0}' } } },
+      { env: { BASH_ENV: "/dev/null" } },
+    ])
+      expect(
+        workflowRunsSuite({ ...workflow, ...extra }, "suite", dir, nightly),
+      ).toBe(false);
+    // Triggers other than the intended ones do not count: a nightly run
+    // without its schedule, or a pull request trigger narrowed by paths.
+    for (const [on, intended] of [
+      [{ workflow_dispatch: null }, NIGHTLY_TRIGGERS],
+      [{ ...NIGHTLY_TRIGGERS, schedule: [] }, NIGHTLY_TRIGGERS],
+      [PR_TRIGGERS, NIGHTLY_TRIGGERS],
+      [{ ...PR_TRIGGERS, pull_request: { paths: ["docs/**"] } }, PR_TRIGGERS],
+      [{ pull_request: null }, PR_TRIGGERS],
+    ] as const)
+      expect(
+        workflowRunsSuite({ ...workflow, on }, "suite", dir, { on: intended }),
+      ).toBe(false);
+    expect(
+      workflowRunsSuite({ ...workflow, on: PR_TRIGGERS }, "suite", dir, {
+        on: PR_TRIGGERS,
+      }),
+    ).toBe(true);
+  }
+});
+
 test("every suite the gate job leaves out runs in its own CI job", async () => {
   const { SEPARATE_SUITES, SKIP_SEPARATE_ENV } = await import("./gates.ts");
   const { load } = await import("js-yaml");
-  const workflow = load(
-    readFileSync(join(root, ".github/workflows/gates.yml"), "utf8"),
-  ) as {
-    jobs: Record<
-      string,
-      {
-        env?: Record<string, string>;
-        needs?: string[];
-        steps?: { run?: string }[];
-      }
-    >;
-  };
-  const jobs = workflow.jobs;
-  expect(jobs["platform-gates"]?.env?.[SKIP_SEPARATE_ENV]).toBe("1");
-  const runs = (jobs["drive-pr-suite"]?.steps ?? []).map((s) => s.run ?? "");
-  for (const suite of SEPARATE_SUITES) {
-    const dir = suite.replace(/\*\*$/, "");
-    expect(runs.some((run) => run.includes(`./${dir}`))).toBe(true);
+  const read = (name: string) =>
+    load(
+      readFileSync(join(root, ".github/workflows", name), "utf8"),
+    ) as SuiteWorkflow & { jobs: Record<string, SuiteJob> };
+  // Pull requests run the gate set on Linux; the nightly run covers macOS
+  // and Windows. Each workflow's gate job leaves the separate suites to its
+  // own drive-pr-suite job.
+  for (const [name, gateJob, contract] of [
+    ["gates.yml", "gate-set", { ...PR_SUITE, on: PR_TRIGGERS }],
+    ["nightly.yml", "platform-gates", { on: NIGHTLY_TRIGGERS }],
+  ] as const) {
+    const workflow = read(name);
+    expect(workflow.jobs[gateJob]?.env?.[SKIP_SEPARATE_ENV]).toBe("1");
+    for (const suite of SEPARATE_SUITES)
+      expect(
+        workflowRunsSuite(
+          workflow,
+          "drive-pr-suite",
+          suite.replace(/\*\*$/, ""),
+          contract,
+        ),
+      ).toBe(true);
   }
+  const { jobs } = read("gates.yml");
   expect(
-    runs.some((run) => run.includes("terminal-states-consistency.ts")),
+    (jobs["drive-pr-suite"]?.steps ?? []).some((s) =>
+      (s.run ?? "").includes("terminal-states-consistency.ts"),
+    ),
   ).toBe(true);
   // The required status check `gates` must wait for the separate job too.
-  expect(jobs.gates?.needs).toEqual([
-    "areas",
-    "platform-gates",
-    "drive-pr-suite",
-  ]);
+  expect(jobs.gates?.needs).toEqual(["areas", "gate-set", "drive-pr-suite"]);
 });
 
 test("the workflow selects jobs by area names the change-area catalog defines", async () => {
@@ -414,7 +730,7 @@ test("the workflow selects jobs by area names the change-area catalog defines", 
     }
   ).jobs;
   expect(jobs["drive-pr-suite"]?.if).toContain('"drive-pr"');
-  expect(jobs["platform-gates"]?.needs).toBe("areas");
+  expect(jobs["gate-set"]?.needs).toBe("areas");
 });
 
 test("the changelog must carry the current plugin version", async () => {

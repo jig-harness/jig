@@ -33,8 +33,8 @@ export const POSIX_ONLY_SUITES = [
  * Suites long enough to deserve their own CI job: the drive-pr suite takes
  * about twelve minutes one file at a time and a few with its files in
  * parallel. CI runs it split across parallel jobs
- * (`.github/workflows/gates.yml`) and sets this variable in the gate job so
- * the suite does not run twice. Locally `bun run gates` runs everything.
+ * (`.github/workflows/gates.yml` and `nightly.yml`) and sets this variable in
+ * the gate job so the suite does not run twice. Locally `bun run gates` runs everything.
  */
 export const SEPARATE_SUITES = ["plugin/skills/drive-pr/**"];
 export const SKIP_SEPARATE_ENV = "JIG_GATES_SKIP_SEPARATE_SUITES";

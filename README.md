@@ -124,15 +124,16 @@ mise exec -- bun run gates
 The gate command checks formatting, lint, types, all gate self-tests, the build,
 Markdown links/tables/glossary coverage, origin-reference exclusions, and a
 changelog entry for the current plugin version.
-GitHub Actions runs the same command on Linux, macOS and Windows; there the
-long drive-pr suite runs in its own job, split into four parallel
-[test shards](GLOSSARY.md) on Linux and macOS, and Windows leaves out the
-POSIX-only suites ([scripts/gates.ts](scripts/gates.ts) says which and why).
-A pull request runs only the jobs its changes need, as Jig's
-[change-area catalog](.config/change-areas.yaml) resolves them: the drive-pr
-suite when the drive-pr skill or something it depends on changed, and macOS
-and Windows when anything outside documentation changed. Linux always runs
-the whole gate set, and a push to `main` runs everything.
+GitHub Actions runs the same command on Linux for every pull request and
+every push to `main`; there the long drive-pr suite runs in its own job,
+split into parallel [test shards](GLOSSARY.md). A pull request runs the
+drive-pr suite only when its changes need it, as Jig's
+[change-area catalog](.config/change-areas.yaml) resolves them: when the
+drive-pr skill or something it depends on changed. A push to `main` runs
+everything. macOS and Windows run once a day, against `main`, in the nightly
+workflow: the gate set on both, the drive-pr suite on macOS, and Windows
+leaves out the POSIX-only suites ([scripts/gates.ts](scripts/gates.ts) says
+which and why).
 The tests use Bun's built-in runner; `bun run test` runs them alone, one test
 file per processor core at a time, with the per-test timeout the slower suites
 need. `bun run format` formats TypeScript and configuration; `bun run build`
