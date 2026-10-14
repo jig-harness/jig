@@ -1,0 +1,27 @@
+# UNSAFE (c): the production deploy job checks out `release` by name, deploys
+# it, then pushes back to `release`. Pushing to a ref does not make selecting
+# it safe: only fetching the ref it writes is exempt, so the checkout trips (c).
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.pin.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: refs/tags/verified }
+      - id: pin
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  deploy-production:
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy and record the release
+        run: |
+          git fetch origin release
+          git checkout release
+          ./deploy --target production
+          git push origin HEAD:release

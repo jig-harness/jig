@@ -1,0 +1,16 @@
+# UNSAFE (c): manually gated and free of the mutable refs (b) knows, but the
+# production deploy job checks out the `release` branch by name. Whatever
+# `release` points at when this job starts ships, not what a gate approved.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release
+      - name: Deploy to production
+        run: ./deploy --target production

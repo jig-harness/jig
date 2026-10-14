@@ -104,6 +104,65 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.20.0] - 2026-10-14
+
+### Added
+
+- M10 states how a promotion executes
+  ([README § Promotion execution](modules/M10-environments-deploy/README.md#promotion-execution)):
+  the gated commit is the shipped commit (the first job resolves the
+  `verified` pointer once and every later job takes the commit from its
+  output; promotions to one environment never drop a queued request and wait
+  for every earlier one, refusing a re-run and checking again before the
+  migration; the promotion
+  and its gate code run from the trusted ref, the only ref the production
+  environment admits);
+  build once (the verified artifact is promoted by digest, with
+  per-environment settings supplied at deploy time); post-deploy identity (a
+  deploy is complete only when the live environment reports the promoted
+  identity, its rollouts are ready and a readiness check of its critical
+  dependencies passes, each under a deadline, and downstream work reads a
+  manifest of what deployed); and release state off the source line (release
+  pointers only fast-forward, after the identity check, and refuse a gated
+  commit older than themselves; rendered
+  deployment state lives on its own ref written by one machine identity that
+  branch protection admits). The CI-architecture and pipeline templates gain
+  the gate's commit output, a verify-identity step and a deploy manifest after
+  every deploy, and advance the release pointer last;
+  `mappings.md` maps digest pinning, runtime configuration, Argo CD and Flux,
+  GitHub's concurrency semantics, rollout checks and the identity check.
+- M10's promote-safety lint gains rule (c): a production deploy job fails when
+  it selects its commit by name (a `ref:` or `--ref` naming a branch or a
+  branch-shaped expression such as `inputs.branch`, or a run step's `git
+  fetch`, `pull`, `checkout`, `switch`, `reset`, `merge`, `rebase` or
+  `rev-parse` of a name) instead of an upstream job's output. The `verified`
+  pointer by name is accepted only in a job with no upstream job (in GitLab,
+  a later stage is upstream unless the job says `needs: []`), resolved
+  there once, and a `git fetch` of a ref the job pushes to (its rendered-state
+  ref) is not a selection when a publishing push from the same repository to
+  the same remote writes it. Git commands are recognized however git is
+  spelled, after global options and inside nested substitutions; only a
+  command at a command position, outside quoted text and heredoc bodies, in a
+  repository its own text establishes, can grant an exemption; a remote
+  `HEAD`, an ancestor such as `HEAD~1`, and a `FETCH_HEAD` of unknown origin
+  count as names. The shapes a line matcher still misses (a command that may
+  not run, a verb spelled with quotes, a fetch that keeps `FETCH_HEAD`, a
+  control word used as an argument) are
+  listed under its Known limits. Option arity follows the git verb, ref names keep
+  their case, and a `#` inside a quoted string does not start a comment.
+- `/jig:audit` scores new M10 criteria: `artifacts-built-once-promoted-by-digest`
+  (standard), `promotions-serialized-from-trusted-ref`,
+  `deploy-verifies-live-identity` and `release-state-off-source-line`
+  (strict). `deploys-verified-artifacts-only` also observes that later jobs
+  of a promotion take the commit from an upstream output.
+- The glossary defines *digest*, *build once*, *GitOps*, *rendered state* and
+  the *post-deploy identity check*.
+
+### Changed
+
+- `/jig:github-actions` describes the deploy and promotion stages with the
+  digest, the trusted ref, one promotion at a time and the identity check.
+
 ## [0.19.1] - 2026-10-14
 
 ### Changed
@@ -836,7 +895,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/docomply/jig/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/docomply/jig/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/docomply/jig/compare/v0.18.3...v0.19.0
 [0.18.3]: https://github.com/docomply/jig/compare/v0.18.2...v0.18.3

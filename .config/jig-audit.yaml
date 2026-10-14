@@ -534,6 +534,10 @@ criteria:
     # prior: expected-absent: No deploy jobs: the only workflow is .github/workflows/gates.yml
     score: expected-absent
     evidence: "No deploy jobs; .github/workflows/gates.yml is the only workflow"
+  M10/artifacts-built-once-promoted-by-digest:   # standard, requires mechanical
+    # What reaches production is the artifact verification approved, built once and addressed by digest, with per-environment settings supplied at deploy time rather than compiled in (expected-absent for a library-shaped repo, which publishes rather than deploys environments).
+    score: expected-absent
+    evidence: "No deployable artifact or environment: the plugin installs from main as source; .github/workflows/gates.yml builds nothing that is promoted"
   M10/freshness-watchdog-runs:   # standard, requires mechanical
     # A scheduled watchdog fails when the `verified` pointer lags the default-branch tip beyond a threshold, so a stalled verifier pages someone instead of silently shipping stale code.
     # prior: expected-absent: No verified pointer and no scheduled workflow (gates.yml has only pull_request and push triggers)
@@ -554,6 +558,18 @@ criteria:
     # prior: expected-absent: No runnable environment or tenant data; tests build scratch repositories (lib/test-tmpdir.ts)
     score: expected-absent
     evidence: "No runnable environment or tenant data; tests build scratch repositories (lib/test-tmpdir.ts)"
+  M10/promotions-serialized-from-trusted-ref:   # strict, requires mechanical
+    # Promotions to one environment never drop a queued request, and each waits until no earlier promotion is active before its first change and checks again just before the migration; the promotion workflow and its gate code load from the trusted ref, the only ref the production environment admits (expected-absent for a library-shaped repo with no production environment).
+    score: expected-absent
+    evidence: "No production environment or promotion workflow; release is a version bump plus a hand-pushed tag"
+  M10/deploy-verifies-live-identity:   # strict, requires mechanical
+    # A deploy is complete only when the live environment reports the exact artifact identity that was promoted, its rollouts are ready, and a readiness check that exercises the application's critical dependencies passes; anything downstream reads a manifest of what actually deployed (expected-absent for a library-shaped repo with no runnable environment).
+    score: expected-absent
+    evidence: "No runnable environment to verify; the only workflow is .github/workflows/gates.yml"
+  M10/release-state-off-source-line:   # strict, requires mechanical
+    # Release pointers only fast-forward to verified source, and rendered deployment state lives on its own ref, written only by a dedicated machine identity that the ref's protection admits (expected-absent for a repository with neither a release pointer nor rendered deployment state in git; a repository with only one of them is scored on that one).
+    score: expected-absent
+    evidence: "No release pointer and no rendered deployment state: v<version> tags are pushed by hand after merge to pin versions (plugin/README.md § Release), not to say what a deployment runs, and no GitOps controller exists"
   # M11 process-observability
   M11/process-events-documented:   # lite, requires convention
     # The process events the team measures (review outcome + cost, gate pass/fail + duration, cycle times) are named and documented as a closed set, distinct from product analytics.

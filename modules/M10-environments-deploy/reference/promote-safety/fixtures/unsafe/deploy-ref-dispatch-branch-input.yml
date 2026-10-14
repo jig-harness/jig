@@ -1,0 +1,18 @@
+# UNSAFE (c): the production deploy checks out a branch the operator typed into
+# a dispatch input. An expression whose last part is `branch` names a branch,
+# not a commit, so the lint reads it as a selection by name.
+name: promote-to-production
+on:
+  workflow_dispatch:
+    inputs:
+      branch: { required: true, type: string }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+      - name: Deploy to production
+        run: ./deploy --target production

@@ -342,6 +342,30 @@ make, use the entry's term instead.
   when post-merge verification passes, so "merged" and "verified" stay distinct
   facts. Deploys ship the verified pointer, not the latest commit; a *freshness*
   watchdog pages when the pointer falls too far behind the default branch.
+- **Digest (content digest)** — a hash of an artifact's exact bytes, such as
+  the `sha256:…` that names a container image (`image@sha256:…`). Unlike a
+  tag, which can be moved to other bytes, a digest always names the same
+  content, so a deploy that names one ships exactly what was verified.
+- **Build once** — the practice of building an artifact a single time and
+  promoting those same bytes, by *digest*, through every environment, with
+  per-environment settings supplied at deploy time rather than compiled in.
+- **GitOps** — running deployments from git: a controller (such as Argo CD or
+  Flux) keeps an environment matching what a git ref holds, so a deploy is a
+  commit to that ref and a rollback is a revert.
+- **Rendered state (release-state ref)** — the fully generated deployment
+  manifests for an environment, with *digests* filled in, kept on a ref of
+  their own that a *GitOps* controller reads and only one dedicated machine
+  identity writes, so the source line's release pointer stays a pure
+  fast-forward of verified commits.
+- **Trusted ref** — the ref a promotion's own workflow definition and gate
+  code are loaded from: the *verified pointer*, never whichever branch the
+  person starting the promotion happened to pick, since a manually started
+  workflow runs the copy of itself that lives on the chosen branch.
+- **Post-deploy identity check** — the step that ends every deploy: the live
+  environment must report the exact artifact identity that was promoted, its
+  rollouts must be ready, and a readiness check that exercises the
+  application's critical dependencies (its database, where it has one) must
+  pass before the deploy counts as done.
 - **Ephemeral environment** — a disposable, cheap preview environment spun up
   per pull request or branch and torn down after, so changes can be exercised in
   something realistic without a shared long-lived staging server.

@@ -346,7 +346,6 @@ Practices a working repository validated, for modules that exist today:
 - **M10 and M11**:
   - the verified-pointer watchdog decides by cause and catches stalls in the
     runner queue;
-  - the commit the gates passed is the commit shipped;
   - a ledger of out-of-tree work that blocks promotion;
   - a registry of external preconditions;
   - a heartbeat in which a stopped schedule reads as red;

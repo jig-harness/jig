@@ -1,0 +1,15 @@
+# UNSAFE (c): the production deploy job takes no ref in its checkout but
+# fetches a branch by name in a run step and deploys what it got.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to production
+        run: |
+          git fetch origin release-candidate && git checkout FETCH_HEAD
+          ./deploy --target production

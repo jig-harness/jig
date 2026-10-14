@@ -1,0 +1,18 @@
+# SAFE: a production deploy with no `needs:` resolves the verified pointer
+# with a revision suffix (`verified^{commit}`). The suffix still names the
+# pointer, which this first job may resolve by name.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - name: Deploy the verified commit to production
+        run: |
+          SHA=$(git rev-parse --verify "verified^{commit}")
+          ./deploy --target production --commit "$SHA"

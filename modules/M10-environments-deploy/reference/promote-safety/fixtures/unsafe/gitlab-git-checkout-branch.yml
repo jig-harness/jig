@@ -1,0 +1,10 @@
+# UNSAFE (c): a manual GitLab production job checks out a branch by name in its
+# script instead of the commit an upstream job passed on.
+deploy-production:
+  stage: deploy
+  when: manual
+  environment: production
+  script:
+    - git fetch origin
+    - git checkout origin/release
+    - ./deploy --target production

@@ -432,6 +432,10 @@ criteria:
     # Deploy jobs ship what the `verified` pointer points at, not a mutable branch or a moving tag (expected-absent for a library-shaped repo, which publishes rather than deploys environments).
     score: expected-absent
     evidence: "Library shape: no deploy jobs (only .github/workflows/main.yml, which has no publish/deploy step). npm publish is manual."
+  M10/artifacts-built-once-promoted-by-digest:   # standard, requires mechanical
+    # What reaches production is the artifact verification approved, built once and addressed by digest, with per-environment settings supplied at deploy time rather than compiled in (expected-absent for a library-shaped repo, which publishes rather than deploys environments).
+    score: expected-absent
+    evidence: "Library shape: no deployable artifact or environment; npm publish is manual."
   M10/freshness-watchdog-runs:   # standard, requires mechanical
     # A scheduled watchdog fails when the `verified` pointer lags the default-branch tip beyond a threshold, so a stalled verifier pages someone instead of silently shipping stale code.
     score: expected-absent
@@ -448,6 +452,18 @@ criteria:
     # Disposable preview environments are created and destroyed per PR, and a seeded, tenant-isolated, resettable test-data factory exists (expected-absent for a library-shaped repo with no runnable environment).
     score: expected-absent
     evidence: "Library shape: no runnable service or tenants. Tests spawn local fixtures (test/fixtures/), and no preview workflow exists."
+  M10/promotions-serialized-from-trusted-ref:   # strict, requires mechanical
+    # Promotions to one environment never drop a queued request, and each waits until no earlier promotion is active before its first change and checks again just before the migration; the promotion workflow and its gate code load from the trusted ref, the only ref the production environment admits (expected-absent for a library-shaped repo with no production environment).
+    score: expected-absent
+    evidence: "No production environment and no promotion workflow (only .github/workflows/main.yml)."
+  M10/deploy-verifies-live-identity:   # strict, requires mechanical
+    # A deploy is complete only when the live environment reports the exact artifact identity that was promoted, its rollouts are ready, and a readiness check that exercises the application's critical dependencies passes; anything downstream reads a manifest of what actually deployed (expected-absent for a library-shaped repo with no runnable environment).
+    score: expected-absent
+    evidence: "Library shape: no runnable environment to verify."
+  M10/release-state-off-source-line:   # strict, requires mechanical
+    # Release pointers only fast-forward to verified source, and rendered deployment state lives on its own ref, written only by a dedicated machine identity that the ref's protection admits (expected-absent for a repository with neither a release pointer nor rendered deployment state in git; a repository with only one of them is scored on that one).
+    score: expected-absent
+    evidence: "No rendered deployment state or GitOps controller; release tags are cut by the maintainer."
   # M11 process-observability
   M11/process-events-documented:   # lite, requires convention
     # The process events the team measures (review outcome + cost, gate pass/fail + duration, cycle times) are named and documented as a closed set, distinct from product analytics.

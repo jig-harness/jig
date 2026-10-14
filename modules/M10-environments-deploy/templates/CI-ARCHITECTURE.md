@@ -21,14 +21,15 @@ So we keep the two facts separate, with an explicit marker for the second one: a
 
 ## The four stages
 
-Delivery is four stages, each with a single job and a hard boundary to the next.
+Delivery is four stages, each with one responsibility and a hard boundary to
+the next; a stage may run several jobs.
 
 | Stage | Runs on | Question it answers | Advances |
 |-------|---------|---------------------|----------|
 | 1. PR gates | every pull request | "Is this diff, in isolation, good enough to merge?" | nothing (informs the human merge) |
 | 2. Post-merge verification | every push to the default branch | "Does the *integrated* branch actually work?" | the `verified` pointer |
-| 3. Deploy | when `verified` advances | "Ship the thing we verified to a live environment." | the deployed environment |
-| 4. Promotion to production | a human's deliberate action | "Put the verified, deployed build in front of users." | production |
+| 3. Deploy | when `verified` advances | "Ship the thing we verified to a live environment, and confirm it is the thing running." | the deployed environment |
+| 4. Promotion to production | a human's deliberate action | "Put the verified, deployed build in front of users, and confirm it is the thing running." | production |
 
 The boundaries are the point: stage 2 never trusts stage 1's green ("merged" ≠
 "verified"), stage 3 only ever deploys what stage 2 marked, and stage 4 never
@@ -81,9 +82,22 @@ the runnable version is the [`verified-pointer`](https://github.com/docomply/jig
 
 Deploys are driven by the pointer moving, and they deploy **what the pointer
 points at** — never a raw branch, never `:latest`, never "whatever triggered
-this run." Build the artifact from the verified commit (or reuse the one
-verification already built) and ship *that*. If a deploy job checks out `main`
-instead of `verified`, the whole verify-then-ship chain is bypassed.
+this run." Build the artifact once, from the verified commit (verification
+already built it), and ship *that*: the same bytes in every environment,
+addressed by digest (a content hash such as `image@sha256:…`), never by a tag
+that can move. Per-environment settings are supplied at deploy time (a runtime
+configuration file, environment variables), never compiled into the artifact,
+so staging and production run identical builds. If a deploy job checks out
+`main` instead of `verified`, the whole verify-then-ship chain is bypassed.
+
+Every deploy ends with an **identity check**: the deploy is complete only when
+the live environment reports the exact artifact identity that was shipped, its
+rollouts are ready, and a readiness check that exercises the application's
+critical dependencies passes (for an application with a database, one that
+queries it).
+"The deploy command returned" is not that fact. The deploy run also records a
+manifest of what it actually deployed this run, and anything downstream (an
+end-to-end run against the environment) reads that manifest.
 
 ### Stage 4 — manual, gated promotion to production
 
@@ -93,7 +107,39 @@ already-verified-and-deployed build — a manual trigger plus an environment
 for a push to auto-promote to production. This is the last human checkpoint (a
 [HITL](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review) boundary), and it is enforced by
 configuration, not habit: the [`promote-safety`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/promote-safety)
-lint fails a production deploy that auto-fires or ships a mutable ref.
+lint fails a production deploy that auto-fires, ships a mutable ref, or looks
+its commit up again by name.
+
+#### The promotion ships what it gated
+
+A promotion is several jobs (gate, migrate, deploy, verify), and each one can
+quietly ship something other than what the gate approved. So:
+
+- **The first job resolves the `verified` pointer once** and outputs the
+  commit it checked; every later job takes that commit from the output. A job
+  that fetches a branch by name gets whatever the name points at when it
+  starts, which can be newer than what the gate checked.
+- **Promotions to one environment run one at a time, and none is dropped.**
+  Use a queue or lock that keeps every request; a mechanism that keeps only
+  the newest pending run silently discards a deliberate promotion. Refuse a
+  re-run of a promotion, which keeps its original place in the order; start
+  a new one. Check the lock again just before the migration.
+- **The promotion runs from the [trusted ref](https://github.com/docomply/jig/blob/main/GLOSSARY.md)** (the `verified` pointer). A manually started workflow
+  runs its definition from whichever branch the operator picks; start it from
+  `verified`, check the gate's own code out from `verified`, and have the
+  production environment admit only that ref.
+- **Production ends with the identity check** above: the promoted digest is
+  live, rollouts are ready, the readiness check passes. The run publishes its
+  manifest of what it deployed.
+- **Release state stays off the source line.** A release pointer (the branch
+  that says what production runs) only fast-forwards to verified commits,
+  and only after the identity check passes; a gated commit older than the
+  pointer is refused before the promotion changes anything, checked again once
+  it holds the lock.
+  Rendered deployment manifests, when git drives the deploy, live on their own
+  ref, written only by one dedicated machine identity; that ref's protection
+  restricts who may push and requires no pull request, which a direct push
+  could never satisfy.
 
 ## Where each suite runs
 
@@ -152,6 +198,8 @@ contract:
 PR gates inform the human merge; post-merge verification advances an explicit
 `verified` pointer and a watchdog keeps that pointer honest; suites neither
 waits for run on a schedule, not per change; deploys ship only
-what `verified` points at; and production is reached only by a gated, manual
-promotion that cannot auto-fire. Preview environments are disposable, and test
+what `verified` points at, built once and addressed by digest; production is
+reached only by a gated, manual promotion that cannot auto-fire, passes the
+gated commit from job to job, and runs one at a time; and no deploy is done
+until the live environment reports the identity that was shipped. Preview environments are disposable, and test
 data is seeded, isolated, and resettable.

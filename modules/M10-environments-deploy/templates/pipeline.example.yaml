@@ -87,29 +87,98 @@ scheduled_suites:
 
 # ---------------------------------------------------------------------------
 # STAGE 3 — Deploy verified artifacts. Triggered when the verified pointer moves.
-# Deploys WHAT THE POINTER POINTS AT — never a raw branch, never :latest.
+# Deploys WHAT THE POINTER POINTS AT — never a raw branch, never :latest — and is
+# done only when the live environment reports that identity (verify_identity).
 # ---------------------------------------------------------------------------
 deploy_verified:
   on:
     pointer_advanced: verified
-  runs:
-    - name: deploy the verified commit to staging
+  jobs:
+    resolve:
+      # Resolve the pointer ONCE; every later job takes the commit from here.
+      outputs:
+        sha: $(git rev-parse refs/tags/verified)
+    deploy:
+      needs: resolve
       checkout:
-        ref: refs/tags/verified  # the verified pointer, not `main`
-      run: deploy --target staging --ref refs/tags/verified
+        ref: ${needs.resolve.outputs.sha}   # the resolved commit, not a name
+      # The artifact verification built, by digest; settings come at deploy time.
+      run: deploy --target staging --image <registry>/<app>@<verified-digest> --config staging
+    verify_identity:
+      needs: deploy
+      # Done only when the live environment reports what was shipped.
+      runs:
+        - live-identity-equals: <registry>/<app>@<verified-digest>
+        - rollouts-ready: true              # e.g. kubectl rollout status
+        - readiness-check: https://staging.<your-domain>/ready   # its critical dependencies, e.g. the database
+      outputs:
+        manifest: deploy-manifest.json      # what actually deployed: identities, rollout results
 
 # ---------------------------------------------------------------------------
 # STAGE 4 — Promotion to production. MANUAL + GATED. Never auto-fires. Ships the
-# already-verified, already-deployed build. Enforced by Jig's promote-safety lint
+# already-verified, already-deployed build — the exact commit and digest the
+# gate approved. Enforced by Jig's promote-safety lint
 # (modules/M10-environments-deploy/reference/promote-safety/).
 # ---------------------------------------------------------------------------
 promote_to_production:
   on:
-    workflow_dispatch: {}        # a deliberate human action — not `push`
+    workflow_dispatch:           # a deliberate human action — not `push`
+      from_ref: verified         # run the workflow's own definition from the trusted ref
+  concurrency:
+    one_at_a_time: true          # serialize promotions to production...
+    drop_pending: false          # ...without discarding a queued request
   environment:
     name: production             # attach protection rules: required reviewers / wait timer
-  runs:
-    - name: promote verified build to production
+  jobs:
+    gate:
       checkout:
-        ref: refs/tags/verified  # still the verified pointer, nothing mutable
-      run: deploy --target production --ref refs/tags/verified
+        ref: refs/tags/verified  # gate code AND the commit, from the trusted pointer
+      run: |
+        ./gates/check-promotion
+        # Refuse a stale promotion early: --ff-only alone accepts a commit
+        # older than the release pointer as a no-op. Checked again under the lock.
+        git merge-base --is-ancestor origin/<release-branch> HEAD
+      outputs:
+        sha: $(git rev-parse HEAD)          # the commit the gate approved
+    lock:
+      needs: gate
+      # Held until earlier runs finish; fails a re-run, which keeps its earlier place.
+      run: wait-until-earliest-active-promotion
+    migrate:
+      needs: [gate, lock]
+      checkout:
+        ref: ${needs.gate.outputs.sha}
+      run: |
+        check-still-earliest-active-promotion   # fail, don't wait: the lock again
+        # An earlier promotion may have advanced the release pointer while this
+        # one waited: refuse a gated commit older than it, before the first change.
+        git fetch origin <release-branch> && git merge-base --is-ancestor FETCH_HEAD HEAD
+        migrate --target production
+    promote:
+      needs: [gate, migrate]
+      checkout:
+        ref: ${needs.gate.outputs.sha}      # never `verified` again: it may have moved
+      # Re-tag or copy the verified digest; never rebuild.
+      run: promote --image <registry>/<app>@<verified-digest> --to production
+    publish_rendered_state:
+      needs: [gate, promote]
+      # Rendered manifests: their own ref, written by one dedicated machine identity.
+      run: |
+        render --target production --image <registry>/<app>@<verified-digest> \
+          | commit-to <release-state-ref> --as <release-state-writer>
+    verify_identity:
+      needs: publish_rendered_state
+      runs:
+        - live-identity-equals: <registry>/<app>@<verified-digest>
+        - rollouts-ready: true
+        - readiness-check: https://<your-domain>/ready   # its critical dependencies, e.g. the database
+      outputs:
+        manifest: deploy-manifest.json      # what actually deployed: identities, rollout results
+    advance_release_pointer:
+      needs: [gate, verify_identity]
+      # Only once production runs the gated commit: a pure fast-forward to it.
+      run: |
+        git fetch origin <release-branch> && git checkout -B <release-branch> FETCH_HEAD
+        git merge --ff-only ${needs.gate.outputs.sha}
+        test "$(git rev-parse HEAD)" = "${needs.gate.outputs.sha}"
+        git push origin HEAD:<release-branch>

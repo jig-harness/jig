@@ -1,0 +1,31 @@
+# SAFE: a scan step takes the promoted image by digest through an input whose
+# key ends in `ref` (`image-ref:`). That key names an image, not a commit, so
+# (c) does not read it; the checkout takes the gate's output.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.pin.outputs.sha }}
+      digest: ${{ steps.pin.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - id: pin
+        run: ./resolve-verified.sh >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - uses: aquasecurity/trivy-action@v0
+        with:
+          image-ref: ghcr.io/o/app@${{ needs.gate.outputs.digest }}
+      - name: Deploy to production
+        run: ./deploy --target production --image ghcr.io/o/app@${{ needs.gate.outputs.digest }}

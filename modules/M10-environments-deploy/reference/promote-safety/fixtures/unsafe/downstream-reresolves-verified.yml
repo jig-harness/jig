@@ -1,0 +1,28 @@
+# UNSAFE (c): the gate job outputs the commit it approved, but the production
+# deploy job, which needs the gate, checks out the verified pointer by name
+# again. The pointer can advance between the two jobs, so the deploy can ship
+# a commit the gate never saw. Only the first job may resolve it by name.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.pin.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - id: pin
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - name: Deploy to production
+        run: ./deploy --target production --ref refs/tags/verified

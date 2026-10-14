@@ -1,0 +1,19 @@
+# SAFE: a staging deploy fetches a branch by name. It carries no production
+# signal, so it is out of scope: (c) applies to production deploys only.
+name: deploy-staging
+on:
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./build.sh
+  staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - run: |
+          git fetch origin release
+          git checkout FETCH_HEAD
+          ./deploy --target staging

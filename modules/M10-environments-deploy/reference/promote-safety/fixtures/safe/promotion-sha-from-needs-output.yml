@@ -1,0 +1,33 @@
+# SAFE: the corrected promotion shape. The gate job (no `needs:`) resolves the
+# verified pointer once and outputs the commit it approved; the production
+# deploy job and the identity check take that commit from the gate's output,
+# never by name. Proves (c) accepts `needs.<job>.outputs.<x>` in a `ref:`, in
+# a git command and in a deploy flag, and the pointer by name in the first job.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+concurrency:
+  group: promote-production-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.pin.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/verified
+      - id: pin
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - run: git fetch origin ${{ needs.gate.outputs.sha }}
+      - name: Deploy to production
+        run: ./deploy --target production --ref ${{ needs.gate.outputs.sha }}

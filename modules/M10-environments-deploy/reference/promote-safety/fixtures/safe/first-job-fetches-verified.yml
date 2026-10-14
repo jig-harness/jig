@@ -1,0 +1,17 @@
+# SAFE: a single-job production deploy with no `needs:` fetches the verified
+# pointer by name in a run step. With no upstream job there is no output to
+# take: this job is where the pointer is resolved, once.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy the verified commit to production
+        run: |
+          git fetch --force origin "refs/tags/verified:refs/tags/verified"
+          git checkout --detach verified
+          ./deploy --target production

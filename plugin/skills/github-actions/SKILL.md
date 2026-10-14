@@ -43,7 +43,7 @@ and the only reference for Phase 4.
 
 [Jig's M10 template](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md)
 is one common shape for such a document. It splits delivery into four stages,
-each with one job and a hard boundary to the next:
+each with one responsibility and a hard boundary to the next:
 
 ```
 1. PR gates
@@ -59,12 +59,15 @@ each with one job and a hard boundary to the next:
 3. Deploy
    Trigger: the verified pointer moves
    Scope:   deployable applications
-   Purpose: build and deploy what the pointer names, never a moving branch
+   Purpose: deploy, by digest, the build of the commit the pointer names,
+            never a moving branch; done when the live environment reports it
 
 4. Promotion to production
-   Trigger: a human, manually
+   Trigger: a human, manually, from the trusted ref
    Scope:   deployable applications
-   Purpose: put the verified, deployed build in front of users
+   Purpose: put the verified, deployed build in front of users: one promotion
+            at a time, the gated commit passed from job to job, and the live
+            identity checked at the end
 ```
 
 When the repository's document sorts its packages by role, check every

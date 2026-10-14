@@ -1,0 +1,20 @@
+# SAFE: GitLab passes the gated commit from job to job as a dotenv variable.
+# The production job fetches and checks out "$GATED_SHA", a variable, never a
+# branch name.
+gate:
+  stage: gate
+  script:
+    - echo "GATED_SHA=$(git rev-parse HEAD)" > gate.env
+  artifacts:
+    reports:
+      dotenv: gate.env
+
+deploy-production:
+  stage: deploy
+  needs: [gate]
+  when: manual
+  environment: production
+  script:
+    - git fetch origin "$GATED_SHA"
+    - git checkout --detach "$GATED_SHA"
+    - ./deploy --target production

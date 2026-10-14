@@ -1,0 +1,37 @@
+# SAFE: the production deploy job takes the commit from the gate's output and
+# then writes the rendered deployment state to its own ref, `release-state`.
+# A ref the job pushes to, from the same repository and to the same remote it
+# fetched from, is its write target, not the commit it ships, so fetching that
+# ref by name does not trip (c). The published state replaces the previous
+# snapshot, so a manifest the new render drops is removed from the ref.
+name: promote-to-production
+on:
+  workflow_dispatch: {}
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.pin.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: refs/tags/verified }
+      - id: pin
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  deploy-production-state:
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - name: Render and publish the production deploy state
+        run: |
+          ./render --target production --out rendered/
+          git fetch origin release-state
+          git worktree add state release-state
+          find state -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r rendered/. state/
+          git -C state add -A
+          git -C state commit -m "deploy: production"
+          git push origin release-state:refs/heads/release-state
