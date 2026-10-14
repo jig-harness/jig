@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { isRecord } from "../lib/record.ts";
+import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 import { CATALOG, type Catalog, validCatalog } from "./change-areas.ts";
 
 export const REVIEW_CONFIG = ".config/ai-review.yaml";
@@ -52,7 +53,7 @@ export function projectPatterns(catalog: Catalog): string[] {
 
 /** The committed block's patterns, in file order. */
 export function committedPatterns(config: string): string[] {
-  const doc = Bun.YAML.parse(config);
+  const doc = loadYaml(config);
   const list = isRecord(doc) ? doc.high_risk_path_patterns : undefined;
   if (!Array.isArray(list))
     throw new Error(`${REVIEW_CONFIG}: no high_risk_path_patterns list`);
@@ -107,7 +108,12 @@ export function checkReviewRisk(root = "."): number {
     console.error(error instanceof Error ? error.message : String(error));
     return 2;
   }
-  if (JSON.stringify(expected) === JSON.stringify(committed)) return 0;
+  if (JSON.stringify(expected) === JSON.stringify(committed)) {
+    console.log(
+      `review-risk: OK — ${REVIEW_CONFIG}'s ${committed.length} high-risk patterns are the projection of ${CATALOG}'s reviewRisk: high areas`,
+    );
+    return 0;
+  }
   console.error(
     `${REVIEW_CONFIG}: high_risk_path_patterns differs from the areas marked reviewRisk: high in ${CATALOG}; regenerate it with \`bun scripts/review-risk.ts --write\``,
   );

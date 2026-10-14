@@ -85,20 +85,82 @@ function unresolved(page: string, cwd = root): string[] {
   expectSpawnExit(result, reported.length ? 1 : 0);
   return reported;
 }
+const todoGate = `${m1}/grep-gate/check-todo-has-issue.ts`;
+const todoFixture = (name: string) =>
+  join(root, m1, "grep-gate/fixtures", name);
+/** The TODO gate run on `dir`, outside GitHub Actions unless `env` says so. */
+function todo(dir: string, env: Record<string, string> = {}) {
+  return run(todoGate, [], root, {
+    GITHUB_ACTIONS: "",
+    SRC_DIR: dir,
+    ...env,
+  });
+}
 for (const [fixture, status] of [
   ["clean", 0],
   ["bad", 1],
   ["exempt", 0],
-  ["does-not-exist", 0],
+  ["no-reason", 1],
+  ["stale", 1],
+  ["stale-with-issue", 1],
+  ["mixed-exempt", 0],
+  ["mixed-bare", 1],
+  ["double-exempt", 1],
+  ["todo-in-key", 0],
+  ["stale-todo-in-key", 1],
+  ["does-not-exist", 2],
 ] as const)
-  test(`TODO gate: ${fixture}`, () =>
-    compare(`${m1}/grep-gate/check-todo-has-issue.ts`, [], status, root, {
-      SRC_DIR: join(root, m1, "grep-gate/fixtures", fixture),
+  test(`TODO gate: ${fixture} exits ${status}`, () =>
+    compare(todoGate, [], status, root, {
+      GITHUB_ACTIONS: "",
+      SRC_DIR: todoFixture(fixture),
     }));
-test("TODO gate: empty root", () =>
-  compare(`${m1}/grep-gate/check-todo-has-issue.ts`, [], 0, root, {
-    SRC_DIR: temp,
-  }));
+test("TODO gate: a root with nothing to scan could not be checked", () => {
+  const empty = mkdtempSync(join(temp, "todo-empty-"));
+  const result = todo(empty);
+  expectSpawnExit(result, 2);
+  expect(String(result.stderr)).toContain("could not check");
+  const binary = mkdtempSync(join(temp, "todo-binary-"));
+  writeFileSync(join(binary, "blob.bin"), Buffer.from([0x54, 0, 0x4f]));
+  expectSpawnExit(todo(binary), 2);
+});
+test("TODO gate: a stale suppression is named as one", () => {
+  const result = todo(todoFixture("stale"));
+  expectSpawnExit(result, 1);
+  expect(String(result.stderr)).toContain(
+    "app.txt:1: [todo-has-issue] `todo-exempt:` on a line with no TODO suppresses nothing",
+  );
+  expect(String(result.stderr)).toContain("fix: delete the stale suppression");
+});
+test("TODO gate: a green run states its scope", () => {
+  const result = todo(todoFixture("clean"));
+  expectSpawnExit(result, 0);
+  expect(String(result.stdout)).toContain(
+    "OK — todo-has-issue: 1 text file(s)",
+  );
+  expect(String(result.stdout)).toContain('Checks the text "TODO" only');
+});
+test("TODO gate: findings become annotations only under GitHub Actions", () => {
+  const plain = todo(todoFixture("bad"));
+  expectSpawnExit(plain, 1);
+  expect(String(plain.stdout)).not.toContain("::error");
+  const annotated = todo(todoFixture("bad"), { GITHUB_ACTIONS: "true" });
+  expectSpawnExit(annotated, 1);
+  const lines = String(annotated.stdout)
+    .split("\n")
+    .filter((line) => line.startsWith("::error "));
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toMatch(
+    /^::error file=[^,]*bad\/app\.txt,line=1,title=todo-has-issue::TODO without an issue reference Fix: /,
+  );
+  const missing = todo(todoFixture("does-not-exist"), {
+    GITHUB_ACTIONS: "true",
+  });
+  expectSpawnExit(missing, 2);
+  expect(String(missing.stdout)).toContain(
+    "::error title=todo-has-issue%3A could not check::",
+  );
+});
 test("review marker passes unrelated paths and requires marker on staged protected paths", () => {
   const dir = join(temp, "marker");
   mkdirSync(dir);

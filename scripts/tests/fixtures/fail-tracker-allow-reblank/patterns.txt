@@ -1,0 +1,9 @@
+# Fixture patterns: a name and a spaced suffix.
+(?i)acme
+(?i) +corp
+# The name on the badge may be named.
+!acme
+# Again: the blanks it re-blanks belong to a reference, but change nothing.
+!acme
+# The suffix may be named too.
+!corp

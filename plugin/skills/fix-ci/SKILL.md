@@ -270,7 +270,17 @@ bun test <file1>.test.ts <file2>.test.ts
 A check written for this repository failed: a [grep gate](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
 a ratchet, a self-test. A specific gate diagnostic is not flaky
 infrastructure. Read the `raw` line, open the workflow step that runs the
-check to learn the rule, and fix the offending source.
+check to learn the rule, and fix the offending source. A finding written to
+[M1](https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md)'s
+rules names its rule, its file and line, and its fix (`fix:` on the next log
+line, `Fix:` in the annotation): apply that fix.
+
+A gate that says it **could not check** (its message says so, or the step
+exited with status 2) has not judged the code at all: its input was missing,
+empty or unreadable, or a command it needs failed. Fix the input or the
+environment it names (a moved folder, a missing file, an absent merge base
+in a shallow checkout), not the code under check, and never read it as a
+pass or as a list of findings.
 
 ### process_exit (priority 7)
 

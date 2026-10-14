@@ -1,0 +1,8 @@
+# Fixture patterns: a name before its suffix, or its end before the suffix's
+# end; and the suffix's first letter.
+acme(?= corp)|e +orp
+c(?=orp)
+# The suffix's first letter may be named.
+!c(?=orp)
+# The suffix's end may be named.
+!orp

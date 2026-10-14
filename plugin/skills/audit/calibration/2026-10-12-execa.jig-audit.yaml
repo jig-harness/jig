@@ -69,6 +69,14 @@ criteria:
     # Third-party CI automation is pinned to immutable revisions and an automated updater proposes pin changes through the normal gate set.
     score: absent
     evidence: "main.yml pins actions by mutable major tag, not SHA: actions/cache@v6 (:21), checkout@v7 (:26), setup-node@v7 (:27), lychee-action@v2 (:31), codecov-action@v4 (:40). No .github/dependabot.yml or renovate.json (git ls-files grep)."
+  M1/gate-outcomes-distinguish-could-not-check:   # standard, requires mechanical
+    # Every repository-written gate has three outcomes, passed, found violations and could not check (exit 0, 1 and 2), and reports a missing or unreadable input, an input empty where its format requires content, or a failed command as could not check, never as a pass.
+    score: absent
+    evidence: "No repository-written gate exists to distinguish the outcomes (see M1/grep-gates-tested-and-wired); the checks are xo, node:test, tsd and lychee, run as configured."
+  M1/stale-exceptions-fail:   # standard, requires mechanical
+    # Every allowlist entry and suppression token a repository-written gate honors carries a non-empty reason the gate checks, and an entry that no longer suppresses anything fails the gate.
+    score: absent
+    evidence: "No repository-written gate exists to honor a suppression (see M1/grep-gates-tested-and-wired); the suppressions recorded under M1/suppression-token-registry are tool-native."
   M1/suppression-token-registry:   # strict, requires convention
     # A single registry page lists every suppression token a live gate honors, with syntax, consuming gate, placement, and justification requirement, plus a registration rule for new tokens.
     score: absent
@@ -82,6 +90,10 @@ criteria:
     # probe found: .github/workflows/main.yml
     score: absent
     evidence: "No grep gates exist, so there are no self-tests. main.yml runs only lychee, npm run lint/type/unit and the codecov upload."
+  M1/gate-self-tests-cover-empty-input:   # strict, requires mechanical
+    # Each repository-written gate's self-test includes a case where the gate has nothing to examine (its input or section missing, or empty where the input's format requires content, such as a scan root with no file) and asserts that the gate does not pass on it.
+    score: absent
+    evidence: "No repository-written gate, so no gate self-test (see M1/gate-self-tests-in-ci)."
   M1/advisory-gates-carry-promotion-conditions:   # strict, requires convention
     # Every advisory (non-blocking) gate states its promotion condition and a review date; none is advisory indefinitely without one.
     score: absent

@@ -1,0 +1,7 @@
+# Fixture patterns: a neutral key and organization name.
+\bEXAMPLE-[0-9]+\b
+(?i)acme-corp
+# The organization's name on the badge may be named.
+!acme-corp
+# Blanking the name exposes the key's word boundary; the key may be named too.
+!EXAMPLE-123456

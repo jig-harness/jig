@@ -330,11 +330,6 @@ Done when the module, its criteria and the migration gate are in.
 Practices a working repository validated, for modules that exist today:
 
 - **M1**:
-  - a gate reports passed, found violations, or could not decide, and never
-    passes on input it could not read;
-  - rules for writing gates that read documents;
-  - findings that name the rule, the place and the remedy;
-  - exceptions that fail once they suppress nothing;
   - supply chain beyond action pins (release cooldown, install-script
     allowlist, layered secret scanning);
   - agent-runtime hooks as a rung of the ladder.

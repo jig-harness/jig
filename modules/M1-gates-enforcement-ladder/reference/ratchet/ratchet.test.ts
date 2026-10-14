@@ -236,7 +236,7 @@ describe("ratchet against the merge base", () => {
     expect(out).toContain("tsconfig.json: noUnusedLocals");
   });
 
-  test("a missing base is reported and skipped locally, and fails in CI", () => {
+  test("a missing base is reported and skipped locally, and could not be checked in CI", () => {
     const r = repo(base);
     const local = sh(r.dir, process.execPath, [
       gate,
@@ -253,8 +253,20 @@ describe("ratchet against the merge base", () => {
       [gate, "--config", "ratchet.json", "--base", "no-such-branch"],
       { CI: "true" },
     );
-    expect(ci.code).toBe(1);
-    expect(ci.out).toContain("fetch-depth: 0");
+    expect(ci.code).toBe(2);
+    expect(ci.out).toContain(
+      "ratchet: could not check: cannot find the merge base with no-such-branch; CI needs the base history",
+    );
+    const annotated = sh(
+      r.dir,
+      process.execPath,
+      [gate, "--config", "ratchet.json", "--base", "no-such-branch"],
+      { CI: "true", GITHUB_ACTIONS: "true" },
+    );
+    expect(annotated.code).toBe(2);
+    expect(annotated.out).toContain(
+      "::error title=ratchet%3A could not check::cannot find the merge base",
+    );
   });
 
   test("--report prints the counts without a base", () => {

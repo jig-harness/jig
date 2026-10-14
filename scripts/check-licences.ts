@@ -13,11 +13,12 @@
 // included, up to the end of the section. Each unindented line in it is a path,
 // whether or not the file exists, so a listed path that is gone is always
 // reported.
-// Exit 2 when the repository's files cannot be listed.
+// Exit 2 when the repository's files cannot be listed or none is found.
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { repoFiles } from "../lib/files.ts";
+import { couldNotCheck } from "../lib/findings.ts";
 
 const ROOT_FILES = ["LICENSE", "LICENSE-MIT-0", "NOTICE"];
 const PLUGIN_COPIES = ["LICENSE", "NOTICE"];
@@ -125,6 +126,7 @@ export function checkLicences(root = "."): number {
     .filter((f) => existsSync(join(root, f)))
     .map((f) => f.replaceAll("\\", "/"))
     .filter(inScope);
+  if (!files.length) return couldNotCheck("licences", `no file under ${root}`);
   const problems = rootProblems(root);
   if (problems.length === 0)
     problems.push(
@@ -134,6 +136,10 @@ export function checkLicences(root = "."): number {
       ),
     );
   for (const problem of problems) console.error(problem);
-  return problems.length ? 1 : 0;
+  if (problems.length) return 1;
+  console.log(
+    `licences: OK — ${files.length} files; LICENSE, LICENSE-MIT-0 and NOTICE present, plugin/ carries copies, and NOTICE lists every template and licence file (seeds and fixtures are skipped)`,
+  );
+  return 0;
 }
 if (import.meta.main) cli(() => checkLicences(process.argv[2]));

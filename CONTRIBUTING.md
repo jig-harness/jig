@@ -84,7 +84,8 @@ design. Run all with one command: `bun run gates`. The set, in order:
 5. the repository checks (`CHECKS` in `scripts/gates.ts`): Markdown links
    and the paths the `AGENTS.md`, `CLAUDE.md` and `CONTRIBUTING.md` files
    name resolve; a blank line before every table; terms of art defined in the
-   glossary (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`);
+   glossary (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`,
+   each entry under a reason and removed once nothing uses it);
    no origin references; no workflow that runs a fork's code with secrets
    (M7's PR-target safety lint); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); a changelog entry for the current plugin

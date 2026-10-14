@@ -1,0 +1,5 @@
+# Fixture patterns: a neutral key and organization name.
+\bEXAMPLE-[0-9]+\b
+(?i)acme-corp
+
+!(?i)^allowed\.md:.*acme-corp\.example/home

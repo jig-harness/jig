@@ -1,0 +1,7 @@
+# Fixture patterns: a name before its suffix, and the suffix.
+acme(?= corp)
+corp
+# The suffix may be named.
+!corp
+# The name may be named too, after the suffix hid it.
+!acme

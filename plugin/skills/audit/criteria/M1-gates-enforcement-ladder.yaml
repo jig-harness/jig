@@ -127,6 +127,36 @@ criteria:
       - "dependency-updater configuration covers those references"
       - "proposed updates run the same required gates as other changes"
 
+  - id: gate-outcomes-distinguish-could-not-check
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every repository-written gate has three outcomes, passed, found
+      violations and could not check (exit 0, 1 and 2), and reports a missing
+      or unreadable input, an input empty where its format requires content,
+      or a failed command as could not check, never as a pass.
+    observe:
+      - "check scripts exit with a distinct status (conventionally 2) and a
+        could-not-check message when their input is missing or unreadable,
+        empty where its format requires content, or a command they run fails"
+      - "self-tests assert that status for at least one such input per gate"
+      - "no gate prints a pass for a scan root that does not exist"
+    since: 0.21.0
+
+  - id: stale-exceptions-fail
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every allowlist entry and suppression token a repository-written gate
+      honors carries a non-empty reason the gate checks, and an entry that no
+      longer suppresses anything fails the gate.
+    observe:
+      - "gates reject a suppression or allowlist entry without a reason"
+      - "gates report an entry that matched no finding in the run as stale and
+        fail on it"
+      - "self-tests cover a stale entry"
+    since: 0.21.0
+
   - id: suppression-token-registry
     level: strict
     requires: convention
@@ -159,6 +189,23 @@ criteria:
       - "CI workflow runs each gate's self-test, not only the gates"
     probe:
       files: *ci-config
+
+  - id: gate-self-tests-cover-empty-input
+    level: strict
+    requires: mechanical
+    statement: >-
+      Each repository-written gate's self-test includes a case where the gate
+      has nothing to examine (its input or section missing, or empty where
+      the input's format requires content, such as a scan root with no file)
+      and asserts that the gate does not pass on it.
+    observe:
+      - "every gate's test suite has a case where the input is missing, or
+        empty where its format requires content, expecting the
+        could-not-check status"
+      - "an input whose format allows zero entries may pass when empty, and
+        the gate's output then says it examined zero"
+      - "those self-tests run in CI"
+    since: 0.21.0
 
   - id: existing-findings-ratcheted
     level: strict

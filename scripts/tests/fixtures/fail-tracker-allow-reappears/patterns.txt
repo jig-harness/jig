@@ -1,0 +1,8 @@
+# Fixture patterns: a name, or its first letter before two blanks; and the
+# name's last letter at the end of a sentence.
+a(?:bc|  )
+c(?=\.)
+# The name's middle letter may be named.
+!b(?=c)
+# The name's last letter may be named.
+!(?<=b)c

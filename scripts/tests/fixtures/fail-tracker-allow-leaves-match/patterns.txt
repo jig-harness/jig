@@ -1,0 +1,9 @@
+# Fixture patterns: a neutral key and a name with any separator.
+\bEXAMPLE-[0-9]+\b
+(?i)acme.corp
+# The home page's key may be named.
+!EXAMPLE-1
+# A hyphen may be named: the name still matches with a blank in its place.
+!-
+# The name on the badge may be named.
+!acme

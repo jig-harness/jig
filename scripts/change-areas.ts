@@ -11,6 +11,8 @@ import { cli } from "../lib/cli.ts";
 import { repoFiles } from "../lib/files.ts";
 import { isRecord } from "../lib/record.ts";
 import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import { couldNotCheck } from "../lib/findings.ts";
+import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 
 export const CATALOG = ".config/change-areas.yaml";
 
@@ -89,9 +91,13 @@ const FIELDS: Record<
   reviewRisk: { required: false, check: oneOf("reviewRisk", REVIEW_RISKS) },
 };
 
-/** Read the catalog file; throws when it cannot be read or parsed. */
+/**
+ * Read the catalog file; throws when it cannot be read or parsed, or repeats
+ * a key (js-yaml rejects one, where a parser keeping the last would silently
+ * drop an area).
+ */
 export function readCatalog(path: string): unknown {
-  return Bun.YAML.parse(readFileSync(path, "utf8"));
+  return loadYaml(readFileSync(path, "utf8"));
 }
 
 /**
@@ -283,13 +289,20 @@ export function checkChangeAreas(root = "."): number {
     return 2;
   }
   const problems = catalogProblems(doc);
+  const files = problems.length ? [] : repoFiles(root);
   if (problems.length === 0) {
+    if (!files.length)
+      return couldNotCheck("change-areas", `no file under ${root}`);
     const catalog = (doc as { areas: Catalog }).areas;
-    for (const file of uncoveredFiles(repoFiles(root), catalog))
+    for (const file of uncoveredFiles(files, catalog))
       problems.push(`${file}: belongs to no area`);
   }
   for (const problem of problems) console.error(`${CATALOG}: ${problem}`);
-  return problems.length ? 1 : 0;
+  if (problems.length) return 1;
+  console.log(
+    `change-areas: OK — ${CATALOG} is valid and each of ${files.length} files belongs to an area (whether an area's paths are the right ones is review's question)`,
+  );
+  return 0;
 }
 
 function writeOutputs(resolution: Resolution): void {

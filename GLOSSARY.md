@@ -87,6 +87,23 @@ make, use the entry's term instead.
 - **Grep gate** — a deliberately simple check that searches the codebase for a
   forbidden or required pattern. Cheap, fast, and good enough for many rules;
   each ships with a self-test so the gate itself can't silently break.
+- **Fail closed** — what a gate does when it cannot do its job: its input is
+  missing or unreadable, empty where its format requires content, or a
+  command it runs failed. It stops with an error instead of reporting that
+  nothing was found. The opposite, failing open, turns a broken check into a
+  green one. An input whose format allows zero entries (a log with no events)
+  may be empty; the gate then says it examined zero.
+- **Could not check** — the third outcome of a gate, beside passed and found
+  violations (exit status 2 by convention): the gate could not decide, so the
+  fix belongs to its input or environment, not to the code under check. Never
+  evidence that a change passed.
+- **Mutation testing** — checking a test by breaking the code it guards on
+  purpose (deleting a condition, flipping a comparison) and confirming that
+  the test then fails. A test that stays green against the broken code was
+  not testing that code.
+- **Shadow job** — a non-blocking CI job that runs a candidate tool beside
+  the one in charge, on the same changes, and publishes how their results
+  differ, so the candidate can be judged before it replaces anything.
 - **Generated artifact** — a committed file produced by a script from some
   source of truth (an API spec from route definitions, an index from a docs
   tree). Must never be edited by hand.

@@ -23,26 +23,27 @@ that surfaces it — not evidence the list is exhaustive.
 ## How to read the table
 
 - **Token** — the exact syntax to write. `<reason>` stands for the
-  justification; its required form varies per row — some tokens demand a
-  non-empty reason, some structured fields, some none. Follow the row, don't
-  assume.
+  justification: free text or structured fields, per row. Every token and
+  every allowlist entry carries one, and the gate checks it.
 - **Suppresses (gate)** — the consuming check script or workflow, by path.
 - **Placement** — where the annotation must sit relative to the flagged site
   (same line, line above, file header, …). Gates should keep placement tight
   so a token can't be sneaked in far from what it excuses.
-- **Justification required** — what the gate mechanically enforces. If a
-  reason is expected only by convention, say so explicitly.
+- **Justification required** — what the gate mechanically checks: a
+  non-empty reason, or the fields the row names.
+- **Stale when** — when the entry no longer suppresses anything. The gate
+  fails on a stale entry, so exceptions leave with what they excused.
 
 ## Enforced inline tokens
 
 Replace these example rows (the first matches the worked example gate in
 `reference/grep-gate/`; the others show common shapes):
 
-| Token | Suppresses (gate) | Placement | Justification required |
-|-------|-------------------|-----------|------------------------|
-| `todo-exempt: <reason>` | `scripts/check-todo-has-issue.ts` (TODO-without-issue ban) | Same line as the TODO | Non-empty `<reason>` — the bare token does not suppress |
-| `-- <gate>-ignore-file` + `-- Justification: <text>` on the next line | `<a whole-file gate, e.g. a SQL migration lint>` | One of the first 5 lines of the file, column 0 — header-only so the marker can't ride along with unrelated violations further down | The companion `Justification:` line is mechanically required |
-| `<allowlist file or in-script list entry>` | `<gate that keeps a reviewed allowlist instead of inline tokens>` | One entry per exempted path/name, in the list itself | None parsed — the PR review of the list edit *is* the justification gate |
+| Token | Suppresses (gate) | Placement | Justification required | Stale when |
+|-------|-------------------|-----------|------------------------|------------|
+| `todo-exempt: <reason>` | `scripts/check-todo-has-issue.ts` (TODO-without-issue ban) | Same line as the TODO | Non-empty `<reason>` — the bare token does not suppress | The line has no TODO, or its TODO already cites an issue |
+| `-- <gate>-ignore-file` + `-- Justification: <text>` on the next line | `<a whole-file gate, e.g. a SQL migration lint>` | One of the first 5 lines of the file, column 0 — header-only so the marker can't ride along with unrelated violations further down | The companion `Justification:` line, non-empty | The file has nothing left the gate would flag |
+| `<allowlist file or in-script list entry>` | `<gate that keeps a reviewed allowlist instead of inline tokens>` | One entry per exempted path/name, in the list itself | A non-empty reason per entry (a `reason` field, or a `#` comment opening the entry's group), checked when the gate reads the list; the review of the list edit judges whether the reason holds | No finding in the run matches the entry |
 
 ## Process markers
 

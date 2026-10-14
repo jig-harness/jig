@@ -7,7 +7,8 @@
 // and a key Jig does not know inside one of its sections fails, since the
 // skills would ignore it and a misspelt field keeps its default; a top-level
 // section Jig does not own is left alone. Offline: the repository host and
-// tracker are not read. Exit 1 on a mismatch; 2 when a file cannot be read.
+// tracker are not read. Exit 1 on a mismatch; 2 when a file cannot be read or
+// there is no criterion to score against.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
@@ -25,12 +26,15 @@ export async function checkAuditFit(
   criteriaDir?: string,
 ): Promise<number> {
   const problems: string[] = [];
+  let criteria = 0;
   try {
     const record = parseRecord(
       readFileSync(join(root, RECORD_RELPATH), "utf8"),
       RECORD_RELPATH,
     );
     const modules = loadModules(criteriaDir);
+    criteria = modules.reduce((n, m) => n + m.criteria.length, 0);
+    if (!criteria) throw new Error("no maturity criterion to score against");
     // A test's own criteria have no profiles; the shipped ones always do.
     const profiles =
       criteriaDir === undefined ? loadProfiles(modules) : undefined;
@@ -57,7 +61,12 @@ export async function checkAuditFit(
     console.error(error instanceof Error ? error.message : String(error));
     return 2;
   }
-  if (problems.length === 0) return 0;
+  if (problems.length === 0) {
+    console.log(
+      `audit-fit: OK — ${RECORD_RELPATH} scores all ${criteria} criteria and .config/jig.yaml fits the audit's schema (offline: the host and the tracker are not read; whether a score is right is the audit's question, not this check's)`,
+    );
+    return 0;
+  }
   for (const p of problems) console.error(p);
   console.error(
     "re-evaluate the audit for this change: score new criteria in .config/jig-audit.yaml, fix the configuration (plugin/skills/audit/SKILL.md)",

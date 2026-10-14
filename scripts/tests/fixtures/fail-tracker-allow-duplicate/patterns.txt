@@ -1,0 +1,8 @@
+# Fixture patterns: a neutral key and organization name.
+\bEXAMPLE-[0-9]+\b
+(?i)acme-corp
+# The project's own home page may be named.
+!(?i)^allowed\.md:.*acme-corp\.example/home
+
+# The same place again: the first entry already exempts it.
+!(?i)^allowed\.md:.*acme-corp\.example/home

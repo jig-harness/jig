@@ -25,8 +25,9 @@
 //   --base    branch to compare against (default: RATCHET_BASE, else
 //             origin/main); the merge base with HEAD is measured
 //   --report  print the current counts only; no comparison, always exits 0
-// Exit: 0 pass (or skipped locally without a base), 1 a count grew or a rule
-// was loosened, 2 usage or configuration error.
+// Exit: 0 pass (or skipped locally without a base, and said so), 1 a count
+// grew or a rule was loosened, 2 could not check: a usage or configuration
+// error, or no merge base in CI.
 import {
   cpSync,
   existsSync,
@@ -40,6 +41,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { cli } from "../../../../lib/cli.ts";
+import { couldNotCheck } from "../../../../lib/findings.ts";
 import { LEAKY_GIT_ENV } from "../../../../lib/guarded-git-spawn.ts";
 
 /** One command whose output is counted, or a set of patterns to grep for. */
@@ -1355,12 +1357,13 @@ function report(lines: {
 }
 
 function missingBase(baseRef: string): number {
-  const message = `ratchet: cannot find the merge base with ${baseRef}`;
-  if (process.env.CI) {
-    console.error(`${message}; CI needs the base history (fetch-depth: 0)`);
-    return 1;
-  }
-  console.error(`${message}; comparison skipped`);
+  const message = `cannot find the merge base with ${baseRef}`;
+  if (process.env.CI)
+    return couldNotCheck(
+      "ratchet",
+      `${message}; CI needs the base history (fetch-depth: 0)`,
+    );
+  console.error(`ratchet: ${message}; comparison skipped`);
   return 0;
 }
 
@@ -1444,7 +1447,9 @@ function main(args: string[]): number {
 
   report({ promote, waived, grew, loose });
   if (grew.length || loose.length) return 1;
-  console.log(`ratchet: no count grew against ${mergeBase.slice(0, 12)}`);
+  console.log(
+    `ratchet: no count grew and no rule loosened without a Ratchet-Loosen trailer against ${mergeBase.slice(0, 12)} (${config.counters.length} counters: ${config.counters.map((c) => c.name).join(", ")})`,
+  );
   return 0;
 }
 

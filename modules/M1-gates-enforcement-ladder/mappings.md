@@ -35,7 +35,44 @@ module (`reference/grep-gate/`, `reference/commit-msg-marker/`) run with Bun and
 | Advisory (non-blocking) gate | `continue-on-error: true` on the job/step | `allow_failure: true` |
 | Blocking merge (the authority) | Branch protection → required status checks | Merge-request setting "Pipelines must succeed" |
 | Run summary | `$GITHUB_STEP_SUMMARY` | Job log / MR widget (no direct equivalent; a comment bot if needed) |
+| Shadow job for a replacement tool | A job with `continue-on-error: true` that runs both tools on the same tree and writes the parity counts to `$GITHUB_STEP_SUMMARY`; not a required check | A job with `allow_failure: true` that writes the counts to its log or a report artifact |
+| A skipped or cancelled job | The aggregator job (above) counts a selected job that was skipped or cancelled as not passed, and accepts a skip only for a job the resolver did not select | A job left out by `rules:` is not run and not counted: keep a job that must run free of `rules:` that can skip it |
 | Commit-msg marker re-check | Step iterating `git rev-list` over PR commits (see template) | Same script; diff range `$CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD` |
+
+## Actionable findings in CI
+
+A finding names its rule, its place, its problem and its fix in the log on
+every platform. In CI it is also written in the form the platform shows on the
+changed lines; the gate detects the platform from its environment.
+
+| | GitHub Actions | GitLab CI |
+|---|---|---|
+| Detect | `GITHUB_ACTIONS=true` | `GITLAB_CI=true` |
+| Mechanism | A workflow command printed to standard output: `::error file=<path>,line=<n>,title=<rule>::<problem> Fix: <remedy>` (`::warning` for an advisory gate) | No log command: the job writes a Code Quality report, a JSON array of `{description, check_name, fingerprint, severity, location: {path, lines: {begin}}}`, and declares it as `artifacts: reports: codequality: <file>` |
+| Escaping | In the message, `%` → `%25`, carriage return → `%0D`, line feed → `%0A`; in a property value also `:` → `%3A` and `,` → `%2C` | Ordinary JSON; `path` is relative to the repository with no leading `./`; `fingerprint` is stable for the same finding (a hash of rule, path and text) |
+| Where it shows | The run's summary and the pull request's changed files | The merge request's Code Quality widget |
+| "Could not check" | `::error title=<gate>: could not check::<reason>`, with exit 2 | The job fails with exit 2 and the reason in its log; a report entry needs a file to point at |
+
+GitHub shows only a limited number of annotations per step and per job and
+drops the rest, so the log, not the annotations, is the complete list of
+findings: a gate always prints every finding there.
+
+Jig's helper [`lib/findings.ts`](../../lib/findings.ts) formats findings and
+writes the GitHub form; the [grep-gate reference](reference/grep-gate/)
+uses it. A repository adopting the reference gate either runs it from a
+pinned Jig checkout or vendors `lib/` with it (it imports `lib/cli.ts`,
+`lib/files.ts` and `lib/findings.ts`); see
+[Non-JavaScript repositories](#non-javascript-repositories). The GitLab report
+is not written by the reference gate yet.
+
+## Exceptions that prune themselves
+
+| Exception form | Reason the gate checks | Stale when |
+|---|---|---|
+| Inline token (`todo-exempt: <reason>`) | Non-empty text after the token | The line no longer has what the rule flags (the TODO is gone, or already cites an issue) |
+| Line-based allowlist (Jig's `scripts/glossary-allowlist.txt`) | Each group of entries opens with `#` lines giving its reason | No checked file uses the entry, or the rule already accepts it |
+| Allow pattern (Jig's `!` lines in `scripts/tracker-key-patterns.txt`) | `#` lines above the pattern | It matches nothing on a line the rule flags |
+| Structured list in the gate (`{ path, match, reason }`) | `reason` non-empty, checked when the list is read | No finding matches the entry in this run |
 
 ## Custom lint rules and the ratchet
 
@@ -53,6 +90,13 @@ format added to the gate.
 | ESLint | A local plugin of custom rules | Not read directly: a `grep` counter, or a new format for `--format json` |
 | Any language | Structural search rules (ast-grep, Semgrep) | Not read directly: a `grep` counter, or a new format for the tool's JSON output |
 | Suppression comments | — | `grep`: one pattern per suppression marker |
+
+Unused code and duplication are measured by tools that read the import graph
+from entry points: fallow (Jig's, through `entry` in `.fallowrc.jsonc`) and
+knip (`entry` in its configuration) for JavaScript and TypeScript. Both take a
+list of entry points: list the files run by path (a script a hook, a workflow
+or a skill runs) one by one, from where they are invoked, rather than a folder
+pattern.
 
 ## Immutable third-party automation and updates
 

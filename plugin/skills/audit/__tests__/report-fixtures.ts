@@ -9,6 +9,7 @@ import { isMapping } from "../../resolve-review-comments/scripts/lib/config-laye
 import { loadModules } from "../scripts/lib/criteria.ts";
 import { loadProfiles } from "../scripts/lib/profiles.ts";
 import { parseRecord } from "../scripts/lib/record.ts";
+import { compareVersions } from "../scripts/lib/repo.ts";
 import { loadSchema } from "../scripts/lib/schema.ts";
 import type { ReportInput } from "../scripts/report/model.ts";
 import { parseFit, parseReportSource } from "../scripts/report/source.ts";
@@ -24,7 +25,9 @@ export const RECORD_PATH = join(
 );
 
 const RECORD_TEXT = readFileSync(RECORD_PATH, "utf8");
+const modules = loadModules();
 export const COMMIT = "63ddae6aeb6934da06fdb3754647791e58cd87c3";
+const RECORD_VERSION = "0.15.0";
 
 /** The report source as raw JSON, for a test to change before parsing. */
 export function rawSource(): Record<string, unknown> {
@@ -51,7 +54,9 @@ export function recordText(
 /**
  * The calibration record as an audit of an earlier day would have written it:
  * another date, commit and plugin version, and the scores `scores` names in
- * place of the record's.
+ * place of the record's. A record of a plugin older than the calibration
+ * record's own lacks every criterion added after its version, as that plugin
+ * would have written it.
  */
 export function recordAt(
   date: string,
@@ -59,14 +64,29 @@ export function recordAt(
   version = "0.14.0",
 ): string {
   let text = RECORD_TEXT.replace('date: "2026-10-12"', `date: "${date}"`)
-    .replace("plugin_version: 0.15.0", `plugin_version: ${version}`)
+    .replace(`plugin_version: ${RECORD_VERSION}`, `plugin_version: ${version}`)
     .replace(COMMIT, `${date.replaceAll("-", "")}${COMMIT.slice(8)}`);
+  const older = compareVersions(version, RECORD_VERSION) < 0;
+  for (const key of older ? addedAfter(version) : []) {
+    const entry = new RegExp(`^  ${key}:.*\\n(?:    .*\\n)*`, "m");
+    if (!entry.test(text))
+      throw new Error(`${RECORD_PATH}: no entry for ${key}`);
+    text = text.replace(entry, "");
+  }
   for (const [key, score] of Object.entries(scores))
     text = text.replace(
       new RegExp(`(${key}:[^\\n]*\\n(?:\\s+#[^\\n]*\\n)*\\s+score:) \\S+`),
       `$1 ${score}`,
     );
   return text;
+}
+
+/** The keys of the criteria Jig added after plugin `version`. */
+export function addedAfter(version: string): string[] {
+  return modules
+    .flatMap((m) => m.criteria)
+    .filter((c) => c.since && compareVersions(c.since, version) > 0)
+    .map((c) => c.key);
 }
 
 /** An older record of the same repository: CI was not running the gates then. */
@@ -80,7 +100,6 @@ export const historyRecord = (): string =>
     "M2/derived-inventory-exists": "absent",
   });
 
-const modules = loadModules();
 const profiles = loadProfiles(modules);
 const schema = loadSchema();
 

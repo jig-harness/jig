@@ -10,10 +10,12 @@
 // file's folder or the repository root, and a bare folder name such as
 // `templates/` also from a folder of that name anywhere in the repository.
 // Markdown links are also checked by check-md-links.ts; this adds the
-// backticked paths. Exit 1 on a missing path.
+// backticked paths. Exit 1 on a missing path, 2 when there is no instruction
+// file to check.
 import { basename } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { markdownFiles } from "../lib/files.ts";
+import { couldNotCheck } from "../lib/findings.ts";
 import { checkPaths } from "../modules/M2-generated-artifact-freshness/reference/prose-facts/check-referenced-paths.ts";
 
 const INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md"];
@@ -22,6 +24,16 @@ export function checkInstructionPaths(root = "."): number {
   const files = markdownFiles(root, ["fixtures", "templates", "seeds"]).filter(
     (file) => INSTRUCTION_FILES.includes(basename(file)),
   );
-  return files.length ? checkPaths(files, root) : 0;
+  if (!files.length)
+    return couldNotCheck(
+      "instruction-paths",
+      `no ${INSTRUCTION_FILES.join(", ")} file under ${root}`,
+    );
+  const status = checkPaths(files, root);
+  if (status === 0)
+    console.log(
+      `instruction-paths: OK — ${files.length} instruction files; every path they name with a \`/\` resolves (bare file names and paths in code blocks are not checked)`,
+    );
+  return status;
 }
 if (import.meta.main) cli(() => checkInstructionPaths(process.argv[2]));

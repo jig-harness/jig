@@ -1,0 +1,7 @@
+# Fixture patterns: a neutral key and a name before its suffix.
+\bEXAMPLE-[0-9]+\b
+acme(?= corp)
+# The home page's key may be named.
+!EXAMPLE-1
+# The suffix may be named: the name is only matched before it.
+!corp

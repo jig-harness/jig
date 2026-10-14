@@ -86,6 +86,14 @@ criteria:
     # prior: mechanical: gates.yml pins actions/checkout and jdx/mise-action to full SHAs; renovate.json5 pins digests for GitHub Actions, mise and Bun; Renovate's pull requests run the required gates check
     score: mechanical
     evidence: "gates.yml pins actions/checkout and jdx/mise-action by SHA in every job; renovate.json5 pins digests for GitHub Actions; Renovate is live and its pull requests run the full required set"
+  M1/gate-outcomes-distinguish-could-not-check:   # standard, requires mechanical
+    # Every repository-written gate has three outcomes, passed, found violations and could not check (exit 0, 1 and 2), and reports a missing or unreadable input, an input empty where its format requires content, or a failed command as could not check, never as a pass.
+    score: absent
+    evidence: "The written convention and its tests asserted the opposite for a missing input: modules/M1-gates-enforcement-ladder/reference/grep-gate/README.md's Files table says a missing SRC_DIR passes because there is nothing to check, and scripts/freshness.test.ts asserts exit 0 for the does-not-exist and empty roots; scripts/check-md-links.ts, check-md-tables.ts and check-glossary-coverage.ts pass when they read no Markdown and the glossary allowlist is optional. Some gates exit 2 on unreadable input (scripts/check-no-tracker-refs.ts, lib/cli.ts maps a thrown error to 2), but no rule makes that hold for every gate"
+  M1/stale-exceptions-fail:   # standard, requires mechanical
+    # Every allowlist entry and suppression token a repository-written gate honors carries a non-empty reason the gate checks, and an entry that no longer suppresses anything fails the gate.
+    score: absent
+    evidence: "No gate fails on a stale entry: scripts/glossary-allowlist.txt entries carry no checked reason and an unused one passes; the allow patterns in scripts/tracker-key-patterns.txt are never checked for a reason or for matching anything; only the reference TODO gate requires a reason after todo-exempt:"
   M1/suppression-token-registry:   # strict, requires convention
     # A single registry page lists every suppression token a live gate honors, with syntax, consuming gate, placement, and justification requirement, plus a registration rule for new tokens.
     # prior: absent: No registry page; live tokens are scattered: biome-ignore comments, ! allow lines in scripts/tracker-key-patterns.txt, scripts/glossary-allowlist.txt (named only in passing in AGENTS.md)
@@ -102,6 +110,10 @@ criteria:
     # probe found: .github/workflows/gates.yml
     score: mechanical
     evidence: "scripts/gates.test.ts, scripts/change-areas.test.ts and tools/quality/grit.test.ts run in the gates test step under the required check; gates.test.ts also checks gates.yml against SEPARATE_SUITES and the catalog's area names"
+  M1/gate-self-tests-cover-empty-input:   # strict, requires mechanical
+    # Each repository-written gate's self-test includes a case where the gate has nothing to examine (its input or section missing, or empty where the input's format requires content, such as a scan root with no file) and asserts that the gate does not pass on it.
+    score: absent
+    evidence: "scripts/freshness.test.ts 'TODO gate: empty root' and 'does-not-exist' assert that the reference gate passes with nothing to scan; scripts/gates.test.ts asserts exit 2 only for the origin-reference gate's missing root; the Markdown and glossary gates have no empty-input case"
   M1/existing-findings-ratcheted:   # strict, requires mechanical
     # A rule that still has findings is ratcheted rather than left advisory: a required gate fails a change that adds a finding to it or loosens its configuration, measured against the merge base, and a rule whose count reaches zero is promoted to blocking.
     # prior: mechanical: bun run quality (modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts with tools/quality/ratchet.jsonc) runs inside bun run gates, the required gates check; it counts Biome warnings, GritQL rules, ratcheted compiler flags and suppression comments against the merge base and needs a Ratchet-Loosen trailer to loosen a rule

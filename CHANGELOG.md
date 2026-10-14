@@ -104,6 +104,70 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.21.0] - 2026-10-14
+
+### Added
+
+- M1 states that a gate has three outcomes: passed, found violations, or
+  could not check (exit 0, 1 and 2). A gate never turns input it could not
+  find or read into a pass, and a skipped or stale result is never evidence
+  that a change passed. An input empty where its format requires content
+  fails closed; one whose format allows zero entries may pass empty, and the
+  gate says it examined zero. The glossary defines *fail closed*, *could not
+  check*, *mutation testing* and *shadow job*.
+- M1's gate-authoring rules (core piece 3, which replaces "a grep with a
+  self-test outlives an AST analyzer"): fail closed on a missing or empty
+  section, an undecodable row, a repeated key or a failed command; count the
+  population read; answer a question about whether code runs or a value binds
+  with a real parser or an exact pinned text, never a guessed pattern; keep a
+  self-test's recognizer broader than the gate's; mutation-test every fixture,
+  each clause of a fail-closed chain alone; state the verdict's scope on green
+  runs too; and give each finding its rule, place, problem and fix, written
+  as an annotation in CI. [mappings.md](modules/M1-gates-enforcement-ladder/mappings.md#actionable-findings-in-ci)
+  maps GitHub's `::error` command and GitLab's Code Quality report.
+- M1's exceptions prune themselves: every suppression token and allowlist
+  entry carries a reason the gate checks, and one that suppresses nothing
+  fails the gate. The suppression-registry template gains a "Stale when"
+  column, and its allowlist row requires a checked reason.
+- M1's gate lifecycle: a recurring syntactic review finding becomes a
+  fixture-tested lint rule under the ratchet, with bulk rewrites by a tool that
+  never gates; a replacement tool runs in a non-blocking shadow job with
+  published parity counts before it takes over; a retired gate records what
+  replaced it and the coverage lost; unused code and duplication are measured
+  on every change from entry points declared one by one.
+- `/jig:audit` scores new M1 criteria: `gate-outcomes-distinguish-could-not-check`
+  and `stale-exceptions-fail` (Standard), and
+  `gate-self-tests-cover-empty-input` (Strict).
+- `lib/findings.ts`: the shared finding format, GitHub annotations with the
+  workflow-command escaping, the could-not-check report, and the reasoned
+  exception-list reader.
+
+### Changed
+
+- M1's grep-gate reference exits 2 when its scan root is missing or holds no
+  text file (it passed before), states its scope on green runs, prints each
+  finding with its rule, file and line, problem and fix, writes `::error`
+  annotations under GitHub Actions, and fails on a `todo-exempt:` that
+  suppresses nothing. It counts each TODO on its own, so a TODO citing an
+  issue no longer clears a bare TODO on the same line, and a TODO inside a
+  cited issue key is part of that citation. **Breaking** for a copy of the gate run on a folder
+  that may not exist: point `SRC_DIR` at a folder with source in it.
+- Jig's own gates follow the rules: the Markdown, glossary, origin-reference,
+  instruction-path, workflow-safety, licence, change-area and audit-fit checks
+  exit 2 when they read nothing, and every check states its scope when it
+  passes.
+  The Markdown, glossary and origin-reference checks write findings in the
+  shared format with annotations. The glossary allowlist and the
+  origin-reference allow patterns need a reason per group and fail on an
+  entry that suppresses nothing (20 stale glossary entries are gone). The
+  change-area and review-risk checks and M7's PR-target safety lint, which
+  Jig's workflow-safety check runs, reject a repeated YAML key. The ratchet
+  exits 2 in CI without a merge base, and the gates M1 does not yet bring in
+  line are listed in [M1 § Jig's own gates](modules/M1-gates-enforcement-ladder/README.md#jigs-own-gates).
+- `/jig:fix-ci` reads a gate's "could not check" (exit 2) as a problem with
+  the gate's input or environment, not with the code, and applies the fix a
+  finding names.
+
 ## [0.20.0] - 2026-10-14
 
 ### Added
@@ -895,7 +959,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/docomply/jig/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/docomply/jig/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/docomply/jig/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/docomply/jig/compare/v0.18.3...v0.19.0

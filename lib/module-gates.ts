@@ -2,11 +2,11 @@
  * intentionally narrow: adopting a full YAML parser would change gate behavior.
  * Two gates read full YAML instead, because their files can spell one value
  * through folded scalars, quoted keys, flow collections and anchors, and the
- * gate must see the value every other reader sees. The PR-target safety lint
- * reads GitHub Actions workflows with Bun's YAML parser. The label-taxonomy lint
- * reads the taxonomy with js-yaml, vendored in `vendor/` beside this file,
- * which rejects a repeated key where Bun's parser keeps the last one; vendoring
- * `lib/` alone therefore keeps that check. */
+ * gate must see the value every other reader sees. Both read it with js-yaml,
+ * vendored in `vendor/` beside this file: the PR-target safety lint for GitHub
+ * Actions workflows, the label-taxonomy lint for the taxonomy. js-yaml rejects
+ * a repeated key where Bun's parser keeps the last one; vendoring `lib/` alone
+ * therefore keeps that check. */
 import {
   accessSync,
   chmodSync,
@@ -300,9 +300,11 @@ export function threadsResolved(args: string[], env: Environment): Result {
     ["deferred", "the follow-up issue/PR it was filed as"],
     ["moot", "the commit/change that superseded it"],
   ]);
+  let threads = 0;
   for (const line of lines(path)) {
     const match = line.trim().match(/^(\S+)(?:\s+(\S+))?(?:\s+(.*))?$/);
     if (!match || match[1]?.startsWith("#")) continue;
+    threads++;
     const [, id, state = "", reason = ""] = match;
     const trailHint = refs.get(state);
     if (trailHint) {
@@ -335,7 +337,13 @@ export function threadsResolved(args: string[], env: Environment): Result {
       out +
         `\nUnresolved-threads gate FAILED: ${open} open, ${noReason} trail-less, ${undeclared} undeclared, ${unknown} unknown.\n`,
     );
-  return result(0, "OK — every review thread is terminal with a trail\n");
+  return result(0, threadsPassed(threads));
+}
+/** The pass line of the threads gate; zero threads is an empty review. */
+function threadsPassed(threads: number): string {
+  if (!threads)
+    return "OK — 0 review threads (an empty export is a review with no threads)\n";
+  return `OK — ${threads} review thread(s), each terminal with a trail\n`;
 }
 export function normalizeThreads(args: string[], env: Environment): Result {
   const path = args[0] || env.ROWS || "",
@@ -608,14 +616,15 @@ function workflowFiles(dir: string): string[] | Result {
   }
 }
 /** Whether one workflow is fork-unsafe, or an error result when it cannot be
- * read as YAML. */
+ * read as YAML. js-yaml rejects a repeated key, which a parser keeping the
+ * last copy would let hide an unsafe step. */
 function unsafeWorkflow(path: string): boolean | Result {
   if (!file(path)) return error(`not a file: ${path}`);
   const raw = readFileSync(path, "utf8");
   const shape = { untrusted: false, executes: false };
   let doc: unknown;
   try {
-    doc = Bun.YAML.parse(raw);
+    doc = loadYaml(raw);
   } catch (e) {
     return error(`cannot parse ${path} as YAML: ${String(e)}`);
   }

@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   CATALOG,
@@ -155,4 +157,19 @@ test("Jig's catalog runs the drive-pr suite for what it depends on, and not for 
       jig,
     ).code,
   ).toBe(true);
+});
+
+test("a catalog that repeats an area is refused, not read as its last copy", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-areas-"));
+  try {
+    const path = join(dir, "catalog.yaml");
+    const entry =
+      "  docs:\n    title: Docs\n    category: docs\n    paths: ['*.md']\n    workspace: []\n    impliedBy: []\n    deployTier: none\n";
+    writeFileSync(path, `areas:\n${entry}`);
+    expect(catalogProblems(readCatalog(path))).toEqual([]);
+    writeFileSync(path, `areas:\n${entry}${entry}`);
+    expect(() => readCatalog(path)).toThrow(/duplicated mapping key/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

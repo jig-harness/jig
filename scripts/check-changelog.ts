@@ -47,6 +47,9 @@ export function checkChangelog(root = "."): number {
     );
     return 1;
   }
+  console.log(
+    `changelog: OK — both plugin manifests carry ${version} and CHANGELOG.md has its section (the section's content is not checked)`,
+  );
   return 0;
 }
 if (import.meta.main) cli(() => checkChangelog(...process.argv.slice(2)));

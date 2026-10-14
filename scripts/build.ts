@@ -35,15 +35,34 @@ if (import.meta.main)
       "scripts/tracker-key-patterns.txt",
       "dist/scripts/tracker-key-patterns.txt",
     );
-    // Smoke-test a bundled gate that needs a companion file at runtime.
-    const smoke = Bun.spawnSync([
-      process.execPath,
-      "dist/scripts/check-no-tracker-refs.js",
-      "scripts/tests/fixtures/pass",
-    ]);
-    if (smoke.exitCode !== 0) {
-      console.error(smoke.stderr.toString());
-      return smoke.exitCode;
+    // Smoke-test the bundled origin-reference gate. With an explicit pattern
+    // file that has no allow patterns, a clean fixture passes. With its
+    // default companion file, copied above, it reads the real patterns: on
+    // that fixture their allow patterns exempt nothing, so it must report
+    // exactly that (exit 1), never fail to find the file (exit 2).
+    const bundled = (args: string[]) =>
+      Bun.spawnSync([
+        process.execPath,
+        "dist/scripts/check-no-tracker-refs.js",
+        "scripts/tests/fixtures/pass",
+        ...args,
+      ]);
+    const clean = bundled(["scripts/tests/fixtures/tracker-key-patterns.txt"]);
+    if (clean.exitCode !== 0) {
+      console.error(
+        `bundled check-no-tracker-refs failed a clean fixture (exit ${clean.exitCode})\n${clean.stderr.toString()}`,
+      );
+      return 1;
+    }
+    const companion = bundled([]);
+    if (
+      companion.exitCode !== 1 ||
+      !companion.stderr.toString().includes("[origin-reference-allowlist]")
+    ) {
+      console.error(
+        `bundled check-no-tracker-refs did not read its companion pattern file (exit ${companion.exitCode})\n${companion.stderr.toString()}`,
+      );
+      return 1;
     }
     console.log(`built ${entries.length} entry points`);
     return 0;

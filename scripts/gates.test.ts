@@ -65,7 +65,44 @@ const cases: [string, string, string[], number][] = [
     1,
   ],
   ["check-no-tracker-refs", "pass", [".", trackerPatterns], 0],
-  ["check-no-tracker-refs", "pass-tracker-allow", [".", trackerPatterns], 0],
+  ["check-no-tracker-refs", "pass-tracker-allow", [".", "patterns.txt"], 0],
+  [
+    "check-no-tracker-refs",
+    "pass-tracker-allow-exposed",
+    [".", "patterns.txt"],
+    0,
+  ],
+  [
+    "check-no-tracker-refs",
+    "pass-tracker-allow-context-later",
+    [".", "patterns.txt"],
+    0,
+  ],
+  [
+    "check-no-tracker-refs",
+    "fail-tracker-stale-allow",
+    [".", "patterns.txt"],
+    1,
+  ],
+  [
+    "check-no-tracker-refs",
+    "fail-tracker-allow-no-reason",
+    [".", "patterns.txt"],
+    1,
+  ],
+  ...[
+    "fail-tracker-allow-beside",
+    "fail-tracker-allow-duplicate",
+    "fail-tracker-allow-split",
+    "fail-tracker-allow-reblank",
+    "fail-tracker-allow-noop",
+    "fail-tracker-allow-leaves-match",
+  ].map((name): [string, string, string[], number] => [
+    "check-no-tracker-refs",
+    name,
+    [".", "patterns.txt"],
+    1,
+  ]),
   ...[
     "fail-tracker",
     "fail-tracker-link",
@@ -209,7 +246,7 @@ test("ignored workspace excluded; non-ignored untracked content checked", () => 
   writeFileSync(join(dir, "README.md"), "# Good\n\nRepository content.\n");
   writeFileSync(
     join(dir, "GLOSSARY.md"),
-    "# Glossary\n\nHITL is defined here.\n",
+    "# Glossary\n\n- **HITL** — defined here.\n",
   );
   writeFileSync(join(dir, "allowlist.txt"), "# none\n");
   mkdirSync(join(dir, ".context"));
@@ -228,6 +265,243 @@ test("ignored workspace excluded; non-ignored untracked content checked", () => 
     expectSpawnExit(run(gate, [dir]), 1);
   expectSpawnExit(run("check-glossary-coverage", glossaryArgs), 1);
 });
+test("the glossary allowlist needs a reason per entry and fails on an entry that suppresses nothing", () => {
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  writeFileSync(
+    join(dir, "GLOSSARY.md"),
+    "# Glossary\n\n- **QZX** — a term.\n",
+  );
+  writeFileSync(join(dir, "doc.md"), "# Doc\n\nUses XQZT and QZX.\n");
+  const allowlist = join(dir, "allowlist.txt");
+  const args = [dir, join(dir, "GLOSSARY.md"), allowlist];
+  const gate = (list: string) => {
+    writeFileSync(allowlist, list);
+    return run("check-glossary-coverage", args);
+  };
+  const green = gate("# a fixture word, not a term\nXQZT\n");
+  expectSpawnExit(green, 0);
+  expect(green.stdout.toString()).toContain(
+    "glossary-coverage: OK — 1 Markdown files",
+  );
+  for (const [list, problem] of [
+    ["XQZT\n", "entry 'XQZT' has no reason"],
+    ["# a reason\nXQZT\n\nXQZT\n", "has no reason"],
+    ["# a reason\nXQZT\nXQZT\n", "repeats an earlier entry"],
+    [
+      "# a reason\nXQZT\nQZX\n",
+      "'QZX' suppresses nothing: GLOSSARY.md already contains it",
+    ],
+    [
+      "# a reason\nXQZT\nZZYQ\n",
+      "'ZZYQ' suppresses nothing: no checked document uses it",
+    ],
+  ] as const) {
+    const result = gate(list);
+    expectSpawnExit(result, 1);
+    expect(result.stderr.toString()).toContain(problem);
+  }
+  rmSync(allowlist);
+  expectSpawnExit(run("check-glossary-coverage", args), 2);
+});
+
+test("a glossary whose entries hold no acronym still checks", () => {
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  writeFileSync(
+    join(dir, "GLOSSARY.md"),
+    "# Glossary\n\n- **Drift** — disagreement between copies.\n",
+  );
+  writeFileSync(join(dir, "doc.md"), "# Doc\n\nOrdinary words only.\n");
+  writeFileSync(join(dir, "allowlist.txt"), "");
+  const args = [dir, join(dir, "GLOSSARY.md"), join(dir, "allowlist.txt")];
+  expectSpawnExit(run("check-glossary-coverage", args), 0);
+  writeFileSync(join(dir, "doc.md"), "# Doc\n\nUses XQZT.\n");
+  const result = run("check-glossary-coverage", args);
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("undefined term of art 'XQZT'");
+});
+
+test("a glossary with acronyms but no entry could not check", () => {
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  writeFileSync(join(dir, "GLOSSARY.md"), "# Glossary\n\nQZX\n");
+  writeFileSync(join(dir, "doc.md"), "# Doc\n\nUses QZX.\n");
+  writeFileSync(join(dir, "allowlist.txt"), "");
+  const result = run("check-glossary-coverage", [
+    dir,
+    join(dir, "GLOSSARY.md"),
+    join(dir, "allowlist.txt"),
+  ]);
+  expectSpawnExit(result, 2);
+  expect(result.stderr.toString()).toContain("has no entry");
+});
+
+test("a glossary whose only entries lack a term or a definition could not check", () => {
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  writeFileSync(join(dir, "doc.md"), "# Doc\n\nOrdinary words only.\n");
+  writeFileSync(join(dir, "allowlist.txt"), "");
+  const args = [dir, join(dir, "GLOSSARY.md"), join(dir, "allowlist.txt")];
+  for (const glossary of [
+    "# Glossary\n\n- ** **\n",
+    "# Glossary\n\n- ** ** — a definition without a term.\n",
+    "# Glossary\n\n- **Drift** —\n",
+  ]) {
+    writeFileSync(join(dir, "GLOSSARY.md"), glossary);
+    const result = run("check-glossary-coverage", args);
+    expectSpawnExit(result, 2);
+    expect(result.stderr.toString()).toContain("has no entry");
+  }
+  writeFileSync(
+    join(dir, "GLOSSARY.md"),
+    "# Glossary\n\n- **Drift** — a gap.\n",
+  );
+  expectSpawnExit(run("check-glossary-coverage", args), 0);
+});
+
+test("a glossary finding names the line of the term's first use outside code", () => {
+  const fixture = run(
+    "check-glossary-coverage",
+    [".", "GLOSSARY.md", "allowlist.txt"],
+    join(fixtures, "fail-glossary"),
+  );
+  expectSpawnExit(fixture, 1);
+  expect(fixture.stderr.toString()).toContain(
+    "doc.md:3: [glossary-coverage] undefined term of art 'XQZT'",
+  );
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  writeFileSync(
+    join(dir, "GLOSSARY.md"),
+    "# Glossary\n\n- **QZX** — a term.\n",
+  );
+  writeFileSync(
+    join(dir, "doc.md"),
+    "# Doc\n\n```\nXQZT in a fence\n```\n\nInline `XQZT\ncode` spans lines.\nNow XQZT in prose.\n",
+  );
+  writeFileSync(join(dir, "allowlist.txt"), "");
+  const result = run("check-glossary-coverage", [
+    dir,
+    join(dir, "GLOSSARY.md"),
+    join(dir, "allowlist.txt"),
+  ]);
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain(
+    "doc.md:9: [glossary-coverage] undefined term of art 'XQZT'",
+  );
+});
+
+test("a tracker reference hidden by blanking only its context is still reported", () => {
+  // The alternative fixture's first allow leaves the name's own pattern
+  // matching over the hidden name, which does not stand in for it; both allows
+  // exempt that other match, so both are in use.
+  for (const [fixture, line, unused, live] of [
+    ["fail-tracker-allow-context", 4, [7], [5]],
+    ["fail-tracker-allow-context-alternative", 3, [], [6, 8]],
+  ] as const) {
+    const result = run(
+      "check-no-tracker-refs",
+      [".", "patterns.txt"],
+      join(fixtures, fixture),
+    );
+    expectSpawnExit(result, 1);
+    const stderr = result.stderr.toString();
+    expect(stderr).toContain(
+      `allowed.md:${line}: [no-origin-references] origin reference \`acme\``,
+    );
+    for (const allow of unused)
+      expect(stderr).toContain(
+        `patterns.txt:${allow}: [origin-reference-allowlist] allow pattern exempts nothing`,
+      );
+    for (const allow of live)
+      expect(stderr).not.toContain(`patterns.txt:${allow}:`);
+  }
+});
+
+test("a tracker reference found again on an exempted span is reported", () => {
+  const result = run(
+    "check-no-tracker-refs",
+    [".", "patterns.txt"],
+    join(fixtures, "fail-tracker-allow-reappears"),
+  );
+  expectSpawnExit(result, 1);
+  const stderr = result.stderr.toString();
+  expect(stderr).toContain(
+    "allowed.md:3: [no-origin-references] origin reference `a  `",
+  );
+  expect(stderr).not.toContain("[origin-reference-allowlist]");
+});
+
+test("a tracker allow pattern is in use only when it removes a reference the earlier patterns left", () => {
+  for (const [fixture, line] of [
+    ["fail-tracker-allow-beside", 7],
+    ["fail-tracker-allow-duplicate", 8],
+    ["fail-tracker-allow-split", 7],
+    ["fail-tracker-allow-reblank", 7],
+    ["fail-tracker-allow-noop", 7],
+    ["fail-tracker-allow-leaves-match", 7],
+  ] as const) {
+    const result = run(
+      "check-no-tracker-refs",
+      [".", "patterns.txt"],
+      join(fixtures, fixture),
+    );
+    expectSpawnExit(result, 1);
+    const stderr = result.stderr.toString();
+    expect(stderr).toContain(
+      `patterns.txt:${line}: [origin-reference-allowlist] allow pattern exempts nothing`,
+    );
+    expect(stderr).not.toContain("patterns.txt:5:");
+    expect(stderr).not.toContain("[no-origin-references]");
+  }
+});
+
+test("a Markdown gate with no Markdown file to read could not check", () => {
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  writeFileSync(join(dir, "notes.txt"), "not Markdown\n");
+  for (const gate of [
+    "check-md-links",
+    "check-md-tables",
+    "check-instruction-paths",
+  ]) {
+    const result = run(gate, [dir]);
+    expectSpawnExit(result, 2);
+    expect(result.stderr.toString()).toContain("could not check");
+  }
+  // A glossary with a real term and a valid allowlist, so the missing
+  // Markdown alone decides the outcome.
+  writeFileSync(
+    join(dir, "GLOSSARY.md"),
+    "# Glossary\n\n- **QZX** — a term.\n",
+  );
+  writeFileSync(join(dir, "allowlist.txt"), "");
+  const glossary = run("check-glossary-coverage", [
+    dir,
+    join(dir, "GLOSSARY.md"),
+    join(dir, "allowlist.txt"),
+  ]);
+  expectSpawnExit(glossary, 2);
+  expect(glossary.stderr.toString()).toContain(
+    "could not check: no Markdown file",
+  );
+});
+
+test("a Markdown finding names its rule, place and fix, and is annotated under GitHub Actions", () => {
+  const result = safeSpawn(
+    [process.execPath, join(import.meta.dir, "check-md-tables.ts"), "."],
+    { cwd: join(fixtures, "fail-table"), env: { GITHUB_ACTIONS: "true" } },
+  );
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toMatch(
+    /bad\.md:\d+: \[md-table-blank-line\] table not preceded by a blank line\n {2}fix: /,
+  );
+  expect(result.stdout.toString()).toMatch(
+    /^::error file=bad\.md,line=\d+,title=md-table-blank-line::/m,
+  );
+});
+
 const unixPermissions =
   process.platform !== "win32" && process.getuid?.() !== 0;
 test.skipIf(!unixPermissions)(
@@ -285,6 +559,7 @@ test("the real patterns reject the original tracker keys and organization name, 
     `{\n  "author": { "name": "${name}" }\n}\n`,
   );
   write(".config/jig.yaml", `team: ${name}\n`);
+  write("NOTICE", `Copyright 2026 ${name}\n`);
   expectSpawnExit(check(), 0);
   for (const content of [
     `See ${["DOC", "1234"].join("-")}.\n`,
@@ -773,13 +1048,30 @@ test("Jig's workflows pass the PR-target safety lint, and an unsafe one fails it
   const dir = temp();
   const workflows = join(dir, ".github/workflows");
   mkdirSync(workflows, { recursive: true });
-  expect(checkWorkflowSafety(dir)).toBe(0);
+  expect(checkWorkflowSafety(dir, {})).toBe(2);
   writeFileSync(
     join(workflows, "review.yml"),
     readFileSync(join(fixtures, "unsafe/folded-ref-run.yml")),
   );
   expect(checkWorkflowSafety(dir)).toBe(1);
-  expect(checkWorkflowSafety(join(dir, "missing"))).toBe(0);
+  expect(checkWorkflowSafety(join(dir, "missing"), {})).toBe(2);
+  // A repeated key is refused rather than read as its last copy.
+  writeFileSync(
+    join(workflows, "review.yml"),
+    "on: push\njobs:\n  a:\n    runs-on: x\n  a:\n    runs-on: y\n",
+  );
+  expect(checkWorkflowSafety(dir, {})).toBe(2);
+});
+
+test("the origin-reference gate with no text file to read could not check", () => {
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  mkdirSync(join(dir, "fixtures"));
+  writeFileSync(join(dir, "fixtures/a.md"), "skipped\n");
+  writeFileSync(join(dir, "blob.bin"), Buffer.from([0x41, 0, 0x42]));
+  const result = run("check-no-tracker-refs", [dir, trackerPatterns]);
+  expectSpawnExit(result, 2);
+  expect(result.stderr.toString()).toContain("could not check: no text file");
 });
 
 test("the paths Jig's instruction files name exist", () => {

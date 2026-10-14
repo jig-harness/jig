@@ -581,9 +581,10 @@ describe("since the last audit", () => {
       ),
     ).toEqual([
       "Fixed 1",
+      "Added by Jig 10",
       "Still open within the target 4",
-      "Still open beyond the target 81",
-      "Unchanged and met 40",
+      "Still open beyond the target 78",
+      "Unchanged and met 36",
     ]);
     const fixed = page.locator("#since .chg-t .bd-fixed");
     expect(await fixed.count()).toBe(1);
