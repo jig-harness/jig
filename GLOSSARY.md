@@ -502,6 +502,46 @@ make, use the entry's term instead.
 - **Test-data factory** — a generator of realistic, tenant-isolated, resettable
   seed data, so tests and preview environments run against representative data
   rather than hand-made fixtures or a copy of production.
+- **Test tier** — a class of test suite with its own trigger and time
+  budget: **unit** tests (one piece of code, no real services) on every
+  push, **integration** tests (code against real services such as a
+  database) when their paths change, and *end-to-end tests*: the full sweep
+  nightly or on demand, and the tests of journeys nothing else checks on
+  every push to the default branch ([M14](modules/M14-testing-strategy/README.md)).
+- **End-to-end test (E2E)** — a test that drives the whole running system
+  through its real interfaces, as a user or client would. The slowest *test
+  tier*, so the full sweep, whose journeys other checks already cover, runs
+  on a schedule rather than per change; end-to-end tests that are the only
+  check of a critical journey run on every push to the default branch,
+  before the `verified` pointer moves.
+- **False green** — a check that reports success while the thing it claims
+  to check is broken: a suite that skipped itself, a *test double* that
+  accepts anything, a test that was never seen to fail.
+- **Flaky test** — a test that sometimes passes and sometimes fails on the
+  same code, because of timing, shared state or an unreliable dependency.
+- **Flaky-test quarantine** — setting a *flaky test* aside so its failures
+  stop blocking merges while it is fixed, without hiding them: the test keeps
+  running and reporting, and the quarantine list is reviewed and short
+  ([M14](modules/M14-testing-strategy/README.md) lists it as future work).
+- **Test double** — a stand-in for a real dependency in a test (a fake,
+  stub or mock). An honest one rejects what the real dependency would
+  reject, so a wrong call fails the test instead of passing it.
+- **Mutation check** — proving a test can fail by breaking the code it
+  covers on purpose (misspelling a flag at a call site, removing a
+  condition), watching the test fail, then restoring the code.
+- **Injected clock** — the current time handed to code as a dependency
+  (an object with a `now()` method) instead of read from the system, so a
+  test can fix or advance time.
+- **Isolation predicate** — the condition that hides data a caller must not
+  see: another tenant's rows, soft-deleted records, what an authorization
+  rule denies. Tested against the engine that evaluates it, with data that
+  would leak if it were missing.
+- **Test-data builder** — a function that returns one value of a declared
+  contract type with fixed defaults, which a test overrides field by field;
+  a change to the type fails the type check, or the completeness lint an
+  ecosystem needs for that (Go's `exhaustruct`), instead of a test. Unlike a
+  *test-data factory*, it makes values in the test process rather than
+  seeding a database.
 
 ## Review & learning
 

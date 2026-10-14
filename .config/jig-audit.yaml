@@ -74,7 +74,7 @@ criteria:
     # prior: mechanical: .github/workflows/gates.yml (pull_request) runs bun run gates on ubuntu/macos/windows plus drive-pr shards; its gates job is a required check on main (gh api branches/main/protection, strict)
     # probe found: .github/workflows/gates.yml
     score: mechanical
-    evidence: ".github/workflows/gates.yml (pull_request) always runs bun run gates on ubuntu, on macOS/Windows when the change touches code, and the drive-pr shards when that area is affected; the aggregator job gates fails unless every selected job passed; main requires gates and the AI review check (strict); admins not bound"
+    evidence: ".github/workflows/gates.yml (pull_request) runs bun run gates on Linux, and the drive-pr shards and the website job when their areas are affected (macOS and Windows run nightly, in nightly.yml); the aggregator job gates fails unless every selected job passed; main requires gates and the AI review check (strict); admins not bound"
   M1/precommit-autofix-hooks:   # standard, requires mechanical
     # A managed pre-commit hook runs auto-fixing checks and re-stages what they fixed.
     # prior: absent: probe: no tracked file matches lefthook.yml, lefthook.yaml, lefthook.toml, lefthook.json, .lefthook.yml, .lefthook.yaml, .config/lefthook.yml, .config/lefthook.yaml, .husky/**, .pre-commit-config.yaml, .githooks/**, .overcommit.yml, .rusty-hook.toml, .cargo-husky/**, **/pre-commit; no tracked package.json contains /"(simple-git-hooks|husky|pre-commit)"/; no tracked package.json, Makefile, GNUmakefile, justfile, Taskfile.y*ml, mise.toml, .mise.toml, **/*.sh contains /core\.hooksPath/
@@ -724,6 +724,55 @@ criteria:
     # A watchdog fails loudly when runs wait for a runner longer than a set bound, because job timeouts do not count time spent in the queue.
     score: absent
     evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: no watchdog: nightly.yml, the only scheduled workflow, runs suites and reads no queue times; modules/M13-pipeline-economy/reference/queue-watchdog/ is an example for other repositories"
+  # M14 testing-strategy
+  M14/test-tiers-declared:   # lite, requires convention
+    # Every test suite has a written tier (unit, integration, end-to-end or the repository's own names) with the trigger that runs it and its time budget.
+    score: convention
+    evidence: "Tiers written down with their triggers: on every pull request and push to main, Linux only, the gate set's tests, the sharded drive-pr suite when the drive-pr area is affected, and the website parser tests when the website area is (a push to main runs every job); once a day and on demand, the gate set on macOS and Windows, the drive-pr suite on macOS and the website tests on both (scripts/gates.ts SEPARATE_SUITES and POSIX_ONLY_SUITES with reasons; the headers of .github/workflows/gates.yml and nightly.yml give each job's trigger, and each job's timeout-minutes its budget); plugin/AGENTS.md requires a long suite to be listed in scripts/gates.ts with its reason. No end-to-end sweep exists"
+  M14/testing-rules-written:   # lite, requires convention
+    # The testing rules are written where agents and people read them: test doubles reject what the real dependency rejects, runtime code reads time from an injected clock, waits poll with a deadline instead of sleeping, tests change the home directory, working directory or environment only in a subprocess, and a new test is seen to fail before its pass is trusted.
+    score: convention
+    evidence: "AGENTS.md § Rules for every change, Tests: tests type-checked, home/cwd/environment changed only in a spawned subprocess, polling with a deadline instead of fixed sleeps, a new test seen to fail first; the rules for doubles and the injected clock are by its pointer to modules/M14-testing-strategy/README.md, not restated. Nothing enforces them yet (see the Standard and Strict M14 criteria)"
+  M14/tier-budgets-enforced:   # standard, requires mechanical
+    # Every CI job that runs tests has an enforced budget on the suite's elapsed time: a job timeout, a timeout on the command that runs the suite, or a step that fails when the suite runs over its tier's budget. A per-test timeout alone does not count: it bounds one test, not the suite.
+    score: mechanical
+    evidence: "Every job that runs tests has timeout-minutes, which bounds each suite's elapsed time: in .github/workflows/gates.yml gate-set 20, drive-pr-suite 15 per shard, website 10; in nightly.yml platform-gates 20, drive-pr-suite 15 per shard, website 10; package.json's test script also bounds each test (bun test --timeout 30000)"
+  M14/full-e2e-never-per-change:   # standard, requires mechanical
+    # The full end-to-end sweep, whose journeys other checks already cover, runs only on a schedule or on demand, and a check over the CI configuration fails when its workflow gains a per-change trigger (end-to-end tests that are the only check of a critical journey may run after every merge; expected-absent where the repository has no end-to-end suite).
+    score: expected-absent
+    evidence: "No end-to-end suite: Jig is a toolkit with no running system; the audit sheet's browser tests (report-browser.test.ts) load static files over file:// and run with the unit tests"
+  M14/tests-type-checked:   # standard, requires mechanical
+    # Test files are type-checked in CI by the same kind of check as runtime code (for a compiled language, the test sources compile in CI).
+    score: mechanical
+    evidence: "tsconfig.json includes every .ts under scripts, lib, tools, plugin, modules and audit, test files included (only fixtures/ excluded), with strict on; bun run typecheck (bun check) is in scripts/gates.ts, which CI runs on every pull request"
+  M14/tests-come-with-changes:   # standard, requires mechanical
+    # A CI check fails a change whose changed source file has no test, unless the file is listed in a registered exemption with a reason, and a pre-push hook runs the same check before the push.
+    score: absent
+    evidence: "No CI check or hook maps changed source files to tests; modules/M14-testing-strategy/reference/tests-with-changes/ is an adopter example not wired into scripts/gates.ts"
+  M14/fixed-sleeps-banned:   # standard, requires mechanical
+    # A gate rejects fixed sleeps in test and tooling code, except those carrying a suppression token registered for local timing; waits for external state poll with a deadline.
+    score: absent
+    evidence: "No sleep gate in scripts/gates.ts or tools/quality/grit/; about two dozen test files call Bun.sleep or setTimeout (git grep -lE 'Bun\\.sleep\\(|setTimeout\\(' -- '*.test.ts' '**/__tests__/**')"
+  M14/clock-reads-linted:   # strict, requires mechanical
+    # A lint rule rejects direct wall-clock reads in runtime code outside the one system-clock adapter, so runtime code gets the current time from an injected clock.
+    score: absent
+    evidence: "No clock rule among biome.json's GritQL plugins (tools/quality/grit/); 149 lines of Date.now() or new Date() in non-test TypeScript"
+  M14/predicates-proven-against-engine:   # strict, requires mechanical
+    # Isolation and visibility predicates (tenant scope, soft delete, authorization) are tested in CI against the engine that evaluates them, with data that would leak if the predicate were missing (expected-absent where the repository has no such predicates).
+    score: expected-absent
+    evidence: "No database, tenant model or authorization layer in Jig"
+  M14/developer-state-isolated:   # strict, requires mechanical
+    # Test runs cannot touch the developer's real state: the home directory, temp directory and the tool's own configuration point at per-run locations before any code under test starts (the test command launches the runner with them set, or tests spawn the code under test as a subprocess with them set), and a lint rejects in-process changes to them in test files.
+    score: convention
+    evidence: "AGENTS.md requires home, working directory and environment changes in a spawned subprocess, and most suites that need them spawn one. bunfig.toml's preloads (lib/test-tmpdir-bun-preload.ts, a per-process temp directory; lib/test-jig-config-preload.ts, JIG_HOME at a fixture) run inside the test process, so they are not isolation before the code starts; the home directory is not isolated, and nothing rejects in-process changes: plugin/skills/drive-pr/__tests__/loop-metrics.test.ts calls process.chdir and resolve-review-comments/__tests__/gh-conditional.test.ts assigns process.env.HOME"
+  M14/doubles-and-builders-typed:   # strict, requires convention
+    # Test doubles and test-data builders are typed against the real contract, doubles reject inputs the real dependency rejects, and builders return one declared type with deterministic defaults.
+    score: absent
+    evidence: "The rule is written (AGENTS.md points at M14's honest doubles and typed builders), explicit any in tests is ratcheted (Biome's noExplicitAny warns; tools/quality/ratchet.jsonc) and tests are type-checked, but the practice is not observed: the fake gh and git commands in the drive-pr tests are not shown to reject an unknown flag"
+  M14/coverage-trend-scheduled:   # strict, requires mechanical
+    # A scheduled CI job publishes coverage as a trend, also when it is below target, refuses to publish incomplete data, and no merge is blocked on a per-file coverage threshold.
+    score: absent
+    evidence: "No coverage job: neither gates.yml nor the scheduled nightly.yml measures coverage, and website.yml only deploys; no per-file threshold either"
 declined:
   - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
     reason: "Deferred."

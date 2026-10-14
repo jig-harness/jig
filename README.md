@@ -80,7 +80,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [docs/](docs/README.md) | Jig's own documents: kinds, decision records, defaults |
 | [design/](design/README.md) | Designs of roadmap items, until they are built |
 | [principles/](principles/) | The seven design principles behind everything here |
-| [modules/](modules/) | The 14 practice modules (M0–M13), each independently adoptable |
+| [modules/](modules/) | The practice modules, each independently adoptable |
 | [profiles/](profiles/) | Module compositions: Solo/Lite, Team/Standard, Regulated/Strict |
 | [adoption/](adoption/) | Greenfield and brownfield adoption paths |
 | [seeds/](seeds/) | Imported source material, kept as-imported for provenance |
@@ -90,7 +90,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 
 ## Status
 
-Every module (M0–M13) carries the full module contract, and the auditor scores
+Every module carries the full module contract, and the auditor scores
 the complete map. The plugin's version and what each release changed are in
 [CHANGELOG.md](CHANGELOG.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 

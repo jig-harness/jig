@@ -64,7 +64,28 @@ export interface Module {
 }
 
 export const CRITERIA_DIR = join(skillDir(), "criteria");
-export const MODULE_COUNT = 14;
+/**
+ * Every module that carries criteria. Module numbers are assigned when a
+ * module is planned, so the list can have a gap while a planned module is
+ * still being written.
+ */
+export const MODULE_IDS = [
+  "M0",
+  "M1",
+  "M2",
+  "M3",
+  "M4",
+  "M5",
+  "M6",
+  "M7",
+  "M8",
+  "M9",
+  "M10",
+  "M11",
+  "M12",
+  "M13",
+  "M14",
+] as const;
 
 const CRITERION_KEYS = new Set([
   "id",

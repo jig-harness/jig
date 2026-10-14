@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   loadModules,
+  MODULE_IDS,
   type Module,
   parseModule,
 } from "../scripts/lib/criteria.ts";
@@ -400,7 +401,7 @@ criteria: {}
     const json = JSON.parse(
       runScript("record.ts", ["compare", a, b, "--json"], scratch).out,
     );
-    expect(json.levels).toHaveLength(14);
+    expect(json.levels).toHaveLength(MODULE_IDS.length);
     const portfolio = runScript(
       "record.ts",
       ["portfolio", `web=${a}`, `api=${b}`],

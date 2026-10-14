@@ -35,6 +35,7 @@ ARCHITECTURE
 WORKTREE
 ERGONOMICS
 ECONOMY
+TESTING
 RECOMMENDED
 SKILLS
 # git refs / plumbing
@@ -58,6 +59,7 @@ AST
 DML
 DTO
 SQL
+HTTP
 HTTPS
 ID
 OS
@@ -66,6 +68,7 @@ MR
 OSS
 ESM
 PID
+JVM
 # licence identifiers, and the licence file's name
 LICENSE
 ISC
@@ -75,3 +78,7 @@ OpenAI
 GPT
 MySQL
 MariaDB
+PostgreSQL
+CircleCI
+# the .NET platform
+NET

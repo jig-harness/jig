@@ -70,7 +70,10 @@ concrete per-provider wiring lives in [mappings.md](mappings.md).
    dataset on demand, give every run (or preview environment) its own isolated
    tenant so runs can't corrupt each other, and reset to the known state in one
    command. Seeded + tenant-isolated + resettable is the contract; without it,
-   "realistic" tests are flaky and fixtures rot.
+   "realistic" tests are flaky and fixtures rot. Values a test builds in its
+   own process are a different tool,
+   [M14](../M14-testing-strategy/README.md)'s typed test-data builders; M14
+   also says which test tiers run per change and which on a schedule.
 8. **Promotion execution** — the promotion itself ships what its gates
    approved, and proves it did: see [Promotion execution](#promotion-execution).
 

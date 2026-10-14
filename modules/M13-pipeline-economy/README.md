@@ -177,6 +177,8 @@ this answer?**
 The copyable policy page,
 [`templates/PIPELINE-ECONOMY.md`](templates/PIPELINE-ECONOMY.md), carries
 this table with the other rules, for a team to fill in with its own suites.
+[M14 (Testing strategy)](../M14-testing-strategy/README.md) gives each suite
+the tier and time budget that decide its row.
 
 ## Maturity levels
 

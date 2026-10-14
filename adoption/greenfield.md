@@ -56,8 +56,9 @@ at their target maturity from the start.
    Team/Standard and up — docs governance ([M4](../modules/M4-docs-governance/)),
    ADRs ([M5](../modules/M5-adr-practice/)), the delivery pipeline
    ([M6](../modules/M6-feature-delivery-pipeline/)), the PR loop
-   ([M7](../modules/M7-pr-lifecycle-review/)), and tracker discipline
-   ([M9](../modules/M9-tasks-memory/)).
+   ([M7](../modules/M7-pr-lifecycle-review/)), tracker discipline
+   ([M9](../modules/M9-tasks-memory/)), and the test tiers and testing rules
+   ([M14](../modules/M14-testing-strategy/)).
 3. **Wire the learning loop early** (even Lite): a place to file misses and the
    habit of turning them into checks ([M8](../modules/M8-learning-loop/)) costs
    almost nothing on day one and compounds forever. If you run several agents on

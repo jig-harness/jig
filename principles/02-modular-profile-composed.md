@@ -1,6 +1,6 @@
 # 2 — Modular, profile-composed
 
-Jig is not a framework you adopt whole. It is **14 modules**
+Jig is not a framework you adopt whole. It is a set of **modules**
 ([modules/](../modules/)) that adopt independently, each defined at three
 **maturity levels** — Lite, Standard, Strict — and composed by **profiles**
 ([profiles/](../profiles/)) matching project shapes:

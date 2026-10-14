@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { checkRecord, compare, parseRecord } from "../scripts/lib/record.ts";
 import { TEXT_PAIRS } from "../scripts/report/css.ts";
 import {
   feedbackText,
@@ -53,6 +54,7 @@ import {
   priorRecord,
   RECORD_PATH,
   rawSource,
+  currentRecordAt,
   recordAt,
   recordText,
   reportInput,
@@ -483,6 +485,19 @@ describe("the map", () => {
     ).toEqual([]);
   });
 
+  test("a criterion added after the calibration audit still applies: Team/Standard's M14 Lite target shows its gaps", () => {
+    const input = reportInput({
+      record: recordText(["profile: team-standard"]),
+      source: noProfile,
+    });
+    const rows = mapRows(input, targetsOf(input));
+    const m14 = rows.find((r) => r.module.module === "M14");
+    expect(m14?.naReason).toBeFalsy();
+    expect(m14?.cells.filter((c) => c.gap).map((c) => c.criterion.key)).toEqual(
+      ["M14/test-tiers-declared", "M14/testing-rules-written"],
+    );
+  });
+
   const uncovered = (input: ReturnType<typeof reportInput>) => {
     const t = targetsOf(input);
     const rows = mapRows(input, t);
@@ -521,6 +536,62 @@ describe("the map", () => {
       ),
     });
     expect(uncovered(declined).keys).toEqual([]);
+  });
+});
+
+describe("the fixture records", () => {
+  test("a record of 0.27.0 is complete, and against a 0.26.0 audit M14's criteria are added by Jig", () => {
+    const { modules, profiles, schema } = reportInput();
+    const current = parseRecord(
+      currentRecordAt("2026-10-14", {}, "0.27.0"),
+      "current.yaml",
+    );
+    expect(checkRecord(current, modules, profiles)).toEqual([]);
+    const prior = parseRecord(
+      recordAt("2026-10-13", {}, "0.26.0"),
+      "prior.yaml",
+    );
+    const added = compare(prior, current, modules, schema, "2026-10-14")
+      .criteria.filter((c) => c.change === "added-by-jig")
+      .map((c) => c.key);
+    const m14 = modules
+      .find((m) => m.module === "M14")
+      ?.criteria.map((c) => c.key);
+    expect(m14?.length).toBe(12);
+    expect(added).toEqual(addedAfter("0.26.0"));
+    expect(added).toEqual(expect.arrayContaining(m14 ?? []));
+  });
+
+  test("a score override reaches a criterion added after the calibration audit", () => {
+    expect(
+      currentRecordAt(
+        "2026-10-14",
+        { "M14/test-tiers-declared": "mechanical" },
+        "0.27.0",
+      ),
+    ).toMatch(
+      /^ {2}M14\/test-tiers-declared:.*\n(?: {4}#.*\n)* {4}score: mechanical$/m,
+    );
+  });
+
+  test("a score override for a criterion the record lacks is refused", () => {
+    expect(() =>
+      currentRecordAt("2026-10-14", { "M99/no-such-criterion": "mechanical" }),
+    ).toThrow("M99/no-such-criterion");
+    expect(() =>
+      recordAt("2026-10-14", { "M99/no-such-criterion": "mechanical" }),
+    ).toThrow("M99/no-such-criterion");
+  });
+
+  test("a score override key matches a criterion literally, not as a pattern", () => {
+    expect(() =>
+      currentRecordAt("2026-10-14", {
+        "M14/test.tiers-declared": "mechanical",
+      }),
+    ).toThrow("M14/test.tiers-declared");
+    expect(() =>
+      recordAt("2026-10-14", { "M1/gate.set-documented": "absent" }),
+    ).toThrow("M1/gate.set-documented");
   });
 });
 
@@ -608,7 +679,7 @@ describe("the trend", () => {
   });
 
   test("never counts the audited record as its own past, given as history on the prior's day", () => {
-    const now = recordAt("2026-10-12", {}, "0.15.0");
+    const now = currentRecordAt("2026-10-12", {}, "0.15.0");
     const prior = recordAt("2026-10-12", {
       "M1/gate-set-documented": "absent",
     }).replace(/^commit: "?2026/m, (m) => m.replace("2026", "1999"));
@@ -629,7 +700,7 @@ describe("the trend", () => {
   });
 
   test("keeps a same-day re-audit of the same commit whose scores differ", () => {
-    const now = recordAt("2026-10-12", {}, "0.15.0");
+    const now = currentRecordAt("2026-10-12", {}, "0.15.0");
     const prior = recordAt(
       "2026-10-12",
       { "M1/gate-set-documented": "absent" },
@@ -766,7 +837,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toMatch(
-      /What changed \(27\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+      /What changed \(39\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
     );
     // A criterion Jig added after the prior audit's plugin was not assessed then.
     const added = addedAfter("0.14.0");
@@ -1030,7 +1101,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>26</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>38</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -1105,7 +1176,7 @@ describe("the sheet", () => {
     expect(by["M5/adrs-exist-numbered-from-template"]).toBe("probe");
     expect(Object.values(by)).toContain("agent");
     const raised = reportInput({
-      record: recordAt("2026-10-12", {
+      record: currentRecordAt("2026-10-12", {
         "M1/precommit-autofix-hooks": "convention",
       }),
     });
@@ -1410,7 +1481,7 @@ describe("the Markdown copy", () => {
       [
         "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
         "",
-        "### What changed (27)",
+        "### What changed (39)",
         "",
         "| Module | Criterion | Before → after | Change |",
         "|--------|-----------|----------------|--------|",
@@ -1441,6 +1512,18 @@ describe("the Markdown copy", () => {
         "| M13 Pipeline economy | `workflow-conventions-linted` | not scored → absent | Added by Jig |",
         "| M13 Pipeline economy | `ci-cost-measured` | not scored → absent | Added by Jig |",
         "| M13 Pipeline economy | `queue-stall-watchdog` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `test-tiers-declared` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `testing-rules-written` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `tier-budgets-enforced` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `full-e2e-never-per-change` | not scored → expected absent | Added by Jig |",
+        "| M14 Testing strategy | `tests-type-checked` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `tests-come-with-changes` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `fixed-sleeps-banned` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `clock-reads-linted` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `predicates-proven-against-engine` | not scored → expected absent | Added by Jig |",
+        "| M14 Testing strategy | `developer-state-isolated` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `doubles-and-builders-typed` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `coverage-trend-scheduled` | not scored → absent | Added by Jig |",
         "",
         "### Still open within the target (4)",
         "",

@@ -1,6 +1,6 @@
 # Modules
 
-The 14 practice modules. Each adopts independently at three maturity levels
+The practice modules. Each adopts independently at three maturity levels
 (Lite / Standard / Strict — see [principle 2](../principles/02-modular-profile-composed.md))
 and carries the same directory contract: `README.md`, `templates/`,
 `reference/`, `mappings.md`, and its [maturity criteria](#maturity-criteria) in
@@ -27,6 +27,7 @@ and reference gates.
 | [M11 Process observability](M11-process-observability/) | Telemetry on the delivery process itself (review quality, gate health) | [`drive-pr`](../plugin/skills/drive-pr/README.md)'s loop and fleet metrics |
 | [M12 Parallel-agent ergonomics](M12-parallel-agent-ergonomics/) | Multiple agents, one machine/repo: ports, mutexes, branch discipline | — |
 | [M13 Pipeline economy](M13-pipeline-economy/) | CI spent only where it changes a merge decision: honest signal, selection, superseding, bounds, ordering, placement | [`github-actions`](../plugin/skills/github-actions/SKILL.md) reviews workflow changes |
+| [M14 Testing strategy](M14-testing-strategy/) | Test tiers with budgets, honest doubles, injected clock, polling, tests with every change | — |
 
 Adoption ordering for brownfield projects is leverage-first — typically
 M1 → M2 → M0 → M4 — but the [audit](../plugin/skills/audit/README.md) report's recommendation

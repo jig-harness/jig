@@ -18,8 +18,8 @@ project-specific survey if the target has a large surface the four don't cover
 
 The four areas: agent scaffolding; documentation governance; automation &
 mechanical enforcement; review architecture & learning loop. They map onto the
-module map as: survey 1 → M0; survey 2 → M4/M5/M6; survey 3 → M1/M2/M3/M10/M12/M13;
-survey 4 → M7/M8/M9/M11. (Tasks/memory, environments/CI, pipeline economy, process
+module map as: survey 1 → M0; survey 2 → M4/M5/M6; survey 3 → M1/M2/M3/M10/M12/M13/M14;
+survey 4 → M7/M8/M9/M11. (Tasks/memory, environments/CI, pipeline economy, testing strategy, process
 observability and parallel-agent ergonomics are covered inside surveys 3–4 rather than each
 getting its own prompt — add a fifth survey only if one of those is a large
 surface in the target.)
@@ -50,7 +50,7 @@ replacement.
 
 ## 3. Score modules on the enforcement ladder
 
-For each Jig module (M0–M13), grade the target:
+For each Jig module, grade the target:
 
 - **absent** — the practice doesn't exist (mark "expected-absent" where the
   repo's shape makes the practice inapplicable — e.g. no deploy pipeline in
@@ -63,7 +63,7 @@ For each Jig module (M0–M13), grade the target:
 - **mechanically enforced** — hooks/CI/review gates catch violations (note
   which rung, and whether CI is the authority).
 
-Every module M0–M13 carries [criteria](../criteria/README.md), so score
+Every module carries [criteria](../criteria/README.md), so score
 **every** module by its criteria individually. The skill's `score.ts --draft`
 writes the record to fill in: one entry per criterion with its level and pass
 bar, where a criterion whose probe found its precondition missing is already

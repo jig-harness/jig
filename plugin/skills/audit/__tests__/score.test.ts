@@ -14,6 +14,7 @@ import {
   attained,
   evaluateProbe,
   loadModules,
+  MODULE_IDS,
   parseModule,
   probedFiles,
   type Score,
@@ -39,14 +40,12 @@ const repo = (files: Record<string, string>) => {
 };
 
 describe("the shipped criteria", () => {
-  test("all fourteen modules carry well-formed criteria", () => {
+  test("every module carries well-formed criteria", () => {
     const run = runScript("score.ts", ["--check"], scratch);
     expect(run.code).toBe(0);
-    expect(run.out).toContain("All 14 modules");
+    expect(run.out).toContain(`All ${MODULE_IDS.length} modules`);
     const modules = loadModules();
-    expect(modules.map((m) => m.module)).toEqual(
-      Array.from({ length: 14 }, (_, n) => `M${n}`),
-    );
+    expect(modules.map((m) => m.module)).toEqual([...MODULE_IDS]);
     // Every file is named after its module.
     for (const m of modules)
       expect(m.file).toEndWith(`${m.module}-${m.name}.yaml`);

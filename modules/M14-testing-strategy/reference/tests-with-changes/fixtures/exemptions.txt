@@ -1,0 +1,2 @@
+# <glob> <reason>
+src/generated/** Generated from the schema; the generator has its own tests.

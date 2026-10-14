@@ -1,0 +1,203 @@
+# Machine-evaluable criteria for M14 (testing strategy).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# Repo-shape note: a library with no running system has no end-to-end sweep
+# to place, and a repository with no database or authorization layer has no
+# isolation predicate to prove; those criteria are expected-absent there.
+module: M14
+name: testing-strategy
+purpose: >-
+  Each test suite runs where its time budget allows, and a passing test
+  means the behaviour works.
+criteria:
+  - id: test-tiers-declared
+    level: lite
+    requires: convention
+    since: 0.27.0
+    statement: >-
+      Every test suite has a written tier (unit, integration, end-to-end or
+      the repository's own names) with the trigger that runs it and its time
+      budget.
+    observe:
+      - "a testing doc, the instruction file or comments in the CI configuration name each suite with its trigger and budget"
+      - "the full end-to-end sweep, where one exists, is written down as nightly or on demand, never per change; end-to-end tests of journeys nothing else checks may run after every merge"
+
+  - id: testing-rules-written
+    level: lite
+    requires: convention
+    since: 0.27.0
+    statement: >-
+      The testing rules are written where agents and people read them: test
+      doubles reject what the real dependency rejects, runtime code reads
+      time from an injected clock, waits poll with a deadline instead of
+      sleeping, tests change the home directory, working directory or
+      environment only in a subprocess, and a new test is seen to fail
+      before its pass is trusted.
+    observe:
+      - "a testing doc, rule file or the instruction file states the rules for doubles, time, waiting, developer state and seeing a new test fail first"
+      - "the instruction file points at it"
+
+  - id: tier-budgets-enforced
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      Every CI job that runs tests has an enforced budget on the suite's
+      elapsed time: a job timeout, a timeout on the command that runs the
+      suite, or a step that fails when the suite runs over its tier's
+      budget. A per-test timeout alone does not count: it bounds one test,
+      not the suite.
+    observe:
+      - "test jobs carry timeout-minutes / timeout: / options { timeout(...) }, or the suite's command runs under timeout <duration>"
+      - "or a step compares the suite's elapsed time with the budget and fails"
+    probe:
+      files: &ci-config
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+        - ".gitlab-ci.yml"
+        - ".circleci/config.yml"
+        - "azure-pipelines.yml"
+        - "bitbucket-pipelines.yml"
+        - "Jenkinsfile"
+        - ".buildkite/**"
+        - ".drone.yml"
+        - ".woodpecker.yml"
+        - ".woodpecker/**"
+        - ".travis.yml"
+        - ".forgejo/workflows/*"
+        - ".gitea/workflows/*"
+        - ".cirrus.yml"
+        - "appveyor.yml"
+        - ".appveyor.yml"
+        - ".semaphore/**"
+        - ".teamcity/**"
+        - "bitrise.yml"
+        - "codemagic.yaml"
+        - "cloudbuild.yaml"
+        - "cloudbuild.yml"
+        - "buildspec.yml"
+        - ".tekton/**"
+
+  - id: full-e2e-never-per-change
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      The full end-to-end sweep, whose journeys other checks already cover,
+      runs only on a schedule or on demand, and a check over the CI
+      configuration fails when its workflow gains a per-change trigger
+      (end-to-end tests that are the only check of a critical journey may
+      run after every merge; expected-absent where the repository has no
+      end-to-end suite).
+    observe:
+      - "the workflow running the full end-to-end suite triggers on schedule / dispatch only"
+      - "a lint or grep gate run in CI fails a per-change trigger (pull_request, push, merge request) on that workflow"
+
+  - id: tests-type-checked
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      Test files are type-checked in CI by the same kind of check as runtime
+      code (for a compiled language, the test sources compile in CI;
+      expected-absent only for a language that has no type checker to apply;
+      a checker that exists for the language but is not configured scores
+      absent).
+    observe:
+      - "the type-check configuration CI runs includes the test files (tsconfig include, tsconfig.test.json, mypy/pyright paths)"
+      - "or the language compiles test sources as part of the CI build"
+
+  - id: tests-come-with-changes
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      A CI check fails a change whose changed source file has no test,
+      unless the file is listed in a registered exemption with a reason, and
+      a pre-push hook runs the same check before the push.
+    observe:
+      - "a CI job maps each changed source file to its test path and fails when none exists"
+      - "the pre-push hook configuration runs the same check"
+      - "exemptions live in a reviewed file or list, each with a reason"
+
+  - id: fixed-sleeps-banned
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      A gate rejects fixed sleeps in test and tooling code, except those
+      carrying a suppression token registered for local timing; waits for
+      external state poll with a deadline.
+    observe:
+      - "a lint rule or grep gate run in CI flags sleep / setTimeout / time.sleep / Thread.sleep in tests"
+      - "its suppression token is listed in the suppression-token registry"
+
+  - id: clock-reads-linted
+    level: strict
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      A lint rule rejects direct wall-clock reads in runtime code outside
+      the one system-clock adapter, so runtime code gets the current time
+      from an injected clock.
+    observe:
+      - "a lint rule (GritQL plugin, no-restricted-syntax, banned-api, forbidigo, ArchUnit, BannedApiAnalyzers) bans Date.now / new Date() / datetime.now / time.Now / Instant.now in runtime code"
+      - "it blocks in CI, directly or through a ratchet on its count"
+
+  - id: predicates-proven-against-engine
+    level: strict
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      Isolation and visibility predicates (tenant scope, soft delete,
+      authorization) are tested in CI against the engine that evaluates
+      them, with data that would leak if the predicate were missing
+      (expected-absent where the repository has no such predicates).
+    observe:
+      - "a CI job provisions the real database or policy engine and runs predicate tests against it"
+      - "those tests seed a second tenant or a deleted record and assert it is hidden"
+
+  - id: developer-state-isolated
+    level: strict
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      Test runs cannot touch the developer's real state: the home
+      directory, temp directory and the tool's own configuration point at
+      per-run locations before any code under test starts (the test command
+      launches the runner with them set, or tests spawn the code under test
+      as a subprocess with them set), and a lint rejects in-process changes
+      to them in test files.
+    observe:
+      - "the test script or a wrapper sets HOME / TMPDIR / the tool's configuration variables to per-run locations in the environment it launches the runner with; a fixture that changes them inside the test process does not count"
+      - "a lint or grep gate rejects process.env.HOME = / process.chdir( (or the ecosystem's equivalent) in tests"
+
+  - id: doubles-and-builders-typed
+    level: strict
+    requires: convention
+    since: 0.27.0
+    statement: >-
+      Test doubles and test-data builders are typed against the real
+      contract, doubles reject inputs the real dependency rejects, and
+      builders return one declared type with deterministic defaults.
+    observe:
+      - "doubles are declared with the real interface type (Pick<T>, satisfies, autospec, implementing the interface), not any"
+      - "fakes of command-line tools or APIs fail on an unknown flag or request"
+      - "the testing doc or the pull-request template asks for a mutation check on a new double: break the real call site, see the test fail, restore it"
+      - "builders declare their return type and use fixed identifiers and timestamps"
+
+  - id: coverage-trend-scheduled
+    level: strict
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      A scheduled CI job publishes coverage as a trend, also when it is
+      below target, refuses to publish incomplete data, and no merge is
+      blocked on a per-file coverage threshold.
+    observe:
+      - "a workflow on a schedule runs coverage and publishes it (dashboard, hosted service, artifact)"
+      - "the publish step runs even when the coverage step fails, and fails when a package's report is missing"
+      - "no per-file blocking coverage threshold is configured"
+    probe:
+      files: *ci-config

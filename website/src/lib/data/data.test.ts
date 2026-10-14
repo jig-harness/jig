@@ -22,7 +22,10 @@ import { parseProfiles } from "./profiles.ts";
 import { parseReadme } from "./readme.ts";
 import { parseSkills } from "./skills.ts";
 import { parseChangelog, parseRoadmap } from "./whats-new.ts";
-import { parseModule as auditModule } from "../../../../plugin/skills/audit/scripts/lib/criteria.ts";
+import {
+  MODULE_IDS,
+  parseModule as auditModule,
+} from "../../../../plugin/skills/audit/scripts/lib/criteria.ts";
 import { parseProfiles as auditProfiles } from "../../../../plugin/skills/audit/scripts/lib/profiles.ts";
 
 const root = join(import.meta.dir, "../../../..");
@@ -31,10 +34,8 @@ const read = (path: string) => readFileSync(join(root, path), "utf8");
 describe("modules", () => {
   const index = parseModuleIndex(read("modules/README.md"));
 
-  test("the index lists all fourteen modules with the skills that run them", () => {
-    expect(index.map((m) => m.id)).toEqual(
-      Array.from({ length: 14 }, (_, i) => `M${i}`),
-    );
+  test("the index lists every declared module with the skills that run them", () => {
+    expect(index.map((m) => m.id)).toEqual([...MODULE_IDS]);
     expect(index.find((m) => m.id === "M7")?.skills).toContain("drive-pr");
     expect(index.find((m) => m.id === "M0")?.skills).toEqual([]);
   });
@@ -86,7 +87,7 @@ test("every criteria file parses as the audit reads it, and M7 has the most", ()
       return [module, criteria.length] as const;
     }),
   );
-  expect(counts.size).toBe(14);
+  expect(counts.size).toBe(15);
   expect(Math.max(...counts.values())).toBe(counts.get("M7") ?? -1);
 });
 

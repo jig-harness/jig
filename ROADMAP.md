@@ -281,23 +281,24 @@ selection, superseding, bounds, ordering and placement. Still to come:
 Done when these are in the module with their criteria, and Jig's own
 workflows pass the lint.
 
-### 15. M14 Testing strategy
+### 15. M14 Testing strategy: the rest
 
-No module states how to test yet. A new one covers:
+[M14](modules/M14-testing-strategy/README.md) states test tiers with budgets,
+honest doubles, the injected clock, polling, predicates proven where they
+execute, typed builders, tests with every change and coverage as a trend.
+Still open:
 
-- test tiers with triggers and time budgets, with a slow end-to-end sweep run
-  per change only when a merge or the `verified` pointer must wait for it;
 - a check that a job which provisions a real dependency executed at least one
-  test;
-- test doubles that reject what the real dependency rejects;
-- an injected clock, and polling with a deadline instead of fixed sleeps;
-- predicates proven where they execute;
+  test, so a suite that skipped itself cannot report success;
+- exceptions that prune themselves: the tests-with-changes gate failing on an
+  exemption that matches no file, and a `fixed-delay:` token gate that fails
+  on a token with no delay beside it;
 - stale-test triage on a freshly fetched base, which `fix-ci` then follows;
-- coverage published as a trend rather than used as a per-change gate;
-- behaviour pins for dependency workarounds, and a canary on the next
-  runtime release.
+- tests that pin the dependency behaviour a workaround exists for, and a
+  scheduled run of the suite on the language runtime's next release.
 
-Done when the module, its criteria and the skip check are in.
+Done when the skip check is in M14's reference with its criterion, and the
+rest of the work listed above is in the module.
 
 ### 16. M15 Contracts and error handling
 

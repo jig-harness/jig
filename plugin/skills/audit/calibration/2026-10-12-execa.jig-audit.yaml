@@ -604,4 +604,53 @@ criteria:
     # A watchdog fails loudly when runs wait for a runner longer than a set bound, because job timeouts do not count time spent in the queue.
     score: absent
     evidence: "No scheduled workflow"
+  # M14 testing-strategy
+  M14/test-tiers-declared:   # lite, requires convention
+    # Every test suite has a written tier (unit, integration, end-to-end or the repository's own names) with the trigger that runs it and its time budget.
+    score: absent
+    evidence: "No suite has a written tier, trigger or budget: there is one unit suite (package.json:21) plus the type tests (package.json:22), all run on every push and pull_request by .github/workflows/main.yml, and no document names a tier"
+  M14/testing-rules-written:   # lite, requires convention
+    # The testing rules are written where agents and people read them: test doubles reject what the real dependency rejects, runtime code reads time from an injected clock, waits poll with a deadline instead of sleeping, tests change the home directory, working directory or environment only in a subprocess, and a new test is seen to fail before its pass is trusted.
+    score: absent
+    evidence: "No instruction file, contributing guide or testing document (no AGENTS.md, CONTRIBUTING.md or docs page on testing); the testing rules are not written anywhere"
+  M14/tier-budgets-enforced:   # standard, requires mechanical
+    # Every CI job that runs tests has an enforced budget on the suite's elapsed time: a job timeout, a timeout on the command that runs the suite, or a step that fails when the suite runs over its tier's budget. A per-test timeout alone does not count: it bounds one test, not the suite.
+    score: absent
+    evidence: "The CI job in .github/workflows/main.yml has no timeout-minutes and no step bounds the suite; --test-timeout=240000 (package.json:21) bounds each test, not the suite"
+  M14/full-e2e-never-per-change:   # standard, requires mechanical
+    # The full end-to-end sweep, whose journeys other checks already cover, runs only on a schedule or on demand, and a check over the CI configuration fails when its workflow gains a per-change trigger (end-to-end tests that are the only check of a critical journey may run after every merge; expected-absent where the repository has no end-to-end suite).
+    score: expected-absent
+    evidence: "No end-to-end suite: a library with no running system; every test under test/ spawns subprocesses from the unit run"
+  M14/tests-type-checked:   # standard, requires mechanical
+    # Test files are type-checked in CI by the same kind of check as runtime code (for a compiled language, the test sources compile in CI).
+    score: absent
+    evidence: "The tests are JavaScript (test/**/*.js) and tsconfig.json type-checks only index.d.ts; tsd checks the type tests in test-d/, not the runtime tests"
+  M14/tests-come-with-changes:   # standard, requires mechanical
+    # A CI check fails a change whose changed source file has no test, unless the file is listed in a registered exemption with a reason, and a pre-push hook runs the same check before the push.
+    score: absent
+    evidence: "No CI check or hook maps changed files under lib/ to tests"
+  M14/fixed-sleeps-banned:   # standard, requires mechanical
+    # A gate rejects fixed sleeps in test and tooling code, except those carrying a suppression token registered for local timing; waits for external state poll with a deadline.
+    score: absent
+    evidence: "No sleep rule in the xo configuration; 38 files under test/ call setTimeout, most through node:timers/promises (for example test/pipe/methods.js:2)"
+  M14/clock-reads-linted:   # strict, requires mechanical
+    # A lint rule rejects direct wall-clock reads in runtime code outside the one system-clock adapter, so runtime code gets the current time from an injected clock.
+    score: absent
+    evidence: "No clock rule in the xo configuration; lib/verbose/log.js:30 reads new Date() directly"
+  M14/predicates-proven-against-engine:   # strict, requires mechanical
+    # Isolation and visibility predicates (tenant scope, soft delete, authorization) are tested in CI against the engine that evaluates them, with data that would leak if the predicate were missing (expected-absent where the repository has no such predicates).
+    score: expected-absent
+    evidence: "No database, tenant model or authorization layer: a subprocess library"
+  M14/developer-state-isolated:   # strict, requires mechanical
+    # Test runs cannot touch the developer's real state: the home directory, temp directory and the tool's own configuration point at per-run locations before any code under test starts (the test command launches the runner with them set, or tests spawn the code under test as a subprocess with them set), and a lint rejects in-process changes to them in test files.
+    score: absent
+    evidence: "Tests change process-global state in-process: nine process.chdir calls under test/ (for example test/methods/node.js:14), and the xo configuration turns node-test/no-process-env-mutation off (package.json:120)"
+  M14/doubles-and-builders-typed:   # strict, requires convention
+    # Test doubles and test-data builders are typed against the real contract, doubles reject inputs the real dependency rejects, and builders return one declared type with deterministic defaults.
+    score: absent
+    evidence: "Tests and their helpers (test/helpers/) are untyped JavaScript, and no rule says how a double or builder must behave"
+  M14/coverage-trend-scheduled:   # strict, requires mechanical
+    # A scheduled CI job publishes coverage as a trend, also when it is below target, refuses to publish incomplete data, and no merge is blocked on a per-file coverage threshold.
+    score: absent
+    evidence: "Coverage is uploaded to Codecov from every matrix leg on each push and pull request (.github/workflows/main.yml, fail_ci_if_error: false), not on a schedule, and nothing refuses incomplete data; .github/codecov.yml sets no per-file threshold"
 declined: []

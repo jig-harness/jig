@@ -134,6 +134,45 @@ changes are marked **Breaking** and say what a consumer changes.
   extracts the base tree's gate scripts, with the `lib/` they import, into a
   fresh directory outside the merge request's checkout.
 
+## [0.27.0] - 2026-10-14
+
+A new module, [M14 Testing strategy](modules/M14-testing-strategy/README.md),
+and the audit criteria that score it. Nothing a consumer has configured stops
+working; a re-audit reports the new criteria as added since the prior audit.
+
+### Added
+
+- [M14 Testing strategy](modules/M14-testing-strategy/README.md): test tiers
+  with a trigger and a time budget, the full end-to-end sweep kept off the
+  per-change path by a check, honest test doubles proven by a mutation check,
+  an injected clock with a lint rule, polling with a deadline instead of
+  fixed sleeps, isolation predicates tested against the real engine, typed
+  test-data builders, type-checked tests, tests with every change, tests kept
+  off the developer's real state, and coverage as a scheduled trend rather
+  than a per-file gate. It ships a testing-strategy template, a
+  tests-with-changes gate (base ref, source globs, test-path templates and an
+  exemptions file as arguments) and a polling helper, each with a self-test,
+  and per-ecosystem mappings for TypeScript, Python, Go, the JVM and .NET.
+- AGENTS.md § Rules for every change states Jig's own testing rules: tests are
+  type-checked, a test that needs another home directory, working directory
+  or environment spawns a subprocess, waits poll with a deadline, and a new
+  test is seen to fail first; M14 has the rest.
+- `/jig:audit` scores M14's criteria (`since: 0.27.0`); its
+  automation survey asks about tiers, budgets and the other testing rules.
+  Team/Standard targets M14 Lite and Regulated/Strict M14 Standard; M14 comes
+  after M7 in the adoption order.
+
+### Changed
+
+- `score.ts --check` checks the modules listed in `MODULE_IDS` rather than a
+  contiguous `M0`…`M<n>` range, so a planned module number can stay open
+  while that module is written.
+- The execa calibration record scores M14's criteria against the same
+  commit, so the website's audit example renders a complete record.
+- M1 lists M14's `fixed-delay:` token and tests-with-changes exemptions file
+  as suppressions for its registry; M10 tells its test-data factory apart
+  from M14's typed builders.
+
 ## [0.26.0] - 2026-10-14
 
 ### Added
@@ -1248,7 +1287,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/docomply/jig/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/docomply/jig/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/docomply/jig/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/docomply/jig/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/docomply/jig/compare/v0.22.0...v0.23.0

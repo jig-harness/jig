@@ -25,7 +25,7 @@ they do not live in the checkout.
 Each repository's committed audit record (`.config/jig-audit.yaml`) is its
 audit: use it when it audited the commit frozen in step 1, and run
 [methodology.md](methodology.md) in that repository only when it has no record
-or an older one. Every M0–M13 criterion is scored for each repo before
+or an older one. Every module's criteria are scored for each repo before
 comparing them. `record.ts portfolio <name>=<record> …` then sets the records
 side by side: the level each module attains per repository and every
 criterion's score, the starting point for the capability matrix.

@@ -16,7 +16,7 @@
  *       The prior record defaults to .config/jig-audit.yaml when it exists;
  *       its declined recommendations are carried over.
  *   bun score.ts --check
- *       check the criteria themselves: all 14 modules present, each with
+ *       check the criteria themselves: every module present, each with
  *       well-formed criteria. Needs no repository.
  *   --criteria <dir> reads the criteria from another directory.
  *
@@ -31,7 +31,7 @@ import {
   type Criterion,
   evaluateProbe,
   loadModules,
-  MODULE_COUNT,
+  MODULE_IDS,
   type Module,
   probedFiles,
   type Score,
@@ -83,22 +83,22 @@ function parseArgs(argv: string[]): Args {
 
 function check(modules: Module[]): number {
   let bad = false;
-  for (let n = 0; n < MODULE_COUNT; n++) {
-    const module = modules.find((m) => m.module === `M${n}`);
+  for (const id of MODULE_IDS) {
+    const module = modules.find((m) => m.module === id);
     if (!module) {
-      console.log(`MISSING: M${n} has no criteria file`);
+      console.log(`MISSING: ${id} has no criteria file`);
       bad = true;
     } else if (module.criteria.length === 0) {
-      console.log(`EMPTY: M${n} (${module.file}) has no criteria`);
+      console.log(`EMPTY: ${id} (${module.file}) has no criteria`);
       bad = true;
     } else
       console.log(
-        `ok: M${n} — ${module.criteria.length} criteria, ${module.criteria.filter((c) => c.probe).length} probed`,
+        `ok: ${id} — ${module.criteria.length} criteria, ${module.criteria.filter((c) => c.probe).length} probed`,
       );
   }
   if (!bad)
     console.log(
-      `All ${MODULE_COUNT} modules (M0–M${MODULE_COUNT - 1}) carry well-formed criteria.`,
+      `All ${MODULE_IDS.length} modules (${MODULE_IDS.join(", ")}) carry well-formed criteria.`,
     );
   return bad ? 1 : 0;
 }
