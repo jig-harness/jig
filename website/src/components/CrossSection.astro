@@ -1,0 +1,300 @@
+---
+// What a factory of agents runs on, as one picture: the stations (the
+// plugin's skills) standing on the scaffolding (three jobs, built by the
+// modules), above the line where the organization's platform starts. `mini`
+// is the home page's form; `full` adds the platform's four needs and the
+// caption.
+import { factory } from "../lib/data/index.ts";
+import JobCell from "./factory/JobCell.astro";
+import ModChip from "./ModChip.astro";
+import StationBox from "./StationBox.astro";
+import StatusMark from "./StatusMark.astro";
+
+interface Props {
+  variant: "mini" | "full";
+}
+const { variant } = Astro.props;
+const f = factory();
+const plain = (md: string) =>
+  md
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*`_]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
+---
+
+<figure class:list={["xs", variant]} aria-labelledby={variant === "full" ? "xs-cap" : undefined} aria-label={variant === "mini" ? "What the factory runs on, at a glance" : undefined}>
+  {
+    variant === "full" && (
+      <div class="legend" role="list" aria-label="Station status">
+        <span role="listitem"><StatusMark kind="skill" size={9} />a skill</span>
+        <span role="listitem"><StatusMark kind="person" size={9} />a person</span>
+        <span role="listitem"><StatusMark kind="todo" size={9} />not built yet</span>
+      </div>
+    )
+  }
+  <div class="stations-wrap">
+    <div class="stations">
+      <span class="frame-tag">Stations · the plugin's skills</span>
+      <span class="level-name">A · Design and planning</span>
+      <ol class="row five">
+        {f.pipeline.map((s) => <StationBox station={s} compact />)}
+      </ol>
+      <div class="handoff"><span class="tick" aria-hidden="true"></span><span>an epic of planned work items, one at a time</span></div>
+      <span class="level-name">B · Execution</span>
+      <ol class="row seven">
+        {f.line.map((s) => <StationBox station={s} compact />)}
+      </ol>
+      <p class="loop">↺ the learning loop wraps both levels · follow-ups re-enter at 1 · no skill merges</p>
+    </div>
+  </div>
+  <div class="scaffold">
+    <div class="scaffold-head">
+      <span class="label">Scaffolding · in the repository</span>
+      <span class="muted">what every station runs on · most of what Jig provides</span>
+    </div>
+    <div class="jobs">
+      {
+        f.jobs.map((j) => (
+          <JobCell job={j} short={shortOf(j.means)} />
+        ))
+      }
+    </div>
+    <div class="many">
+      <a class="label" href="/factory/#scaffolding-many">Many agents at once</a>
+      <span class="chips">{f.many.modules.map((id) => <ModChip id={id} size="small" />)}</span>
+      <span class="muted">workspaces that do not collide · measurement of the process</span>
+    </div>
+  </div>
+  <div class="floor-line">
+    <span>↑ In the repository · Jig</span>
+    <span>Underneath · your platform ↓</span>
+  </div>
+  {
+    variant === "full" ? (
+      <ul class="floor">
+        {f.platform.map((p) => (
+          <li>
+            <span class="floor-name">{p.lead}</span>
+            <span class="floor-mods">
+              <span>needs stated in</span>
+              {p.modules.map((id) => (
+                <ModChip id={id} />
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p class="floor-mini">
+        machines, environments, deployment, monitoring. <a href="/factory/#platform">What the repository needs from it</a>
+      </p>
+    )
+  }
+  {
+    variant === "mini" ? (
+      <div class="legend after" role="list" aria-label="Station status">
+        <span role="listitem"><StatusMark kind="skill" size={9} />a skill</span>
+        <span role="listitem"><StatusMark kind="person" size={9} />a person</span>
+        <span role="listitem"><StatusMark kind="todo" size={9} />not built yet</span>
+      </div>
+    ) : (
+      <figcaption id="xs-cap">
+        Figure 1: what a factory of agents runs on. The plugin's skills run the stations at the top (<a href="#levels">figure 2</a> has each one); they stand on the scaffolding, whose three jobs Jig's modules build. Jig ends at the solid line: below it, each module states what the repository needs from your platform, so any platform can supply it.
+      </figcaption>
+    )
+  }
+</figure>
+
+<style>
+  .xs {
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--card);
+    padding: clamp(14px, 2vw, 24px);
+    min-width: 0;
+  }
+  .mini {
+    padding: 16px 16px 14px;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    font-size: 12.5px;
+    margin-bottom: 6px;
+  }
+  .legend span {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .legend.after {
+    margin: 10px 0 0;
+  }
+  .stations-wrap {
+    margin: 10px clamp(0px, 5%, 40px) 0;
+  }
+  .stations {
+    position: relative;
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: var(--r-panel) var(--r-panel) 0 0;
+    padding: 22px 10px 10px;
+    background: var(--card);
+  }
+  .level-name {
+    display: block;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .row {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 5px;
+  }
+  .five {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .seven {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+  .handoff {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .tick {
+    width: 1.5px;
+    height: 14px;
+    background: var(--line-strong);
+    margin-left: 16px;
+    flex: none;
+  }
+  .loop {
+    margin: 8px 0 0;
+    font-size: 12.5px;
+  }
+  .scaffold {
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--sunk);
+    padding: 12px;
+  }
+  .scaffold-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 2px 12px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .scaffold-head .muted {
+    font-size: 13px;
+  }
+  .jobs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+  .many {
+    margin-top: 8px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r);
+    background: var(--card);
+    padding: 6px 10px;
+    display: flex;
+    gap: 4px 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    font-size: 12.5px;
+  }
+  .many a.label {
+    text-decoration: underline;
+  }
+  .floor-line {
+    margin-top: 12px;
+    border-top: 2px solid var(--ink);
+    padding-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    gap: 6px 16px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .floor-mini {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .floor {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    gap: 10px;
+  }
+  .floor li {
+    background: var(--sunk);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .floor-name {
+    font-weight: 600;
+    font-size: 15px;
+    line-height: 1.3;
+  }
+  .floor-mods {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+  figcaption {
+    font-size: 13.5px;
+    color: var(--muted);
+    margin-top: 12px;
+    max-width: 96ch;
+  }
+  .mini .stations-wrap {
+    margin-inline: clamp(0px, 4%, 30px);
+  }
+  @media (max-width: 1279px) {
+    .mini .five {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .mini .seven {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 900px) {
+    .five {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .seven {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .jobs {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

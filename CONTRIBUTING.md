@@ -117,8 +117,9 @@ checks the setting against that policy; it needs an administrator's `gh`
 login, so it runs by hand, not in CI.
 
 Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out the long
-drive-pr suite; run its test files for what you changed, and let CI's shards
-run the rest.
+drive-pr suite and the website's tests, which CI runs in their own jobs; run
+the test files for what you changed, and let CI run the rest. The website's
+tests need `bun install` inside `website/` first.
 
 ### The ratchet
 
@@ -147,13 +148,14 @@ so skipping never changes what merges.
 
 [Generated artifacts](GLOSSARY.md) (M2) are never edited by hand: regenerate
 them. Each row's drift check catches the failure named there. The example
-indexes open with a "generated" header naming their generator. `bun.lock` and
-the vendored parsers cannot carry one, since each must stay byte for byte what
+indexes open with a "generated" header naming their generator. The lockfiles
+and the vendored parsers cannot carry one, since each must stay byte for byte what
 its generator writes, so this list is their marker.
 
 | File | Regenerate | Drift check |
 | --- | --- | --- |
 | `bun.lock` | `bun install` after changing `package.json` | CI installs with `bun install --frozen-lockfile`, which fails when the lockfile no longer matches `package.json`; it does not catch an edit that keeps them in agreement |
+| `website/bun.lock` | `bun install` in `website/` after changing `website/package.json` | the `website` job in `gates.yml` and the deploy in `website.yml` install with `bun install --frozen-lockfile` in `website/`, with the same limit as the row above |
 | `plugin/skills/resolve-review-comments/scripts/lib/vendor/js-yaml.mjs` and its `js-yaml.LICENSE` | after updating `js-yaml`, copy `node_modules/js-yaml/dist/js-yaml.mjs` and `node_modules/js-yaml/LICENSE` (as `js-yaml.LICENSE`) into that folder | `tools/plugin/plugin.test.ts` compares both with the installed `js-yaml` |
 | `lib/vendor/js-yaml.mjs` and its `js-yaml.LICENSE` (a second copy, because `lib/` is vendored without `plugin/`) | the same copy, into `lib/vendor/` | `lib/module-gates.test.ts` compares both with the installed `js-yaml` |
 | `plugin/LICENSE` and `plugin/NOTICE` | `cp LICENSE NOTICE plugin/` after changing either (the plugin installs only `plugin/`) | `scripts/check-licences.ts` compares them with the root files |

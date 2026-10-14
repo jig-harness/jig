@@ -705,7 +705,26 @@ function suiteJobShapeAllowed(job: SuiteJob, contract: SuiteContract) {
   const matrix = strategy.matrix;
   return (
     matrix === undefined ||
-    (Object.keys(matrix).length === 1 && "shard" in matrix)
+    (Object.keys(matrix).length === 1 &&
+      ("shard" in matrix || "include" in matrix))
+  );
+}
+
+/**
+ * The `os` values a job's `matrix.include` runs on. The job runs on each row's
+ * `runner`, not its `os`, so a row counts only when its runner names that
+ * platform (`blacksmith-6vcpu-macos-latest` for `macos`).
+ */
+function matrixPlatforms(job: SuiteJob): string[] {
+  const include = job.strategy?.matrix?.include;
+  if (!Array.isArray(include) || job["runs-on"] !== `\${{ matrix.runner }}`)
+    return [];
+  return include.flatMap((row: Record<string, unknown>) =>
+    typeof row.os === "string" &&
+    typeof row.runner === "string" &&
+    row.runner.split("-").includes(row.os)
+      ? [row.os]
+      : [],
   );
 }
 
@@ -959,22 +978,44 @@ test("every suite the gate job leaves out runs in its own CI job", async () => {
     ) as SuiteWorkflow & { jobs: Record<string, SuiteJob> };
   // Pull requests run the gate set on Linux; the nightly run covers macOS
   // and Windows. Each workflow's gate job leaves the separate suites to its
-  // own drive-pr-suite job.
+  // own suite jobs.
   for (const [name, gateJob, contract] of [
     ["gates.yml", "gate-set", { ...PR_SUITE, on: PR_TRIGGERS }],
     ["nightly.yml", "platform-gates", { on: NIGHTLY_TRIGGERS }],
   ] as const) {
     const workflow = read(name);
     expect(workflow.jobs[gateJob]?.env?.[SKIP_SEPARATE_ENV]).toBe("1");
-    for (const suite of SEPARATE_SUITES)
+    for (const suite of SEPARATE_SUITES) {
+      const job = suite === "website/**" ? "website" : "drive-pr-suite";
+      const suiteContract =
+        name === "gates.yml" && job === "website"
+          ? {
+              ...contract,
+              if: `contains(needs.areas.outputs.areas, '"website"')`,
+            }
+          : contract;
       expect(
         workflowRunsSuite(
           workflow,
-          "drive-pr-suite",
+          job,
           suite.replace(/\*\*$/, ""),
-          contract,
+          suiteContract,
         ),
       ).toBe(true);
+    }
+  }
+  // The nightly run stands in for macOS and Windows, so a separate suite that
+  // is not POSIX-only runs there on both.
+  const { POSIX_ONLY_SUITES } = await import("./gates.ts");
+  const nightly = read("nightly.yml");
+  for (const suite of SEPARATE_SUITES.filter(
+    (s) => !POSIX_ONLY_SUITES.includes(s),
+  )) {
+    const job = suite === "website/**" ? "website" : "drive-pr-suite";
+    expect(matrixPlatforms(nightly.jobs[job] ?? {}).sort()).toEqual([
+      "macos",
+      "windows",
+    ]);
   }
   const { jobs } = read("gates.yml");
   expect(
@@ -983,7 +1024,12 @@ test("every suite the gate job leaves out runs in its own CI job", async () => {
     ),
   ).toBe(true);
   // The required status check `gates` must wait for the separate job too.
-  expect(jobs.gates?.needs).toEqual(["areas", "gate-set", "drive-pr-suite"]);
+  expect(jobs.gates?.needs).toEqual([
+    "areas",
+    "gate-set",
+    "drive-pr-suite",
+    "website",
+  ]);
 });
 
 test("the workflow selects jobs by area names the change-area catalog defines", async () => {

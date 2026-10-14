@@ -1,0 +1,67 @@
+---
+import Base from "../../layouts/Base.astro";
+import { principles } from "../../lib/data/index.ts";
+import { countWord } from "../../lib/view.ts";
+
+const count = principles().length;
+---
+
+<Base title="Principles" description={`The ${countWord(count)} principles behind every module.`}>
+  <section class="page wrap" style="max-width:calc(860px + 2 * var(--gutter))">
+    <span class="eyebrow">{countWord(count, true)} principles</span>
+    <h1 class="display">The principles behind every module.</h1>
+    <ol class="list">
+      {
+        principles().map((p) => (
+          <li>
+            <a href={`/principles/${p.n}/`}>
+              <span class="num">{p.n}</span>
+              <span class="text">
+                <span class="title">{p.title}</span>
+                <span class="muted">{p.oneLiner}</span>
+              </span>
+            </a>
+          </li>
+        ))
+      }
+    </ol>
+  </section>
+</Base>
+
+<style>
+  h1 {
+    font-size: clamp(30px, 3.2vw, 46px);
+    margin: 12px 0 24px;
+  }
+  .list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  li {
+    border-top: 1px solid var(--line);
+  }
+  a {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 10px;
+    padding: 14px 0;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  a:hover .title {
+    color: var(--accent-hover);
+  }
+  .text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .title {
+    font-weight: 600;
+    font-size: 18px;
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-underline-offset: 3px;
+  }
+</style>

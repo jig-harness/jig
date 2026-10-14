@@ -1,0 +1,261 @@
+---
+import Base from "../layouts/Base.astro";
+import { changelog, roadmap } from "../lib/data/index.ts";
+import { md, mdInline } from "../lib/markdown.ts";
+import { REPO_URL } from "../lib/routes.ts";
+import { currentRelease } from "../lib/site.ts";
+
+const cl = changelog();
+const rm = roadmap();
+const release = currentRelease();
+const dateLabel = (d: string) =>
+  d
+    ? new Date(`${d}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    : "";
+const [introLead = "", ...introMore] = cl.intro;
+const introLeadHtml = await mdInline(introLead, "CHANGELOG.md");
+const introMoreHtml = await Promise.all(introMore.map((p) => mdInline(p, "CHANGELOG.md")));
+const releases = await Promise.all(
+  cl.releases.map(async (r) => ({
+    ...r,
+    leadHtml: r.lead ? await mdInline(r.lead, "CHANGELOG.md") : "",
+    parts: await Promise.all(r.parts.map(async (p) => ({ title: p.title, html: await md(p.body, "CHANGELOG.md") }))),
+  })),
+);
+const groups = await Promise.all(
+  rm.groups.map(async (g) => ({
+    ...g,
+    introHtml: g.intro ? await md(g.intro, "ROADMAP.md") : "",
+    items: await Promise.all(
+      g.items.map(async (it) => ({
+        ...it,
+        titleHtml: await mdInline(it.title, "ROADMAP.md"),
+        html: it.body ? await md(it.body, "ROADMAP.md") : "",
+      })),
+    ),
+  })),
+);
+---
+
+<Base title="What's new" description="Every release of the jig plugin, and the open roadmap.">
+  <section class="page wrap">
+    <div class="intro">
+      <span class="eyebrow">What's new and what's next</span>
+      <h1 class="display">Plugin v{release.version}, released {dateLabel(release.date)}.</h1>
+      <p set:html={introLeadHtml} />
+      {
+        introMoreHtml.length > 0 && (
+          <details>
+            <summary>How versions and releases work</summary>
+            {introMoreHtml.map((html) => <p class="more" set:html={html} />)}
+          </details>
+        )
+      }
+    </div>
+    <div class="cols">
+      <div class="log">
+        <div class="col-head"><h2 class="label">Changelog</h2><span class="muted">newest first</span></div>
+        {
+          releases.map((r) => (
+            <article class="release" id={r.unreleased ? "unreleased" : `v${r.version}`}>
+              <header>
+                {r.unreleased ? (
+                  <>
+                    <h3 class="unreleased">Unreleased</h3>
+                    <span class="pending">merged · ships with the next plugin release</span>
+                  </>
+                ) : (
+                  <>
+                    <h3 class="version">v{r.version}</h3>
+                    <span>{dateLabel(r.date)}</span>
+                    <a class="tag" href={`${REPO_URL}/releases/tag/v${r.version}`}>tag v{r.version} ↗</a>
+                  </>
+                )}
+              </header>
+              {r.leadHtml && <p class="lead" set:html={r.leadHtml} />}
+              {r.parts.map((p) => (
+                <>
+                  <h4 class="label part">{p.title}</h4>
+                  <div class="prose part-body" set:html={p.html} />
+                </>
+              ))}
+            </article>
+          ))
+        }
+      </div>
+      <aside class="roadmap" id="roadmap" aria-label="Roadmap">
+        <div class="col-head"><h2 class="label">Roadmap</h2><span class="muted">open work, in priority order</span></div>
+        {
+          groups.map((g) => (
+            <div class="group" id={g.id}>
+              <h3>{g.name}</h3>
+              {g.introHtml && <div class="prose group-intro" set:html={g.introHtml} />}
+              {g.items.length > 0 && (
+                <ol>
+                  {g.items.map((it) => (
+                    <li id={it.n ? `rm-item-${it.n}` : undefined}>
+                      <details>
+                        <summary>
+                          <span class="n">{it.n}</span>
+                          <span set:html={it.titleHtml} />
+                        </summary>
+                        <div class="prose item-body" set:html={it.html} />
+                      </details>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          ))
+        }
+        <p class="muted small"><a class="out" href={`${REPO_URL}/blob/main/ROADMAP.md`}>Source: ROADMAP.md</a></p>
+      </aside>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .intro summary {
+    font-size: 14.5px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .more {
+    margin: 10px 0 0;
+    font-size: 15px;
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 36px clamp(28px, 4vw, 64px);
+    align-items: start;
+  }
+  .col-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+  }
+  .col-head h2 {
+    margin: 0;
+  }
+  .col-head .muted {
+    font-size: 13.5px;
+  }
+  .release {
+    padding: 18px 0 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .release header {
+    display: flex;
+    gap: 8px 16px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .version {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+  .unreleased {
+    font-family: var(--serif);
+    margin: 0;
+    font-size: 22px;
+    font-weight: 500;
+  }
+  .pending {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1.5px dashed var(--line-strong);
+    border-radius: var(--r-tag);
+    padding: 2px 7px;
+    font-weight: 600;
+  }
+  .tag {
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+  .lead {
+    margin: 0 0 14px;
+    font-size: 17px;
+    line-height: 1.55;
+    max-width: 70ch;
+  }
+  .part {
+    margin: 14px 0 8px;
+  }
+  .part-body {
+    font-size: 15.5px;
+  }
+  .roadmap {
+    position: sticky;
+    top: 84px;
+    max-height: calc(100vh - 100px);
+    overflow: auto;
+    min-width: 0;
+  }
+  .group {
+    margin-top: 14px;
+  }
+  .group h3 {
+    font-family: var(--serif);
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .group-intro {
+    font-size: 14.5px;
+  }
+  .group ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+  .group li {
+    border-bottom: 1px solid var(--line);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .group summary {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 8px;
+    padding: 7px 0;
+  }
+  .group summary:hover {
+    color: var(--accent-hover);
+  }
+  .n {
+    font-family: var(--serif);
+    font-size: 12.5px;
+    padding-top: 2px;
+  }
+  .item-body {
+    font-size: 14.5px;
+    padding: 0 0 10px 36px;
+  }
+  .small {
+    font-size: 13.5px;
+    margin-top: 14px;
+  }
+  .group li:target summary {
+    background: var(--accent-soft);
+  }
+  @media (max-width: 1079px) {
+    .cols {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .roadmap {
+      position: static;
+      max-height: none;
+    }
+  }
+</style>

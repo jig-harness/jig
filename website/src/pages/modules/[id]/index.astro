@@ -1,0 +1,55 @@
+---
+import Base from "../../../layouts/Base.astro";
+import Idea from "../../../components/module/Idea.astro";
+import Mechanics from "../../../components/module/Mechanics.astro";
+import Practice from "../../../components/module/Practice.astro";
+import Rail from "../../../components/module/Rail.astro";
+import { moduleDoc, modules } from "../../../lib/data/index.ts";
+import { mdInline } from "../../../lib/markdown.ts";
+import "../../../styles/module.css";
+
+export function getStaticPaths() {
+  return modules().map((m) => ({ params: { id: m.id } }));
+}
+
+const { id } = Astro.params as { id: string };
+const all = modules();
+const at = all.findIndex((m) => m.id === id);
+const meta = all[at];
+if (!meta) throw new Error(`no module ${id}`);
+const prev = all[at - 1];
+const next = all[at + 1];
+const summary = moduleDoc(id).problem.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*`]/g, "");
+const areaHtml = await mdInline(meta.area, "modules/README.md");
+---
+
+
+<Base title={`${id} ${meta.title}`} description={summary}>
+  <section class="page wrap">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/modules/">Modules</a><span aria-hidden="true">/</span><span>{id}</span>
+      <span class="grow"></span>
+      {prev && <a href={`/modules/${prev.id}/`}>← {prev.id}</a>}
+      {next && <a href={`/modules/${next.id}/`}>{next.id} →</a>}
+    </nav>
+
+    <div class="layout">
+      <article class="main">
+        <header class="head">
+          <span class="mod-id">{id}</span>
+          <h1 class="display">{meta.title}</h1>
+          <span class="area" set:html={areaHtml} />
+        </header>
+
+        <Idea id={id} />
+        <Practice id={id} />
+        <Mechanics id={id} />
+      </article>
+      <Rail id={id} />
+    </div>
+  </section>
+</Base>
+
+<script>
+  import "../../../scripts/module.ts";
+</script>

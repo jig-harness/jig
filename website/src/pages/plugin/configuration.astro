@@ -1,0 +1,34 @@
+---
+import SideIndex from "../../components/SideIndex.astro";
+import Base from "../../layouts/Base.astro";
+import { md } from "../../lib/markdown.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+import { read } from "../../lib/site.ts";
+import { sections, titleLine, withoutTitle } from "../../lib/source.ts";
+import { headingId } from "../../lib/view.ts";
+
+const FROM = "plugin/CONFIGURATION.md";
+const text = read(FROM);
+const parts = sections(text);
+const html = await md(withoutTitle(text), FROM);
+const title = titleLine(text);
+---
+
+<Base title={title} description="Every field of a repository's Jig configuration, the layers it is read from, and who reads it.">
+  <section class="page wrap with-side">
+    <SideIndex title="On this page" items={parts.slice(1).map((p) => ({ label: p.title.replace(/[`*]/g, ""), href: `#${headingId(p.title)}` }))} />
+    <article class="main" style="--main-max:860px">
+      <span class="eyebrow">The jig plugin · configuration</span>
+      <h1 class="display">{title}</h1>
+      <div class="prose" set:html={html} />
+      <p class="source"><a class="out" href={`${REPO_URL}/blob/main/${FROM}`}>Source: {FROM}</a></p>
+    </article>
+  </section>
+</Base>
+
+<style>
+  h1 {
+    font-size: clamp(30px, 3.2vw, 46px);
+    margin: 12px 0 16px;
+  }
+</style>

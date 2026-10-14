@@ -1,0 +1,69 @@
+---
+// What Jig provides to build the scaffolding, and how it fits an organization: the configuration layers and the tracker interface.
+import "../../styles/factory.css";
+import ActorLine from "../ActorLine.astro";
+import SectionHead from "../SectionHead.astro";
+import { factory, layers, trackerInterface } from "../../lib/data/index.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+const f = factory();
+const cfg = layers();
+const tracker = trackerInterface();
+const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
+const block = (text: string) => md(text, "FACTORY.md");
+const layerRows = await Promise.all(
+  cfg.layers.map(async (l) => ({ ...l, whereHtml: await inline(l.where, "plugin/CONFIGURATION.md") })),
+);
+---
+
+  <SectionHead id="provides" label="What Jig provides to build it" note="a practice per part, sized, measured, fitted, kept current" />
+  <div class="two">
+    <div class="provide">
+      <p class="lead" set:html={await inline(f.provideLead)} />
+      <div class="prose" set:html={await block(f.provideList)} />
+      <p class="muted small" set:html={await inline(f.provideClose)} />
+    </div>
+    <aside class="fitted" id="fitted" aria-label="Fitted to how the organization works">
+      <span class="label">Fitted to how the organization works</span>
+      <span class="fit-title">Your values live in three layers, never in the skills' code</span>
+      <div class="layers">
+        {
+          layerRows.map((l) => (
+            <div class="layer">
+              <span class="layer-n">{l.n}</span>
+              <span class="layer-name">{l.name}</span>
+              <span set:html={l.whereHtml} />
+            </div>
+          ))
+        }
+      </div>
+      <span class="muted small">A higher layer overrides a lower one. <a href="/plugin/configuration/#configuration-layers">Every layer, and what it holds</a></span>
+      <span class="fit-title">Tool bindings sit behind interfaces where Jig has built them</span>
+      <figure class="tracker" aria-labelledby="trk-cap">
+        <div class="trk">
+          <div class="trk-col">
+            <span class="label">The skills</span>
+            {["do-item", "drive-pr"].map((k) => <a class="trk-skill" href={`/skills/${k}/`}>{k}</a>)}
+          </div>
+          <span class="trk-arrow" aria-hidden="true">→</span>
+          <div class="trk-iface">
+            <span class="label accent">Tracker interface</span>
+            <ul>{tracker.operations.map((o) => <li>{o}</li>)}</ul>
+          </div>
+          <span class="trk-arrow" aria-hidden="true">→</span>
+          <div class="trk-col">
+            <span class="label">Adapters</span>
+            <div class="adapter">
+              <span class="adapter-name">Linear</span>
+              <span class="muted">the only adapter today, out of the box</span>
+            </div>
+            <div class="adapter todo">
+              <ActorLine actor={{ kind: "todo", item: "12", text: "Jira, and a plan file kept in the repository" }} />
+            </div>
+          </div>
+        </div>
+        <figcaption id="trk-cap">
+          The skills reach the tracker through the interface; <code>issue_tracker.adapter</code> chooses the adapter. Another tracker is a new adapter, not a change to the skills. <a href="/whats-new/#rm-item-10">The exceptions still open</a>, such as the review skill's deferral step calling Linear directly.
+        </figcaption>
+      </figure>
+    </aside>
+  </div>

@@ -1,0 +1,114 @@
+---
+import ModChip from "../../../components/ModChip.astro";
+import SideIndex from "../../../components/SideIndex.astro";
+import StatusMark from "../../../components/StatusMark.astro";
+import Base from "../../../layouts/Base.astro";
+import { skills } from "../../../lib/data/index.ts";
+import { type Doc as DocEntry, docsMatching } from "../../../lib/docs.ts";
+import { md, mdInline } from "../../../lib/markdown.ts";
+import { REPO_URL } from "../../../lib/routes.ts";
+import { modulesRunBy, stationsRunBy } from "../../../lib/skills-view.ts";
+import { withoutTitle } from "../../../lib/source.ts";
+
+// A skill's page is its human README when it has one, else its SKILL.md.
+export async function getStaticPaths() {
+  const docs = await docsMatching(/^plugin\/(skills\/[^/]+\/(README|SKILL)|agents\/[^/]+)$/);
+  const byName = new Map<string, DocEntry>();
+  for (const entry of docs) {
+    const name = entry.id.split("/")[2] ?? entry.id;
+    if (entry.id.endsWith("/README") || !byName.has(name)) byName.set(name, entry);
+  }
+  return [...byName].map(([name, entry]) => ({ params: { name }, props: { entry } }));
+}
+
+const { entry } = Astro.props as { entry: DocEntry };
+const { name } = Astro.params as { name: string };
+const all = skills();
+const skill = all.find((s) => s.name === name);
+const from = `${entry.id}.md`;
+const body = withoutTitle((entry.body ?? "").replace(/^---[\s\S]*?---\n/, ""));
+const bodyHtml = await md(body, from);
+const purposeHtml = skill ? await mdInline(skill.purpose, "plugin/README.md") : "";
+const mods = modulesRunBy(name);
+const stations = stationsRunBy(name);
+const command = skill?.command ?? (name === "review-arbiter" ? "jig:review-arbiter" : `/jig:${name}`);
+const prefix = command.slice(0, command.indexOf(":") + 1);
+const hasContract = entry.id.endsWith("/README");
+---
+
+<Base title={name} description={skill?.purpose.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[`*]/g, "")}>
+  <section class="page wrap with-side">
+    <SideIndex
+      title={`${all.filter((s) => !s.agent).length} skills, 1 agent`}
+      mono
+      items={all.map((s) => ({ label: s.name, href: `/skills/${s.name}/`, current: s.name === name }))}
+    />
+    <article class="main" style="--main-max:800px">
+      <nav class="crumbs" aria-label="Breadcrumb"><a href="/skills/">Skills</a><span aria-hidden="true">/</span><span>{name}</span></nav>
+      <span class="label">{skill?.agent ? "Agent" : "Skill"}{mods.length > 0 && " · runs"}</span>
+      {mods.map((m) => <span class="chip-gap"><ModChip id={m.id} size="small" /></span>)}
+      {
+        stations.length > 0 && (
+          <div class="stations">
+            <a class="label" href="/factory/">In the factory</a>
+            {stations.map((t) => (
+              <a class="station" href={t.href}>
+                <StatusMark kind="skill" />
+                <span class="vh">Runs station: </span>
+                {t.label}
+              </a>
+            ))}
+          </div>
+        )
+      }
+      <h1>{name}</h1>
+      <div class="cmd"><code><span class="accent">{prefix}</span>{name}</code><button type="button" class="copy" data-copy data-copy-text={command}>Copy</button></div>
+      {purposeHtml && <p class="purpose" set:html={purposeHtml} />}
+      <div class="prose doc" set:html={bodyHtml} />
+      <p class="source">
+        <a class="out" href={`${REPO_URL}/blob/main/${from}`}>Source: {from}</a>
+        {hasContract && <a href={`/skills/${name}/skill/`}>The agent's contract (SKILL.md)</a>}
+      </p>
+    </article>
+  </section>
+</Base>
+
+<style>
+  .chip-gap {
+    margin-left: 6px;
+  }
+  .stations {
+    display: flex;
+    gap: 6px 16px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 8px;
+    font-size: 14px;
+  }
+  .station {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  h1 {
+    margin: 8px 0 14px;
+    font-family: var(--mono);
+    font-size: clamp(32px, 3.6vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .purpose {
+    margin: 16px 0 0;
+    font-size: clamp(17px, 1.35vw, 19px);
+    line-height: 1.55;
+    max-width: 66ch;
+    text-wrap: pretty;
+  }
+  .doc {
+    margin-top: 28px;
+    border-top: 1px solid var(--line);
+    padding-top: 6px;
+  }
+</style>

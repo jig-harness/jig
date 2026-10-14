@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // A Worker that serves the built site and nothing else: no Worker code.
+  "name": "jig-website",
+  "account_id": "5aa39c31a8adb212a10de1a76e9e1bad",
+  "compatibility_date": "2026-10-13",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  // Only the custom domain serves the site. Cloudflare Access protects that
+  // domain; the workers.dev and preview addresses would bypass it.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "jig-harness.dev", "custom_domain": true }]
+}

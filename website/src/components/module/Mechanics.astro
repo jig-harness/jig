@@ -1,0 +1,110 @@
+---
+// Parts 3 and 4: the mechanics folded, the mappings by tool, and the status.
+import "../../styles/module.css";
+import SectionHead from "../SectionHead.astro";
+import { mappingsOf, moduleDoc, moduleMeta } from "../../lib/data/index.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+import { headingId } from "../../lib/view.ts";
+
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+const meta = moduleMeta(id);
+const doc = moduleDoc(id);
+const from = `${meta.dir}/README.md`;
+const mappings = mappingsOf(id);
+const statusHtml = doc.status ? await md(doc.status.replace(/^### /gm, "#### ").replace(/^## /gm, "### "), from) : "";
+const body = await Promise.all(
+  doc.body.map(async (s) => ({
+    id: headingId(s.title),
+    title: await mdInline(s.title, from),
+    lead: s.lead,
+    html: await md(s.body.replace(/^### /gm, "#### "), from),
+  })),
+);
+const mappingsFrom = `${meta.dir}/mappings.md`;
+const mapIntroHtml = mappings.intro ? await md(mappings.intro, mappingsFrom) : "";
+const mapSections = await Promise.all(
+  mappings.sections.map(async (s) => ({
+    title: await mdInline(s.title, mappingsFrom),
+    intro: s.intro ? await md(s.intro, mappingsFrom) : "",
+    parts: await Promise.all(
+      s.parts.map(async (part) => ({
+        title: await mdInline(part.title, mappingsFrom),
+        ci: part.ci,
+        html: await md(part.body, mappingsFrom),
+      })),
+    ),
+  })),
+);
+const hasCi = mapSections.some((s) => s.parts.some((part) => part.ci));
+---
+
+<SectionHead id="mechanics" label="3 · The mechanics" note="open what you need" />
+{
+  body.map((b) => (
+    <details class="fold" id={b.id}>
+      <summary>
+        <span class="fold-text">
+          <span class="fold-title" set:html={b.title} />
+          {b.lead && <span class="fold-lead">{b.lead}</span>}
+        </span>
+        <span class="fold-open">Open</span>
+      </summary>
+      <div class="prose fold-body" set:html={b.html} />
+    </details>
+  ))
+}
+<details class="fold" id="mappings">
+  <summary>
+    <span class="fold-text">
+      <span class="fold-title">In your tools</span>
+      <span class="fold-lead">The same rule, wired into a specific CI provider, hook manager or tracker. Shows only your stack.</span>
+    </span>
+    <span class="fold-open">Open</span>
+  </summary>
+  <div class="fold-body">
+    {
+      hasCi && (
+        <div class="ci-switch" data-ci-switch hidden>
+          <span class="ci-label">Your CI provider</span>
+          <div role="radiogroup" aria-label="CI provider">
+            {["GitHub Actions", "GitLab CI"].map((name) => (
+              <button type="button" role="radio" aria-checked="false" data-ci={name}>
+                {name}
+              </button>
+            ))}
+          </div>
+          <span class="ci-note">Remembered on this device for every module page.</span>
+        </div>
+      )
+    }
+    {mapIntroHtml && <div class="prose" set:html={mapIntroHtml} />}
+    {
+      mapSections.map((s) => (
+        <section class="map-section">
+          <h3 class="map-title" set:html={s.title} />
+          {s.intro && <div class="prose" set:html={s.intro} />}
+          {s.parts.map((part) => (
+            <div class="map-part" data-ci-part={part.ci ?? undefined}>
+              <h4 class="map-part-title" set:html={part.title} />
+              <div class="prose" set:html={part.html} />
+            </div>
+          ))}
+        </section>
+      ))
+    }
+    <p class="source"><a class="out" href={`${REPO_URL}/blob/main/${meta.dir}/mappings.md`}>Source: {meta.dir}/mappings.md</a></p>
+  </div>
+</details>
+
+{
+  statusHtml && (
+    <>
+      <SectionHead id="status" label="4 · Status" note="what is built, and what is left out on purpose" />
+      <div class="prose" set:html={statusHtml} />
+    </>
+  )
+}

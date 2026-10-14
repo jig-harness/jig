@@ -1,0 +1,90 @@
+---
+// Figure 2, every station and who runs it, and the two levels.
+import "../../styles/factory.css";
+import ActorLine from "../ActorLine.astro";
+import ModChip from "../ModChip.astro";
+import SectionHead from "../SectionHead.astro";
+import StationBox from "../StationBox.astro";
+import StatusMark from "../StatusMark.astro";
+import { type Actor, DESIGN_NOT_BUILT } from "../../lib/data/factory.ts";
+import { factory } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+const f = factory();
+const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
+const band: Actor[] = [
+  { kind: "skill", name: "review", note: "against the repository's decisions" },
+  { kind: "skill", name: "decide", note: "a dilemma: ruled, or escalated" },
+  { kind: "person", note: "accepts each stage's artifact" },
+  ...DESIGN_NOT_BUILT.everyStage,
+];
+const levelRows = await Promise.all(
+  f.levels.map(async (l) => ({
+    ...l,
+    unitHtml: await inline(l.unit),
+    decidesHtml: await inline(l.decides),
+    handsHtml: await inline(l.handsOn),
+  })),
+);
+---
+
+  <SectionHead id="levels" label="Two levels and a loop around them" note="the stations, on that scaffolding" />
+  <p class="lead" set:html={await inline(f.levelsLead)} />
+  <figure class="detail" aria-labelledby="fx-cap">
+    <div class="legend" role="list" aria-label="Station status">
+      <span role="listitem"><StatusMark kind="skill" />run by a skill <span class="muted">(or the launcher tool)</span></span>
+      <span role="listitem"><StatusMark kind="person" />run by a person</span>
+      <span role="listitem"><StatusMark kind="todo" />not built yet · its roadmap item</span>
+    </div>
+    <div class="loop-frame">
+      <a class="frame-tag" href="#learning">Learning loop · M8 · wraps both levels</a>
+      <div class="level-head" id="design-level">
+        <span><span class="label">A · Design and planning</span> <span class="muted">a feature or an epic · the feature pipeline</span></span>
+        <span class="chips">{f.levels[0]?.modules.map((id) => <ModChip id={id} size="small" />)}</span>
+      </div>
+      <div class="level-todo">{DESIGN_NOT_BUILT.level.map((a) => <ActorLine actor={a} />)}</div>
+      <ol class="row five">
+        {f.pipeline.map((s, i) => <StationBox station={s} tag={s.n === 4 ? "UI work only" : undefined} arrow={i < f.pipeline.length - 1} />)}
+      </ol>
+      <div class="band" id="station-band">
+        <span class="band-head"><span class="label">At every stage</span><span>adversarial review → iterate until cleared → de-scar</span></span>
+        {band.map((a) => <ActorLine actor={a} />)}
+      </div>
+      <div class="handoff"><span class="tick" aria-hidden="true"></span><span>hands on an epic of planned work items · each sub-issue enters the line below as one work item</span></div>
+      <div class="level-head" id="execution-level">
+        <span><span class="label">B · Execution</span> <span class="muted">one work item · the work-item line</span></span>
+        <span class="chips">{f.levels[1]?.modules.map((id) => <ModChip id={id} size="small" />)}</span>
+      </div>
+      <ol class="row seven">
+        {f.line.map((s, i) => <StationBox station={s} arrow={i < f.line.length - 1} />)}
+      </ol>
+      <div class="return" aria-hidden="true"><span>▲</span></div>
+      <p class="return-text">↺ Follow-up items enter the line again at station 1. No skill merges.</p>
+      <div class="base">
+        <span class="base-item"><span class="frame-tag inline">↺ misses → lenses</span><span class="base-text"><StatusMark kind="skill" /><span>every miss becomes a new check; <a class="mono" href="/skills/promote-memory/">promote-memory</a> promotes session memory</span></span></span>
+        <span class="base-item"><span class="audit-tag">Audit</span><span class="base-text"><StatusMark kind="skill" /><span><a class="mono" href="/skills/audit/">audit</a> inspects the factory itself: scores every module and, re-run, reports what drifted</span></span></span>
+      </div>
+    </div>
+    <figcaption id="fx-cap">
+      Figure 2: the stations in detail. Two levels inside the learning loop; every station names what runs it, and unbuilt work stays in the figure with its roadmap item. The filled station is a person's decision. Every station here stands on the scaffolding in <a href="#scaffolding">figure 1</a>.
+    </figcaption>
+  </figure>
+
+  <div class="levels-table">
+    <div class="th" aria-hidden="true"><span>Level</span><span>Unit of work</span><span>What it decides</span><span>What it hands on</span><span>Modules</span></div>
+    {
+      levelRows.map((l) => (
+        <div class="level-row">
+          <span class="job-name">{l.name}</span>
+          <span set:html={l.unitHtml} />
+          <span set:html={l.decidesHtml} />
+          <span set:html={l.handsHtml} />
+          <span class="chips">
+            {l.modules.map((id) => (
+              <ModChip id={id} size="small" />
+            ))}
+          </span>
+        </div>
+      ))
+    }
+  </div>
+  <p class="small-p" set:html={await inline(f.loopAndAudit)} />

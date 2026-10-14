@@ -1,0 +1,117 @@
+---
+// A sticky list of a page family's members (the skills, the principles),
+// with the current one held. On a phone it folds into one line above the
+// page.
+interface Item {
+  label: string;
+  href: string;
+  num?: string;
+  current?: boolean;
+}
+interface Props {
+  title: string;
+  items: Item[];
+  mono?: boolean;
+}
+const { title, items, mono = false } = Astro.props;
+const current = items.find((i) => i.current);
+---
+
+<nav class:list={["side", { mono }]} aria-label={title}>
+  <details open class="wide-open">
+    <summary>
+      <span class="label">{title}</span>
+      {current && <span class="cur">{current.num ? `${current.num} · ` : ""}{current.label}</span>}
+    </summary>
+    <ol>
+      {
+        items.map((i) => (
+          <li>
+            <a href={i.href} aria-current={i.current ? "page" : undefined}>
+              {i.num && <span class="num">{i.num}</span>}
+              <span>{i.label}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ol>
+  </details>
+</nav>
+
+<script>
+  // On a phone the index starts folded; on a wide screen it stays open.
+  if (window.matchMedia("(max-width: 1079px)").matches)
+    for (const d of document.querySelectorAll<HTMLDetailsElement>(".side details")) d.open = false;
+</script>
+
+<style>
+  .side {
+    flex: 0 1 260px;
+    max-width: 300px;
+    min-width: 0;
+    position: sticky;
+    top: 84px;
+    align-self: flex-start;
+  }
+  summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    pointer-events: none;
+  }
+  .cur {
+    display: none;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  ol {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+  li {
+    border-bottom: 1px solid var(--line);
+  }
+  a {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    padding: 7px 8px;
+    text-decoration: none;
+    font-size: 14.5px;
+    color: var(--ink);
+  }
+  a:hover {
+    background: var(--sunk);
+  }
+  a[aria-current="page"] {
+    background: var(--accent-soft);
+    font-weight: 600;
+  }
+  .mono a {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    display: block;
+  }
+  @media (max-width: 1079px) {
+    .side {
+      position: static;
+      flex: 1 1 100%;
+      max-width: none;
+      border: 1px solid var(--line);
+      border-radius: var(--r-card);
+      background: var(--card);
+      padding: 10px 14px;
+    }
+    summary {
+      pointer-events: auto;
+      min-height: 32px;
+      align-items: center;
+    }
+    .cur {
+      display: inline;
+    }
+  }
+</style>

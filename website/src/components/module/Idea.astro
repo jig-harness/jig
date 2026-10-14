@@ -1,0 +1,31 @@
+---
+// Part 1, the idea: the problem the module solves and its invariant.
+import "../../styles/module.css";
+import SectionHead from "../SectionHead.astro";
+import { moduleDoc, moduleMeta } from "../../lib/data/index.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+const meta = moduleMeta(id);
+const doc = moduleDoc(id);
+const from = `${meta.dir}/README.md`;
+const problemHtml = await mdInline(doc.problem, from);
+const invariantHtml = await md(doc.invariant, from);
+const invNotesHtml = doc.invariantNotes ? await md(doc.invariantNotes, from) : "";
+---
+
+<SectionHead id="idea" label="1 · The idea" note="read this first" />
+<p class="problem" set:html={problemHtml} />
+<figure class="invariant" id="invariant">
+  <figcaption>
+    <span class="square" aria-hidden="true"></span>
+    <a class="term" href="/glossary/#invariant" data-term="invariant">Invariant</a>
+    <span class="cap-note">the rule, independent of any tool</span>
+  </figcaption>
+  <div class="prose invariant-text" set:html={invariantHtml} />
+</figure>
+{invNotesHtml && <div class="prose small" set:html={invNotesHtml} />}
+

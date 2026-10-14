@@ -1,0 +1,553 @@
+/* The factory page and its sections (components/factory/). */
+.intro .prose {
+  font-size: 16.5px;
+}
+.small {
+  font-size: 13.5px;
+}
+.lead {
+  margin: 0 0 14px;
+  max-width: 76ch;
+  font-size: 16px;
+}
+.small-p {
+  margin: 12px 0 0;
+  max-width: 70ch;
+  font-size: 15.5px;
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 0.94em;
+}
+.two {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+  gap: 20px clamp(28px, 4vw, 56px);
+  align-items: start;
+}
+.th {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.jobs-table .th,
+.job-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1.3fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 6px 22px;
+}
+.job-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+  line-height: 1.5;
+  align-items: baseline;
+}
+.job-name {
+  font-weight: 600;
+  font-size: 17px;
+}
+.job-mods {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+.side.catches {
+  border-left: 2px solid var(--ink);
+}
+.side-name {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.without {
+  color: var(--muted);
+}
+.many {
+  display: flex;
+  gap: 8px 14px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: 12px 0;
+}
+.many p {
+  margin: 0;
+  max-width: 76ch;
+  font-size: 15px;
+}
+
+.fitted {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.fit-title {
+  font-weight: 600;
+  font-size: 16px;
+  margin-top: 6px;
+}
+.layers {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.layer {
+  display: grid;
+  grid-template-columns: 20px 92px minmax(0, 1fr);
+  gap: 3px 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 1.45;
+  align-items: baseline;
+}
+.layer-n {
+  font-family: var(--serif);
+  font-size: 13px;
+}
+.layer-name {
+  font-weight: 600;
+}
+.tracker {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--card);
+  padding: 14px;
+}
+.trk {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) auto minmax(0, 1.3fr) auto minmax(0, 1.1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.trk-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.trk-skill {
+  font-family: var(--mono);
+  font-size: 13px;
+  text-decoration: none;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--ink);
+}
+.trk-skill:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.trk-arrow {
+  font-family: var(--mono);
+  font-size: 15px;
+  align-self: center;
+}
+.trk-iface {
+  background: var(--accent-soft);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.trk-iface ul {
+  margin: 0;
+  padding: 0 0 0 16px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.label.accent {
+  color: var(--accent);
+}
+.adapter {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12.5px;
+}
+.adapter.todo {
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+.adapter-name {
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.tracker figcaption {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+
+.detail {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--card);
+  padding: clamp(14px, 2vw, 24px);
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.legend span[role="listitem"] {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.loop-frame {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-panel);
+  padding: 24px clamp(10px, 1.6vw, 18px) 14px;
+}
+.level-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 6px 0 8px;
+}
+.level-head .muted {
+  font-size: 13px;
+}
+.level-todo {
+  margin-bottom: 8px;
+}
+.row {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px 26px;
+}
+.five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.seven {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.band {
+  margin-top: 10px;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--r);
+  padding: 8px 12px;
+  display: flex;
+  gap: 6px 22px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.band-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13.5px;
+}
+.handoff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.tick {
+  width: 1.5px;
+  height: 18px;
+  background: var(--line-strong);
+  margin-left: 16px;
+  flex: none;
+}
+.return {
+  position: relative;
+  margin: 0 calc(100% / 14);
+  height: 20px;
+  border: 1px solid var(--line-strong);
+  border-top: 0;
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+}
+.return span {
+  position: absolute;
+  left: -5.5px;
+  top: -9px;
+  font-size: 10px;
+  line-height: 1;
+}
+.return-text {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 13.5px;
+}
+.base {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 10px 24px;
+  font-size: 13.5px;
+}
+.base-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.base-text {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.base-text > .mark {
+  margin-top: 5px;
+}
+.audit-tag {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+  padding: 2px 7px;
+  border-radius: var(--r-tag);
+  flex: none;
+  font-weight: 600;
+}
+.detail figcaption,
+.fly figcaption {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin-top: 12px;
+  max-width: 96ch;
+}
+.levels-table {
+  margin-top: 24px;
+}
+.levels-table .th,
+.level-row {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) 110px;
+  gap: 6px 18px;
+}
+.level-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+  line-height: 1.5;
+  align-items: baseline;
+}
+.skill-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.skill-list li {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 4px 18px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.skill-cell {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.person-line {
+  margin: 12px 0 0;
+  font-size: 15px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  max-width: 66ch;
+}
+.person-line > .mark {
+  margin-top: 7px;
+}
+.line-table {
+  margin-top: 20px;
+}
+.line-table .th,
+.line-row {
+  display: grid;
+  grid-template-columns: 28px 110px minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 6px 18px;
+}
+.line-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+  line-height: 1.5;
+  align-items: baseline;
+}
+.actors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.marked,
+.platform-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.marked li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15.5px;
+}
+.marked li > .mark {
+  margin-top: 7px;
+}
+.platform-list li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15.5px;
+}
+.fly {
+  margin: 0 0 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--card);
+}
+.fly-row {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.fly-station {
+  position: relative;
+  display: flex;
+}
+.fly-box {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 8px 10px 10px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 96px;
+}
+.fly-box.held {
+  border: 1.5px solid var(--accent);
+  background: var(--accent-soft);
+}
+.fly-box.held .num {
+  color: var(--accent);
+}
+.fly-lead {
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.fly-note {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.arrow {
+  position: absolute;
+  right: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 15px;
+}
+.shape {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.shape li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.shape li > span:nth-child(2) {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: var(--r);
+  padding: 6px 10px;
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.cycles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cycles li {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
+.cycles p {
+  margin: 0;
+  font-size: 15.5px;
+}
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 28px;
+  font-size: 14px;
+}
+@media (max-width: 1079px) {
+  .jobs-table .th,
+  .levels-table .th,
+  .line-table .th {
+    display: none;
+  }
+  .job-row,
+  .level-row,
+  .line-row,
+  .skill-list li,
+  .trk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trk-arrow,
+  .return,
+  .arrow {
+    display: none;
+  }
+  .five,
+  .seven,
+  .fly-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

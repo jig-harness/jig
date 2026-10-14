@@ -1,0 +1,432 @@
+---
+import "../styles/global.css";
+import GithubMark from "../components/GithubMark.astro";
+import Logo from "../components/Logo.astro";
+import { glossary } from "../lib/data/index.ts";
+import { REPO_URL } from "../lib/routes.ts";
+import { currentRelease, NAV } from "../lib/site.ts";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const {
+  title,
+  description = "Delivery practices for teams that build and maintain software with AI coding agents.",
+} = Astro.props;
+const release = currentRelease();
+const released = release.date
+  ? new Date(`${release.date}T12:00:00Z`).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })
+  : "";
+const here = Astro.url.pathname;
+const current = (href: string) =>
+  href === "/" ? here === "/" : here.startsWith(href);
+const repoName = new URL(REPO_URL).pathname.slice(1);
+const termCount = glossary().length;
+const pageTitle = title === "Jig" ? "Jig — delivery practices for teams building with AI coding agents" : `${title} · Jig`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>{pageTitle}</title>
+    <script is:inline>
+      // The reader's theme choice, applied before the page paints.
+      try {
+        const t = localStorage.getItem("jig-theme");
+        if (t === "light" || t === "dark")
+          document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="strip wrap" role="note">
+      <span class="tag">Internal preview</span>
+      <span class="wide-only">
+        Jig is a work in progress. Plugin <strong>v{release.version}</strong>,
+        released {released}; releases are frequent and the roadmap is open.
+      </span>
+      <span class="narrow-only">
+        Work in progress · <strong>v{release.version}</strong>, {released}
+      </span>
+      <span class="strip-links">
+        <a href="/whats-new/">What's new</a>
+        <a class="wide-only" href="/whats-new/#roadmap">Roadmap</a>
+      </span>
+      <span class="muted wide-only">Source links open the private repository.</span>
+    </div>
+
+    <header class="top">
+      <div class="bar wrap">
+        <a class="home" href="/" aria-label="Jig home"><Logo /></a>
+        <nav class="nav wide-only" aria-label="Site">
+          {
+            NAV.map((n) => (
+              <a href={n.href} aria-current={current(n.href) ? "page" : undefined}>
+                {n.label}
+              </a>
+            ))
+          }
+        </nav>
+        <span class="spacer narrow-only"></span>
+        <button type="button" class="theme" data-theme-switch aria-label="Theme: follows your system">
+          <span class="theme-dot" aria-hidden="true"></span><span class="theme-label wide-only">System</span>
+        </button>
+        <div class="search" role="search" data-search hidden>
+          <label class="search-field">
+            <span class="vh">Search the site</span>
+            <input
+              type="search"
+              placeholder={`Search modules, skills, ${termCount} terms`}
+              autocomplete="off"
+              aria-controls="search-results"
+              aria-expanded="false"
+              data-search-input
+            />
+            <kbd title="Press / to search">/</kbd>
+          </label>
+          <div id="search-results" class="search-results" role="listbox" hidden data-search-results></div>
+        </div>
+        <a class="repo" href={REPO_URL} aria-label="Jig on GitHub">
+          <GithubMark /><span class="wide-only">{repoName}</span>
+        </a>
+        <details class="menu narrow-only">
+          <summary>Menu</summary>
+          <nav aria-label="Site">
+            <a href="/">Overview</a>
+            {NAV.map((n) => <a href={n.href} aria-current={current(n.href) ? "page" : undefined}>{n.label}</a>)}
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="foot wrap">
+      <div class="foot-id">
+        <img src="/brand/jig-guide-light.svg" alt="" width="52" height="52" />
+        <span>
+          Delivery practices for teams that build and maintain software with AI
+          coding agents. Distilled from a production codebase built with AI
+          agents.
+        </span>
+      </div>
+      <div class="foot-links">
+        <a href="/adopt/">Adoption guide</a>
+        <a href="/adopt/greenfield/">Greenfield guide</a>
+        <a href="/modules/">Modules</a>
+        <a href="/factory/">Jig as a software factory</a>
+      </div>
+      <div class="foot-links">
+        <a href="/plugin/">Install the plugin</a>
+        <a href="/skills/">Skills</a>
+        <a href="/principles/">Principles</a>
+        <a href="/glossary/">Glossary</a>
+      </div>
+      <div class="foot-links">
+        <a class="foot-version" href="/whats-new/">plugin v{release.version} · {released} · what's new</a>
+        <a class="foot-repo" href={REPO_URL}><GithubMark />{repoName}</a>
+        <span class="muted">Every docs page is rendered from the repository's Markdown at build.</span>
+        <span class="muted">
+          Licensed under the <a href={`${REPO_URL}/blob/main/LICENSE`}>Apache License 2.0</a>;
+          template files under <a href={`${REPO_URL}/blob/main/LICENSE-MIT-0`}>MIT No Attribution</a>.
+        </span>
+      </div>
+    </footer>
+
+    <div class="tip" role="tooltip" id="term-tip" hidden data-tip></div>
+
+    <script>
+      import "../scripts/site.ts";
+    </script>
+  </body>
+</html>
+
+<style>
+  .skip {
+    position: absolute;
+    left: -9999px;
+  }
+  .skip:focus {
+    left: 16px;
+    top: 8px;
+    z-index: 50;
+    background: var(--card);
+    padding: 6px 10px;
+    border-radius: var(--r);
+  }
+
+  .strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: center;
+    padding-block: 9px;
+    background: var(--sunk);
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+    line-height: 1.45;
+  }
+  .strip strong {
+    font-weight: 600;
+  }
+  .tag {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    background: var(--accent);
+    color: var(--on-accent);
+    padding: 3px 7px;
+    border-radius: var(--r-tag);
+  }
+  .strip-links {
+    display: flex;
+    gap: 14px;
+  }
+  .strip-links a {
+    color: var(--accent);
+  }
+
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-height: 62px;
+  }
+  .home {
+    display: block;
+    flex: none;
+    text-decoration: none;
+  }
+  .nav {
+    display: flex;
+    gap: 2px;
+    flex: 1;
+    flex-wrap: wrap;
+  }
+  .nav a {
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 15px;
+    padding: 6px 10px;
+    border-radius: var(--r);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .nav a:hover {
+    background: var(--sunk);
+  }
+  .nav a[aria-current="page"] {
+    font-weight: 600;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .spacer {
+    flex: 1;
+  }
+
+  .theme {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font: 500 14px var(--sans);
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0 12px;
+    min-height: 38px;
+    cursor: pointer;
+  }
+  .theme:hover {
+    border-color: var(--line-strong);
+    background: var(--card);
+  }
+  .theme-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+  }
+
+  .search {
+    position: relative;
+    width: clamp(230px, 21vw, 300px);
+  }
+  .search-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r);
+    background: var(--card);
+    padding: 0 6px 0 10px;
+    min-height: 38px;
+  }
+  .search-field input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    font: 15px var(--sans);
+    color: var(--ink);
+    padding: 7px 0;
+  }
+  .search-field input:focus {
+    outline: none;
+  }
+  .search-field:focus-within {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .search-field kbd {
+    font: 500 11.5px var(--mono);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r);
+    padding: 1px 6px;
+    color: var(--muted);
+  }
+  .search-results {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: min(480px, 92vw);
+    z-index: 40;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    box-shadow: 0 10px 30px var(--shadow);
+    overflow: hidden;
+  }
+
+  .repo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 4px 2px;
+    white-space: nowrap;
+    min-height: var(--tap);
+  }
+  .repo:hover {
+    color: var(--accent-hover);
+  }
+
+  .menu summary {
+    font: 600 14px var(--sans);
+    background: var(--accent);
+    color: var(--on-accent);
+    border-radius: 999px;
+    padding: 10px 14px;
+    min-height: var(--tap);
+    display: flex;
+    align-items: center;
+  }
+  .menu summary:hover {
+    background: var(--accent-hover);
+  }
+  .menu nav {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    display: grid;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    padding: 6px var(--gutter) 14px;
+  }
+  .menu nav a {
+    text-decoration: none;
+    font-size: 17px;
+    font-weight: 500;
+    padding: 12px 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  .menu nav a[aria-current="page"] {
+    color: var(--accent);
+  }
+
+  .foot {
+    background: var(--sunk);
+    border-top: 1px solid var(--line);
+    padding-block: 32px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    gap: 24px;
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .foot-id {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .foot-id img {
+    flex: none;
+  }
+  .foot-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .foot-version {
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .foot-repo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .narrow-only {
+    display: none;
+  }
+  @media (max-width: 1079px) {
+    .wide-only {
+      display: none;
+    }
+    .narrow-only {
+      display: revert;
+    }
+    span.spacer.narrow-only {
+      display: block;
+    }
+    .theme {
+      width: var(--tap);
+      height: var(--tap);
+      padding: 0;
+      border: 0;
+    }
+    .search {
+      display: none;
+    }
+  }
+</style>

@@ -1,0 +1,128 @@
+---
+// A station of the factory: its number, its name, and who runs it. A
+// station a person decides is held (tinted); `compact` drops the actor lines
+// for marks only (the home page's miniature).
+import type { Station } from "../lib/data/factory.ts";
+import ActorLine from "./ActorLine.astro";
+import StatusMark from "./StatusMark.astro";
+
+interface Props {
+  station: Station;
+  tag?: string;
+  compact?: boolean;
+  arrow?: boolean;
+  href?: string;
+}
+const { station, tag, compact = false, arrow = false, href } = Astro.props;
+const held = station.actors[0]?.kind === "person" && station.id.startsWith("b");
+const kinds = new Set(station.actors.map((a) => (a.kind === "agent" || a.kind === "tool" ? "skill" : a.kind)));
+const level = station.id.startsWith("a") ? "Design" : "Execution";
+const aria = `${level} ${station.n}, ${station.name}: ${[
+  kinds.has("skill") && "run by a skill",
+  kinds.has("person") && "run by a person",
+  kinds.has("todo") && "part not built yet",
+]
+  .filter(Boolean)
+  .join(", ")}`;
+---
+
+<li class:list={["station", { compact }]} id={compact ? undefined : `station-${station.id}`}>
+  {
+    compact ? (
+      <a class:list={["box", { held }]} href={href ?? `/factory/#station-${station.id}`} aria-label={aria}>
+        <span class="n">{station.n}</span>
+        <span class="name">{station.name}</span>
+        <span class="marks" aria-hidden="true">
+          {(["skill", "person", "todo"] as const).filter((k) => kinds.has(k)).map((k) => <StatusMark kind={k} size={9} />)}
+        </span>
+      </a>
+    ) : (
+      <div class:list={["box", { held }]}>
+        <span class="n">{station.n}</span>
+        <span class="name">{station.name}</span>
+        {tag && <span class="tag">{tag}</span>}
+        <span class="actors">
+          {station.actors.map((a) => (
+            <ActorLine actor={a} />
+          ))}
+        </span>
+      </div>
+    )
+  }
+  {arrow && <span class="arrow" aria-hidden="true">→</span>}
+</li>
+
+<style>
+  .station {
+    position: relative;
+    display: flex;
+    min-width: 0;
+  }
+  .box {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 8px 10px 10px;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    text-decoration: none;
+  }
+  .box.held {
+    border: 1.5px solid var(--accent);
+    background: var(--accent-soft);
+  }
+  a.box:hover {
+    border-color: var(--accent);
+  }
+  .n {
+    font-family: var(--serif);
+    font-size: 12px;
+  }
+  .name {
+    font-size: 14.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    hyphens: auto;
+  }
+  .tag {
+    font-size: 11.5px;
+  }
+  .actors {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 6px;
+    padding-top: 7px;
+    border-top: 1px solid var(--line);
+  }
+  .compact .box {
+    padding: 5px 6px 6px;
+    gap: 3px;
+  }
+  .compact .n {
+    font-size: 11px;
+  }
+  .compact .name {
+    font-size: 12.5px;
+    line-height: 1.25;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  .marks {
+    display: flex;
+    gap: 4px;
+    margin-top: auto;
+    padding-top: 3px;
+  }
+  .arrow {
+    position: absolute;
+    right: -20px;
+    top: 28px;
+    font-family: var(--mono);
+    font-size: 15px;
+  }
+</style>

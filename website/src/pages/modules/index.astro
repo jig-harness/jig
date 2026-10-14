@@ -1,0 +1,44 @@
+---
+import ModuleMap from "../../components/ModuleMap.astro";
+import Base from "../../layouts/Base.astro";
+import { modules } from "../../lib/data/index.ts";
+
+const count = modules().length;
+---
+
+<Base title="The module map" description={`${count} modules, three levels each, and how much of them each profile needs.`}>
+  <section class="page wrap">
+    <div class="intro">
+      <span class="eyebrow">The module map</span>
+      <h1 class="display">{count} modules, three levels each. Pick a profile to see how much of it applies.</h1>
+      <p>
+        Each module adopts on its own. "Adopted" means a module reached Lite; you climb from there. The rows are in the
+        default order to adopt them in an existing repository — your audit's ranking overrides it.
+      </p>
+    </div>
+    <ModuleMap variant="full" />
+    <div class="after muted">
+      <p>
+        Order: the brownfield default, extended to every module (<code>profiles.yaml</code>). An audit's own ranking
+        overrides it.
+      </p>
+      <p>
+        Left off this view: each module's criteria, mappings and dependencies. They are one click away on the module's
+        page; the cells link straight to that level.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .after {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: 24px;
+    margin-top: 28px;
+    font-size: 14.5px;
+  }
+  .after p {
+    margin: 0;
+  }
+</style>

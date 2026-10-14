@@ -1,0 +1,69 @@
+---
+// The two levels in text: the feature pipeline with its skills, the pull-request loop, and the work-item line.
+import "../../styles/factory.css";
+import ActorLine from "../ActorLine.astro";
+import SectionHead from "../SectionHead.astro";
+import StatusMark from "../StatusMark.astro";
+import { factory } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+const f = factory();
+const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
+const stagesHtml = await Promise.all(f.pipeline.map(async (s) => ({ n: s.n, html: await inline(s.what) })));
+const designSkills = await Promise.all(
+  f.designSkills.map(async (d) => ({ name: d.name, html: await inline(d.station) })),
+);
+const designPerson = await inline(f.designPerson);
+const prLoop = await Promise.all(f.prLoop.map(async (s) => ({ n: s.n, html: await inline(s.body) })));
+const lineRows = await Promise.all(f.line.map(async (s) => ({ ...s, whatHtml: await inline(s.what) })));
+---
+
+  <SectionHead id="design" label="A · Design and planning: the feature pipeline" note="five stages, each reviewed before the next uses it" />
+  <div class="two">
+    <div>
+      <ol class="numbered">{stagesHtml.map((s) => <li><span class="num">{s.n}</span><p set:html={s.html} /></li>)}</ol>
+      <p class="small-p" set:html={await inline(f.everyStage)} />
+    </div>
+    <div>
+      <p class="small-p" set:html={await inline(f.designSkillsLead)} />
+      <ul class="skill-list">
+        {
+          designSkills.map((d) => (
+            <li>
+              <span class="skill-cell"><StatusMark kind="skill" /><span class="vh">Run by a skill: </span><a class="mono" href={`/skills/${d.name}/`}>{d.name}</a></span>
+              <span set:html={d.html} />
+            </li>
+          ))
+        }
+      </ul>
+      <p class="person-line"><StatusMark kind="person" /><span set:html={designPerson} /></p>
+    </div>
+  </div>
+
+  <SectionHead id="execution" label="B · Execution: the work-item line" note="one work item, seven stations" />
+  <div class="two">
+    <div>
+      <p class="small-p" set:html={await inline(f.prLoopLead)} />
+      <ol class="numbered">{prLoop.map((s) => <li><span class="num">{s.n}</span><p set:html={s.html} /></li>)}</ol>
+    </div>
+    <div>
+      <p class="small-p" set:html={await inline(f.lineLead)} />
+      <p class="small-p" set:html={await inline(f.lineAfter)} />
+    </div>
+  </div>
+  <div class="line-table">
+    <div class="th" aria-hidden="true"><span>#</span><span>Station</span><span>What happens</span><span>Run by</span></div>
+    {
+      lineRows.map((s) => (
+        <div class="line-row">
+          <span class="num">{s.n}</span>
+          <span class="job-name">{s.name}</span>
+          <span set:html={s.whatHtml} />
+          <span class="actors">
+            {s.actors.map((a) => (
+              <ActorLine actor={a} />
+            ))}
+          </span>
+        </div>
+      ))
+    }
+  </div>

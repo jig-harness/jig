@@ -1,0 +1,197 @@
+---
+import Base from "../layouts/Base.astro";
+import { slug } from "../lib/glossary.ts";
+import { glossary } from "../lib/data/index.ts";
+import { mdInline } from "../lib/markdown.ts";
+import { REPO_URL } from "../lib/routes.ts";
+
+const entries = glossary();
+const groupNames = [...new Set(entries.map((e) => e.group))];
+const groups = await Promise.all(
+  groupNames.map(async (name) => ({
+    name,
+    id: `g-${slug(name)}`,
+    terms: await Promise.all(
+      entries
+        .filter((e) => e.group === name)
+        .map(async (e) => {
+          const def = e.definition.charAt(0).toUpperCase() + e.definition.slice(1);
+          return { ...e, html: await mdInline(def, "GLOSSARY.md") };
+        }),
+    ),
+  })),
+);
+---
+
+<Base title="Glossary" description={`${entries.length} terms of art, in plain language.`}>
+  <section class="page wrap">
+    <div class="intro">
+      <span class="eyebrow">Glossary · {entries.length} terms</span>
+      <h1 class="display">Every term of art, in plain language.</h1>
+      <p>
+        Anywhere on this site, a term with a dotted underline shows its definition when you point at it or tab to it. This
+        page is where those definitions live; a term in <em>italics</em> inside a definition links to its own entry.
+      </p>
+    </div>
+    <div class="bar">
+      <label class="find" data-find hidden>
+        <span>Find</span>
+        <input type="search" placeholder="drift, HITL, worktree…" autocomplete="off" data-find-input />
+      </label>
+      <nav class="groups" aria-label="Groups">
+        {groups.map((g) => <a href={`#${g.id}`}>{g.name} <span data-group-count={g.id}>{g.terms.length}</span></a>)}
+      </nav>
+      <span class="shown muted" data-shown></span>
+    </div>
+    {
+      groups.map((g) => (
+        <section data-group={g.id}>
+          <h2 id={g.id}>{g.name}</h2>
+          <dl>
+            {g.terms.map((t) => (
+              <div class="entry" id={t.anchor} data-entry data-key={`${t.term} ${t.definition}`.toLowerCase()}>
+                <dt>{t.term}</dt>
+                <dd set:html={t.html} />
+              </div>
+            ))}
+          </dl>
+        </section>
+      ))
+    }
+    <p class="none" data-none hidden>No term matches. Try a shorter word, or browse the groups above.</p>
+    <p class="source"><a class="out" href={`${REPO_URL}/blob/main/GLOSSARY.md`}>Source: GLOSSARY.md</a></p>
+  </section>
+</Base>
+
+<script>
+  // The glossary's filter: narrows the list to the entries whose term or
+  // definition contains what is typed. Without it, every entry shows.
+  const box = document.querySelector<HTMLElement>("[data-find]");
+  const input = document.querySelector<HTMLInputElement>("[data-find-input]");
+  const shown = document.querySelector<HTMLElement>("[data-shown]");
+  const none = document.querySelector<HTMLElement>("[data-none]");
+  if (box && input && shown && none) {
+    box.hidden = false;
+    input.addEventListener("input", () => {
+      const q = input.value.trim().toLowerCase();
+      let total = 0;
+      for (const section of document.querySelectorAll<HTMLElement>("[data-group]")) {
+        let count = 0;
+        for (const entry of section.querySelectorAll<HTMLElement>("[data-entry]")) {
+          const hit = !q || (entry.dataset.key ?? "").includes(q);
+          entry.hidden = !hit;
+          if (hit) count++;
+        }
+        section.hidden = count === 0;
+        const counter = document.querySelector(`[data-group-count="${section.dataset.group}"]`);
+        if (counter) counter.textContent = String(count);
+        total += count;
+      }
+      shown.textContent = q ? `${total} shown` : "";
+      none.hidden = total > 0;
+    });
+  }
+</script>
+
+<style>
+  .bar {
+    position: sticky;
+    top: 63px;
+    z-index: 5;
+    background: var(--bg);
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: center;
+  }
+  .find {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 260px;
+    max-width: 420px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .find input {
+    flex: 1;
+    min-width: 0;
+    font: 16px var(--sans);
+    padding: 8px 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r);
+    background: var(--card);
+    color: var(--ink);
+    min-height: 40px;
+  }
+  .groups {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .groups a {
+    font-size: 13.5px;
+    text-decoration: none;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 4px 8px;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+  .groups a:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .groups span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .shown {
+    font-size: 13.5px;
+  }
+  h2 {
+    font-family: var(--serif);
+    font-size: 24px;
+    font-weight: 500;
+    margin: 32px 0 6px;
+    scroll-margin-top: 140px;
+  }
+  dl {
+    margin: 0;
+  }
+  .entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 4px 28px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+    scroll-margin-top: 140px;
+  }
+  .entry:target dt {
+    background: var(--accent-soft);
+  }
+  dt {
+    font-weight: 600;
+    font-size: 16.5px;
+    line-height: 1.4;
+    align-self: start;
+    padding: 0 4px;
+    border-radius: var(--r-tag);
+  }
+  dd {
+    margin: 0;
+    max-width: 72ch;
+    font-size: 15.5px;
+    line-height: 1.58;
+  }
+  .none {
+    margin: 28px 0;
+  }
+  @media (max-width: 760px) {
+    .entry {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

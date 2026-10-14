@@ -1,0 +1,25 @@
+---
+// The rung a criterion requires: half a square when convention is enough,
+// a full square when a check must enforce it.
+interface Props {
+  mechanical: boolean;
+}
+const { mechanical } = Astro.props;
+const label = mechanical ? "must be mechanically enforced" : "convention-only is enough";
+---
+
+<span class:list={["rung", { mechanical }]} role="img" aria-label={label}></span>
+
+<style>
+  .rung {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    flex: none;
+    border: 1.5px solid var(--ink);
+    background: linear-gradient(90deg, var(--ink) 50%, transparent 50%);
+  }
+  .rung.mechanical {
+    background: var(--ink);
+  }
+</style>

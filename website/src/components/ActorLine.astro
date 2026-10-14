@@ -1,0 +1,79 @@
+---
+// One line of "who runs this station": the mark, then the skill (linked),
+// the tool, "a person", or the roadmap item for work not built yet.
+import type { Actor } from "../lib/data/factory.ts";
+import { REPO_URL } from "../lib/routes.ts";
+import StatusMark from "./StatusMark.astro";
+
+interface Props {
+  actor: Actor;
+}
+const { actor } = Astro.props;
+const markKind = actor.kind === "person" ? "person" : actor.kind === "todo" ? "todo" : "skill";
+const said = {
+  skill: "Run by a skill: ",
+  agent: "Run by an agent: ",
+  tool: "Run by a tool: ",
+  person: "Run by a person",
+  todo: "Not built yet: ",
+}[actor.kind];
+const roadmapHref = (item: string) => (item === "Later" ? "/whats-new/#rm-later" : `/whats-new/#rm-item-${item}`);
+---
+
+<span class="actor">
+  <StatusMark kind={markKind} />
+  <span class="what">
+    <span class="vh">{said}</span>
+    {
+      (actor.kind === "skill" || actor.kind === "agent") && (
+        <a class="name" href={`/skills/${actor.name}/`}>{actor.name}</a>
+      )
+    }
+    {actor.kind === "tool" && <a class="name" href={`${REPO_URL}/blob/main/tools/launcher/README.md`}>{actor.name}</a>}
+    {actor.kind === "person" && <span class="person">a person</span>}
+    {
+      actor.kind === "todo" && (
+        <>
+          <a class="todo" href={roadmapHref(actor.item)}>not built · {actor.item === "Later" ? "roadmap, Later" : `roadmap item ${actor.item}`}</a> {actor.text}
+        </>
+      )
+    }
+    {actor.kind === "agent" && <span class="note">agent</span>}
+    {actor.kind === "tool" && <span class="note">tool · {actor.note}</span>}
+    {"note" in actor && actor.note && actor.kind !== "tool" && <span class="note">{actor.note}</span>}
+  </span>
+</span>
+
+<style>
+  .actor {
+    display: flex;
+    gap: 7px;
+    align-items: flex-start;
+    font-size: 12.5px;
+    line-height: 1.4;
+    min-width: 0;
+  }
+  .actor > :global(.mark) {
+    margin-top: 3px;
+  }
+  .what {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .name {
+    color: inherit;
+    font-family: var(--mono);
+    font-size: 0.96em;
+  }
+  .person,
+  .todo {
+    font-weight: 600;
+  }
+  .todo {
+    color: inherit;
+  }
+  .note {
+    display: block;
+    color: var(--muted);
+  }
+</style>

@@ -4,9 +4,11 @@
 # Linux run and is the slowest part of it, while what breaks only on macOS or
 # Windows is rare enough that finding it within a day is soon enough.
 #
-# The drive-pr suite is POSIX-only, so it runs on macOS here, split into
-# parallel shards; on Windows the gate script leaves out the POSIX-only suites
-# on its own (see SEPARATE_SUITES and POSIX_ONLY_SUITES in scripts/gates.ts).
+# The website parser tests run in their own job on both platforms, with the
+# website dependencies installed. The drive-pr suite is POSIX-only, so it runs
+# on macOS here, split into parallel shards; on Windows the gate script leaves
+# out the POSIX-only suites on its own (see SEPARATE_SUITES and
+# POSIX_ONLY_SUITES in scripts/gates.ts).
 #
 # Nothing waits for this run. GitHub notifies whoever last changed the
 # schedule when it fails; workflow_dispatch runs it on demand, against any
@@ -41,8 +43,8 @@ jobs:
     # Windows takes the longest, about 8 minutes.
     timeout-minutes: 20
     env:
-      # The drive-pr-suite job below runs the drive-pr suite; on Windows the
-      # gate script also leaves out the POSIX-only suites on its own.
+      # The drive-pr-suite and website jobs below run the separate suites; on
+      # Windows the gate script also leaves out the POSIX-only suites.
       JIG_GATES_SKIP_SEPARATE_SUITES: "1"
       # Every runner image has Google Chrome, so a sheet's browser checks
       # fail here when it is missing instead of being skipped with a warning.
@@ -79,3 +81,26 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Run this shard of the drive-pr suite
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
+
+  website:
+    name: website (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            runner: blacksmith-6vcpu-macos-latest
+          - os: windows
+            runner: blacksmith-4vcpu-windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Install the website's locked dependencies
+        working-directory: website
+        run: bun install --frozen-lockfile
+      - name: Test the document parsers
+        run: bun run test ./website/

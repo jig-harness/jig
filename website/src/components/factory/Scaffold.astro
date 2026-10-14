@@ -1,0 +1,60 @@
+---
+// The scaffolding's three jobs, the modules that build each, and running many agents at once.
+import "../../styles/factory.css";
+import ModChip from "../ModChip.astro";
+import SectionHead from "../SectionHead.astro";
+import { factory } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+const f = factory();
+const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
+const jobs = await Promise.all(
+  f.jobs.map(async (j) => {
+    const [guides = "", catches = ""] = j.modulesText.split(/Catches:/);
+    const ver = j.id === "verification";
+    return {
+      ...j,
+      meansHtml: await inline(j.means),
+      withoutHtml: await inline(j.without),
+      modulesHtml: ver ? "" : await inline(j.modulesText),
+      guidesHtml: ver ? await inline(guides.replace(/^Guides:\s*/, "").replace(/\.\s*$/, "")) : "",
+      catchesHtml: ver ? await inline(catches) : "",
+    };
+  }),
+);
+const manyHtml = await inline(f.many.text);
+---
+
+  <SectionHead id="scaffolding" label="A factory of agents runs on scaffolding" note="three jobs, and the modules that build each" />
+  <p class="lead" set:html={await inline(f.scaffoldLead)} />
+  <div class="jobs-table">
+    <div class="th" aria-hidden="true"><span>Job</span><span>What it means</span><span>Jig's modules</span><span>Without it</span></div>
+    {
+      jobs.map((j) => (
+        <div class="job-row" id={`job-${j.id}`}>
+          <span class="job-name">{j.name}</span>
+          <span set:html={j.meansHtml} />
+          <span class="job-mods">
+            {j.id === "verification" ? (
+              <>
+                <span class="side guides">
+                  <span class="side-name">Guides · before an agent acts</span>
+                  <span set:html={j.guidesHtml} />
+                </span>
+                <span class="side catches">
+                  <span class="side-name">Catches · stop what slips through</span>
+                  <span set:html={j.catchesHtml} />
+                </span>
+              </>
+            ) : (
+              <span set:html={j.modulesHtml} />
+            )}
+          </span>
+          <span class="without" set:html={j.withoutHtml} />
+        </div>
+      ))
+    }
+  </div>
+  <div class="many" id="scaffolding-many">
+    <span class="chips">{f.many.modules.map((id) => <ModChip id={id} />)}</span>
+    <p set:html={manyHtml} />
+  </div>

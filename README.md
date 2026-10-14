@@ -86,6 +86,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [seeds/](seeds/) | Imported source material, kept as-imported for provenance |
 | [plugin/](plugin/README.md) | The `jig` plugin: agent skills for Claude Code and Codex (the pull-request drive loop, issue pickup, review resolution, conflict resolution, the [repository audit](plugin/skills/audit/README.md), and procedure skills), the `review-arbiter` agent, and [recommended third-party skills](plugin/RECOMMENDED-SKILLS.md) |
 | [tools/](tools/README.md) | Runnable development tools |
+| [website/](website/) | The jig-harness.dev site, rendered from this repository's documents at build time |
 
 ## Status
 
@@ -118,8 +119,12 @@ Install [mise](https://mise.jdx.dev/) and run:
 ```sh
 mise install
 mise exec -- bun install --frozen-lockfile
+mise exec -- bun install --frozen-lockfile --cwd website
 mise exec -- bun run gates
 ```
+
+The second install is the website's own dependencies (`website/` has its own
+lockfile): the gates run its tests too.
 
 The gate command checks formatting, lint, types, all gate self-tests, the build,
 Markdown links/tables/glossary coverage, origin-reference exclusions, and a
@@ -131,8 +136,8 @@ drive-pr suite only when its changes need it, as Jig's
 [change-area catalog](.config/change-areas.yaml) resolves them: when the
 drive-pr skill or something it depends on changed. A push to `main` runs
 everything. macOS and Windows run once a day, against `main`, in the nightly
-workflow: the gate set on both, the drive-pr suite on macOS, and Windows
-leaves out the POSIX-only suites ([scripts/gates.ts](scripts/gates.ts) says
+workflow: the gate set and the website's tests on both, the drive-pr suite
+on macOS, and Windows leaves out the POSIX-only suites ([scripts/gates.ts](scripts/gates.ts) says
 which and why).
 The tests use Bun's built-in runner; `bun run test` runs them alone, one test
 file per processor core at a time, with the per-test timeout the slower suites

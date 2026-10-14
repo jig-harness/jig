@@ -1,0 +1,37 @@
+---
+import Base from "../../../layouts/Base.astro";
+import { moduleMeta, modules } from "../../../lib/data/index.ts";
+import { md } from "../../../lib/markdown.ts";
+import { REPO_URL } from "../../../lib/routes.ts";
+import { read } from "../../../lib/site.ts";
+import { titleLine, withoutTitle } from "../../../lib/source.ts";
+
+// A module's mappings.md whole, for links that name the file; the module's
+// own page shows the same sections under "In your tools".
+export function getStaticPaths() {
+  return modules().map((m) => ({ params: { id: m.id } }));
+}
+
+const { id } = Astro.params as { id: string };
+const meta = moduleMeta(id);
+const from = `${meta.dir}/mappings.md`;
+const text = read(from);
+const html = await md(withoutTitle(text), from);
+---
+
+<Base title={titleLine(text)}>
+  <section class="page wrap" style="max-width:calc(860px + 2 * var(--gutter))">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="/modules/">Modules</a><span aria-hidden="true">/</span><a href={`/modules/${id}/`}>{id}</a><span aria-hidden="true">/</span><span>mappings</span></nav>
+    <span class="eyebrow">{id} {meta.title} · in your tools</span>
+    <h1 class="display">{titleLine(text)}</h1>
+    <div class="prose" set:html={html} />
+    <p class="source"><a class="out" href={`${REPO_URL}/blob/main/${from}`}>Source: {from}</a></p>
+  </section>
+</Base>
+
+<style>
+  h1 {
+    font-size: clamp(28px, 3vw, 40px);
+    margin: 12px 0 16px;
+  }
+</style>

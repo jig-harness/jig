@@ -1,0 +1,27 @@
+---
+// Who runs a station, by shape: a ring for a skill (or a tool), a filled
+// disc for a person, a dashed ring for work not built yet. Shape carries
+// the meaning; the mark draws in the text color.
+interface Props {
+  kind: "skill" | "person" | "todo";
+  size?: number;
+}
+const { kind, size = 10 } = Astro.props;
+---
+
+<span class:list={["mark", kind]} style={`width:${size}px;height:${size}px`} aria-hidden="true"></span>
+
+<style>
+  .mark {
+    flex: none;
+    display: inline-block;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+  }
+  .person {
+    background: currentColor;
+  }
+  .todo {
+    border-style: dashed;
+  }
+</style>

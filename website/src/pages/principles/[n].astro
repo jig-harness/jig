@@ -1,0 +1,94 @@
+---
+import Ladder from "../../components/Ladder.astro";
+import SideIndex from "../../components/SideIndex.astro";
+import Base from "../../layouts/Base.astro";
+import { principles } from "../../lib/data/index.ts";
+import { md } from "../../lib/markdown.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+import { countWord } from "../../lib/view.ts";
+
+export function getStaticPaths() {
+  return principles().map((p) => ({ params: { n: p.n } }));
+}
+
+const { n } = Astro.params as { n: string };
+const all = principles();
+const at = all.findIndex((p) => p.n === n);
+const p = all[at];
+if (!p) throw new Error(`no principle ${n}`);
+const prev = all[at - 1];
+const next = all[at + 1];
+const statementHtml = await md(p.statement, p.file);
+const whyHtml = await md(p.why, p.file);
+const consHtml = await md(p.consequences, p.file);
+const isLadder = /enforcement ladder/i.test(p.statement);
+---
+
+<Base title={`${p.n} — ${p.title}`} description={p.oneLiner}>
+  <section class="page wrap with-side">
+    <SideIndex title={`${countWord(all.length, true)} principles`} items={all.map((x) => ({ label: x.title, href: `/principles/${x.n}/`, num: x.n, current: x.n === n }))} />
+    <article class="main" style="--main-max:780px">
+      <span class="big">0{p.n}</span>
+      <h1 class="display">{p.title}</h1>
+      <p class="one">{p.oneLiner}</p>
+      <div class="prose statement" set:html={statementHtml} />
+      {isLadder && <div class="fig"><Ladder scores caption="Figure: the five rungs above, drawn from the line in the source. The same three marks score every criterion on module pages." /></div>}
+      <h2 class="h2">Why</h2>
+      <div class="prose" set:html={whyHtml} />
+      <h2 class="h2">{p.consequencesLabel}</h2>
+      <div class="prose" set:html={consHtml} />
+      <nav class="pn" aria-label="Next and previous">
+        {prev ? <a href={`/principles/${prev.n}/`}>← {prev.n} {prev.title}</a> : <span />}
+        {next && <a href={`/principles/${next.n}/`}>{next.n} {next.title} →</a>}
+      </nav>
+      <p class="source"><a class="out" href={`${REPO_URL}/blob/main/${p.file}`}>Source: {p.file}</a></p>
+    </article>
+  </section>
+</Base>
+
+<style>
+  .big {
+    font-family: var(--serif);
+    font-size: clamp(40px, 4.4vw, 64px);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+  h1 {
+    margin: 10px 0;
+    font-size: clamp(28px, 3vw, 42px);
+    line-height: 1.1;
+  }
+  .one {
+    margin: 0 0 26px;
+    font-size: 18px;
+    color: var(--muted);
+    max-width: 60ch;
+  }
+  .statement {
+    font-size: 17px;
+  }
+  .fig {
+    margin: 8px 0 28px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--card);
+  }
+  .h2 {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 500;
+    margin: 30px 0 10px;
+  }
+  .pn {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+    margin-top: 30px;
+    font-size: 15px;
+    flex-wrap: wrap;
+  }
+</style>

@@ -4,8 +4,9 @@
 #
 # Which jobs a pull request runs comes from Jig's change-area catalog
 # (.config/change-areas.yaml, resolved by scripts/change-areas.ts): the
-# drive-pr suite runs when the `drive-pr` area is affected. A push to main
-# runs everything.
+# drive-pr suite runs when the `drive-pr` area is affected, and the website
+# job when the `website` area is (the site renders the documents, so most
+# changes affect it). A push to main runs everything.
 #
 # macOS and Windows run nothing here: the nightly workflow (nightly.yml) runs
 # the gate set and the drive-pr suite on them against main once a day, so a
@@ -61,7 +62,7 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     env:
-      # The drive-pr-suite job below runs the drive-pr suite.
+      # The drive-pr-suite and website jobs below run the separate suites.
       JIG_GATES_SKIP_SEPARATE_SUITES: "1"
       # The runner image has Google Chrome, so a sheet's browser checks fail
       # here when it is missing instead of being skipped with a warning.
@@ -104,13 +105,41 @@ jobs:
       - name: Run this shard of the drive-pr suite
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
 
+  website:
+    name: website
+    needs: areas
+    if: contains(needs.areas.outputs.areas, '"website"')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      # The build renders the live audit example with the audit skill's
+      # renderer, which needs the repository's own dependencies.
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Install the website's locked dependencies
+        working-directory: website
+        run: bun install --frozen-lockfile
+      - name: Check types
+        working-directory: website
+        run: bun run check
+      # The gate job leaves these out (scripts/gates.ts SEPARATE_SUITES):
+      # they need the dependencies installed above.
+      - name: Test the document parsers
+        run: bun run test ./website/
+      - name: Build the site and check its links
+        working-directory: website
+        run: bun run build
+
   # Branch protection requires a check named `gates`; this job reports it,
   # passing only when the areas resolved, the gate set passed, and the
-  # drive-pr suite passed or was not needed. It runs on `!cancelled()`, not
+  # drive-pr suite and website job passed or were not needed. It runs on
+  # `!cancelled()`, not
   # `always()`: `always()` also runs when a newer push cancelled this run, and
   # would then report a failure for a head that is already superseded.
   gates:
-    needs: [areas, gate-set, drive-pr-suite]
+    needs: [areas, gate-set, drive-pr-suite, website]
     if: ${{ !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
@@ -121,6 +150,8 @@ jobs:
           GATE_SET: ${{ needs.gate-set.result }}
           DRIVE_PR: ${{ needs.drive-pr-suite.result }}
           DRIVE_PR_SELECTED: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') }}
+          WEBSITE: ${{ needs.website.result }}
+          WEBSITE_SELECTED: ${{ contains(needs.areas.outputs.areas, '"website"') }}
         run: |
           failed=""
           [ "$AREAS" = success ] || failed="$failed areas($AREAS)"
@@ -129,6 +160,11 @@ jobs:
             [ "$DRIVE_PR" = success ] || failed="$failed drive-pr-suite($DRIVE_PR)"
           else
             [ "$DRIVE_PR" = skipped ] || failed="$failed drive-pr-suite($DRIVE_PR)"
+          fi
+          if [ "$WEBSITE_SELECTED" = true ]; then
+            [ "$WEBSITE" = success ] || failed="$failed website($WEBSITE)"
+          else
+            [ "$WEBSITE" = skipped ] || failed="$failed website($WEBSITE)"
           fi
           if [ -n "$failed" ]; then
             echo "::error::required jobs did not pass:$failed"

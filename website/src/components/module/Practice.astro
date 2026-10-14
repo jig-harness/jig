@@ -1,0 +1,96 @@
+---
+// Part 2, the practice: each level with what the audit checks, then the adoption steps.
+import "../../styles/module.css";
+import LevelGlyph from "../LevelGlyph.astro";
+import RungMark from "../RungMark.astro";
+import SectionHead from "../SectionHead.astro";
+import { criteriaOf, moduleDoc, moduleMeta } from "../../lib/data/index.ts";
+import { LEVEL_NAME, LEVELS } from "../../lib/data/modules.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+import { levelRank } from "../../lib/view.ts";
+
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+const meta = moduleMeta(id);
+const doc = moduleDoc(id);
+const from = `${meta.dir}/README.md`;
+const criteria = criteriaOf(id);
+const BLURB = { lite: "minimum useful", standard: "production teams", strict: "regulated / compliance posture" };
+const levels = await Promise.all(
+  LEVELS.map(async (level) => ({
+    level,
+    name: LEVEL_NAME[level],
+    rank: levelRank(level),
+    html: await mdInline(doc.levels[level], from),
+    criteria: criteria.list.filter((c) => c.level === level),
+  })),
+);
+const levelNotesHtml = doc.levelNotes ? await md(doc.levelNotes, from) : "";
+const stepsHtml = doc.steps ? await md(doc.steps, from) : "";
+---
+
+<SectionHead id="maturity-levels" label="2 · The practice" note="what each level asks of your repository" />
+<div class="tabs" role="tablist" aria-label="Maturity level" data-level-tabs hidden>
+  {
+    levels.map((l) => (
+      <button type="button" role="tab" id={`tab-${l.level}`} aria-controls={l.level} aria-selected={l.level === "lite" ? "true" : "false"} data-level={l.level}>
+        <span class="tab-name">
+          <LevelGlyph rank={l.rank} />
+          {l.name}
+        </span>
+        <span class="tab-count">{l.criteria.length} criteria</span>
+      </button>
+    ))
+  }
+</div>
+{
+  levels.map((l) => (
+    <div class="level" id={l.level} role="tabpanel" aria-labelledby={`tab-${l.level}`} data-level-panel={l.level}>
+      <p class="level-eyebrow">
+        {id} {l.name} — {BLURB[l.level]}
+      </p>
+      <p class="level-text" set:html={l.html} />
+      <div class="checks-head">
+        <span class="checks-title">What the audit checks at {l.name}</span>
+        <span class="legend">
+          <span><RungMark mechanical={false} /> convention-only is enough</span>
+          <span><RungMark mechanical={true} /> must be mechanically enforced</span>
+        </span>
+      </div>
+      <ol class="criteria">
+        {l.criteria.map((c) => (
+          <li>
+            <RungMark mechanical={c.requires === "mechanical"} />
+            <div class="criterion">
+              <span class="statement">{c.statement}</span>
+              <details>
+                <summary>
+                  <code>{c.id}</code>
+                  <span class="look">What the audit looks for ({c.observe.length})</span>
+                </summary>
+                <ul>
+                  {c.observe.map((o) => (
+                    <li>{o}</li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  ))
+}
+{levelNotesHtml && <div class="prose small notes" set:html={levelNotesHtml} />}
+
+{
+  stepsHtml && (
+    <>
+      <h2 id="adoption-steps" class="h2">Adoption steps</h2>
+      <div class="prose" set:html={stepsHtml} />
+    </>
+  )
+}
+

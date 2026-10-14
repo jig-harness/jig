@@ -1,0 +1,40 @@
+---
+// The learning loop, what stays with a person, and what Jig leaves to the platform.
+import "../../styles/factory.css";
+import SectionHead from "../SectionHead.astro";
+import StatusMark from "../StatusMark.astro";
+import { factory } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+const f = factory();
+const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
+const personItems = await Promise.all(f.person.map((p) => inline(p)));
+const platformItems = await Promise.all(f.platform.map(async (p) => ({ ...p, html: await inline(p.body) })));
+---
+
+  <SectionHead id="learning" label="The learning loop, around both levels" />
+  <p class="lead" set:html={await inline(f.learning)} />
+  <p><a href="#flywheel">The miss → lens flywheel, step by step ↓</a></p>
+
+  <div class="two">
+    <div>
+      <SectionHead id="person" label="What stays with a person" />
+      <p class="small-p" set:html={await inline(f.personLead)} />
+      <ul class="marked">
+        {personItems.map((html) => <li><StatusMark kind="person" /><span class="vh">Stays with a person: </span><span set:html={html} /></li>)}
+      </ul>
+    </div>
+    <div>
+      <SectionHead id="platform" label="What Jig leaves to the platform" note="the scope line, and what crosses it" />
+      <p class="small-p" set:html={await inline(f.platformLead)} />
+      <ul class="platform-list">
+        {
+          platformItems.map((p) => (
+            <li>
+              <span set:html={p.html} />
+            </li>
+          ))
+        }
+      </ul>
+      <p class="muted small">Each item is a requirement a module states, not a missing feature: Jig names what the repository needs from the platform and stops there.</p>
+    </div>
+  </div>

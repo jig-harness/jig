@@ -54,6 +54,7 @@ with the review.
 | [Session reflection](reflection.md) | 6, 7 |
 | [The audit experience](audit-experience.md) | 8 |
 | [Batching small issues](work-batch.md) | 13 |
+| [The jig-harness.dev website](website.md) | 18 |
 
 ## Starting a design
 

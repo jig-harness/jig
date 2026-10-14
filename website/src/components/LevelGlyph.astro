@@ -1,0 +1,29 @@
+---
+// A maturity level as three rising bars, `rank` of them filled (1 Lite,
+// 2 Standard, 3 Strict; 0 none). Always beside the level's name.
+interface Props {
+  rank: number;
+}
+const { rank } = Astro.props;
+---
+
+<span class="glyph" aria-hidden="true">
+  {[0, 1, 2].map((i) => <span class:list={["bar", { on: i < rank }]} style={`height:${6 + i * 4}px`} />)}
+</span>
+
+<style>
+  .glyph {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 14px;
+  }
+  .bar {
+    width: 5px;
+    box-shadow: inset 0 0 0 1.25px var(--line-strong);
+  }
+  .bar.on {
+    background: var(--accent);
+    box-shadow: none;
+  }
+</style>

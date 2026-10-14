@@ -1,0 +1,160 @@
+---
+import GuideTabs from "../../components/GuideTabs.astro";
+import ModChip from "../../components/ModChip.astro";
+import PlanRail from "../../components/PlanRail.astro";
+import SectionHead from "../../components/SectionHead.astro";
+import Base from "../../layouts/Base.astro";
+import { greenfield } from "../../lib/data/index.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+
+const FROM = "adoption/greenfield.md";
+const g = greenfield();
+const introHtml = await md(g.intro, FROM);
+const phases = await Promise.all(
+  g.phases.map(async (ph) => ({
+    ...ph,
+    nameHtml: await mdInline(ph.name, FROM),
+    producesHtml: await mdInline(ph.produces, FROM),
+    mapsHtml: await mdInline(ph.mapsTo, FROM),
+  })),
+);
+const moves = await Promise.all(g.moves.map(async (m) => ({ n: m.n, html: await mdInline(m.body, FROM) })));
+---
+
+<Base title="Adopt Jig in a new project" description="Run the kickoff, and hand each phase to the module that governs it.">
+  <section class="page wrap with-side">
+    <article class="main" style="--main-max:880px">
+      <GuideTabs current="new" />
+      <div class="banner" role="status" data-handed-over hidden>
+        <strong>Someone chose <span data-profile-name></span> for this new project.</strong> Run the kickoff below; at phase 5, adopt the modules in Your plan.
+      </div>
+      <div class="intro">
+        <span class="eyebrow">Adoption guide · new project</span>
+        <h1 class="display">Run the kickoff, and hand each phase to the module that governs it.</h1>
+        <div class="prose" set:html={introHtml} />
+      </div>
+
+      <SectionHead id="phases" label={`A · The ${g.phases.length} kickoff phases`} note="each one hands its output to a module" />
+      <p class="lead" set:html={await mdInline(g.phasesLead, FROM)} />
+      <ol class="phases">
+        {
+          phases.map((ph) => (
+            <li>
+              <span class="step-n">{ph.n}</span>
+              <div class="phase">
+                <div class="phase-what">
+                  <span class="phase-name" set:html={ph.nameHtml} />
+                  <span class="muted">Produces: <span set:html={ph.producesHtml} /></span>
+                </div>
+                <div class="phase-who">
+                  <span class="chips">
+                    <span class="hand-label">Hands over to</span>
+                    {ph.modules.map((id) => <ModChip id={id} />)}
+                    {ph.modules.length === 0 && <span class="none">not a Jig module</span>}
+                  </span>
+                  <span class="maps" set:html={ph.mapsHtml} />
+                </div>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+      <p class="lead after" set:html={await mdInline(g.tiers, FROM)} />
+
+      <SectionHead id="moves" label={`B · ${g.movesTitle}`} />
+      <ol class="phases">
+        {moves.map((m) => <li><span class="step-n">{m.n}</span><p class="move" set:html={m.html} /></li>)}
+      </ol>
+
+      <SectionHead id="why" label={`C · ${g.whyTitle}`} />
+      <div class="prose" set:html={await md(g.why, FROM)} />
+    </article>
+    <PlanRail listLabel="Phase 5 · adopt these at target" path="/adopt/greenfield/" />
+  </section>
+</Base>
+
+<script>
+  import "../../scripts/adopt.ts";
+</script>
+
+<style>
+  .banner {
+    background: var(--accent-soft);
+    border-radius: var(--r-card);
+    padding: 14px 18px;
+    margin-bottom: 22px;
+    font-size: 15.5px;
+  }
+  .intro .prose {
+    font-size: 16.5px;
+  }
+  .lead {
+    margin: 0 0 10px;
+    max-width: 70ch;
+  }
+  .lead.after {
+    margin-top: 16px;
+    font-size: 15.5px;
+  }
+  .phases {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+  .phases > li {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .phase {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+    gap: 8px 28px;
+    min-width: 0;
+  }
+  .phase-what,
+  .phase-who {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .phase-name {
+    font-weight: 600;
+    font-size: 17.5px;
+    line-height: 1.35;
+  }
+  .phase-what .muted {
+    font-size: 14.5px;
+  }
+  .hand-label {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    margin-right: 2px;
+  }
+  .none {
+    font-size: 12.5px;
+    border: 1.5px dashed var(--line-strong);
+    border-radius: var(--r);
+    padding: 2px 7px;
+  }
+  .maps {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .move {
+    margin: 0;
+    max-width: 70ch;
+    text-wrap: pretty;
+    line-height: 1.6;
+  }
+  .move :global(strong:first-child) {
+    font-size: 18px;
+  }
+</style>

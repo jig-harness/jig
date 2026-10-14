@@ -1,0 +1,488 @@
+---
+import AuditSpecimen from "../components/AuditSpecimen.astro";
+import CrossSection from "../components/CrossSection.astro";
+import Ladder from "../components/Ladder.astro";
+import LevelGlyph from "../components/LevelGlyph.astro";
+import ModuleMap from "../components/ModuleMap.astro";
+import Base from "../layouts/Base.astro";
+import { modules, principles, profiles, readme } from "../lib/data/index.ts";
+import { mdInline } from "../lib/markdown.ts";
+import { countWord } from "../lib/view.ts";
+
+const count = modules().length;
+const r = readme();
+const allProfiles = profiles().profiles;
+const solo = allProfiles.find((p) => p.id === "solo-lite");
+if (!solo) throw new Error("profiles.yaml has no solo-lite profile");
+const soloCount = Object.keys(solo.targets).length;
+const principleList = principles();
+const fxLead = await mdInline(r.factory.lead, "README.md");
+const fxJobs = await Promise.all(
+  r.factory.jobs.map(async (j) => ({ lead: j.lead, html: await mdInline(j.body, "README.md") })),
+);
+const fxFits = await mdInline(r.factory.fits, "README.md");
+const fxStations = await mdInline(r.factory.stations, "README.md");
+const ways = await Promise.all(r.ways.map(async (w) => ({ n: w.n, html: await mdInline(w.body, "README.md") })));
+const profileCards = allProfiles.map((p, i) => ({
+  id: p.id,
+  name: p.name,
+  rank: i + 1,
+  question: p.question,
+  summary:
+    `${Object.keys(p.targets).length} modules targeted` +
+    (Object.keys(p.conditional).length ? `, ${Object.keys(p.conditional).length} conditional` : ""),
+}));
+
+// Site-owned copy: what the home page says in its own words. Each limit
+// points at the document that states it.
+const LIMITS = [
+  { text: "A person merges. No skill merges or approves a pull request.", src: "M7 invariant · drive-pr", href: "/skills/drive-pr/" },
+  { text: "Nothing an audit recommends is applied by itself: your team marks each choice and hands the decisions to an agent.", src: "the audit experience", href: "#day-one" },
+  { text: "Changes an agent proposes to its own rules wait for a human to approve them.", src: "principle 5 · M8", href: "/principles/5/" },
+  { text: "Promotion to production is a manual, gated human action that cannot auto-fire.", src: "M10 invariant", href: "/modules/M10/" },
+  { text: "An automated reviewer blocks nothing until its measured precision clears a bar set in advance.", src: "M7 invariant", href: "/modules/M7/" },
+];
+---
+
+<Base title="Jig">
+  <section class="hero wrap">
+    <div class="hero-text">
+      <span class="label">Delivery practices for teams that build with AI coding agents</span>
+      <h1 class="display">Scaffolding that lets AI agents work your repository well — adopted one module at a time.</h1>
+      <p class="lede">
+        Jig is a modular collection of software-delivery practices for teams that build and maintain software with AI
+        coding agents. A jig, in a workshop, holds the work and guides the tool so every cut comes out the same; Jig's
+        skills and gates do that for agents.
+      </p>
+      <p class="sub">
+        You don't adopt all of it: <a href="/modules/">{count} independent modules</a>, each at three levels. A one-person
+        project starts with {countWord(soloCount)} modules at Lite. Every practice is a tool-independent rule first, mapped to your tools
+        second.
+      </p>
+      <div class="paths">
+        <div class="path">
+          <span class="label">Evaluating Jig for a team</span>
+          <p>Ten minutes: what it is, what it never does, and how far a team like yours should go.</p>
+          <div class="path-links">
+            <a href="#factory">Jig as a software factory: what it runs on, and who runs each station ↓</a>
+            <a href="#limits">What Jig never does ↓</a>
+            <a href="/adopt/">Choose how far to go: {countWord(allProfiles.length)} profiles →</a>
+          </div>
+        </div>
+        <div class="path lit">
+          <span class="eyebrow">Working on a repository</span>
+          <p>Start with an audit. It scores your repository against every module and says what to do first.</p>
+          <div class="cmd"><code><span class="accent">/jig:</span>audit</code><button type="button" class="copy" data-copy data-copy-text="/jig:audit">Copy</button></div>
+          <div class="path-links">
+            <a href="/plugin/">Install the plugin →</a>
+            <a href="/adopt/">The adoption guide →</a>
+            <a href="/modules/">Find a module →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figure class="map-card">
+      <figcaption>
+        <span class="map-title">All of Jig, and how much of it you need</span>
+        <a href="/modules/">Full map →</a>
+      </figcaption>
+      <ModuleMap variant="compact" />
+    </figure>
+  </section>
+
+  <section id="factory" class="factory wrap band" aria-labelledby="factory-h">
+    <div class="fx-text">
+      <span class="eyebrow">Jig as a software factory</span>
+      <h2 id="factory-h" class="display">A factory of agents runs on scaffolding.</h2>
+      <p set:html={fxLead} />
+      <ul class="fx-jobs">
+        {fxJobs.map((j) => <li><a class="label" href={`/factory/#job-${j.lead.toLowerCase()}`}>{j.lead}</a><span set:html={j.html} /></li>)}
+      </ul>
+      <p set:html={fxFits} />
+      <p class="muted small" set:html={fxStations} />
+      <a class="more" href="/factory/">What the factory runs on, every station, and what is not built yet →</a>
+    </div>
+    <CrossSection variant="mini" />
+  </section>
+
+  <section id="limits" class="limits wrap band band-sunk">
+    <div class="split">
+      <div class="limits-head">
+        <span class="eyebrow">The limits</span>
+        <h2 class="display">What Jig never does. A person stays on the decisions that matter.</h2>
+      </div>
+      <ul class="limit-list">
+        {
+          LIMITS.map((l) => (
+            <li>
+              <span class="sq" aria-hidden="true" />
+              <span class="limit">
+                <span class="limit-text">{l.text}</span>
+                <a class="limit-src" href={l.href}>{l.src}</a>
+              </span>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="ladder wrap band">
+    <div class="ladder-text">
+      <span class="eyebrow">The idea under every module</span>
+      <h2 class="display small-h">Every rule names how hard it is to skip.</h2>
+      <p>
+        A rule can live anywhere from a sentence in a doc to a check that blocks the merge. Jig asks each rule where it
+        lives today and what would promote it. The audit scores exactly that, so "we always do X" and "something fails
+        if we don't" stop looking the same.
+      </p>
+      <a class="more" href="/principles/4/">Principle 4 — Enforcement-ladder discipline →</a>
+    </div>
+    <Ladder caption="The enforcement ladder, from principle 4. Local hooks are conveniences; CI is the authority." />
+  </section>
+
+  <section class="profiles wrap band">
+    <div class="profiles-head">
+      <div>
+        <span class="eyebrow">How far to go</span>
+        <h2 class="display small-h">{countWord(allProfiles.length, true)} profiles. Answer one question.</h2>
+      </div>
+      <a class="more" href="/adopt/">Compare what each one asks →</a>
+    </div>
+    <div class="cards">
+      {
+        profileCards.map((p) => (
+          <a class="card" href={`/adopt/?profile=${p.id}`}>
+            <span class="card-name">
+              <LevelGlyph rank={p.rank} />
+              {p.name}
+            </span>
+            <span class="card-q">{p.question}</span>
+            <span class="card-sum">{p.summary}</span>
+          </a>
+        ))
+      }
+    </div>
+    <p class="muted">Graduate when the answer changes — profiles are stages, not identities.</p>
+  </section>
+
+  <section id="day-one" class="day wrap band">
+    <div class="day-head">
+      <div>
+        <span class="eyebrow">Day one</span>
+        <h2 class="display small-h">What you get first: an audit sheet of where you stand.</h2>
+      </div>
+      <p>
+        <code>/jig:audit</code> scores your repository against every module's criteria and renders one self-contained HTML
+        page. Nothing is applied: you mark each recommendation, copy your decisions, and hand them to an agent as one block
+        of text. Below is a real one, from a run on an open-source library.
+      </p>
+    </div>
+    <AuditSpecimen />
+  </section>
+
+  <section class="ways wrap band">
+    <div>
+      <span class="label">{countWord(ways.length, true)} ways to use it</span>
+      <ol class="numbered">{ways.map((w) => <li><span class="num">{w.n}</span><span set:html={w.html} /></li>)}</ol>
+    </div>
+    <div>
+      <span class="label">{countWord(principleList.length, true)} principles behind it</span>
+      <ol class="numbered">
+        {
+          principleList.map((p) => (
+            <li>
+              <span class="num">{p.n}</span>
+              <a class="principle" href={`/principles/${p.n}/`}>
+                <span class="p-title">{p.title}</span>
+                <span class="muted">{p.oneLiner}</span>
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero {
+    padding-top: clamp(24px, 3.4vw, 48px);
+    padding-bottom: 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+    gap: clamp(28px, 4vw, 64px);
+    align-items: start;
+  }
+  .hero-text {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+  }
+  .hero h1 {
+    font-size: clamp(34px, 3.9vw, 58px);
+    line-height: 1.04;
+    max-width: 17ch;
+  }
+  .sub {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.55;
+    max-width: 60ch;
+  }
+  .paths {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+    gap: 14px;
+    margin-top: 6px;
+  }
+  .path {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    padding: 18px 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .path.lit {
+    background: var(--accent-soft);
+    border-color: var(--accent-soft);
+  }
+  .path p {
+    margin: 0;
+    font-size: 15.5px;
+    line-height: 1.5;
+  }
+  .path-links {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-weight: 500;
+    font-size: 15px;
+    margin-top: auto;
+  }
+  .map-card {
+    margin: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    padding: 18px 18px 14px;
+    min-width: 0;
+  }
+  .map-card figcaption {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .map-title {
+    font-weight: 600;
+    font-size: 17px;
+  }
+
+  .factory {
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+    gap: clamp(24px, 4vw, 56px);
+    align-items: start;
+  }
+  .fx-text {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .fx-text p {
+    margin: 0;
+    max-width: 58ch;
+    text-wrap: pretty;
+  }
+  .small {
+    font-size: 15px;
+  }
+  .fx-jobs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+  .fx-jobs li {
+    display: grid;
+    grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+    gap: 4px 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: baseline;
+    font-size: 15.5px;
+    line-height: 1.5;
+  }
+  .more {
+    font-weight: 500;
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: clamp(24px, 4vw, 56px);
+  }
+  .limits-head {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .limit-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .limit-list li {
+    display: grid;
+    grid-template-columns: 14px 1fr;
+    gap: 14px;
+    padding: 13px 0;
+    border-top: 1px solid var(--line);
+  }
+  .sq {
+    width: 10px;
+    height: 10px;
+    background: var(--accent);
+    margin-top: 8px;
+    border-radius: 2px;
+  }
+  .limit {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .limit-text {
+    font-size: 17px;
+    line-height: 1.45;
+  }
+  .limit-src {
+    color: var(--muted);
+    font-size: 12px;
+    text-decoration-color: var(--muted);
+  }
+  .limit-src:hover {
+    color: var(--accent-hover);
+  }
+
+  .ladder {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    gap: clamp(28px, 4vw, 64px);
+    border-bottom: 1px solid var(--line);
+  }
+  .ladder-text {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .ladder-text p {
+    margin: 0;
+    max-width: 56ch;
+    text-wrap: pretty;
+  }
+  .small-h {
+    font-size: clamp(24px, 2.3vw, 34px);
+    line-height: 1.15;
+  }
+  .profiles {
+    border-bottom: 1px solid var(--line);
+  }
+  .profiles-head,
+  .day-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 22px;
+  }
+  .profiles-head > div,
+  .day-head > div {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: 14px;
+  }
+  .card {
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--card);
+    color: var(--ink);
+  }
+  .card:hover {
+    border-color: var(--accent);
+  }
+  .card-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 18px;
+  }
+  .card-q {
+    font-size: 15.5px;
+    line-height: 1.45;
+  }
+  .card-sum {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: auto;
+  }
+  .profiles > p {
+    margin: 14px 0 0;
+    font-size: 15px;
+  }
+  .day {
+    border-bottom: 1px solid var(--line);
+  }
+  .day-head {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    gap: 14px clamp(28px, 4vw, 64px);
+  }
+  .day-head p {
+    margin: 0;
+    max-width: 60ch;
+    text-wrap: pretty;
+  }
+  .ways {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    gap: clamp(28px, 4vw, 64px);
+  }
+  .principle {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .p-title {
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-underline-offset: 3px;
+  }
+  .principle:hover .p-title {
+    color: var(--accent-hover);
+  }
+  .principle .muted {
+    font-size: 14.5px;
+  }
+</style>

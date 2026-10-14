@@ -1,0 +1,191 @@
+---
+import GuideTabs from "../../components/GuideTabs.astro";
+import LevelGlyph from "../../components/LevelGlyph.astro";
+import PlanRail from "../../components/PlanRail.astro";
+import SectionHead from "../../components/SectionHead.astro";
+import Base from "../../layouts/Base.astro";
+import { brownfield, profiles } from "../../lib/data/index.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+
+const FROM = "adoption/brownfield.md";
+const b = brownfield();
+const p = profiles();
+const introHtml = await mdInline(b.intro, FROM);
+const cards = await Promise.all(
+  p.profiles.map(async (prof, i) => ({
+    name: prof.name,
+    rank: i + 1,
+    question: await mdInline(prof.question, "profiles/README.md"),
+    rationale: await md(prof.rationale, "profiles/README.md"),
+  })),
+);
+const ladder = await Promise.all(
+  b.ladder.map(async (s) => ({ n: s.n, lead: s.lead, html: await mdInline(s.body, FROM) })),
+);
+const constraintsHtml = await md(b.constraints, FROM);
+---
+
+<Base title="Adopt Jig in an existing repository" description="Decide how far to go, then climb one rung at a time: the audit, the ladder, and your plan.">
+  <section class="page wrap with-side">
+    <article class="main" style="--main-max:880px">
+      <GuideTabs current="existing" />
+      <div class="banner" role="status" data-handed-over hidden>
+        <strong>Someone chose <span data-profile-name></span> for your repository.</strong> Below is what that means, in the order to do it. Step 1 takes one command.
+      </div>
+      <div class="intro">
+        <span class="eyebrow">Adoption guide · existing repository</span>
+        <h1 class="display">Decide how far to go, then climb one rung at a time.</h1>
+        <p class="lede-p" set:html={introHtml} />
+        <p class="muted small">Starting a new project instead? The <a href="/adopt/greenfield/">greenfield guide</a> runs eleven kickoff phases, each handing over to the module that governs it.</p>
+      </div>
+
+      <SectionHead id="profiles" label="A · How far to go" note="Choose the strictest profile whose question applies to you." />
+      <div class="cards" role="radiogroup" aria-label="Profile">
+        {
+          cards.map((c, i) => (
+            <button type="button" role="radio" aria-checked={i === 0 ? "true" : "false"} data-profile={i} class="card">
+              <span class="q" set:html={c.question} />
+              <span class="answer">
+                <LevelGlyph rank={c.rank} />
+                {c.name}
+              </span>
+            </button>
+          ))
+        }
+      </div>
+      {cards.map((c, i) => <div class="prose rationale" data-for-profile={i} hidden={i !== 0} set:html={c.rationale} />)}
+      <p class="muted note">A profile is the whole repository's aim; a level is one module's rung. They share words, and the profile is your dial, never a grade.</p>
+
+      <SectionHead id="ladder" label="B · The ladder" note="five steps, from the brownfield guide" />
+      <ol class="steps">
+        {
+          ladder.map((s) => (
+            <li>
+              <span class="step-n">{s.n}</span>
+              <div class="step">
+                <p set:html={s.html} />
+                {s.lead === "Audit" && (
+                  <>
+                    <div class="cmd"><code><span class="accent">/jig:</span>audit</code><button type="button" class="copy" data-copy data-copy-text="/jig:audit">Copy</button></div>
+                    <span class="muted small">Needs the <a href="/plugin/">jig plugin</a>, installed once per machine for Claude Code or Codex. On a first audit it asks which profile you aim for. <a href="/#day-one">See a real audit sheet</a>.</span>
+                  </>
+                )}
+                {s.n === 3 && <p class="plan-note">Your order for the profile you chose is in <strong>Your plan</strong>, beside this guide. Each level links to its requirements.</p>}
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+
+      <SectionHead id="different" label="C · What makes an existing repository different" />
+      <div class="prose" set:html={constraintsHtml} />
+    </article>
+    <PlanRail audit listLabel="Step 3 · adopt in this order, one rung at a time" path="/adopt/" />
+  </section>
+</Base>
+
+<script>
+  import "../../scripts/adopt.ts";
+</script>
+
+<style>
+  .banner {
+    background: var(--accent-soft);
+    border-radius: var(--r-card);
+    padding: 14px 18px;
+    margin-bottom: 22px;
+    font-size: 15.5px;
+    line-height: 1.45;
+  }
+  .banner strong {
+    font-weight: 600;
+  }
+  .lede-p {
+    margin: 0;
+    font-size: 18px;
+  }
+  .small {
+    font-size: 14.5px;
+  }
+  .intro .small {
+    margin: 0;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    gap: 12px;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+    padding: 16px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-card);
+    background: var(--card);
+    color: var(--ink);
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .card:hover {
+    border-color: var(--accent);
+  }
+  .card[aria-checked="true"] {
+    border: 1.5px solid var(--accent);
+    background: var(--accent-soft);
+  }
+  .q {
+    font-size: 15px;
+    line-height: 1.4;
+  }
+  .answer {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: auto;
+    font-weight: 600;
+    font-size: 17px;
+  }
+  .rationale {
+    margin-top: 18px;
+    font-size: 15.5px;
+  }
+  .note {
+    margin: 0;
+    font-size: 14.5px;
+  }
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .steps > li {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 16px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .step {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .step p {
+    margin: 0;
+    max-width: 70ch;
+    text-wrap: pretty;
+    line-height: 1.6;
+  }
+  .step :global(strong:first-child) {
+    font-size: 19px;
+  }
+  .plan-note {
+    font-size: 14.5px;
+    padding: 10px 14px;
+    background: var(--sunk);
+    border-radius: var(--r-card);
+  }
+</style>

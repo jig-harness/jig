@@ -659,6 +659,10 @@ make, use the entry's term instead.
   every dependency. When a merge conflicts in one, Jig's conflict tooling
   regenerates it from the manifests instead of merging it by hand, and the CI
   fixer reinstalls from it ([resolve-conflicts](plugin/skills/resolve-conflicts/SKILL.md)).
+- **WCAG (Web Content Accessibility Guidelines)** — the W3C's standard for
+  making web pages usable by people with disabilities. Its levels A, AA and
+  AAA are increasingly strict; Jig's website holds every text color pair to
+  the AA contrast minimum in both themes ([design/website.md](design/website.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`
   writes it to a snapshot file and *Refocus* puts it back in front of an agent

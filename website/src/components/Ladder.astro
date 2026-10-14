@@ -1,0 +1,117 @@
+---
+// The enforcement ladder from principle 4: five rungs from a written
+// convention to a mandatory review step, the last two the authority. With
+// `scores`, it adds the three marks the audit scores a rule by.
+import RungMark from "./RungMark.astro";
+
+interface Props {
+  scores?: boolean;
+  caption: string;
+}
+const { scores = false, caption } = Astro.props;
+const RUNGS = ["written convention", "editor/local script", "git hook", "CI", "mandatory review step"];
+---
+
+<figure class="ladder">
+  <div class="steps">
+    {
+      RUNGS.map((label, i) => (
+        <div class="step">
+          <span class="step-label">{label}</span>
+          <div class:list={["bar", { auth: i >= 3 }]} style={`height:${28 + i * 22}px`}>
+            {i + 1}
+          </div>
+        </div>
+      ))
+    }
+  </div>
+  <div class="ends"><span>easy to bypass</span><span>harder to bypass →</span></div>
+  {
+    scores && (
+      <div class="scores">
+        <span class="scores-title">The audit scores each rule:</span>
+        <span><span class="absent" aria-hidden="true" />absent</span>
+        <span aria-hidden="true">→</span>
+        <span><RungMark mechanical={false} />convention-only</span>
+        <span aria-hidden="true">→</span>
+        <span><RungMark mechanical={true} />mechanically enforced</span>
+      </div>
+    )
+  }
+  <figcaption>{caption}</figcaption>
+</figure>
+
+<style>
+  .ladder {
+    margin: 0;
+    min-width: 0;
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    align-items: end;
+  }
+  .step {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .step-label {
+    font-size: 13px;
+    line-height: 1.3;
+    font-weight: 500;
+    text-wrap: balance;
+    hyphens: auto;
+  }
+  .bar {
+    border: 1px solid var(--line);
+    border-radius: var(--r-tag);
+    padding: 6px;
+    font-family: var(--serif);
+    font-size: 12px;
+  }
+  .bar.auth {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--accent);
+  }
+  .ends {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+  }
+  .scores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    align-items: center;
+    margin-top: 16px;
+    font-size: 14px;
+  }
+  .scores > span {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .scores-title {
+    font-weight: 600;
+  }
+  .absent {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border: 1.5px solid var(--ink);
+  }
+  figcaption {
+    font-size: 13.5px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+</style>

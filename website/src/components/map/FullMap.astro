@@ -1,0 +1,200 @@
+---
+// The modules page's map: a row per module in adoption order, with its area,
+// scaffolding jobs, levels, the chosen profile's note and its skills.
+import { LEVEL_NAME } from "../../lib/data/modules.ts";
+import { mapRows } from "../../lib/map.ts";
+
+const rows = await mapRows();
+---
+
+<div class="full-table">
+  {rows.map((r) => (
+    <div class="row">
+      <div class="who">
+        <span class="order" aria-label="Adoption order">
+          {r.order}
+        </span>
+        <span class="rid">{r.id}</span>
+        <span class="what">
+          <a class="title" href={`/modules/${r.id}/`}>
+            {r.title}
+          </a>
+          <span class="area" set:html={r.area} />
+          {r.jobs.length > 0 && (
+            <span class="jobs">
+              <span>Scaffolding</span>
+              {r.jobs.map((j) => (
+                <a class="job" href={j.href}>
+                  {j.label}
+                </a>
+              ))}
+            </span>
+          )}
+        </span>
+      </div>
+      <div class="levels">
+        <div class="cells">
+          {r.cells.map((c) => (
+            <a class="cell big" href={`/modules/${r.id}/#${c.level}`} data-states={c.states.join(" ")} data-state={c.states[0]}>
+              {LEVEL_NAME[c.level]}
+              <span class="if"> if</span>
+            </a>
+          ))}
+        </div>
+        {r.notes.map((n, i) => (
+          <span class="note" data-for-profile={i} hidden={i !== 0}>
+            {n}
+          </span>
+        ))}
+      </div>
+      <div class="skills">
+        {r.skills.length ? (
+          r.skills.map((s, i) => (
+            <a class="skill" href={`/skills/${r.skillNames[i]}/`}>
+              {s.prefix}
+              {s.name}
+            </a>
+          ))
+        ) : (
+          <span class="none">No skill; adopt from templates</span>
+        )}
+      </div>
+    </div>
+  ))}
+</div>
+
+<style>
+  .full-table {
+    border-top: 1px solid var(--line);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: 10px 28px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: center;
+  }
+  .who {
+    display: grid;
+    grid-template-columns: 30px 52px minmax(0, 1fr);
+    gap: 6px;
+    align-items: baseline;
+  }
+  .order {
+    font-family: var(--serif);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .rid {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .what {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .title {
+    font-weight: 600;
+    font-size: 17px;
+  }
+  .title:hover {
+    color: var(--accent-hover);
+  }
+  .area {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .jobs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    align-items: baseline;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .job {
+    color: var(--ink);
+    text-decoration: none;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-tag);
+    padding: 0 5px;
+  }
+  .job:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .levels {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .cells {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .cell.big {
+    height: auto;
+    text-decoration: none;
+    text-align: center;
+    font-size: 12px;
+    padding: 6px 2px;
+    color: var(--muted);
+  }
+  .cell.big[data-state="on"] {
+    color: var(--on-accent);
+  }
+  .cell.big[data-state="on"]:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  .cell.big[data-state="cond"] {
+    color: var(--ink);
+  }
+  .cell.big:not([data-state="on"]):hover {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+  .if {
+    display: none;
+  }
+  .cell[data-state="cond"] .if {
+    display: inline;
+  }
+  .note {
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .skills {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .skill {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    text-decoration: none;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 3px 7px;
+    color: var(--ink);
+  }
+  .skill:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .none {
+    font-size: 13px;
+    color: var(--muted);
+  }
+</style>

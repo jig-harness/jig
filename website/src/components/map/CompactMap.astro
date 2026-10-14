@@ -1,0 +1,103 @@
+---
+// The home page's module map: one linked row per module, in id order.
+import { LEVEL_NAME } from "../../lib/data/modules.ts";
+import { mapRows, mapSummary } from "../../lib/map.ts";
+
+const rows = [...(await mapRows())].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+const { profiles, counts, total } = mapSummary();
+---
+
+<div class="compact-table">
+  <div class="compact-head" aria-hidden="true">
+    <span>Id</span>
+    <span>Module</span>
+    <span>Lite</span>
+    <span>Std</span>
+    <span>Strict</span>
+  </div>
+  {
+    rows.map((r) => (
+      <a class="compact-row" href={`/modules/${r.id}/`}>
+        <span class="cid">{r.id}</span>
+        <span class="ctitle">{r.title}</span>
+        {r.cells.map((c) => (
+          <span class="cell" data-states={c.states.join(" ")} data-state={c.states[0]} aria-label={`${LEVEL_NAME[c.level]}: ${c.label}`} />
+        ))}
+      </a>
+    ))
+  }
+  <p class="legend">
+    {profiles.map((prof, i) => (
+      <span data-for-profile={i} hidden={i !== 0}>
+        <strong>{prof.name}</strong> targets {counts[i]} of {total} modules.{" "}
+      </span>
+    ))}
+    <span class="key on" /> target · <span class="key cond" /> only when a stated condition holds.
+  </p>
+</div>
+
+<style>
+  .compact-head,
+  .compact-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) repeat(3, minmax(30px, 46px));
+    gap: 0 6px;
+    align-items: center;
+  }
+  .compact-head {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+  }
+  .compact-head span:nth-child(n + 3) {
+    text-align: center;
+  }
+  .compact-row {
+    text-decoration: none;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+    line-height: 1.3;
+    color: var(--ink);
+  }
+  .compact-row:hover {
+    background: var(--sunk);
+  }
+  .cid {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .ctitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .legend {
+    margin: 10px 0 0;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .legend strong {
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .key {
+    display: inline-block;
+    width: 12px;
+    height: 10px;
+    border-radius: 2px;
+    vertical-align: middle;
+  }
+  .key.on {
+    background: var(--accent);
+  }
+  .key.cond {
+    border: 1.5px dashed var(--line-strong);
+  }
+</style>

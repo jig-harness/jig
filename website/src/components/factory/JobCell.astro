@@ -1,0 +1,115 @@
+---
+// One scaffolding job in the cross-section: its name, what it means, and the
+// modules that build it; verification splits into guides and catches.
+import type { Job } from "../../lib/data/factory.ts";
+import ModChip from "../ModChip.astro";
+
+interface Props {
+  job: Job;
+  short: string;
+}
+const { job, short } = Astro.props;
+---
+
+<div class:list={["job", { ver: job.id === "verification" }]}>
+  <a class="job-name" href={`/factory/#job-${job.id}`}>
+    {job.name}
+  </a>
+  <span class="job-short">{short}</span>
+  {job.id === "verification" ? (
+    <span class="split">
+      <span class="side">
+        <span class="side-name">Guides · before an agent acts</span>
+        <span class="chips">
+          {job.modules.map((id) => (
+            <ModChip id={id} size="small" />
+          ))}
+        </span>
+      </span>
+      <span class="side-arrow" aria-hidden="true">→</span>
+      <span class="side">
+        <span class="side-name">Catches · what slips through</span>
+        <span class="chips">
+          {job.catches.map((id) => (
+            <ModChip id={id} size="small" />
+          ))}
+        </span>
+      </span>
+    </span>
+  ) : (
+    <span class="chips bottom">
+      {job.modules.map((id) => (
+        <ModChip id={id} size="small" />
+      ))}
+      {job.glossary && <span class="plus">+ the glossary</span>}
+    </span>
+  )}
+</div>
+
+<style>
+  .job {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: var(--card);
+    padding: 8px 10px 10px;
+    min-width: 0;
+  }
+  .job-name {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+    text-decoration: none;
+    align-self: flex-start;
+  }
+  .job-name:hover {
+    color: var(--accent-hover);
+  }
+  .job-short {
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+  .bottom {
+    margin-top: auto;
+  }
+  .plus {
+    font-size: 12px;
+  }
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 6px;
+    margin-top: auto;
+  }
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-top: 1px solid var(--line-strong);
+    padding-top: 5px;
+    min-width: 0;
+  }
+  .side-name {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .side-arrow {
+    font-family: var(--mono);
+    font-size: 14px;
+    align-self: center;
+  }
+  @media (max-width: 900px) {
+    .split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .side-arrow {
+      display: none;
+    }
+  }
+</style>

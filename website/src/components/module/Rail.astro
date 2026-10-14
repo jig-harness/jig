@@ -1,0 +1,106 @@
+---
+// The module at a glance: its commands, its job in the scaffolding, its target per profile and its place in the adoption order.
+import "../../styles/module.css";
+import LevelGlyph from "../LevelGlyph.astro";
+import { criteriaOf, moduleMeta, modules, profiles } from "../../lib/data/index.ts";
+import { LEVEL_NAME, LEVELS } from "../../lib/data/modules.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+import { commandOf, factoryPlace, jobTags, levelRank, ordinal } from "../../lib/view.ts";
+
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+const meta = moduleMeta(id);
+const from = `${meta.dir}/README.md`;
+const all = modules();
+const criteria = criteriaOf(id);
+const p = profiles();
+const order = p.order.indexOf(id) + 1;
+const targets = p.profiles.map((x) => {
+  const target = x.targets[id];
+  const cond = x.conditional[id];
+  const level = target ?? cond?.level;
+  return {
+    name: x.name,
+    rank: level ? levelRank(level) : 0,
+    label: level ? `${LEVEL_NAME[level]}${!target && cond ? "*" : ""}` : "—",
+    when: !target && cond ? cond.when : "",
+  };
+});
+const condNote = targets.find((t) => t.when)?.when ?? "";
+const jobs = jobTags(id);
+const place = factoryPlace(id);
+---
+
+<aside class="rail" aria-label={`${id} at a glance`}>
+  <div class="rail-box">
+    <div class="rail-head label">{id} at a glance</div>
+    <div class="rail-part">
+      <span class="rail-cap">Run it with</span>
+      {
+        meta.skills.length ? (
+          meta.skills.map((s) => {
+            const c = commandOf(s);
+            return (
+              <a class="cmd" href={`/skills/${s}/`}>
+                <span>
+                  <span class="cmd-prefix">{c.prefix}</span>
+                  {c.name}
+                </span>
+                <span aria-hidden="true">→</span>
+              </a>
+            );
+          })
+        ) : (
+          <span class="rail-text">No skill runs this module. Adopt it from its templates and reference gates.</span>
+        )
+      }
+    </div>
+    {
+      (jobs.length > 0 || place) && (
+        <div class="rail-part">
+          <span class="rail-cap">
+            Its job in the <a href="/factory/#scaffolding">scaffolding</a>
+          </span>
+          {jobs.map((j) => (
+            <a class="job" href={j.href}>
+              <span class="job-label">{j.label}</span>
+              <span class="job-note">{j.note}</span>
+            </a>
+          ))}
+          {place && (
+            <a class="place" href={place.href}>
+              On the line: {place.label}
+            </a>
+          )}
+        </div>
+      )
+    }
+    <div class="rail-part">
+      <span class="rail-cap">
+        Target per <a class="term" href="/glossary/#profile" data-term="profile">profile</a>
+      </span>
+      {
+        targets.map((t) => (
+          <div class="target">
+            <span>{t.name}</span>
+            <span class="target-level">
+              <LevelGlyph rank={t.rank} />
+              {t.label}
+            </span>
+          </div>
+        ))
+      }
+      {condNote && <span class="cond">* only when {condNote}</span>}
+    </div>
+    <p class="rail-part rail-text rail-order">
+      <strong>{ordinal(order)}</strong> of {all.length} in the default adoption order for an existing repository.
+    </p>
+    <nav class="rail-part rail-nav" aria-label="On this page">
+      {LEVELS.map((level) => <a href={`#${level}`} data-level-link={level}>{LEVEL_NAME[level]} requirements</a>)}
+      <a class="out" href={`${REPO_URL}/blob/main/${from}`}>Source: {from}</a>
+      <a class="out" href={`${REPO_URL}/blob/main/${criteria.source}`}>Criteria: {criteria.source.split("/").pop()}</a>
+    </nav>
+  </div>
+</aside>

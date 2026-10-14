@@ -1,0 +1,67 @@
+---
+// The miss → lens flywheel from M8, step by step, and its two companion cycles.
+import "../../styles/factory.css";
+import SectionHead from "../SectionHead.astro";
+import { flywheel } from "../../lib/data/index.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+const fw = flywheel();
+const M8 = "modules/M8-learning-loop/README.md";
+const inline = (text: string, from = M8) => mdInline(text, from);
+const block = (text: string, from = M8) => md(text, from);
+const shape = /\*([^*]*→[^*]*)\*/.exec(fw.sameShape)?.[1]?.split(/\s*→\s*/) ?? [];
+const FW_TAG: Record<number, string> = { 5: "then required: true", 6: "blocking · advisory · killed" };
+const flyStations = [
+  { n: 0, lead: "An oracle catches a miss", note: "an external reviewer or a human", held: true },
+  ...fw.steps.map((s) => ({ n: s.n, lead: s.lead, note: FW_TAG[s.n] ?? "", held: false })),
+];
+const cycles = await Promise.all(fw.cycles.map((c) => inline(c.body)));
+const flySteps = await Promise.all(fw.steps.map(async (s) => ({ n: s.n, html: await inline(s.body) })));
+---
+
+  <SectionHead id="flywheel" label="The learning loop in detail: miss → lens" note="from M8, the learning loop" />
+  <p class="lead" set:html={await inline(fw.oracle)} />
+  <figure class="fly">
+    <ol class="row fly-row">
+      {
+        flyStations.map((s, i) => (
+          <li class="fly-station">
+            <div class:list={["fly-box", { held: s.held }]}>
+              <span class="num">{s.n}</span>
+              <span class="fly-lead">{s.lead}</span>
+              {s.note && <span class="fly-note">{s.note}</span>}
+            </div>
+            {i < flyStations.length - 1 && <span class="arrow" aria-hidden="true">→</span>}
+          </li>
+        ))
+      }
+    </ol>
+    <div class="return fly-return" aria-hidden="true"><span>▲</span></div>
+    <p class="return-text">↺ The next miss runs the cycle again. The lens list only grows, so today's fix never deletes yesterday's coverage.</p>
+    <figcaption>
+      Figure: the miss → lens flywheel. The filled station is the oracle, outside the automated system; step 5 is where a fixture becomes blocking, and only after it is shown to catch the miss.
+    </figcaption>
+  </figure>
+  <ol class="numbered">{flySteps.map((s) => <li><span class="num">{s.n}</span><p set:html={s.html} /></li>)}</ol>
+
+  <SectionHead label="The two companion cycles" note="the same shape, applied to process feedback and to memory" />
+  <div class="two">
+    <div>
+      <ol class="shape" aria-label="The shared shape">
+        {shape.map((step, i) => <li><span class="num">{i + 1}</span><span>{step}</span>{i < shape.length - 1 && <span aria-hidden="true">→</span>}</li>)}
+      </ol>
+      <p class="small-p" set:html={await inline(fw.sameShape, M8)} />
+    </div>
+    <ul class="cycles">{cycles.map((html) => <li><p set:html={html} /></li>)}</ul>
+  </div>
+  <details class="fold">
+    <summary>
+      <span class="fold-text"><span class="fold-title">{fw.trigger.title}</span><span class="muted small">Why reflection fires on the review-round count, at convergence.</span></span>
+      <span class="fold-open">Open</span>
+    </summary>
+    <div class="prose fold-body" set:html={await block(fw.trigger.body.replace(/^### /gm, "#### "))} />
+  </details>
+  <p class="sources">
+    <a class="out" href={`${REPO_URL}/blob/main/FACTORY.md`}>Source: FACTORY.md</a>
+    <a class="out" href={`${REPO_URL}/blob/main/${M8}`}>Source: {M8}</a>
+  </p>

@@ -1,0 +1,192 @@
+---
+import ActorLine from "../../components/ActorLine.astro";
+import ModChip from "../../components/ModChip.astro";
+import StatusMark from "../../components/StatusMark.astro";
+import Base from "../../layouts/Base.astro";
+import { type Actor, DESIGN_NOT_BUILT } from "../../lib/data/factory.ts";
+import { factory, skills } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+import { modulesRunBy, stationsRunBy } from "../../lib/skills-view.ts";
+
+const all = skills();
+const rows = await Promise.all(
+  all.map(async (s) => ({
+    ...s,
+    prefix: s.command.slice(0, s.command.indexOf(":") + 1),
+    purposeHtml: await mdInline(s.purpose, "plugin/README.md"),
+    stations: stationsRunBy(s.name),
+    mods: modulesRunBy(s.name),
+  })),
+);
+const STATION_NOTE: Record<string, string> = {
+  audit: "Inspects the factory itself, outside the stations",
+  "promote-memory": "The learning loop around both levels",
+};
+const f = factory();
+const unrun: { station: string; href: string; actors: Actor[] }[] = [...f.pipeline, ...f.line]
+  .map((s) => ({
+    station: `${s.id.startsWith("a") ? "Design" : "Execution"} ${s.n} · ${s.name}`,
+    href: `/factory/#station-${s.id}`,
+    actors: s.actors.filter((a) => a.kind === "person" || a.kind === "todo"),
+  }))
+  .filter((s) => s.actors.length > 0);
+unrun.push({ station: "Design · every stage", href: "/factory/#station-band", actors: [{ kind: "person", note: "accepts each stage's artifact" }, ...DESIGN_NOT_BUILT.everyStage] });
+---
+
+<Base title="Skills" description="The skills that run Jig's modules for you, and the stations no skill runs.">
+  <section class="page wrap">
+    <div class="intro">
+      <span class="eyebrow">Skills · {all.filter((s) => !s.agent).length} skills and 1 agent</span>
+      <h1 class="display">The skills that run Jig's modules for you.</h1>
+      <p>They all come from one plugin, installed once per machine: <a href="/plugin/">install and configure it</a>.</p>
+    </div>
+    <div class="th" aria-hidden="true"><span>Invoke as</span><span>What it does</span><span>Runs station</span><span>Runs module</span></div>
+    {
+      [false, true].map((agents) => (
+        <>
+          {agents && (
+            <>
+              <h2 class="h2">Agent</h2>
+              <p class="muted small">Skills call it themselves when a finding is contested; you do not invoke it by hand.</p>
+            </>
+          )}
+          <ol class="rows">
+            {rows
+              .filter((s) => s.agent === agents)
+              .map((s) => (
+                <li>
+                  <a class="cmd" href={`/skills/${s.name}/`}>
+                    <span class="muted">{s.prefix}</span>
+                    {s.name}
+                  </a>
+                  <span class="purpose" set:html={s.purposeHtml} />
+                  <span class="stations">
+                    {s.stations.map((t) => (
+                      <a href={t.href}>
+                        <StatusMark kind="skill" />
+                        <span class="vh">Runs station: </span>
+                        <span>{t.label}</span>
+                      </a>
+                    ))}
+                    {s.stations.length === 0 && <span class="muted">{STATION_NOTE[s.name] ?? "Used at many stations"}</span>}
+                  </span>
+                  <span class="mods">
+                    {s.mods.map((m) => <ModChip id={m.id} />)}
+                    {s.mods.length === 0 && <span class="muted">{s.agent ? "Called by the review skills" : "Supports every module; runs none on its own"}</span>}
+                  </span>
+                </li>
+              ))}
+          </ol>
+        </>
+      ))
+    }
+    <h2 class="h2" id="unrun">Stations no skill runs</h2>
+    <p class="muted small">From <a href="/factory/">the factory page</a>: the stations a person runs, and the ones not built yet, with their roadmap item.</p>
+    <ul class="unrun">
+      {
+        unrun.map((u) => (
+          <li>
+            <a href={u.href}>{u.station}</a>
+            <span class="actors">{u.actors.map((a) => <ActorLine actor={a} />)}</span>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</Base>
+
+<style>
+  .th,
+  .rows li {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1.6fr) minmax(0, 1fr) 150px;
+    gap: 6px 28px;
+  }
+  .th {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+  }
+  .rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .rows li {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: baseline;
+  }
+  .purpose {
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .stations {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    font-size: 13.5px;
+    line-height: 1.35;
+  }
+  .stations a {
+    display: flex;
+    gap: 7px;
+    align-items: flex-start;
+  }
+  .stations :global(.mark) {
+    margin-top: 3px;
+  }
+  .mods {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 13.5px;
+  }
+  .h2 {
+    font-family: var(--serif);
+    font-size: 21px;
+    font-weight: 500;
+    margin: 34px 0 4px;
+  }
+  .small {
+    margin: 0 0 10px;
+    font-size: 14.5px;
+    max-width: 72ch;
+  }
+  .unrun {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+  .unrun li {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 4px 28px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: baseline;
+  }
+  .actors {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .actors :global(.actor) {
+    font-size: 14.5px;
+  }
+  @media (max-width: 1079px) {
+    .th {
+      display: none;
+    }
+    .rows li,
+    .unrun li {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

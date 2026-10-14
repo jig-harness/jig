@@ -363,6 +363,22 @@ Practices a working repository validated, for modules that exist today:
 Done when each module states the practice with its mappings and criteria, and
 a re-audit of Jig scores them.
 
+### 18. The jig-harness.dev website
+
+`website/` renders this repository's documents as a designed site (Astro, a
+static Cloudflare Worker), behind Cloudflare Access for the team while Jig
+is a work in progress; [design/website.md](design/website.md) has how it
+works and what is left. Done when:
+
+- a gate checks the contrast of every text pair and every hover and focus
+  state, in both themes;
+- search works on a phone, and the plugin page shows one agent's steps at a
+  time;
+- `main` deploys the site on every push, without anyone's machine.
+
+Opening the site to the public is a decision for a person, together with
+the repository's own visibility.
+
 ## Later
 
 - **Jira store for reflections.** One issue per finding, of a custom issue

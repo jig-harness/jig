@@ -1,0 +1,9 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "types": ["bun"]
+  },
+  "include": [".astro/types.d.ts", "**/*", "./worker-configuration.d.ts"],
+  "exclude": ["dist", "node_modules"]
+}

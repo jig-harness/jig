@@ -173,6 +173,19 @@ areas:
     deployTier: none
     reviewRisk: high
 
+  website:
+    title: "The jig-harness.dev website"
+    # Published documentation: a change here or in what the site renders
+    # runs the website job, not the gate set on every operating system.
+    category: docs
+    paths: ["website/**"]
+    workspace: []
+    # The site renders the documents, the skills' pages and the audit sheet,
+    # so a change to any of them can break its build.
+    impliedBy:
+      [docs, instructions, plugin, plugin-manifests, drive-pr, resolve-review-comments, do-item, audit-scoring, toolchain]
+    deployTier: none
+
   docs:
     title: "Documentation and vendored seed material"
     category: docs

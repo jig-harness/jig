@@ -1,0 +1,35 @@
+---
+import CrossSection from "../components/CrossSection.astro";
+import Boundary from "../components/factory/Boundary.astro";
+import Flywheel from "../components/factory/Flywheel.astro";
+import Pipelines from "../components/factory/Pipelines.astro";
+import Provides from "../components/factory/Provides.astro";
+import Scaffold from "../components/factory/Scaffold.astro";
+import Stations from "../components/factory/Stations.astro";
+import Base from "../layouts/Base.astro";
+import { factory } from "../lib/data/index.ts";
+import { md, mdInline } from "../lib/markdown.ts";
+import "../styles/factory.css";
+
+const f = factory();
+const introHtml = await md(f.intro.slice(0, -1).join("\n\n"), "FACTORY.md");
+const mapHtml = await mdInline(f.intro[f.intro.length - 1] ?? "", "FACTORY.md");
+---
+
+<Base title="Jig as a software factory" description="A factory of agents runs on scaffolding: what Jig provides to build it, and the stations that stand on it.">
+  <section class="page wrap">
+    <div class="intro">
+      <span class="eyebrow">Jig as a software factory · FACTORY.md</span>
+      <h1 class="display">A factory of agents runs on scaffolding. The stations stand on it.</h1>
+      <div class="prose" set:html={introHtml} />
+      <p class="muted small" set:html={mapHtml} />
+    </div>
+    <CrossSection variant="full" />
+    <Scaffold />
+    <Provides />
+    <Stations />
+    <Pipelines />
+    <Boundary />
+    <Flywheel />
+  </section>
+</Base>

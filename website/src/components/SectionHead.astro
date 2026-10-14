@@ -1,0 +1,29 @@
+---
+// A numbered part of a long page: "2 · The practice", with a short note.
+interface Props {
+  id?: string;
+  label: string;
+  note?: string;
+}
+const { id, label, note } = Astro.props;
+---
+
+<div class="section-head" id={id}>
+  <span class="label">{label}</span>{note && <span class="note">{note}</span>}
+</div>
+
+<style>
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 12px;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+    margin: 40px 0 16px;
+  }
+  .note {
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+</style>
