@@ -32,7 +32,8 @@ changes are marked **Breaking** and say what a consumer changes.
   matching page or term, and the build fails on a broken one. The live audit
   example is rendered at build from a committed run. CI builds the site
   whenever the documents or the site change, and `main` deploys it as a
-  static Cloudflare Worker behind Cloudflare Access. Jig's mark now comes
+  Cloudflare Worker that serves it only to readers who opened a private
+  link, so it can be shown to reviewers outside the team. Jig's mark now comes
   without letters too, square in light, dark and accent, for favicons and
   avatars. [design/website.md](design/website.md) has how it works and what
   is left.

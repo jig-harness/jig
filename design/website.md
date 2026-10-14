@@ -12,7 +12,7 @@ disagree with them.
 
 This is the design of [ROADMAP.md](../ROADMAP.md) item 18. The site is
 built and deployed: `website/` renders every page type below in the final
-design, behind Cloudflare Access. What is left is in
+design, behind a private link. What is left is in
 [§ Build order](#build-order).
 
 ## How it works
@@ -103,13 +103,20 @@ screen).
 
 ### Hosting and access
 
-- **Worker**: `website/wrangler.jsonc`, a Worker that only serves the built
-  files, on the custom domain `jig-harness.dev`; its `workers.dev` and
+- **Worker**: `website/wrangler.jsonc`, a Worker on the custom domain
+  `jig-harness.dev` that serves the built files; its `workers.dev` and
   preview addresses are off, so the domain is the only way in.
-- **Access**: a Cloudflare Access application covers `jig-harness.dev` and
-  `*.jig-harness.dev` with the organization's reusable staff policy (its
-  email domain, a 24-hour session). Until the site is public, every page
-  also carries `noindex` and `robots.txt` disallows everything.
+- **Private link**: until the site is public, `website/worker/index.ts`
+  serves a page only to a reader holding the key. The link
+  `https://jig-harness.dev/?key=<key>` sets a 30-day cookie holding the
+  key's SHA-256 digest and redirects to the same address without the key;
+  a request with neither a valid key nor a valid cookie gets a short "this
+  site is private" page. The key is the Worker's `SITE_KEY` secret
+  (`wrangler secret put SITE_KEY`); with none set, nothing but `robots.txt`
+  is served, and changing it ends every visit and every link sent out. Anyone who holds the link can forward it, so it is for people the
+  site is shown to on purpose, not for anything secret. `robots.txt`
+  (disallow everything) is served to everyone, and every page also carries
+  `noindex`.
 - **Deploy**: `.github/workflows/website.yml` deploys every push to `main`
   (the site renders the documents, so most changes reach it). It needs the
   `CLOUDFLARE_API_TOKEN` secret of the `website` environment: a token
@@ -139,7 +146,7 @@ linter would otherwise report them.
 
 ## Build order
 
-Done: the site, its design, CI and deployment from `main` behind Access.
+Done: the site, its design, CI and deployment from `main` behind a private link.
 Open, each its own pull request:
 
 1. **Contrast gate.** A check, run in CI after the build, that every text
@@ -154,7 +161,7 @@ Open, each its own pull request:
    once the skills' READMEs state their limits and platforms in a form a
    page can read.
 5. **Opening the site** (a person's decision, with the repository's own
-   visibility): remove `noindex`, `robots.txt` and the Access application;
+   visibility): remove `noindex`, `robots.txt` and the key check in `website/worker/index.ts`;
    review the site's own copy (the home page's statements, the limits, the
    figure captions); decide whether the live audit example keeps showing a
    third party's repository or shows Jig's own audit.

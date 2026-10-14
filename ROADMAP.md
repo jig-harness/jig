@@ -354,8 +354,8 @@ a re-audit of Jig scores them.
 ### 18. The jig-harness.dev website
 
 `website/` renders this repository's documents as a designed site (Astro, a
-static Cloudflare Worker), behind Cloudflare Access for the team while Jig
-is a work in progress; [design/website.md](design/website.md) has how it
+static Cloudflare Worker), open only through a private link while Jig is a
+work in progress; [design/website.md](design/website.md) has how it
 works and what is left. Done when:
 
 - a gate checks the contrast of every text pair and every hover and focus

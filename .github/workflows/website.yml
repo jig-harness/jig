@@ -1,8 +1,8 @@
 # Deploys jig-harness.dev from main. The site renders the repository's
 # documents, so every push to main deploys: a static build takes about a
-# minute and a deploy that changes nothing is harmless. Cloudflare Access
-# guards the domain; the Worker serves only its custom domain
-# (website/wrangler.jsonc). Needs the CLOUDFLARE_API_TOKEN secret, a token
+# minute and a deploy that changes nothing is harmless. The Worker serves
+# only its custom domain, and only to readers holding the site key
+# (website/worker/index.ts). Needs the CLOUDFLARE_API_TOKEN secret, a token
 # limited to this account's Workers scripts and the zone's routes and DNS.
 name: website
 
