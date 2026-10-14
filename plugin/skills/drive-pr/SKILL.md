@@ -1800,7 +1800,14 @@ ${CLAUDE_SKILL_DIR}/scripts/round-plan.ts [PR] --json \
 `--area` is **required**. When the repository configures its change-area
 catalog (`drive.change_areas_catalog`, a YAML file whose `areas:` map is keyed
 by area), the value is validated against those keys; without one it is
-recorded unchecked, and the script says so. Name the area the plan's
+recorded unchecked, and the script says so. The catalog is read first, and
+every area's fields the plugin reads (`paths`, `generated[].source`,
+`labels`, `tracker.labels`, `tracker.flags`) are checked: a catalog that
+cannot be read, or has one of those fields of the wrong shape or a glob that
+cannot compile, stops the script with exit `2`, naming the field at fault,
+and nothing is recorded. The rest of the catalog's schema (non-empty `paths`,
+the `agent` values) is not checked here; keeping it valid is the repository's
+own job. Name the area the plan's
 `requiredBy` (or, for an `over-strict`/`proportionate` verdict with no box
 involved, `seedAreas`) points at. This is not derivable from the plan alone: an `under-strict`
 verdict fires precisely because the plan demanded too little, so nothing

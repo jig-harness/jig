@@ -119,6 +119,45 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.24.0] - 2026-10-14
+
+The plugin reads the change-area catalog through one reader.
+
+### Added
+
+- `drive-pr/scripts/lib/change-areas-catalog.ts` is the plugin's one reader
+  of the consumer's change-area catalog (`drive.change_areas_catalog`). It
+  matches a path to the areas whose own `paths` (and `generated[].source`)
+  match it, and returns each area's `tracker.labels` (alone, and joined to
+  the area's own `labels`) and `tracker.flags`, reading `linear.labels` and
+  `linear.flags` as the older spelling. It is step 3 of the `work-batch`
+  build order ([design/work-batch.md](design/work-batch.md)): the batching
+  skill will read area flags through it.
+
+### Changed
+
+- `fleet-health`, `verification-fit.ts`, `determine_agent.ts` and
+  `resolve-conflicts` use that reader and its one path-glob matcher instead
+  of their own. `resolve_conflicts.generated` globs now also understand
+  `{a,b}` and `[...]`, as catalog globs always did; `[!...]` and `[^...]`
+  both negate a class, and a `]` first in a class is one of its members. A
+  `[...]` class no longer matches `/`, so it stays within one path segment
+  as `*` and `?` do, and `**` now also matches a path whose name contains a
+  newline.
+- **Breaking** for a catalog with a malformed area (for example `paths:`
+  that is not a list of strings, or a glob such as `src/{a,b` that compiles
+  to no pattern): `verification-fit.ts` now stops on it with the field at
+  fault, and `determine_agent.ts` routes by labels alone and prints
+  `Catalog unavailable, routing by labels only: <reason>` on stderr.
+  `resolve-conflicts` refuses such a glob in `resolve_conflicts.generated`
+  with exit 2. Fix the field the message names.
+- **Breaking** for the fleet-health sensor, which already refused a catalog
+  whose `paths`, `generated` or `labels` were malformed: it now also refuses
+  one whose `tracker.flags` or `linear.flags` is not a list of strings, and
+  compiles every glob when it loads the catalog rather than only the globs a
+  path reaches. A catalog it refuses leaves merged PRs unclassified, so no PR
+  counts as product progress and the delivery-system share is not measured.
+
 ## [0.23.0] - 2026-10-14
 
 ### Added
@@ -1149,7 +1188,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/docomply/jig/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/docomply/jig/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/docomply/jig/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/docomply/jig/compare/v0.20.0...v0.21.0

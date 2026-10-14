@@ -356,10 +356,13 @@ resolve_conflicts:
 ```
 
 Each entry's `paths` are globs over repository-relative paths (`*` and `?`
-stay within one directory; `**` spans any number), and `command` rebuilds
-them, run from the repository root. An entry also overrides the built-in
-lockfile table for a path it matches. Unknown keys and wrong types are
-refused with the field named (exit 2). `JIG_OVERLAY` points the
+stay within one directory; `**` spans any number; `{a,b}` matches either
+alternative; `[...]` matches one character of a class, `[!...]` or `[^...]`
+one outside it, and never `/`), and `command` rebuilds them, run from the repository
+root. An entry also overrides the built-in lockfile table for a path it
+matches. Unknown keys, wrong types and a glob that cannot compile (an
+unclosed `{`, a backwards range such as `[z-a]`) are refused with the field
+named (exit 2). `JIG_OVERLAY` points the
 scripts at another configuration file.
 
 Built-in lockfiles, matched by file name in any directory and regenerated in

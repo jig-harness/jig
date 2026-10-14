@@ -66,10 +66,8 @@ import {
   type FleetHealthConfig,
   parseConfig,
 } from "../scripts/lib/fleet-health-config.ts";
-import {
-  loadCatalogFile,
-  type PrListing,
-} from "../scripts/lib/fleet-health-sources.ts";
+import { loadCatalogFile } from "../scripts/lib/change-areas-catalog.ts";
+import type { PrListing } from "../scripts/lib/fleet-health-sources.ts";
 
 const DAY = 86_400_000;
 const UNTIL = Date.parse("2026-09-15T00:00:00Z");

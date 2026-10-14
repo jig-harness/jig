@@ -305,6 +305,11 @@ describe("classes", () => {
       "resolve_conflicts.generated[0].command must be a nonempty string",
     ],
     [
+      "a glob that compiles to no pattern",
+      'resolve_conflicts:\n  generated:\n    - paths: ["src/{a,b"]\n      command: make\n',
+      'resolve_conflicts.generated[0].paths[0]: "src/{a,b" is not a valid glob',
+    ],
+    [
       "an unknown entry key",
       'resolve_conflicts:\n  generated:\n    - paths: ["a"]\n      command: make\n      when: always\n',
       "resolve_conflicts.generated[0].when is not a known key",

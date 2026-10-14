@@ -9,7 +9,8 @@
  *
  * The tracker is reached through do-item's tracker port (the adapter the
  * consumer names in `issue_tracker.adapter`); the change-area catalog is the
- * consumer's file (`drive.change_areas_catalog`), read directly.
+ * consumer's file (`drive.change_areas_catalog`), read through the plugin's
+ * one catalog reader (`change-areas-catalog.ts`).
  */
 
 import {
@@ -19,7 +20,6 @@ import {
   parseIssueRefs,
   type WindowSpec,
 } from "./fleet-health.ts";
-import { readFileSync } from "node:fs";
 import { openTracker } from "../../../do-item/scripts/lib/tracker/index.ts";
 import { trackerConfigFrom } from "../../../do-item/scripts/lib/tracker/config.ts";
 import type {
@@ -30,7 +30,11 @@ import {
   consumerRoot,
   layeredConfig,
 } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
-import { load as loadYaml } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import {
+  areasOf,
+  type ChangeAreaCatalog,
+  loadCatalogFile,
+} from "./change-areas-catalog.ts";
 import type { FleetHealthConfig } from "./fleet-health-config.ts";
 import { ghCall as realGhCall } from "./proc.ts";
 
@@ -397,141 +401,6 @@ export interface Classifier {
 }
 
 /**
- * The part of a change-area catalog the sensor reads. The catalog is the
- * consumer's (`drive.change_areas_catalog`); this is the minimal schema:
- *
- *   areas:
- *     <area key>:
- *       paths: ["src/api/**"]          # globs that define membership
- *       generated: [{ source: [...] }] # optional: generator sources, also members
- *       labels: [delivery]             # optional: the area's tracker labels
- *                                      # (`tracker: { labels: [...] }` is read
- *                                      # too, and its older spelling `linear:`)
- */
-export interface CatalogArea {
-  globs: string[];
-  labels: string[];
-}
-
-// Only an omitted field reads as empty. A present one, `null` included, must
-// have its shape: read as empty, a malformed area would silently drop its
-// paths or its delivery labels.
-function stringList(v: unknown, where: string): string[] {
-  if (v === undefined) return [];
-  if (!Array.isArray(v) || !v.every((x) => typeof x === "string"))
-    throw new Error(`${where}: expected a list of strings`);
-  return v as string[];
-}
-
-/** Validate a parsed catalog into its areas. */
-export function parseCatalog(raw: unknown): Map<string, CatalogArea> {
-  if (!isRecord(raw) || !isRecord(raw.areas))
-    throw new Error("the change-area catalog has no `areas` mapping");
-  const out = new Map<string, CatalogArea>();
-  for (const [key, area] of Object.entries(raw.areas)) {
-    if (!isRecord(area)) throw new Error(`catalog area ${key}: not a mapping`);
-    const generated = area.generated === undefined ? [] : area.generated;
-    if (!Array.isArray(generated))
-      throw new Error(`catalog area ${key}.generated: expected a list`);
-    const globs = [
-      ...stringList(area.paths, `catalog area ${key}.paths`),
-      ...generated.flatMap((g, i) => {
-        if (!isRecord(g))
-          throw new Error(`catalog area ${key}.generated[${i}]: not a mapping`);
-        return stringList(
-          g.source,
-          `catalog area ${key}.generated[${i}].source`,
-        );
-      }),
-    ];
-    const labels = [
-      ...stringList(area.labels, `catalog area ${key}.labels`),
-      ...["tracker", "linear"].flatMap((block) => {
-        const b = area[block];
-        if (b === undefined) return [];
-        if (!isRecord(b))
-          throw new Error(`catalog area ${key}.${block}: not a mapping`);
-        return stringList(b.labels, `catalog area ${key}.${block}.labels`);
-      }),
-    ];
-    out.set(key, { globs, labels });
-  }
-  return out;
-}
-
-const globCache = new Map<string, RegExp>();
-
-/**
- * A path glob as a regular expression: `**` spans directories, `*` and `?`
- * stay within one segment, `{a,b}` alternates and `[...]` is a character
- * class. Dotfiles match like any other name (the catalog lists paths such as
- * `.github/**`).
- */
-export function globToRegExp(glob: string): RegExp {
-  const hit = globCache.get(glob);
-  if (hit !== undefined) return hit;
-  let re = "";
-  let depth = 0;
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob.charAt(i);
-    if (c === "*") {
-      if (glob.charAt(i + 1) === "*") {
-        const slashAfter = glob.charAt(i + 2) === "/";
-        re += slashAfter ? "(?:.*/)?" : ".*";
-        i += slashAfter ? 2 : 1;
-      } else re += "[^/]*";
-    } else if (c === "?") re += "[^/]";
-    else if (c === "{") {
-      depth++;
-      re += "(?:";
-    } else if (c === "}" && depth > 0) {
-      depth--;
-      re += ")";
-    } else if (c === "," && depth > 0) re += "|";
-    else if (c === "[") {
-      const end = glob.indexOf("]", i + 1);
-      if (end === -1) re += "\\[";
-      else {
-        const body = glob.slice(i + 1, end).replace(/^!/, "^");
-        re += `[${body.replace(/\\/g, "\\\\")}]`;
-        i = end;
-      }
-    } else re += c.replace(/[.+^${}()|\\/]/g, "\\$&");
-  }
-  const compiled = new RegExp(`^${re}$`);
-  globCache.set(glob, compiled);
-  return compiled;
-}
-
-export function matchesGlob(file: string, glob: string): boolean {
-  return globToRegExp(glob).test(file);
-}
-
-/** The areas whose globs claim `file`. */
-export function areasOf(
-  file: string,
-  catalog: ReadonlyMap<string, CatalogArea>,
-): string[] {
-  const out: string[] = [];
-  for (const [key, area] of catalog)
-    if (area.globs.some((g) => matchesGlob(file, g))) out.push(key);
-  return out;
-}
-
-/** Read the consumer's catalog. Throws with the reason. */
-export function loadCatalogFile(path: string): Map<string, CatalogArea> {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (err) {
-    throw new Error(
-      `the change-area catalog ${path} could not be read (${err instanceof Error ? err.message : String(err)})`,
-    );
-  }
-  return parseCatalog(loadYaml(text));
-}
-
-/**
  * Build the classifier from the consumer's catalog. A delivery-system area is
  * one whose own labels carry `labels.delivery_system` — the catalog's own
  * statement, not a second list here — and a product area is one
@@ -541,7 +410,7 @@ export function loadCatalogFile(path: string): Map<string, CatalogArea> {
  */
 export async function makeClassifier(
   cfg: FleetHealthConfig,
-  load: (path: string) => Map<string, CatalogArea> = loadCatalogFile,
+  load: (path: string) => ChangeAreaCatalog = loadCatalogFile,
 ): Promise<Classifier> {
   if (cfg.catalogPath === null)
     throw new Error(

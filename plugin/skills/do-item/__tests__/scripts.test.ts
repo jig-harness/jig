@@ -13,8 +13,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { parseCatalog } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import {
-  type Catalog,
   determineAgents as determine,
   parseAgentRouting,
 } from "../scripts/determine_agent.ts";
@@ -26,11 +26,14 @@ const ROUTING = parseAgentRouting(
   loadYaml(readFileSync(OVERLAY, "utf8")) as Record<string, unknown>,
 );
 
-const determineAgents = (
-  labels: string[],
-  title: string,
-  catalog: Catalog | null,
-) => determine(labels, title, catalog, ROUTING);
+// Catalogs are written as the YAML would parse, then read as the script does.
+const determineAgents = (labels: string[], title: string, catalog: unknown) =>
+  determine(
+    labels,
+    title,
+    catalog === null ? null : parseCatalog(catalog),
+    ROUTING,
+  );
 
 // Every spawn goes through this env: git hook variables scrubbed, the
 // fixture overlay as the consumer configuration, and no Linear API key, so
@@ -557,6 +560,43 @@ describe("catalog agent resolution", () => {
         primary_agent: "DevOps Agent",
         catalog_source: "DevOps Agent",
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("routes by labels and says why when the catalog has a malformed area", () => {
+    const dir = mkdtempSync(join(tmpdir(), "do-item-catalog-"));
+    try {
+      writeFileSync(
+        join(dir, "catalog.yaml"),
+        "areas:\n  backend:\n    agent: devops\n    paths: src/**\n",
+      );
+      writeFileSync(
+        join(dir, "overlay.yaml"),
+        `${readFileSync(OVERLAY, "utf8")}drive:\n  change_areas_catalog: ${join(dir, "catalog.yaml")}\n`,
+      );
+      const r = spawnSync(
+        process.execPath,
+        [join(SCRIPTS, "determine_agent.ts"), "-"],
+        {
+          encoding: "utf8",
+          input: '{"labels":["codearea:backend"]}',
+          env: {
+            ...gitCleanEnv(),
+            JIG_OVERLAY: join(dir, "overlay.yaml"),
+          },
+        },
+      );
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout)).toMatchObject({
+        primary_agent: "Backend Agent",
+      });
+      expect("catalog_source" in JSON.parse(r.stdout)).toBe(false);
+      expect(r.stderr).toContain(
+        "Catalog unavailable, routing by labels only:",
+      );
+      expect(r.stderr).toContain("catalog area backend.paths");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

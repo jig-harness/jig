@@ -15,6 +15,10 @@
  * A `generated` entry also overrides the built-in table for a path it matches.
  */
 import { posix } from "node:path";
+import {
+  globProblem,
+  matchesGlob,
+} from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import { fail } from "../../../resolve-review-comments/scripts/lib/cli.ts";
 import { fieldInMessage } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
 import {
@@ -56,23 +60,13 @@ export const LOCKFILES: Readonly<Record<string, string>> = {
   "composer.lock": "composer update --lock",
 };
 
-/**
- * A path glob as a regular expression over a repository-relative path:
- * `*` and `?` stay within one directory, `**` spans any number of them.
- */
-export function globToRegExp(glob: string): RegExp {
-  let out = "";
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i] as string;
-    if (c === "*" && glob[i + 1] === "*") {
-      const slash = glob[i + 2] === "/";
-      out += slash ? "(?:.*/)?" : ".*";
-      i += slash ? 2 : 1;
-    } else if (c === "*") out += "[^/]*";
-    else if (c === "?") out += "[^/]";
-    else out += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+/** `[<index>]: <reason>` for the first glob that cannot compile, or `null`. */
+function firstInvalidGlob(paths: readonly string[]): string | null {
+  for (const [j, glob] of paths.entries()) {
+    const problem = globProblem(glob);
+    if (problem !== null) return `[${j}]: ${problem}`;
   }
-  return new RegExp(`^${out}$`);
+  return null;
 }
 
 const SECTION = "resolve_conflicts";
@@ -119,6 +113,8 @@ export function generatedEntries(): GeneratedEntry[] {
       paths.some((p) => typeof p !== "string" || p.trim() === "")
     )
       bad(`${at}.paths must be a nonempty list of path globs`);
+    const invalid = firstInvalidGlob(paths as string[]);
+    if (invalid !== null) bad(`${at}.paths${invalid}`);
     if (typeof record.command !== "string" || record.command.trim() === "")
       bad(`${at}.command must be a nonempty string`);
     return { paths: paths as string[], command: record.command as string };
@@ -131,7 +127,7 @@ export function regenerateFor(
   entries: readonly GeneratedEntry[],
 ): (Regenerate & { class: "lockfile" | "generated" }) | null {
   for (const entry of entries)
-    if (entry.paths.some((glob) => globToRegExp(glob).test(path)))
+    if (entry.paths.some((glob) => matchesGlob(path, glob)))
       return {
         class: "generated",
         command: entry.command,

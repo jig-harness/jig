@@ -1,13 +1,9 @@
 /**
- * The pure pieces: marker parsing, path globs, the lockfile table, conflict
+ * The pure pieces: marker parsing, the lockfile table, conflict
  * kinds, pull-request numbers and the line filter of the dropped-change check.
  */
 import { describe, expect, it } from "bun:test";
-import {
-  globToRegExp,
-  LOCKFILES,
-  regenerateFor,
-} from "../scripts/lib/classify.ts";
+import { LOCKFILES, regenerateFor } from "../scripts/lib/classify.ts";
 import { prNumber } from "../scripts/conflict-map.ts";
 import { significant } from "../scripts/lib/drops.ts";
 import { markerKind, markerLines, parseHunks } from "../scripts/lib/markers.ts";
@@ -79,24 +75,13 @@ describe("parseHunks", () => {
   });
 });
 
-describe("globToRegExp", () => {
-  const cases: [string, string, boolean][] = [
-    ["src/generated/**", "src/generated/a/b.ts", true],
-    ["src/generated/**", "src/other/a.ts", false],
-    ["**/schema.json", "schema.json", true],
-    ["**/schema.json", "a/b/schema.json", true],
-    ["docs/*.md", "docs/index.md", true],
-    ["docs/*.md", "docs/guide/index.md", false],
-    ["file?.txt", "file1.txt", true],
-    ["a.b", "axb", false],
-  ];
-  for (const [glob, path, matches] of cases)
-    it(`${glob} ${matches ? "matches" : "does not match"} ${path}`, () => {
-      expect(globToRegExp(glob).test(path)).toBe(matches);
-    });
-});
-
 describe("regenerateFor", () => {
+  it("matches configured globs with alternatives and character classes", () => {
+    const entries = [{ paths: ["gen/{api,web}/[ab].ts"], command: "make" }];
+    expect(regenerateFor("gen/web/b.ts", entries)?.class).toBe("generated");
+    expect(regenerateFor("gen/cli/b.ts", entries)).toBeNull();
+  });
+
   it("knows the common lockfiles by name, in any directory", () => {
     expect(Object.keys(LOCKFILES)).toContain("Cargo.lock");
     expect(regenerateFor("services/api/go.sum", [])).toEqual({

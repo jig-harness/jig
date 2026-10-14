@@ -14,9 +14,10 @@ five closures cost about what one costs today.
 
 This is the design of [ROADMAP.md](../ROADMAP.md) item 13: a `work-batch`
 skill in the `jig` plugin, moved from a working repository that uses it
-today. The first two steps of the [build order](#build-order) are built: the
-tracker reads in the [tracker interface](../GLOSSARY.md) and the
-tracker-neutral key in the [change-area catalog](../GLOSSARY.md). When the
+today. Built so far, as the [build order](#build-order) marks: the tracker
+reads in the [tracker interface](../GLOSSARY.md), the tracker-neutral key in
+the [change-area catalog](../GLOSSARY.md) and the plugin's shared catalog
+reader. When the
 item is finished, this design leaves the folder
 ([design/README.md](README.md)).
 
@@ -279,14 +280,14 @@ reported before Jig takes the skill.
 
 1. **Tracker reads** (built): `openIssues`, `openChildren`, `poolIssue`.
 2. **Tracker-neutral catalog key** (built): the change-area catalog's
-   tracker block is `tracker:`. `drive-pr`'s fleet-health sensor still reads
-   the older `linear:` spelling, so a repository can rename its catalog when
+   tracker block is `tracker:`. The plugin's catalog reader still reads the
+   older `linear:` spelling, so a repository can rename its catalog when
    convenient.
-3. **A shared catalog reader.** `drive-pr`'s fleet-health sensor already
-   reads the consumer repository's catalog (`drive.change_areas_catalog`),
-   with code that ships in the plugin, and matches paths to areas
-   (`parseCatalog`, `globToRegExp` in `fleet-health-sources.ts`). It moves
-   to a library both skills use and also reads `tracker.flags`. The full
+3. **A shared catalog reader** (built): `drive-pr`'s
+   `scripts/lib/change-areas-catalog.ts` reads the consumer repository's
+   catalog (`drive.change_areas_catalog`) for every skill, matches a path to
+   the areas whose own `paths` match it (`areasOf`), and returns each area's
+   `tracker.labels` and `tracker.flags`. The full
    [M3](../modules/M3-change-area-catalog/README.md) resolver, with its
    implied-by closure, is not needed for batching and stays a "Later" item.
    Jig's own `scripts/change-areas.ts` checks Jig's catalog for Jig's CI and

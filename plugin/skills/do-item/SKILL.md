@@ -448,7 +448,12 @@ routing below remain **exact**.
      (`general-purpose` when `do_item.agents` is absent).
    - `do_item.agents.codearea_areas` — `{label: areaKey}`: an area label
      selects an area in the change-area catalog (`drive.change_areas_catalog`),
-     and that area's own `agent` field is the primary signal.
+     and that area's own `agent` field is the primary signal. A catalog that
+     cannot be read, or has an area whose `paths`, `generated` sources,
+     `labels` or `tracker` block are malformed or whose globs do not compile,
+     is not used (the area's other fields, `agent` included, are not
+     checked): routing falls back to the labels below, and the script prints
+     `Catalog unavailable, routing by labels only: <reason>` on stderr.
    - `do_item.agents.catalog` — `{catalogAgent: agent}`: maps the catalog's
      `agent` values to agent types.
    - `do_item.agents.labels` — `{label: agent}`: the fallback when no catalog

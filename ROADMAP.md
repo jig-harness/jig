@@ -252,12 +252,10 @@ it once: review cost is paid per pull request, so batching closes small
 issues faster than one pull request each. It moves from a working repository
 that uses it today, with that repository's labels turned into configuration;
 [design/work-batch.md](design/work-batch.md) has the procedure, the
-configuration and the build order. The tracker reads it needs and the
-tracker-neutral catalog key are built. Done when:
+configuration and the build order. The tracker reads it needs, the
+tracker-neutral catalog key and the plugin's shared catalog reader are built.
+Done when:
 
-- one catalog reader in the plugin, shared by `drive-pr` and `work-batch`,
-  matches paths to areas and reads each area's `tracker.labels` and
-  `tracker.flags`;
 - `work-batch` is in the plugin with its tests, reading every label through
   configuration, and the working repository's copy is deleted;
 - no setting can remove a solo-only flag that the hitl or manual-ops label

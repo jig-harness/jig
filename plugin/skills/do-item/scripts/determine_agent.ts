@@ -34,8 +34,8 @@
  *     bun get_issue.ts ENG-123 | bun determine_agent.ts -
  *     bun determine_agent.ts - --catalog /path/to/catalog.yaml
  *
- * YAML parsing uses the review skill's vendored js-yaml build (the plugin
- * cache has no `node_modules`).
+ * The catalog is read through the plugin's one change-area catalog reader
+ * (drive-pr's `change-areas-catalog.ts`).
  */
 
 import { readFileSync } from "node:fs";
@@ -46,7 +46,10 @@ import {
   withSource,
 } from "../../resolve-review-comments/scripts/lib/consumer.ts";
 import { formatField } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
-import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import {
+  type ChangeAreaCatalog,
+  loadCatalogFile,
+} from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { doItemSection } from "./lib/overlay.ts";
 
@@ -61,10 +64,6 @@ export interface AgentRouting {
   labels: Record<string, string>;
   titleKeywords: Record<string, string>;
   scouts: Record<string, string[]>;
-}
-
-export interface Catalog {
-  areas?: Record<string, { agent?: string }>;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -155,13 +154,22 @@ export function catalogPathFromOverlay(
   return isAbsolute(p) ? p : join(consumerRoot(), p);
 }
 
-/** Load a catalog; `null` if it is unavailable or unparseable. */
-export function loadCatalog(path: string): Catalog | null {
+/**
+ * Load a catalog. When it is unavailable or not valid, `catalog` is `null` and
+ * `error` says why: routing then falls back to the labels.
+ */
+export function loadCatalog(
+  path: string,
+):
+  | { catalog: ChangeAreaCatalog; error: null }
+  | { catalog: null; error: string } {
   try {
-    const parsed = loadYaml(readFileSync(path, "utf8"));
-    return isRecord(parsed) ? (parsed as Catalog) : null;
-  } catch {
-    return null;
+    return { catalog: loadCatalogFile(path), error: null };
+  } catch (err) {
+    return {
+      catalog: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -173,19 +181,18 @@ export function loadCatalog(path: string): Catalog | null {
  */
 function catalogAgentsFromLabels(
   labels: string[],
-  catalog: Catalog | null,
+  catalog: ChangeAreaCatalog | null,
   routing: AgentRouting,
 ): { agentTypes: string[]; resolvedLabels: Set<string> } {
   const agentTypes: string[] = [];
   const resolvedLabels = new Set<string>();
   if (catalog === null) return { agentTypes, resolvedLabels };
-  const areas = catalog.areas ?? {};
   const hits: Array<[string, string, string]> = [];
   for (const label of labels) {
     const labelLower = label.toLowerCase();
     const areaKey = lookup(routing.codeareaAreas, labelLower);
     if (areaKey === undefined) continue;
-    const catalogAgent = lookup(areas, areaKey)?.agent;
+    const catalogAgent = catalog.get(areaKey)?.fields.agent;
     if (typeof catalogAgent === "string" && catalogAgent !== "")
       hits.push([areaKey, catalogAgent, labelLower]);
   }
@@ -204,7 +211,7 @@ function catalogAgentsFromLabels(
 export function determineAgents(
   labels: string[],
   title: string,
-  catalog: Catalog | null,
+  catalog: ChangeAreaCatalog | null,
   routing: AgentRouting,
 ): Record<string, unknown> {
   const agents = new Set<string>();
@@ -293,6 +300,27 @@ function readRouting(catalogArg: string | null): {
   }
 }
 
+/**
+ * The configured catalog, or `null`. A configured catalog that cannot be read
+ * is reported even without --verbose: routing by labels alone is otherwise
+ * silent.
+ */
+function configuredCatalog(
+  catalogPath: string | null,
+  verbose: boolean,
+): ChangeAreaCatalog | null {
+  if (catalogPath === null) {
+    if (verbose)
+      console.error("Catalog not configured (drive.change_areas_catalog)");
+    return null;
+  }
+  const { catalog, error } = loadCatalog(catalogPath);
+  if (error !== null)
+    console.error(`Catalog unavailable, routing by labels only: ${error}`);
+  else if (verbose) console.error(`Catalog loaded: ${catalogPath}`);
+  return catalog;
+}
+
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2), {
     flags: ["verbose"],
@@ -348,19 +376,11 @@ async function main(): Promise<number> {
     const title = rawTitle ?? "";
 
     const { routing, catalogPath } = readRouting(catalogArg);
-    const catalog = catalogPath === null ? null : loadCatalog(catalogPath);
-
     if (verbose) {
       console.error(`Labels: ${JSON.stringify(labels)}`);
       console.error(`Title: ${title}`);
-      console.error(
-        catalogPath === null
-          ? "Catalog not configured (drive.change_areas_catalog)"
-          : catalog !== null
-            ? `Catalog loaded: ${catalogPath}`
-            : `Catalog unavailable: ${catalogPath}`,
-      );
     }
+    const catalog = configuredCatalog(catalogPath, verbose);
 
     const result = determineAgents(labels, title, catalog, routing);
 

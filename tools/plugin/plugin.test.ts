@@ -753,6 +753,76 @@ fix_ci:
   expect(fixCi.stdout).toContain("  - bun run generate\n");
 });
 
+test("one change-area catalog reader serves the skills from the plugin copy", () => {
+  const consumer = consumerRepo(
+    "catalog",
+    `issue_tracker:
+  team: TASK
+do_item:
+  agents:
+    codearea_areas: { "codearea:api": api }
+    catalog: { backend: Backend Agent }
+drive:
+  change_areas_catalog: .config/change-areas.yaml
+`,
+  );
+  writeFileSync(
+    join(consumer, ".config", "change-areas.yaml"),
+    `areas:
+  api:
+    paths: ["src/{api,rpc}/**"]
+    agent: backend
+    linear:
+      labels: [area:api]
+      flags: [security]
+`,
+  );
+  const cache = join(scratch, "cache", "skills");
+  const agent = spawnSync(
+    process.execPath,
+    [join(cache, "do-item", "scripts", "determine_agent.ts"), "-"],
+    {
+      cwd: consumer,
+      env,
+      encoding: "utf8",
+      input: '{"labels":["codearea:api"],"title":"x"}',
+    },
+  );
+  expectSpawnExit({ ...agent, exitCode: agent.status }, 0);
+  expect(JSON.parse(agent.stdout)).toMatchObject({
+    primary_agent: "Backend Agent",
+  });
+
+  const probe = join(consumer, "catalog-probe.ts");
+  writeFileSync(
+    probe,
+    `import { areasOf, loadCatalogFile } from ${JSON.stringify(join(cache, "drive-pr", "scripts", "lib", "change-areas-catalog.ts"))};
+const c = loadCatalogFile(".config/change-areas.yaml");
+console.log(JSON.stringify({ areas: areasOf("src/rpc/x.ts", c), flags: c.get("api")?.flags }));
+`,
+  );
+  const read = spawnSync(process.execPath, [probe], {
+    cwd: consumer,
+    env,
+    encoding: "utf8",
+  });
+  expectSpawnExit({ ...read, exitCode: read.status }, 0);
+  expect(JSON.parse(read.stdout)).toEqual({
+    areas: ["api"],
+    flags: ["security"],
+  });
+
+  // Every skill matches paths through that module: no second glob compiler.
+  const definitions = spawnSync(
+    "git",
+    ["grep", "-l", "-F", "function globToRegExp(", "--", "plugin/"],
+    { cwd: root, env, encoding: "utf8" },
+  );
+  expect(definitions.stdout.trim().split("\n")).toEqual([
+    "plugin/skills/drive-pr/scripts/lib/change-areas-catalog.ts",
+  ]);
+});
+
 test("the audit reads its schema, criteria and version from the plugin copy", () => {
   const consumer = consumerRepo("audit", "gates:\n  comand: make check\n");
   const commit = spawnSync(

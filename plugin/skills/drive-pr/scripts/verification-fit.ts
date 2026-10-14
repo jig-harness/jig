@@ -63,7 +63,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
-import { readChangeAreaCatalog } from "./lib/change-areas-catalog.ts";
+import { loadCatalogFile } from "./lib/change-areas-catalog.ts";
 import { readStdinAll } from "./lib/cli.ts";
 import { changeAreasCatalogPath } from "./lib/overlay.ts";
 import { gitIdentityEnv, run, tsArgv } from "./lib/proc.ts";
@@ -244,7 +244,7 @@ if (catalogPath === undefined) {
 } else {
   let knownAreas: Set<string>;
   try {
-    knownAreas = new Set(Object.keys(readChangeAreaCatalog(catalogPath).areas));
+    knownAreas = new Set(loadCatalogFile(catalogPath).keys());
   } catch (err) {
     die(err instanceof Error ? err.message : String(err));
   }
