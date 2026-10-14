@@ -112,9 +112,10 @@ screen).
   also carries `noindex` and `robots.txt` disallows everything.
 - **Deploy**: `.github/workflows/website.yml` deploys every push to `main`
   (the site renders the documents, so most changes reach it). It needs the
-  `CLOUDFLARE_API_TOKEN` repository secret: a token limited to the account's
-  Workers scripts and the zone's routes and domain-name records. Without it, deploy from a
-  machine logged in with `wrangler login`: `cd website && bun run deploy`.
+  `CLOUDFLARE_API_TOKEN` secret of the `website` environment: a token
+  limited to the account's Workers scripts and the zone's routes and
+  domain-name records. To deploy from a machine instead, log in with
+  `wrangler login`: `cd website && bun run deploy`.
 - **CI**: the `website` change-area selects the `website` job in
   `gates.yml` (type check, build, link check) for any change to the site or
   to a document it renders; the required `gates` check waits for it.
@@ -138,8 +139,8 @@ linter would otherwise report them.
 
 ## Build order
 
-Done: the site, its design, CI and deployment behind Access. Open, each its
-own pull request:
+Done: the site, its design, CI and deployment from `main` behind Access.
+Open, each its own pull request:
 
 1. **Contrast gate.** A check, run in CI after the build, that every text
    pair and every hover and focus state on every page meets the contrast
@@ -152,9 +153,7 @@ own pull request:
 4. **Skill page summary cards.** "It never" and "Runs on" for each skill,
    once the skills' READMEs state their limits and platforms in a form a
    page can read.
-5. **The deploy token** as the repository secret, so `main` deploys without
-   anyone's machine.
-6. **Opening the site** (a person's decision, with the repository's own
+5. **Opening the site** (a person's decision, with the repository's own
    visibility): remove `noindex`, `robots.txt` and the Access application;
    review the site's own copy (the home page's statements, the limits, the
    figure captions); decide whether the live audit example keeps showing a

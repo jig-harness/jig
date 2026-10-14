@@ -372,8 +372,7 @@ works and what is left. Done when:
 - a gate checks the contrast of every text pair and every hover and focus
   state, in both themes;
 - search works on a phone, and the plugin page shows one agent's steps at a
-  time;
-- `main` deploys the site on every push, without anyone's machine.
+  time.
 
 Opening the site to the public is a decision for a person, together with
 the repository's own visibility.
