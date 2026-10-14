@@ -15,6 +15,7 @@ import { checkAuditFit } from "./check-audit-fit.ts";
 import { checkChangeAreas } from "./change-areas.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { checkReviewRisk } from "./review-risk.ts";
+import { checkContextBudget } from "./check-context-budget.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -118,6 +119,9 @@ async function gates(fast: boolean): Promise<number> {
     console.log(`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`);
   const test = testArgs(skipped, configuredIgnores());
   const { steps, checks } = plan(fast, test);
+  // First, as in CI, where it runs before dependencies are installed.
+  const budget = checkContextBudget(root);
+  if (budget) return budget;
   for (const args of steps) {
     const child = Bun.spawn([process.execPath, ...args], {
       cwd: root,

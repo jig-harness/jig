@@ -352,7 +352,6 @@ Practices a working repository validated, for modules that exist today:
   - a post-merge stage;
   - a lifecycle map with a check that every named skill exists.
 - **M0, M4, M5 and M8**:
-  - always-loaded context as a budget for each consuming runtime;
   - model routing with family-alias pins and a generated roster;
   - instructions that keep working in every runtime;
   - the M4 items listed as future that have been validated;

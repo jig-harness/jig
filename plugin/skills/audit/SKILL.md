@@ -1,6 +1,6 @@
 ---
 name: audit
-description: "Audit a repository against Jig's practice modules: check its Jig configuration against the repository, score every module's maturity criteria with file-path evidence against the profile the team aims for, compare with the committed record of the last audit, and report prioritized recommendations as an HTML audit sheet the team marks its decisions in; records those decisions when they are pasted back; read-only unless asked to apply a recommendation. Use to see where a repository stands, to re-check it for drift, or to compare several repositories."
+description: "Audit a repository against Jig's practice modules: check its Jig configuration, score each module's maturity criteria with file-path evidence against the target profile, compare with the last audit's committed record, and report prioritized recommendations as an HTML audit sheet; records the team's decisions when pasted back. Read-only unless asked to apply a recommendation. Use to see where a repository stands, re-check it for drift, or compare several repositories."
 argument-hint: "[apply <ref> ...] | [portfolio <name>=<record> ...] | (paste an audit_feedback block)"
 allowed-tools: "Read Write Edit Grep Glob Agent Bash(bun *) Bash(git *) Bash(gh *)"
 ---

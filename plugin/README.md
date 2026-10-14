@@ -560,6 +560,12 @@ of the plugin:
   built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
   with its licence and a test that keeps it identical to the pinned package
   (as `resolve-review-comments/scripts/lib/vendor/js-yaml.mjs` is).
+- **Description:** keep the frontmatter `description` (and an agent's) at 512
+  characters or fewer; 1,024 is the hard limit. Every repository that installs
+  the plugin pays for it in every session, so
+  [scripts/check-context-budget.ts](../scripts/check-context-budget.ts) fails
+  `bun run gates` and CI past 512, and checks the plugin's whole skill listing
+  against its budget ([M0](../modules/M0-instruction-architecture/reference/context-budget/README.md)).
 - **Harness frontmatter:** fields only one tool reads (Claude Code's
   `allowed-tools`, `argument-hint`) are ignored by the other.
 - **Tests:** keep the skill's tests in `plugin/skills/<name>/__tests__/`; extend

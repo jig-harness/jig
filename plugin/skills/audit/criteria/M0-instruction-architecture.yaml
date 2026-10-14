@@ -3,7 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 #
 # No probe on the instruction file or the glossary: an equivalent may carry
-# any name, so no file search can rule either out.
+# any name, so no file search can rule either out. The CI list in
+# context-budget-gated is M1's ci-runs-gates-on-pr list; an anchor cannot
+# reach across files, so keep the two in step.
 module: M0
 name: instruction-architecture
 purpose: >-
@@ -48,11 +50,15 @@ criteria:
     statement: >-
       Every tool-specific instruction file (CLAUDE.md, .cursor rules,
       copilot-instructions.md, ...) carries only runtime-specific content
-      and brings in the universal file, duplicating none of it: through the
-      runtime's import where it has one, a pointer only where it has none.
+      and brings in the universal file, maintaining none of it by hand,
+      through the runtime's import or its native read of the universal file.
+      Where a runtime has neither, the delta it needs is generated from it and
+      checked for freshness, or the gap is recorded in the load model; a
+      pointer line alone is not delivery.
     observe:
-      - "each tool-specific file imports the universal file where its runtime supports an import (Claude Code: an @AGENTS.md line), and points to it otherwise"
-      - "no rule text appears in both the universal file and a tool delta"
+      - "each tool-specific file imports the universal file (Claude Code: an @AGENTS.md line), or its runtime reads the universal file natively"
+      - "where a runtime has neither, its delta is generated from the universal file, or the gap is recorded where the load model is; a pointer line alone does not count"
+      - "no rule text is maintained by hand in both the universal file and a tool delta; a delta generated from the universal file and checked for freshness is a projection of it, not a copy"
 
   - id: per-directory-instructions
     level: standard
@@ -76,6 +82,21 @@ criteria:
     observe:
       - "rules directory contains a README stating the loading model"
       - "rules carry path frontmatter unless deliberately universal"
+
+  - id: load-model-recorded
+    level: standard
+    requires: convention
+    statement: >-
+      What each agent runtime the team uses actually loads is recorded in one
+      place, with the date it was observed and a procedure to check it again,
+      and which instruction file wins when two disagree is written as an
+      authoring convention, not assumed runtime behaviour.
+    observe:
+      - "one document records which instruction files each runtime loads, and when"
+      - "each observation carries a date (and the runtime version where known)"
+      - "a procedure to re-check the observations is written beside them"
+      - "precedence between instruction files is stated as a convention (a nested file extends its parent; a contradiction is a bug)"
+    since: 0.22.0
 
   - id: dispositions-with-flip-conditions
     level: standard
@@ -105,3 +126,45 @@ criteria:
     observe:
       - "an owner is named in or alongside the universal instruction file"
       - "a review cadence is stated (and last-review date is plausible)"
+
+  - id: context-budget-gated
+    level: strict
+    requires: mechanical
+    statement: >-
+      CI measures the always-loaded context against the smallest budget of
+      every runtime and reviewer that reads it (the cumulative root-to-directory
+      instruction chain, each skill and agent description, and the aggregate
+      skill listing) in a step that runs before dependencies are installed,
+      and fails when any is over.
+    observe:
+      - "a CI step measures every root-to-directory instruction chain against a byte budget no larger than the smallest consumer's (Codex: 32,768 bytes by default)"
+      - "a CI step checks each skill and agent description against a per-item cap and the skill listing against an aggregate allowance"
+      - "the steps run before the dependency install, on every pull request, with no path filter"
+    probe:
+      files:
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+        - ".gitlab-ci.yml"
+        - ".circleci/config.yml"
+        - "azure-pipelines.yml"
+        - "bitbucket-pipelines.yml"
+        - "Jenkinsfile"
+        - ".buildkite/**"
+        - ".drone.yml"
+        - ".woodpecker.yml"
+        - ".woodpecker/**"
+        - ".travis.yml"
+        - ".forgejo/workflows/*"
+        - ".gitea/workflows/*"
+        - ".cirrus.yml"
+        - "appveyor.yml"
+        - ".appveyor.yml"
+        - ".semaphore/**"
+        - ".teamcity/**"
+        - "bitrise.yml"
+        - "codemagic.yaml"
+        - "cloudbuild.yaml"
+        - "cloudbuild.yml"
+        - "buildspec.yml"
+        - ".tekton/**"
+    since: 0.22.0

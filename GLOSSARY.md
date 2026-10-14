@@ -57,8 +57,31 @@ make, use the entry's term instead.
   condition under which it flips (its *flip condition*). A disposition
   without a flip condition becomes dogma.
 - **Tool delta** — a runtime-specific instruction file (`CLAUDE.md`,
-  `.cursorrules`, …) carrying only what is specific to that runtime plus a
-  pointer to the universal instruction file — never a second copy of it.
+  `.cursorrules`, …) carrying only what is specific to that runtime, with the
+  universal instruction file brought in by the runtime's import or native
+  read — never a hand-maintained second copy of it, and never only a pointer
+  to it. Where a runtime has neither, a delta generated from the universal
+  file and checked for freshness is a projection of it, not a copy.
+- **Always-loaded context** — everything an agent runtime puts in context
+  before the agent acts, in every session: the chained instruction files,
+  rules with no path scope, the *discovery metadata* of every skill and
+  agent, and the instructions *MCP* servers send. Each runtime and reviewer
+  that reads it has a *context budget*.
+- **Context budget** — how much of the *always-loaded context* one consumer
+  takes in (Codex: the first 32,768 bytes of the instruction chain by
+  default). Text past a consumer's budget does not reach it, usually without
+  a warning, so it counts as not delivered.
+- **Discovery metadata** — the name and description of a *skill* or agent
+  that a runtime lists in every session so the model can choose it, paid
+  for whether or not it is ever used.
+- **Context window** — the amount of text a language model can take in at
+  once, counted in *tokens*: the instructions, the conversation and every
+  file it has read share it.
+- **Token** — the unit a language model reads and is billed in, a word or
+  part of one; English prose runs at about 4 characters a token.
+- **Load path** — the way a file reaches a runtime's context: read natively,
+  or brought in by an import. A text pointer ("see `AGENTS.md`") is not a
+  load path; the model may or may not follow it.
 - **Vendoring** — copying external material into a repo so it remains
   available and stable regardless of the original's location or lifetime.
 - **MCP (Model Context Protocol)** — an open standard for connecting AI

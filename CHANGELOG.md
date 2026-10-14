@@ -119,6 +119,67 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.22.0] - 2026-10-14
+
+M0 states that instructions must reach each runtime, and that what every
+session loads is a budget. Nothing a consumer has configured stops working.
+
+### Added
+
+- [M0](modules/M0-instruction-architecture/README.md) gains the invariants
+  **delivery is observed** (a rule reaches a runtime by an import or a file it
+  reads natively, the load model is recorded with dated evidence and a way to
+  re-check it, precedence is a written convention, and parity is judged by
+  what each runtime receives) and **always-loaded context is a budget** (the
+  chained instruction files, unscoped rules, skill and agent discovery
+  metadata and MCP server instructions are measured against the smallest
+  consumer's budget, and text past it counts as undelivered). Its
+  [mappings](modules/M0-instruction-architecture/mappings.md) list each
+  runtime's and reviewer's budget with the date it was checked, where the
+  always-loaded surface lives per runtime, and a CI recipe that runs before
+  dependencies are installed.
+- M0's [context-budget checks](modules/M0-instruction-architecture/reference/context-budget/README.md):
+  `check-instruction-chain.ts` fails any root-to-directory `AGENTS.md` chain
+  over the smaller of the configured `project_doc_max_bytes` and the
+  consumer budget (32,768 bytes by default), and `check-discovery-budget.ts`
+  checks skill and agent descriptions against the 1,024-character cap, the
+  512-character soft target and the 1,536-character combined cap, and the
+  skill listing against 8,000 characters, path-scoped skills included. Both
+  use only Bun's built-ins.
+- `/jig:audit` scores the new M0 criteria `load-model-recorded` (Standard)
+  and `context-budget-gated` (Strict, mechanical).
+- `bun run gates` runs the context-budget checks over Jig first (the plugin's
+  skills must meet the 512-character soft target), and CI runs them before
+  installing dependencies.
+
+### Changed
+
+- `/jig:audit`'s description is shorter (471 characters, within the soft
+  target); the detail it dropped is in the skill's body.
+- A pointer line no longer counts as bringing in the universal instruction
+  file. M0's layers and `/jig:audit`'s `tool-deltas-are-pointers` criterion
+  accept an import or the runtime's native read; where a runtime has
+  neither, the delta is generated from it and checked for freshness (a
+  projection, not a hand-kept copy), or the gap is recorded in the load
+  model. A repository whose tool file only points to `AGENTS.md` scores
+  lower on that criterion at its next audit.
+- [plugin/README.md](plugin/README.md) § Add or change a skill states the
+  512-character description target and the 1,024-character hard limit.
+
+### Fixed
+
+- The audit sheet owns history scroll restoration: each history entry keeps
+  its own position under a key in its history state, recorded as the reader
+  scrolls and when they leave, so Back, Forward and a reload return the reader
+  to where they were in that entry, in the report and in its guide alike. Only
+  the most recently used positions stay in memory; an older entry restores from
+  its history state, and a position not yet written there is kept in
+  preference to one that is, within the same bound.
+- A re-audit reports a criterion whose `since` is newer than the prior
+  audit's plugin version as added by Jig even when the prior record carries a
+  score for it, so a criterion filled in after the fact is not reported as a
+  long-standing gap.
+
 ## [0.21.0] - 2026-10-14
 
 ### Added
@@ -974,7 +1035,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/docomply/jig/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/docomply/jig/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/docomply/jig/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/docomply/jig/compare/v0.19.0...v0.19.1

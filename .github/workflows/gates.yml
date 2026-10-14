@@ -74,6 +74,11 @@ jobs:
           # with main, which a shallow checkout does not have.
           fetch-depth: 0
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      # Built-ins only, so it runs before the install: an over-budget
+      # instruction chain or skill listing fails in seconds, and a broken
+      # install cannot keep the check from running.
+      - name: Check the always-loaded context budget
+        run: bun scripts/check-context-budget.ts
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
       - name: Run gate set

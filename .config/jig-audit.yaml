@@ -25,7 +25,7 @@ criteria:
     score: absent
     evidence: "GLOSSARY.md (558 lines) is linked from AGENTS.md and gated by scripts/check-glossary-coverage.ts, but has no avoid aliases (grep -ci avoid GLOSSARY.md = 0); 'instance' is used in AGENTS.md but not defined, and instance/downstream/target repo/consumer repository compete"
   M0/tool-deltas-are-pointers:   # standard, requires convention
-    # Every tool-specific instruction file (CLAUDE.md, .cursor rules, copilot-instructions.md, ...) carries only runtime-specific content and brings in the universal file, duplicating none of it: through the runtime's import where it has one, a pointer only where it has none.
+    # Every tool-specific instruction file (CLAUDE.md, .cursor rules, copilot-instructions.md, ...) carries only runtime-specific content and brings in the universal file, maintaining none of it by hand, through the runtime's import or its native read of the universal file. Where a runtime has neither, the delta it needs is generated from it and checked for freshness, or the gap is recorded in the load model; a pointer line alone is not delivery.
     # prior: convention: CLAUDE.md, modules/CLAUDE.md, plugin/CLAUDE.md are only `@AGENTS.md` plus a no-delta note; no other tool files (no .cursor/, copilot-instructions, GEMINI.md in git ls-files)
     score: convention
     evidence: "CLAUDE.md, modules/CLAUDE.md, plugin/CLAUDE.md import their AGENTS.md with an `@AGENTS.md` line; git ls-files: no .cursor/, copilot-instructions.md, GEMINI.md or .claude/ rules"
@@ -39,6 +39,10 @@ criteria:
     # prior: expected-absent: No conditional-rules directory: git ls-files has no .claude/rules, .cursor/rules or .agents/rules; the criterion applies only where such rules exist
     score: expected-absent
     evidence: "No conditional-rules directory: git ls-files has no .claude/rules, .cursor/rules or .agents/rules"
+  M0/load-model-recorded:   # standard, requires convention
+    # What each agent runtime the team uses actually loads is recorded in one place, with the date it was observed and a procedure to check it again, and which instruction file wins when two disagree is written as an authoring convention, not assumed runtime behaviour.
+    score: absent
+    evidence: "At a66ee22 modules/M0-instruction-architecture/mappings.md has the per-runtime layer table but no observed load model: no dates of observation and no procedure to check one again"
   M0/dispositions-with-flip-conditions:   # standard, requires convention
     # Behavioral defaults (dispositions) are written down, and every disposition states the condition under which it flips.
     # prior: absent: git grep -il disposition outside templates/reference/fixtures hits only module docs, GLOSSARY.md, criteria yaml; no dispositions doc of Jig's own, none linked from AGENTS.md
@@ -54,6 +58,11 @@ criteria:
     # prior: absent: No CODEOWNERS (git ls-files), no owner or review cadence in or near AGENTS.md (git grep 'owner:|review cadence|last.review' on AGENTS files/README/ROADMAP: none)
     score: absent
     evidence: "No CODEOWNERS/OWNERS/MAINTAINERS in git ls-files; no owner or review cadence in AGENTS.md, README.md or ROADMAP.md"
+  M0/context-budget-gated:   # strict, requires mechanical
+    # CI measures the always-loaded context against the smallest budget of every runtime and reviewer that reads it (the cumulative root-to-directory instruction chain, each skill and agent description, and the aggregate skill listing) in a step that runs before dependencies are installed, and fails when any is over.
+    # probe found: .github/workflows/gates.yml
+    score: absent
+    evidence: "At a66ee22 .github/workflows/gates.yml has no step measuring an always-loaded budget, and scripts/gates.ts runs no such check"
   # M1 gates-enforcement-ladder
   M1/gate-set-documented:   # lite, requires convention
     # An ordered gate set (format, lint, types, tests, build) is stated in one canonical place and runnable with a single command.

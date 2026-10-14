@@ -76,12 +76,16 @@ natively under the pinned Bun runtime.
 Dogfooded [M1](modules/M1-gates-enforcement-ladder/README.md), tiny by
 design. Run all with one command: `bun run gates`. The set, in order:
 
-1. format, lint (Biome, with Jig's GritQL rules in `tools/quality/grit/`),
+1. the [always-loaded context](GLOSSARY.md) budget
+   (`scripts/check-context-budget.ts`: M0's instruction-chain and
+   skill-description budgets, which CI also runs before installing
+   dependencies);
+2. format, lint (Biome, with Jig's GritQL rules in `tools/quality/grit/`),
    types (`bun check`);
-2. unused code, and the changed files' complexity and duplication (fallow);
-3. the ratchet (below);
-4. gate self-tests, then build;
-5. the repository checks (`CHECKS` in `scripts/gates.ts`): Markdown links
+3. unused code, and the changed files' complexity and duplication (fallow);
+4. the ratchet (below);
+5. gate self-tests, then build;
+6. the repository checks (`CHECKS` in `scripts/gates.ts`): Markdown links
    and the paths the `AGENTS.md`, `CLAUDE.md` and `CONTRIBUTING.md` files
    name resolve; a blank line before every table; terms of art defined in the
    glossary (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`,

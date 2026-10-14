@@ -242,6 +242,26 @@ test("moving into or out of expected-absent is a reclassification, not a fix or 
   ]);
 });
 
+test("a criterion newer than the prior audit's plugin is added by Jig even when the prior record scores it", () => {
+  const m = [
+    parseModule(
+      "module: M1\nname: g\npurpose: P.\ncriteria:\n  - { id: a, level: lite, requires: mechanical, statement: A., observe: [a], since: 0.14.0 }\n  - { id: b, level: lite, requires: mechanical, statement: B., observe: [b], since: 0.13.0 }\n",
+      "M1.yaml",
+    ),
+  ];
+  const result = compare(
+    record({ "M1/a": "absent", "M1/b": "absent" }),
+    record({ "M1/a": "absent", "M1/b": "absent" }),
+    m,
+    schema,
+    "2026-10-12",
+  );
+  expect(result.criteria.map((c) => c.change)).toEqual([
+    "added-by-jig",
+    "still-open",
+  ]);
+});
+
 describe("comparing two audits", () => {
   const prior = record(
     {

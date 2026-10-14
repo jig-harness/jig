@@ -115,7 +115,26 @@ d.addEventListener('click',function(e){if(e.target.closest&&e.target.closest('su
 function openTo(el){for(var f=el&&el.closest('details');f;f=f.parentElement&&f.parentElement.closest('details'))f.open=true}
 d.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href^="#"]');if(a)openTo(d.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))))});
 // The guide: a view of its own on the #guide route. Leaving it returns to the place and the scroll position the reader came from.
-var G=d.getElementById('guide'),root=d.documentElement,back=0,from='';
+var G=d.getElementById('guide'),root=d.documentElement,back=0,from='',yAt=hashOf(W.location.href);
+// The view router restores scroll itself; browser history must not restore it a second time. Each history entry carries a key in its state, and its position is kept under that key as the reader scrolls (and in the state itself, for a reload). Arriving at an entry, by Back, Forward or a reload, in the guide or out of it, returns to that entry's own position; an entry never seen before gets the view's default. Only the most recently used positions are kept in memory; an older entry falls back to the one in its state. A position that differs from the one in its entry's state (left by Back before the delayed save) is the only copy, so positions their states already hold are dropped first; memory never holds more than the bound, because an entry a new link discarded from history can never be revisited to save its position.
+W.history.scrollRestoration='manual';
+var Y={},U={},yO=[],YMAX=20,yT=0,want=null,yN=0,yP=null,yK=mint();
+// yP is the position the current entry's state holds, so noting the current entry knows whether memory is the only copy.
+function note(k,y){Y[k]=y;if(y===yP)delete U[k];else U[k]=1;if(yO[yO.length-1]===k)return;var i=yO.indexOf(k);if(i>=0)yO.splice(i,1);yO.push(k);
+ for(i=0;yO.length>YMAX&&i<yO.length;)if(U[yO[i]])i++;else delete Y[yO.splice(i,1)[0]];
+ while(yO.length>YMAX){i=yO.shift();delete Y[i];delete U[i]}}
+function saved(k,s){return Y.hasOwnProperty(k)?Y[k]:yOf(s)}
+function newKey(){return Date.now().toString(36)+'.'+(++yN)+'.'+Math.random().toString(36).slice(2,6)}
+function yOf(s){return s&&typeof s.y==='number'?s.y:null}
+function mint(){var s=W.history.state,k=s&&s.k;yP=yOf(s);if(!k){k=newKey();try{W.history.replaceState({k:k,y:yP},'')}catch(e){yP=null}}return k}
+function keepY(){clearTimeout(yT);yT=0;var y=W.scrollY;note(yK,y);try{W.history.replaceState({k:yK,y:y},'');yP=y;delete U[yK]}catch(e){}}
+W.addEventListener('scroll',function(){note(yK,W.scrollY);if(!yT)yT=setTimeout(keepY,150)},{passive:true});
+d.addEventListener('click',function(e){if(e.target.closest&&e.target.closest('a[href^="#"]'))keepY()},true);
+W.addEventListener('beforeunload',keepY);
+// A keyed state means a traversal to an entry already seen: note the position being left (the page has not moved yet) and the one to return to. A new entry has no position of its own.
+W.addEventListener('popstate',function(e){clearTimeout(yT);yT=0;var s=e.state;
+ if(s&&s.k){note(yK,W.scrollY);yK=s.k;yP=yOf(s);want=saved(yK,s)}else{yK=mint();want=null}
+ var h=hashOf(W.location.href);if(h===yAt)arrive(h,yAt)});
 function hashOf(u){var i=u.indexOf('#');return i<0?'':decodeURIComponent(u.slice(i+1))}
 // Switching views jumps: the page's smooth scrolling is for moving within one view.
 var NOW={behavior:'instant'};
@@ -127,8 +146,9 @@ function show(h,old,first){var on=!!G&&isGuide(h),was=root.classList.contains('g
  if(on){if(h==='guide'||!el)jump(0);else el.scrollIntoView(NOW);return}
  if(was&&(h===from||!el)){jump(back);return}
  if(el&&(was||first)){openTo(el);el.scrollIntoView(NOW)}}
-function leave(){W.history.pushState(null,'',from?'#'+from:W.location.pathname+W.location.search);show(from,'',false)}
-W.addEventListener('hashchange',function(e){show(hashOf(W.location.href),hashOf(e.oldURL||''),false)});
+function arrive(h,old,first){var y=want;want=null;yAt=h;show(h,old,first);if(y!==null)jump(y)}
+function leave(){keepY();yK=newKey();yP=null;W.history.pushState({k:yK,y:null},'',from?'#'+from:W.location.pathname+W.location.search);yAt=from;show(from,'',false)}
+W.addEventListener('hashchange',function(e){var s=W.history.state;if(!s||s.k!==yK){yK=mint();want=null}arrive(hashOf(W.location.href),hashOf(e.oldURL||''))});
 $$('[data-back]').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();leave()})});
 // choices
 $$('[data-js]').forEach(function(e){e.hidden=false});
@@ -183,7 +203,8 @@ if(tray){
 $$('[data-copy]').forEach(function(b){b.addEventListener('click',function(){var from=d.getElementById(b.getAttribute('data-copy'));if(from)copy(from.textContent,b.parentNode.querySelector('.done'))})});
 d.addEventListener('keydown',function(e){if(e.key!=='Escape')return;d.documentElement.classList.add('notip');if(root.classList.contains('guide-on'))leave()});
 sync();
-show(hashOf(W.location.href),'',true);
+// Opening the sheet is an arrival too: a reloaded entry returns to its saved position.
+want=saved(yK,W.history.state);arrive(hashOf(W.location.href),'',true);
 `;
 
 export const REPORT_SCRIPT = `(function(){var L=${embedJson(SHEET_LABEL)},DATA=${embedJson(DATA_BLOCK_ID)},CHOICES=${embedJson(CHOICES)},LIGHTER=${embedJson(LIGHTER_PREFIX)};${SCRIPT_BODY}})();`;

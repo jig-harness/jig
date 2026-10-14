@@ -375,10 +375,13 @@ function criterionChange(
   after: Score,
   priorVersion: string,
 ): Change {
-  if (before !== null) return scoredChange(before, after, criterion.requires);
-  return criterion.since && compareVersions(criterion.since, priorVersion) > 0
-    ? "added-by-jig"
-    : "new";
+  // A criterion newer than the prior audit's plugin was not part of that
+  // audit, even when its record carries a score for it backfilled later.
+  if (criterion.since && compareVersions(criterion.since, priorVersion) > 0)
+    return "added-by-jig";
+  return before === null
+    ? "new"
+    : scoredChange(before, after, criterion.requires);
 }
 
 /** Whether every criterion `refs` names now meets its bar. */
@@ -457,9 +460,9 @@ export function heldCriteria(
  * Compare a new record with the prior one. A criterion is `fixed` when it
  * now meets its bar and did not, `regressed` when it no longer meets it or
  * its rung dropped (below the bar too), `still-open` when it fails both times
- * on the same or a higher rung; one the prior
- * record lacks is `added-by-jig` when its `since` is newer than the prior
- * audit's plugin version, else `new`.
+ * on the same or a higher rung; one whose `since` is newer than the prior
+ * audit's plugin version is `added-by-jig`, whether or not the prior record
+ * scores it; any other the prior record lacks is `new`.
  */
 export function compare(
   prior: AuditRecord,

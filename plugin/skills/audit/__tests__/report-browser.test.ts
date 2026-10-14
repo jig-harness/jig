@@ -581,7 +581,7 @@ describe("since the last audit", () => {
       ),
     ).toEqual([
       "Fixed 1",
-      "Added by Jig 10",
+      "Added by Jig 12",
       "Still open within the target 4",
       "Still open beyond the target 78",
       "Unchanged and met 36",
@@ -645,6 +645,279 @@ describe("the guide", () => {
     expect(requests).toEqual([]);
     await page.context().close();
   });
+
+  run("leaves Back within the report where the reader was", async () => {
+    const { page } = await open(true);
+    await page.evaluate(
+      "window.scrollTo({ top: 2400, left: 0, behavior: 'instant' })",
+    );
+    const y = await page.evaluate(() => window.scrollY);
+    // A link to a place in the report, not to the guide: the router has no view to switch.
+    await page
+      .locator('a[href^="#d-"]')
+      .first()
+      .evaluate((a) => (a as unknown as { click(): void }).click());
+    await page.waitForFunction("location.hash.startsWith('#d-')");
+    // The page scrolls smoothly: wait until it has stopped at the place.
+    await page.evaluate(
+      () =>
+        new Promise<void>((done) => {
+          let last = -1;
+          const tick = () => {
+            if (window.scrollY === last) done();
+            else {
+              last = window.scrollY;
+              setTimeout(tick, 250);
+            }
+          };
+          tick();
+        }),
+    );
+    expect(await page.evaluate(() => window.scrollY)).not.toBe(y);
+    await page.goBack();
+    await page.waitForFunction("location.hash === ''");
+    expect(await page.evaluate(() => window.scrollY)).toBe(y);
+    await page.context().close();
+  });
+
+  run(
+    "returns every history entry, guide or report, to its own place",
+    async () => {
+      const { page } = await open(true);
+      const at = (y: number) =>
+        page.evaluate(
+          `window.scrollTo({ top: ${y}, left: 0, behavior: 'instant' })`,
+        );
+      const scrollY = () => page.evaluate(() => window.scrollY);
+      await at(2400);
+      const a = await scrollY();
+      await page
+        .locator('.bar nav a[href="#guide"]')
+        .evaluate((l) => (l as unknown as { click(): void }).click());
+      await guideOn(page, true);
+      await at(600);
+      const g = await scrollY();
+      // Escape leaves the guide for a new report entry, scrolled elsewhere.
+      await page.keyboard.press("Escape");
+      await guideOn(page, false);
+      await at(1200);
+      expect(await scrollY()).not.toBe(a);
+      // Back reaches the guide where it was left, Back again the first report entry.
+      await page.goBack();
+      await guideOn(page, true);
+      expect(await scrollY()).toBe(g);
+      await page.goBack();
+      await guideOn(page, false);
+      expect(await scrollY()).toBe(a);
+      // Forward twice comes to the report entry's own place, not the guide's way in.
+      await page.goForward();
+      await guideOn(page, true);
+      expect(await scrollY()).toBe(g);
+      await page.goForward();
+      await guideOn(page, false);
+      expect(await scrollY()).toBe(1200);
+      await page.context().close();
+    },
+  );
+
+  run("keeps a position scrolled to just before Back", async () => {
+    const { page } = await open(true);
+    await page
+      .locator('a[href^="#d-"]')
+      .first()
+      .evaluate((l) => (l as unknown as { click(): void }).click());
+    await page.waitForFunction("location.hash.startsWith('#d-')");
+    // Scroll and leave at once, before any delayed save could run.
+    await page.evaluate(
+      "window.scrollTo({ top: 1800, left: 0, behavior: 'instant' }); history.back()",
+    );
+    await page.waitForFunction("location.hash === ''");
+    await page.goForward();
+    await page.waitForFunction("location.hash.startsWith('#d-')");
+    expect(await page.evaluate(() => window.scrollY)).toBe(1800);
+    await page.context().close();
+  });
+
+  run(
+    "returns a reloaded entry, guide or report, to its own place",
+    async () => {
+      const { page } = await open(true);
+      const scrollY = () => page.evaluate(() => window.scrollY);
+      // Scroll and reload at once, before any delayed save could run.
+      await page.evaluate(
+        "window.scrollTo({ top: 2400, left: 0, behavior: 'instant' })",
+      );
+      await page.reload();
+      await guideOn(page, false);
+      expect(await scrollY()).toBe(2400);
+      await page
+        .locator('.bar nav a[href="#guide"]')
+        .evaluate((l) => (l as unknown as { click(): void }).click());
+      await guideOn(page, true);
+      await page.evaluate(
+        "window.scrollTo({ top: 600, left: 0, behavior: 'instant' })",
+      );
+      await page.reload();
+      await guideOn(page, true);
+      expect(await scrollY()).toBe(600);
+      await page.context().close();
+    },
+  );
+
+  run("restores an entry older than the positions kept in memory", async () => {
+    const { page } = await open(true);
+    await page.evaluate(
+      "window.scrollTo({ top: 2400, left: 0, behavior: 'instant' })",
+    );
+    // More entries than the in-memory positions hold, each one scrolled.
+    await page.evaluate(`(async () => {
+      const all = [...document.querySelectorAll('a[href^="#d-"]')];
+      const links = all.filter((l, i) => all.findIndex((m) => m.getAttribute('href') === l.getAttribute('href')) === i).slice(0, 2);
+      if (links.length < 2) throw new Error('two distinct links needed');
+      for (let i = 0; i < 30; i++) {
+        const moved = new Promise((r) => addEventListener('hashchange', r, { once: true }));
+        links[i % links.length].click();
+        await moved;
+        window.scrollTo({ top: 100 + i, left: 0, behavior: 'instant' });
+      }
+    })()`);
+    await page.evaluate("history.go(-30)");
+    await page.waitForFunction("location.hash === ''");
+    expect(await page.evaluate(() => window.scrollY)).toBe(2400);
+    await page.context().close();
+  });
+
+  run(
+    "keeps a position left by an immediate Back past the positions kept in memory",
+    async () => {
+      const { page } = await open(true);
+      await page.evaluate(`(async () => {
+        const all = [...document.querySelectorAll('a[href^="#d-"]')];
+        const links = all.filter((l, i) => all.findIndex((m) => m.getAttribute('href') === l.getAttribute('href')) === i).slice(0, 2);
+        if (links.length < 2) throw new Error('two distinct links needed');
+        for (let i = 0; i < 30; i++) {
+          const moved = new Promise((r) => addEventListener('hashchange', r, { once: true }));
+          links[i % links.length].click();
+          await moved;
+          window.scrollTo({ top: 100 + i, left: 0, behavior: 'instant' });
+        }
+        await new Promise((r) => setTimeout(r, 300));
+        // Scroll and leave at once, before any delayed save could run: the position lives only in memory.
+        const back = new Promise((r) => addEventListener('popstate', r, { once: true }));
+        window.scrollTo({ top: 1800, left: 0, behavior: 'instant' });
+        history.back();
+        await back;
+        // Visit more entries than the in-memory positions hold.
+        for (let i = 0; i < 25; i++) {
+          const moved = new Promise((r) => addEventListener('popstate', r, { once: true }));
+          history.back();
+          await moved;
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+      })()`);
+      await page.evaluate(`(async () => {
+        const moved = new Promise((r) => addEventListener('popstate', r, { once: true }));
+        history.go(26);
+        await moved;
+        await new Promise((r) => requestAnimationFrame(r));
+      })()`);
+      expect(await page.evaluate(() => window.scrollY)).toBe(1800);
+      await page.context().close();
+    },
+  );
+
+  run(
+    "keeps no more positions in memory than its bound when going Back through saved entries",
+    async () => {
+      const ctx = await (browser as Browser).newContext({
+        viewport: { width: 1440, height: 900 },
+      });
+      // The cache is private to the sheet's script; its order list is the only array that receives history keys, so its largest length is the cache's size.
+      await ctx.addInitScript(`(() => {
+        const push = Array.prototype.push, key = /^[0-9a-z]+\\.\\d+\\.[0-9a-z]{1,4}$/;
+        window.__keysHeld = 0;
+        Array.prototype.push = function (...a) {
+          const n = push.apply(this, a);
+          if (a.length === 1 && typeof a[0] === 'string' && key.test(a[0])) window.__keysHeld = Math.max(window.__keysHeld, n);
+          return n;
+        };
+      })()`);
+      const { page } = await open(true, 1440, ctx);
+      await page.evaluate(`(async () => {
+        const all = [...document.querySelectorAll('a[href^="#d-"]')];
+        const links = all.filter((l, i) => all.findIndex((m) => m.getAttribute('href') === l.getAttribute('href')) === i).slice(0, 2);
+        if (links.length < 2) throw new Error('two distinct links needed');
+        for (let i = 0; i < 60; i++) {
+          const moved = new Promise((r) => addEventListener('hashchange', r, { once: true }));
+          links[i % links.length].click();
+          await moved;
+          window.scrollTo({ top: 100 + i, left: 0, behavior: 'instant' });
+        }
+        window.__keysHeld = 0;
+        // Each link click saved the entry it left, so every position is already in its state: leaving one by Back leaves nothing that only memory holds.
+        for (let i = 0; i < 40; i++) {
+          const moved = new Promise((r) => addEventListener('popstate', r, { once: true }));
+          history.back();
+          await moved;
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+      })()`);
+      expect(
+        await page.evaluate(
+          () => (window as unknown as { __keysHeld: number }).__keysHeld,
+        ),
+      ).toBeLessThanOrEqual(21);
+      await ctx.close();
+    },
+  );
+
+  run(
+    "keeps no more positions in memory than its bound when links branch history after an immediate Back",
+    async () => {
+      const ctx = await (browser as Browser).newContext({
+        viewport: { width: 1440, height: 900 },
+      });
+      await ctx.addInitScript(`(() => {
+        const push = Array.prototype.push, key = /^[0-9a-z]+\\.\\d+\\.[0-9a-z]{1,4}$/;
+        window.__keysHeld = 0;
+        Array.prototype.push = function (...a) {
+          const n = push.apply(this, a);
+          if (a.length === 1 && typeof a[0] === 'string' && key.test(a[0])) window.__keysHeld = Math.max(window.__keysHeld, n);
+          return n;
+        };
+      })()`);
+      const { page } = await open(true, 1440, ctx);
+      await page.evaluate(`(async () => {
+        const all = [...document.querySelectorAll('a[href^="#d-"]')];
+        const links = all.filter((l, i) => all.findIndex((m) => m.getAttribute('href') === l.getAttribute('href')) === i).slice(0, 3);
+        if (links.length < 3) throw new Error('three distinct links needed');
+        const other = () => links.find((l) => l.getAttribute('href') !== location.hash);
+        const follow = async (l) => {
+          const moved = new Promise((r) => addEventListener('hashchange', r, { once: true }));
+          l.click();
+          await moved;
+        };
+        for (let i = 0; i < 40; i++) {
+          const l = other();
+          await follow(l);
+          // Scroll and go Back before the delayed save: the entry left holds its position only in memory.
+          const back = new Promise((r) => addEventListener('popstate', r, { once: true }));
+          window.scrollTo({ top: 200 + i, left: 0, behavior: 'instant' });
+          history.back();
+          await back;
+          await new Promise((r) => requestAnimationFrame(r));
+          // A new link discards that forward entry from history, so its position can never be saved.
+          await follow(l);
+        }
+      })()`);
+      expect(
+        await page.evaluate(
+          () => (window as unknown as { __keysHeld: number }).__keysHeld,
+        ),
+      ).toBeLessThanOrEqual(21);
+      await ctx.close();
+    },
+  );
 
   run(
     "opens at a deep link, and its back link returns to the report",

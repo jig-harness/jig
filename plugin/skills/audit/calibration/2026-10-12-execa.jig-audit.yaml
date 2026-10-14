@@ -31,6 +31,11 @@ criteria:
     # If a conditional-rules directory exists, its README documents the loading semantics — path-frontmatter rules load on match, frontmatter-less rules always load — and each rule is scoped to the narrowest paths that cover it.
     score: expected-absent
     evidence: "No conditional-rules directory (.claude/rules, .cursor/rules, .agents/) exists in git ls-files, so the criterion does not apply. The only path-scoped rules are xo's per-file override (package.json, files: **/*.md), which is lint config, not agent rules."
+  M0/load-model-recorded:   # standard, requires convention
+    # What each agent runtime the team uses actually loads is recorded in one place, with the date it was observed and a procedure to check it again, and which instruction file wins when two disagree is written as an authoring convention, not assumed runtime behaviour.
+    # Scored at plugin 0.22.0 from this record's existing evidence; not observed in the original run.
+    score: absent
+    evidence: "No instruction file exists (same search as universal-instruction-file), so nothing records what a runtime loads."
   M0/dispositions-with-flip-conditions:   # standard, requires convention
     # Behavioral defaults (dispositions) are written down, and every disposition states the condition under which it flips.
     score: absent
@@ -43,6 +48,11 @@ criteria:
     # The instruction set has a named owner and a stated review cadence.
     score: absent
     evidence: "No instruction set. readme.md:458-461 names the project maintainers, but no owner or review cadence is stated for any instructions."
+  M0/context-budget-gated:   # strict, requires mechanical
+    # CI measures the always-loaded context against the smallest budget of every runtime and reviewer that reads it (the cumulative root-to-directory instruction chain, each skill and agent description, and the aggregate skill listing) in a step that runs before dependencies are installed, and fails when any is over.
+    # Scored at plugin 0.22.0 from this record's existing evidence; not observed in the original run.
+    score: absent
+    evidence: "There are no instruction files or skills to measure, and no CI step in .github/workflows/ measures an always-loaded budget."
   # M1 gates-enforcement-ladder
   M1/gate-set-documented:   # lite, requires convention
     # An ordered gate set (format, lint, types, tests, build) is stated in one canonical place and runnable with a single command.
