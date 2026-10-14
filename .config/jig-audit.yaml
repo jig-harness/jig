@@ -208,8 +208,11 @@ criteria:
   M3/regex-shortcut-sync-checked:   # strict, requires mechanical
     # Any hand-maintained CI shortcut regex is checked against the catalog in both directions and against the union of files tracked at the current and base refs (the two directional checks alone can pass while a whole unmapped tracked file still slips through — see reference/regex-mirror/README.md).
     # prior: expected-absent: No hand-maintained CI shortcut regex in .github/workflows/gates.yml (no paths/paths-ignore/changed-files filters)
-    score: mechanical
-    evidence: "gates.yml has no paths:/paths-ignore/regex shortcut; every selection decision comes from the resolver's output, which the criterion's own observe clause accepts"
+    score: expected-absent
+    evidence: "gates.yml has no paths:/paths-ignore/regex shortcut; every selection decision comes from the resolver's output, so there is no duplicate classification to keep in sync"
+  M3/area-class-resolved:
+    score: expected-absent
+    evidence: "At the recorded commit, .github/workflows/gates.yml selects jobs through scripts/change-areas.ts; there is no general hand-maintained CI shortcut regex to corroborate."
   # M4 docs-governance
   M4/governance-model-written:   # lite, requires convention
     # A written governance model names the frontmatter fields, the status/lifecycle vocabulary, the de-scarring rule, and the authority hierarchy for resolving conflicts between docs.

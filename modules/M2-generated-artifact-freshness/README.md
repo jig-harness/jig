@@ -40,6 +40,12 @@ spin a throwaway database/container, replay the source of truth (migrations)
 from scratch, dump, normalize, and compare — testing the *whole chain*, not
 just file timestamps.
 
+A [change-area catalog](../M3-change-area-catalog/)'s `generated:` field
+couples a generated artifact to the area that owns it, so an area on the
+shallow [validation profile](../../GLOSSARY.md) can carry this module's
+freshness gate without escalating to full code validation, and the regenerate
+command isn't duplicated across a hook, CI, and prose.
+
 ## Maturity levels
 
 - **Lite** — inventory exists: every derived file in the repo is listed with

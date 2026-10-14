@@ -225,12 +225,27 @@ does not implement.
 
 ## Direction 2 — catalog → regex (recipe)
 
-The reverse check needs the resolver's `impliedBy` closure, so it lives with
-the resolver rather than as a standalone script:
+The reverse check needs the resolver's area list, so it lives with the
+resolver rather than as a standalone script:
 
-1. For each area, decide if it is **code-bearing** — its forward `impliedBy`
-   closure reaches a [code area](../../../../GLOSSARY.md) (the *area class* you
-   designate as "a change here means the heavy build must run").
+1. For each area, decide if it is **code-bearing** — any area not explicitly
+   named in the checker's non-code-bearing deny-list is code-bearing. Keep
+   that designation as a checker-side config, but model it as a **deny-list
+   of explicit area ids** naming the *non*-code-bearing areas (docs, spike,
+   and similar) rather than enumerating the code-bearing ones. (This is a
+   direct per-area classification, not a closure computation — reachability
+   through `impliedBy` is a separate, narrower check against a separate
+   *anchor* set; see § Matching an area is not the same as being
+   code-bearing, below.) Deny by area id only, never by
+   `category` value: `category` is grouping metadata, never a build-lane
+   selector (see the module's design rules), so excluding a whole category
+   would silently carry any future area minted under it — even a genuinely
+   code-generating one — out of the code-bearing set with it. Any area not
+   on the deny-list is code-bearing by default, so a newly added area is
+   covered automatically — an allow-list instead would let a forgotten area
+   silently skip step 3 below and never be checked against the regex at
+   all. It does not line up with `deployTier`, since a shared library can
+   be code-bearing with `deployTier: none` (it never deploys on its own).
 2. For each code-bearing area's `paths` glob, compute its **literal head**.
    This is *not* simply "the substring before the glob's first wildcard" —
    that raw cut is unsound (a mid-component wildcard like `apps/web-*/**`
@@ -268,7 +283,7 @@ where `docs/**` belongs to a docs-only area) passes both directions and
 `checkFilterFileCoverage` — the shortcut then runs the heavy build for
 docs-only changes, a correctness gap this script doesn't close. Closing it needs a regex-positive check against the code-area class
 specifically, analogous to `checkFilterCodeAreaCoverage`'s deploy-critical
-check; this module doesn't yet specify one. Neither direction, alone or together,
+check; the anchor check below supplies this additional test. Neither direction, alone or together,
 proves every *tracked file* the regex calls code-bearing actually belongs to
 some area: a regex broader than any single area's glob (`^apps/` against a
 catalog that only knows `apps/web/**`) can pass both while still classifying
@@ -300,6 +315,121 @@ glob matches. So a deploy-gating shortcut runs Direction 1 unchanged,
 Direction 2 against the deploy-critical class, `checkFilterFileCoverage`
 unchanged, and `checkFilterCodeAreaCoverage` — four checks, but not "the
 same three plus one."
+
+## Matching an area is not the same as being code-bearing
+
+Both directions above can stay green while the underlying classification is
+wrong, because both check the regex against the catalog — not against
+reality, and both lean on the *code-bearing* deny-list from Direction 2
+step 1. That deny-list is deliberately generous (everything not explicitly
+excluded counts as code-bearing, so a forgotten area still gets checked) —
+which is exactly why it can't *also* serve as the target of a reachability
+check: `impliedBy` closure is reflexive, so every non-denied area trivially
+"reaches" itself, and a closure check against that same deny-list degrades
+into re-testing the deny-list. A file can match a real, schema-valid area
+whose closure never reaches anything that actually ships, and still get
+treated as fine if the classification step only asks "does this file match
+*some* [non-denied] area?" A real incident: a large slice of tracked files
+sat in exactly that gap — matched by a real area, structurally disconnected
+from anything deploy-critical — while the bidirectional sync check stayed
+green on both sides, because neither direction was built to see it. A
+downstream watchdog with no visibility into that gap then raised a false
+stale-artifact alarm on a fixed schedule, unrelated to any actual staleness.
+
+The fix is a third, independent check against a *second*, deliberately
+narrower list: a hand-maintained **code-bearing anchor** set naming the
+areas that directly ship (the actual services/apps) — or, for code-bearing
+internal tooling that never ships, carry an active heavy-gate/build CI job
+reference instead (see below) — not every area that merely isn't denied.
+Unlike the deny-list, the anchor set is an allow-list
+and default-*exclusive* on purpose: it exists to be a genuinely smaller
+target, so reaching it through the closure is real evidence, not a
+tautology. Its failure mode is the opposite of the deny-list's — a newly
+shipped service left off the anchor set makes everything whose closure
+reaches only it fail this check — but that failure is loud and safe: an
+adopter fixes it by adding the anchor, rather than a false "non-code" green
+light nobody was watching for.
+
+**Code-bearing internal tooling — a repo-owned test harness, linter, or
+build tool — needs a path into this set too.** Such an area can legitimately
+require the heavy build/test shortcut (it is real code, exercised by CI, per
+the code-bearing deny-list in Direction 2 above) while never deploying or
+publishing anything: nothing it produces is a shipped artifact. Two wrong
+fixes: adding it straight to the anchor set with no external evidence
+reproduces the reflexivity gap this check exists to close (an author could
+anchor any area by editing `catalog.yaml` alone); denying it instead
+contradicts the deny-list's own definition of code-bearing — the area is
+real code that needs the heavy gate, not prose. The right fix broadens what
+counts as a valid *target*, not what counts as an *anchor*: alongside a
+shipping reference (deploy manifest, publish step), accept a
+source-controlled reference to an **active heavy-gate/build CI job** that
+runs on that area's own paths — external to `catalog.yaml`, the same way a
+deployment manifest is, and subject to the same negative fixtures (a
+disabled or dead job doesn't count). See
+[mappings.md](../../mappings.md#anchor-corroboration-recipe)'s recipe table
+for the per-ecosystem check.
+
+Any signal *derived from the catalog itself* — `deployTier`, a generated
+deploy/job projection — is written and reviewed through the same process as
+the anchor list, so checking one against the other is not independent
+evidence; it's a claim checked against its own restatement, and closure's
+reflexivity means an author could otherwise defeat this check by adding the
+disconnected area straight to the anchor list. The corroboration this check
+requires is *external* to the catalog instead — but to keep the criterion
+honestly `mechanical`, what it actually certifies is narrower than "this
+anchor ships": a **source-controlled deployment/release reference** — a
+checked-in Kubernetes/Terraform/CI/package-publish artifact, external to
+`catalog.yaml`, that names the anchor's build output. This proves the
+reference exists and was reviewed outside the anchor list itself (closing
+the reflexivity gap: an author can no longer satisfy the check by editing
+`catalog.yaml` alone), not that the anchor is currently live in production.
+"Ships" is the motivating intent an adopter enforces through catalog
+review — the same trust boundary this module already accepts for `impliedBy`
+edges, `category`, and `deployTier` — not a property this mechanical check
+certifies by itself. The reference can point to either shape of shipping,
+not narrowly "deploys": a deployed service *or* a published package. A
+library-shaped repo has areas that legitimately never deploy (see
+[M10](../../../M10-environments-deploy/)'s documented deploy-shaped-vs.-
+library-shaped distinction); a release/publish pipeline is exactly as valid
+an anchor terminus as a deployment, and requiring "deploys" specifically
+would make this criterion unattainable for a pure-library monorepo without
+an adopter fabricating a fake deployment edge.
+
+**This is a baseline, not a formal liveness proof — and it doesn't claim to
+be one.** No repo-internal, source-text check can *prove* a manifest is
+applied to a live cluster, a Terraform resource survives its next `plan`, or
+a workflow is reachable through every trigger/condition/dependency
+combination — that requires live infrastructure state (a rendered/applied
+deployment inventory, an evaluated Terraform plan or state file, real
+workflow-trigger analysis), out of scope for a static catalog check and
+belonging to each ecosystem's own tooling. That's exactly why the criterion's
+mechanical claim is scoped to "a real, reviewed reference exists," not "is
+currently live" — a team that needs the stronger liveness guarantee has to
+add that infrastructure-state tooling; this check alone is not it. What this
+baseline *does* mechanically enforce is a materially higher bar than a raw
+grep: a comment (`# apps/foo`), an unused workflow file, or a
+`disabled: true`/`count = 0` resource must not satisfy it — see
+[mappings.md](../../mappings.md#anchor-corroboration-recipe) for the
+per-ecosystem baseline recipes and their known gaps, and for how to upgrade
+to stronger, infrastructure-state-backed evidence where that tooling exists.
+Like every other trust boundary this module already accepts (`impliedBy`
+edge correctness, `category`, `deployTier`), this check raises the cost of
+gaming and lets catalog review catch what the mechanical baseline can't —
+it does not claim to make gaming impossible.
+
+For every file the regex classifies as code, confirm that the union of the
+`impliedBy` closures of every area the file directly matches reaches the
+anchor set — not merely that it matches some (non-denied) area. Catalog
+membership is multi-valued (a path can match more than one area), so testing
+only one matched area's closure is order-dependent and can reject a file
+that legitimately reaches an anchor through a *different* matched area; the
+union is the correct operation. This population has no exemption: if the regex itself
+misclassifies a docs or spike file as code, that file stays in scope and
+correctly fails the check, since surfacing exactly that kind of regex
+mistake is why this additional check exists — exempting a file because its area
+is off the deny-list would let the same false classification stay green on
+the sync and tracked-file checks at once. See the `area-class-resolved` strict criterion in the
+[audit criteria](../../../../plugin/skills/audit/criteria/M3-change-area-catalog.yaml).
 
 ## When you don't need this
 

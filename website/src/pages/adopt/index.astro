@@ -23,6 +23,7 @@ const ladder = await Promise.all(
   b.ladder.map(async (s) => ({ n: s.n, lead: s.lead, html: await mdInline(s.body, FROM) })),
 );
 const constraintsHtml = await md(b.constraints, FROM);
+const grandfatheringHtml = await md(b.grandfathering, FROM);
 ---
 
 <Base title="Adopt Jig in an existing repository" description="Decide how far to go, then climb one rung at a time: the audit, the ladder, and your plan.">
@@ -79,6 +80,9 @@ const constraintsHtml = await md(b.constraints, FROM);
 
       <SectionHead id="different" label="C · What makes an existing repository different" />
       <div class="prose" set:html={constraintsHtml} />
+
+      <SectionHead id="grandfathering-a-coverage-gate" label="D · Grandfathering a coverage gate" />
+      <div class="prose" set:html={grandfatheringHtml} />
     </article>
     <PlanRail audit listLabel="Step 3 · adopt in this order, one rung at a time" path="/adopt/" />
   </section>

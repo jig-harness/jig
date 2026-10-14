@@ -37,3 +37,38 @@ Improving an existing project. The entry point is an **audit**, not a module.
   promotion condition attached — advisory-forever is drift (principle 4).
 - **One concern per change**: adopt via small PRs scoped to one module's next
   maturity level, not a big-bang "process PR" nobody can review.
+
+## Grandfathering a coverage gate
+
+A pass/fail coverage check ("every file/workspace must map to something") is
+right for greenfield and unreachable for brownfield on day one. The honest
+pattern has these properties:
+
+1. A named, in-code exception set that **new entries may never be added to**
+   — it exists to grandfather what predates the gate, not to accumulate new
+   debt. Stating this as policy is not enough: the set is an ordinary
+   in-code list, so a PR adding a newly-uncovered item can add it to the same
+   list and keep the gate green. Enforce it mechanically — diff the set
+   against its value on the base branch and fail the check if the diff
+   contains any addition; removals always pass. The comparison side must
+   come from the trusted base (the base branch's copy of the set or of a
+   frozen baseline file, never the PR's own copy, which the PR can edit in
+   step), and the comparison script stays under required review ownership.
+2. Suppression applies **only** to the "uncovered" finding class. A path
+   moving from fully-uncovered to partially-covered is a fresh fact, not
+   noise — it still reports, so the backlog reflects the gate's real
+   progress instead of a single frozen count.
+3. A companion set pinning any *partial* coverage by **exact glob and a real
+   on-disk path**, so neither deleting the pinning declaration nor deleting
+   the files it names passes silently: the glob must still resolve to its
+   path, and the pin set is diffed against the base branch so a removed pin
+   fails unless its path is now fully covered or gone from the tree.
+
+Its failure mode is worth stating plainly: an exception set that only routes
+findings to a closed tracking issue has no owner, and a closed issue looks
+resolved on every dashboard that matters — the set becomes permanent by
+default. An exception set needs a **live**, currently-open owner, or it stops
+being a grandfather clause and becomes a permanent carve-out nobody chose.
+
+See [M3](../modules/M3-change-area-catalog/reference/catalog/README.md#grandfathering-catalog-coverage)
+for the concrete two-set mechanism applied to change-area workspace coverage.

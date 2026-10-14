@@ -69,6 +69,24 @@ one shared change-area vocabulary, many thin per-consumer projections.
    map to at least one area, and every area's declared workspace must exist and
    be covered by one of its own globs. A new, unmapped workspace fails CI in
    the same PR that introduces it, instead of silently skipping all its gates.
+   Brownfield adopters grandfather existing gaps instead of blocking on day
+   one — see the pattern in [`adoption/brownfield.md`](../../adoption/brownfield.md#grandfathering-a-coverage-gate)
+   and its catalog-specific mechanism in
+   [`reference/catalog/README.md`](reference/catalog/README.md#grandfathering-catalog-coverage).
+6. **Agent gate-depth (`validation:`)** — a projection answering "what must a
+   coding agent run before commit and push, and does it need a CI-identical
+   sandbox," with its depth read from the same *seeds* as labels, not the
+   closure — except the sandbox requirement itself, which reads the seeded
+   areas' closure so it still protects an affected dependent the change
+   didn't directly touch. Cross-cuts [M1](../M1-gates-enforcement-ladder/)
+   (which gate rung runs) and [M12](../M12-parallel-agent-ergonomics/) (a
+   shallow-enough answer can skip the cross-worktree heavy-run mutex).
+7. **Generated-output coupling (`generated:`)** — an area declares the
+   generated artifact it owns and the source paths that produce it, so a
+   shallow-profile area can carry one specific
+   [freshness gate](../M2-generated-artifact-freshness/) without escalating to
+   full validation, and the regenerate command isn't triplicated across a
+   hook, CI, and prose.
 
 ## Design rules
 
@@ -84,6 +102,26 @@ one shared change-area vocabulary, many thin per-consumer projections.
   are `deployTier` and the projections.
 - **Don't populate a projection block before its consumer exists** — an empty
   `review`/`postDeploy`/tracker-label block is drift waiting to happen.
+- **Every projection reads one side of `impliedBy`, and must say which**:
+  fan-in *closure* answers "what are the consequences?" (deploy tiers,
+  post-deploy actions — over-triggering is cheap here); *seeds* answer "what
+  did this change touch?" (tracker labels, `validation:`, `generated:` —
+  accuracy matters more than coverage here). Mandatory review-gate flags need
+  the closure's reach (a shared-library change must still trigger review of
+  its dependents) but a flag's placement on an area is a *decision* made
+  against that area's real membership, never *inherited* as a side effect of
+  some unrelated area's `impliedBy` edge. Getting this backwards is a
+  demonstrated failure mode — see the worked table in
+  [`reference/catalog/README.md`](reference/catalog/README.md#seeds-vs-closure--which-side-each-projection-reads).
+- **The catalog's own structural check needs one required hand-written
+  shortcut**: a self-check cannot ask its subject whether it should run, so
+  the CI step that validates the catalog's own structure must run
+  independently of catalog-derived selection — unconditionally on every CI
+  event, or behind a literal, hand-written path match on the catalog file —
+  never by resolving through the catalog itself, or a change that deletes the
+  catalog's own paths would resolve to nothing and skip the very check meant
+  to catch that. Where a trigger is used, it is the one hand-maintained
+  shortcut this module treats as required, not debt; see [`reference/catalog/README.md`](reference/catalog/README.md#the-self-check-paradox).
 
 ## Maturity levels
 
@@ -107,6 +145,12 @@ one shared change-area vocabulary, many thin per-consumer projections.
   [`reference/regex-mirror/README.md`](reference/regex-mirror/README.md) for
   why the area class must change, not just the check count.
 
+  In addition, every general code-shortcut-positive file must reach a
+  separately corroborated code-bearing anchor through the union of its
+  matched areas' closures. Anchors need a source-controlled deployment,
+  publish, or enabled heavy-gate reference outside the catalog; see
+  [the anchor protocol](reference/regex-mirror/README.md#matching-an-area-is-not-the-same-as-being-code-bearing).
+
 ## Adoption steps
 
 1. Write one catalog file from [`templates/catalog.yaml`](templates/catalog.yaml)
@@ -128,7 +172,8 @@ one shared change-area vocabulary, many thin per-consumer projections.
    `checkFilterSegmentCoverage` script as the regex → catalog half. A
    general "did any code change?" shortcut needs three of the guard's four
    checks, run against the code-area class (the two directional prefix
-   checks plus `checkFilterFileCoverage`); a shortcut that instead *gates a
+   checks plus `checkFilterFileCoverage`), together with the independent
+   anchor reachability check described below; a shortcut that instead *gates a
    deploy* needs all four, with the catalog → regex direction re-scoped to
    the deploy-critical area class instead of the code-area class — running
    it against the code-area class while also running the fourth check,

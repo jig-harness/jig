@@ -1,6 +1,6 @@
 /**
- * The two adoption guides: the brownfield ladder and its constraints
- * (adoption/brownfield.md), and the greenfield kickoff's phases, three moves
+ * The two adoption guides: the brownfield ladder, its constraints and the
+ * coverage-gate grandfathering pattern (adoption/brownfield.md), and the greenfield kickoff's phases, three moves
  * and reasoning (adoption/greenfield.md).
  */
 import {
@@ -33,6 +33,7 @@ export interface Brownfield {
   intro: string;
   ladder: Step[];
   constraints: string;
+  grandfathering: string;
 }
 
 export function parseBrownfield(markdown: string): Brownfield {
@@ -41,6 +42,7 @@ export function parseBrownfield(markdown: string): Brownfield {
     intro: withoutTitle(parts[0]?.body ?? "").trim(),
     ladder: steps(section(parts, "The ladder")),
     constraints: section(parts, "Constraints"),
+    grandfathering: section(parts, "Grandfathering a coverage gate"),
   };
 }
 

@@ -26,3 +26,14 @@ areas:
     # tracker:
     #   labels: [<tracker-label>]
     # agent: <owning-agent>
+    # validation:
+    #   profile: <deep|shallow>        # what a coding agent must run pre-commit/push
+    #                                  # (omitting this block, or `profile`, defaults to `deep`)
+    #   needsSandbox: <true|false>     # does it need a CI-identical sandbox
+    #   notes: "why this depth"
+    # generated:
+    #   from: ["<source-glob>/**"]     # must exist on disk — checked, not just glob-shaped;
+    #                                  # matching this activates THIS area's freshness check,
+    #                                  # even when the source lives under a different area's `paths`
+    #   by: "<regenerate command>"
+    #   notes: "what this generates and why it lives on this area"

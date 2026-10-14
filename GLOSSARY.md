@@ -178,6 +178,61 @@ make, use the entry's term instead.
   are mandatory, which deploy tier applies). It is the *SSoT* every consumer
   reads via generated *projections*, instead of each re-hardcoding its own
   path-lists that then disagree.
+- **Validation profile** — a *change-area catalog* area's declared gate depth
+  for a coding agent's own pre-commit/push checks: `deep` runs the area's full
+  code gates; `shallow` skips them, either because the area has no code to gate
+  (docs) or because it holds real code that deliberately never ships (a
+  prototype/spike). An area that omits the field defaults to `deep` — the same
+  fail-closed default as a file matching no area at all.
+- **Self-check paradox** — the situation where a *check* validates the same
+  data its own trigger condition is computed from (e.g. a catalog's structural
+  check, triggered by resolving changed paths *through* that catalog). The
+  fix is to run the self-check independently of the thing it's checking —
+  unconditionally, or on a hand-written, literal path match — never on a
+  selection computed from it; otherwise a change that breaks the check's own
+  trigger skips the check along with it.
+- **Code-bearing** — a *change-area catalog* area classification: changing
+  it means a heavy build/test job must run. Modeled as a checker-side
+  deny-list of explicitly non-code-bearing area ids (docs, spike, and
+  similar) — never `category` values, since `category` is grouping metadata
+  and must never select a build lane; any area not on the deny-list is
+  code-bearing by default, so a newly added area fails toward the heavy gate
+  instead of silently skipping it the way an allow-list would. This
+  deny-list is deliberately generous and must not double as the reachability
+  target of *area-class-resolved* — see **Code-bearing anchor**, below.
+- **Code-bearing anchor** — a *change-area catalog* area explicitly
+  designated as one that directly ships — a deployed service *or* a
+  published package, not deployment-only (a library-shaped area can anchor
+  via a release/publish reference) — *or*, for a non-shipping code-bearing
+  area such as a repo-owned test harness, linter, or build tool, one backed
+  by an enabled heavy-gate/build CI job running on its own paths — used only
+  as the target of *area-class-resolved*'s `impliedBy`-closure check.
+  Modeled the opposite way from the *code-bearing* deny-list on purpose: a
+  small, hand-maintained allow-list, default-*exclusive*, so it stays a
+  genuinely narrower target — reachability against the default-inclusive
+  deny-list would be tautological, since closure is reflexive and every
+  non-denied area trivially reaches itself. Each anchor carries a
+  source-controlled *reference* external to the catalog — a deployment
+  manifest or package-publish step for an anchor that ships, or the CI job
+  reference for a non-shipping one — proving the reference exists and was
+  reviewed — not that the area is currently live.
+- **Regex-mirror guard** — the pattern that keeps a hand-written, fast CI
+  regex ("did any code change?") honest against the *change-area catalog* it
+  duplicates. Two directional checks compare path prefixes — every regex
+  alternative's prefix belongs to some catalog area, and every
+  *code-bearing* catalog area is matched by the regex — and a third checks
+  that every tracked file the regex calls code-bearing matches an area. That
+  is prefix synchronization over tracked files, not proof that every path
+  the regex could match is in the catalog: a not-yet-tracked file under a
+  broad prefix can still match no area.
+- **Area-class-resolved** — the *change-area catalog* strict-maturity
+  criterion proving a *regex-mirror guard*'s bidirectional sync is
+  insufficient on its own: a file can match a real, schema-valid area whose
+  `impliedBy` closure never reaches a **code-bearing anchor**, and still
+  pass a sync check that only asks "does this file match some area?" The
+  criterion requires every file the regex classifies as code to resolve,
+  through the closure, to the anchor set — checking against the broader
+  *code-bearing* deny-list instead would make the criterion tautological.
 - **Fix-and-stage** — the pre-commit hook pattern where an auto-fixer
   (formatter, regenerator) runs and its output is re-staged automatically,
   so the commit lands already clean instead of failing.
@@ -190,8 +245,9 @@ make, use the entry's term instead.
   area* are the two instances used by the *change-area catalog*'s
   regex-mirror guard.
 - **Code area** — the *area class* answering "must the heavy build run for a
-  change here?", repo-defined (e.g. every area whose `category` isn't a
-  docs-only tag). Used by `checkFilterCoverage` to decide which areas a fast
+  change here?", defined by explicit non-code-bearing area ids
+  on a deny-list, never by `category` (which is grouping metadata). Used by
+  `checkFilterCoverage` to decide which areas a fast
   CI shortcut regex must never miss. Not identical to *deploy-critical
   area* — a CI-infra area can be code-bearing without ever being deployed.
 - **Deploy-critical area** — the *area class* of every area whose

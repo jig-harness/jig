@@ -38,7 +38,10 @@ behind is a place the rule silently no longer applies.
 2. **Hook layer** — pre-commit: auto-fixing checks that fix-and-stage
    (formatting, regeneration); pre-push: cheap pattern gates + the heavy
    build/test; commit-msg: process markers (e.g., "this migration was
-   reviewed" tokens that a later gate verifies).
+   reviewed" tokens that a later gate verifies). A
+   [change-area catalog](../M3-change-area-catalog/)'s `validation:`
+   projection can scope the pre-push gate depth to what the change actually
+   touched instead of always running the heaviest set.
 3. **Gate-authoring rules** — one small script per codebase-wide rule
    ("no direct fetch calls in frontend", "no DML in migrations"), each with a
    paired self-test and fixtures, wired into both pre-push and CI. Every

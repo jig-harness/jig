@@ -7,9 +7,11 @@
 # area *names*, never re-hardcoding the globs.
 #
 # The areas below are neutral placeholders — a web app that consumes a shared
-# library, a deployable API service, the shared library itself, a CI-infra
-# area, and a docs area — chosen only to exercise every field and both shapes
-# of the `impliedBy` relation. Replace them with your repo's real areas.
+# library, a deployable API service, a generated schema owned by that service,
+# the shared library itself, a CI-infra area, a docs area, and a throwaway
+# prototype area — chosen only to exercise every field, both shapes of the
+# `impliedBy` relation, and both `validation:` profiles. Replace them with
+# your repo's real areas.
 #
 # Field reference: see ./README.md § "Entry schema".
 
@@ -38,6 +40,10 @@ areas:
     workspace: ["apps/api-service"]
     impliedBy: [core-lib, ci-infra]
     deployTier: primary
+    validation:
+      profile: deep
+      needsSandbox: true
+      notes: "Route/contract changes need integration coverage against a CI-identical sandbox."
     review:
       skills: [api-review]
       notes: "Applies when request/response contracts change."
@@ -49,6 +55,25 @@ areas:
     tracker:
       labels: [area:api]
     agent: backend
+
+  # ---- A generated-artifact area coupling M3 to M2's freshness gate -------
+  api-schema:
+    title: "Generated API Schema"
+    category: generated
+    paths: ["packages/api-schema/**"]
+    workspace: ["packages/api-schema"]
+    impliedBy: [api-service]     # an api-service change adds this area to the resolved closure
+    deployTier: none
+    validation:
+      profile: shallow
+      needsSandbox: false
+      notes: "Generated output; the source (api-service routes) carries the real code gates."
+    generated:
+      from: ["apps/api-service/src/routes/**"]
+      by: "npm run generate:api-schema"
+      notes: "Regenerated from route definitions; see M2's freshness triad for the drift check + hook wiring."
+    tracker:
+      labels: [area:api]
 
   # ---- A path-only library area that fans OUT to its consumers -----------
   core-lib:
@@ -82,5 +107,24 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: shallow
+      needsSandbox: false
+      notes: "No code to gate — shallow because there's nothing to run, not because prose is inherently shallow."
     tracker:
       labels: [area:docs]
+
+  # ---- Real code on the shallow validation profile, deliberately ---------
+  # Demonstrates that `shallow` means "skips the code gates," not "is prose":
+  # this is real code, kept shallow because it never ships.
+  spike:
+    title: "Prototype / Spike Code"
+    category: prototype
+    paths: ["spikes/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    validation:
+      profile: shallow
+      needsSandbox: false
+      notes: "Real code, not prose — shallow because it never ships, not because it isn't code."

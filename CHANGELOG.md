@@ -119,6 +119,19 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+## [0.26.0] - 2026-10-14
+
+### Added
+
+- M3 catalog rules for seeds versus dependency closure, agent gate depth,
+  generated-output coupling, externally corroborated code-bearing anchors,
+  and an independent catalog self-check trigger. The auditor's M3 criteria
+  now cover these facts; shortcut-only criteria use `expected-absent` where
+  the repository has no shortcut.
+- A brownfield coverage-gate adoption pattern with frozen exceptions,
+  partial-coverage pins and a live owner, also shown on the site's adoption
+  page.
+
 ## [0.25.0] - 2026-10-14
 
 A new practice module, M13 Pipeline economy: spend CI only where it changes

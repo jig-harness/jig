@@ -581,7 +581,7 @@ describe("since the last audit", () => {
       ),
     ).toEqual([
       "Fixed 1",
-      "Added by Jig 25",
+      "Added by Jig 26",
       "Still open within the target 4",
       "Still open beyond the target 78",
       "Unchanged and met 36",
@@ -734,6 +734,8 @@ describe("the guide", () => {
     await page.waitForFunction("location.hash === ''");
     await page.goForward();
     await page.waitForFunction("location.hash.startsWith('#d-')");
+    // The hash changes before the browser finishes restoring the scroll position.
+    await page.waitForFunction("window.scrollY === 1800");
     expect(await page.evaluate(() => window.scrollY)).toBe(1800);
     await page.context().close();
   });
@@ -821,6 +823,8 @@ describe("the guide", () => {
         await moved;
         await new Promise((r) => requestAnimationFrame(r));
       })()`);
+      // The hash changes before the browser finishes restoring the scroll position.
+      await page.waitForFunction("window.scrollY === 1800");
       expect(await page.evaluate(() => window.scrollY)).toBe(1800);
       await page.context().close();
     },

@@ -209,6 +209,7 @@ test("the plugin's tables give every skill and the agent", () => {
 test("the adoption guides parse into steps and phases", () => {
   const b = parseBrownfield(read("adoption/brownfield.md"));
   expect(b.ladder.map((s) => s.lead)).toContain("Audit");
+  expect(b.grandfathering).toContain("exception set");
   const g = parseGreenfield(read("adoption/greenfield.md"));
   expect(g.phases).toHaveLength(11);
   expect(g.moves).toHaveLength(3);

@@ -26,6 +26,8 @@ The catalog is a single top-level map `areas:` keyed by kebab-case area ids
 | `postDeploy` | optional | `[{ action, when, envs: [..], notes? }]` — post-deploy operational steps |
 | `tracker` | optional | `{ labels?: [..], flags?: [..] }` — tracker labels/flags to derive, whichever tracker the repository uses |
 | `agent` | optional | owning-agent label (a closed enum) |
+| `validation` | optional | `{ profile: <deep\|shallow>, needsSandbox: bool, notes? }` — the gate depth a coding agent must run before commit/push for this area; omitting the block, or omitting `profile` within it, defaults to `deep`; see [§ Agent gate depth](#agent-gate-depth-validation) |
+| `generated` | optional | `{ from: [..] (source globs, ≥1), by: "<regenerate command>", notes? }` — declares a generated output this area owns; see [§ Generated-output coupling](#generated-output-coupling-generated) |
 
 Reserved-but-loosely-typed blocks (`ci`, `deploy`, `scaffolding`, `owner`) let
 later consumers attach their own projection without a schema break — leave them
@@ -38,10 +40,12 @@ Enforced structurally (a JSON/YAML schema does this cleanly):
 - Area ids **and** every `impliedBy` reference match the kebab-case pattern.
 - `additionalProperties: false` on the catalog, each area, and each nested
   block — unknown fields are rejected (catches typos like `reviews:`).
-- `category`, `deployTier`, `agent`, `postDeploy[].envs`, tracker `flags` are
-  **closed literal unions** (fixed vocabularies).
+- `category`, `deployTier`, `agent`, `validation.profile`, `postDeploy[].envs`,
+  tracker `flags` are **closed literal unions** (fixed vocabularies).
 - `paths` ≥1 non-empty string; `review.skills` ≥1; `postDeploy[]` each carry
-  ≥1 `envs`.
+  ≥1 `envs`; `generated.from` ≥1 non-empty string and `generated.by`
+  non-empty — an empty `by` command passes every filesystem-level check
+  below while leaving nothing to run the freshness regeneration.
 
 Schema validation deliberately does **not** check referential integrity or
 cycles — a schema-valid catalog may still have a dangling `impliedBy` ref. That
@@ -62,7 +66,21 @@ Run these after schema validation:
    the area's own `paths` (else the resolver is blind to changes in it).
 6. **Coverage** — every `apps/*` and `packages/*` dir on disk maps to ≥1
    area's `workspace`. A new, unmapped workspace fails CI in the same PR that
-   adds it, instead of silently skipping all its gates.
+   adds it, instead of silently skipping all its gates. Brownfield adopters
+   grandfather existing gaps in this check rather than blocking on day one —
+   see [§ Grandfathering catalog coverage](#grandfathering-catalog-coverage).
+7. **Generated source exists** — each `generated.from` glob, expanded using
+   the catalog's defined glob semantics, matches at least one real path on
+   disk. A literal-prefix check (before the first wildcard) is not enough: a
+   typo further inside the pattern (`src/**/rouets/*.ts`) or a mid-pattern
+   segment that matches no directory still leaves the prefix resolving while
+   the full glob matches nothing, silently ceasing to fire the coupling it
+   was meant to declare. Expanding the whole glob is sufficient on its own —
+   a wildcard-leading pattern with an empty prefix (`**/*.proto` for a
+   repo-wide generator) is a legitimate, technology-neutral source layout and
+   needs no special-case rejection, since the full-glob match already proves
+   whether it has real sources — see
+   [§ Generated-output coupling](#generated-output-coupling-generated).
 
 ## The resolver
 
@@ -89,6 +107,92 @@ The git layer that feeds the resolver (picking the right diff per CI event —
 `pull_request` base…HEAD, merge-commit parent union, etc.) is repo- and
 provider-specific; keep it injectable so the pure resolver stays testable.
 
+## Seeds vs. closure — which side each projection reads
+
+The resolver produces two outputs on the way to `closure(seed(files))`, and
+they answer different questions:
+
+- **Seeds** — the areas *directly* matched by a changed file's globs. Answers
+  *"what did this change touch?"* Precise: a file that seeds an area really
+  did land in it.
+- **Closure** — seeds plus everything the forward `impliedBy` traversal adds.
+  Answers *"what are the consequences?"* Broad by design (see "conservative
+  over-trigger" in the module README's design rules); a file several
+  `impliedBy` hops away can land an area in the closure without ever matching
+  one of its globs.
+
+Every projection must state, explicitly, which side it reads:
+
+| Projection | Reads | Why |
+|---|---|---|
+| Deploy tier / post-deploy actions | closure | consequences — a rebuild several hops upstream is cheap to over-trigger and expensive to miss |
+| Mandatory review-gate flags (`tracker.flags`) | closure, but each flag is *decided*, never *inherited* | still needs the fan-in reach (a shared-library change must trigger review of its dependents) — but a flag's presence on an area is a modeling decision made against that area's real membership, not a side effect of some *other* area's `impliedBy` edge |
+| Review-gate table (`review.skills`) | closure | same fan-in reach as the mandatory review flags above — a `core-lib` change whose closure reaches `api-service` must request `api-service`'s `review.skills` too, or the dependent ships unreviewed |
+| Tracker labels | seeds | accuracy — a label describes what changed, not what might be affected |
+| `validation:` (agent gate depth) | seeds — except `needsSandbox`, which reads closure (see [§ Agent gate depth](#agent-gate-depth-validation)) | profile depth: an agent needs to know what it touched, not the whole consequence graph. `needsSandbox` is the one exception: it protects dependents the change didn't directly touch |
+| `generated:` (freshness coupling) | seeds — matched against `generated.from` as well as the area's own `paths` | a generated-output declaration binds to the specific area whose files produce it, and that area's own `paths` frequently do not cover its source (the source lives in a *different* area's `paths`) |
+
+**Labels fail toward accuracy; mandatory review gates fail toward coverage** —
+they need opposite defaults, so a projection that reads the wrong side fails
+silently in the wrong direction. A real failure mode: imagine a CI-infra area
+whose `impliedBy` closure reaches a backend area, which in turn reaches a
+generated-schema area carrying a mandatory API-review flag. An unrelated
+CI-workflow edit then seeds `ci-infra`, whose closure pulls in the
+generated-schema area — and a diff with no route, endpoint, or DTO in it
+emits a false mandatory-review flag. The flag itself is legitimate (schema
+changes do need that review); it was just attached to the wrong link in the
+chain.
+
+The corollary bites second: **seed-only only works if every mandatory flag is
+reachable from a seed.** Dropping the closure-derived flag for genuine route
+changes trades the false positive for a false *negative*, because the flag
+lived only on the generated-artifact area and a route change doesn't directly
+seed it. The fix in that shape of problem is not "pick a side" — it's a new,
+directly-matched area whose `paths` glob precisely covers the real trigger
+files, rather than an existing, broader area hand-enumerated for something
+else, so a real route change seeds the flag without needing the closure at
+all. This still uses an ordinary `paths` glob — nothing about the resolver
+or schema changes. When the real trigger genuinely can't be expressed as a
+path glob (it depends on import graphs or file content, not location),
+that analysis belongs in the git layer that feeds the resolver — already
+documented as repo-specific and injectable (see § The resolver) — which can
+emit synthetic changed-path entries the new area's `paths` then matches,
+rather than asking the core resolver to grow file-content-aware logic.
+
+**"Decided, not inherited" describes an authoring goal — it is not something
+the resolver can enforce on a shared graph.** There is one closure per
+catalog, and every projection reading it sees the same `impliedBy` edges. An
+edge kept deliberately broad because the deploy-tier projection wants to
+over-trigger on it (the `ci-infra → backend` edge above) inherits into every
+other closure-reading projection too, including mandatory-review flags —
+narrowing that edge to silence a review-flag false positive can just as
+easily under-trigger the deploy-tier projection that needed it broad in the
+first place. Edges cannot be selectively narrowed per projection on a single
+shared graph, so "narrow the edge" is not a real fix.
+
+**Nor does a new, precisely-scoped area** — that fix only closes the
+false-*negative* half. It does not close the false-*positive* half, and the
+worked catalog demonstrates why: `api-schema` has a precise `paths` glob
+(only the generated output matches it) and its own `impliedBy:
+[api-service]` is a real, direct trigger, so a genuine route change reaches
+it through closure — the false negative is fixed. But
+`api-service.impliedBy` includes `ci-infra` (kept broad on purpose, for the
+deploy-tier projection), so `ci-infra`'s closure still reaches `api-service`
+and, through it, `api-schema` — reproducing the exact false positive on an
+unrelated CI-workflow edit that this area was supposed to prevent. Closure
+only cares which edges exist on the path, not how precisely the area at the
+far end is seeded or reached; a new area cannot un-share the graph it's
+still wired into.
+
+**There is no catalog-internal fix.** The accepted mitigation is the
+fail-toward-coverage default already stated above: an occasional false
+positive on a mandatory review flag costs a human one redundant review,
+which is cheaper than the alternative (narrowing the edge, which risks a
+missed deploy-tier or post-deploy trigger the edge also serves). An adopter
+who needs precision here has to model review-flag applicability outside the
+shared `impliedBy` graph entirely — a capability this resolver's schema does
+not provide.
+
 ## Projections (generated)
 
 Each projection is a pure function of the catalog (and, for the dynamic ones,
@@ -100,11 +204,159 @@ a non-empty diff.
 |-----------|------|--------|
 | CI path-filter | static | per-area glob set = own `paths` ∪ the `paths` of every area that transitively implies it — a native CI `paths:` filter equivalent to "this area is affected" |
 | Per-event area flags | dynamic | `area=true/false` outputs for the CI run's changed files (drives job selection); optionally a synthetic `code=true/false` aggregate |
-| Review-gate table | static | Markdown table: area → trigger paths → mandatory review skills |
+| Review-gate table | static | Markdown table: area → trigger paths → mandatory review skills, trigger paths = the area's own `paths` ∪ the `paths` of every area whose `impliedBy` closure contains it (the same reverse reachability as the CI path-filter row; see [§ Seeds vs. closure](#seeds-vs-closure--which-side-each-projection-reads)), so a dependent's `review.skills` is requested even when the change only directly touched its dependency |
 | Component directory | static | Markdown: apps / packages / infra grouped by `workspace`, with deploy tier + owning agent |
 | Post-deploy checklist | dynamic | Markdown checklist of `postDeploy` actions for the affected areas |
-| Tracker labels | dynamic | the union of `tracker.labels` and `tracker.flags` for the affected areas |
+| Tracker labels | dynamic | the union of `tracker.labels` for the seeded areas — seeds only, for accuracy (see [§ Seeds vs. closure](#seeds-vs-closure--which-side-each-projection-reads)) |
+| Mandatory review-gate flags | dynamic | the union of `tracker.flags` reached through the seeded areas' `impliedBy` closure — each flag *decided* per area, never *inherited* as a side effect (see the same table) |
+| Agent gate depth | dynamic | the deepest `validation.profile` across the *seeded* areas, and whether `needsSandbox: true` on any area in those seeds' `impliedBy` *closure* — see below |
 | JSON resolution | dynamic | `{ changedFiles, seedAreas, areas, flags, postDeploy }` for other tooling |
+
+## Agent gate depth (`validation:`)
+
+CI job selection isn't the only consumer worth generating a projection for.
+`validation:` answers a different question: what must a **coding agent** run
+before commit and push, and does it need a CI-identical sandbox? It reads
+*seeds*, not the closure (see [§ Seeds vs. closure](#seeds-vs-closure--which-side-each-projection-reads)) — an
+agent needs to know what it touched, not the whole consequence graph.
+
+The rules below were learned from real misses:
+
+- **A file matching no area fails closed to the deepest profile.** Adding
+  coverage is how a change gets *cheaper* to validate (a narrower, correctly
+  scoped gate set); leaving a path uncovered is safe but expensive (it runs
+  the deepest gate set by default). Under-validating is the only unsafe
+  direction.
+- **A seeded area with no `validation` block, or one missing `profile`, also
+  defaults to `deep`** — the same fail-closed default as an unmatched file, for
+  the same reason. The block is opt-in *to `shallow`*, never opt-out of being
+  counted: `web-app`, `core-lib`, and `ci-infra` in the worked example all omit
+  `validation` and are each `deep` by this default, not excluded from the
+  deepest-profile computation.
+- **"Skips code validation" is not "is prose."** A `shallow` profile means
+  "this area doesn't need the code gates" — not "this area is written in
+  English." Prototype/throwaway code (see `spike` in the worked example) is
+  real code deliberately kept on the shallow profile because it never ships;
+  a docs area is shallow because it has no code to gate at all — a different
+  reason that happens to land on the same profile.
+- **`needsSandbox` is the one part of this projection that reads closure, not
+  just seeds.** The profile depth (`deep`/`shallow`) stays seed-only — an
+  agent needs to know what it touched. But sandbox need protects *dependents*:
+  in the worked example, a `core-lib` change seeds only `core-lib` (`deep` by
+  default, no `validation` block), while `api-service` — which depends on
+  `core-lib` and declares `needsSandbox: true` — is reached only through the
+  closure. Computing `needsSandbox` from seeds alone would miss it and let the
+  agent run the deep gate set on its local toolchain instead of a
+  CI-identical sandbox. So: take the deepest `validation.profile` from the
+  *seeded* areas, but take `needsSandbox` from the *closure* of those seeds —
+  if any area the change could affect requires a sandbox, fail closed to it.
+
+  This local check is a convenience, not a substitute for CI: CI re-runs the
+  deepest profile's full gate set regardless of what the hook computed or
+  skipped (see [mappings.md](../../mappings.md#agent-gate-depth-validation-wiring)),
+  so a closure-scope miss here is caught, not silently lost.
+
+The payoff for [M12](../../../M12-parallel-agent-ergonomics/): a pre-push hook
+can look up both computations above and skip the cross-worktree heavy-run
+mutex only when they *agree* nothing heavy ran — the deepest
+`validation.profile` across the seeded areas is `shallow` **and** no area in
+those seeds' `impliedBy` closure has `needsSandbox: true`. Profile depth
+alone is not sufficient: it's seed-only by design (see above), so an
+all-`shallow` seed set can still reach a `needsSandbox` dependent purely
+through closure — the machine-wide serialization
+[M1](../../../M1-gates-enforcement-ladder/) points at exists to protect
+exactly those closure-reached `needsSandbox: true` runs, not just the
+directly-seeded ones.
+
+## Generated-output coupling (`generated:`)
+
+[M2](../../../M2-generated-artifact-freshness/) covers artifact freshness;
+this field covers the seam between it and the catalog. Declaring a generated
+output *on its owning area* — see `api-schema` in the worked example — lets
+that area carry one specific freshness gate (the `generated.by` command, run
+against `generated.from`) without escalating the whole area to a `deep`
+validation profile, and stops the regenerate command being copy-pasted across
+a hook, a CI step, and a paragraph of prose that then drift independently.
+
+The `from` paths are as load-bearing as `paths` itself: if a cross-area
+generator's source path is mistyped, a naive glob-coverage check still passes
+(the string is *some* valid-looking glob) while the coupling silently stops
+firing — the area never sees the source change that should have triggered its
+regeneration. That is why `generated.from` is graph-checked against the
+filesystem (§ Graph validation, above), not just schema-checked for shape.
+
+**Activation.** A changed file matching `generated.from` seeds the *owning*
+area for this projection, exactly as a match against `paths` would — even
+though the source usually lives inside a *different* area's `paths`. In the
+worked example, `apps/api-service/src/routes/**` is covered by `api-service`'s
+own `paths`, not `api-schema`'s; without this rule a routes-only diff would
+seed `api-service` but never `api-schema`, and the freshness check would never
+fire on a source-only change. This activation is scoped to the freshness
+projection alone — it does not add the owning area to the `validation:` seed
+set or to the general `closure()` output (see
+[§ Seeds vs. closure](#seeds-vs-closure--which-side-each-projection-reads)).
+
+## Grandfathering catalog coverage
+
+The Coverage check (§ Graph validation) is pass/fail, which a brownfield repo
+cannot satisfy on day one. Apply the general pattern from
+[`adoption/brownfield.md`](../../../../adoption/brownfield.md#grandfathering-a-coverage-gate)
+with these catalog-specific sets:
+
+1. **An exception set** (e.g. a checker-side list, not the catalog itself)
+   naming workspaces the coverage check may not fail on yet. New workspaces
+   may never be *added* to it — only removed as they gain coverage. Enforce
+   this mechanically, not by convention: a check diffs the set against its
+   value on the base branch and fails if the diff contains an addition.
+   Read the comparison side from the trusted base — the base branch's copy
+   of the set, or of a frozen baseline file, never the copy in the PR's own
+   tree, which the same PR can edit in step with the set — and keep the
+   comparison script under required review ownership, so the PR cannot
+   weaken the check that judges it. Without that check the set is an
+   ordinary in-code list, and a PR introducing a newly-uncovered workspace
+   can add it to the same list and keep the coverage gate green — the
+   base-branch diff is what makes "may never be added to" observable instead
+   of just documented.
+2. **A partial-coverage pin set**, one entry per `{glob, path}` pair, checked
+   two ways: the glob must still resolve to that literal on-disk path (so
+   deleting the files doesn't silently pass), and the pin only suppresses the
+   *uncovered* finding for that path — a path that moves from uncovered to
+   partially-covered still reports, since narrowing coverage is progress the
+   backlog should see, not more silence. Those two checks only see pins that
+   still exist, so a third catches a deleted declaration: diff the pin set
+   against the base branch's copy, as for the exception set, and fail on a
+   removed `{glob, path}` pair unless its path is now fully covered or no
+   longer exists in the tree — the only two ways its coverage obligation is
+   discharged. A fixture that deletes a pin while its path is still
+   partially covered must fail.
+
+Route the resulting backlog to a **live, open** tracking item, not a closed
+one — see the brownfield doc's failure mode.
+
+## The self-check paradox
+
+A self-check (see [GLOSSARY.md](../../../../GLOSSARY.md)) cannot ask its
+subject whether it should run. The CI step that
+validates the catalog's own structure (§ Schema-level validation, § Graph
+validation) must run independently of catalog-derived selection — either
+unconditionally on every CI event, or behind a hand-written, literal path
+match on the catalog file itself — never by resolving changed paths
+*through* the catalog to decide whether to run the catalog check. If it did, a change that deletes
+the catalog's own paths from the catalog would resolve to nothing, and the one
+check that should catch that deletion would skip itself along with it.
+
+A trigger on the catalog file alone is enough only while no area declares
+`generated:`. Point 7 of § Graph validation can break without the catalog
+changing: deleting the last file a `generated.from` glob matches leaves the
+declaration dangling. So once any area declares `generated:`, either run the
+check on every CI event, or extend the trigger with a literal match on every
+`generated.from` glob, deletions included.
+
+Where a trigger is used rather than an unconditional run, it is the single
+hand-written shortcut this module treats as *required*, not debt — every other hand-maintained path list (the regex-mirror shortcut
+below) is drift to be checked or replaced. It generalizes beyond this module:
+any catalog-, config-, or manifest-driven CI has exactly one check that cannot
+be gated by the thing it validates.
 
 ## The regex-mirror guard
 
@@ -133,15 +385,16 @@ implementations can't silently disagree:
 
 ### `checkFilterCoverage` (catalog → regex)
 
-- **Inputs:** every area whose forward `impliedBy` closure reaches the
-  *target area class* — every regex under test is checked against **one**
-  area class, matching what the regex actually decides:
+- **Inputs:** the areas relevant to the shortcut's target class — every
+  regex is checked against one class matching what it actually decides:
   - a general "did any code change?" shortcut targets the
-    [code area](../../../../GLOSSARY.md) class (e.g. every area whose
-    `category` isn't a docs-only tag; the repo states its own rule);
+    [code area](../../../../GLOSSARY.md) class directly: every area not on
+    an explicit non-code-bearing area-id deny-list, never a `category`
+    filter. Closure reachability is checked separately against anchors;
   - a deploy-gating shortcut targets the
     [deploy-critical area](../../../../GLOSSARY.md) class instead — the same
     class `checkFilterCodeAreaCoverage` uses — **not** the code-area class.
+    Include every area whose forward closure reaches that class.
     Running this check against the broader code-area class for a
     deploy-gating regex is unsatisfiable together with
     `checkFilterCodeAreaCoverage` whenever some code-bearing area isn't
@@ -496,3 +749,16 @@ needs the resolver's closure, so it isn't a standalone script).
 refinements of the same regex → catalog direction — same "parse, don't grep
 the substring" lesson, walked per file and per area-class instead of per
 regex alternative.
+
+**Bidirectional sync is necessary, not sufficient.** Both directions can stay
+green while "code-bearing" itself is wrong, because both check against the
+same default-inclusive deny-list, not against reality: a file can match a
+real area whose `impliedBy` closure never reaches anything that actually
+ships, and still count as code-bearing simply because nobody added that area
+to the deny-list. The regex and the catalog agree with *each other* while
+both disagree with reality. The fix is a *second*, deliberately narrower
+list — a **code-bearing anchor** set — that an additional check verifies the
+closure actually reaches. See
+[`../regex-mirror/README.md`](../regex-mirror/README.md#matching-an-area-is-not-the-same-as-being-code-bearing)
+for the failure mode and the audit criteria's [`area-class-resolved`](../../../../GLOSSARY.md)
+strict criterion for the mechanical check.

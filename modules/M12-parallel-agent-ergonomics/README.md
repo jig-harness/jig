@@ -46,7 +46,18 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    is the **same `with-resource-lock` mechanism** the
    [M1 gates & enforcement ladder](../M1-gates-enforcement-ladder/) module points
    to for putting heavy pre-push gates behind a mutex; M12 owns the script, M1
-   consumes it.
+   consumes it. It can also be skipped locally — not just bypassed in CI —
+   when a [change-area catalog](../M3-change-area-catalog/)'s `validation:`
+   projection clears it on *both* axes it computes: the deepest profile is
+   all-`shallow` *including its fail-closed defaults* (an unmatched file, or
+   a seeded area missing `validation.profile`, both compute as `deep` —
+   never vacuously `shallow`), **and** no area reached through the seeds'
+   `impliedBy` closure declares `needsSandbox: true` (see
+   [mappings.md](../M3-change-area-catalog/mappings.md)). Profile depth alone
+   is not enough to skip: it's seed-only by design, so an all-`shallow` seed
+   set can still reach a `needsSandbox` dependent purely through closure —
+   only agreement on both axes means nothing heavy enough to need
+   serializing ran.
 3. **Branch reuse before create** — before creating a branch, look for an
    existing one (local or remote) and reuse it; only create when none exists, so
    two agents on the same task converge on one branch instead of forking two. The
