@@ -54,52 +54,90 @@ jobs:
           reqsec="$M6/reference/required-sections/check-required-sections.ts"
           review="$M6/reference/stage-review-record/check-stage-accepted.ts"
           base="${{ github.event.pull_request.base.sha }}"
-          git -C pr diff --name-only --diff-filter=d "$base" HEAD -- 'docs/**/*.md' |
-          while read -r f; do
+          # -z: file names verbatim; a file, not a pipe, so a failing git diff stops the step
+          list=$(mktemp)
+          git -C pr diff -z --name-only --diff-filter=d "$base" HEAD -- 'docs/*.md' > "$list"
+          while IFS= read -r -d '' f; do
             # one sections manifest per artifact type, read from the base tree too
             case "$f" in
               docs/prd/*)          man="base/docs/_manifests/prd-sections.txt" ;;
               docs/architecture/*) man="base/docs/_manifests/architecture-sections.txt" ;;
               docs/research/*)     man="base/docs/_manifests/research-sections.txt" ;;
-              *)                   man="" ;;
+              *)                   man="" ;;     # not a stage artifact: no sections to require
             esac
             [ -n "$man" ] && { MANIFEST="$man" bun "$reqsec" "pr/$f" || exit 1; }
-            bun "$review" "pr/$f" || exit 1     # accepted-implies-reviewed, every stage doc
-          done
+            bun "$review" "pr/$f" || exit 1     # accepted-implies-reviewed, every changed doc
+          done < "$list"
 ```
 
 ### GitLab CI
 
 ```yaml
 pipeline_docs:
+  # Merge-request pipelines only: CI_MERGE_REQUEST_DIFF_BASE_SHA is empty in
+  # any other pipeline, and both the base tree and the diff need it.
   rules:
-    - changes: ["docs/prd/**", "docs/architecture/**", "docs/research/**"]
-  variables:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: ["docs/prd/**", "docs/architecture/**", "docs/research/**"]
+  variables: { GIT_DEPTH: 0 }   # full history: the merge base must be present
+  image: <an image with bun and bash>
+  before_script:
     # Gate scripts MUST come from the BASE the MR targets, never the MR's own
     # tree — a fork MR can edit its copy of the gate to report success. Extract
-    # the base copy of the module and point M6 at THAT; the changed docs are
+    # the base copy of the module, with the lib/ it imports, into a fresh
+    # directory outside the checkout and point M6 at THAT; the changed docs are
     # checked as data.
-    M6: base/modules/M6-feature-delivery-pipeline
-  before_script:
-    - git fetch --depth=1 origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
-    - mkdir -p base && git archive "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
-        modules/M6-feature-delivery-pipeline docs/_manifests | tar -x -C base
+    - git fetch origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+    - export BASE_TREE="$(mktemp -d)"
+    - git archive "$CI_MERGE_REQUEST_DIFF_BASE_SHA" lib
+        modules/M6-feature-delivery-pipeline docs/_manifests | tar -x -C "$BASE_TREE"
+    - export M6="$BASE_TREE/modules/M6-feature-delivery-pipeline"
   script:
     - bun test "$M6"/reference/required-sections/check-required-sections.test.ts
     - bun test "$M6"/reference/stage-review-record/check-stage-accepted.test.ts
     - |
-      git diff --name-only --diff-filter=d "$CI_MERGE_REQUEST_DIFF_BASE_SHA"... -- 'docs/**/*.md' |
-      while read -r f; do
-        SECTIONS="$(cat base/docs/_manifests/$(basename "$(dirname "$f")")-sections.txt 2>/dev/null)" \
-          bun "$M6"/reference/required-sections/check-required-sections.ts "$f" || exit 1
+      [ -n "${BASH_VERSION:-}" ] || { echo "pipeline_docs needs bash" >&2; exit 1; }
+      list=$(mktemp)
+      git diff -z --name-only --diff-filter=d "$CI_MERGE_REQUEST_DIFF_BASE_SHA"... -- 'docs/*.md' > "$list"
+      while IFS= read -r -d '' f; do
+        case "$f" in
+          docs/prd/*)          man="$BASE_TREE/docs/_manifests/prd-sections.txt" ;;
+          docs/architecture/*) man="$BASE_TREE/docs/_manifests/architecture-sections.txt" ;;
+          docs/research/*)     man="$BASE_TREE/docs/_manifests/research-sections.txt" ;;
+          *)                   man="" ;;     # not a stage artifact: no sections to require
+        esac
+        [ -n "$man" ] && { MANIFEST="$man" bun "$M6"/reference/required-sections/check-required-sections.ts "$f" || exit 1; }
         bun "$M6"/reference/stage-review-record/check-stage-accepted.ts "$f" || exit 1
-      done
+      done < "$list"
 ```
 
-The required-sections gate takes a per-artifact-type manifest (or a `SECTIONS=`
-list); the stage-review-record gate takes just the artifact and passes any doc
-that is not `status: accepted`, so it is safe to run over every changed stage
-doc.
+File names come from `git diff -z`, which prints them verbatim, each ended by
+a zero byte; without it git quotes a name holding a double quote, a backslash,
+a control character such as a newline, or (under the default
+`core.quotePath`) a non-ASCII character, and the quoted form names no file.
+The list goes through a file rather than a pipe, so a failing `git diff`
+stops the step instead of reading as an empty list, and the loop runs in the
+shell itself, so `exit 1` fails the step. The pathspec is `'docs/*.md'`: in a
+git pathspec `*` crosses `/`, so it matches every depth, while
+`'docs/**/*.md'` misses the documents directly under `docs/`. `read -d ''`
+needs bash: GitHub Actions runs `run:` steps with bash on Linux, and the GitLab
+job names a bash image and fails under any other shell rather than reading an
+empty list.
+
+The GitLab job extracts `lib/` with the module because the gate scripts import
+`../../../../lib/module-gates.ts`, so the base tree keeps Jig's layout:
+`modules/M6-feature-delivery-pipeline/` beside `lib/`.
+
+A document directly under `docs/` is not a stage artifact, so it has no sections
+manifest and the required-sections gate skips it (the gate refuses to run
+without a list of sections). The stage-review-record gate still reads it: it
+takes just the artifact and passes any well-formed doc that is not
+`status: accepted` (unclosed frontmatter or a duplicated `status:` or
+`reviewed:` key fails it whatever the status), so it is safe to run over every
+changed doc, and a top-level doc marked accepted
+without a review record still fails. The job's trigger lists only the stage
+directories, so such a doc is read when the same change also touches a stage
+artifact; list `docs/**` there to read it on every change.
 
 ## Agent runtimes — the loop and the review as skills
 

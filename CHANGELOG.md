@@ -120,6 +120,20 @@ changes are marked **Breaking** and say what a consumer changes.
   M15 contracts and error handling) and the corrected designs for the existing
   modules.
 
+### Fixed
+
+- M6's changed-docs recipes (GitHub Actions and GitLab) read the changed
+  documents the way M4's do: `git diff -z` into a file, with the
+  `'docs/*.md'` pathspec. Documents directly under `docs/` are no longer
+  skipped, names git would quote (non-ASCII characters, quotes, newlines)
+  reach the checkers intact, and a failing `git diff` fails the step instead
+  of reading as no changed documents. The GitLab recipe picks the sections
+  manifest by stage directory, as the GitHub one does, so a document outside
+  the stage directories no longer fails for want of a manifest. It also runs
+  only in merge-request pipelines, fails under a shell other than bash, and
+  extracts the base tree's gate scripts, with the `lib/` they import, into a
+  fresh directory outside the merge request's checkout.
+
 ## [0.26.0] - 2026-10-14
 
 ### Added

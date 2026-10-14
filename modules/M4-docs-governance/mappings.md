@@ -87,15 +87,16 @@ those paths to the job's `changes:` list as well as to `VENDORED`. Renamed
 documents (`R`) are checked at their new path, since a move into another
 subtree can break that subtree's path rules.
 
-File names come from `git diff -z`, which prints them verbatim; without it git
-quotes a name holding a space or a non-ASCII character, and the quoted form
-names no file. The list goes through a file rather than a pipe or process
-substitution, so a failing `git diff` stops the step instead of reading as an
-empty list. The pathspec is `'docs/*.md'`: in a git pathspec `*` crosses `/`,
-so it matches every depth, while `'docs/**/*.md'` misses the documents
-directly under `docs/`. `NEW_DOCS` takes one path per line, and the checker
-fails on an entry that names no file it checked. `mapfile -d ''` needs bash
-4.4 or later.
+File names come from `git diff -z`, which prints them verbatim, each ended by
+a zero byte; without it git quotes a name holding a double quote, a backslash,
+a control character such as a newline, or (under the default
+`core.quotePath`) a non-ASCII character, and the quoted form names no file.
+The list goes through a file rather than a pipe or process substitution, so
+a failing `git diff` stops the step instead of reading as an empty list. The
+pathspec is `'docs/*.md'`: in a git pathspec `*` crosses `/`, so it matches
+every depth, while `'docs/**/*.md'` misses the documents directly under
+`docs/`. `NEW_DOCS` takes one path per line, and the checker fails on an entry
+that names no file it checked. `mapfile -d ''` needs bash 4.4 or later.
 
 ### GitLab CI
 
