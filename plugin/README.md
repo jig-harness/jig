@@ -446,8 +446,9 @@ Paths inside the cache change with each release, so never store them.
   machine uses the same release, so releases keep reading older configuration
   files unless [CHANGELOG.md](../CHANGELOG.md) says otherwise.
 - **What `main` means:** both tools install from the default branch, but a
-  machine only receives a change when `version` changes. Every pull request
-  that changes `plugin/` therefore bumps the version (see
+  machine only receives a change when `version` changes. Every merge that
+  changes `plugin/` is therefore released as a new version, written by the
+  release step on `main` from the pull request's change note (see
   [release](#release-a-new-version)); otherwise two machines showing the same
   version can run different code.
 - **Remove**: `claude plugin uninstall jig@jig` and

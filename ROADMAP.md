@@ -65,7 +65,10 @@ workspace, whose copies are deleted in the same rollout):
 
 ### 4. `changelog` skill
 
-Keeps a repository's changelog as a practice, not an afterthought, in either
+Keeps a repository's changelog as a practice, not an afterthought, for a
+repository that opts in: the skill, its gate and the change-note requests
+below act only where `.config/jig.yaml` has a `changelog:` section, and a
+repository without one is never asked for a changelog. It works in either
 common format, detected from the file or set in configuration:
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) (an
 `Unreleased` section filled as changes merge; `Added`, `Changed`,
@@ -93,8 +96,18 @@ first; no `Unreleased`).
 - **Release**: for Keep a Changelog, M12's change-notes release step
   ([reference/change-notes/](modules/M12-parallel-agent-ergonomics/reference/change-notes/README.md))
   already writes each pull request's note into the version's section or
-  Unreleased, moves the version and the comparison links; the skill runs it
-  for a consumer and adds the Common Changelog form.
+  Unreleased, moves the version and the comparison links. The skill moves
+  that step and its branch check into the plugin (self-contained, so they run
+  from the plugin cache), takes the notes directory, the changelog, the
+  version files (`package.json`, `pyproject.toml` and others, not only JSON),
+  the released paths and the version placeholders from configuration, and
+  adds the Common Changelog form.
+- **How the release reaches the integration branch**, chosen per
+  repository: a direct push by a GitHub App the branch's ruleset lets past
+  its rules (Jig's own setup, ADR-0004), or a release pull request a person
+  merges, which needs no such exception. A workflow template per CI
+  provider, and a setup step that walks through the App, the ruleset and the
+  environment holding the key.
 - `do-item` and `drive-pr` ask for a change note when a pull request changes
   what users see, where the format keeps one per change.
 
