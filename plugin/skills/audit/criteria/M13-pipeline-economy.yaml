@@ -107,7 +107,7 @@ criteria:
   - id: job-timeout-ceiling-linted
     level: strict
     requires: mechanical
-    since: next
+    since: 0.32.0
     statement: >-
       The CI-configuration lint fails a job whose timeout, written as a
       number, is above an hour, unless a reasoned exception covers that job,
