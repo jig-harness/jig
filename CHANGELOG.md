@@ -171,6 +171,14 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.31.1] - 2026-10-15
+
+### Changed
+
+- The plugin's update guide says a merge that changes `plugin/` is released
+  as a new version by the release step on `main`, from the pull request's
+  change note, instead of the pull request bumping the version itself.
+
 ## [0.31.0] - 2026-10-15
 
 Pull requests stop conflicting over the changelog and the version: each adds
@@ -1556,7 +1564,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.31.1...HEAD
+[0.31.1]: https://github.com/docomply/jig/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/docomply/jig/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/docomply/jig/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/docomply/jig/compare/v0.28.1...v0.29.0
