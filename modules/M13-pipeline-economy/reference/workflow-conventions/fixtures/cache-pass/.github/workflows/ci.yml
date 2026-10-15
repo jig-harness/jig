@@ -1,0 +1,13 @@
+on: push
+env:
+  NODE_ENV: production
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET: linux
+      UNRELATED: one
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v4
+      - run: make build

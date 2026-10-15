@@ -1,0 +1,1 @@
+job-timeout .github/workflows/ci.yml untimed

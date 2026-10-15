@@ -1,0 +1,7 @@
+name: setup
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@0123456789abcdef0123456789abcdef01234567 # v4
+    - run: echo ready
+      shell: bash

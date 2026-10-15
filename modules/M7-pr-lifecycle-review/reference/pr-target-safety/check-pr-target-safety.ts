@@ -21,7 +21,8 @@
 //   3. it has an execution path: a `run:` step or a local `uses: ./` action.
 // High-recall by design: a false positive is a two-line review; a false
 // negative is a leaked secret. A workflow that omits any of the three passes.
-// Workflows are read with Bun's YAML parser; one that does not parse exits 2.
+// Workflows are read through the shared reader in lib/workflows.ts (js-yaml);
+// one that does not parse, or repeats a key, exits 2.
 //
 // Conventions (see ../../../M1-gates-enforcement-ladder/reference/grep-gate):
 // exit 0 on pass, 1 on an unsafe workflow (per-file report), 2 on a usage

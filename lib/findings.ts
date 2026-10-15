@@ -12,9 +12,9 @@ export interface Finding {
   /** The rule's short name, the same in every finding of that rule. */
   rule: string;
   /** Path relative to the repository root, with forward slashes. */
-  file?: string;
+  file?: string | undefined;
   /** 1-based line number in `file`. */
-  line?: number;
+  line?: number | undefined;
   /** What is wrong at this place. */
   problem: string;
   /** How to fix it, or the document that says how. */

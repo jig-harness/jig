@@ -280,7 +280,8 @@ and passes, and point the author at it, rather than checking by eye:
 
 | Concern | Typical enforcing check |
 |---------|-------------------------|
-| Mutable (non-SHA) action references | an action-pin check over `.github/workflows/**` and `.github/actions/**` |
+| Mutable (non-SHA) action references | an action-pin check over `.github/workflows/**` and `.github/actions/**`, or a workflow-convention lint |
+| Job timeouts, cancelling pull-request concurrency, unfiltered required workflows, a `!cancelled()` aggregator, heavy suites off the per-change path | a workflow-convention lint; Jig's reference is [M13's](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md), whose exceptions each carry a reason |
 | Unpinned `curl \| sh` or install scripts | an install-script allowlist |
 | Merge strategy (for example squash-only) | a merge-strategy validation |
 | Secrets leaked in the diff | a secret scan |

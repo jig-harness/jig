@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { remediation } from "./check-branch-protection.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
+import { checkWorkflowConventions } from "./check-workflow-conventions.ts";
 import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 
@@ -1107,6 +1108,29 @@ test("Jig's workflows pass the PR-target safety lint, and an unsafe one fails it
     "on: push\njobs:\n  a:\n    runs-on: x\n  a:\n    runs-on: y\n",
   );
   expect(checkWorkflowSafety(dir, {})).toBe(2);
+});
+
+test("Jig's workflows pass the workflow-convention lint, and a broken one fails it", () => {
+  expect(checkWorkflowConventions(root)).toBe(0);
+  const dir = temp();
+  const workflows = join(dir, ".github/workflows");
+  mkdirSync(workflows, { recursive: true });
+  expect(checkWorkflowConventions(dir, {})).toBe(2);
+  writeFileSync(
+    join(workflows, "ci.yml"),
+    "on: push\njobs:\n  build:\n    runs-on: x\n    steps:\n      - run: make\n",
+  );
+  expect(checkWorkflowConventions(dir, {})).toBe(1);
+  writeFileSync(join(workflows, "ci.yml"), "on: push\njobs: [unclosed\n");
+  expect(checkWorkflowConventions(dir, {})).toBe(2);
+  // Jig always has workflows: an action alone has checked none of them.
+  const actionOnly = temp();
+  mkdirSync(join(actionOnly, ".github/actions/setup"), { recursive: true });
+  writeFileSync(
+    join(actionOnly, ".github/actions/setup/action.yml"),
+    "runs:\n  using: composite\n  steps: []\n",
+  );
+  expect(checkWorkflowConventions(actionOnly, {})).toBe(2);
 });
 
 test("the origin-reference gate with no text file to read could not check", () => {

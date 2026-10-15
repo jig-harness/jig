@@ -1,0 +1,8 @@
+# Exceptions to M13's workflow-convention lint
+# (modules/M13-pipeline-economy/reference/workflow-conventions/README.md).
+# One `<rule> <file> [<job>]` per line, the file as the lint's findings name
+# it. Each group of entries opens with `#` lines giving its reason, and a
+# blank line ends the group. The lint fails on an entry without a reason and
+# on one that suppresses no finding: delete such an entry.
+#
+# Jig's workflows meet every convention, so there is no entry.

@@ -48,10 +48,12 @@ rather than what is not: the head reaches a checkout through many spellings
 (an `env.` variable, a step output, bracket access, the merge ref), and every
 one of them is outside the list.
 
-The lint reads each workflow with Bun's YAML parser, so a value is judged as
-GitHub sees it, whether it is written folded, quoted, escaped, in a flow
-mapping or through an anchor; the trigger is read from the parsed `on:` as
-well as the raw text. A file that does not parse fails the lint with exit 2.
+The lint reads each workflow through Jig's shared workflow reader
+([`lib/workflows.ts`](../../../../lib/workflows.ts), with a vendored js-yaml),
+so a value is judged as GitHub sees it, whether it is written folded, quoted,
+escaped, in a flow mapping or through an anchor; the trigger is read from the
+parsed `on:` as well as the raw text. A file that does not parse, or repeats a
+key, fails the lint with exit 2.
 
 A literal `ref:` or `repository:` passes: under `pull_request_target` the
 workflow file comes from the base branch, so a literal was written by the

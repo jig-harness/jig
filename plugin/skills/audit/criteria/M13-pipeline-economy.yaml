@@ -92,11 +92,16 @@ criteria:
     requires: mechanical
     since: 0.25.0
     statement: >-
-      A lint over the CI configuration fails a job without a timeout, a
-      required workflow filtered at its trigger, an aggregator that runs on
-      always(), and a concurrency key that drops runs it does not cover.
+      A lint over the parsed CI configuration fails a job without a timeout, a
+      pull-request workflow without a cancelling concurrency group, a required
+      workflow filtered at its trigger, and an aggregator that runs on
+      always(); it fails closed on a file it cannot parse, every exception it
+      accepts carries a reason, and an exception that suppresses nothing fails
+      it.
     observe:
-      - "a script or rule set reads the workflow files and checks these conventions"
+      - "a script or rule set reads the parsed workflow files and checks these conventions"
+      - "a file that does not parse (a repeated key included) makes it fail, not pass"
+      - "its exceptions are checked in, each with a reason; an entry without one, or one that suppresses no finding, fails the lint"
       - "it runs in CI on changes to the workflow files, with its own self-test"
 
   - id: ci-cost-measured

@@ -1,0 +1,2 @@
+ci:
+  required_checks: [verdict]

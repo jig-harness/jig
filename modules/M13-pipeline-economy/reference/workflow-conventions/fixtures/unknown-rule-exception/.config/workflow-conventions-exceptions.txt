@@ -1,0 +1,2 @@
+# Not a rule.
+no-such-rule .github/workflows/ci.yml

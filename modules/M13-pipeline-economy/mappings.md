@@ -65,7 +65,7 @@ risk moves to pipelines that are never created.
 | Every push to the integration branch | `on: push: branches: [<integration branch>]` | `rules: - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH` |
 | On a schedule | `on: schedule: - cron:`; in a public repository GitHub disables a scheduled workflow after 60 days without repository activity, so watch that it still runs | A pipeline schedule; `rules: - if: $CI_PIPELINE_SOURCE == "schedule"` |
 | On demand | `on: workflow_dispatch` with `inputs:` naming the suite | A manual job (`when: manual`) or a pipeline run from the web (`$CI_PIPELINE_SOURCE == "web"`) |
-| The placement checked | A lint over `.github/workflows/` rejecting a per-change trigger on a workflow marked as a scheduled suite | A lint over `.gitlab-ci.yml` rejecting a merge-request rule on such a job |
+| The placement checked | A lint over `.github/workflows/` rejecting a per-change trigger on a workflow marked as a scheduled suite: [`reference/workflow-conventions/`](reference/workflow-conventions/README.md#heavy-per-change) | A lint over `.gitlab-ci.yml` rejecting a merge-request rule on such a job |
 
 ## Measuring cost
 

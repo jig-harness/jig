@@ -1,0 +1,10 @@
+on: pull_request
+# A group without cancel-in-progress queues every push.
+concurrency: ci-${{ github.ref }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v4
+      - run: make build

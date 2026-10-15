@@ -713,7 +713,7 @@ criteria:
     score: mechanical
     evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: nightly.yml runs the gate set on macOS and Windows, the drive-pr suite on macOS and the website parser tests on both, on a daily schedule and workflow_dispatch; its header says nothing waits for it and names the per-platform run the slowest part of CI; the gates aggregator needs only gates.yml's Linux jobs and there is no verified pointer; the per-change proxy is the same gate set, drive-pr suite and website tests on Linux in gates.yml"
   M13/workflow-conventions-linted:   # strict, requires mechanical
-    # A lint over the CI configuration fails a job without a timeout, a required workflow filtered at its trigger, an aggregator that runs on always(), and a concurrency key that drops runs it does not cover.
+    # A lint over the parsed CI configuration fails a job without a timeout, a pull-request workflow without a cancelling concurrency group, a required workflow filtered at its trigger, and an aggregator that runs on always(); it fails closed on a file it cannot parse, every exception it accepts carries a reason, and an exception that suppresses nothing fails it.
     score: absent
     evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: no lint checks these conventions; scripts/check-workflow-safety.ts reads .github/workflows/ for pull_request_target safety only, so timeouts, trigger filters, aggregator conditions and concurrency keys hold by review only"
   M13/ci-cost-measured:   # strict, requires mechanical

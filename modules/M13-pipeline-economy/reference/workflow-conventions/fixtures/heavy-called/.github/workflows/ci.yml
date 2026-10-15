@@ -1,0 +1,7 @@
+on: pull_request
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  e2e:
+    uses: ./.github/workflows/e2e.yml

@@ -1,0 +1,5 @@
+areas:
+  docs:
+    paths: ["docs/**", "*.md"]
+  site:
+    paths: ["site/**"]

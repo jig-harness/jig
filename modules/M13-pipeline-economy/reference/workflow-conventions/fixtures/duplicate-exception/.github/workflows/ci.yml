@@ -1,0 +1,10 @@
+on: push
+jobs:
+  one:
+    runs-on: ubuntu-latest
+    steps:
+      - run: make
+  two:
+    runs-on: ubuntu-latest
+    steps:
+      - run: make

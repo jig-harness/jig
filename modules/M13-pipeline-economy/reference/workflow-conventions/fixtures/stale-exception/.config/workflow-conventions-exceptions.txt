@@ -1,0 +1,2 @@
+# The job once had no timeout.
+job-timeout .github/workflows/ci.yml build

@@ -1,0 +1,6 @@
+name: setup
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567 # v4
+    - uses: actions/cache@v4

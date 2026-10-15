@@ -1,0 +1,4 @@
+cache_groups:
+  - name: build-cache
+    members: [ci.yml#build, nightly.yml#build]
+    env: [NODE_ENV, TARGET]

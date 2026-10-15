@@ -4,7 +4,8 @@
  * through folded scalars, quoted keys, flow collections and anchors, and the
  * gate must see the value every other reader sees. Both read it with js-yaml,
  * vendored in `vendor/` beside this file: the PR-target safety lint for GitHub
- * Actions workflows, the label-taxonomy lint for the taxonomy. js-yaml rejects
+ * Actions workflows, through the shared workflow reader in `workflows.ts`, and
+ * the label-taxonomy lint for the taxonomy. js-yaml rejects
  * a repeated key where Bun's parser keeps the last one; vendoring `lib/` alone
  * therefore keeps that check. */
 import {
@@ -17,7 +18,6 @@ import {
   writeFileSync,
   readFileSync,
   readlinkSync,
-  readdirSync,
   renameSync,
   statSync,
   symlinkSync,
@@ -27,6 +27,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { dirname, join, isAbsolute } from "node:path";
 import { load as loadYaml } from "./vendor/js-yaml.mjs";
+import { readYaml, workflowFiles as listWorkflows } from "./workflows.ts";
 
 export interface Result {
   code: number;
@@ -598,36 +599,25 @@ function workflowShape(
 /** The workflow files under `dir`; a missing folder holds none, and one that
  * cannot be read is an error result. */
 function workflowFiles(dir: string): string[] | Result {
-  try {
-    if (!statSync(dir).isDirectory())
-      return error(`workflows path is not a directory: ${dir}`);
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "ENOTDIR")
-      return result(0, `OK — ${dir} does not exist (no workflows to check)\n`);
-    return error(`cannot inspect ${dir}: ${String(e)}`);
-  }
-  try {
-    return readdirSync(dir)
-      .filter((f) => /\.ya?ml$/.test(f))
-      .map((f) => join(dir, f));
-  } catch (e) {
-    return error(`cannot scan ${dir}: ${String(e)}`);
-  }
+  const listing = listWorkflows(dir);
+  if ("missing" in listing)
+    return result(0, `OK — ${dir} does not exist (no workflows to check)\n`);
+  if ("error" in listing)
+    return error(
+      listing.error.startsWith("not a directory")
+        ? `workflows path is ${listing.error}`
+        : listing.error,
+    );
+  return listing.files;
 }
 /** Whether one workflow is fork-unsafe, or an error result when it cannot be
  * read as YAML. js-yaml rejects a repeated key, which a parser keeping the
  * last copy would let hide an unsafe step. */
 function unsafeWorkflow(path: string): boolean | Result {
-  if (!file(path)) return error(`not a file: ${path}`);
-  const raw = readFileSync(path, "utf8");
+  const read = readYaml(path);
+  if ("error" in read) return error(read.error);
+  const { raw, doc } = read;
   const shape = { untrusted: false, executes: false };
-  let doc: unknown;
-  try {
-    doc = loadYaml(raw);
-  } catch (e) {
-    return error(`cannot parse ${path} as YAML: ${String(e)}`);
-  }
   workflowShape(doc, shape, new Set());
   // The raw text also counts, so a trigger spelling the parsed check does not
   // know over-flags rather than passes.

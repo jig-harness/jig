@@ -255,11 +255,8 @@ selection, superseding, bounds, ordering and placement. Still to come:
   rate, and a trust boundary.
 - **Cost.** Runner sizing, one authoritative run of each check, and cost
   measured with conditions that reopen a decision.
-- **Enforcement.** A workflow-convention lint as the reference gate behind
-  M13's Strict level.
 
-Done when these are in the module with their criteria, and Jig's own
-workflows pass the lint.
+Done when these are in the module with their criteria.
 
 ### 15. M14 Testing strategy: the rest
 

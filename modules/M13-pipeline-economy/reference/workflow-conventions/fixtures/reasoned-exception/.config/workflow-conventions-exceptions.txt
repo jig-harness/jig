@@ -1,0 +1,2 @@
+# A self-hosted runner enforces its own limit on this job.
+job-timeout .github/workflows/ci.yml untimed

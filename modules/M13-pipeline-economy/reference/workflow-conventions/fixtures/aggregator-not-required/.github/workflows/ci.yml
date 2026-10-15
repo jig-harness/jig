@@ -1,0 +1,15 @@
+# No aggregator (no job needs every other one), so the path filter is
+# not on a required workflow.
+on:
+  pull_request:
+    paths: ["docs/**"]
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v4
+      - run: make docs

@@ -170,7 +170,8 @@ this answer?**
   as its proxy.
 - **The placement is enforced, not remembered.** A heavy suite that gains a
   per-change trigger drifts back into everyone's wait; a check on the
-  workflow files rejects it. A scheduled suite reports its failures where
+  workflow files rejects it (the
+  [workflow-convention lint](reference/workflow-conventions/README.md#heavy-per-change)). A scheduled suite reports its failures where
   someone will see them, and a schedule that stopped running counts as
   failing.
 
@@ -188,8 +189,10 @@ the tier and time budget that decide its row.
 - **Standard** — a resolver reading the change-area catalog drives job
   selection, failing closed; one aggregator job is the required check; slow
   suites no merge waits for run on a schedule, with a cheap per-change proxy.
-- **Strict** — the workflow conventions are checked by a lint; CI time or cost
-  is measured per workflow and job; a queue-stall watchdog runs.
+- **Strict** — the workflow conventions are checked by a lint that fails
+  closed on input it cannot parse and accepts only reasoned exceptions, which
+  fail once they suppress nothing; CI time or cost is measured per workflow
+  and job; a queue-stall watchdog runs.
 
 The criteria are in
 [`M13-pipeline-economy.yaml`](../../plugin/skills/audit/criteria/M13-pipeline-economy.yaml).
@@ -210,9 +213,10 @@ expected-absent there.
    [`templates/PIPELINE-ECONOMY.md`](templates/PIPELINE-ECONOMY.md), fill in
    the placement table, and move each slow suite nothing waits for to a
    schedule with a per-change proxy. This is **Standard**.
-3. Check the conventions with a lint over the workflow files, measure CI time
-   per workflow and job, and run the queue-stall watchdog. This is
-   **Strict**.
+3. Check the conventions with a lint over the workflow files
+   ([`reference/workflow-conventions/`](reference/workflow-conventions/README.md)),
+   measure CI time per workflow and job, and run the queue-stall watchdog.
+   This is **Strict**.
 
 ## Status
 
@@ -223,6 +227,7 @@ expected-absent there.
 | [`templates/PIPELINE-ECONOMY.md`](templates/PIPELINE-ECONOMY.md) | The copyable policy page: the six rules, the placement table to fill in, and a checklist for a new or changed workflow |
 | [`templates/queue-watchdog.yml`](templates/queue-watchdog.yml) | A scheduled GitHub Actions workflow that runs the queue-stall check |
 | [`reference/queue-watchdog/`](reference/queue-watchdog/) | The queue-stall check: fails when a job has waited for a runner longer than a bound; with its self-test |
+| [`reference/workflow-conventions/`](reference/workflow-conventions/README.md) | The workflow-convention lint behind the Strict level: job timeouts, cancelling pull-request concurrency, unfiltered required workflows and `!cancelled()` aggregators, the CI hold's guard and sentinel, heavy suites off the per-change path, cache-environment parity, commit-pinned actions ([M1's piece 7](../M1-gates-enforcement-ladder/README.md#core-pieces) says why), and path filters that match each other and the change-area catalog; reasoned, self-pruning exceptions; with its self-test. Jig's own workflows pass it in `bun run gates` |
 | [`mappings.md`](mappings.md) | Each sub-invariant on GitHub Actions and GitLab CI, with the syntax and provider behaviour this page leaves out |
 | [maturity criteria](../../plugin/skills/audit/criteria/M13-pipeline-economy.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
@@ -255,5 +260,5 @@ and land here as their own work:
   reported hit rate, and a trust boundary.
 - **Cost and sizing**: runner sizes, one authoritative run of each check, and
   cost measured with the conditions that reopen a decision.
-- **A workflow-convention lint** as the reference gate behind the Strict
-  level, which Jig's own workflows pass.
+- **The lint on GitLab CI**: the workflow-convention lint reads GitHub
+  Actions files only.

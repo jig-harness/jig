@@ -812,7 +812,7 @@ test("the label-taxonomy lint reads every YAML spelling of an entry and rejects 
 test("the label-taxonomy lint rejects a repeated key where only lib/ was vendored", async () => {
   const vendored = join(temporary(), "lib");
   mkdirSync(join(vendored, "vendor"), { recursive: true });
-  for (const name of ["module-gates.ts", "vendor/js-yaml.mjs"])
+  for (const name of ["module-gates.ts", "workflows.ts", "vendor/js-yaml.mjs"])
     writeFileSync(
       join(vendored, name),
       readFileSync(join(import.meta.dir, name)),

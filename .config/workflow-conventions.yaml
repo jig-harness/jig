@@ -1,0 +1,11 @@
+# Jig's configuration for M13's workflow-convention lint
+# (modules/M13-pipeline-economy/reference/workflow-conventions/README.md),
+# run by `bun run gates` (scripts/check-workflow-conventions.ts). The lint
+# reads the required checks, the CI hold and the change-area catalog from
+# .config/jig.yaml; this file holds what only the lint needs.
+
+# Suites placed off the per-change path: the lint fails when one gains a
+# pull-request or every-push trigger. The macOS and Windows runs cost several
+# times the Linux run and nothing waits for them (nightly.yml's header).
+heavy:
+  - nightly.yml

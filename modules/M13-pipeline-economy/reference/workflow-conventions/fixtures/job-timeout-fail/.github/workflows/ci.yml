@@ -1,0 +1,11 @@
+on: push
+jobs:
+  untimed:
+    runs-on: ubuntu-latest
+    steps:
+      - run: make
+  at-default:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - run: make

@@ -1,0 +1,2 @@
+# The merge waits for the end-to-end suite.
+heavy-per-change .github/workflows/ci.yml e2e

@@ -153,6 +153,51 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.29.0] - 2026-10-15
+
+M13's workflow conventions are checked by a gate instead of left to prose.
+
+### Added
+
+- [M13's workflow-convention lint](modules/M13-pipeline-economy/reference/workflow-conventions/README.md),
+  the reference gate behind M13's Strict level. It reads the parsed GitHub
+  Actions workflows and composite actions and fails a job without a timeout
+  below the provider's default, a pull-request workflow without a cancelling
+  concurrency group, a path filter on a workflow holding a required check, a
+  required aggregator not on exactly `!cancelled()`, a heavy job without
+  the CI hold's guard or a hold without a reachable sentinel that fails a
+  required check, a
+  heavy suite with a per-change trigger, differing environments across jobs
+  that share a cache, a `uses:` not pinned to a commit SHA (or an image to a
+  digest), push and pull-request path filters that differ or sit on only one
+  of the two, and trigger paths
+  that are not whole areas of the change-area catalog. Required checks come
+  from `ci.required_checks`, or are derived as the jobs that need every
+  other job of their workflow; heavy suites and cache groups are declared
+  in its own configuration. Every
+  exception carries a reason, one that suppresses nothing fails the lint, and
+  input it cannot parse or that is malformed (a repeated key, an empty
+  `jobs:`, an action without `runs:` included) exits 2. Whether GitHub
+  accepts a value, such as a cron expression or a Node runtime, stays
+  GitHub's check and a workflow linter's. Jig's workflows
+  pass it in `bun run gates`, with `nightly.yml` declared heavy and no
+  exception.
+- `lib/workflows.ts`: the one reader of workflow files, shared by M7's
+  PR-target safety lint and the workflow-convention lint.
+
+### Changed
+
+- `/jig:audit`: `M13/workflow-conventions-linted` now requires the lint to
+  fail closed on a file it cannot parse, to accept only reasoned exceptions,
+  and to fail on one that suppresses nothing; it names the cancelling
+  pull-request concurrency group among the conventions instead of a
+  concurrency key that drops runs, which a lint cannot judge. Jig's record
+  keeps its scores; the next audit re-scores it, with this change targeting
+  `M13/workflow-conventions-linted` and
+  `M13/no-required-pipeline-path-filtered`.
+- `/jig:github-actions` names a workflow-convention lint among the checks a
+  repository may already run.
+
 ## [0.28.1] - 2026-10-15
 
 ### Fixed

@@ -148,7 +148,9 @@ behind is a place the rule silently no longer applies.
    automation are pinned to immutable revisions, while an automated dependency
    updater proposes tested pin changes. An immutable pin without an update
    path becomes stale; an update bot without immutable pins leaves merge-time
-   behavior changeable outside the reviewed commit.
+   behavior changeable outside the reviewed commit. On GitHub Actions, M13's
+   [workflow-convention lint](../M13-pipeline-economy/reference/workflow-conventions/README.md#pinned-uses)
+   checks the pins of workflows and composite actions.
 
 ## Maturity levels
 
@@ -259,11 +261,12 @@ observable fact a criterion can name, and finding one is future work.
 Jig's repository checks (`CHECKS` in [`scripts/gates.ts`](../../scripts/gates.ts))
 and its ratchet exit 2 when they could not check, state their scope on green
 runs; the change-area and review-risk checks fail on a repeated key in the
-YAML they read. The Markdown, glossary
-and origin-reference checks also write findings in the shared format with
-GitHub annotations, and their exception lists (`scripts/glossary-allowlist.txt`,
-the allow patterns in `scripts/tracker-key-patterns.txt`) need a reason per
-group and fail on an entry that suppresses nothing. Where a gate does not yet
+YAML they read. The Markdown, glossary,
+origin-reference and workflow-convention checks also write findings in the
+shared format with GitHub annotations, and their exception lists
+(`scripts/glossary-allowlist.txt`, the allow patterns in
+`scripts/tracker-key-patterns.txt`, `.config/workflow-conventions-exceptions.txt`)
+need a reason per group and fail on an entry that suppresses nothing. Where a gate does not yet
 meet a rule:
 
 | Gate | Rule not yet met | Why |

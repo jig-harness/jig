@@ -107,7 +107,10 @@ design. Run all with one command: `bun run gates`. The set, in order:
    glossary (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`,
    each entry under a reason and removed once nothing uses it);
    no origin references; no workflow that runs a fork's code with secrets
-   (M7's PR-target safety lint); the licence files and NOTICE complete
+   (M7's PR-target safety lint); the workflows meeting M13's pipeline
+   conventions (the workflow-convention lint, with its heavy suites in
+   `.config/workflow-conventions.yaml` and its reasoned exceptions in
+   `.config/workflow-conventions-exceptions.txt`); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); a changelog entry for the current plugin
    version; Jig's own audit record and configuration fitting the audit skill;
    every file belonging to an area of the change-area catalog

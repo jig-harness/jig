@@ -1,0 +1,2 @@
+ci:
+  hold_label: [ci:hold]
