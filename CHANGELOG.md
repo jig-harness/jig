@@ -171,6 +171,16 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.33.1] - 2026-10-15
+
+### Fixed
+
+- The drive-pr test that checks `RunHandle.stop()` empties the process group
+  counts a zombie as gone, as `stop()` itself does. It reads the group from
+  `/proc` where that answers and from `ps` otherwise, so on a host whose
+  PID 1 reaps orphans late, a killed descendant still holding its
+  process-table slot after `stop()` returned no longer fails the test.
+
 ## [0.33.0] - 2026-10-15
 
 ### Added
@@ -1655,7 +1665,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.33.1...HEAD
+[0.33.1]: https://github.com/docomply/jig/compare/v0.33.0...v0.33.1
 [0.33.0]: https://github.com/docomply/jig/compare/v0.32.1...v0.33.0
 [0.32.1]: https://github.com/docomply/jig/compare/v0.32.0...v0.32.1
 [0.32.0]: https://github.com/docomply/jig/compare/v0.31.1...v0.32.0
