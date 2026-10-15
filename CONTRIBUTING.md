@@ -59,6 +59,22 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an
    agent never does ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
+5. After the merge, run `/followup <PR>`
+   ([.claude/skills/followup/](.claude/skills/followup/SKILL.md)): the
+   tracker item and deferred findings, the release tag, what the merge did
+   to the website, the status pages and documents that cite them, the
+   consumer repositories, and cleanup. Its fixes go in one follow-up pull
+   request.
+
+## Jig's own skills
+
+Skills for work on this repository, rather than for the repositories that
+use Jig, live in `.claude/skills/` and are not part of the plugin; their
+scripts live in `scripts/` with the repository's other tooling. Claude
+Code finds them there. For Codex, run M0's mirror script once in each
+worktree, since the links it makes live in the worktree and are ignored by
+git:
+`bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts`.
 
 ## Toolchain
 

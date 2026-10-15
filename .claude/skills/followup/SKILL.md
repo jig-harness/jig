@@ -1,0 +1,256 @@
+---
+name: followup
+description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and cleanup; or, before the merge, list what it will owe."
+argument-hint: "<PR number>"
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Edit
+  - Write
+  - Bash
+  - mcp__linear__get_issue
+  - mcp__linear__list_issues
+  - mcp__linear__save_issue
+  - mcp__linear__save_comment
+---
+
+# Followup: what a merged Jig pull request still owes
+
+Merging closes the pull request, not the work. A merge into Jig can leave a
+release untagged, a page of jig-harness.dev saying something the documents
+no longer say, a roadmap item still open elsewhere, a copy of a moved tool
+alive in the repository it came from, or a driver still running. Nothing
+else checks these after the merge. This skill runs one pass over them,
+reports each as **owed** or **not owed** with the evidence that settled it,
+and carries out the ones it may carry out on its own.
+
+This is Jig's own post-merge pass, for this repository. The general stage for
+[consumer repositories](../../../GLOSSARY.md) is not built yet (FACTORY.md,
+station 7). The pass orchestrates the procedures that already exist and does
+not restate them: [`do-item`](../../../plugin/skills/do-item/SKILL.md) owns
+tracker statuses,
+[the deferral protocol](../../../plugin/skills/resolve-review-comments/references/deferral-protocol.md)
+owns deferred findings, [CONTRIBUTING.md](../../../CONTRIBUTING.md) owns how a
+follow-up change is made, and [design/website.md](../../../design/website.md)
+owns how the site is built.
+
+Run it from the repository root, in the session that drove the pull request
+when there is one: the facts are still in its context.
+
+## Step 0: establish the merge facts
+
+```bash
+PR=<number>
+gh pr view "$PR" --json number,title,state,mergedAt,mergeCommit,baseRefName,headRefName,headRefOid,body,labels
+```
+
+- `state` must be `MERGED` and `baseRefName` `main`. On an open pull request,
+  run the [preview](#before-the-merge-preview) instead and carry out
+  nothing.
+- `SHA` is `mergeCommit.oid`. Jig squash-merges, so `SHA^1` is `main` just
+  before the merge, and `git diff --name-only SHA^1 SHA` is the change.
+- The tracker item: `Closes <KEY>-<n>` in the body, else the key in the
+  branch name. Leave it empty when neither names one.
+- Fetch first: `git fetch --no-tags origin main`. Leave this clone's tags
+  alone: a fetch that updates them refuses a tag origin holds elsewhere
+  ("would clobber existing tag"), and [B](#b-tagging-the-release) reads
+  origin's tags and this clone's separately, to tell those cases apart.
+
+## Step 1: the arms
+
+Each arm ends **OWED** (with the concrete item) or **NOT OWED** (with the
+reason). "Nothing found" is not a reason; "no file under `plugin/` changed"
+is.
+
+### A. The tracker item and deferred findings
+
+1. **Status and closing comment**: `do-item`'s post-merge status rule decides
+   between done and ops-pending. The closing comment carries the pull
+   request's `## Out-of-tree follow-ups` section as unchecked boxes, and the
+   merge commit.
+2. **Deferred findings**: every `**deferred**` reply was meant to become a
+   follow-up item. Check that each exists rather than trusting the reply. A
+   deferred thread is resolved as soon as its reply posts, so include the
+   resolved ones. A summary-only finding has no thread: its answer is a
+   comment on the pull request carrying a `drive-pr-addressed` marker, and
+   `summary-findings.ts` reports only whether a finding was answered, not
+   how. Read the answers themselves:
+
+   ```bash
+   bun plugin/skills/resolve-review-comments/scripts/list-unresolved-threads.ts "$PR" --include-resolved
+   gh api "repos/{owner}/{repo}/issues/$PR/comments" --paginate \
+     --jq '.[] | select((.body | contains("drive-pr-addressed")) and (.body | startswith("**deferred**"))) | .html_url + "\n" + .body'
+   ```
+
+   File what is missing with `defer-batch.ts`, as the deferral protocol says.
+3. **The epic**: when the item has a parent, `do-item`'s parent-status rule
+   (`reconcile_parent_status.ts`) decides its status.
+
+Without a tracker item, 1 and 3 are NOT OWED; 2 still applies.
+
+### B. Tagging the release
+
+Every Jig release is tagged `v<version>` on the commit that shipped it
+([plugin/README.md § Release a new
+version](../../../plugin/README.md#release-a-new-version)). The gates hold
+the version bump and its changelog section in the pull request; nothing
+holds the tag, which can only be made after the merge. Check on every merge,
+whatever it changed: a tag an earlier merge left owed is owed now.
+
+```bash
+bun scripts/release-tags.ts
+```
+
+It lists every version CHANGELOG.md released that has no tag on origin, with
+the commit that first set the manifest to it; a tag made here whose push
+failed still counts as owed, and so does a tag on origin that is lightweight
+or points at another commit: a release is owed an annotated tag at that
+commit. Replacing a tag on origin deletes it
+there first, so the script prints those commands apart, as ask-first. That
+commit, not a pull request title, is the one to tag: a title can name the version the branch had before
+it was renumbered. It prints the commands; it never runs them. NOT OWED only
+when it reports none. An untagged release is also a broken link on the site,
+which links each release on `/whats-new/` to its tag.
+
+Machines receive a release only when they update the plugin: say so, with the
+update command from [plugin/README.md](../../../plugin/README.md#update-pin-or-remove),
+when the merge changed a skill this session uses.
+
+### C. The website
+
+The site renders the repository's documents at build time and deploys every
+push to `main` ([design/website.md](../../../design/website.md)), so most
+merges change it. Three questions:
+
+1. **Did it deploy?**
+
+   ```bash
+   gh run list --workflow website.yml --commit "$SHA" --json status,conclusion,url
+   ```
+
+   A failed run is OWED: read its log (`gh run view --log-failed`). Not
+   started yet is "awaiting deploy": report it and check again later.
+2. **What did the merge change on the site?** Compare the site built before
+   and after the merge, page by page:
+
+   ```bash
+   bun scripts/site-diff.ts "$SHA^1" "$SHA"
+   ```
+
+   It builds both commits in temporary [worktrees](../../../GLOSSARY.md)
+   (about a minute each) and prints the pages added, removed and changed,
+   with the lines that changed in each page's main content (in order, with
+   heading levels and link and image targets). Read the result
+   as a reader of the site would: a page that lost a section it should keep,
+   a fragment that now renders badly (a table cut short, raw Markdown, a
+   heading the page lays out in the wrong place), a changed page the merge
+   should not have reached. Each is OWED. To look at a page, rerun with
+   `--keep` and open the built file. `--keep` leaves the worktrees, so
+   remove them afterwards (`git worktree remove`).
+3. **What should have changed and did not?** Some of the site is written by
+   hand rather than rendered: the pages and components in `website/src/`,
+   and the statements in `website/src/lib/data/` (for example
+   `NOT_BUILT` in `factory.ts`, which names the roadmap items the factory
+   page draws as not built). For each fact the merge changed (a finished
+   roadmap item, a renamed or new skill, a count of modules, stations or
+   levels, a module's or skill's name), search `website/src/` for the old
+   fact. A match the merge did not update is OWED, and the diff in 2 cannot
+   show it, because that page did not change.
+
+When the site itself changed (`website/`), also check that
+[design/website.md](../../../design/website.md) still describes it and that
+its build order no longer lists what the merge built.
+
+### D. Status pages and the documents that cite them
+
+- **The roadmap**: an item the merge finished has left
+  [ROADMAP.md](../../../ROADMAP.md), and the change is in
+  [CHANGELOG.md](../../../CHANGELOG.md). Then search the repository for the
+  places that still cite it (`grep -rn "item <n>\b"`, FACTORY.md's "Not built
+  yet", `design/*.md` build orders): each is OWED.
+- **The glossary**: a term of art the merge introduced is in
+  [GLOSSARY.md](../../../GLOSSARY.md) (the gates catch acronyms only).
+- **The auditor**: the pull request description said what changed in the
+  audit (CONTRIBUTING.md § Keeping the auditor current). When the merge
+  targeted criteria, the next audit (`/jig:audit`) is what scores them:
+  report it as owed work, with the criteria named, rather than running it
+  here.
+
+### E. Consumer repositories
+
+Jig names no consumer in its own content; the consumer's repository and
+tracker are where this arm's work goes.
+
+- **Move, never copy**: when the merge brought a tool in from a consumer
+  repository, deleting the source's copy in the same rollout is OWED there.
+  File it on the tracker for that repository (its label is in
+  `review.taxonomy.repos` in `.config/jig.yaml`); never edit another
+  repository from this pass.
+- **Breaking changes**: a release marked **Breaking** owes each consumer the
+  change its changelog section names. File one item per affected consumer.
+- **Backflow** (a lesson the merge learned that a consumer's practice should
+  take, or the reverse): file it; whether Jig takes a consumer's practice is
+  decided in its own pull request.
+
+Anything that would name a consumer, or bring its content into Jig, is a
+decision for a person (AGENTS.md, HITL decisions): flag it.
+
+### F. Cleanup
+
+| Thing | Check | Teardown |
+|---|---|---|
+| A live driver on this pull request | `bun plugin/skills/drive-pr/scripts/drives.ts` | `drives.ts --stop <PR>` |
+| The driver's log | listed by `drives.ts` | keep it; it is the record |
+| The local branch | `git branch --list <headRefName>` (Step 0). A squash merge leaves it out of `git branch --merged`, so Step 0's `MERGED` state shows only that the pull request's head merged; `git rev-parse <headRefName>` must equal Step 0's `headRefOid` for the branch to hold nothing else | delete it, only when its tip is `headRefOid` and no driver is live in this worktree. Any other tip holds commits the merge does not have: push them to a branch of their own, or ask, before deleting |
+| The workspace's `.context/` notes | what this work wrote there | remove what no later work needs |
+| Scaffolding in the merged diff | a disabled check, a `.only(`, a loosened timeout, a suppression | a follow-up change |
+
+Never `git stash` any of this (CONTRIBUTING.md § Parallel workspaces).
+
+### G. What comes next
+
+What the merge implies, as concrete work rather than advice:
+
+- **Sweep the class**: when the merge fixed a defect, search for its siblings
+  elsewhere in the repository.
+- **Scope cuts**: anything the description or the review rounds narrowed or
+  carved out, that no item tracks yet.
+- **The next item**: the epic's next sub-issue, or the roadmap's next open
+  item, handed to `/jig:do-item`.
+- **Knowledge**: a lesson that belongs in the team's documents
+  (`/jig:promote-memory`).
+
+Before filing anything new, search the tracker for an item it belongs to.
+
+## Step 2: report, then act within authority
+
+Report first, one row per arm: OWED or NOT OWED, the item, the evidence. Then
+act:
+
+| Action | Authority |
+|---|---|
+| Tracker status, closing comment, filing follow-up items (here or for a consumer) | on its own |
+| Fixing what the pass found in Jig's documents or the site's hand-written text | on its own: one follow-up pull request for all of it, opened as a draft (CONTRIBUTING.md) |
+| Read-only checks: `release-tags.ts`, `site-diff.ts`, `drives.ts`, `gh run` | on its own |
+| Creating and pushing release tags | ask first |
+| Re-running a failed deploy | ask first |
+| Stopping a live driver, deleting a branch or a worktree | ask first |
+| Anything in another repository, or anything near the origin-reference boundary | a person decides |
+
+Close with what is left for a person, by name. When every arm is NOT OWED,
+say so in one line: an honest "nothing is owed" is a result.
+
+## Before the merge: preview
+
+On an open pull request the skill runs the same arms against the pull
+request's diff (`origin/main` and its head instead of `SHA^1` and `SHA`) and
+records what the merge will owe, carrying out nothing: the
+`## Out-of-tree follow-ups` section of the description, the deferred
+findings still to file, the site pages the change will reach, the cleanup
+inventory. The post-merge pass then checks a list instead of rebuilding it.
+
+Building the head for `site-diff.ts` runs the pull request's code (its
+install and the site's build scripts) with your credentials. Run it only on a
+branch of this repository whose diff you would run the gates on; for any
+other, skip the site arm in the preview and leave it to the post-merge pass.

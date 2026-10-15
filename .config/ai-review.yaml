@@ -61,6 +61,7 @@ high_risk_path_patterns:
   - source: '^plugin/skills/audit/references/survey-prompts/'
   - source: '^plugin/skills/audit/criteria/M[^/]*\.yaml$'
   - source: '^scripts/'
+  - source: '^\.claude/'
   - source: '^modules/[^/]*/reference/'
   - source: '^\.github/workflows/'
   - source: '^\.config/ai-review\.yaml$'

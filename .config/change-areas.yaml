@@ -92,6 +92,16 @@ areas:
     deployTier: none
     reviewRisk: high
 
+  repo-skills:
+    title: "Jig's own skills, for work on this repository"
+    category: docs
+    paths: [".claude/**"]
+    workspace: []
+    # Their scripts live in scripts/, with the repository's other tooling.
+    impliedBy: []
+    deployTier: none
+    reviewRisk: high
+
   tools:
     title: "Machine-level tools"
     category: tooling

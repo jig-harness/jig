@@ -21,6 +21,21 @@ changes are marked **Breaking** and say what a consumer changes.
 
 ### Added
 
+- `/followup`, Jig's own post-merge pass (`.claude/skills/followup/`): after
+  a pull request merges, it reports what the merge still owes, with the
+  evidence for each, and carries out what it may on its own. It covers the
+  tracker item and its deferred findings, the release tags, on every merge
+  (`scripts/release-tags.ts` lists every released version without an
+  annotated tag on origin, at the commit that set it), the website (whether it deployed, and `scripts/site-diff.ts`, which
+  builds the site before and after the merge and lists every page whose
+  content changed, plus the hand-written text the merge should have changed
+  and did not), the status pages and the documents that cite them, consumer
+  repositories, and cleanup. Before the merge it lists what the merge will
+  owe. The website's tests now fail when the factory page draws a roadmap
+  item as not built after it has left the roadmap. Jig's own skills
+  (`.claude/`) are now a high review-risk area, like the other agent
+  instructions.
+
 - `website/`: the jig-harness.dev site, an Astro build that renders this
   repository's documents as designed pages: the module map and a page per
   module (its levels with the audit's criteria, its mappings by CI

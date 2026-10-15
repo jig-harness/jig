@@ -296,6 +296,20 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
         item === "Later" ? /ROADMAP\.md, Later/ : new RegExp(`item ${item}\\b`),
       );
   });
+
+  test("every roadmap item marked not built is still open", () => {
+    const groups = parseRoadmap(read("ROADMAP.md")).groups;
+    const open = new Set([
+      ...groups.flatMap((g) => g.items.map((i) => i.n)),
+      ...groups.map((g) => g.name),
+    ]);
+    const items = [
+      ...Object.values(NOT_BUILT).flat(),
+      ...DESIGN_NOT_BUILT.level,
+      ...DESIGN_NOT_BUILT.everyStage,
+    ].flatMap((a) => (a.kind === "todo" ? [a.item] : []));
+    for (const item of items) expect(open.has(item), item).toBe(true);
+  });
 });
 
 test("M8's flywheel has its six steps and two companion cycles", () => {

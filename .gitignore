@@ -7,5 +7,7 @@
 
 # Local evidence and installed/build outputs.
 .context/
+# Codex's links to Jig's own skills (CONTRIBUTING.md, Jig's own skills).
+.agents/skills/
 node_modules/
 dist/
