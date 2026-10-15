@@ -56,7 +56,7 @@ nothing the site states is typed twice.
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
 | `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement, two reader paths, the compact module map, the factory miniature, the limits, the enforcement ladder, the profiles, the live audit, the ways to use Jig and the principles |
-| `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in adoption order, with a profile switch, scaffolding jobs and the skills that run each |
+| `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
 | `/modules/<Mn>/mappings/` | mappings.md | the whole file, for links that name it |
 | `/factory/` | FACTORY.md, M8's README, CONFIGURATION.md | figure 1 (stations on the scaffolding, above the platform), the jobs table, what Jig provides with the configuration layers and the tracker interface, figure 2 (every station and who runs it), the levels, both pipelines, the flywheel |

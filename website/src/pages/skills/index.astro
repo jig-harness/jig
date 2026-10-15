@@ -21,6 +21,8 @@ const rows = await Promise.all(
 const STATION_NOTE: Record<string, string> = {
   audit: "Inspects the factory itself, outside the stations",
   "promote-memory": "The learning loop around both levels",
+  reflect: "The learning loop around both levels",
+  "review-reflections": "The learning loop around both levels",
 };
 const f = factory();
 const unrun: { station: string; href: string; actors: Actor[] }[] = [...f.pipeline, ...f.line]

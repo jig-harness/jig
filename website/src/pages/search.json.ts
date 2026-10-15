@@ -47,7 +47,7 @@ const PAGES: [string, string, string][] = [
   [
     "Adoption guide · existing repository",
     "/adopt/",
-    "brownfield audit ladder profile order",
+    "brownfield audit ladder profile order grandfathering coverage gate",
   ],
   [
     "Greenfield guide · new project",

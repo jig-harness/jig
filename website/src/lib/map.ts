@@ -1,6 +1,6 @@
 /**
- * The module map's rows: every module in the default adoption order, each
- * level's state under every profile, and a note per profile. Each cell
+ * The module map's rows: every module in id order, with each level's state
+ * under every profile, and a note per profile. Each cell
  * carries all its states so the profile switch (scripts/map.ts) only moves
  * attributes; without it the map shows the first profile.
  */
@@ -42,8 +42,11 @@ function noteOf(id: string, profileIndex: number): string {
 export async function mapRows() {
   const p = profiles();
   const byId = new Map(modules().map((m) => [m.id, m]));
+  const ids = [...p.order].sort(
+    (a, b) => Number(a.slice(1)) - Number(b.slice(1)),
+  );
   return Promise.all(
-    p.order.map(async (id, i) => {
+    ids.map(async (id) => {
       const m = byId.get(id);
       if (!m)
         throw new Error(
@@ -51,7 +54,6 @@ export async function mapRows() {
         );
       return {
         id,
-        order: i + 1,
         title: m.title,
         area: await mdInline(m.area, "modules/README.md"),
         skills: m.skills.map(commandOf),

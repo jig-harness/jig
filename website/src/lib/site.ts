@@ -38,7 +38,7 @@ export const NAV: readonly { label: string; href: string }[] = [
   { label: "Adopt", href: "/adopt/" },
   { label: "Modules", href: "/modules/" },
   { label: "Factory", href: "/factory/" },
-  { label: "Plugin", href: "/plugin/" },
+  { label: "Install", href: "/plugin/" },
   { label: "Skills", href: "/skills/" },
   { label: "Principles", href: "/principles/" },
   { label: "Glossary", href: "/glossary/" },

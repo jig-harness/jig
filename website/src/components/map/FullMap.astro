@@ -1,5 +1,5 @@
 ---
-// The modules page's map: a row per module in adoption order, with its area,
+// The modules page's map: a row per module in id order, with its area,
 // scaffolding jobs, levels, the chosen profile's note and its skills.
 import { LEVEL_NAME } from "../../lib/data/modules.ts";
 import { mapRows } from "../../lib/map.ts";
@@ -11,9 +11,6 @@ const rows = await mapRows();
   {rows.map((r) => (
     <div class="row">
       <div class="who">
-        <span class="order" aria-label="Adoption order">
-          {r.order}
-        </span>
         <span class="rid">{r.id}</span>
         <span class="what">
           <a class="title" href={`/modules/${r.id}/`}>
@@ -77,14 +74,9 @@ const rows = await mapRows();
   }
   .who {
     display: grid;
-    grid-template-columns: 30px 52px minmax(0, 1fr);
+    grid-template-columns: 52px minmax(0, 1fr);
     gap: 6px;
     align-items: baseline;
-  }
-  .order {
-    font-family: var(--serif);
-    font-size: 12px;
-    color: var(--muted);
   }
   .rid {
     font-family: var(--mono);

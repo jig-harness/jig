@@ -12,16 +12,12 @@ const count = modules().length;
       <span class="eyebrow">The module map</span>
       <h1 class="display">{count} modules, three levels each. Pick a profile to see how much of it applies.</h1>
       <p>
-        Each module adopts on its own. "Adopted" means a module reached Lite; you climb from there. The rows are in the
-        default order to adopt them in an existing repository — your audit's ranking overrides it.
+        Each module adopts on its own. "Adopted" means a module reached Lite; you climb from there. Which to adopt
+        first is the <a href="/adopt/">adoption guide</a>'s question; your audit's ranking answers it for your repository.
       </p>
     </div>
     <ModuleMap variant="full" />
     <div class="after muted">
-      <p>
-        Order: the brownfield default, extended to every module (<code>profiles.yaml</code>). An audit's own ranking
-        overrides it.
-      </p>
       <p>
         Left off this view: each module's criteria, mappings and dependencies. They are one click away on the module's
         page; the cells link straight to that level.

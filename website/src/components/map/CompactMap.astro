@@ -3,7 +3,7 @@
 import { LEVEL_NAME } from "../../lib/data/modules.ts";
 import { mapRows, mapSummary } from "../../lib/map.ts";
 
-const rows = [...(await mapRows())].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+const rows = await mapRows();
 const { profiles, counts, total } = mapSummary();
 ---
 
