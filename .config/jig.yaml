@@ -37,6 +37,10 @@ pull_requests:
   # One pull request per change against main; a person merges.
   stacking: none
 drive:
+  # Rounds a drive may spend before it stops unconverged. Jig's pull requests
+  # are large and the AI reviewer keeps finding things in them, so the
+  # built-in 10 is too tight.
+  max_rounds: 30
   # The same catalog selects CI jobs (.github/workflows/gates.yml).
   change_areas_catalog: .config/change-areas.yaml
   # The AI reviewer reviews drafts, so pull requests open as drafts and

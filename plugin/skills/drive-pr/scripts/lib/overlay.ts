@@ -183,6 +183,20 @@ export function reviewsDrafts(): boolean | undefined {
   return value;
 }
 
+/** The round budget a drive gets when neither `--max-rounds` nor `drive.max_rounds` sets one. */
+export const DEFAULT_MAX_ROUNDS = 10;
+
+/** `drive.max_rounds`: the repository's default round budget; `undefined` when not configured. */
+export function maxRoundsSetting(): number | undefined {
+  const value = section("drive").max_rounds;
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isSafeInteger(value) || (value as number) < 1)
+    throw new Error(
+      `drive.max_rounds must be a whole number of at least 1: ${configSource("drive.max_rounds")}`,
+    );
+  return value as number;
+}
+
 /**
  * `ci.required_checks`: the exact check-run names that certify a head, or
  * `undefined` when not configured (the drive then derives them from the base

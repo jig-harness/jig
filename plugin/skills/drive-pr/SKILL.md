@@ -568,7 +568,9 @@ could forge or forget.
    `--bots-only` is always on: an unattended sweep never acts on human threads
    (§ 2). Forward the invocation's own drive flags — `--keep-draft`,
    `--max-rounds N`, `--handoff-at …` — to `drive.ts` **before** the `--`, and
-   never to the pass argv. `--max-rounds` counts from the durable state, so
+   never to the pass argv. Without `--max-rounds` the budget is the
+   repository's `drive.max_rounds` (default 10); pass the flag only to override
+   it. `--max-rounds` counts from the durable state, so
    re-arming a PR that has already run rounds resumes it ("at round 4 of 10")
    rather than restarting the budget.
 4. **Check the spawn once, a few seconds later** — not immediately and not in a

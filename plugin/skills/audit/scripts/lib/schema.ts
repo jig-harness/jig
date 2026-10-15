@@ -302,7 +302,7 @@ function integerProblem(value: unknown, field?: Field): string | null {
   const words = field?.values ?? [];
   if (typeof value === "string" && words.includes(value)) return null;
   const min = field?.min ?? Number.NEGATIVE_INFINITY;
-  if (typeof value === "number" && Number.isInteger(value) && value >= min)
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= min)
     return null;
   const bound =
     field?.min === undefined ? "a whole number" : `a whole number ≥ ${min}`;

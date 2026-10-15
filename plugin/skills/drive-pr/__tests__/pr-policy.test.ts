@@ -89,6 +89,7 @@ describe("parsePrPolicy", () => {
     [{ title_format: "angular" }, /title_format must be one of/],
     [{ size_budget: 0 }, /size_budget must be a whole number of at least 1/],
     [{ size_budget: 2.5 }, /size_budget must be a whole number/],
+    [{ size_budget: 2 ** 53 }, /size_budget must be a whole number/],
     [
       { stacking: "branch", max_stack_depth: "3" },
       /max_stack_depth must be a whole number/,
@@ -118,7 +119,7 @@ describe("mark_ready", () => {
     expect(policy({ mark_ready: "never" }).markReady).toBe("never");
   });
 
-  it.each([0, 1.5, "always", "1"])("refuses %j", (value) => {
+  it.each([0, 1.5, 2 ** 53, "always", "1"])("refuses %j", (value) => {
     expect(() => policy({ mark_ready: value })).toThrow(
       /mark_ready must be a round number of at least 1, converged or never/,
     );

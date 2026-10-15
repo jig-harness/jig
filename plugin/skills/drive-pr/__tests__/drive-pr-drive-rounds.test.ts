@@ -25,6 +25,7 @@ import {
   QUOTA_PARKED_EXIT,
   resolveHandoffAt,
 } from "../scripts/drive";
+import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
 import { cloneKey } from "../scripts/lib/state/clone-key";
 import { appendDirective } from "../scripts/lib/state/mailbox";
 
@@ -796,6 +797,83 @@ describe("drive.ts loop control", () => {
     expect(second.exitCode).toBe(6);
     expect(second.stderr).not.toContain("RAN_THE_PASS");
     expect(second.stderr).toContain("resuming PR #999 at round");
+  });
+
+  describe("drive.max_rounds, the repository's default round budget", () => {
+    const work = { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] };
+
+    /** The suite's overlay with `drive.max_rounds` set to `value`. */
+    function withMaxRounds(dir: string, value: unknown) {
+      const path = join(dir, "max-rounds-overlay.json");
+      const suite = loadYaml(
+        readFileSync(process.env.JIG_OVERLAY as string, "utf8"),
+      ) as Record<string, unknown>;
+      const drive = (suite.drive ?? {}) as Record<string, unknown>;
+      writeFileSync(
+        path,
+        JSON.stringify({ ...suite, drive: { ...drive, max_rounds: value } }),
+      );
+      return { env: { JIG_OVERLAY: path, DRIVE_PR_STALL_ROUNDS: "0" } };
+    }
+
+    const drive = (args: string[], value?: unknown) => {
+      const f = writeFixture(work);
+      return runDriveIn(
+        f.dir,
+        f.stateDir,
+        ["--no-head-sync", ...args, "--", ...PASS_LOUD],
+        undefined,
+        value === undefined
+          ? { env: { DRIVE_PR_STALL_ROUNDS: "0" } }
+          : withMaxRounds(f.dir, value),
+      );
+    };
+
+    it("is 10 when neither the flag nor the setting names one", async () => {
+      const r = await drive([]);
+      expect(r.exitCode).toBe(6);
+      expect(r.stderr).toContain("--- round 10/10 on PR #999 ---");
+    });
+
+    it("sets the budget when the flag is absent", async () => {
+      const r = await drive([], 2);
+      expect(r.exitCode).toBe(6);
+      expect(r.stderr).toContain("--- round 2/2 on PR #999 ---");
+      expect(r.stderr).toContain("hit --max-rounds (2)");
+      expect(r.stderr).not.toContain("round 3/2");
+    });
+
+    it("yields to --max-rounds", async () => {
+      const r = await drive(["--max-rounds", "1"], 3);
+      expect(r.exitCode).toBe(6);
+      expect(r.stderr).toContain("hit --max-rounds (1)");
+      expect(r.stderr).not.toContain("round 2/");
+    });
+
+    it.each([0, -1, 2.5, 2 ** 53, "ten", true])(
+      "refuses %p, naming the field",
+      async (value) => {
+        const r = await drive([], value);
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toContain("drive.max_rounds must be a whole number");
+        expect(r.stderr).not.toContain("RAN_THE_PASS");
+      },
+    );
+
+    it("refuses a --max-rounds too large to read exactly", async () => {
+      const r = await drive(["--max-rounds", "9".repeat(400)]);
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain(
+        "--max-rounds must be a whole number of at least 1",
+      );
+      expect(r.stderr).not.toContain("RAN_THE_PASS");
+    });
+
+    it("does not stop a run whose flag names the budget", async () => {
+      const r = await drive(["--max-rounds", "1"], "ten");
+      expect(r.exitCode).toBe(6);
+      expect(r.stderr).toContain("RAN_THE_PASS");
+    });
   });
 
   /** Seed the durable state directly, to model a drive resumed at its bound. */

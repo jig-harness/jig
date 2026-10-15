@@ -98,7 +98,7 @@ function positiveInt(
 ): number | null {
   const value = section[key];
   if (value === undefined || value === null) return null;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1)
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
     throw new Error(
       `pull_requests.${key} must be a whole number of at least 1 (got ${JSON.stringify(value)})`,
     );
@@ -163,7 +163,7 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
       rawMarkReady === "converged" ||
       rawMarkReady === "never" ||
       (typeof rawMarkReady === "number" &&
-        Number.isInteger(rawMarkReady) &&
+        Number.isSafeInteger(rawMarkReady) &&
         rawMarkReady >= 1)
     )
   )

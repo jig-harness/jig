@@ -339,6 +339,19 @@ describe("top bar", () => {
           width,
           height: 900,
         });
+        // --bar-h is set by a ResizeObserver, which reports after layout: wait for it.
+        await page.waitForFunction(
+          () =>
+            Math.abs(
+              Number.parseFloat(
+                getComputedStyle(document.documentElement).getPropertyValue(
+                  "--bar-h",
+                ),
+              ) - (document.querySelector(".bar") as HTMLElement).offsetHeight,
+            ) <= 1,
+          undefined,
+          { timeout: 5000 },
+        );
         const report = await page.evaluate(() => {
           const bar = document.querySelector(".bar") as HTMLElement;
           const inner = document.querySelector(".bar-in") as HTMLElement;

@@ -266,6 +266,7 @@ drive:
   load_guard_command: "<your load-guard command>"   # returns once the machine can take heavy checks; default: none
   change_areas_catalog: docs/change-areas.yaml      # change-area catalog for area-aware reports; default: none
   reviews_drafts: true        # does the AI reviewer review draft pull requests
+  max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)

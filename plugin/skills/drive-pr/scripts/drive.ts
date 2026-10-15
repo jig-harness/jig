@@ -11,8 +11,9 @@
  * Usage:
  *   drive.ts [PR] [flags] -- <command to run ONE pass> [args...]
  *
- *   --max-rounds N   stop after N rounds (default 10). A finding the agent
- *                    cannot fix would otherwise re-push forever.
+ *   --max-rounds N   stop after N rounds (default `drive.max_rounds`, else
+ *                    10). A finding the agent cannot fix would otherwise
+ *                    re-push forever.
  *   --handoff-at V   the context-economy dial: hand off at V% of the pass's
  *                    context rather than degrading. V is a whole percent, or
  *                    `never` for a continuous drive through compaction.
@@ -191,7 +192,11 @@ import {
   tsArgv,
   unconcludedGitOpMarker,
 } from "./lib/proc.ts";
-import { reviewerLabel } from "./lib/overlay.ts";
+import {
+  DEFAULT_MAX_ROUNDS,
+  maxRoundsSetting,
+  reviewerLabel,
+} from "./lib/overlay.ts";
 import {
   type MarkReady,
   markReadyDueAfterRound,
@@ -2289,6 +2294,26 @@ async function recordQuotaPark(
 }
 
 /**
+ * The round budget: `--max-rounds` when given, else the repository's
+ * `drive.max_rounds`, else the built-in default. The setting is read only
+ * when the flag is absent, so a malformed one cannot block an explicit run.
+ */
+function resolveMaxRounds(flag: string | undefined): number {
+  if (flag !== undefined) {
+    if (!isDigits(flag)) fail(2, "--max-rounds takes a whole number");
+    const n = Number.parseInt(flag, 10);
+    if (!Number.isSafeInteger(n) || n < 1)
+      fail(2, "--max-rounds must be a whole number of at least 1");
+    return n;
+  }
+  try {
+    return maxRoundsSetting() ?? DEFAULT_MAX_ROUNDS;
+  } catch (e) {
+    return fail(1, `drive.ts: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
  * Whether the reflect duty is armed: the depth past the last recorded
  * reflection passes the threshold and reflection is on (the `reflection`
  * configuration section); with it off the lesson has no store to reach.
@@ -2306,7 +2331,7 @@ function reflectDutyArmed(depth: number, threshold: number): boolean {
 
 async function main(): Promise<number> {
   let pr = "";
-  let maxRounds = "10";
+  let maxRounds: string | undefined;
   let dryRun = false;
   let botsOnly = false;
   let keepDraft = false;
@@ -2364,9 +2389,7 @@ async function main(): Promise<number> {
     }
   }
 
-  if (!isDigits(maxRounds)) fail(2, "--max-rounds takes a whole number");
-  const maxRoundsN = Number.parseInt(maxRounds, 10);
-  if (maxRoundsN < 1) fail(2, "--max-rounds must be at least 1");
+  const maxRoundsN = resolveMaxRounds(maxRounds);
 
   // When a draft is marked Ready: `--keep-draft` wins, else the repository's
   // `pull_requests.mark_ready`. Read once, up front: an unreadable policy

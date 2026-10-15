@@ -444,7 +444,7 @@ worth exactly what the mandatory pre-push gates behind it are worth.
 
 ### 8. Unbounded spinning
 
-**Guard**: `drive.ts --max-rounds` (default 10). Hitting it exits `6` with an
+**Guard**: `drive.ts --max-rounds` (default `drive.max_rounds`, else 10). Hitting it exits `6` with an
 explicit non-convergence report naming the state that was still live — not a
 quiet stop that reads like success.
 

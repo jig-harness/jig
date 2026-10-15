@@ -202,6 +202,12 @@ fields:
   drive.reviews_drafts:
     type: boolean
     read_by: [drive-pr, do-item]
+  drive.max_rounds:
+    type: integer
+    min: 1
+    default: 10
+    since: next
+    read_by: [drive-pr]
   drive.escape_baseline_doc:
     type: path
     exists: expected

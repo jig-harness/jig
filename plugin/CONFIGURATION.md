@@ -300,6 +300,7 @@ not resolve it either.
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
 | `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `determine_agent.ts --catalog` overrides it for one run |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
+| `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
 
 ## `ci`
@@ -538,6 +539,7 @@ drive:
   load_guard_command: "<your load-guard command>"  # returns once the machine can take heavy checks
   change_areas_catalog: docs/change-areas.yaml
   reviews_drafts: true
+  max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
   escape_baseline_doc: docs/review-loop-baseline.md
 ci:
   required_checks: [build, test]

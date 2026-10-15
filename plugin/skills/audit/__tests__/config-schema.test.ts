@@ -23,6 +23,7 @@ import {
   DEFAULT_ADAPTER,
   parseTrackerConfig,
 } from "../../do-item/scripts/lib/tracker/config.ts";
+import { DEFAULT_MAX_ROUNDS } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import {
   CANONICAL_STATES,
@@ -170,9 +171,21 @@ describe("the reading skills", () => {
       "pull_requests.mark_ready": policy.markReady,
       "pull_requests.branch_name": policy.branchName,
       "pull_requests.issue_link": policy.issueLink,
+      "drive.max_rounds": DEFAULT_MAX_ROUNDS,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "do_item.execution_plan_block": DEFAULT_BLOCK,
     });
+  });
+
+  test("accept only integers the skills read exactly", () => {
+    const problems = (value: number) =>
+      checkConfig({ drive: { max_rounds: value } }, schema).map(
+        (f) => f.message,
+      );
+    expect(problems(Number.MAX_SAFE_INTEGER)).toEqual([]);
+    expect(problems(2 ** 53)).toEqual([
+      "drive.max_rounds must be a whole number ≥ 1",
+    ]);
   });
 
   test("read the fields the schema lists in their strict maps", () => {
