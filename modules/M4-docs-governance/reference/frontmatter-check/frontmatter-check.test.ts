@@ -1,10 +1,16 @@
-import { expect, spyOn, test } from "bun:test";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, expect, spyOn, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkFrontmatter, readSchema } from "./frontmatter-check";
 
 const fixtures = join(import.meta.dir, "fixtures");
 const schema = join(fixtures, "schema.yaml");
+// Temporary documents and schemas go outside the repository: other suites walk
+// every file in it, and a file deleted between their listing and their read
+// fails them.
+const scratch = mkdtempSync(join(tmpdir(), "frontmatter-check-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 function run(
   args: string[],
@@ -93,8 +99,8 @@ test("only the generated index at its configured path is left out", () => {
   expect(run([index], { env: { OUT: index } }).code).toBe(0);
   // The same file is an ordinary document when the index is configured elsewhere.
   expect(run([index]).out).toContain("no frontmatter");
-  const copied = join(fixtures, "copied-marker.md");
-  const moved = join(fixtures, "moved-marker.md");
+  const copied = join(scratch, "copied-marker.md");
+  const moved = join(scratch, "moved-marker.md");
   writeFileSync(copied, readFileSync(index, "utf8"));
   writeFileSync(moved, `# Notes\n\n${readFileSync(index, "utf8")}`);
   try {
@@ -106,8 +112,8 @@ test("only the generated index at its configured path is left out", () => {
       "no frontmatter",
     );
   } finally {
-    rmSync(copied);
-    rmSync(moved);
+    rmSync(copied, { force: true });
+    rmSync(moved, { force: true });
   }
 });
 
@@ -119,7 +125,7 @@ test("no-description doc fails when NEW", () => {
 });
 
 test("NEW_DOCS holds one path per line, so a name may contain spaces", () => {
-  const spaced = fix("good/new doc.md");
+  const spaced = join(scratch, "new doc.md");
   writeFileSync(spaced, readFileSync(fix("good/nodesc.md")));
   try {
     const files = [fix("good/caching.md"), spaced];
@@ -203,7 +209,7 @@ test("path rules do not apply outside their prefix", () => {
 });
 
 test("a prefix that matches no document in the tree fails the check", () => {
-  const typo = join(fixtures, "..", "typo-schema.yaml");
+  const typo = join(scratch, "typo-schema.yaml");
   writeFileSync(
     typo,
     readFileSync(rules, "utf8").replace("[docs/archive/]", "[docs/archvie/]"),
@@ -243,7 +249,7 @@ test("a path rule that cannot be evaluated fails the check (fail closed)", () =>
 });
 
 test("every YAML spelling of a schema list is enforced, flow form and trailing comment alike", () => {
-  const flow = join(fixtures, "..", "flow-schema.yaml");
+  const flow = join(scratch, "flow-schema.yaml");
   writeFileSync(
     flow,
     readFileSync(schema, "utf8").replace(
@@ -256,7 +262,7 @@ test("every YAML spelling of a schema list is enforced, flow form and trailing c
       schema: flow,
     });
     expect(result.out).not.toContain("flow-schema.yaml");
-    const missingTitle = join(fixtures, "..", "untitled.md");
+    const missingTitle = join(scratch, "untitled.md");
     writeFileSync(
       missingTitle,
       readFileSync(fix("good/caching.md"), "utf8").replace(/^title:.*\n/m, ""),
@@ -274,7 +280,7 @@ test("every YAML spelling of a schema list is enforced, flow form and trailing c
 });
 
 test("a schema section of the wrong shape fails the run instead of dropping its check", () => {
-  const odd = join(fixtures, "..", "odd-schema.yaml");
+  const odd = join(scratch, "odd-schema.yaml");
   writeFileSync(
     odd,
     readFileSync(schema, "utf8").replace(
@@ -292,7 +298,7 @@ test("a schema section of the wrong shape fails the run instead of dropping its 
 });
 
 test("a schema that is not valid YAML fails the run", () => {
-  const broken = join(fixtures, "..", "broken-schema.yaml");
+  const broken = join(scratch, "broken-schema.yaml");
   writeFileSync(broken, "required: [title\n");
   try {
     const result = run([fix("good/caching.md")], { schema: broken });
@@ -330,7 +336,7 @@ test("checkFrontmatter returns its exit code to the caller", async () => {
 });
 
 test("an explicit null section is a schema error, not an omitted one", () => {
-  const nulled = join(fixtures, "..", "null-schema.yaml");
+  const nulled = join(scratch, "null-schema.yaml");
   const text = readFileSync(schema, "utf8");
   const variants: [RegExp, string, string][] = [
     [/^required:\n/m, "required: null\nformer_required:\n", "'required'"],
@@ -356,7 +362,7 @@ test("an explicit null section is a schema error, not an omitted one", () => {
 });
 
 test("a value YAML loads as an object but not a mapping is a schema error", () => {
-  const dated = join(fixtures, "..", "dated-schema.yaml");
+  const dated = join(scratch, "dated-schema.yaml");
   const text = readFileSync(schema, "utf8");
   const variants: [RegExp, string, string][] = [
     [

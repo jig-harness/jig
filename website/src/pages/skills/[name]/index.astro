@@ -2,6 +2,7 @@
 import ModChip from "../../../components/ModChip.astro";
 import SideIndex from "../../../components/SideIndex.astro";
 import StatusMark from "../../../components/StatusMark.astro";
+import TermInfo from "../../../components/TermInfo.astro";
 import Base from "../../../layouts/Base.astro";
 import { skills } from "../../../lib/data/index.ts";
 import { type Doc as DocEntry, docsMatching } from "../../../lib/docs.ts";
@@ -50,7 +51,7 @@ const hasContract = entry.id.endsWith("/README");
       {
         stations.length > 0 && (
           <div class="stations">
-            <a class="label" href="/factory/">In the factory</a>
+            <span class="label"><a href="/factory/">In the factory</a><TermInfo term="station" /></span>
             {stations.map((t) => (
               <a class="station" href={t.href}>
                 <StatusMark kind="skill" />

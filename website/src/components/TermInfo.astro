@@ -1,0 +1,38 @@
+---
+// A small "i" beside a label that names a term of art: hovering or focusing
+// it opens the term's glossary definition (scripts/site.ts).
+interface Props {
+  /** The term's glossary anchor: `station`. */
+  term: string;
+}
+const { term } = Astro.props;
+---
+
+<a class="info" href={`/glossary/#${term}`} data-term={term} aria-label={`What is a ${term}?`}>i</a>
+
+<style>
+  .info {
+    display: inline-grid;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    margin-left: 5px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 10.5px;
+    line-height: 1;
+    text-transform: none;
+    letter-spacing: 0;
+    text-decoration: none;
+    color: var(--muted);
+    vertical-align: 1px;
+  }
+  .info:hover,
+  .info:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+</style>

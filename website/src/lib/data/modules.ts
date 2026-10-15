@@ -72,14 +72,14 @@ export interface ModuleDoc {
   body: BodySection[];
 }
 
-const plain = (md: string) =>
+export const plain = (md: string) =>
   md
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[*`]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
-function clip(text: string, max: number): string {
+export function clip(text: string, max: number): string {
   return text.length > max
     ? `${text.slice(0, max - 4).replace(/\s+\S*$/, "")}…`
     : text;

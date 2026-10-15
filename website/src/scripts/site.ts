@@ -80,6 +80,9 @@ document.addEventListener("click", (event) => {
 });
 
 // ---------- term definitions ----------
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+
 interface TermDef {
   term: string;
   group: string;
@@ -111,25 +114,68 @@ function place(anchor: Element): void {
       : `${below}px`;
 }
 
+// What opens a definition beside it: a glossary term (`data-term`), or an
+// element that carries its own (`data-tip-head`, `-kind`, `-body`, `-more`).
+const TIPPED = "[data-term], [data-tip-body]";
+
+async function tipHtml(anchor: HTMLElement): Promise<string | undefined> {
+  const d = anchor.dataset;
+  if (d.tipBody !== undefined) {
+    const href = anchor.getAttribute("href");
+    const more =
+      href && d.tipMore
+        ? `<a class="tip-more" href="${escapeHtml(href)}">${escapeHtml(d.tipMore)}</a>`
+        : "";
+    return `<div class="tip-head"><strong>${escapeHtml(d.tipHead ?? "")}</strong><span>${escapeHtml(d.tipKind ?? "")}</span></div><div class="tip-def">${escapeHtml(d.tipBody)}</div>${more}`;
+  }
+  const slug = d.term;
+  const def = slug ? (await loadTerms())[slug] : undefined;
+  if (!def) return undefined;
+  return `<div class="tip-head"><strong>${def.term}</strong><span>${def.group}</span></div><div class="tip-def">${def.html}</div><a class="tip-more" href="/glossary/#${slug}">Open in the glossary →</a>`;
+}
+
 async function showTip(anchor: HTMLElement): Promise<void> {
-  const slug = anchor.dataset.term;
-  if (!tip || !slug) return;
+  if (!tip) return;
   window.clearTimeout(hideTimer);
   if (tipFor === anchor && !tip.hidden) return;
+  // A new anchor takes the panel over empty, so a definition that fails to
+  // load never leaves the previous anchor's content showing beside it.
+  if (tipFor !== anchor) {
+    tip.hidden = true;
+    release();
+  }
   tipFor = anchor;
-  const def = (await loadTerms())[slug];
-  if (!def || tipFor !== anchor) return;
-  tip.innerHTML = `<div class="tip-head"><strong>${def.term}</strong><span>${def.group}</span></div><div class="tip-def">${def.html}</div><a class="tip-more" href="/glossary/#${slug}">Open in the glossary →</a>`;
+  const html = await tipHtml(anchor);
+  if (!html || tipFor !== anchor) return;
+  tip.innerHTML = html;
   tip.hidden = false;
   anchor.setAttribute("aria-describedby", "term-tip");
   place(anchor);
 }
 
+// Unlinks the current anchor from the panel; a definition still loading
+// for it is dropped when it arrives, since it no longer owns the panel.
+function release(): void {
+  tipFor?.removeAttribute("aria-describedby");
+  tipFor = null;
+}
+
+function dismiss(): void {
+  window.clearTimeout(hideTimer);
+  if (tip) tip.hidden = true;
+  release();
+}
+
+// Hover and focus each keep the panel open: it closes only once neither
+// the anchor nor the panel is hovered or holds focus.
+function engaged(el: Element | null): boolean {
+  return !!el && (el.matches(":hover") || el.contains(document.activeElement));
+}
+
 function hideTip(): void {
+  window.clearTimeout(hideTimer);
   hideTimer = window.setTimeout(() => {
-    if (tip) tip.hidden = true;
-    tipFor?.removeAttribute("aria-describedby");
-    tipFor = null;
+    if (!engaged(tipFor) && !engaged(tip)) dismiss();
   }, 160);
 }
 
@@ -141,20 +187,17 @@ for (const type of ["mouseover", "focusin"] as const)
       window.clearTimeout(hideTimer);
       return;
     }
-    const term = target.closest<HTMLElement>("a[data-term]");
+    const term = target.closest<HTMLElement>(TIPPED);
     if (term) void showTip(term);
   });
 for (const type of ["mouseout", "focusout"] as const)
   document.addEventListener(type, (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (target.closest("a[data-term]") || tip?.contains(target)) hideTip();
+    if (target.closest(TIPPED) || tip?.contains(target)) hideTip();
   });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && tip && !tip.hidden) {
-    tip.hidden = true;
-    tipFor = null;
-  }
+  if (event.key === "Escape" && tipFor) dismiss();
 });
 
 // ---------- search ----------
@@ -207,9 +250,6 @@ function search(entries: Entry[], query: string): Entry[] {
     .slice(0, 8)
     .map((x) => x.e);
 }
-
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 for (const box of document.querySelectorAll<HTMLElement>("[data-search]")) {
   box.hidden = false;

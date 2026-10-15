@@ -42,7 +42,9 @@ changes are marked **Breaking** and say what a consumer changes.
   provider), the software factory with its two figures, the adoption guides
   with a plan per profile and a hand-off link, the plugin, every skill,
   principle and glossary term, and what's new beside the roadmap, in light
-  and dark, with search and term definitions in place. Parsers read each
+  and dark, with search and term definitions in place (a module's pill
+  opens its name and the problem it solves; an "i" beside a term of art such
+  as *station* opens its glossary entry). Parsers read each
   kind of document and are tested against the real files; links land on the
   matching page or term, and the build fails on a broken one. The live audit
   example is rendered at build from a committed run. CI builds the site
@@ -146,6 +148,10 @@ changes are marked **Breaking** and say what a consumer changes.
   only in merge-request pipelines, fails under a shell other than bash, and
   extracts the base tree's gate scripts, with the `lib/` they import, into a
   fresh directory outside the merge request's checkout.
+- M4's frontmatter-check test writes every temporary document and schema to
+  a scratch directory outside the repository, so a suite that reads every
+  Markdown file in the repository at the same time no longer fails on a file
+  deleted mid-read.
 
 ## [0.28.0] - 2026-10-15
 

@@ -2,6 +2,7 @@
 import ActorLine from "../../components/ActorLine.astro";
 import ModChip from "../../components/ModChip.astro";
 import StatusMark from "../../components/StatusMark.astro";
+import TermInfo from "../../components/TermInfo.astro";
 import Base from "../../layouts/Base.astro";
 import { type Actor, DESIGN_NOT_BUILT } from "../../lib/data/factory.ts";
 import { factory, skills } from "../../lib/data/index.ts";
@@ -12,7 +13,6 @@ const all = skills();
 const rows = await Promise.all(
   all.map(async (s) => ({
     ...s,
-    prefix: s.command.slice(0, s.command.indexOf(":") + 1),
     purposeHtml: await mdInline(s.purpose, "plugin/README.md"),
     stations: stationsRunBy(s.name),
     mods: modulesRunBy(s.name),
@@ -40,7 +40,7 @@ unrun.push({ station: "Design · every stage", href: "/factory/#station-band", a
       <h1 class="display">The skills that run Jig's modules for you.</h1>
       <p>They all come from one plugin, installed once per machine: <a href="/plugin/">install and configure it</a>.</p>
     </div>
-    <div class="th" aria-hidden="true"><span>Invoke as</span><span>What it does</span><span>Runs station</span><span>Runs module</span></div>
+    <div class="th"><span aria-hidden="true">Skill</span><span aria-hidden="true">What it does</span><span><span aria-hidden="true">Runs station</span><TermInfo term="station" /></span><span aria-hidden="true">Runs module</span></div>
     {
       [false, true].map((agents) => (
         <>
@@ -55,10 +55,7 @@ unrun.push({ station: "Design · every stage", href: "/factory/#station-band", a
               .filter((s) => s.agent === agents)
               .map((s) => (
                 <li>
-                  <a class="cmd" href={`/skills/${s.name}/`}>
-                    <span class="muted">{s.prefix}</span>
-                    {s.name}
-                  </a>
+                  <a class="name" href={`/skills/${s.name}/`}>{s.name}</a>
                   <span class="purpose" set:html={s.purposeHtml} />
                   <span class="stations">
                     {s.stations.map((t) => (
@@ -80,7 +77,7 @@ unrun.push({ station: "Design · every stage", href: "/factory/#station-band", a
         </>
       ))
     }
-    <h2 class="h2" id="unrun">Stations no skill runs</h2>
+    <h2 class="h2" id="unrun">Stations no skill runs<TermInfo term="station" /></h2>
     <p class="muted small">From <a href="/factory/">the factory page</a>: the stations a person runs, and the ones not built yet, with their roadmap item.</p>
     <ul class="unrun">
       {
@@ -120,6 +117,12 @@ unrun.push({ station: "Design · every stage", href: "/factory/#station-band", a
     padding: 14px 0;
     border-bottom: 1px solid var(--line);
     align-items: baseline;
+  }
+  .name {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 15px;
+    overflow-wrap: anywhere;
   }
   .purpose {
     font-size: 15px;

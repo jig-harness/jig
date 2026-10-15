@@ -22,6 +22,11 @@ make, use the entry's term instead.
   *scaffolding* for context, verification and kept knowledge; Jig provides the
   practices to build that scaffolding and skills that run the stations. See
   [FACTORY.md](FACTORY.md).
+- **Station** — one fixed step of a *software factory*, with its input, its
+  output and who runs it: a skill, an agent or a person. Design and planning
+  runs a feature through a pipeline of stations (research, PRD, architecture,
+  …); execution runs one work item through a line of them, from pick-up to a
+  merged pull request and its follow-ups. See [FACTORY.md](FACTORY.md).
 - **SSoT (single source of truth)** — the one authoritative place a fact or
   rule is defined. Everything else *points* to it or is *generated* from it,
   so copies can't quietly disagree.

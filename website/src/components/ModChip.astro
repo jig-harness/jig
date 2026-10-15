@@ -1,13 +1,25 @@
 ---
-// A module's id as a pill, linking to its page.
+// A module's id as a pill, linking to its page; hovering it opens the
+// module's name and the problem it solves (scripts/site.ts).
+import { moduleMeta, moduleSummary } from "../lib/data/index.ts";
+
 interface Props {
   id: string;
   size?: "small" | "normal";
 }
 const { id, size = "normal" } = Astro.props;
+const { title } = moduleMeta(id);
 ---
 
-<a class:list={["chip", size]} href={`/modules/${id}/`}>{id}</a>
+<a
+  class:list={["chip", size]}
+  href={`/modules/${id}/`}
+  aria-label={`${id} ${title}`}
+  data-tip-head={`${id} · ${title}`}
+  data-tip-kind="Practice module"
+  data-tip-body={moduleSummary(id)}
+  data-tip-more="Open the module →">{id}</a
+>
 
 <style>
   .chip {

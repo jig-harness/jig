@@ -12,11 +12,13 @@ import { parseLayers, parseTrackerInterface } from "./config.ts";
 import { parseFactory } from "./factory.ts";
 import { parseFlywheel } from "./flywheel.ts";
 import {
+  clip,
   type ModuleDoc,
   type ModuleMeta,
   parseMappings,
   parseModule,
   parseModuleIndex,
+  plain,
 } from "./modules.ts";
 import {
   type Principle,
@@ -55,6 +57,11 @@ export function moduleDoc(id: string): ModuleDoc {
   const doc = moduleDocs().get(id);
   if (!doc) throw new Error(`no module ${id}`);
   return doc;
+}
+
+/** The problem a module solves, as one plain line short enough for a popover. */
+export function moduleSummary(id: string): string {
+  return clip(plain(moduleDoc(id).problem), 220);
 }
 
 export function moduleMeta(id: string): ModuleMeta {
