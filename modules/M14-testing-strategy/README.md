@@ -35,8 +35,12 @@ the [glossary](../../GLOSSARY.md).
 
 1. **Tiers, with a trigger and a time budget.** Every suite belongs to a
    declared [test tier](../../GLOSSARY.md) that says what starts it and how
-   long it may take, and the budget is enforced (a job timeout, or a step
-   that fails when the suite runs over).
+   long it may take, and the budget is enforced on the suite itself (a
+   timeout on the command that runs it, or a step that fails when it runs
+   over). The job's own timeout stays the generous backstop
+   [M13](../M13-pipeline-economy/README.md#4-bound) sizes at about two to
+   three times the slowest healthy run, so it enforces a budget alone only
+   when the budget is that loose.
 
    | Tier | What it tests | Trigger | Example budget |
    |------|---------------|---------|----------------|
@@ -167,7 +171,8 @@ authorization layer has no isolation predicate to prove. The
 1. Copy [`templates/TESTING.md`](templates/TESTING.md) into your docs tree,
    fill in the tier table with your suites, triggers and budgets, and point
    your instruction file at it. This is **Lite**.
-2. Give every CI test job a timeout that matches its tier; move the full
+2. Enforce each CI test suite's tier budget on the command or step that runs
+   it, inside a job timeout sized as M13's backstop; move the full
    end-to-end sweep to a nightly schedule and a manual trigger, and add a
    check over the CI configuration that fails if it gains a per-change trigger
    ([mappings.md](mappings.md#tiers-in-ci)).

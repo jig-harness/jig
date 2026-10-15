@@ -18,8 +18,11 @@ export interface Pipelines {
 
 const README =
   "modules/M13-pipeline-economy/reference/workflow-conventions/README.md";
-/** GitHub's default job limit on hosted runners, in minutes. */
-const DEFAULT_LIMIT = 360;
+/** The longest `timeout-minutes` a job may declare, in minutes. It is generous
+ * on purpose (a timeout stops a hang, it does not police a slow run) and far
+ * below GitHub's default of 360; a job that needs more is sharded, or carries a
+ * reasoned exception. */
+const MAX_JOB_MINUTES = 60;
 const PR_EVENTS = ["pull_request", "pull_request_target"];
 const EXPRESSION = /\$\{\{/;
 
@@ -128,7 +131,8 @@ const isPullRequest = (wf: Workflow) =>
 /** A reusable-workflow call: its timeout is the called workflow's jobs'. */
 const callsWorkflow = (job: Job) => typeof job.def.uses === "string";
 
-/** Every job has `timeout-minutes` below the provider's default limit. */
+/** Every job has `timeout-minutes`, a positive number of minutes within the
+ * ceiling. */
 export function jobTimeout({ workflows }: Pipelines): Found[] {
   return workflows.flatMap((wf) =>
     wf.jobs
@@ -136,7 +140,7 @@ export function jobTimeout({ workflows }: Pipelines): Found[] {
       .flatMap((job): Found[] => {
         const finding = at(wf, job, "job-timeout");
         const value = job.def["timeout-minutes"];
-        const remedy = `set timeout-minutes near the job's real duration (${README}#job-timeout)`;
+        const remedy = `set timeout-minutes to about two to three times the job's slowest healthy run, at most ${MAX_JOB_MINUTES}; shard a longer job or add a reasoned exception (${README}#job-timeout)`;
         if (value === undefined)
           return [finding(`job '${job.id}' has no timeout-minutes`, remedy)];
         if (typeof value === "string" && EXPRESSION.test(value)) return [];
@@ -145,11 +149,15 @@ export function jobTimeout({ workflows }: Pipelines): Found[] {
           (typeof value === "string" && /^\s*\d+(?:\.\d+)?\s*$/.test(value))
             ? Number(value)
             : Number.NaN;
-        if (Number.isFinite(minutes) && minutes > 0 && minutes < DEFAULT_LIMIT)
+        if (
+          Number.isFinite(minutes) &&
+          minutes > 0 &&
+          minutes <= MAX_JOB_MINUTES
+        )
           return [];
         return [
           finding(
-            `job '${job.id}' has timeout-minutes ${JSON.stringify(value)}, not a number of minutes below the ${DEFAULT_LIMIT}-minute default`,
+            `job '${job.id}' has timeout-minutes ${JSON.stringify(value)}, not a positive number of minutes within the ${MAX_JOB_MINUTES}-minute ceiling`,
             remedy,
           ),
         ];

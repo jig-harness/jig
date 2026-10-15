@@ -124,10 +124,27 @@ Cancel a run only when another run covers it.
 
 ### 4. Bound
 
-- **Every job has a timeout sized to its work**: near its real duration, not
-  the provider's maximum. When two jobs merge into one, the new timeout is
-  the sum of theirs, not a round number. A suite that outgrows its timeout is
-  sharded, not given a longer one.
+- **Every job has a timeout, without exception.** A job with none runs until
+  the provider's default limit, often hours, so one hung test or stuck
+  download holds a runner, and its cost, for that long before anything
+  fails. Where a job only hands its work to another pipeline, the jobs that
+  do the work carry the timeout
+  ([mappings](mappings.md#bound) has each provider's default and syntax).
+- **The timeout is generous, never the default.** Size it to about two to
+  three times the slowest healthy run, rounded up, and at most an hour. Its
+  work is to stop a hang, not to police a slow day: a tight limit fails
+  healthy runs on a busy runner, and the re-run costs more than the headroom
+  saved. A suite with a tight time budget
+  ([M14](../M14-testing-strategy/README.md)) enforces it at its own step, and
+  the job timeout stays the backstop around it. When two jobs merge into one,
+  the new timeout is the sum of theirs, not a round number. A suite that
+  outgrows its timeout is sharded, not given a longer one: a job that needs
+  more than an hour is the sign, and one that truly cannot be split carries a
+  reasoned exception in the
+  [workflow-convention lint](reference/workflow-conventions/README.md#job-timeout).
+  The lint checks that every job has a timeout and that none exceeds the
+  hour; it cannot see run durations, so the two-to-three-times sizing stays
+  the author's to apply.
 - **A watchdog bounds [queue stalls](../../GLOSSARY.md) and fails loudly.**
   A job timeout counts
   only time the job runs, not time it waits for a runner. A job waiting for a
@@ -184,14 +201,15 @@ the tier and time budget that decide its row.
 ## Maturity levels
 
 - **Lite** — a new push to a pull request cancels the runs for its older head;
-  every job has a timeout; no workflow behind a required check is filtered by
-  changed paths at its trigger.
+  every job has its own timeout, below the provider's default; no workflow
+  behind a required check is filtered by changed paths at its trigger.
 - **Standard** — a resolver reading the change-area catalog drives job
   selection, failing closed; one aggregator job is the required check; slow
   suites no merge waits for run on a schedule, with a cheap per-change proxy.
 - **Strict** — the workflow conventions are checked by a lint that fails
   closed on input it cannot parse and accepts only reasoned exceptions, which
-  fail once they suppress nothing; CI time or cost is measured per workflow
+  fail once they suppress nothing, and it fails a job timeout above an hour;
+  CI time or cost is measured per workflow
   and job; a queue-stall watchdog runs.
 
 The criteria are in
@@ -205,7 +223,7 @@ expected-absent there.
    from the workflows behind required checks, put one aggregator in front of
    them, and require only the aggregator
    ([M1's skeleton](../M1-gates-enforcement-ladder/templates/ci-pr-gates.yml)
-   has the shape). Give every job a timeout and every pull-request workflow
+   has the shape). Give every job a generous timeout and every pull-request workflow
    a cancelling concurrency group. This is **Lite**.
 2. Write a change-area catalog ([M3](../M3-change-area-catalog/README.md)) if
    there is none, and select jobs from one resolver job; gate the toolchain

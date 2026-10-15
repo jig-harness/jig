@@ -56,9 +56,12 @@ Each finding names its rule, the file and line, the problem and the fix.
 
 ### job-timeout
 
-Every job has `timeout-minutes`, a number below the provider's 360-minute
-default or an expression. A hung job otherwise holds its runner until that
-default. A job that calls a reusable workflow (`uses:` at job level) cannot
+Every job has `timeout-minutes`, a positive number of minutes within a
+60-minute ceiling, or an expression. A hung job otherwise holds its runner
+until the provider's 360-minute default. Size the value to about two to three
+times the job's slowest healthy run: the timeout stops a hang, and a tighter
+one fails healthy runs on a busy runner. A job that needs more than the
+ceiling is sharded, or carries a reasoned exception. A job that calls a reusable workflow (`uses:` at job level) cannot
 carry the key: the called workflow's jobs carry their own, and the lint checks
 them where the called workflow is in the same repository.
 

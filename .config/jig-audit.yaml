@@ -724,6 +724,10 @@ criteria:
     # A lint over the parsed CI configuration fails a job without a timeout, a pull-request workflow without a cancelling concurrency group, a required workflow filtered at its trigger, and an aggregator that runs on always(); it fails closed on a file it cannot parse, every exception it accepts carries a reason, and an exception that suppresses nothing fails it.
     score: absent
     evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: no lint checks these conventions; scripts/check-workflow-safety.ts reads .github/workflows/ for pull_request_target safety only, so timeouts, trigger filters, aggregator conditions and concurrency keys hold by review only"
+  M13/job-timeout-ceiling-linted:   # strict, requires mechanical
+    # The CI-configuration lint fails a job whose timeout, written as a number, is above an hour, unless a reasoned exception covers that job, so a timeout stays a generous backstop against a hang rather than drifting toward the provider's default.
+    score: mechanical
+    evidence: "Scored by hand at 9d3637a, after this record's commit, because the criterion postdates the audit: scripts/gates.ts runs scripts/check-workflow-conventions.ts, M13's reference lint, whose job-timeout rule fails a literal timeout-minutes above MAX_JOB_MINUTES (60) and is self-tested by the job-timeout-fail (61) and job-timeout-pass (60) fixtures; exceptions come only from .config/workflow-conventions-exceptions.txt, which requires a reason per entry and holds none"
   M13/ci-cost-measured:   # strict, requires mechanical
     # CI time or cost is measured per workflow and job from the provider's records, so a decision about what to run where cites a number.
     score: absent

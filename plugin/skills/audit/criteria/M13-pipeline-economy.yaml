@@ -104,6 +104,20 @@ criteria:
       - "its exceptions are checked in, each with a reason; an entry without one, or one that suppresses no finding, fails the lint"
       - "it runs in CI on changes to the workflow files, with its own self-test"
 
+  - id: job-timeout-ceiling-linted
+    level: strict
+    requires: mechanical
+    since: next
+    statement: >-
+      The CI-configuration lint fails a job whose timeout, written as a
+      number, is above an hour, unless a reasoned exception covers that job,
+      so a timeout stays a generous backstop against a hang rather than
+      drifting toward the provider's default.
+    observe:
+      - "the lint fails a literal job timeout above 60 minutes, and passes one of exactly 60"
+      - "a job above the ceiling passes only through a checked-in exception that gives a reason"
+      - "a timeout written as an expression is outside this criterion: its value is known only at run time, and review checks it"
+
   - id: ci-cost-measured
     level: strict
     requires: mechanical

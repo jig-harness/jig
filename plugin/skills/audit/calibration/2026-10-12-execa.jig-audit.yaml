@@ -604,6 +604,10 @@ criteria:
     # A lint over the CI configuration fails a job without a timeout, a required workflow filtered at its trigger, an aggregator that runs on always(), and a concurrency key that drops runs it does not cover.
     score: absent
     evidence: "No lint reads .github/workflows/"
+  M13/job-timeout-ceiling-linted:   # strict, requires mechanical
+    # The CI-configuration lint fails a job whose timeout, written as a number, is above an hour, unless a reasoned exception covers that job, so a timeout stays a generous backstop against a hang rather than drifting toward the provider's default.
+    score: absent
+    evidence: "No lint reads .github/workflows/, so nothing bounds a job timeout"
   M13/ci-cost-measured:   # strict, requires mechanical
     # CI time or cost is measured per workflow and job from the provider's records, so a decision about what to run where cites a number.
     score: absent

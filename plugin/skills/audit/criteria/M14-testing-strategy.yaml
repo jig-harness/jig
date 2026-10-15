@@ -51,6 +51,7 @@ criteria:
     observe:
       - "test jobs carry timeout-minutes / timeout: / options { timeout(...) }, or the suite's command runs under timeout <duration>"
       - "or a step compares the suite's elapsed time with the budget and fails"
+      - "where the tier declares a budget, the bound that counts is no looser than it: a job timeout well above the suite's budget is a backstop against a hang, not the budget's enforcement"
     probe:
       files: &ci-config
         - ".github/workflows/*.yml"

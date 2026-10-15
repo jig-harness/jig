@@ -48,8 +48,12 @@ this page decides how cheaply and how fast it runs, without weakening it.
 
 ## 4. Bound
 
-> One row per job, or per family of jobs. A merged job's timeout is the sum
-> of the timeouts it replaced; a suite that outgrows its timeout is sharded.
+Every job has a timeout, sized to about two to three times its slowest
+healthy run, at most `<60>` minutes and never the provider's default. A
+merged job's timeout is the sum of the timeouts it replaced; a suite that
+outgrows its timeout is sharded.
+
+> One row per job, or per family of jobs.
 
 | Job | Usual duration | Timeout |
 |-----|----------------|---------|
@@ -88,7 +92,8 @@ schedule that stopped running counts as failing.
 ## Checklist for a new or changed workflow
 
 - [ ] No trigger-level path filter, if it reports a required check.
-- [ ] Every job has a timeout sized to its work.
+- [ ] Every job has a timeout with generous headroom over its slowest healthy
+      run, never the provider's default.
 - [ ] Its concurrency key names the ref, the event and every dispatch input
       (a dispatch keyed by its run id), and a cancelled run is always covered
       by the run that replaced it.

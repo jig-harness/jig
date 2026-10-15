@@ -9,3 +9,8 @@ jobs:
     timeout-minutes: 360
     steps:
       - run: make
+  over-ceiling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 61
+    steps:
+      - run: make

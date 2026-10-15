@@ -16,7 +16,9 @@
 #     failed or was cancelled, and names the jobs that did. A job skipped
 #     because the change did not need it passes; a job skipped because the
 #     job it needs failed does not.
-#   - Every job has a timeout sized to its work.
+#   - Every job has a timeout of about two to three times its slowest healthy
+#     run, at most 60 minutes, and never the provider's default (Jig module
+#     M13, Bound).
 #   - Concurrency-cancel: a new push to the PR cancels the superseded run.
 #
 # Make `pr-gates`, and only it, the required status check in branch
@@ -74,7 +76,7 @@ jobs:
   gates-and-build:
     needs: changes
     runs-on: <runner, e.g. ubuntu-latest>
-    timeout-minutes: <sized to the work, e.g. 20>
+    timeout-minutes: <2-3x the slowest healthy run, at most 60, e.g. 20>
     steps:
       - uses: actions/checkout@<pinned-sha>
         with:
@@ -136,7 +138,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: <runner, e.g. ubuntu-latest>
-    timeout-minutes: <sized to the work, e.g. 30>
+    timeout-minutes: <2-3x the slowest healthy run, at most 60, e.g. 30>
     steps:
       - uses: actions/checkout@<pinned-sha>
       - name: Setup toolchain

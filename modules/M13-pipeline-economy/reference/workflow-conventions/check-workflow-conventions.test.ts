@@ -100,7 +100,10 @@ test("a finding names its file, line, rule, problem and fix", () => {
   );
   expect(lines[1]).toStartWith("  fix: set timeout-minutes");
   expect(lines[2]).toContain(
-    "[job-timeout] job 'at-default' has timeout-minutes 360",
+    "[job-timeout] job 'at-default' has timeout-minutes 360, not a positive number of minutes within the 60-minute ceiling",
+  );
+  expect(lines.join("\n")).toContain(
+    "[job-timeout] job 'over-ceiling' has timeout-minutes 61",
   );
 });
 

@@ -44,7 +44,7 @@ risk moves to pipelines that are never created.
 
 | Rule | GitHub Actions | GitLab CI |
 |------|----------------|-----------|
-| A timeout on every job | `timeout-minutes:` on each job (default 360); steps may carry their own | `timeout:` on each job; the project's default (60 minutes unless changed) and each runner's maximum also apply |
+| A timeout on every job | `timeout-minutes:` on each job (default 360), about two to three times the slowest healthy run and at most an hour; there is no workflow-level default, so each job needs its own, and the [lint](reference/workflow-conventions/README.md#job-timeout) checks it; a job that calls a reusable workflow cannot carry one, so the called workflow's jobs do; steps may carry their own | `timeout:` on each job, about two to three times the slowest healthy run and at most an hour; `default:` does not accept it, so share one value through `extends:` or a YAML anchor; the project's default (60 minutes unless changed) and each runner's maximum also apply |
 | Queue time is not run time | `timeout-minutes` does not count time a job waits for a runner; the jobs API shows a waiting job as `status: queued` with its `created_at` | A job waiting for a runner is `pending`; the jobs API reports `queued_duration` |
 | Queue-stall watchdog | A scheduled workflow feeding the jobs API to [`reference/queue-watchdog/`](reference/queue-watchdog/) ([`templates/queue-watchdog.yml`](templates/queue-watchdog.yml)) | A pipeline schedule running a job that reads `pending` jobs' `queued_duration` from the jobs API and fails over the bound |
 

@@ -12,13 +12,17 @@ is a feature of the named tool.
 ## Tiers in CI
 
 A tier is a trigger plus a time budget. The trigger is CI configuration. The
-budget bounds the whole suite's elapsed time: a job timeout, a timeout on
-the command that runs the suite, or a step that measures the run against the
-budget. A per-test timeout in the runner is useful too, but it bounds one
-test, not the suite: hundreds of tests each under their limit can still run
-far past the tier's budget.
+budget bounds the whole suite's elapsed time: a timeout on the command that
+runs the suite, or a step that measures the run against the budget. The job
+timeout bounds it too, but
+[M13 sizes it](../M13-pipeline-economy/README.md#4-bound) as a generous
+backstop, about two to three times the slowest healthy run and at most an
+hour, so it enforces a budget alone only when the budget is that loose; a
+tighter budget goes on the command or step. A per-test timeout in the runner
+is useful too, but it bounds one test, not the suite: hundreds of tests each
+under their limit can still run far past the tier's budget.
 
-| CI provider | Every push / pull request | When paths change | Nightly and on demand | Job time budget |
+| CI provider | Every push / pull request | When paths change | Nightly and on demand | Job timeout (the backstop) |
 |-------------|---------------------------|-------------------|-----------------------|-----------------|
 | GitHub Actions | `on: push` / `on: pull_request` | a resolver job that lists changed files and sets outputs the tier's job reads in `if:` (a trigger-level `paths:` filter never starts the workflow, which leaves its required check pending and blocks the merge) | `on: schedule` (cron) and `on: workflow_dispatch` | `timeout-minutes` on the job |
 | GitLab CI | default pipeline on push and merge request | `rules: - changes: [<paths>]` | `rules: - if: $CI_PIPELINE_SOURCE == "schedule"` plus a pipeline schedule; `when: manual` for on demand | `timeout:` on the job |
