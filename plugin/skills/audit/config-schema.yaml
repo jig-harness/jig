@@ -379,7 +379,7 @@ fields:
     since: 0.28.0
   reflection.store:
     type: enum
-    values: [filesystem, command]
+    values: [filesystem, command, notion]
     read_by: [reflect, review-reflections]
     since: 0.28.0
   reflection.path:
@@ -390,6 +390,10 @@ fields:
     type: any
     read_by: [reflect, review-reflections]
     since: 0.28.0
+  reflection.notion.database:
+    type: string
+    read_by: [reflect, review-reflections]
+    since: 0.30.0
   reflection.journal:
     type: path
     read_by: [reflect, resolve-review-comments]

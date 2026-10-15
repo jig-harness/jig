@@ -167,6 +167,37 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.30.0] - 2026-10-15
+
+### Added
+
+- The [Notion store](plugin/skills/reflect/README.md#notion-store) for
+  session reflection (`reflection.store: notion`): reflections in a Notion
+  database people browse, filter and sort, from two settings, the
+  integration's secret in `NOTION_TOKEN` and `reflection.notion.database`.
+  `notion-store.ts init --parent <page>` creates the database with its
+  properties and views and prints the setting. Each change gets one page
+  (its issue key, else its branch, per repository), where every reflection
+  adds a section with the session and its findings as readable text, and a
+  decision adds a review note under its finding. Each event is kept on the
+  page as a JSON code block in a collapsed toggle, which is all `list`
+  reads; the page properties (Status, Severity, Classes, Repository and the
+  rest) are recomputed from the events after every write, and
+  `notion-store.ts repair` recomputes them after a failed write. A Status a
+  person changed by hand is kept, and `diagnose` reports it until a decision
+  agrees. `list` caches pages that have not changed since the last read, and
+  requests keep to Notion's rate limit. The store passes the conformance
+  suite against a local fake of the Notion API; a run against Notion itself
+  is an opt-in test (`notion-live.test.ts`).
+- `store-contract.ts`'s `runConformance` and the store client's `runStore`
+  take the environment the store command runs in.
+
+### Changed
+
+- [design/reflection.md](design/reflection.md) now describes only the future
+  Jira store; the Notion store is documented in the reflect skill's README,
+  and roadmap item 7 holds only its run against Notion itself.
+
 ## [0.29.0] - 2026-10-15
 
 M13's workflow conventions are checked by a gate instead of left to prose.
@@ -1465,7 +1496,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/docomply/jig/compare/v0.29.0...v0.30.0
+[0.29.0]: https://github.com/docomply/jig/compare/v0.28.1...v0.29.0
+[0.28.1]: https://github.com/docomply/jig/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/docomply/jig/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/docomply/jig/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/docomply/jig/compare/v0.26.0...v0.27.0

@@ -184,8 +184,8 @@ loop that feeds the reflection trigger runs as
 findings in a shared store, and
 [`review-reflections`](../../plugin/skills/review-reflections/README.md),
 which turns them into changes a person approves. The store sits behind a
-contract with a conformance suite; the plugin ships a filesystem store and
-runs any other store command. The reflection trigger and its markdown inbox
+contract with a conformance suite; the plugin ships a filesystem store and a
+Notion store, and runs any other store command. The reflection trigger and its markdown inbox
 below remain the option for repositories without the plugin.
 
 ### What the module provides

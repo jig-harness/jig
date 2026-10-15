@@ -48,6 +48,11 @@ export function storeCommand(settings: ReflectionSettings): string[] {
       ]);
     case "command":
       return settings.command as string[];
+    case "notion":
+      return tsArgv(join(import.meta.dir, "..", "notion-store.ts")).concat([
+        "--database",
+        settings.notionDatabase as string,
+      ]);
   }
 }
 
@@ -66,18 +71,21 @@ export interface StoreResult {
 }
 
 /**
- * Run `<command> <op>` with `input` on stdin. A deadline that passes, or a
- * command that cannot be started, reads as unavailable (exit 3).
+ * Run `<command> <op>` with `input` on stdin, in `env` when given (else this
+ * process's environment). A deadline that passes, or a command that cannot
+ * be started, reads as unavailable (exit 3).
  */
 export async function runStore(
   command: readonly string[],
   op: Operation,
   input: string,
   timeoutSec: number,
+  env?: Record<string, string | undefined>,
 ): Promise<StoreResult> {
   const r = await run([...command, op], {
     stdin: input,
     timeoutSec: deadlineFor(op, timeoutSec),
+    ...(env === undefined ? {} : { env }),
   });
   if (r.timedOut)
     return {

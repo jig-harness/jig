@@ -16,8 +16,9 @@ import {
   isMapping,
   jigHome,
 } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { notionId } from "./notion/ids.ts";
 
-export const STORE_KINDS = ["filesystem", "command"] as const;
+export const STORE_KINDS = ["filesystem", "command", "notion"] as const;
 export type StoreKind = (typeof STORE_KINDS)[number];
 export const MODES = ["quick", "comprehensive"] as const;
 export type Mode = (typeof MODES)[number];
@@ -29,6 +30,8 @@ export interface ReflectionSettings {
   path: string;
   /** The `command` store's argument list. */
   command: string[] | null;
+  /** The Notion store's database id. */
+  notionDatabase: string | null;
   /** The journal's path when configured, absolute; null for the default. */
   journal: string | null;
   escalateAfter: number;
@@ -83,6 +86,7 @@ const KNOWN = [
   "store",
   "path",
   "command",
+  "notion",
   "journal",
   "escalate_after",
   "timeout_sec",
@@ -148,6 +152,24 @@ function commandSetting(value: unknown): string[] | null {
   return words;
 }
 
+/** `reflection.notion`: the database's id, from an id or a link. */
+function notionSetting(value: unknown): string | null {
+  if (value === undefined) return null;
+  if (!isMapping(value)) throw new Error("reflection.notion must be a mapping");
+  const unknown = Object.keys(value).find((key) => key !== "database");
+  if (unknown !== undefined)
+    throw new Error(
+      `reflection.notion.${unknown} is not a Notion store setting (known: database)`,
+    );
+  const id =
+    typeof value.database === "string" ? notionId(value.database) : null;
+  if (id === null)
+    throw new Error(
+      "reflection.notion.database must be a Notion database id or link",
+    );
+  return id;
+}
+
 /** Parse the merged `reflection` section; `undefined` means off. */
 export function parseReflection(
   section: unknown,
@@ -172,12 +194,18 @@ export function parseReflection(
     throw new Error(
       "reflection.store is command, so reflection.command is required",
     );
+  const notionDatabase = notionSetting(section.notion);
+  if (store === "notion" && notionDatabase === null)
+    throw new Error(
+      "reflection.store is notion, so reflection.notion.database is required",
+    );
   return {
     on: true,
     store,
     path:
       pathSetting(section.path, "path", root) ?? join(jigHome(), "reflections"),
     command,
+    notionDatabase,
     journal: pathSetting(section.journal, "journal", root),
     escalateAfter: positiveWhole(
       section.escalate_after,

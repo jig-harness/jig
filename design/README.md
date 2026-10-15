@@ -51,7 +51,7 @@ with the review.
 
 | Design | Roadmap items |
 |--------|---------------|
-| [Reflection stores](reflection.md) | 7 |
+| [Reflection stores](reflection.md) | Later: the Jira store |
 | [The audit experience](audit-experience.md) | 8 |
 | [Batching small issues](work-batch.md) | 13 |
 | [The jig-harness.dev website](website.md) | 18 |

@@ -61,7 +61,7 @@ hook or the interface instead.
 | Local checks, generators, lints | Any command | [A command](#commands-a-repository-supplies) | — |
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
 | Issue tracker | Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
-| Reflection store | A folder of files, or any command | [A store command](#reflection-stores), no change to Jig | Notion: roadmap item 7; Jira later |
+| Reflection store | A folder of files, a Notion database, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
 | AI reviewer | Any bot, by login, app and check name | [Configuration](#ai-reviewers) | Summary-comment severities in [the parsed formats](#ai-reviewers) only: roadmap item 10 |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
@@ -187,10 +187,9 @@ machine, or a whole team, writes to
   `append`, `list`, `diagnose`) as its first argument, reads JSON or
   [JSONL](../GLOSSARY.md) on standard input, writes it on standard output,
   and exits 0 (done), 1 (failed), 2 (usage) or 3 (unavailable).
-- **The stores.** `filesystem`, a folder of files and the default, and
-  `command`, any command that keeps the contract. A Notion store, a database
-  people browse and filter, is roadmap item 7; a Jira store is planned for
-  later.
+- **The stores.** `filesystem`, a folder of files and the default;
+  `notion`, a Notion database people browse and filter; and `command`, any
+  command that keeps the contract. A Jira store is planned for later.
 - **To add one.** Write a command in any language that keeps the contract,
   run the conformance suite (`store-contract.ts`) against it, and choose it
   with `reflection.store: command` and `reflection.command`

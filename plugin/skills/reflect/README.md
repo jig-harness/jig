@@ -20,7 +20,8 @@ Contents: [the loop](#the-loop) · [turning it on](#turning-it-on) ·
 [events](#events) · [computed state](#computed-state) ·
 [the journal](#the-journal) · [escalation](#escalation) ·
 [the store contract](#the-store-contract) ·
-[filesystem store](#filesystem-store) · [command store](#command-store) ·
+[filesystem store](#filesystem-store) · [Notion store](#notion-store) ·
+[command store](#command-store) ·
 [where reflection is asked for](#where-reflection-is-asked-for) ·
 [scripts](#scripts) · [left out](#left-out)
 
@@ -269,9 +270,9 @@ filed for it.
 
 A store is a command that takes an operation as an argument (appended after
 the command's own words), reads JSON or JSONL on standard input, and writes
-JSON or JSONL on standard output. The built-in filesystem store is implemented
-through the same contract, so the conformance suite that checks it checks any
-other.
+JSON or JSONL on standard output. The built-in stores are implemented
+through the same contract, so the conformance suite that checks them checks
+any other.
 
 | Operation | Input | Output | Guarantees |
 |-----------|-------|--------|------------|
@@ -344,13 +345,135 @@ The default store (`reflection.store: filesystem`): a folder of JSONL files,
   it. A folder shared with a team mixes the content of every repository in it,
   so share it only among people who may see all of them.
 
+## Notion store
+
+`reflection.store: notion` keeps the reflections in a Notion database that
+people browse, filter and sort, while the skills read and write the same
+events as with any other store. A team that already triages its work in
+Notion sees the findings there instead of in a folder of files.
+
+**Setup.** In Notion, create an *internal integration* (a connection that
+belongs to your workspace and acts through a secret key, at
+[notion.so/profile/integrations](https://www.notion.so/profile/integrations))
+and share a page with it (the page's ••• menu → Connections). Export the
+integration's secret as `NOTION_TOKEN`, then create the database under that
+page:
+
+```sh
+bun <skill-dir>/scripts/notion-store.ts init --parent <page id or link>
+```
+
+It creates the database with its properties and views (*All changes*,
+*Inbox* and *By status*), and prints the setting to add:
+
+```yaml
+reflection:
+  store: notion
+  notion:
+    database: <database id or link>
+```
+
+Those are the two settings: the token, read only from the environment and
+never from a file, and the database. `check` reports a missing or refused
+token, a database the integration cannot see, a database `init` did not
+create, and a database missing properties, each with its fix. It cannot
+confirm the integration may write: Notion does not expose an integration's
+capabilities, and a probe would edit the database on every check. An
+integration without insert or update capabilities fails at its first
+`append`, with Notion's message. The store does not adopt a database it did
+not create.
+
+- **Through Notion's REST API.** The store is a script that runs outside the
+  agent, so it calls Notion's public API with the integration's token, not
+  the agent's own Notion connection. It pins the API version it is tested
+  against (`2026-03-11`). Every database query and block listing is read
+  page by page to its end, so `list` reads everything or fails; content is
+  only ever added to a page, never rewritten.
+- **One page per change.** A page per issue key (else branch) per
+  repository, titled `[<repository>] <issue or branch>: <first finding's
+  title>`. Each `append` adds a section at the end of the page: a heading with
+  the time, the session as a callout (harness, model, Jig version, skills),
+  and each finding as readable text. A decision adds a review note under its
+  finding. A decision about a finding the database does not hold goes to a
+  page of its own.
+- **The record is in the page.** Below each finding and each decision, in a
+  collapsed toggle named *Record*, is its event as a JSON code block
+  captioned `jig reflection event`. `list` reads events from these blocks and
+  nothing else, so editing the prose, the title or the properties changes
+  nothing the skills see. A captioned block that does not hold a valid event
+  is an error naming its page and block: a store that cannot be read whole is
+  not read at all.
+- **Properties are a view.** Status, Severity (the highest), Classes,
+  Components (the targets), Repository, Issue, Branch, Pull request, Skills,
+  Harness, Model, Jig version, Sessions, and First and Last reflected are
+  recomputed from the events after every write, against the whole store's
+  [computed state](#computed-state), on every page the write touched and
+  on every page whose computed properties differ from the ones last written
+  to it. A page keeps a digest of those in a property no view shows,
+  *Computed properties*, so finding the pages that are behind takes no
+  extra request.
+  Events carry no session id, so Sessions counts the distinct session
+  setups (harness, model, Jig version, skills and mode) behind the page's
+  events. A multi-select shows at most a hundred options; the events keep
+  the rest. A page's Status is *Inbox* while any
+  finding on it has no decision, *Approved* while any is approved but not
+  yet merged, and otherwise its latest decision, so filters and boards on
+  Status work. A property write that fails leaves the events stored and says
+  so on standard error; the next append, of any event, or
+  `notion-store.ts --database <id> repair` recomputes them.
+- **A status changed by hand is kept and surfaced.** The store also writes
+  the Status it computed to a property no view shows, *Computed status*.
+  Before every property update, `repair` included, a Status that differs from
+  it was changed by hand: the update leaves Status as the person set it and
+  updates the rest, and `diagnose` reports the page (`status-edited`, with
+  the shown and the computed Status and the page's findings) until the person
+  records the change as a decision (`review-reflections` asks) or puts it
+  back. It is never silently overwritten or silently obeyed.
+- **Retries and races are harmless.** `append` reads the store before
+  writing and does not write an event whose exact text is already there, so
+  a retried append adds nothing. A write Notion answers with a server
+  error may have been applied, so it is not sent again: the append reads as
+  unavailable, and running it again finishes it. A read (a database query
+  too, though Notion's API sends it as a write request) is retried on a
+  server error. Two concurrent writers can still both add
+  one, and `list` returns it once; `diagnose` reports different events under
+  one id, on any page. Two sessions that create a page for the same change at
+  the same moment leave two pages; since state comes from events, `list`
+  merges them, and later writes go to the older page. A page's change is the
+  hidden *Change key* property.
+- **Fast enough to review often.** `list` keeps a cache in
+  `~/.jig/cache/notion/<database>.json` (under `JIG_HOME`), keyed by each
+  page's last-edited time, so a review re-reads only the pages that changed
+  since the last one. Notion keeps that time only to the minute, so a page
+  edited in the last five minutes is never taken from the cache. The cache
+  is saved while a read goes on, so a read cut off by its deadline is
+  continued by the next. Requests
+  start at least 340 milliseconds apart (Notion allows an average of three a
+  second) and honour `Retry-After` when Notion asks to wait; a rate limit or
+  a server error that outlasts six attempts, or a wait longer than a
+  minute, reads as unavailable. `JIG_NOTION_API_URL`, which points the store
+  at another endpoint, must be https, or http to this machine.
+- **`ref`** is a link to the page, or to the record's toggle on it.
+- **Exit codes.** 3 (unavailable) for a missing or refused token, or Notion
+  out of reach; 1 for anything Notion refused, such as a database the
+  integration cannot see.
+- **Privacy.** The database holds the findings of every repository that
+  writes to it, and everyone it is shared with sees all of them. A page
+  moved to Notion's trash takes its events out of the store.
+- **Tested without Notion.** The tests run the conformance suite, and the
+  behaviour above, against a local fake of the API endpoints the store uses
+  (`JIG_NOTION_API_URL` points the store at it, and `JIG_NOTION_INTERVAL_MS`
+  sets the time between requests). A run against Notion itself is opt-in:
+  with `NOTION_TOKEN` and `JIG_NOTION_LIVE_PARENT` (a scratch page shared
+  with the integration) set, `__tests__/notion-live.test.ts` creates a
+  database there and runs the conformance suite against it.
+
 ## Command store
 
 `reflection.store: command` runs `reflection.command` (a list of words, or a
 line split on spaces with quotes keeping words together; no shell runs it) as
 the store, with the operation appended. That is how a repository or a person
 plugs in a store of their own; run the conformance suite against it first.
-A Notion store is planned (see the [roadmap](https://github.com/docomply/jig/blob/main/ROADMAP.md)).
 
 ## Where reflection is asked for
 
@@ -371,6 +494,7 @@ Only when reflection is on; when it is off nothing below happens.
 | `scripts/reflect.ts` | `status`, `gather`, `plan`, `contribute`: the script half of the procedure |
 | `scripts/store.ts` | One store operation against the configured store, under its deadline |
 | `scripts/filesystem-store.ts` | The filesystem store, behind the contract |
+| `scripts/notion-store.ts` | The Notion store, behind the contract, with `init` and `repair` |
 | `scripts/store-contract.ts` | The conformance suite |
 
 ## Left out

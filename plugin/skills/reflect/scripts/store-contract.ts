@@ -125,9 +125,14 @@ function jsonl(events: readonly ReflectionEvent[]): string {
   return `${events.map(eventText).join("\n")}\n`;
 }
 
+/**
+ * Run every check against a store command; `env`, when given, is the
+ * environment the command runs in.
+ */
 export async function runConformance(
   command: readonly string[],
   timeoutSec = 60,
+  env?: Record<string, string | undefined>,
 ): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   const record = (name: string, ok: boolean, detail?: string): void => {
@@ -136,7 +141,7 @@ export async function runConformance(
     );
   };
   const call = (op: Parameters<typeof runStore>[1], input = "") =>
-    runStore(command, op, input, timeoutSec);
+    runStore(command, op, input, timeoutSec, env);
 
   const check = await call("check");
   const checkOk = check.code === 0 && objectOf(check.stdout).ok === true;

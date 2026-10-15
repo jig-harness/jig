@@ -123,6 +123,7 @@ its conformance suite checks any of them.
 | Store | `reflection.store` | Fits |
 |-------|--------------------|------|
 | A folder of JSONL files, one file per write | `filesystem` (the default) | One person's machine, or a team folder synced by a cloud drive or committed to a git repository |
+| A Notion database, one page per change, with each event kept on its page | `notion` | A team that triages in Notion and wants the findings filterable and sortable there |
 | Any command that answers the contract | `command` | A store a repository or a person already runs: a database, an internal service |
 | Without the plugin: the markdown [inbox](templates/reflection-inbox.md) the [reflection trigger](reference/reflection-trigger/) appends to | n/a | A repository that does not use Jig's plugin |
 

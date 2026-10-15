@@ -134,19 +134,18 @@ item gives each a named replacement and then moves the code onto it.
   drive-pr and resolve-review-comments each keep; the duplicated block in
   `fleet-health.ts`; fallow's complexity hotspots.
 
-### 7. Notion store for reflections
+### 7. The Notion store, run against Notion
 
-The [Notion store](design/reflection.md#notion-store): reflections in a Notion
-database people browse and filter, from two settings (`NOTION_TOKEN` and
-`reflection.notion.database`), with `init` creating the database. One page
-per change; each event kept in the page as a JSON block that `list` reads, and
-the properties recomputed from the events as a view. Built on the
-[store contract](plugin/skills/reflect/README.md#the-store-contract) the
-`reflect` skill defines, and checked by its conformance suite.
+The [Notion store](plugin/skills/reflect/README.md#notion-store) is built and
+passes the conformance suite against a local fake of the Notion API. What
+is left is the run against Notion itself, which needs an integration's
+token: set `NOTION_TOKEN` and `JIG_NOTION_LIVE_PARENT` (a scratch page shared
+with the integration) and run
+`bun test plugin/skills/reflect/__tests__/notion-live.test.ts`, then fix
+where the fake and Notion disagree, in both.
 
-Done when the conformance suite passes against a local fake of the Notion API
-and against a live scratch database, and a repository reflects into a
-database `init` created using only the two settings.
+Done when that test passes, and a repository reflects into a database `init`
+created using only `NOTION_TOKEN` and `reflection.notion.database`.
 
 ### 8. The audit experience: what is left
 

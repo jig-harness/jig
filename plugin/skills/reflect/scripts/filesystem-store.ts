@@ -35,18 +35,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, relative } from "node:path";
-import {
-  readStdinAll,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { runMain } from "../../resolve-review-comments/scripts/lib/cli.ts";
 import {
   distinctById,
   idConflicts,
-  jsonlLines,
   parseEvent,
-  parseObject,
   type StoredEvent,
 } from "./lib/events.ts";
+import { appendInput, sinceInput } from "./lib/store-io.ts";
 
 const TEMP_PREFIX = ".tmp-";
 
@@ -115,18 +111,13 @@ function fileName(now: Date): { month: string; name: string } {
 }
 
 async function append(folder: string): Promise<number> {
-  const lines = jsonlLines(await readStdinAll());
-  const ids: string[] = [];
-  for (const [index, line] of lines.entries()) {
-    try {
-      ids.push(parseEvent(line).id);
-    } catch (error) {
-      console.error(
-        `line ${index + 1} is not a reflection event: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return 1;
-    }
+  const input = await appendInput();
+  if ("problem" in input) {
+    console.error(input.problem);
+    return 1;
   }
+  const lines = input.events.map((line) => line.text);
+  const ids = input.events.map((line) => line.event.id);
   if (lines.length === 0) {
     console.log(JSON.stringify({ stored: [] }));
     return 0;
@@ -207,17 +198,8 @@ function readCopies(folder: string): Copy[] {
   return storeFiles(folder).flatMap((file) => fileCopies(folder, file));
 }
 
-async function sinceFilter(): Promise<string | null> {
-  const input = (await readStdinAll()).trim();
-  if (input === "") return null;
-  const query = parseObject(input, "the list query");
-  if (query.since === undefined || query.since === null) return null;
-  if (typeof query.since !== "string") throw new Error("since must be a time");
-  return query.since;
-}
-
 async function list(folder: string): Promise<number> {
-  const since = await sinceFilter();
+  const since = await sinceInput();
   const events = distinctById(readCopies(folder)).filter(
     (stored) => since === null || stored.event.at >= since,
   );

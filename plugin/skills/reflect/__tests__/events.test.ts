@@ -244,6 +244,40 @@ describe("settings", () => {
     );
   });
 
+  it("reads the Notion store's database from an id or a link", () => {
+    const id = "0123456789abcdef0123456789abcdef";
+    const dashed = "01234567-89ab-cdef-0123-456789abcdef";
+    expect(
+      parseReflection({ store: "notion", notion: { database: id } }, "/repo"),
+    ).toMatchObject({ store: "notion", notionDatabase: dashed });
+    expect(
+      parseReflection(
+        {
+          store: "notion",
+          notion: {
+            database: `https://www.notion.so/team/Agent-reflections-${id}?v=fedcba9876543210fedcba9876543210`,
+          },
+        },
+        "/repo",
+      ),
+    ).toMatchObject({ notionDatabase: dashed });
+    expect(() => parseReflection({ store: "notion" }, "/repo")).toThrow(
+      "reflection.notion.database is required",
+    );
+    expect(() =>
+      parseReflection(
+        { store: "notion", notion: { database: "not an id" } },
+        "/repo",
+      ),
+    ).toThrow("must be a Notion database id or link");
+    expect(() =>
+      parseReflection(
+        { store: "notion", notion: { database: id, token: "x" } },
+        "/repo",
+      ),
+    ).toThrow("reflection.notion.token is not a Notion store setting");
+  });
+
   it("splits a command line without a shell", () => {
     expect(splitWords(`bun "my store.ts" --path '/a b' x`)).toEqual([
       "bun",

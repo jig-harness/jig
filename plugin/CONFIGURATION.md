@@ -422,9 +422,10 @@ reflection:
 |-------|------|-------------|---------|--------------|
 | `reflection` | mapping | Reflection is off | reflect, review-reflections, drive-pr, resolve-review-comments, do-item | Its presence turns reflection on |
 | `reflection.enabled` | `true`, `false` | `true` when the section exists | reflect, review-reflections, drive-pr, resolve-review-comments | `false` turns reflection off: in a repository's file for that repository, or `JIG__REFLECTION__ENABLED=false` for one run |
-| `reflection.store` | `filesystem`, `command` | `filesystem` | reflect, review-reflections | Which store answers: the [filesystem store](skills/reflect/README.md#filesystem-store), or `reflection.command` |
+| `reflection.store` | `filesystem`, `notion`, `command` | `filesystem` | reflect, review-reflections | Which store answers: the [filesystem store](skills/reflect/README.md#filesystem-store), the [Notion store](skills/reflect/README.md#notion-store), or `reflection.command` |
 | `reflection.path` | folder; `~` is the home directory, a relative path is the repository's | `~/.jig/reflections` (under `JIG_HOME`) | reflect, review-reflections | The filesystem store's folder |
 | `reflection.command` | a command line, or a list of words | **Required** with `store: command` | reflect, review-reflections | The store command; the operation is appended to it. No shell runs it |
+| `reflection.notion.database` | a Notion database id, or a link to it | **Required** with `store: notion` | reflect, review-reflections | The database `notion-store.ts init` created. The integration's secret is read from the `NOTION_TOKEN` environment variable, never from a file |
 | `reflection.journal` | file path | `<git-dir>/jig/reflection-journal.jsonl` | reflect, resolve-review-comments | The worktree's journal; a path git would track, or a file it already tracks, is refused. Parking still uses it when the section says `enabled: false` |
 | `reflection.escalate_after` | whole number, at least 1 | `3` | reflect, review-reflections | The recurrence count at which a class is escalated to one tracker issue |
 | `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections | The deadline for one store operation; `list` and `diagnose` get five times as long |
@@ -612,6 +613,8 @@ reflection:
   store: filesystem
   path: ~/.jig/reflections
   command: "<your store command>"
+  notion:
+    database: 0123456789abcdef0123456789abcdef   # the id init printed, or a link
   journal: .scratch/reflection-journal.jsonl
   escalate_after: 3
   timeout_sec: 120
