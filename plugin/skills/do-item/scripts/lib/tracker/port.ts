@@ -145,6 +145,8 @@ export interface LabelledIssueState {
   identifier: string;
   stateType: string;
   completedAt: string | null;
+  /** The issue body; present only when the read asked for it. */
+  description?: string | null;
 }
 
 // ── Candidate pools ────────────────────────────────────────────────────────
@@ -244,12 +246,14 @@ export interface Tracker {
     onPage?: (fetched: number) => void,
   ): Promise<LedgerIssue[]>;
   /**
-   * Every issue of a label, with its state. An aborted `signal` ends the read
-   * in flight and starts no further page.
+   * Every issue of a label, with its state, and its description when
+   * `withDescription` is set. An aborted `signal` ends the read in flight and
+   * starts no further page.
    */
   labelledIssues(
     label: string,
     signal?: AbortSignal,
+    withDescription?: boolean,
   ): Promise<LabelledIssueState[]>;
 
   // ── Candidate pools ──

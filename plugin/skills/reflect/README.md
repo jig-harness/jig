@@ -250,10 +250,17 @@ repository's tracker.
 
 For a class with an open tracker issue labelled
 `<issue_tracker.labels.pattern_prefix><class>` (`pattern:narrow-fix-per-round`
-by default), a new finding of that class owned by this repository is stored
+by default) that is this repository's own, a new finding of that class owned by this repository is stored
 with an `escalated` decision naming the issue, and a comment on the issue
 lists it. The issue is found through the repository's
-[tracker interface](https://github.com/docomply/jig/blob/main/GLOSSARY.md). When there is no such issue and the
+[tracker interface](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+The label is shared by every repository filing into the tracker's team, so it
+does not say whose issue it is: the issue carries an
+[owner marker](https://github.com/docomply/jig/blob/main/GLOSSARY.md), the
+line `Jig owner: <owner>` with the owner percent-encoded, in its description
+(the plan's `owner_marker`, written when the issue is filed), and only an
+issue with the asking owner's marker counts. An issue without it, such as one filed before the marker existed, is
+not attached to, and the next escalation files a new one. When there is no such issue and the
 class's recurrence count, counting the new findings, reaches
 `reflection.escalate_after` (default 3), the agent files one
 (`issue_tracker.file_command`) and every open finding of the class this

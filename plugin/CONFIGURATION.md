@@ -435,7 +435,9 @@ reflection:
 | `reflection.mode` | `quick`, `comprehensive` | `quick` | reflect | The reflection's default depth: what went wrong only, or also what worked and what could improve |
 
 Escalation reads `issue_tracker.labels.pattern_prefix` (a class's issue is
-labelled `<prefix><class>`) and `issue_tracker.file_command`.
+labelled `<prefix><class>` and carries an owner marker, a
+`Jig owner: <owner>` line with the owner percent-encoded, in its
+description, which the lookup requires) and `issue_tracker.file_command`.
 
 ## Procedure skills
 

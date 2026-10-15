@@ -44,7 +44,12 @@ The findings the repository it runs in would fix:
 5. **Escalate** a class at `reflection.escalate_after` occurrences to one
    tracker issue, as [reflect's escalation](../reflect/README.md#escalation)
    does, for the owners in scope: run in the Jig repository, it escalates
-   findings about Jig's skills to Jig's tracker.
+   findings about Jig's skills to Jig's tracker. A class's issue is the one
+   carrying that owner's
+   [owner marker](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in
+   its description, and a newly filed issue gets the marker the plan names; an
+   issue without it, such as one filed before the marker existed, is not
+   attached to, and the next escalation files a new one.
 6. **Implement** the approved changes in a pull request, and **record** a
    decision event per finding: `approved` with the commit and pull request, or
    the disposition and its reason.

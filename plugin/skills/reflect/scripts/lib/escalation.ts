@@ -11,8 +11,16 @@
  * reaching `reflection.escalate_after` asks for one to be filed. A closed
  * issue does not count: the class recurring after its fix closed is a new
  * escalation, and the new issue links the closed one.
+ *
+ * The label is shared by every repository filing into the tracker's team, so
+ * it does not say whose issue it is: the filing step writes an owner marker
+ * line into the description, and the lookup keeps only the issues carrying the
+ * owner's own marker. An issue without it is not attached to.
  */
-import { CLOSED_STATE_TYPES } from "../../../do-item/scripts/lib/tracker/port.ts";
+import {
+  CLOSED_STATE_TYPES,
+  type LabelledIssueState,
+} from "../../../do-item/scripts/lib/tracker/port.ts";
 import { openTracker } from "../../../do-item/scripts/lib/tracker/index.ts";
 import { trackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
 import {
@@ -30,6 +38,61 @@ export interface ClassIssue {
   state: string;
 }
 
+/**
+ * `owner` with every character outside letters, digits and `.:/-`
+ * percent-encoded (UTF-8 bytes, `%` included). A lone surrogate has no UTF-8
+ * form, so it is written `%u` and its four hex digits instead. Every JavaScript
+ * string thus has its own encoding, and the result is unchanged by the
+ * markdown rewrites `plainLine` undoes, so two owners never share a marker.
+ */
+function encodeOwner(owner: string): string {
+  return Array.from(owner, (ch) => {
+    if (/^[A-Za-z0-9.:/-]$/.test(ch)) return ch;
+    const unit = ch.charCodeAt(0);
+    if (ch.length === 1 && unit >= 0xd800 && unit <= 0xdfff)
+      return `%u${unit.toString(16).toUpperCase()}`;
+    return Array.from(
+      new TextEncoder().encode(ch),
+      (b) => `%${b.toString(16).toUpperCase().padStart(2, "0")}`,
+    ).join("");
+  }).join("");
+}
+
+/**
+ * The line a class issue's description carries to say whose it is. `owner` is
+ * the finding's owner (`repository:<id>` or `tool:<name>`), encoded so that it
+ * survives the tracker's markdown rewrites exactly.
+ */
+export function ownerMarker(owner: string): string {
+  return `Jig owner: ${encodeOwner(owner)}`;
+}
+
+/**
+ * A description line as the tracker may have rewritten it: link syntax reduced
+ * to its text, code ticks and backslash escapes removed, spaces collapsed.
+ * Applied to description lines only; the marker it is compared with is
+ * already plain.
+ */
+function plainLine(line: string): string {
+  return line
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`/g, "")
+    .replace(/\\(.)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Whether `description` carries `owner`'s marker as a line of its own. */
+export function carriesOwnerMarker(
+  description: string | null | undefined,
+  owner: string,
+): boolean {
+  const marker = ownerMarker(owner);
+  return (description ?? "")
+    .split(/\r?\n/)
+    .some((line) => plainLine(line) === marker);
+}
+
 /** What the tracker says about one class's label. */
 export interface ClassIssues {
   open: ClassIssue[];
@@ -44,7 +107,12 @@ export interface ClassIssues {
  */
 export interface TrackerLookup {
   label(className: string): string;
-  issues(className: string, signal: AbortSignal): Promise<ClassIssues>;
+  /** The class's issues that carry `owner`'s marker, open and closed. */
+  issues(
+    className: string,
+    owner: string,
+    signal: AbortSignal,
+  ): Promise<ClassIssues>;
   comment(issue: string, body: string, signal: AbortSignal): Promise<void>;
 }
 
@@ -77,6 +145,23 @@ export async function withinTrackerDeadline<T>(
   }
 }
 
+/** The labelled issues that are `owner`'s, split into open and closed. */
+export function ownedClassIssues(
+  found: readonly LabelledIssueState[],
+  owner: string,
+): ClassIssues {
+  const closed = new Set<string>(CLOSED_STATE_TYPES);
+  const result: ClassIssues = { open: [], closed: [] };
+  for (const issue of found) {
+    if (!carriesOwnerMarker(issue.description, owner)) continue;
+    (closed.has(issue.stateType) ? result.closed : result.open).push({
+      identifier: issue.identifier,
+      state: issue.stateType,
+    });
+  }
+  return result;
+}
+
 /** The configured tracker, or the reason there is none to ask. */
 export function configuredTracker(): TrackerLookup | string {
   let prefix: string;
@@ -90,19 +175,13 @@ export function configuredTracker(): TrackerLookup | string {
   }
   return {
     label: (className) => `${prefix}${className}`,
-    async issues(className, signal) {
+    async issues(className, owner, signal) {
       const found = await tracker.labelledIssues(
         `${prefix}${className}`,
         signal,
+        true,
       );
-      const closed = new Set<string>(CLOSED_STATE_TYPES);
-      const result: ClassIssues = { open: [], closed: [] };
-      for (const issue of found)
-        (closed.has(issue.stateType) ? result.closed : result.open).push({
-          identifier: issue.identifier,
-          state: issue.stateType,
-        });
-      return result;
+      return ownedClassIssues(found, owner);
     },
     comment: (issue, body, signal) => tracker.postComment(issue, body, signal),
   };
@@ -124,6 +203,8 @@ export interface ClassPlan {
    */
   action: "attach" | "file" | "store" | "unverified";
   label: string | null;
+  /** The line a filed issue's description must carry. */
+  owner_marker: string;
 }
 
 /**
@@ -135,6 +216,7 @@ interface ClassIssueFacts {
   open_issue: string | null;
   closed_issues: string[];
   label: string | null;
+  owner_marker: string;
   /** False when the tracker was asked and could not answer. */
   verified: boolean;
 }
@@ -147,18 +229,19 @@ function issueAsker(tracker: TrackerLookup | string) {
   let note = typeof tracker === "string" ? `no tracker: ${tracker}` : "ok";
   return {
     note: () => note,
-    async ask(className: string): Promise<ClassIssueFacts> {
+    async ask(className: string, owner: string): Promise<ClassIssueFacts> {
       if (typeof tracker === "string")
         return {
           open_issue: null,
           closed_issues: [],
           label: null,
+          owner_marker: ownerMarker(owner),
           verified: true,
         };
       let issues: ClassIssues;
       try {
         issues = await withinTrackerDeadline(
-          (signal) => tracker.issues(className, signal),
+          (signal) => tracker.issues(className, owner, signal),
           "the tracker's issue lookup",
         );
       } catch (error) {
@@ -167,6 +250,7 @@ function issueAsker(tracker: TrackerLookup | string) {
           open_issue: null,
           closed_issues: [],
           label: tracker.label(className),
+          owner_marker: ownerMarker(owner),
           verified: false,
         };
       }
@@ -174,6 +258,7 @@ function issueAsker(tracker: TrackerLookup | string) {
         open_issue: issues.open[0]?.identifier ?? null,
         closed_issues: issues.closed.map((issue) => issue.identifier),
         label: tracker.label(className),
+        owner_marker: ownerMarker(owner),
         verified: true,
       };
     },
@@ -199,7 +284,7 @@ export async function planEscalation(
   for (const [className, members] of [...byClass.entries()].sort()) {
     const fresh = members.filter((finding) => !state.findings.has(finding.id));
     const count = recurrence(state, owner, className) + fresh.length;
-    const { verified, ...facts } = await asker.ask(className);
+    const { verified, ...facts } = await asker.ask(className, owner);
     const due =
       count < escalateAfter ? "store" : verified ? "file" : "unverified";
     classes.push({
@@ -226,6 +311,7 @@ export interface OwnedClassPlan {
    */
   action: "attach" | "file" | "unverified";
   label: string | null;
+  owner_marker: string;
 }
 
 /**
@@ -268,7 +354,7 @@ export async function planOwnedClasses(
   const asker = issueAsker(tracker);
   const classes: OwnedClassPlan[] = [];
   for (const entry of countsByOwnerClass(state, owners)) {
-    const { verified, ...facts } = await asker.ask(entry.class);
+    const { verified, ...facts } = await asker.ask(entry.class, entry.owner);
     if (facts.open_issue === null && entry.count < escalateAfter) continue;
     classes.push({
       ...entry,

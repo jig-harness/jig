@@ -96,7 +96,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/review.ts" plan
 
 lists the classes in scope at the escalation threshold (`file`: file one
 issue with the repository's `issue_tracker.file_command`, labelled `label`,
-linking any `closed_issues`) or with an open issue already (`attach`).
+with `owner_marker` as a line of its own in the description, linking any
+`closed_issues`) or with an open issue already (`attach`).
 `unverified` means the tracker could not be read, so an issue may already
 exist: file nothing for that class and report it with `tracker`. After
 the issue exists, and the person approved escalating:

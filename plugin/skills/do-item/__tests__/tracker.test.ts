@@ -679,6 +679,48 @@ describe("Linear adapter: fleet metrics", () => {
     }));
     await expect(t.labelledIssues("epic")).rejects.toThrow("completedAt");
   });
+
+  it("reads descriptions only when asked", async () => {
+    const node = {
+      identifier: "ENG-1",
+      completedAt: null,
+      description: "Jig owner: repository:example/web",
+      state: { type: "started" },
+    };
+    const { description: _omitted, ...bare } = node;
+    const plain = tracker(() => ({ issues: page([bare]) }));
+    expect(await plain.t.labelledIssues("pattern:x")).toEqual([
+      { identifier: "ENG-1", stateType: "started", completedAt: null },
+    ]);
+    expect(plain.calls[0]?.query).not.toContain("description");
+    const described = tracker(() => ({
+      issues: page([node, { ...node, identifier: "ENG-2", description: null }]),
+    }));
+    const got = await described.t.labelledIssues("pattern:x", undefined, true);
+    expect(described.calls[0]?.query).toContain("description");
+    expect(got.map((i) => [i.identifier, i.description])).toEqual([
+      ["ENG-1", "Jig owner: repository:example/web"],
+      ["ENG-2", null],
+    ]);
+  });
+
+  it("refuses a requested description that is absent or not a string", async () => {
+    const node = {
+      identifier: "ENG-1",
+      completedAt: null,
+      state: { type: "started" },
+    };
+    for (const bad of [
+      node,
+      { ...node, description: 42 },
+      { ...node, description: {} },
+    ]) {
+      const { t } = tracker(() => ({ issues: page([bad]) }));
+      await expect(
+        t.labelledIssues("pattern:x", undefined, true),
+      ).rejects.toThrow("description was requested");
+    }
+  });
 });
 
 describe("Linear adapter: candidate pools", () => {

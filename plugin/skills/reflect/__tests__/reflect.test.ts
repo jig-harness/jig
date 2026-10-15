@@ -16,8 +16,11 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import {
+  carriesOwnerMarker,
   type ClassIssues,
   escalationDecisions,
+  ownedClassIssues,
+  ownerMarker,
   planEscalation,
   type TrackerLookup,
   withinTrackerDeadline,
@@ -735,6 +738,140 @@ describe("planning escalation", () => {
       ["recurring", 3, "file", null],
       ["tracked", 1, "attach", "ENG-9"],
     ]);
+  });
+
+  it("attaches only to an issue that carries the owner's own marker", () => {
+    const mine = `repository:${web}`;
+    const theirs = "repository:github.com/example/api";
+    const found = [
+      {
+        identifier: "ENG-1",
+        stateType: "started",
+        completedAt: null,
+        description: `Fix the class.\n\n${ownerMarker(theirs)}\n`,
+      },
+      {
+        identifier: "ENG-2",
+        stateType: "started",
+        completedAt: null,
+        description: `${ownerMarker(mine)}\r\nFix the class.`,
+      },
+      {
+        identifier: "ENG-3",
+        stateType: "completed",
+        completedAt: "2026-10-01T00:00:00Z",
+        description: `Fix the class.\n${ownerMarker(mine)}`,
+      },
+      { identifier: "ENG-4", stateType: "started", completedAt: null },
+      {
+        identifier: "ENG-5",
+        stateType: "started",
+        completedAt: null,
+        description: `see ${ownerMarker(mine)} in prose`,
+      },
+    ];
+    expect(ownedClassIssues(found, mine)).toEqual({
+      open: [{ identifier: "ENG-2", state: "started" }],
+      closed: [{ identifier: "ENG-3", state: "completed" }],
+    });
+    expect(ownedClassIssues(found, theirs).open).toEqual([
+      { identifier: "ENG-1", state: "started" },
+    ]);
+    expect(carriesOwnerMarker(null, mine)).toBe(false);
+    const owner = "repository:github.com/example/my_repo";
+    expect(ownerMarker(owner)).toBe(
+      "Jig owner: repository:github.com/example/my%5Frepo",
+    );
+    for (const line of [
+      "Jig owner: repository:github\\.com/example/my%5Frepo",
+      "Jig owner: repository:[github.com/example/my%5Frepo](<https://github.com/example/my%5Frepo>)",
+      "`Jig owner: repository:github.com/example/my%5Frepo`",
+      "Jig  owner:   repository:github.com/example/my%5Frepo ",
+    ])
+      expect(carriesOwnerMarker(`Text\n\n${line}\n`, owner)).toBe(true);
+    expect(
+      carriesOwnerMarker("Jig owner: repository:github.com/example/my", owner),
+    ).toBe(false);
+  });
+
+  it("gives owners that differ only in markdown-significant characters distinct markers", () => {
+    const base = "repository:git.example/team/ab";
+    for (const sibling of [
+      "repository:git.example/team/a`b",
+      "repository:git.example/team/a\\b",
+      "repository:git.example/team/a b",
+      "repository:git.example/team/a  b",
+      "repository:git.example/team/[ab](x)",
+      "repository:git.example/team/a%62",
+      "repository:git.example/team/a\ud800b",
+      "repository:git.example/team/a\udc00b",
+      "repository:git.example/team/a�b",
+      "repository:git.example/team/a%uD800b",
+    ]) {
+      expect(ownerMarker(sibling)).not.toBe(ownerMarker(base));
+      expect(carriesOwnerMarker(ownerMarker(base), sibling)).toBe(false);
+      expect(carriesOwnerMarker(ownerMarker(sibling), base)).toBe(false);
+      expect(carriesOwnerMarker(ownerMarker(sibling), sibling)).toBe(true);
+    }
+    expect(
+      carriesOwnerMarker(
+        ownerMarker("repository:git.example/team/a b"),
+        "repository:git.example/team/a  b",
+      ),
+    ).toBe(false);
+  });
+
+  it("gives owners with lone surrogates or the replacement character distinct markers", () => {
+    const owners = [
+      "tool:\ud800",
+      "tool:\ud801",
+      "tool:\udc00",
+      "tool:�",
+      "tool:%uD800",
+      "tool:%EF%BF%BD",
+      "tool:𐀀",
+    ];
+    expect(new Set(owners.map(ownerMarker)).size).toBe(owners.length);
+    for (const a of owners)
+      for (const b of owners)
+        expect(carriesOwnerMarker(ownerMarker(a), b)).toBe(a === b);
+  });
+
+  it("asks the tracker for the owner's issues and plans the marker to file", async () => {
+    const asked: string[] = [];
+    const plan = await planEscalation(
+      [owned("recurring")],
+      computeState([owned("recurring"), owned("recurring")]),
+      web,
+      3,
+      {
+        label: (c) => `pattern:${c}`,
+        issues: async (c, owner) => {
+          asked.push(`${c} ${owner}`);
+          return { open: [], closed: [] };
+        },
+        comment: async () => undefined,
+      },
+    );
+    expect(asked).toEqual([`recurring repository:${web}`]);
+    expect(plan.classes[0]).toMatchObject({
+      action: "file",
+      owner_marker: `Jig owner: repository:${web}`,
+    });
+  });
+
+  it("plans the marker to file when no tracker is configured", async () => {
+    const plan = await planEscalation(
+      [owned("recurring")],
+      computeState([owned("recurring"), owned("recurring")]),
+      web,
+      3,
+      "issue_tracker.team is not set",
+    );
+    expect(plan.classes[0]).toMatchObject({
+      action: "file",
+      owner_marker: `Jig owner: repository:${web}`,
+    });
   });
 
   it("files nothing when the tracker could not say whether an issue exists", async () => {

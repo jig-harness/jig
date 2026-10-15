@@ -701,17 +701,25 @@ export function parseLedgerNode(raw: unknown): LedgerIssue {
   };
 }
 
-const LABELLED_QUERY = `
+const labelledQuery = (withDescription: boolean) => `
 query TrackerLabelled($teamKey: String!, $label: String!, $after: String) {
   issues(first: 250, after: $after, includeArchived: true,
          filter: { team: { key: { eq: $teamKey } }, labels: { name: { eq: $label } } }) {
     pageInfo { hasNextPage endCursor }
-    nodes { identifier completedAt state { type } }
+    nodes { identifier completedAt${withDescription ? " description" : ""} state { type } }
   }
 }`;
 
-/** Every issue of a label with its state; a completed one must carry its completion time. */
-export function parseLabelledNode(raw: unknown): LabelledIssueState {
+/**
+ * Every issue of a label with its state; a completed one must carry its
+ * completion time. With `withDescription`, the description must be a string
+ * or an explicit null: an absent or malformed one would read as "no owner
+ * marker" and let reflection file a duplicate of an issue it could not read.
+ */
+export function parseLabelledNode(
+  raw: unknown,
+  withDescription = false,
+): LabelledIssueState {
   const n = record(raw, "labelled issue");
   const state = record(n.state, "labelled issue.state");
   if (typeof n.identifier !== "string" || typeof state.type !== "string")
@@ -726,7 +734,13 @@ export function parseLabelledNode(raw: unknown): LabelledIssueState {
     throw new ShapeError(
       `labelled issue ${n.identifier}: completed but completedAt is missing or not a valid timestamp`,
     );
-  return { identifier: n.identifier, stateType: state.type, completedAt };
+  const base = { identifier: n.identifier, stateType: state.type, completedAt };
+  if (!withDescription) return base;
+  if (typeof n.description !== "string" && n.description !== null)
+    throw new ShapeError(
+      `labelled issue ${n.identifier}: description was requested but is missing or not a string`,
+    );
+  return { ...base, description: n.description };
 }
 
 // ── Candidate pools ────────────────────────────────────────────────────────
@@ -1219,16 +1233,16 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       return nodes.map(parseLedgerNode);
     },
 
-    async labelledIssues(label, signal) {
+    async labelledIssues(label, signal, withDescription = false) {
       const nodes = await pageAll(
         transport,
-        LABELLED_QUERY,
+        labelledQuery(withDescription),
         { teamKey: team, label },
         (d) => d.issues,
         `'${label}' issues`,
         signal,
       );
-      return nodes.map(parseLabelledNode);
+      return nodes.map((node) => parseLabelledNode(node, withDescription));
     },
 
     async openIssues(query) {

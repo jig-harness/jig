@@ -694,6 +694,14 @@ make, use the entry's term instead.
 - **Reflection journal** — a worktree's own file of findings captured as they
   happen and not yet sent to the *reflection store*, so capturing one never
   depends on the store being reachable.
+- **Owner marker** — the line `Jig owner: <owner>` that reflection writes into
+  the description of a class's tracker issue, so the issue says whose it is.
+  `<owner>` is `repository:<id>` or `tool:<name>`, with every character other
+  than letters, digits and `.:/-` percent-encoded so that the tracker's
+  markdown rewrites cannot make two owners read alike. Several repositories
+  can share one tracker team and one `pattern:<class>` label; reflection
+  attaches a finding only to an issue carrying its own owner's marker
+  ([reflect](plugin/skills/reflect/README.md)).
 - **Conformance suite** — a set of checks any implementation of a contract
   must pass, run against the implementation itself, so a second
   implementation is held to what the first was tested for.

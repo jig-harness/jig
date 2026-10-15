@@ -144,7 +144,7 @@ and the action:
 | `action` | Do |
 |----------|----|
 | `attach` | Pass `--issue <class>=<open_issue>` to step 6 |
-| `file` | File one issue for the class's structural fix with the repository's `issue_tracker.file_command` (ask the person when none is configured), labelled with `label`, describing the shape and linking the `closed_issues` if any (the class recurred after their fix). Then pass `--issue <class>=<new key>` |
+| `file` | File one issue for the class's structural fix with the repository's `issue_tracker.file_command` (ask the person when none is configured), labelled with `label`, with `owner_marker` as a line of its own in the description (the lookup attaches only to issues carrying it), describing the shape and linking the `closed_issues` if any (the class recurred after their fix). Then pass `--issue <class>=<new key>` |
 | `store` | Nothing: the findings are stored as they are |
 | `unverified` | Due for escalation, but the tracker could not be read, so an issue may already exist: do not file. Store the findings as they are and report the class and `tracker` to the person |
 
