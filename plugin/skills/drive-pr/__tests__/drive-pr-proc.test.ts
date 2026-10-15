@@ -556,6 +556,30 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
   }
 
   /**
+   * Does any non-zombie process remain in group `pgid`? Read from `/proc`
+   * where it answers, else from `ps` — the same sources `stop()` reads, so a
+   * zombie is gone here exactly when it is gone there. Only a host with
+   * neither falls back to `groupAlive`, which cannot tell a zombie apart.
+   */
+  function liveGroupMember(pgid: number): boolean {
+    const viaProc = hasLiveGroupMemberLinux(pgid);
+    if (viaProc !== null) return viaProc;
+    let out: string;
+    try {
+      out = execFileSync("ps", ["-A", "-o", "pid=,pgid=,stat="], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 5000,
+      });
+    } catch {
+      return groupAlive(pgid);
+    }
+    return parsePsStatRows(out).some(
+      (row) => row.pgid === pgid && !row.stat.startsWith("Z"),
+    );
+  }
+
+  /**
    * A descendant that survives SIGTERM and outlives its own leader.
    *
    * The leader exits IMMEDIATELY, so `run()`'s 'close' — and therefore
@@ -587,12 +611,17 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
     await done;
 
     // Non-vacuous: the group must still be ALIVE at this point, or the test
-    // would prove nothing about waiting for it.
+    // would prove nothing about waiting for it. The zombie-aware probe must see
+    // it too, or its `false` below could not fail.
     expect(groupAlive(pgid)).toBe(true);
+    expect(liveGroupMember(pgid)).toBe(true);
 
     expect(await h.stop()).toBe(true);
-    // And `true` means what it claims — no member of the group is left.
-    expect(groupAlive(pgid)).toBe(false);
+    // And `true` means what it claims — no member of the group can still act.
+    // A zombie counts as gone, as it does for `stop()`: under a PID 1 that
+    // reaps orphans late, the SIGKILLed descendant can hold its process-table
+    // slot after `stop()` returns, and `kill(-pgid, 0)` would still see it.
+    expect(liveGroupMember(pgid)).toBe(false);
   });
 
   it("reports false rather than guessing when there is no group to witness", async () => {
