@@ -767,6 +767,12 @@ make, use the entry's term instead.
 - **TypeScript** — JavaScript with checked type declarations; Jig checks
   the types separately before running its commands.
 - **mise** — a tool that installs the exact runtime version recorded by a repository.
+- **POSIX** — the common standard behind macOS, Linux and other Unix-like
+  systems: how processes are grouped and signalled, which commands exist
+  (`ps`, `sh`), how file permissions work. Windows does not follow it, so
+  code that relies on it needs a separate path there.
+- **WSL (Windows Subsystem for Linux)** — a Linux system that runs inside
+  Windows. Tools that need *POSIX* run there unchanged.
 - **Hard link** — another filesystem name for the same file. Creating the name
   atomically lets a lock claim publish a complete owner record in one operation.
 - **Subagent (plugin agent)** — a separately prompted helper with its own

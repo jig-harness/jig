@@ -21,6 +21,7 @@ const docs = defineCollection({
       "modules/M*/mappings.md",
       "plugin/README.md",
       "plugin/CONFIGURATION.md",
+      "plugin/EXTENDING.md",
       "plugin/skills/*/SKILL.md",
       "plugin/skills/*/README.md",
       "plugin/agents/*.md",

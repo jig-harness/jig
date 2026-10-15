@@ -36,6 +36,7 @@ const FIXED: Record<string, string> = {
   "adoption/greenfield.md": "/adopt/greenfield/",
   "plugin/README.md": "/plugin/",
   "plugin/CONFIGURATION.md": "/plugin/configuration/",
+  "plugin/EXTENDING.md": "/plugin/extending/",
 };
 
 /** Whether a repository path exists (or, for `isFile`, is a file); the default knows of none. */

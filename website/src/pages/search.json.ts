@@ -40,6 +40,11 @@ const PAGES: [string, string, string][] = [
     "configuration layers jig.yaml user repository environment overlay tracker adapter linear",
   ],
   [
+    "Extending and adapting Jig",
+    "/plugin/extending/",
+    "extend adapt interface adapter tracker linear jira store reflection notion command hook forge github gitlab ci github actions windows macos linux operating system wsl launcher provider requirements",
+  ],
+  [
     "Adoption guide · existing repository",
     "/adopt/",
     "brownfield audit ladder profile order",

@@ -227,7 +227,10 @@ Move into configuration when a consumer needs them:
   [tracker interface](GLOSSARY.md);
 - the drive pushes to and fetches from a remote named `origin`;
 - summary-finding severity is parsed only for the reviewers whose comment
-  formats the drive already knows.
+  formats the drive already knows;
+- fields named after Linear: the review-triage file's
+  `severity_mapping.<severity>.linear_priority` and
+  `fractal-metrics.ts --skip-linear`, renamed with the old names still read.
 
 ### 11. Jig's own Simplified Technical English linter
 
@@ -242,7 +245,14 @@ golden files from the Python linter then retire with the translation.
 ### 12. More tracker adapters
 
 Jira, and a plan file kept in the repository. Both wait on the open decisions
-below.
+below. Before a second adapter works end to end, the
+[tracker interface](GLOSSARY.md) gains the operations skills now reach
+through the Linear MCP tools or the `linear` command: creating an issue,
+searching open issues, adding labels and attaching a file. The deferral step
+(item 10), `decide`, `explain` and `do-item`'s instructions then use them,
+and `do-item`'s parent-status reconciliation reads the interface's answers
+instead of Linear's. [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker)
+lists what still assumes Linear.
 
 ### 13. Batching small issues into one pull request (`work-batch`)
 
@@ -381,6 +391,18 @@ the repository's own visibility.
 - **Tracker planning.** Epic planning and prioritisation as skills on the
   tracker interface, where the procedure is generic rather than one
   organization's workflow.
+- **A forge interface.** GitHub is the only forge: the skills that work on
+  pull requests call `gh` directly. An interface on the tracker's model (pull
+  requests, review threads, checks and required checks, labels and comments),
+  with the GitHub implementation behind it, then GitLab as the second; build
+  it when a team on another forge needs it. What it covers is in
+  [plugin/EXTENDING.md](plugin/EXTENDING.md#forge-github).
+- **CI logs from other providers.** `fix-ci` finds and downloads a failed run
+  through GitHub Actions only (any CI's saved log already works with
+  `--log`); a provider interface for those two steps.
+- **Windows for `drive-pr` and `do-item`.** Finding and waiting on a pass's
+  processes without `ps` and POSIX signals, `do-item`'s pickup record without
+  owner-only file modes, and a Windows CI job for both suites.
 - **More launcher providers.** A Herdr provider for
   [tools/launcher/](tools/launcher/README.md), once its generic workspace
   commands are separated from the product-specific setup they come with.

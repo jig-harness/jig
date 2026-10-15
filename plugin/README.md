@@ -54,20 +54,23 @@ Contents: [requirements](#requirements) ·
 
 ## Requirements
 
-- **Claude Code** 2.1.292 or later and/or a **Codex CLI** with plugin support (tested with 0.159). Either
-  one is enough; install for each one you use.
-- **Bun** on `PATH`: the skills' scripts are TypeScript run by
-  [Bun](https://bun.sh). Jig tests with the version in
-  [mise.toml](../mise.toml); an older Bun may lack an API a script uses.
-- **git** and the **GitHub CLI** (`gh`), signed in with access to the
-  repositories you work on.
-- **macOS or Linux for `drive-pr`.** Its driver supervises agent processes
-  through POSIX process groups and signals, so it does not run on Windows.
-  The other skills run on all three systems.
-- **Issue-tracker access for `do-item`** (and for `drive-pr`'s tracker
-  reads): with the Linear adapter, `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in
-  the environment, or the Linear MCP server or `linear` command line tool
-  signed in.
+| Tool | Version | Needed for |
+|------|---------|------------|
+| **Claude Code** and/or a **Codex CLI** with plugin support | Claude Code 2.1.292 or later for the one-step install below (older: the two-step install), and 2.1.285 or later for a drive's [long background commands](skills/drive-pr/README.md#the-background-time-limit). Codex: tested with 0.159 | Every skill. Either tool is enough; install for each one you use |
+| **[Bun](https://bun.sh)** on `PATH` | The version in [mise.toml](../mise.toml), which Jig tests; an older Bun may lack an API a script uses | Every skill's scripts, which are TypeScript run by Bun. The repository being worked on needs no Bun of its own |
+| **git** | 2.36 or later (`git worktree list -z`; `resolve-conflicts` needs 2.31) | Every skill that reads the repository |
+| **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
+| **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in |
+
+Nothing checks these versions when a skill runs: an older tool fails on the
+command it lacks.
+
+- **macOS or Linux for `drive-pr` and `do-item`.** The driver supervises
+  agent processes through [POSIX](../GLOSSARY.md) process groups and
+  signals, so it does not run on Windows, and `do-item` is not tested there.
+  The other skills run on all three systems
+  ([operating systems](EXTENDING.md#operating-systems)).
 - **Read access to this repository.** It is private, so git must be able to
   fetch it without asking for a password. The simplest setup:
   `gh auth login`, then `gh auth setup-git`. The install commands below use the
@@ -166,7 +169,9 @@ committed: no copy of the skill, no install script, no generated files.
    derive instead of asking for, is in the
    [configuration reference](CONFIGURATION.md); the skill's own
    [configuration table](skills/resolve-review-comments/README.md#consumer-configuration)
-   explains its fields.
+   explains its fields. What a repository can adapt beyond values (its own
+   commands, other trackers and stores, other platforms) is in
+   [EXTENDING.md](EXTENDING.md).
    Fields a skill does not read are ignored, so other tooling can share the
    file. Check it by running the skill's first step from the repository:
    `bun <plugin>/skills/resolve-review-comments/scripts/consumer-config.ts`
@@ -462,7 +467,7 @@ runs as you:
 | A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace …`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` |
 | CI jobs that only run tests and gates | Nothing: they do not need the skills |
 | A runner that gives each session its own Claude Code configuration directory (`CLAUDE_CONFIG_DIR`) | A user-level install lives in the default directory and is not seen there. Build a seed once (as for containers) and set `CLAUDE_CODE_PLUGIN_SEED_DIR` in the runner's environment; repositories enable the plugin through `enabledPlugins` in `.claude/settings.json` |
-| A tool without plugin support | Copy or link `plugin/skills/<name>` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`); the command name is then the bare skill name |
+| A tool without plugin support | Copy or link every folder of `plugin/skills/` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`), side by side: skills import scripts from their siblings, so one skill alone does not run. The command name is then the bare skill name |
 
 ## Troubleshooting
 

@@ -1,0 +1,42 @@
+---
+// One reference document rendered whole, with a side index of its sections:
+// the plugin's configuration reference and its extending guide.
+import Base from "../layouts/Base.astro";
+import { md } from "../lib/markdown.ts";
+import { REPO_URL } from "../lib/routes.ts";
+import { read } from "../lib/site.ts";
+import { sections, titleLine, withoutTitle } from "../lib/source.ts";
+import { headingId } from "../lib/view.ts";
+import SideIndex from "./SideIndex.astro";
+
+interface Props {
+  from: string;
+  description: string;
+  eyebrow: string;
+}
+
+const { from, description, eyebrow } = Astro.props;
+const text = read(from);
+const parts = sections(text);
+const html = await md(withoutTitle(text), from);
+const title = titleLine(text);
+---
+
+<Base title={title} description={description}>
+  <section class="page wrap with-side">
+    <SideIndex title="On this page" items={parts.slice(1).map((p) => ({ label: p.title.replace(/[`*]/g, ""), href: `#${headingId(p.title)}` }))} />
+    <article class="main" style="--main-max:860px">
+      <span class="eyebrow">{eyebrow}</span>
+      <h1 class="display">{title}</h1>
+      <div class="prose" set:html={html} />
+      <p class="source"><a class="out" href={`${REPO_URL}/blob/main/${from}`}>Source: {from}</a></p>
+    </article>
+  </section>
+</Base>
+
+<style>
+  h1 {
+    font-size: clamp(30px, 3.2vw, 46px);
+    margin: 12px 0 16px;
+  }
+</style>

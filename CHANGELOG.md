@@ -149,6 +149,37 @@ changes are marked **Breaking** and say what a consumer changes.
   extracts the base tree's gate scripts, with the `lib/` they import, into a
   fresh directory outside the merge request's checkout.
 
+## [0.27.1] - 2026-10-15
+
+What can be adapted in Jig, and how, in one place. No behaviour changes.
+
+### Added
+
+- [plugin/EXTENDING.md](plugin/EXTENDING.md), and its page on the site
+  (`/plugin/extending/`): the ways a repository adapts Jig (a value, a
+  command of its own, an implementation behind an interface, a row in a
+  module's mappings); the commands a repository supplies, with their
+  contracts; the tracker interface and how to add an adapter, with what
+  still assumes Linear; reflection stores; AI reviewers; what depends on
+  GitHub as the forge and on GitHub Actions as the CI system; the agent
+  tools; the launcher's providers; which parts run on which operating
+  system; and how an extension is contributed. Each limit names the roadmap
+  item that would lift it.
+- The roadmap's later work gains a forge interface, a CI provider for
+  `fix-ci`'s log download, and Windows support for `drive-pr` and `do-item`;
+  item 12 names the operations the tracker interface needs before a second
+  adapter works end to end, and item 10 the fields named after Linear.
+
+### Changed
+
+- The plugin's [requirements](plugin/README.md#requirements) give minimum
+  versions: git 2.36, the GitHub command line 2.48, Claude Code 2.1.285 for
+  a drive's long background commands, and say that `do-item` is not tested
+  on Windows.
+- [Where it works](plugin/README.md#where-it-works): a tool without plugin
+  support takes every skill folder side by side, since skills import
+  scripts from their siblings.
+
 ## [0.27.0] - 2026-10-14
 
 A new module, [M14 Testing strategy](modules/M14-testing-strategy/README.md),
