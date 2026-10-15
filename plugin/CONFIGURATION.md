@@ -72,7 +72,9 @@ Contents: [the file](#the-file) ·
   with the same readers, and the schema's value sets are the ones the reading
   skills accept; the audit skill's tests fail when they differ. A field added
   to a skill is added to both in the same pull request, with `since:` the
-  plugin version that adds it, so an audit can report it as new.
+  plugin version that adds it, so an audit can report it as new. The pull
+  request writes `since: next`, and Jig's release step replaces it with the
+  version it releases.
 - **The audit record.** `/jig:audit` keeps what it found in
   `.config/jig-audit.yaml` beside this file; it is not configuration, and no
   other skill reads it.

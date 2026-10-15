@@ -543,6 +543,10 @@ criteria:
     # A per-worktree port-allocation convention exists, so two worktrees do not default to the same port.
     score: expected-absent
     evidence: "No dev server or listening service. The library spawns subprocesses and has no ports to allocate per worktree. No parallel-agent workflow."
+  M12/change-records-one-file-per-change:   # lite, requires convention
+    # A change records its changelog entry (and any version bump) in a file of its own, not as an edit to a file every change edits, so merging one change does not put the others in conflict.
+    score: expected-absent
+    evidence: "No changelog or version that changes with each pull request: git ls-files has no CHANGELOG*, and package.json's version moves only in the maintainer's release commit (63ddae6 '10.1.0', tag v10.1.0)."
   M12/port-allocation-scripted:   # standard, requires mechanical
     # Per-worktree port allocation is scripted and deterministic — the same worktree identity always maps to the same in-range port.
     score: expected-absent
@@ -555,6 +559,10 @@ criteria:
     # Worktree create/remove hooks are wired — create allocates and surfaces the port slot, remove nudges reflection.
     score: expected-absent
     evidence: "No worktree workflow, and no hook manager (.husky/, lefthook.yml, .pre-commit-config.yaml absent from git ls-files)."
+  M12/change-records-assembled-after-merge:   # standard, requires mechanical
+    # A release step assembles the per-change notes into the changelog and sets the version after the merge, one run at a time, and a check fails a change whose note it cannot read or that edits what the step writes.
+    score: expected-absent
+    evidence: "Same as change-records-one-file-per-change: no per-change changelog or version to assemble; releases are cut by the maintainer."
   M12/utilities-self-tested-in-ci:   # strict, requires mechanical
     # The port allocator and the resource lock each ship a self-test that runs in CI, so a broken utility fails loudly instead of silently misallocating.
     score: expected-absent

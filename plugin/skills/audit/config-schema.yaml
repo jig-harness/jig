@@ -33,7 +33,8 @@
 #             one fixed value; a starter configuration never writes it
 #   deprecated  the message a re-run prints: what to use instead
 #   since     the plugin version that added the field; fields older than the
-#             audit skill carry none
+#             audit skill carry none. A pull request writes `next`, which the
+#             release step replaces with the version it releases
 version: 1
 
 # Maps whose keys the skills look up: an unknown key there is refused, since

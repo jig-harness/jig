@@ -84,19 +84,24 @@ first; no `Unreleased`).
   exemptions are taken from the format's own specification, cited where the
   check enforces them, not restated here. Jig's own
   `scripts/check-changelog.ts` is the starting point, not the finished check:
-  it reads Jig's two plugin manifests and checks only that their
-  versions agree and that the current one has a heading. The skill's check
+  it reads Jig's two plugin manifests, checks that their versions agree and
+  that the current one has a heading, and holds branches to M12's change
+  notes. The skill's check
   detects the format, validates the rules above, and takes the current version
   from the repository rather than from fixed paths; Jig's `bun run
   gates` keeps calling it.
-- **Release**: write the version's section (or move `Unreleased` into it),
-  update the comparison links, and leave tagging to the release step.
-- `do-item` and `drive-pr` ask for an entry when a pull request changes what
-  users see, where the format keeps one per change.
+- **Release**: for Keep a Changelog, M12's change-notes release step
+  ([reference/change-notes/](modules/M12-parallel-agent-ergonomics/reference/change-notes/README.md))
+  already writes each pull request's note into the version's section or
+  Unreleased, moves the version and the comparison links; the skill runs it
+  for a consumer and adds the Common Changelog form.
+- `do-item` and `drive-pr` ask for a change note when a pull request changes
+  what users see, where the format keeps one per change.
 
 The practice itself (a changelog per released artifact, mechanically
 checked) belongs in a module; decide whether M10 (environments and deploy)
-holds it or a new release module does.
+holds it or a new release module does. M12 keeps the part about parallel
+work: one change note per pull request, written in after the merge.
 
 ### 5. A shared runtime kernel and diagnostics
 

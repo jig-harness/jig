@@ -14,7 +14,7 @@
 //   site     it touched the site itself and nothing the site reads
 //   outside  it touched nothing the site reads
 //   update   it changed the record and nothing else content: an earlier
-//            run of the skill, whose site and changelog edits that run
+//            run of the skill, whose site edits and change note that run
 //            already checked. A record change that also touched content
 //            stays `content`, since nothing shows a run checked that part.
 // A commit whose counted lines exceed --max-lines (default 5000) is marked
@@ -49,7 +49,8 @@ import {
 } from "./change-areas.ts";
 
 export const RECORD = "website/content-sync.yaml";
-const CHANGELOG = "CHANGELOG.md";
+/** The change note a run of the skill adds (changes/README.md). */
+const UPDATE_NOTE = "changes/website-update.md";
 const MAIN = "origin/main";
 const SITE_AREA = "website";
 const CONTENT_CATEGORIES = ["docs", "skill"];
@@ -161,12 +162,12 @@ export function kindOf(areas: string[], catalog: Catalog): Kind {
 
 /**
  * Whether a commit is an earlier run of the skill: it changed the record,
- * and nothing else it changed is content once the changelog line such a run
+ * and nothing else it changed is content once the change note such a run
  * may add is set aside.
  */
 function isUpdate(paths: string[], catalog: Catalog): boolean {
   if (!paths.includes(RECORD)) return false;
-  const rest = paths.filter((path) => path !== CHANGELOG);
+  const rest = paths.filter((path) => path !== UPDATE_NOTE);
   return kindOf(resolveAreas(rest, catalog).seedAreas, catalog) !== "content";
 }
 

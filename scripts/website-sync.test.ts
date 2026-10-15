@@ -44,7 +44,7 @@ function area(paths: string[], category: string, impliedBy: string[] = []) {
 
 const catalog: Catalog = {
   website: area(["site/**"], "docs", ["docs", "skills", "toolchain"]),
-  docs: area(["*.md"], "docs"),
+  docs: area(["*.md", "changes/**"], "docs"),
   skills: area(["skills/**"], "skill", ["notes"]),
   notes: area(["notes/**"], "docs"),
   toolchain: area(["package.json", "bun.lock", ".config/**"], "infra", [
@@ -289,7 +289,7 @@ test("a commit that changed the record and the site is an earlier update", () =>
   commit("chore(website): site checked", {
     [RECORD]: record,
     "site/page.astro": "p\n",
-    "CHANGELOG.md": "changelog line\n",
+    "changes/website-update.md": "### Changed\n\n- a page\n",
   });
   git("update-ref", "refs/remotes/origin/main", "refs/heads/main");
   expect(plan(root, "main").commits.map((c) => c.kind)).toEqual(["update"]);

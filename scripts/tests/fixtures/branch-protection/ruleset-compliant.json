@@ -1,0 +1,26 @@
+{
+  "rules": [
+    { "type": "deletion", "ruleset_id": 7 },
+    { "type": "non_fast_forward", "ruleset_id": 7 },
+    {
+      "type": "pull_request",
+      "ruleset_id": 7,
+      "parameters": {
+        "required_approving_review_count": 0,
+        "required_review_thread_resolution": true
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "ruleset_id": 7,
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [{ "context": "gates", "integration_id": 15368 }]
+      }
+    }
+  ],
+  "bypass_actors": [
+    { "actor_id": 123, "actor_type": "Integration", "bypass_mode": "always" },
+    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }
+  ]
+}

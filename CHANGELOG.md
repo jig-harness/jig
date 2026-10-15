@@ -6,13 +6,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 A version number is the version of the `jig` [plugin](plugin/README.md)
 (`version` in `plugin/.claude-plugin/plugin.json` and
-`plugin/.codex-plugin/plugin.json`), and each release is tagged `v<version>` on
-its merge commit. Machines receive a change to the plugin only through a new
-version, so every pull request that changes `plugin/` adds its entry under that
-new version's heading. Changes outside the plugin (modules, the auditor,
-documentation) collect under **Unreleased** until the next plugin release
-carries them. `bun run gates` fails when the current plugin version has no
-heading here.
+`plugin/.codex-plugin/plugin.json`), and each release is tagged `v<version>`.
+Machines receive a change to the plugin only through a new version.
+
+This file is written by the release step, not by hand. A pull request adds a
+[change note](changes/README.md) under `changes/` instead; after the merge,
+`scripts/release.ts` writes every note here and deletes it. A note that asks
+for a release (every pull request that changes `plugin/` has one) becomes the
+next version's section, and the step moves both manifests to that version
+and tags it. Changes outside the plugin (modules, the auditor,
+documentation) are listed under **Unreleased**. Why it works this way:
+[ADR-0004](docs/adr/ADR-0004-change-notes-released-after-the-merge.md).
 
 Before 1.0.0, a minor version can change behaviour that consumers rely on; such
 changes are marked **Breaking** and say what a consumer changes.

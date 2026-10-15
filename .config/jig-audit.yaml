@@ -657,6 +657,10 @@ criteria:
     # prior: expected-absent: Jig runs no dev server or network service: git grep 'Bun.serve|createServer|listen(' over non-fixture/reference/template .ts finds nothing, so worktrees have no ports to share
     score: expected-absent
     evidence: "No listener in Jig's own code: git grep Bun.serve|createServer|.listen(|localhost: over non-fixture/reference/template .ts finds none; browser tests drive Chrome over file:// URLs"
+  M12/change-records-one-file-per-change:   # lite, requires convention
+    # A change records its changelog entry (and any version bump) in a file of its own, not as an edit to a file every change edits, so merging one change does not put the others in conflict.
+    score: absent
+    evidence: "At the audited commit every pull request edits CHANGELOG.md's Unreleased or release section and, for a plugin change, both plugin manifests' version; there is no changes/ directory, and scripts/check-changelog.ts checks only that the current version has a section"
   M12/port-allocation-scripted:   # standard, requires mechanical
     # Per-worktree port allocation is scripted and deterministic — the same worktree identity always maps to the same in-range port.
     # prior: expected-absent: No port-bound process in Jig's own tooling; modules/M12-parallel-agent-ergonomics/reference/port-allocator/ is an example for other repositories
@@ -672,6 +676,10 @@ criteria:
     # prior: absent: No worktree create/remove hooks tracked: git ls-files has no workspace-tool config, .claude/settings, lefthook/husky/.githooks (only modules/M1-gates-enforcement-ladder/templates/lefthook.yml, a template)
     score: absent
     evidence: "No tracked worktree create/remove hooks: no workspace-tool config, .claude/settings or hook manager; tools/launcher opens workspaces but allocates and nudges nothing"
+  M12/change-records-assembled-after-merge:   # standard, requires mechanical
+    # A release step assembles the per-change notes into the changelog and sets the version after the merge, one run at a time, and a check fails a change whose note it cannot read or that edits what the step writes.
+    score: absent
+    evidence: "At the audited commit no release step runs after a merge: .github/workflows/ has no release workflow, the version and the changelog section are written in each pull request, and v<version> tags are pushed by hand"
   M12/utilities-self-tested-in-ci:   # strict, requires mechanical
     # The port allocator and the resource lock each ship a self-test that runs in CI, so a broken utility fails loudly instead of silently misallocating.
     # prior: absent: Jig has no port allocator or heavy-run lock of its own to self-test

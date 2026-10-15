@@ -11,6 +11,14 @@
 // and an up-to-date branch ("strict" checks), which turns every merge into a
 // pull, a push and another full CI run on each open pull request. Those
 // settings are reported, never failed, and remediation keeps them as they are.
+//
+// The policy may live in branch protection or in a repository ruleset. Only a
+// ruleset can let a named actor past every rule, which the release App that
+// pushes the release commit needs (docs/adr/ADR-0004-change-notes-released-
+// after-the-merge.md), so Jig's lives in one. A ruleset is read as the rules
+// GitHub applies to the branch, with each ruleset's bypass list, and reported
+// the same way; offline, `--input` takes `{ "rules": [...], "bypass_actors":
+// [...] }` for it. A failing ruleset gets the rules to add, not a payload.
 import { readFileSync } from "node:fs";
 import { cli } from "../lib/cli.ts";
 
@@ -119,10 +127,14 @@ export function evaluateProtection(value: unknown): {
     ...checks.map(([label, pass]) => `  ${pass ? "PASS" : "FAIL"}  ${label}`),
     `  required checks: ${contexts(value).join(", ") || "none"}`,
     unrequired(value),
-    ...BYPASS_ACTORS.map(
-      ([label, path]) =>
-        `  bypass actors (${label}): ${actorNames(value, path).join(", ") || "none"}`,
-    ),
+    ...(Array.isArray(value.ruleset_bypass)
+      ? [
+          `  bypass actors (ruleset): ${value.ruleset_bypass.join(", ") || "none"}`,
+        ]
+      : BYPASS_ACTORS.map(
+          ([label, path]) =>
+            `  bypass actors (${label}): ${actorNames(value, path).join(", ") || "none"}`,
+        )),
   ];
   const satisfied = checks.filter(([, pass]) => pass).length;
   lines.push(`${satisfied}/${checks.length} controls satisfied`);
@@ -195,6 +207,76 @@ export function remediation(value: Json): Json {
     ),
   };
 }
+/** A rule of the branch's rulesets, by type; undefined when none applies. */
+function rule(rules: Json[], type: string): Json | undefined {
+  return rules.find((r) => r.type === type);
+}
+
+/** A ruleset bypass actor, named as far as its id allows. */
+function bypassName(actor: Json): string {
+  const id = String(actor.actor_id ?? "");
+  switch (actor.actor_type) {
+    case "Integration":
+      return `app ${id}`;
+    case "RepositoryRole":
+      return id === "5" ? "repository admin" : `repository role ${id}`;
+    case "OrganizationAdmin":
+      return "organization admin";
+    case "Team":
+      return `team ${id}`;
+    case "DeployKey":
+      return "deploy keys";
+    default:
+      return `${String(actor.actor_type)} ${id}`;
+  }
+}
+
+/**
+ * A ruleset's rules for the branch, as the branch-protection shape the
+ * policy is evaluated on. Administrator enforcement is on when no bypass
+ * actor is the repository admin role.
+ */
+export function fromRuleset(value: Json): Json {
+  if (!Array.isArray(value.rules) || !value.rules.every(object))
+    throw new Error("ruleset input: rules must be an array of objects");
+  const bypass = value.bypass_actors ?? [];
+  if (!Array.isArray(bypass) || !bypass.every(object))
+    throw new Error("ruleset input: bypass_actors must be an array of objects");
+  const rules = value.rules;
+  const checks = rule(rules, "required_status_checks")?.parameters;
+  const review = rule(rules, "pull_request")?.parameters;
+  const contextsOf = (p: unknown) =>
+    object(p) && Array.isArray(p.required_status_checks)
+      ? p.required_status_checks.filter(object).map((c) => c.context)
+      : [];
+  return {
+    required_status_checks: object(checks)
+      ? {
+          strict: checks.strict_required_status_checks_policy === true,
+          contexts: contextsOf(checks),
+        }
+      : null,
+    required_pull_request_reviews: object(review)
+      ? {
+          required_approving_review_count:
+            review.required_approving_review_count ?? 0,
+        }
+      : null,
+    required_conversation_resolution: {
+      enabled:
+        object(review) && review.required_review_thread_resolution === true,
+    },
+    enforce_admins: {
+      enabled: !bypass.some(
+        (a) => a.actor_type === "RepositoryRole" && String(a.actor_id) === "5",
+      ),
+    },
+    allow_force_pushes: { enabled: !rule(rules, "non_fast_forward") },
+    allow_deletions: { enabled: !rule(rules, "deletion") },
+    ruleset_bypass: bypass.map(bypassName),
+  };
+}
+
 function gh(args: string[]) {
   const result = Bun.spawnSync(["gh", "api", ...args], { timeout: 15000 });
   if (result.exitCode !== 0 && !result.stderr.toString().includes("HTTP 404"))
@@ -245,6 +327,28 @@ function fetchProtection(
     gh([`repos/${repo}`, "--jq", ".default_branch"])
       .stdout.toString()
       .trim();
+  const rules: unknown = JSON.parse(
+    gh([
+      `repos/${repo}/rules/branches/${encodeURIComponent(name)}`,
+    ]).stdout.toString() || "[]",
+  );
+  if (Array.isArray(rules) && rules.length) {
+    const ids = [
+      ...new Set(rules.filter(object).map((r) => String(r.ruleset_id))),
+    ];
+    const bypass = ids.flatMap((id) => {
+      const ruleset: unknown = JSON.parse(
+        gh([`repos/${repo}/rulesets/${id}`]).stdout.toString() || "{}",
+      );
+      return object(ruleset) && Array.isArray(ruleset.bypass_actors)
+        ? ruleset.bypass_actors
+        : [];
+    });
+    return {
+      branch: name,
+      raw: JSON.stringify({ rules, bypass_actors: bypass }),
+    };
+  }
   const response = gh([
     `repos/${repo}/branches/${encodeURIComponent(name)}/protection`,
   ]);
@@ -278,12 +382,18 @@ function protectionSource(
 export function checkProtection(args: string[]): number {
   const { input, positional } = parseArgs(args);
   const { repo, branch, raw } = protectionSource(input, positional);
-  const value: unknown = JSON.parse(raw);
+  const parsed: unknown = JSON.parse(raw);
+  const ruleset = object(parsed) && "rules" in parsed;
+  const value = ruleset ? fromRuleset(parsed) : parsed;
   const result = evaluateProtection(value);
   console.log(
-    `Branch protection recheck — ${repo}@${branch}\n${result.lines.join("\n")}`,
+    `${ruleset ? "Ruleset" : "Branch protection"} recheck — ${repo}@${branch}\n${result.lines.join("\n")}`,
   );
-  if (result.status && !input && object(value))
+  if (result.status && ruleset)
+    console.log(
+      "Recommended remediation — a human adds to the branch's ruleset the rules marked FAIL above: required status check `gates`, required review thread resolution (pull_request rule), block force pushes (non_fast_forward), restrict deletions (deletion).",
+    );
+  else if (result.status && !input && object(value))
     printRemediation(repo, branch, value);
   return result.status;
 }

@@ -13,12 +13,7 @@ import { isMapping as isRecord } from "../../../resolve-review-comments/scripts/
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
-import {
-  compareVersions,
-  matchGlob,
-  skillDir,
-  VERSION_PATTERN,
-} from "./repo.ts";
+import { compareVersions, matchGlob, skillDir, isSince } from "./repo.ts";
 
 export const LEVELS = ["lite", "standard", "strict"] as const;
 export type Level = (typeof LEVELS)[number];
@@ -147,11 +142,10 @@ function checkCriterionFields(c: Record<string, unknown>, at: string): void {
     c.observe.some((o) => typeof o !== "string")
   )
     throw new Error(`${at}: observe must list what to look for`);
-  if (
-    c.since !== undefined &&
-    (typeof c.since !== "string" || !VERSION_PATTERN.test(c.since))
-  )
-    throw new Error(`${at}: since must be a version such as 1.2.0`);
+  if (c.since !== undefined && !isSince(c.since))
+    throw new Error(
+      `${at}: since must be a version such as 1.2.0, or next until its release`,
+    );
 }
 
 /** Parse one criterion of `module`; `seen` holds the ids before it. */

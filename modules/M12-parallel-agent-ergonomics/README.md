@@ -9,8 +9,11 @@ another; two agents open divergent branches for the same task. The cruel part is
 that these collisions **don't look like collisions** to an agent that doesn't
 know another worktree exists — they look like application bugs ("address already
 in use", a test that times out only sometimes, a lockfile that changed on its
-own), so the agent misdiagnoses them and burns a session chasing a ghost. This
-module treats "N agents in parallel on one machine" as a **designed-for
+own), so the agent misdiagnoses them and burns a session chasing a ghost. The collisions
+continue past the machine: when every pull request adds its line to the top of
+the changelog and bumps the version, each merge puts every other open pull
+request in conflict, and each conflict costs a resolution and another full CI
+run. This module treats "N agents in parallel" as a **designed-for
 condition** and engineers the collisions away up front.
 
 ## Invariant
@@ -22,8 +25,11 @@ condition** and engineers the collisions away up front.
 > **CI bypass**, since a CI runner is already isolated); branches are
 > **reused before created**; the shared-state footguns (`git stash` across
 > worktrees, a root install with the wrong package manager, global git config)
-> are **banned with a stated rationale**; and worktree **teardown nudges
-> reflection** so a session's lessons reach the learning loop.
+> are **banned with a stated rationale**; worktree **teardown nudges
+> reflection** so a session's lessons reach the learning loop; and **no pull
+> request edits a file every pull request edits**: a change's changelog entry
+> and version bump are a **change note** of its own, which a release step
+> writes into the changelog after the merge.
 
 Everything below is one tool-independent statement made mechanical; the
 per-ecosystem wiring lives in [mappings.md](mappings.md).
@@ -79,6 +85,20 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    the next reflection). Skeletons for both create and remove hooks are
    [`templates/worktree-hooks.md`](templates/worktree-hooks.md).
 
+6. **Change notes instead of a shared changelog edit** — each pull request
+   adds its changelog entry as a file of its own (a
+   [change note](../../GLOSSARY.md)), saying which release it needs; it never
+   edits the changelog's open sections or the version. After the merge, a
+   release step on the integration branch, one run at a time, writes the
+   notes into the changelog, moves the version to the largest bump asked for,
+   and deletes the notes; a branch check fails a note the step could not read
+   and a direct edit to what the step writes. Pull requests then touch
+   disjoint files, and no two claim the same version. The portable form is
+   [`reference/change-notes/`](reference/change-notes/) (`release.ts`,
+   `check.ts` + self-test) for a
+   [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) file; the tools
+   that do the same per ecosystem are in [mappings.md](mappings.md).
+
 The whole copyable model — all its rules in one place, ready to drop into a docs
 tree — is [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md).
 The branch-discipline block is written to be **imported into an agent instruction
@@ -89,11 +109,16 @@ governs how those files layer), so every agent inherits the rules.
 
 - **Lite** — the branch reuse-before-create rule and the footgun bans are
   written down (a convention agents can follow), and a port-allocation
-  convention exists (even if only "each worktree picks a port from this range").
+  convention exists (even if only "each worktree picks a port from this range");
+  and a change records its changelog entry and version bump as a change note
+  of its own, not as an edit to the changelog or the version.
 - **Standard** — deterministic per-worktree port allocation is **scripted**
   (mechanical, not eyeballed); the cross-worktree heavy-run mutex is **scripted
   with a CI bypass**; and worktree create/remove hooks are wired so the port slot
-  is allocated on create and reflection is nudged on remove.
+  is allocated on create and reflection is nudged on remove; and a release
+  step **assembles the change notes after the merge**, one run at a time,
+  while a check fails a malformed note or a direct edit to what that step
+  writes.
 - **Strict** — the port allocator and the resource lock each **ship a self-test
   that runs in CI**, so a broken utility fails loudly; the teardown hook's
   reflection nudge is wired to the [M8](../M8-learning-loop/) loop; and the
@@ -114,6 +139,12 @@ governs how those files layer), so every agent inherits the rules.
    your agent instruction file so the reuse rule and bans travel with every
    agent.
 5. Add the two self-tests to CI so the utilities can't rot silently.
+6. Where the repository keeps a changelog or a version that every pull request
+   touches, move it to change notes: pick the tool for your ecosystem from
+   [mappings.md](mappings.md) or vendor
+   [`reference/change-notes/`](reference/change-notes/), run the release step
+   on the integration branch after each merge, and the branch check on every
+   pull request. Convert open pull requests' changelog edits into notes once.
 
 ## Status
 
@@ -126,19 +157,26 @@ governs how those files layer), so every agent inherits the rules.
 | [`templates/worktree-hooks.md`](templates/worktree-hooks.md) | Create-hook (allocate and print the port slot) and remove-hook (nudge reflection) skeletons |
 | [`reference/port-allocator/`](reference/port-allocator/) | The deterministic per-worktree port allocator |
 | [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree mutex for heavy runs, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
-| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers |
+| [`reference/change-notes/`](reference/change-notes/) | The release step that writes change notes into a Keep a Changelog file and moves the version, and the branch check that holds pull requests to it |
+| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools |
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference utility is a standalone Bun script with a self-test.
 
 ### Left out by design
 
-- **Local values.** Port ranges, lock names and hook-manager wiring are each
-  repository's own; the two scripts ship with neutral defaults.
+- **Local values.** Port ranges, lock names, hook-manager wiring, the notes
+  directory and the version files are each repository's own; the scripts
+  take them as arguments or ship with neutral defaults.
+- **Who may push the release.** Where the integration branch is protected,
+  the release step's commit needs an identity allowed past that protection,
+  or a release pull request that a person merges; which one is the
+  repository's decision, and its CI provider's settings hold it.
 - **Repositories without parallel agents.** The module is **expected-absent**
   for a repository that never runs parallel agents on one machine: with a
   single checkout there is nothing to partition, so scoring it "absent" is
-  correct, not a gap.
+  correct, not a gap. The change-note criteria are expected-absent where no
+  changelog or version changes with each pull request.
 
 ### Future
 

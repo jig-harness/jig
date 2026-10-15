@@ -23,11 +23,12 @@ once.
   [CONFIGURATION.md](CONFIGURATION.md) in the same pull request that adds or
   changes it, with its default and the skills that read it.
 - **Every change ships as a version.** A pull request that changes `plugin/`
-  bumps `version` in both `.claude-plugin/plugin.json` and
-  `.codex-plugin/plugin.json`, adds that version's section to
-  [CHANGELOG.md](../CHANGELOG.md) (say what a consumer must change first when
-  it is breaking), and its merge commit is tagged `v<version>`
-  ([README.md § Release a new version](README.md#release-a-new-version)).
+  adds a [change note](../changes/README.md) with `release: patch|minor|major`
+  (say what a consumer must change first when it is breaking) and leaves both
+  manifests' `version` and [CHANGELOG.md](../CHANGELOG.md) alone: after the
+  merge, the release step moves the version, writes the section and tags
+  `v<version>` ([README.md § Release a new version](README.md#release-a-new-version)).
+  A `since:` it adds names `next`.
 - **A new skill** gets a row in the skills table in [README.md](README.md),
   its name in both manifests' descriptions, its configuration in
   [CONFIGURATION.md](CONFIGURATION.md), and its tests in

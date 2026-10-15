@@ -79,7 +79,9 @@ of the same file.
 
 A criterion added after the audit skill's first release carries
 `since: <plugin version>`. A re-audit reports it as added by Jig since the
-prior audit, not as a regression or a new gap the team missed.
+prior audit, not as a regression or a new gap the team missed. The pull
+request that adds it writes `since: next`, since it cannot know the version
+it will ship in; Jig's release step replaces `next` with that version.
 
 ## Changing a criterion
 

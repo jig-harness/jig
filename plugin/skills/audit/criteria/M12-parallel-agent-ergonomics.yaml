@@ -31,6 +31,18 @@ criteria:
     observe:
       - "a documented convention assigns each worktree a port (a range to pick from, or a derivation)"
 
+  - id: change-records-one-file-per-change
+    level: lite
+    requires: convention
+    statement: >-
+      A change records its changelog entry (and any version bump) in a file of
+      its own, not as an edit to a file every change edits, so merging one
+      change does not put the others in conflict.
+    observe:
+      - "a doc tells contributors to add a per-change note file (changes/, .changeset/, changelog.d/, newsfragments/ or similar) instead of editing the changelog"
+      - "expected-absent: the repository keeps no changelog or version that changes with each pull request"
+    since: next
+
   - id: port-allocation-scripted
     level: standard
     requires: mechanical
@@ -60,6 +72,18 @@ criteria:
     observe:
       - "a create hook allocates/prints the worktree's port slot"
       - "a remove hook prints a reflection nudge (non-blocking)"
+
+  - id: change-records-assembled-after-merge
+    level: standard
+    requires: mechanical
+    statement: >-
+      A release step assembles the per-change notes into the changelog and
+      sets the version after the merge, one run at a time, and a check fails
+      a change whose note it cannot read or that edits what the step writes.
+    observe:
+      - "a CI job or release tool on the integration branch writes the notes into the changelog and moves the version (Changesets, towncrier, scriv, changie, or a script)"
+      - "a pull-request check fails a malformed note, or a direct edit to the changelog's release sections or the version"
+    since: next
 
   - id: utilities-self-tested-in-ci
     level: strict

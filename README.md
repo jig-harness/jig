@@ -127,8 +127,9 @@ The second install is the website's own dependencies (`website/` has its own
 lockfile): the gates run its tests too.
 
 The gate command checks formatting, lint, types, all gate self-tests, the build,
-Markdown links/tables/glossary coverage, origin-reference exclusions, and a
-changelog entry for the current plugin version.
+Markdown links/tables/glossary coverage, origin-reference exclusions, and the
+change notes ([changes/](changes/README.md)) the release step writes into the
+changelog after a merge.
 GitHub Actions runs the same command on Linux for every pull request and
 every push to `main`; there the long drive-pr suite runs in its own job,
 split into parallel [test shards](GLOSSARY.md). A pull request runs the

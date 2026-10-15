@@ -93,10 +93,16 @@ Without a tracker item, 1 and 3 are NOT OWED; 2 still applies.
 
 Every Jig release is tagged `v<version>` on the commit that shipped it
 ([plugin/README.md § Release a new
-version](../../../plugin/README.md#release-a-new-version)). The gates hold
-the version bump and its changelog section in the pull request; nothing
-holds the tag, which can only be made after the merge. Check on every merge,
-whatever it changed: a tag an earlier merge left owed is owed now.
+version](../../../plugin/README.md#release-a-new-version)). After the merge,
+the release workflow (`.github/workflows/release.yml`) writes the change notes
+into CHANGELOG.md, moves the version on a commit of its own and tags it.
+First check that it ran: once its run for the merge has finished, `changes/`
+on main holds only its README. A note still there means the workflow failed
+(most often, the `jig-release` App can no longer push: its key in the
+`release` environment was rotated or removed, or `main`'s ruleset no longer
+lets it past): report it
+with the run's link, as a person's step. Then check the tags on every merge,
+whatever it changed: a tag an earlier release left owed is owed now.
 
 ```bash
 bun scripts/release-tags.ts

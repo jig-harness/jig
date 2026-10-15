@@ -209,6 +209,7 @@ areas:
       - "adoption/**"
       - "assets/**"
       - "audit/**"
+      - "changes/**"
       - "design/**"
       - "docs/**"
       - "principles/**"

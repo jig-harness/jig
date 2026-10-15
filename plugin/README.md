@@ -591,17 +591,34 @@ of the plugin:
 
 ## Release a new version
 
-1. In the pull request that changes `plugin/`, bump `version` in **both** `plugin/.claude-plugin/plugin.json` and
-   `plugin/.codex-plugin/plugin.json` (the plugin test fails when they differ). Use
-   [semantic versioning](https://semver.org). Before 1.0.0, a change that
-   needs consumers to edit their configuration or instructions bumps the minor
-   version; from 1.0.0 it is a major version.
-2. In the same pull request, add the version's section to
-   [CHANGELOG.md](../CHANGELOG.md): what changed, and for a breaking change
-   what a consumer must change first (`bun run gates` fails without the
-   section).
-3. Merge it with green gates.
-4. Tag the merge commit `v<version>` and push the tag.
+1. In the pull request that changes `plugin/`, add a
+   [change note](../changes/README.md) under `changes/`: what changed, and
+   for a breaking change what a consumer must change first, with
+   `release: patch`, `minor` or `major` as
+   [semantic versioning](https://semver.org) names it. Before 1.0.0, a change
+   that needs consumers to edit their configuration or instructions asks for
+   `minor`; from 1.0.0, `major`. Leave the manifests' `version` and
+   CHANGELOG.md alone (`bun run gates` fails otherwise, and fails a change to
+   `plugin/` without a note that asks for a release). A `since:` the change
+   adds names `next`.
+2. Merge it with green gates.
+3. The release workflow (`.github/workflows/release.yml`) then runs
+   `scripts/release.ts` on main: it moves `version` in both manifests to the
+   next version, writes the note as that version's section of
+   [CHANGELOG.md](../CHANGELOG.md), replaces `since: next`, deletes the note,
+   and pushes the commit with its tag `v<version>`.
+
+The workflow pushes as the `jig-release` GitHub App, the one actor `main`'s
+ruleset lets past its pull-request and check rules; its client ID
+(`RELEASE_APP_CLIENT_ID`) and private key (`RELEASE_APP_PRIVATE_KEY`) live in
+the `release` environment, which only `main` may use. When the workflow
+cannot push (the App was uninstalled, its key revoked, or the ruleset no
+longer names it), the notes wait on `main` and nothing is lost: restore it,
+then run the workflow by hand (`gh workflow run release.yml`, or Run
+workflow on its Actions page). It writes every waiting note, one merge at a
+time. A release cannot go through a pull request instead: the gates refuse a
+branch that moves the version or writes a release section, which only the
+release step may.
 
 Machines receive the release on their next update. Repositories need no change
 unless the changelog says so.

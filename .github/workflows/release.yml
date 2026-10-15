@@ -1,0 +1,108 @@
+# After every merge to main, writes the change notes under changes/ into
+# CHANGELOG.md and, when a note asks for a release, moves both plugin
+# manifests to the next version and tags it `v<version>` (scripts/release.ts;
+# docs/adr/ADR-0004-change-notes-released-after-the-merge.md). Runs one at a
+# time and always from main's newest commit, so a run that waited behind
+# another writes whatever notes are still there; a run that finds none does
+# nothing. It writes them one merge at a time, a commit (and a tag) each, so
+# every merge that asks for a release gets a version of its own even when
+# several merged before the run started.
+#
+# main's ruleset admits a change only through a pull request with its checks
+# green, and names the `jig-release` GitHub App as the one actor allowed to
+# push past it. The push therefore uses a token of that App, minted for this
+# run only, limited to this repository's contents and valid for an hour. Its
+# key is a secret of the `release` environment, which only main may use, so
+# no workflow on another branch can mint one. The token is minted after the
+# release step has run, and the checkout keeps no credential, so nothing but
+# the push ever holds it. The commit it pushes runs the gates and deploys the
+# site like any other push to main.
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    environment: release
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          # The notes are ordered by the commits that added them.
+          fetch-depth: 0
+          # The push authenticates with the App's token below.
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: Write, commit and tag the change notes, one merge at a time
+        run: |
+          git config user.name "jig-release[bot]"
+          git config user.email "343182900+jig-release[bot]@users.noreply.github.com"
+          start=$(git rev-parse HEAD)
+          refs="HEAD:main"
+          while :; do
+            bun scripts/release.ts --json > "$RUNNER_TEMP/release.json"
+            cat "$RUNNER_TEMP/release.json"
+            notes=$(jq '.notes | length' "$RUNNER_TEMP/release.json")
+            [ "$notes" = 0 ] && break
+            version=$(jq -r '.version // empty' "$RUNNER_TEMP/release.json")
+            # Everything the release step wrote: the notes it deleted, the
+            # changelog, the manifests and the files whose `since: next` it
+            # filled in. The checkout holds nothing else.
+            git add -A
+            if [ -n "$version" ]; then
+              git commit -q -m "chore(release): $version" \
+                -m "Writes $notes change note(s) into CHANGELOG.md and moves the plugin to $version."
+              git tag -a "v$version" -m "v$version"
+              refs="$refs refs/tags/v$version"
+            else
+              git commit -q -m "docs(changelog): write $notes change note(s) under Unreleased"
+            fi
+            [ "$(jq '.remaining' "$RUNNER_TEMP/release.json")" = 0 ] && break
+          done
+          echo "start=$start" >> "$GITHUB_ENV"
+          echo "refs=$refs" >> "$GITHUB_ENV"
+      - name: Check whether there is anything to push
+        id: written
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$start" ]; then
+            echo "no change notes to release"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Mint the release App's token
+        if: steps.written.outputs.push == 'true'
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Push
+        if: steps.written.outputs.push == 'true'
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # shellcheck disable=SC2086 # the branch and each tag, split on purpose
+          if git push --atomic "$remote" $refs; then exit 0; fi
+          # A merge that landed while this ran has its own run queued behind
+          # this one, which writes these notes too; any other failure fails.
+          git fetch -q "$remote" +main:refs/remotes/origin/main
+          if [ "$(git rev-parse origin/main)" != "$start" ]; then
+            echo "::notice::main moved during the release; the run queued behind this one writes these notes"
+            exit 0
+          fi
+          exit 1

@@ -354,7 +354,15 @@ make, use the entry's term instead.
 - **Changelog** — a file listing each release's notable changes, newest
   first. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
   one heading per plugin version, and an **Unreleased** heading for changes
-  that no release carries yet.
+  that no release carries yet. Jig's is written from *change notes* by the
+  release step, never by hand.
+- **Change note** — a small file a pull request adds with its changelog
+  entry and the release it needs, in place of an edit to the changelog and the
+  version that every pull request would otherwise make. After the merge, a
+  release step writes the notes into the changelog and moves the version, so
+  parallel pull requests never conflict over either. Also called a changeset
+  or a news fragment by the tools that use them
+  ([changes/](changes/README.md), [M12](modules/M12-parallel-agent-ergonomics/README.md)).
 - **HITL (human-in-the-loop)** — a decision class that must be made by a
   human, never autonomously by an agent (merges, releases, destructive
   operations, scope expansions). Kept in an explicit registry.

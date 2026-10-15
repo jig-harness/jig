@@ -11,7 +11,7 @@ import { isMapping as isRecord } from "../../../resolve-review-comments/scripts/
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
-import { skillDir, VERSION_PATTERN } from "./repo.ts";
+import { skillDir, isSince } from "./repo.ts";
 
 export const FIELD_TYPES = [
   "string",
@@ -189,9 +189,8 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
       ? "deprecated must be a message"
       : null,
   (e) =>
-    e.since !== undefined &&
-    (typeof e.since !== "string" || !VERSION_PATTERN.test(e.since))
-      ? "since must be a version such as 1.2.0"
+    e.since !== undefined && !isSince(e.since)
+      ? "since must be a version such as 1.2.0, or next until its release"
       : null,
 ];
 

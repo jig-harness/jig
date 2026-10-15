@@ -1,21 +1,24 @@
 # M12 mappings — per-ecosystem implementations
 
 The module [invariant](README.md) — deterministic per-worktree ports, a
-cross-worktree heavy-run mutex with a CI bypass, branch reuse-before-create, and
-banned shared-state footguns — is tool-independent. This file maps its mechanisms
+cross-worktree heavy-run mutex with a CI bypass, branch reuse-before-create,
+change records of their own assembled after the merge, and banned shared-state
+footguns — is tool-independent. This file maps its mechanisms
 onto concrete worktree managers / agent runners, package managers, and
 [CI](../../GLOSSARY.md) providers. Replace `<placeholders>` with your values.
 
-## The two utilities, and where they plug in
+## The utilities, and where they plug in
 
-The module ships two portable scripts; everything else is convention. Point one
-variable at wherever you vendored the module and build paths from it, exactly as
-the other modules do.
+The module ships portable scripts for the mechanisms below; the rest is
+convention. Point one variable at wherever you vendored the module and build
+paths from it, exactly as the other modules do.
 
 | Utility | Runs where | Signal it reads |
 |---------|-----------|-----------------|
 | `reference/port-allocator/allocate-port.ts` | worktree-create hook and/or the dev script | worktree id (arg or `WORKTREE_ID`), range via `PORT_BASE`/`PORT_SPAN` |
 | `reference/resource-lock/with-resource-lock.ts` | around heavy local gate commands (build, test, e2e) | lock via `LOCK_NAME`/`--lock`; bypass via `CI`/`RESOURCE_LOCK_BYPASS` |
+| `reference/change-notes/release.ts` | on the integration branch after every merge, one run at a time | notes directory, changelog and version files via flags |
+| `reference/change-notes/check.ts` | in the branch gates | the same, plus `--base` and `--release-path` |
 
 ## Worktree managers / agent runners — where the hooks wire
 
@@ -84,3 +87,43 @@ The mutex is the **same mechanism** [M1](../M1-gates-enforcement-ladder/) points
 to for heavy pre-push gates; a repo that adopts both wraps its heavy gate once
 and gets the cross-worktree serialization locally and the isolation-based bypass
 in CI for free.
+
+## Change notes — per ecosystem
+
+The invariant: no pull request edits a file every pull request edits. Each
+change adds a note of its own, and one run at a time on the integration branch
+writes the notes into the changelog and moves the version. The tools below do
+that; they differ in where the notes live, how the release is chosen, and
+which changelog format they write.
+
+| Tool | Ecosystem | Notes | Release step | Changelog it writes |
+|------|-----------|-------|--------------|---------------------|
+| [`reference/change-notes/`](reference/change-notes/) | any (Bun script) | `changes/*.md`, front matter `release: patch\|minor\|major`, Keep a Changelog sections | `release.ts` after each merge; the caller commits, tags and pushes | Keep a Changelog, with Unreleased for notes that ask for no release; versions in JSON files |
+| [Changesets](https://github.com/changesets/changesets) | JavaScript / TypeScript packages | `.changeset/*.md`, front matter naming each package and its bump | `changeset version`; its GitHub Action keeps a "Version Packages" pull request open that a person merges | its own format, grouped by bump (Major / Minor / Patch Changes), per package; versions in `package.json` only |
+| [towncrier](https://towncrier.readthedocs.io/) | Python, any | `newsfragments/<id>.<type>` files | `towncrier build --version <v>`; the version is given, not computed; `towncrier check` fails a branch without a fragment | configurable template and types |
+| [scriv](https://scriv.readthedocs.io/) | Python, any | `changelog.d/*.md` or `.rst` | `scriv collect --version <v>` | Keep a Changelog's types by default |
+| [changie](https://changie.dev/) | any (Go binary) | `.changes/unreleased/*.yaml`, one kind each | `changie batch <version\|auto>` then `changie merge`; `auto` derives the bump from the kinds | configurable; Keep a Changelog's kinds by default |
+
+Choose by the version you release: Changesets fits a repository whose
+released artifacts are npm packages; a repository whose version lives
+elsewhere (a plugin manifest, a `pyproject.toml`, a Go tag) or that wants
+Keep a Changelog's Unreleased for changes outside any release fits the
+reference or changie better.
+
+Two neighbouring approaches remove the conflicts without notes, at a cost:
+
+- **Generate the changelog from commits** (release-please,
+  semantic-release, GitLab's changelog API from `Changelog:` commit
+  trailers). Nothing per pull request to conflict on, but each entry is a
+  commit subject, written for a reviewer rather than a reader.
+- **A union merge driver** (`CHANGELOG.md merge=union` in `.gitattributes`)
+  lets git keep both sides of a local merge, but places lines without
+  knowing the changelog's sections, does nothing for the version, and
+  GitHub's mergeability check does not use it: the pull request still shows
+  as conflicting.
+
+Whatever the tool, the release step pushes to the integration branch. Where
+that branch is protected, give the step an identity allowed past the
+protection (a GitHub App or a token stored as a secret, with contents write
+on that repository only), or have it open a release pull request a person
+merges.

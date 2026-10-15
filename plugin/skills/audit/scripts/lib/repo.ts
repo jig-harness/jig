@@ -127,9 +127,10 @@ function installedAs(dir: string, version: string): boolean {
   );
 }
 
-/** Compare two `major.minor.patch` versions; a malformed one sorts first. */
+/** Compare two `major.minor.patch` versions; `next` sorts last, a malformed one first. */
 export function compareVersions(a: string, b: string): number {
   const parts = (v: string) => {
+    if (v === NEXT_VERSION) return [Number.POSITIVE_INFINITY, 0, 0];
     const match = /^(\d+)\.(\d+)\.(\d+)/.exec(v);
     return match ? match.slice(1).map(Number) : [-1, -1, -1];
   };
@@ -142,6 +143,18 @@ export function compareVersions(a: string, b: string): number {
 }
 
 export const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+/**
+ * What a `since` names before its release: a branch cannot know the version
+ * it ships in, so the release step (changes/README.md) writes it.
+ */
+export const NEXT_VERSION = "next";
+/** Whether `value` is a `since`: a version, or `next` before the release. */
+export function isSince(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    (value === NEXT_VERSION || VERSION_PATTERN.test(value))
+  );
+}
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Whether `v` is a real calendar date written YYYY-MM-DD. */

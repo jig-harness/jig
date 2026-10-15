@@ -146,6 +146,8 @@ for (const [name, status] of [
   ["malformed", 2],
   ["wrong-type", 2],
   ["bad-types", 2],
+  ["ruleset-compliant", 0],
+  ["ruleset-partial", 1],
 ] as const)
   test(`branch protection: ${name}`, () => {
     const args = [
@@ -177,6 +179,17 @@ for (const [fixture, needle] of [
   ["partial", "not required by policy: strict checks on, approving reviews 1"],
   ["partial", "release-bot"],
   ["compliant", "4/4 controls satisfied"],
+  ["ruleset-compliant", "Ruleset recheck"],
+  ["ruleset-compliant", "4/4 controls satisfied"],
+  ["ruleset-compliant", "bypass actors (ruleset): app 123, repository admin"],
+  ["ruleset-compliant", "administrator enforcement off"],
+  ["ruleset-partial", "FAIL  required CI status check(s) configured"],
+  ["ruleset-partial", "FAIL  required conversation resolution"],
+  ["ruleset-partial", "FAIL  force-push disallowed"],
+  ["ruleset-partial", "PASS  branch deletion disallowed"],
+  ["ruleset-partial", "administrator enforcement on"],
+  ["ruleset-partial", "bypass actors (ruleset): none"],
+  ["ruleset-partial", "a human adds to the branch's ruleset"],
 ])
   test(`branch report includes ${needle}`, () =>
     expect(
@@ -1055,7 +1068,7 @@ test("the workflow selects jobs by area names the change-area catalog defines", 
   expect(jobs["gate-set"]?.needs).toBe("areas");
 });
 
-test("the changelog must carry the current plugin version", async () => {
+test("the changelog must carry the current plugin version, and every change note must read", async () => {
   const { checkChangelog, changelogVersions } = await import(
     "./check-changelog.ts"
   );
@@ -1077,12 +1090,31 @@ test("the changelog must carry the current plugin version", async () => {
   };
   manifest("claude", "1.2.0");
   manifest("codex", "1.2.0");
-  writeFileSync(join(dir, "CHANGELOG.md"), "## [1.1.0] - 2026-01-01\n");
-  expect(checkChangelog(dir)).toBe(1);
   writeFileSync(join(dir, "CHANGELOG.md"), "## [1.2.0] - 2026-01-02\n");
-  expect(checkChangelog(dir)).toBe(0);
-  manifest("codex", "1.3.0");
+  // The branch rules need a base to compare with; one git cannot find fails.
   expect(checkChangelog(dir)).toBe(1);
+  const git = (...args: string[]) =>
+    expectSpawnExit(
+      safeSpawn(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+        cwd: dir,
+      }),
+      0,
+    );
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("commit", "-qm", "base");
+  const base = { JIG_CHANGE_NOTES_BASE: "main" };
+  expect(checkChangelog(dir, base)).toBe(0);
+  writeFileSync(join(dir, "CHANGELOG.md"), "## [1.1.0] - 2026-01-01\n");
+  expect(checkChangelog(dir, base)).toBe(1);
+  writeFileSync(join(dir, "CHANGELOG.md"), "## [1.2.0] - 2026-01-02\n");
+  mkdirSync(join(dir, "changes"));
+  writeFileSync(join(dir, "changes", "a.md"), "### Improved\n\n- x\n");
+  expect(checkChangelog(dir, base)).toBe(1);
+  writeFileSync(join(dir, "changes", "a.md"), "### Changed\n\n- x\n");
+  expect(checkChangelog(dir, base)).toBe(0);
+  manifest("codex", "1.3.0");
+  expect(checkChangelog(dir, base)).toBe(1);
   expect(checkChangelog(root)).toBe(0);
 });
 

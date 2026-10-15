@@ -1,11 +1,11 @@
 ---
 title: "ADR-0003: A person merges every pull request to Jig"
 type: adr
-status: approved
+status: amended
 description: "Agents open, review and drive Jig's pull requests; only a person merges them"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-10-13
+version: "1.1"
+last_updated: 2026-10-15
 owner: maintainers
 decision_date: 2026-10-11
 supersedes: ~
@@ -59,3 +59,16 @@ and deleting the branch, but requires no approving review,
 since the person who merges is the person who would approve.
 `scripts/check-branch-protection.ts` checks that policy by hand (reading the
 setting needs an administrator's login, which CI lacks).
+
+## Amendments
+
+### 2026-10-15 — main's rules live in a ruleset, with the release App beside administrators (v1.1)
+
+Touches the Extraction section. The policy it describes is unchanged, but it
+now lives in a repository ruleset on `main` instead of branch protection,
+and the ruleset lets one more actor past it: the `jig-release` GitHub App,
+which pushes the commit that writes a merge's change notes and moves the
+version ([ADR-0004](ADR-0004-change-notes-released-after-the-merge.md)).
+That commit is not a merge: it writes what a person's merge already
+implies, so a person still merges every pull request.
+`scripts/check-branch-protection.ts` reads the ruleset.

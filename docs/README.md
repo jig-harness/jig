@@ -17,7 +17,8 @@ This folder holds:
 Jig's own documents carry no frontmatter, except decision records, which
 carry M5's frontmatter, and skill and agent definitions (the plugin's, and
 Jig's own skills in `.claude/skills/`), which carry the metadata the agent
-runtimes read. Copyable `templates/`, test
+runtimes read, and [change notes](../changes/README.md), whose `release`
+front matter the release step reads. Copyable `templates/`, test
 fixtures and vendored `seeds/` are not Jig's own documents: they keep the
 frontmatter their purpose needs. Where a document lives says what kind it is
 and how it changes. An `AGENTS.md` file is an instruction wherever it lives;
@@ -32,7 +33,7 @@ kind, its README included.
 | Reference | every document no other row places: `SKILL.md`, [CONFIGURATION.md](../plugin/CONFIGURATION.md), the skills' references, and the READMEs outside the doctrine and plans directories | describes what exists now; changes with what it describes |
 | Doctrine | [modules/](../modules/README.md), [principles/](../principles/README.md), [profiles/](../profiles/README.md), [adoption/](../adoption/brownfield.md), [FACTORY.md](../FACTORY.md), [dispositions.md](dispositions.md) | rewritten to stay current, never appended to |
 | Plans | [ROADMAP.md](../ROADMAP.md), [design/](../design/README.md) | open work only; an item and its design leave when it is finished |
-| History | [CHANGELOG.md](../CHANGELOG.md), the audit's dated [calibration runs](../plugin/skills/audit/calibration/), git, pull requests | appended to; never edited to state what is true now |
+| History | [CHANGELOG.md](../CHANGELOG.md) (written from [change notes](../changes/README.md) by the release step), the audit's dated [calibration runs](../plugin/skills/audit/calibration/), git, pull requests | appended to; never edited to state what is true now |
 
 `AGENTS.md` stays short: it holds what every session must know (the rules
 no change may break, and where to read next) and points to the document

@@ -23,8 +23,11 @@ doesn't know another worktree exists:
   branch name collides; a global config edit leaks sideways.
 - **Wrong-tool installs** — an install run at the repo root with the wrong
   package manager rewrites a lockfile every other worktree then trips over.
+- **Shared-file pull requests** — every pull request adds its line to the top
+  of the changelog and bumps the version, so each merge puts every other open
+  pull request in conflict and costs it a resolution and another CI run.
 
-## The five rules
+## The rules
 
 ### 1. Deterministic per-worktree ports
 
@@ -88,6 +91,20 @@ the learning loop rather than evaporating. This closes the loop with the
 trigger, and reflection feedback becomes durable improvements. Hook skeletons:
 `worktree-hooks.md`.
 
+### 6. Change notes instead of shared changelog edits
+
+A pull request never edits the changelog's open sections or the version. It
+adds a change note of its own (`changes/<branch>.md`) with its entry and the
+release it needs (`patch`, `minor`, `major`, or none). After the merge, one
+release run at a time on the integration branch writes the notes into the
+changelog, moves the version and deletes the notes; a pull-request check
+fails a malformed note and a direct edit to what that run writes. The
+portable release step and check:
+**[reference/change-notes](https://github.com/docomply/jig/tree/main/modules/M12-parallel-agent-ergonomics/reference/change-notes)**;
+the tools that do the same per ecosystem (Changesets, towncrier, scriv,
+changie) are in the module's
+**[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.
+
 ## Adopt it
 
 1. Vendor `reference/port-allocator/` and `reference/resource-lock/` (or copy the
@@ -98,3 +115,5 @@ trigger, and reflection feedback becomes durable improvements. Hook skeletons:
 3. Wrap your heavy gate commands with `with-resource-lock.ts` locally; leave CI
    unwrapped (the bypass handles it).
 4. Add the footgun table above to your contributing docs, trimmed to your stack.
+5. If every pull request edits a changelog or a version, move to change notes
+   (rule 6) and convert the open pull requests' entries once.

@@ -17,10 +17,15 @@ under `plugin/`.
   and then by area, not by item. Small pull requests that touch the same
   files (this file, AGENTS.md, CHANGELOG.md, the configuration) conflict with
   each other at every merge.
-- Every pull request records its user-visible change in
-  [CHANGELOG.md](CHANGELOG.md) ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)):
-  under the new plugin version's heading when it changes `plugin/`, under
-  **Unreleased** otherwise.
+- Every pull request records its user-visible change as a
+  [change note](changes/README.md) under `changes/`, never as an edit to
+  [CHANGELOG.md](CHANGELOG.md)'s Unreleased or release sections or to the
+  plugin version. A pull request that changes `plugin/` gives its note
+  `release: patch|minor|major`; after the merge, the release step writes the
+  note into the changelog, moves the version and tags it
+  ([ADR-0004](docs/adr/ADR-0004-change-notes-released-after-the-merge.md)).
+  A file that must name the version a change ships in (a `since:`) names
+  `next`, which the release replaces.
 
 ## Parallel workspaces
 
@@ -126,8 +131,10 @@ design. Run all with one command: `bun run gates`. The set, in order:
    conventions (the workflow-convention lint, with its heavy suites in
    `.config/workflow-conventions.yaml` and its reasoned exceptions in
    `.config/workflow-conventions-exceptions.txt`); the licence files and NOTICE complete
-   (`scripts/check-licences.ts`); a changelog entry for the current plugin
-   version; Jig's own audit record and configuration fitting the audit skill;
+   (`scripts/check-licences.ts`); a changelog section for the current plugin
+   version, change notes the release step can read, and a branch that leaves
+   the changelog's open sections and the version to that step (with a note
+   asking for a release when it changes `plugin/`); Jig's own audit record and configuration fitting the audit skill;
    every file belonging to an area of the change-area catalog
    (`.config/change-areas.yaml`); and the AI reviewer's high-risk paths
    matching the catalog's `reviewRisk: high` areas
@@ -146,11 +153,14 @@ what it skips and why: the Markdown gates leave vendored material (`seeds/`),
 everything, vendored material and templates included, except test `fixtures/`
 and its own pattern file.
 
-`main`'s branch protection requires the `gates` check and every review
-thread resolved, and forbids force-pushes and deleting the branch. It
-requires nothing more: no approving review (a person merges) and no
-up-to-date branch, which would cost a pull, a push and a full CI run on
-every open pull request at each merge. `bun scripts/check-branch-protection.ts`
+`main`'s ruleset requires a pull request with the `gates` check green and
+every review thread resolved, and forbids force-pushes and deleting the
+branch. It requires nothing more: no approving review (a person merges) and
+no up-to-date branch, which would cost a pull, a push and a full CI run on
+every open pull request at each merge. Only the `jig-release` GitHub App,
+which pushes the release commit after a merge
+([ADR-0004](docs/adr/ADR-0004-change-notes-released-after-the-merge.md)),
+and repository administrators may bypass it. `bun scripts/check-branch-protection.ts`
 checks the setting against that policy; it needs an administrator's `gh`
 login, so it runs by hand, not in CI.
 

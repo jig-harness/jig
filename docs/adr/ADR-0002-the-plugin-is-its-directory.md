@@ -1,11 +1,11 @@
 ---
 title: "ADR-0002: The plugin is the plugin/ directory, and every change to it ships as a version"
 type: adr
-status: approved
+status: amended
 description: "Agent tools install only plugin/ from main; everything a skill needs lives there, and each change is a tagged version"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-10-13
+version: "1.1"
+last_updated: 2026-10-15
 owner: maintainers
 decision_date: 2026-10-09
 supersedes: ~
@@ -68,3 +68,16 @@ Partly checked: `tools/plugin/plugin.test.ts` fails when the two manifests
 disagree, and the changelog gate (`scripts/check-changelog.ts`) fails when
 the current version has no section. Nothing yet fails a change under
 `plugin/` that leaves the version unchanged.
+
+## Amendments
+
+### 2026-10-15 — The release is written after the merge (v1.1)
+
+Touches the Decision's second half. A pull request that changes `plugin/` no
+longer bumps the manifests or adds the version's section itself: it adds a
+change note that asks for a release, and after the merge the release step
+moves both manifests, writes the section and tags `v<version>` on its own
+commit ([ADR-0004](ADR-0004-change-notes-released-after-the-merge.md)). Every
+change to `plugin/` still ships as its own version. The changelog gate now
+also fails a change under `plugin/` without such a note, which closes the gap
+the Extraction section named.
