@@ -186,6 +186,24 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.34.0] - 2026-10-15
+
+### Fixed
+
+- Reflection no longer attaches a finding to another owner's class issue. The
+  `pattern:<class>` label is shared by every repository filing into the same
+  tracker team, so two repositories reviewing the same class used to land on the
+  first one's issue. The `plan` of `/jig:reflect` and `/jig:review-reflections`
+  now carries an `owner_marker` (`Jig owner: <owner>`, the owner
+  percent-encoded): the issue filed for a
+  class must carry it as a line of its own in the description, and the lookup
+  attaches only to open issues that carry the asking owner's marker. A class
+  issue filed before this change has no marker and is not attached to: the next
+  escalation files a new one. The tracker port's `labelledIssues` can now return
+  descriptions, and refuses an issue whose requested description is missing or
+  neither a string nor an explicit null, rather than reading it as unmarked; an
+  explicit null is an empty description and so carries no marker.
+
 ## [0.33.1] - 2026-10-15
 
 ### Fixed
@@ -1680,7 +1698,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.33.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/docomply/jig/compare/v0.33.1...v0.34.0
 [0.33.1]: https://github.com/docomply/jig/compare/v0.33.0...v0.33.1
 [0.33.0]: https://github.com/docomply/jig/compare/v0.32.1...v0.33.0
 [0.32.1]: https://github.com/docomply/jig/compare/v0.32.0...v0.32.1
