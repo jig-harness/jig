@@ -43,6 +43,8 @@ declare const document: BrowserWindow["document"];
 declare const window: BrowserWindow & { copied?: string };
 declare const getComputedStyle: BrowserWindow["getComputedStyle"];
 declare const Event: BrowserWindow["Event"];
+declare const KeyboardEvent: BrowserWindow["KeyboardEvent"];
+declare const requestAnimationFrame: BrowserWindow["requestAnimationFrame"];
 
 // Solo/Lite suggested, heading to Team/Standard: R1, R2 and R4 are for now,
 // R3 and R5 (each with a lighter option) wait in the "as you grow" group.
@@ -610,6 +612,53 @@ const guideOn = (page: Page, on: boolean) =>
     on,
   );
 
+/** Wait until the page's own smooth scrolling has ended: the position holds for ten frames in a row, within five seconds. */
+const scrollSettled = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((done, fail) => {
+        const until = performance.now() + 5000;
+        let last = -1;
+        let held = 0;
+        let frames = 0;
+        const frame = () => {
+          frames++;
+          held = window.scrollY === last ? held + 1 : 0;
+          last = window.scrollY;
+          if (held >= 10) done();
+          else if (performance.now() > until)
+            fail(
+              new Error(
+                `scroll did not hold for ten frames within 5s: last at ${last}, held ${held} of ${frames} frames`,
+              ),
+            );
+          else requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      }),
+  );
+
+/**
+ * Run `start`, which begins one of the page's smooth scrolls, then `then` in the
+ * frame where that scroll is seen still moving (the position changed over each
+ * of the last two frames), all inside the page so no test-driver round trip can
+ * let the scroll end first. Fails when no scroll is seen moving within five seconds.
+ */
+const duringSmoothScroll = (page: Page, start: string, then: string) =>
+  page.evaluate(`new Promise((done, fail) => {
+    const until = performance.now() + 5000;
+    let before = window.scrollY, last = before;
+    ${start};
+    const frame = () => {
+      const y = window.scrollY;
+      if (last !== before && y !== last) { ${then}; done(); return; }
+      before = last; last = y;
+      if (performance.now() > until) fail(new Error("no smooth scroll seen moving within 5s, at " + y));
+      else requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  })`);
+
 describe("the guide", () => {
   run("is hidden from the report and opens as its own view", async () => {
     const { page, requests } = await open(true);
@@ -695,11 +744,14 @@ describe("the guide", () => {
         .locator('.bar nav a[href="#guide"]')
         .evaluate((l) => (l as unknown as { click(): void }).click());
       await guideOn(page, true);
+      // A jump is made again once, two frames on, if a smooth scroll moved the page after it.
+      await scrollSettled(page);
       await at(600);
       const g = await scrollY();
       // Escape leaves the guide for a new report entry, scrolled elsewhere.
       await page.keyboard.press("Escape");
       await guideOn(page, false);
+      await scrollSettled(page);
       await at(1200);
       expect(await scrollY()).not.toBe(a);
       // Back reaches the guide where it was left, Back again the first report entry.
@@ -727,6 +779,8 @@ describe("the guide", () => {
       .first()
       .evaluate((l) => (l as unknown as { click(): void }).click());
     await page.waitForFunction("location.hash.startsWith('#d-')");
+    // A jump made while the link's smooth scroll still runs ends a few pixels off: let it end first.
+    await scrollSettled(page);
     // Scroll and leave at once, before any delayed save could run.
     await page.evaluate(
       "window.scrollTo({ top: 1800, left: 0, behavior: 'instant' }); history.back()",
@@ -739,6 +793,86 @@ describe("the guide", () => {
     expect(await page.evaluate(() => window.scrollY)).toBe(1800);
     await page.context().close();
   });
+
+  run(
+    "returns to the top after Back from a link followed at once",
+    async () => {
+      const { page } = await open(true);
+      // Back while the link's smooth scroll still runs: the page must not keep part of it.
+      await duringSmoothScroll(
+        page,
+        "document.querySelector('a[href^=\"#d-\"]').click()",
+        "history.back()",
+      );
+      await page.waitForFunction("location.hash === ''");
+      await scrollSettled(page);
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+      await page.context().close();
+    },
+  );
+
+  run("keeps the way back Escape makes until it is made again", async () => {
+    const { page } = await open(true);
+    await page.evaluate(
+      "window.scrollTo({ top: 2400, left: 0, behavior: 'instant' })",
+    );
+    const y = await page.evaluate(() => window.scrollY);
+    await page.evaluate("location.hash = 'guide'");
+    await guideOn(page, true);
+    await scrollSettled(page);
+    // The same keydown that leaves the guide must not drop the jump it makes: still pending (smooth scrolling off) once the event is done.
+    expect(
+      await page.evaluate(() => {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+        return document.documentElement.style.scrollBehavior;
+      }),
+    ).toBe("auto");
+    await guideOn(page, false);
+    await scrollSettled(page);
+    expect(await page.evaluate(() => window.scrollY)).toBe(y);
+    await page.context().close();
+  });
+
+  run(
+    "stays on a part of the guide followed before the way in settles",
+    async () => {
+      const { page } = await open(true);
+      await page.evaluate(
+        "window.scrollTo({ top: 2400, left: 0, behavior: 'instant' })",
+      );
+      // The guide's last part, so arriving there means scrolling down from the guide's top.
+      const part = await page.evaluate(() => {
+        const all = [...document.querySelectorAll('#guide [id^="guide-"]')];
+        if (!all.length) throw new Error("a part of the guide is needed");
+        return (all[all.length - 1] as Element).id;
+      });
+      // Open the guide, then follow a link inside it before the jump to its top is made again.
+      await page.evaluate(
+        (id) =>
+          new Promise<void>((done) => {
+            window.addEventListener(
+              "hashchange",
+              () => {
+                window.addEventListener("hashchange", () => done(), {
+                  once: true,
+                });
+                window.location.hash = id;
+              },
+              { once: true },
+            );
+            window.location.hash = "guide";
+          }),
+        part,
+      );
+      await scrollSettled(page);
+      expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+      const at = await box(page, `#${part}`);
+      expect(at.top).toBeLessThan(at.vh / 2);
+      await page.context().close();
+    },
+  );
 
   run(
     "returns a reloaded entry, guide or report, to its own place",
@@ -756,6 +890,7 @@ describe("the guide", () => {
         .locator('.bar nav a[href="#guide"]')
         .evaluate((l) => (l as unknown as { click(): void }).click());
       await guideOn(page, true);
+      await scrollSettled(page);
       await page.evaluate(
         "window.scrollTo({ top: 600, left: 0, behavior: 'instant' })",
       );

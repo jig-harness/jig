@@ -138,9 +138,17 @@ W.addEventListener('popstate',function(e){clearTimeout(yT);yT=0;var s=e.state;
 function hashOf(u){var i=u.indexOf('#');return i<0?'':decodeURIComponent(u.slice(i+1))}
 // Switching views jumps: the page's smooth scrolling is for moving within one view.
 var NOW={behavior:'instant'};
-function jump(y){W.scrollTo({top:y,left:0,behavior:'instant'})}
+// A smooth scroll still running (a link was just followed) keeps adding to a jump made meanwhile and leaves the page a few pixels off; the jump is made again once the animation has had two frames to end.
+// Any later navigation, or the reader scrolling on purpose, drops a jump not yet made again.
+// Reader input drops only a jump made before it: the window's capture phase runs ahead of every other handler of the same event, so a jump that event makes itself (Escape leaving the guide) is kept.
+var jumpN=0;
+function unjump(){jumpN++;root.style.scrollBehavior=''}
+function jump(y){var n=++jumpN;root.style.scrollBehavior='auto';W.scrollTo({top:y,left:0,behavior:'instant'});
+ W.requestAnimationFrame(function(){W.requestAnimationFrame(function(){if(n!==jumpN)return;if(W.scrollY!==y)W.scrollTo({top:y,left:0,behavior:'instant'});root.style.scrollBehavior=''})})}
+['wheel','touchstart','keydown','mousedown'].forEach(function(t){W.addEventListener(t,unjump,{capture:true,passive:true})});
 function isGuide(h){return h==='guide'||h.indexOf('guide-')===0}
 function show(h,old,first){var on=!!G&&isGuide(h),was=root.classList.contains('guide-on'),el=h?d.getElementById(h):null;
+ unjump();
  if(on&&!was){back=W.scrollY;from=old}
  root.classList.toggle('guide-on',on);
  if(on){if(h==='guide'||!el)jump(0);else el.scrollIntoView(NOW);return}

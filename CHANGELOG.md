@@ -153,6 +153,21 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.28.1] - 2026-10-15
+
+### Fixed
+
+- The audit sheet keeps the reader's place when Back or Forward comes while
+  the smooth scroll of a link just followed is still running: the page no
+  longer keeps part of that scroll and ends a few pixels (up to a few
+  dozen) from where the entry was left. The browser check for a position
+  scrolled to just before Back, which failed about one run in five, now
+  waits for that smooth scroll to end before it scrolls, and a second check
+  covers following a link and going Back at once. The corrected jump never
+  overrides a later move: following another link before it is made, or
+  scrolling on purpose, drops it. Only a jump made before the input is
+  dropped: Escape leaving the guide keeps the way back it makes itself.
+
 ## [0.28.0] - 2026-10-15
 
 ### Added
@@ -236,6 +251,7 @@ What can be adapted in Jig, and how, in one place. No behaviour changes.
 - [Where it works](plugin/README.md#where-it-works): a tool without plugin
   support takes every skill folder side by side, since skills import
   scripts from their siblings.
+
 
 ## [0.27.0] - 2026-10-14
 
