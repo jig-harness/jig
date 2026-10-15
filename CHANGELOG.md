@@ -171,6 +171,27 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.33.0] - 2026-10-15
+
+### Added
+
+- `drive.max_rounds` sets a repository's default round budget for `drive-pr`
+  (default `10`, as before). `--max-rounds` still overrides it for one run.
+  Jig's own configuration sets it to 30.
+
+### Changed
+
+- Integer settings accept only whole numbers that can be represented exactly
+  (up to 2⁵³ − 1). This applies to `drive.max_rounds`, `--max-rounds`,
+  `pull_requests.size_budget`, `pull_requests.max_stack_depth`,
+  `pull_requests.mark_ready`, and the audit's configuration check. A larger
+  value used to be read as a rounded number and is now refused.
+  **Breaking** for a `.config/jig.yaml` that sets one of these
+  `pull_requests` values above 2⁵³ − 1: `drive-pr` reads the whole policy
+  when it starts and stops with exit 1, and `do-item`'s pull-request plan
+  refuses it too. Before upgrading, lower the value to 9007199254740991 or
+  less, or delete it to use the default.
+
 ## [0.32.1] - 2026-10-15
 
 Prose fixes to the PR review loop's skills. No configuration changes and no
@@ -1634,7 +1655,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.32.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/docomply/jig/compare/v0.32.1...v0.33.0
 [0.32.1]: https://github.com/docomply/jig/compare/v0.32.0...v0.32.1
 [0.32.0]: https://github.com/docomply/jig/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/docomply/jig/compare/v0.31.0...v0.31.1
