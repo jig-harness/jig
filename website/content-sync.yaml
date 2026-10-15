@@ -1,0 +1,6 @@
+# The last commit of main the site was checked against. Written by the
+# website-update skill (.claude/skills/website-update/SKILL.md) with
+# `bun scripts/website-sync.ts --advance <commit>`; its next run reviews the
+# commits after this one.
+commit: 92b9561821167e9087e449af15458c87a0f2b4e2
+date: "2026-10-14"

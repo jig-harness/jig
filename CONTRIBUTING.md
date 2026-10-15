@@ -68,13 +68,28 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
 
 ## Jig's own skills
 
-Skills for work on this repository, rather than for the repositories that
-use Jig, live in `.claude/skills/` and are not part of the plugin; their
-scripts live in `scripts/` with the repository's other tooling. Claude
-Code finds them there. For Codex, run M0's mirror script once in each
-worktree, since the links it makes live in the worktree and are ignored by
-git:
-`bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts`.
+Procedures for maintaining this repository, as opposed to the ones Jig ships
+to other repositories, are skills in `.claude/skills/`, the canonical skill
+directory [M0](modules/M0-instruction-architecture/mappings.md#cross-runtime-skill-discovery-the-symlink-mirror)
+recommends. They are not part of the plugin, so changing one ships no
+version. One that opens pull requests or files issues sets
+`disable-model-invocation: true`, so it runs only when a person or a schedule
+starts it; the context budget gate still measures its description. The
+exception is `followup`: every session is told to run it after a merge
+([AGENTS.md](AGENTS.md)), so an agent must be able to start it. Their
+scripts and tests live in `scripts/`, where the gates run them. Codex reads
+skills from another directory; link it once per worktree with M0's mirror
+script (the links are gitignored):
+
+```sh
+bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
+```
+
+- [`followup`](.claude/skills/followup/SKILL.md): settles what a merged
+  pull request still owes (step 5 above).
+- [`website-update`](.claude/skills/website-update/SKILL.md): brings the
+  site up to date with the commits since its last check, recorded in
+  `website/content-sync.yaml`.
 
 ## Toolchain
 

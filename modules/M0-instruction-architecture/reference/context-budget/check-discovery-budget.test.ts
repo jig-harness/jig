@@ -158,6 +158,34 @@ test("the plugin namespace is part of each listed name", () => {
   expect(result.output).toContain("skill listing is 16 chars over");
 });
 
+test("bare skills share the listing and take no namespace", () => {
+  // At exactly 8,000 unprefixed, so a namespace on these would fail.
+  const atBudget = run(["--bare-skills", boundary(), "--namespace", "p"]);
+  expectSpawnExit(atBudget, 0);
+  const plugin = dir();
+  skill(plugin, "x", "D.");
+  const shared = run(["--skills", plugin, "--bare-skills", boundary()]);
+  expectSpawnExit(shared, 1);
+  expect(shared.output).toContain("skill listing is");
+});
+
+test("a bare skill may share a name with a namespaced one", () => {
+  const plugin = dir();
+  const own = dir();
+  skill(plugin, "same", "D.");
+  skill(own, "same", "D.");
+  const result = run([
+    "--skills",
+    plugin,
+    "--bare-skills",
+    own,
+    "--namespace",
+    "p",
+  ]);
+  expectSpawnExit(result, 0);
+  expectSpawnExit(run(["--skills", plugin, "--bare-skills", own]), 1);
+});
+
 test.each([
   ["no frontmatter", "# A skill\n\nBody.\n"],
   ["no description", "---\nname: bad\n---\n"],

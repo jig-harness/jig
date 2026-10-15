@@ -54,6 +54,20 @@ changes are marked **Breaking** and say what a consumer changes.
   without letters too, square in light, dark and accent, for favicons and
   avatars. [design/website.md](design/website.md) has how it works and what
   is left.
+- `/website-update`, one of Jig's own maintenance skills
+  (`.claude/skills/`, not shipped in the plugin): it reviews every commit to
+  `main` since the site was last checked (`website/content-sync.yaml`),
+  fixes the site's hand-written copy, parsers and counts that a change left
+  behind, in one draft pull request, files follow-ups for what is too large
+  to review well, moves the record forward and reports.
+  `bun scripts/website-sync.ts` lists the commits with their size and how
+  each bears on the site, read from the change-area catalog; it marks those
+  over 5,000 counted lines (`--max-lines`) for that call, reviewed when the
+  parts the site renders are small enough. The context budget gate now also
+  measures `.claude/skills`, in one session listing with the plugin's skills
+  (M0's discovery check gains `--bare-skills` for that), and
+  [CONTRIBUTING.md](CONTRIBUTING.md#jigs-own-skills) says where such skills
+  live and how Codex finds them.
 - Jig as a software factory: [FACTORY.md](FACTORY.md), which replaces
   `PLAYBOOK.md`, starts from what a factory of AI agents runs on, the
   repository's scaffolding for context, verification and kept knowledge, and

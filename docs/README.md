@@ -15,8 +15,9 @@ This folder holds:
 ## Kinds of document
 
 Jig's own documents carry no frontmatter, except decision records, which
-carry M5's frontmatter, and the plugin's `SKILL.md` and agent files, which
-carry the metadata the agent runtimes read. Copyable `templates/`, test
+carry M5's frontmatter, and skill and agent definitions (the plugin's, and
+Jig's own skills in `.claude/skills/`), which carry the metadata the agent
+runtimes read. Copyable `templates/`, test
 fixtures and vendored `seeds/` are not Jig's own documents: they keep the
 frontmatter their purpose needs. Where a document lives says what kind it is
 and how it changes. An `AGENTS.md` file is an instruction wherever it lives;

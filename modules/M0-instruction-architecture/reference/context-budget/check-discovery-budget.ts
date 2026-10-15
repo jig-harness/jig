@@ -46,10 +46,13 @@
 // instructions, none of which a repository file shows.
 //
 // Usage: bun check-discovery-budget.ts [--skills <dir>]... [--agents <dir>]...
-//          [--namespace <plugin>] [--hard N] [--soft N] [--combined N]
-//          [--listing N] [--fail-soft]
-//   --namespace  the plugin name a runtime prefixes to each skill name
-//                (`<plugin>:<skill>`), counted in the listing
+//          [--bare-skills <dir>]... [--namespace <plugin>] [--hard N]
+//          [--soft N] [--combined N] [--listing N] [--fail-soft]
+//   --namespace    the plugin name a runtime prefixes to each --skills name
+//                  (`<plugin>:<skill>`), counted in the listing
+//   --bare-skills  skills listed by their bare name in the same session as
+//                  the --skills ones (a repository's own skills beside an
+//                  installed plugin's), so both count in one listing
 // Exit: 0 within budget (an agents directory with no agent is noted); 1 over
 // a budget, unusable frontmatter, an unreadable definition, a file the
 // census found but the measurement missed, a duplicate skill name, or a
@@ -71,6 +74,7 @@ type Budgets = {
 type Item = {
   kind: "skill" | "agent";
   label: string;
+  /** The name as listed, with its plugin namespace when it has one. */
   name: string;
   /** Description length in Unicode code points. */
   length: number;
@@ -84,7 +88,7 @@ type Item = {
 type Found = { label: string; file: string; fallbackName: string };
 
 const USAGE =
-  "usage: check-discovery-budget.ts [--skills <dir>]... [--agents <dir>]... [--namespace <plugin>] [--hard N] [--soft N] [--combined N] [--listing N] [--fail-soft]";
+  "usage: check-discovery-budget.ts [--skills <dir>]... [--agents <dir>]... [--bare-skills <dir>]... [--namespace <plugin>] [--hard N] [--soft N] [--combined N] [--listing N] [--fail-soft]";
 
 function frontmatter(raw: string): Record<string, unknown> {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
@@ -164,7 +168,7 @@ function measure(
   return {
     kind,
     label: found.label,
-    name: meta.name,
+    name: listedName,
     length: [...meta.description].length,
     combined: text.length,
     listing: meta.listed ? listedName.length + 4 + text.length : 0,
@@ -308,6 +312,7 @@ function parse(argv: string[]) {
     args: argv,
     options: {
       skills: { type: "string", multiple: true },
+      "bare-skills": { type: "string", multiple: true },
       agents: { type: "string", multiple: true },
       namespace: { type: "string" },
       hard: { type: "string" },
@@ -320,11 +325,16 @@ function parse(argv: string[]) {
     strict: true,
   });
   const skills = values.skills ?? [];
+  const bareSkills = values["bare-skills"] ?? [];
   const agents = values.agents ?? [];
-  if (positionals.length || !(skills.length || agents.length))
+  if (
+    positionals.length ||
+    !(skills.length || bareSkills.length || agents.length)
+  )
     throw new Error(USAGE);
   return {
     skills,
+    bareSkills,
     agents,
     namespace: values.namespace,
     budgets: budgetsFrom(values),
@@ -332,13 +342,15 @@ function parse(argv: string[]) {
 }
 
 export function checkDiscoveryBudget(argv: string[]): number {
-  const { skills, agents, namespace, budgets } = parse(argv);
-  for (const dir of [...skills, ...agents]) listDirectory(dir);
+  const { skills, bareSkills, agents, namespace, budgets } = parse(argv);
+  for (const dir of [...skills, ...bareSkills, ...agents]) listDirectory(dir);
   const corpus = new Corpus();
   for (const dir of skills)
     corpus.add("skill", dir, skillFiles(dir), namespace);
+  for (const dir of bareSkills) corpus.add("skill", dir, skillFiles(dir));
   for (const dir of agents) corpus.add("agent", dir, agentFiles(dir));
-  for (const dir of skills) corpus.checkCensus("skill", dir);
+  for (const dir of [...skills, ...bareSkills])
+    corpus.checkCensus("skill", dir);
   for (const dir of agents) corpus.checkCensus("agent", dir);
   corpus.checkDuplicates();
   return report(corpus, budgets);

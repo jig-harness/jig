@@ -144,6 +144,19 @@ Building writes Astro's generated types into `website/.astro/` and the site
 into `website/dist/`; delete both before `bun run gates`, whose formatter and
 linter would otherwise report them.
 
+### Keeping it current
+
+A document change reaches the site on the next deploy, but the site's
+hand-written copy, a parser that finds a section by its heading, and a page
+that lists modules or skills by hand do not follow it. The
+[`website-update`](../.claude/skills/website-update/SKILL.md) skill, run
+with `/website-update`, reviews every commit to `main` after the one
+recorded in `website/content-sync.yaml` (`bun scripts/website-sync.ts`
+lists them by what they touched and their size), fixes what the site now
+gets wrong in one draft pull request, files a follow-up for a change too
+large to review in one session, and moves the record forward. A site
+update is not a plugin release.
+
 ## Build order
 
 Done: the site, its design, CI and deployment from `main` behind a private link.

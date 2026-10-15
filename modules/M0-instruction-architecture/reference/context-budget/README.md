@@ -19,7 +19,7 @@ dependencies, on every change.
 | File | Role |
 |------|------|
 | `check-instruction-chain.ts` | `[--budget <bytes>] [--config <file>] [root]`: models Codex's `AGENTS.md` chain. For every directory with an instruction file, joins the chain from the root down (one file per directory, the first with content: `AGENTS.override.md`, then `AGENTS.md`, then the configured fallback names; a blank file is passed over) and fails each chain over budget, listing its files. Each chain uses the Codex configuration layered from the root down to its directory. Reports the largest chain |
-| `check-discovery-budget.ts` | `--skills <dir>… --agents <dir>… [--namespace <plugin>] [--hard N] [--soft N] [--combined N] [--listing N] [--fail-soft]`: measures each skill's (`<dir>/<skill>/SKILL.md`) and agent's (`<dir>/*.md`) description and the aggregate skill listing |
+| `check-discovery-budget.ts` | `--skills <dir>… --agents <dir>… [--bare-skills <dir>…] [--namespace <plugin>] [--hard N] [--soft N] [--combined N] [--listing N] [--fail-soft]`: measures each skill's (`<dir>/<skill>/SKILL.md`) and agent's (`<dir>/*.md`) description and the aggregate skill listing. `--namespace` prefixes the `--skills` names; `--bare-skills` folders are listed unprefixed in the same listing, for a repository's own skills beside an installed plugin's |
 | `fixtures/` | A small repository with a fallback-named instruction file, and a skills and an agents folder, all within budget |
 
 Each script's header comment states what it measures, what it leaves out and

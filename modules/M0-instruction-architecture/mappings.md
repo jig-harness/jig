@@ -181,7 +181,9 @@ Name only folders that exist: a missing folder is a usage error. Name every
 skill folder a runtime scans (`.claude/skills`, `.agents/skills` when it
 holds real files rather than the symlink mirror) and add
 `--namespace <plugin>` when the folder ships as a plugin, since the runtime
-lists its skills as `<plugin>:<skill>`.
+lists its skills as `<plugin>:<skill>`. A repository that measures its own
+plugin and also has skills of its own names those with `--bare-skills <dir>`:
+both appear in the same session's listing, so they share one allowance.
 
 ## The universal-file + delta pattern
 
