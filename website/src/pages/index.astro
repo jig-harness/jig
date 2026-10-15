@@ -4,6 +4,7 @@ import CrossSection from "../components/CrossSection.astro";
 import Ladder from "../components/Ladder.astro";
 import LevelGlyph from "../components/LevelGlyph.astro";
 import ModuleMap from "../components/ModuleMap.astro";
+import Plate from "../components/Plate.astro";
 import Base from "../layouts/Base.astro";
 import { modules, principles, profiles, readme } from "../lib/data/index.ts";
 import { mdInline } from "../lib/markdown.ts";
@@ -49,11 +50,14 @@ const LIMITS = [
     <div class="hero-text">
       <span class="label">Delivery practices for teams that build with AI coding agents</span>
       <h1 class="display">Scaffolding that lets AI agents work your repository well — adopted one module at a time.</h1>
-      <p class="lede">
-        Jig is a modular collection of software-delivery practices for teams that build and maintain software with AI
-        coding agents. A jig, in a workshop, holds the work and guides the tool so every cut comes out the same; Jig's
-        skills and gates do that for agents.
-      </p>
+      <div class="lede-row">
+        <p class="lede">
+          Jig is a modular collection of software-delivery practices for teams that build and maintain software with AI
+          coding agents. A jig, in a workshop, holds the work and guides the tool so every cut comes out the same; Jig's
+          skills and gates do that for agents.
+        </p>
+        <span class="hero-plate"><Plate name="jig" width="230px" /></span>
+      </div>
       <p class="sub">
         You don't adopt all of it: <a href="/modules/">{count} independent modules</a>, each at three levels. A one-person
         project starts with {countWord(soloCount)} modules at Lite. Every practice is a tool-independent rule first, mapped to your tools
@@ -96,7 +100,7 @@ const LIMITS = [
       <h2 id="factory-h" class="display">A factory of agents runs on scaffolding.</h2>
       <p set:html={fxLead} />
       <ul class="fx-jobs">
-        {fxJobs.map((j) => <li><a class="label" href={`/factory/#job-${j.lead.toLowerCase()}`}>{j.lead}</a><span set:html={j.html} /></li>)}
+        {fxJobs.map((j) => <li><a class="label" href={`/factory/scaffolding/#job-${j.lead.toLowerCase()}`}>{j.lead}</a><span set:html={j.html} /></li>)}
       </ul>
       <p set:html={fxFits} />
       <p class="muted small" set:html={fxStations} />
@@ -224,6 +228,23 @@ const LIMITS = [
     font-size: clamp(34px, 3.9vw, 58px);
     line-height: 1.04;
     max-width: 17ch;
+  }
+  .lede-row {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+  }
+  .lede-row .lede {
+    margin: 0;
+    min-width: 0;
+  }
+  .hero-plate {
+    flex: none;
+  }
+  @media (max-width: 600px) {
+    .hero-plate {
+      display: none;
+    }
   }
   .sub {
     margin: 0;

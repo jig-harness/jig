@@ -6,6 +6,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { type GlossaryEntry, parseGlossary } from "../glossary.ts";
 import { read, repoRoot } from "../site.ts";
+import { firstParagraph } from "../source.ts";
 import { parseBrownfield, parseGreenfield } from "./adoption.ts";
 import { type Criterion, parseCriteria } from "./criteria.ts";
 import { parseLayers, parseTrackerInterface } from "./config.ts";
@@ -28,7 +29,7 @@ import {
 import { parseProfiles } from "./profiles.ts";
 import { parseReadme } from "./readme.ts";
 import { parseSkills } from "./skills.ts";
-import { parseChangelog, parseRoadmap } from "./whats-new.ts";
+import { parseChangelog, parseRoadmap, type RoadmapItem } from "./whats-new.ts";
 
 function once<T>(load: () => T): () => T {
   let value: { v: T } | undefined;
@@ -118,6 +119,18 @@ export const principles = once((): (Principle & { file: string })[] => {
 
 export const skills = once(() => parseSkills(read("plugin/README.md")));
 
+/** What a skill (or the agent) does, as one plain line short enough for a popover. */
+export function skillSummary(name: string): string {
+  const skill = skills().find((s) => s.name === name);
+  if (!skill) throw new Error(`no skill ${name}`);
+  return clip(plain(skill.purpose), 220);
+}
+
+/** The problem a tool under tools/ solves, from its README's first paragraph. */
+export function toolSummary(name: string): string {
+  return clip(plain(firstParagraph(read(`tools/${name}/README.md`))), 220);
+}
+
 export const factory = once(() => parseFactory(read("FACTORY.md")));
 
 export const brownfield = once(() =>
@@ -131,6 +144,16 @@ export const greenfield = once(() =>
 export const changelog = once(() => parseChangelog(read("CHANGELOG.md")));
 
 export const roadmap = once(() => parseRoadmap(read("ROADMAP.md")));
+
+/**
+ * A roadmap item by its number. "Later" names a list of entries, not one
+ * item, so it has none: whoever cites it says which entry it means.
+ */
+export function roadmapItem(n: string): RoadmapItem | undefined {
+  return roadmap()
+    .groups.flatMap((g) => g.items)
+    .find((i) => i.n === n);
+}
 
 export const flywheel = once(() =>
   parseFlywheel(read("modules/M8-learning-loop/README.md")),

@@ -143,6 +143,53 @@ details > summary::-webkit-details-marker {
 .band-sunk {
   background: var(--sunk);
   border-block: 1px solid var(--line);
+  position: relative;
+  isolation: isolate;
+}
+
+/* The scaffolding lattice (public/plates/lattice.webp), faint behind a sunk
+   band, drawn in the ink token so it follows the theme. */
+.band-sunk::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ink);
+  -webkit-mask: url(/plates/lattice.webp) 0 0 / 640px repeat;
+  mask: url(/plates/lattice.webp) 0 0 / 640px repeat;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+/* A link to a skill, the agent or a tool whose text is the bare name draws
+   the actor's glyph before it, as the chips in the figures do; hovering any
+   actor link opens what it does (scripts/site.ts). */
+.actor-ref {
+  text-decoration: none;
+  border-bottom: 1px dotted var(--line-strong);
+}
+.actor-ref:not(:has(code))::before,
+.actor-ref > code::before {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 1px;
+}
+.actor-ref.skill:not(:has(code))::before,
+.actor-ref.skill > code::before {
+  content: "/";
+}
+.actor-ref.agent:not(:has(code))::before,
+.actor-ref.agent > code::before {
+  content: "@";
+}
+.actor-ref.tool:not(:has(code))::before,
+.actor-ref.tool > code::before {
+  content: ">";
+}
+.actor-ref:hover,
+.actor-ref:focus-visible {
+  border-bottom-color: var(--accent);
 }
 
 /* ---------- type ---------- */

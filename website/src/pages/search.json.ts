@@ -60,6 +60,26 @@ const PAGES: [string, string, string][] = [
     "software factory scaffolding context verification guides catches knowledge stations levels design planning execution pipeline pr loop learning loop flywheel platform person merge",
   ],
   [
+    "The scaffolding",
+    "/factory/scaffolding/",
+    "scaffolding context verification guides catches knowledge jobs modules configuration layers tracker interface adapters",
+  ],
+  [
+    "Design and planning: the feature pipeline",
+    "/factory/design/",
+    "design planning feature pipeline research prd architecture prototype plan epic stages",
+  ],
+  [
+    "Execution: the work-item line",
+    "/factory/execution/",
+    "execution work item line pull request loop pick up build open drive repair merge follow up stations",
+  ],
+  [
+    "The learning loop",
+    "/factory/learning-loop/",
+    "learning loop flywheel miss lens fixture validate measure reflection memory promotion",
+  ],
+  [
     "What's new and what's next",
     "/whats-new/",
     "changelog roadmap release version",
@@ -143,7 +163,7 @@ const jobEntries = (): Entry[] =>
       kind: "Scaffolding",
       label: j.name + (ver ? " · guides and catches" : ""),
       sub: clip(plain(j.means)),
-      href: `/factory/#job-${j.id}`,
+      href: `/factory/scaffolding/#job-${j.id}`,
       key: `scaffolding ${j.name} ${plain(j.means)}${ver ? " guide guides catch catches" : ""}`.toLowerCase(),
     };
   });

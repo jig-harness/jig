@@ -1,0 +1,26 @@
+---
+import ExecutionLevel from "../../components/factory/ExecutionLevel.astro";
+import FactoryNav from "../../components/factory/FactoryNav.astro";
+import Base from "../../layouts/Base.astro";
+import { factory } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+import { countWord } from "../../lib/view.ts";
+import "../../styles/factory.css";
+
+const f = factory();
+const level = f.levels[1];
+const unit = level ? await mdInline(level.unit, "FACTORY.md") : "";
+const hands = level ? await mdInline(level.handsOn, "FACTORY.md") : "";
+---
+
+<Base title="Execution" description={`The work-item line: the pull-request loop every change follows, and the ${countWord(f.line.length)} stations the plugin runs it as, one work item at a time.`}>
+  <section class="page wrap">
+    <div class="intro">
+      <span class="eyebrow">Jig as a software factory · level B</span>
+      <h1 class="display">Execution: the work-item line.</h1>
+      <p class="muted small">The unit of work is <span set:html={unit} />; what the level hands on is <span set:html={hands} />. <a href="/factory/#levels">Both levels, in figure 2</a>.</p>
+    </div>
+    <FactoryNav current="execution" />
+    <ExecutionLevel />
+  </section>
+</Base>

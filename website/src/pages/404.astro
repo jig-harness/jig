@@ -1,8 +1,23 @@
 ---
+import Plate from "../components/Plate.astro";
 import Base from "../layouts/Base.astro";
 ---
 
 <Base title="Not found">
-  <h1>No page here</h1>
-  <p>Try the <a href="/modules/">modules</a>, the <a href="/adopt/">adoption guide</a> or the <a href="/glossary/">glossary</a>.</p>
+  <section class="page wrap lost">
+    <Plate name="engine" width="360px" tone={0.7} />
+    <div class="intro">
+      <h1 class="display">No page here</h1>
+      <p>Try the <a href="/modules/">modules</a>, the <a href="/adopt/">adoption guide</a> or the <a href="/glossary/">glossary</a>.</p>
+    </div>
+  </section>
 </Base>
+
+<style>
+  .lost {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    align-items: center;
+  }
+</style>

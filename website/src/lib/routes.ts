@@ -90,16 +90,26 @@ function repoUrl(path: string, isFile: Exists = () => false): string {
 /**
  * The anchors a designed page gives a document's headings, where they differ
  * from the heading anchors the document's own links use. The roadmap renders
- * as groups (`rm-<name>`) and numbered items (`rm-item-<n>`); the factory page
- * names its sections itself.
+ * as groups (`rm-<name>`) and numbered items (`rm-item-<n>`). FACTORY.md
+ * renders as several pages, so a heading's anchor may be a whole route.
  */
+const FACTORY_HEADINGS: Record<string, string> = {
+  "a-factory-of-agents-runs-on-scaffolding":
+    "/factory/scaffolding/#scaffolding",
+  "what-jig-provides-to-build-it": "/factory/scaffolding/#provides",
+  "two-levels-and-a-loop-around-them": "levels",
+  "design-and-planning-the-feature-pipeline": "/factory/design/#design",
+  "execution-the-work-item-line": "/factory/execution/#execution",
+  "the-learning-loop-wraps-both": "/factory/learning-loop/#learning",
+  "what-stays-with-a-person": "person",
+  "what-jig-leaves-to-the-platform": "platform",
+};
 const ANCHORS: Record<string, (anchor: string) => string> = {
   "ROADMAP.md": (anchor) => {
     const n = /^(\d+)-/.exec(anchor)?.[1];
     return n ? `rm-item-${n}` : `rm-${anchor}`;
   },
-  "FACTORY.md": (anchor) =>
-    ({ "the-learning-loop-wraps-both": "learning" })[anchor] ?? anchor,
+  "FACTORY.md": (anchor) => FACTORY_HEADINGS[anchor] ?? anchor,
 };
 
 /** The anchor on the site for an anchor in the document at `path`. */
@@ -107,8 +117,13 @@ function siteAnchor(path: string, anchor: string): string {
   return anchor ? (ANCHORS[path]?.(anchor) ?? anchor) : "";
 }
 
-/** Joins a route and an anchor; the anchor replaces one the route carries. */
+/**
+ * Joins a route and an anchor; the anchor replaces one the route carries,
+ * and an anchor that is itself a route (`/factory/design/#design`) stands
+ * alone.
+ */
 function withAnchor(route: string, anchor: string): string {
+  if (anchor.startsWith("/")) return anchor;
   return anchor ? `${route.split("#")[0]}#${anchor}` : route;
 }
 

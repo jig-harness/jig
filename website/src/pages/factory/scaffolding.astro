@@ -1,0 +1,24 @@
+---
+import FactoryNav from "../../components/factory/FactoryNav.astro";
+import Provides from "../../components/factory/Provides.astro";
+import Scaffold from "../../components/factory/Scaffold.astro";
+import Base from "../../layouts/Base.astro";
+import { factory } from "../../lib/data/index.ts";
+import { countWord } from "../../lib/view.ts";
+import "../../styles/factory.css";
+
+const jobs = factory().jobs.length;
+---
+
+<Base title="The scaffolding" description={`The ${countWord(jobs)} jobs a repository's scaffolding does for a factory of agents, the modules that build each, and what Jig provides to build it.`}>
+  <section class="page wrap">
+    <div class="intro">
+      <span class="eyebrow">Jig as a software factory · the scaffolding</span>
+      <h1 class="display">{countWord(jobs, true)} jobs the scaffolding does, and what Jig provides to build it.</h1>
+      <p class="muted small">Every station in <a href="/factory/">the overview</a> stands on this. The modules that build each job are on <a href="/modules/">the module map</a>.</p>
+    </div>
+    <FactoryNav current="scaffolding" />
+    <Scaffold />
+    <Provides />
+  </section>
+</Base>

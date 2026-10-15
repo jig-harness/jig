@@ -1,6 +1,7 @@
 ---
 // The learning loop, what stays with a person, and what Jig leaves to the platform.
 import "../../styles/factory.css";
+import Plate from "../Plate.astro";
 import SectionHead from "../SectionHead.astro";
 import StatusMark from "../StatusMark.astro";
 import { factory } from "../../lib/data/index.ts";
@@ -11,20 +12,20 @@ const personItems = await Promise.all(f.person.map((p) => inline(p)));
 const platformItems = await Promise.all(f.platform.map(async (p) => ({ ...p, html: await inline(p.body) })));
 ---
 
-  <SectionHead id="learning" label="The learning loop, around both levels" />
+  <SectionHead id="learning" label="The learning loop, around both levels"><Plate name="flywheel" width="150px" /></SectionHead>
   <p class="lead" set:html={await inline(f.learning)} />
-  <p><a href="#flywheel">The miss → lens flywheel, step by step ↓</a></p>
+  <p><a href="/factory/learning-loop/">The miss → lens flywheel, step by step →</a></p>
 
   <div class="two">
     <div>
-      <SectionHead id="person" label="What stays with a person" />
+      <SectionHead id="person" label="What stays with a person"><Plate name="lever" width="110px" /></SectionHead>
       <p class="small-p" set:html={await inline(f.personLead)} />
       <ul class="marked">
         {personItems.map((html) => <li><StatusMark kind="person" /><span class="vh">Stays with a person: </span><span set:html={html} /></li>)}
       </ul>
     </div>
     <div>
-      <SectionHead id="platform" label="What Jig leaves to the platform" note="the scope line, and what crosses it" />
+      <SectionHead id="platform" label="What Jig leaves to the platform" note="the scope line, and what crosses it"><Plate name="slab" width="140px" /></SectionHead>
       <p class="small-p" set:html={await inline(f.platformLead)} />
       <ul class="platform-list">
         {

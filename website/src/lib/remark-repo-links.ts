@@ -7,6 +7,10 @@
  *   own text, so two references to one definition can name two terms. A link to a glossary entry becomes a
  *   term (`class="term"`, `data-term`), whose definition opens beside it; a
  *   link to the repository's source is marked as one (`class="out"`).
+ * - A link to a skill, the agent or a tool carries what it does
+ *   (`data-tip-*`), so hovering it opens the same popover as the actor chips
+ *   in the figures, and a link whose text is the bare name draws the actor's
+ *   glyph before it (`class="actor-ref"`).
  * - In GLOSSARY.md, each entry's list item gets the entry's anchor as its id,
  *   so `/glossary/#drift` lands on the definition, and an italic phrase that
  *   names another entry (the glossary's cross-reference form) links to it.
@@ -15,6 +19,9 @@
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { clip, plain } from "./data/modules.ts";
+import { parseSkills, type Skill } from "./data/skills.ts";
+import { firstParagraph } from "./source.ts";
 import { anchorFor, type GlossaryEntry, parseGlossary } from "./glossary.ts";
 import { REPO_URL, resolveHref } from "./routes.ts";
 
@@ -114,12 +121,87 @@ function renamePathLink(node: MdNode): void {
     node.children = [{ type: "text", value: name }];
 }
 
-/** Marks a resolved link as a term or as a link to the source. */
-function markLink(node: MdNode): void {
+/** What a link to an actor (a skill, the agent, a tool) opens beside itself. */
+interface ActorTip {
+  name: string;
+  kind: "skill" | "agent" | "tool";
+  head: string;
+  body: string;
+  more: string;
+}
+
+/** The popover a link opens, by the actor its address names, or null. */
+type ActorTips = (url: string) => ActorTip | null;
+
+function actorTips(repoRoot: string): ActorTips {
+  let skills: Skill[] | undefined;
+  const tools = new Map<string, string>();
+  return (url) => {
+    const skill = /^\/skills\/([a-z-]+)\/(?:skill\/)?$/.exec(url)?.[1];
+    if (skill) {
+      skills ??= parseSkills(
+        readFileSync(join(repoRoot, "plugin/README.md"), "utf8"),
+      );
+      const s = skills.find((k) => k.name === skill);
+      if (!s) return null;
+      return s.agent
+        ? {
+            name: s.name,
+            kind: "agent",
+            head: `Agent · ${s.command}`,
+            body: clip(plain(s.purpose), 220),
+            more: "Open the agent →",
+          }
+        : {
+            name: s.name,
+            kind: "skill",
+            head: `Skill · ${s.command}`,
+            body: clip(plain(s.purpose), 220),
+            more: "Open the skill →",
+          };
+    }
+    const tool = new RegExp(
+      `^${REPO_URL}/(?:blob|tree)/main/tools/([a-z-]+)(?:/README\\.md)?$`,
+    ).exec(url)?.[1];
+    if (tool) {
+      const readme = join(repoRoot, `tools/${tool}/README.md`);
+      if (!existsSync(readme)) return null;
+      if (!tools.has(tool))
+        tools.set(
+          tool,
+          clip(plain(firstParagraph(readFileSync(readme, "utf8"))), 220),
+        );
+      return {
+        name: tool,
+        kind: "tool",
+        head: "Tool · runs outside the agent",
+        body: tools.get(tool) ?? "",
+        more: "Open its README →",
+      };
+    }
+    return null;
+  };
+}
+
+/** Marks a resolved link as a term, an actor, or a link to the source. */
+function markLink(node: MdNode, tips: ActorTips): void {
   const url = node.url ?? "";
   const term = /^\/glossary\/#(.+)$/.exec(url)?.[1];
+  const actor = tips(url);
   if (term) withProps(node, { className: ["term"], "data-term": term });
-  else if (url.startsWith(REPO_URL))
+  else if (actor) {
+    const bare = textOf(node) === actor.name;
+    withProps(node, {
+      className: bare ? ["actor-ref", actor.kind] : [`${actor.kind}-link`],
+      "data-tip-head": actor.name,
+      "data-tip-kind": actor.head,
+      "data-tip-body": actor.body,
+      "data-tip-more": actor.more,
+      ...(url.startsWith(REPO_URL)
+        ? { title: "Opens in the Jig repository" }
+        : {}),
+    });
+  } else if (url.startsWith(REPO_URL))
     withProps(node, {
       className: ["out"],
       title: "Opens in the Jig repository",
@@ -127,7 +209,11 @@ function markLink(node: MdNode): void {
 }
 
 /** In the glossary: ids on entries, links on italic cross-references. */
-function glossaryNode(node: MdNode, entries: GlossaryEntry[]): void {
+function glossaryNode(
+  node: MdNode,
+  entries: GlossaryEntry[],
+  tips: ActorTips,
+): void {
   if (node.type === "listItem") {
     const term = entryTerm(node);
     const anchor = term ? entries.find((e) => e.term === term)?.anchor : null;
@@ -144,7 +230,7 @@ function glossaryNode(node: MdNode, entries: GlossaryEntry[]): void {
       url: `/glossary/#${anchor}`,
       children: [child],
     };
-    markLink(link);
+    markLink(link, tips);
     node.children[i] = link;
   }
 }
@@ -154,6 +240,7 @@ export function remarkRepoLinks(options: { repoRoot: string }) {
     readFileSync(join(options.repoRoot, "GLOSSARY.md"), "utf8"),
   );
   const glossaryAnchor = (text: string) => anchorFor(entries, text);
+  const tips = actorTips(options.repoRoot);
   const exists = (path: string) => existsSync(join(options.repoRoot, path));
   const isFile = (path: string) =>
     statSync(join(options.repoRoot, path), {
@@ -176,10 +263,10 @@ export function remarkRepoLinks(options: { repoRoot: string }) {
         });
         if (node.type === "link") {
           renamePathLink(node);
-          markLink(node);
+          markLink(node, tips);
         }
       }
-      if (isGlossary) glossaryNode(node, entries);
+      if (isGlossary) glossaryNode(node, entries, tips);
     });
   };
 }

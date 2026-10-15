@@ -25,7 +25,7 @@ function verificationTag(jobs: string[]): JobTag | null {
   if (!sides.length) return null;
   return {
     label: `verification · ${sides.join(" + ")}`,
-    href: "/factory/#job-verification",
+    href: "/factory/scaffolding/#job-verification",
     note: sides.map((j) => JOB_NOTE[j]).join("; "),
   };
 }
@@ -35,12 +35,16 @@ export function jobTags(moduleId: string): JobTag[] {
   const jobs = jobsByModule(factory()).get(moduleId) ?? [];
   const tag = (job: string): JobTag | null =>
     jobs.includes(job)
-      ? { label: job, href: `/factory/#job-${job}`, note: JOB_NOTE[job] ?? "" }
+      ? {
+          label: job,
+          href: `/factory/scaffolding/#job-${job}`,
+          note: JOB_NOTE[job] ?? "",
+        }
       : null;
   const many: JobTag | null = jobs.includes("many")
     ? {
         label: "many agents at once",
-        href: "/factory/#scaffolding-many",
+        href: "/factory/scaffolding/#scaffolding-many",
         note:
           moduleId === "M12"
             ? "workspaces that do not collide"
@@ -58,11 +62,14 @@ export function factoryPlace(
 ): { label: string; href: string } | null {
   const f = factory();
   if (f.levels[0]?.modules.includes(moduleId))
-    return { label: "Factory · design and planning", href: "/factory/#design" };
+    return { label: "Factory · design and planning", href: "/factory/design/" };
   if (f.levels[1]?.modules.includes(moduleId))
-    return { label: "Factory · execution", href: "/factory/#execution" };
+    return { label: "Factory · execution", href: "/factory/execution/" };
   if (moduleId === "M8")
-    return { label: "Factory · the learning loop", href: "/factory/#learning" };
+    return {
+      label: "Factory · the learning loop",
+      href: "/factory/learning-loop/",
+    };
   if (f.platform.some((p) => p.modules.includes(moduleId)))
     return {
       label: "Factory · asks the platform for",

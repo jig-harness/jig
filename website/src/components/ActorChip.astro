@@ -1,0 +1,135 @@
+---
+// One actor as a chip that says what it is: `/name` for a skill, `@name`
+// for an agent, `>name` for a tool, a silhouette for a person, a dashed
+// chip for work not built yet. Hovering or focusing it opens what the actor
+// does (scripts/site.ts), and it links to the actor's page.
+import type { Actor } from "../lib/data/factory.ts";
+import { factory, roadmapItem, skillSummary, toolSummary } from "../lib/data/index.ts";
+import { clip, plain } from "../lib/data/modules.ts";
+import { REPO_URL } from "../lib/routes.ts";
+import StatusMark from "./StatusMark.astro";
+
+interface Props {
+  actor: Actor;
+}
+const { actor } = Astro.props;
+
+const roadmapHref = (item: string) => (item === "Later" ? "/whats-new/#rm-later" : `/whats-new/#rm-item-${item}`);
+const roadmapLabel = (item: string) => (item === "Later" ? "roadmap, Later" : `roadmap ${item}`);
+
+interface Tip {
+  href: string;
+  head: string;
+  kind: string;
+  body: string;
+  more: string;
+  said: string;
+}
+function tipOf(a: Actor): Tip {
+  switch (a.kind) {
+    case "skill":
+      return {
+        href: `/skills/${a.name}/`,
+        head: a.name,
+        kind: `Skill · /jig:${a.name}`,
+        body: skillSummary(a.name),
+        more: "Open the skill →",
+        said: "Run by a skill: ",
+      };
+    case "agent":
+      return {
+        href: `/skills/${a.name}/`,
+        head: a.name,
+        kind: `Agent · jig:${a.name}`,
+        body: skillSummary(a.name),
+        more: "Open the agent →",
+        said: "Run by an agent: ",
+      };
+    case "tool":
+      return {
+        href: `${REPO_URL}/blob/main/tools/${a.name}/README.md`,
+        head: a.name,
+        kind: "Tool · runs outside the agent",
+        body: toolSummary(a.name),
+        more: "Open its README →",
+        said: "Run by a tool: ",
+      };
+    case "person":
+      return {
+        href: "/factory/#person",
+        head: "A person",
+        kind: "Kept with people",
+        body: (a.note ? `Here, a person ${a.note}. ` : "") + plain(factory().personLead),
+        more: "What stays with a person →",
+        said: "Run by a person",
+      };
+    case "todo": {
+      const item = roadmapItem(a.item);
+      return {
+        href: roadmapHref(a.item),
+        head: `Not built yet · ${roadmapLabel(a.item)}`,
+        kind: "Roadmap",
+        body: item ? clip(`${item.title}. ${plain(item.body)}`, 220) : a.text,
+        more: "Open the roadmap item →",
+        said: "Not built yet: ",
+      };
+    }
+  }
+}
+const tip = tipOf(actor);
+const GLYPH: Partial<Record<Actor["kind"], string>> = { skill: "/", agent: "@", tool: ">", todo: "⋯" };
+---
+
+<a class:list={["achip", actor.kind]} href={tip.href} data-tip-head={tip.head} data-tip-kind={tip.kind} data-tip-body={tip.body} data-tip-more={tip.more}>
+  <span class="vh">{tip.said}</span>
+  {actor.kind === "person" ? <StatusMark kind="person" size={12} /> : <span class="pre" aria-hidden="true">{GLYPH[actor.kind]}</span>}
+  <span class="name">{actor.kind === "person" ? "a person" : actor.kind === "todo" ? roadmapLabel(actor.item) : actor.name}</span>
+</a>
+
+<style>
+  .achip {
+    display: inline;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.9;
+    text-decoration: none;
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 1px 8px 1px 6px;
+    overflow-wrap: break-word;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .achip:hover,
+  .achip:focus-visible {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .pre {
+    color: var(--accent);
+    font-weight: 700;
+    margin-right: 2px;
+  }
+  .person {
+    font-family: var(--sans);
+    font-weight: 600;
+    border-color: var(--ink);
+    padding-left: 7px;
+    white-space: nowrap;
+  }
+  .person :global(.mark) {
+    margin-right: 4px;
+  }
+  .todo {
+    border-style: dashed;
+    font-family: var(--sans);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .todo .pre {
+    color: var(--muted);
+    letter-spacing: -0.1em;
+  }
+</style>

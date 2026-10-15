@@ -1,0 +1,26 @@
+---
+import FactoryNav from "../../components/factory/FactoryNav.astro";
+import Flywheel from "../../components/factory/Flywheel.astro";
+import Plate from "../../components/Plate.astro";
+import Base from "../../layouts/Base.astro";
+import { factory } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+import "../../styles/factory.css";
+
+const learningHtml = await mdInline(factory().learning, "FACTORY.md");
+---
+
+<Base title="The learning loop" description="How a miss a station should have caught becomes a validated check: the miss-to-lens flywheel from M8, and its two companion cycles.">
+  <section class="page wrap">
+    <div class="intro-row">
+      <div class="intro" id="learning">
+        <span class="eyebrow">Jig as a software factory · around both levels</span>
+        <h1 class="display">The learning loop: misses become checks.</h1>
+        <p set:html={learningHtml} />
+      </div>
+      <span class="intro-plate"><Plate name="flywheel" width="100%" /></span>
+    </div>
+    <FactoryNav current="learning" />
+    <Flywheel />
+  </section>
+</Base>

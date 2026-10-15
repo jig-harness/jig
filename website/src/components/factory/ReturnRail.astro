@@ -1,0 +1,11 @@
+---
+// The rail that carries a row's last station back to its first: down from
+// under the last, across, and up into the first, with the head centered on
+// the line where it meets the box. The text sits on the rail.
+import "../../styles/factory.css";
+---
+
+<div class="return" aria-hidden="true">
+  <svg class="return-head" viewBox="0 0 12 9" width="12" height="9"><path d="M6 0 12 9H0z" /></svg>
+</div>
+<p class="return-text"><span><slot /></span></p>

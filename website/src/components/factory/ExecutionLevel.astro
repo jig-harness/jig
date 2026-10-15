@@ -1,0 +1,53 @@
+---
+// Level B in full: the stations as a line with what each hands on and
+// the follow-up return, the pull-request loop in text, and the station table.
+import "../../styles/factory.css";
+import ActorLine from "../ActorLine.astro";
+import Plate from "../Plate.astro";
+import SectionHead from "../SectionHead.astro";
+import ReturnRail from "./ReturnRail.astro";
+import StationBox from "../StationBox.astro";
+import { HANDOFFS } from "../../lib/data/factory.ts";
+import { factory } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+import { countWord } from "../../lib/view.ts";
+const f = factory();
+const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
+const prLoop = await Promise.all(f.prLoop.map(async (s) => ({ n: s.n, html: await inline(s.body) })));
+const lineRows = await Promise.all(f.line.map(async (s) => ({ ...s, whatHtml: await inline(s.what) })));
+---
+
+  <SectionHead id="execution" label="B · Execution: the work-item line" note={`one work item, ${countWord(f.line.length)} stations`}><Plate name="line" width="300px" /></SectionHead>
+  <figure class="level-fig" aria-label={`The ${countWord(f.line.length)} execution stations, who runs each, and what each hands on`}>
+    <ol class="row seven">
+      {f.line.map((s, i) => <StationBox station={s} arrow={i < f.line.length - 1} handoff={HANDOFFS[s.id]?.label} />)}
+    </ol>
+    <ReturnRail>↺ follow-up items enter the line again at station 1 · no skill merges</ReturnRail>
+  </figure>
+  <div class="two">
+    <div>
+      <p class="small-p" set:html={await inline(f.prLoopLead)} />
+      <ol class="numbered">{prLoop.map((s) => <li><span class="num">{s.n}</span><p set:html={s.html} /></li>)}</ol>
+    </div>
+    <div>
+      <p class="small-p" set:html={await inline(f.lineLead)} />
+      <p class="small-p" set:html={await inline(f.lineAfter)} />
+    </div>
+  </div>
+  <div class="line-table">
+    <div class="th" aria-hidden="true"><span>#</span><span>Station</span><span>What happens</span><span>Run by</span></div>
+    {
+      lineRows.map((s) => (
+        <div class="line-row" id={`line-${s.id}`}>
+          <span class="num">{s.n}</span>
+          <span class="job-name">{s.name}</span>
+          <span set:html={s.whatHtml} />
+          <span class="actors">
+            {s.actors.map((a) => (
+              <ActorLine actor={a} />
+            ))}
+          </span>
+        </div>
+      ))
+    }
+  </div>

@@ -1,0 +1,34 @@
+---
+// An arrow between two parts of a figure, drawn so its head lands where the
+// line ends: 20 by 10 units, pointing right, or down when turned.
+interface Props {
+  dir?: "right" | "down";
+  class?: string;
+}
+const { dir = "right", class: cls } = Astro.props;
+---
+
+<svg class:list={["arrow-svg", dir, cls]} viewBox="0 0 20 10" width="20" height="10" aria-hidden="true">
+  <path class="shaft" d="M0.75 5H14" />
+  <path class="head" d="M13 0.8 19.6 5 13 9.2z" />
+</svg>
+
+<style>
+  .arrow-svg {
+    display: block;
+    flex: none;
+    overflow: visible;
+  }
+  .shaft {
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    fill: none;
+  }
+  .head {
+    fill: currentColor;
+  }
+  .down {
+    transform: rotate(90deg);
+  }
+</style>

@@ -4,6 +4,7 @@
 // for marks only (the home page's miniature).
 import type { Station } from "../lib/data/factory.ts";
 import ActorLine from "./ActorLine.astro";
+import Arrow from "./Arrow.astro";
 import StatusMark from "./StatusMark.astro";
 
 interface Props {
@@ -12,13 +13,17 @@ interface Props {
   compact?: boolean;
   arrow?: boolean;
   href?: string;
+  /** What the station hands on, drawn at its foot. */
+  handoff?: string;
 }
-const { station, tag, compact = false, arrow = false, href } = Astro.props;
+const { station, tag, compact = false, arrow = false, href, handoff } = Astro.props;
 const held = station.actors[0]?.kind === "person" && station.id.startsWith("b");
-const kinds = new Set(station.actors.map((a) => (a.kind === "agent" || a.kind === "tool" ? "skill" : a.kind)));
+const kinds = new Set(station.actors.map((a) => a.kind));
 const level = station.id.startsWith("a") ? "Design" : "Execution";
 const aria = `${level} ${station.n}, ${station.name}: ${[
   kinds.has("skill") && "run by a skill",
+  kinds.has("agent") && "with an agent",
+  kinds.has("tool") && "with a tool",
   kinds.has("person") && "run by a person",
   kinds.has("todo") && "part not built yet",
 ]
@@ -33,7 +38,7 @@ const aria = `${level} ${station.n}, ${station.name}: ${[
         <span class="n">{station.n}</span>
         <span class="name">{station.name}</span>
         <span class="marks" aria-hidden="true">
-          {(["skill", "person", "todo"] as const).filter((k) => kinds.has(k)).map((k) => <StatusMark kind={k} size={9} />)}
+          {(["skill", "agent", "tool", "person", "todo"] as const).filter((k) => kinds.has(k)).map((k) => <StatusMark kind={k} size={12} />)}
         </span>
       </a>
     ) : (
@@ -46,10 +51,11 @@ const aria = `${level} ${station.n}, ${station.name}: ${[
             <ActorLine actor={a} />
           ))}
         </span>
+        {handoff && <span class="out"><span class="out-k">hands on</span><span class="out-t">{handoff}</span></span>}
       </div>
     )
   }
-  {arrow && <span class="arrow" aria-hidden="true">→</span>}
+  {arrow && <span class="arrow"><Arrow /></span>}
 </li>
 
 <style>
@@ -118,11 +124,46 @@ const aria = `${level} ${station.n}, ${station.name}: ${[
     margin-top: auto;
     padding-top: 3px;
   }
+  .out {
+    margin-top: auto;
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .out-k {
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .out-t {
+    font-weight: 600;
+  }
+  .out-t::before {
+    content: "→ ";
+    font-family: var(--mono);
+    color: var(--accent);
+  }
   .arrow {
     position: absolute;
-    right: -20px;
-    top: 28px;
-    font-family: var(--mono);
-    font-size: 15px;
+    right: -23px;
+    top: 31px;
+    width: 20px;
+    height: 10px;
+    color: var(--ink);
+  }
+  @media (max-width: 640px) {
+    .station:not(.compact) .arrow {
+      display: block;
+      right: auto;
+      left: 50%;
+      top: auto;
+      bottom: -19px;
+      transform: translateX(-50%) rotate(90deg);
+    }
   }
 </style>

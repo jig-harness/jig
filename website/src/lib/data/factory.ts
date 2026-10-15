@@ -142,6 +142,71 @@ export const DESIGN_NOT_BUILT: { level: Actor[]; everyStage: Actor[] } = {
   ],
 };
 
+/**
+ * The design level's review band, "at every stage": the skills that review
+ * and decide, the person who accepts, and what the band still lacks.
+ */
+export const EVERY_STAGE: Actor[] = [
+  { kind: "skill", name: "review", note: "against the repository's decisions" },
+  { kind: "skill", name: "decide", note: "a dilemma: ruled, or escalated" },
+  { kind: "person", note: "accepts each stage's artifact" },
+  ...DESIGN_NOT_BUILT.everyStage,
+];
+
+/**
+ * What each station hands to the next, by station id, as the figure labels
+ * its arrows; `says` is the phrase in that station's own text in FACTORY.md
+ * the label stands for, which the test checks is still there.
+ */
+export const HANDOFFS: Record<string, { label: string; says: RegExp }> = {
+  a1: { label: "a dated research note", says: /dated research note/ },
+  a2: { label: "the PRD", says: /\*\*PRD\*\*/ },
+  a3: { label: "the architecture, with its ADRs", says: /become\s+ADRs/ },
+  a4: { label: "the accepted prototype", says: /accepted prototype/ },
+  a5: { label: "an epic of planned work items", says: /epic/ },
+  b1: {
+    label: "a branch, a workspace and a plan",
+    says: /a branch, a workspace and a plan/,
+  },
+  b2: {
+    label: "the change, reviewed before its first push",
+    says: /review before the first push/,
+  },
+  b3: { label: "a pull request", says: /A pull request shaped/ },
+  b4: {
+    label: "every finding with one outcome",
+    says: /every finding one recorded outcome/,
+  },
+  b5: { label: "a green head without conflicts", says: /Red CI or a conflict/ },
+  b6: { label: "a merged pull request", says: /A person merges/ },
+  b7: {
+    label: "follow-up items, back to station 1",
+    says: /tracked follow-up items/,
+  },
+};
+
+/**
+ * When each verification module acts, on the time axis the scaffolding
+ * figure draws: guides before and while an agent works, catches before merge
+ * and before deploy. A module may act at more than one point.
+ */
+export const VERIFY_PHASES = [
+  "before the agent acts",
+  "while it works",
+  "before merge",
+  "before deploy",
+] as const;
+export const VERIFY_WHEN: Record<string, { at: number[]; what: string }> = {
+  M0: { at: [0], what: "instructions" },
+  M5: { at: [0, 2], what: "decisions, then checks derived from them" },
+  M6: { at: [1], what: "templates" },
+  M3: { at: [1], what: "the validation plan" },
+  M1: { at: [2], what: "tested gates, CI the authority" },
+  M2: { at: [2], what: "freshness checks" },
+  M7: { at: [2], what: "layered review" },
+  M10: { at: [3], what: "verification before deployment" },
+};
+
 /** One actor a "Run by" cell's match names. */
 function actorFromMatch(m: RegExpMatchArray): Actor {
   if (m[0] === "a person") return { kind: "person" };

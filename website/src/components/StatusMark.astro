@@ -1,25 +1,48 @@
 ---
-// Who runs a station, by shape: a ring for a skill (or a tool), a filled
-// disc for a person, a dashed ring for work not built yet. Shape carries
-// the meaning; the mark draws in the text color.
+// Who runs a station, as one mark: a key cap holding the glyph the actor is
+// written with (`/` a skill, `@` an agent, `>` a tool), a person's
+// silhouette, and a dashed, empty cap for work not built yet. Shape and
+// glyph carry the meaning; the mark draws in the text color.
 interface Props {
-  kind: "skill" | "person" | "todo";
+  kind: "skill" | "agent" | "tool" | "person" | "todo";
   size?: number;
 }
-const { kind, size = 10 } = Astro.props;
+const { kind, size = 14 } = Astro.props;
+const GLYPH: Record<Props["kind"], string> = {
+  skill: "/",
+  agent: "@",
+  tool: ">",
+  person: "",
+  todo: "",
+};
 ---
 
-<span class:list={["mark", kind]} style={`width:${size}px;height:${size}px`} aria-hidden="true"></span>
+{
+  kind === "person" ? (
+    <svg class="mark person" width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+      <circle cx="7" cy="4.1" r="2.9" fill="currentColor" />
+      <path d="M1.4 13.4c.5-3.6 2.7-5.3 5.6-5.3s5.1 1.7 5.6 5.3z" fill="currentColor" />
+    </svg>
+  ) : (
+    <span class:list={["mark", "cap", kind]} style={`width:${size}px;height:${size}px;font-size:${Math.round(size * 0.72)}px`} aria-hidden="true">
+      {GLYPH[kind]}
+    </span>
+  )
+}
 
 <style>
   .mark {
     flex: none;
-    display: inline-block;
-    border-radius: 50%;
-    border: 1.5px solid currentColor;
+    display: inline-grid;
+    place-items: center;
+    vertical-align: -2px;
   }
-  .person {
-    background: currentColor;
+  .cap {
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-weight: 700;
+    line-height: 1;
   }
   .todo {
     border-style: dashed;

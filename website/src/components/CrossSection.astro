@@ -5,6 +5,7 @@
 // is the home page's form; `full` adds the platform's four needs and the
 // caption.
 import { factory } from "../lib/data/index.ts";
+import Arrow from "./Arrow.astro";
 import JobCell from "./factory/JobCell.astro";
 import ModChip from "./ModChip.astro";
 import StationBox from "./StationBox.astro";
@@ -24,13 +25,15 @@ const plain = (md: string) =>
 const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
 ---
 
-<figure class:list={["xs", variant]} aria-labelledby={variant === "full" ? "xs-cap" : undefined} aria-label={variant === "mini" ? "What the factory runs on, at a glance" : undefined}>
+<figure class:list={["xs", variant]} id={variant === "full" ? "figure-1" : undefined} aria-labelledby={variant === "full" ? "xs-cap" : undefined} aria-label={variant === "mini" ? "What the factory runs on, at a glance" : undefined}>
   {
     variant === "full" && (
-      <div class="legend" role="list" aria-label="Station status">
-        <span role="listitem"><StatusMark kind="skill" size={9} />a skill</span>
-        <span role="listitem"><StatusMark kind="person" size={9} />a person</span>
-        <span role="listitem"><StatusMark kind="todo" size={9} />not built yet</span>
+      <div class="legend" role="list" aria-label="Who runs a station">
+        <span role="listitem"><StatusMark kind="skill" size={13} />a skill</span>
+        <span role="listitem"><StatusMark kind="agent" size={13} />an agent</span>
+        <span role="listitem"><StatusMark kind="tool" size={13} />a tool</span>
+        <span role="listitem"><StatusMark kind="person" size={13} />a person</span>
+        <span role="listitem"><StatusMark kind="todo" size={13} />not built yet</span>
       </div>
     )
   }
@@ -41,7 +44,7 @@ const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
       <ol class="row five">
         {f.pipeline.map((s) => <StationBox station={s} compact />)}
       </ol>
-      <div class="handoff"><span class="tick" aria-hidden="true"></span><span>an epic of planned work items, one at a time</span></div>
+      <div class="handoff"><Arrow dir="down" class="handoff-arrow" /><span>an epic of planned work items, one at a time</span></div>
       <span class="level-name">B · Execution</span>
       <ol class="row seven">
         {f.line.map((s) => <StationBox station={s} compact />)}
@@ -62,7 +65,7 @@ const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
       }
     </div>
     <div class="many">
-      <a class="label" href="/factory/#scaffolding-many">Many agents at once</a>
+      <a class="label" href="/factory/scaffolding/#scaffolding-many">Many agents at once</a>
       <span class="chips">{f.many.modules.map((id) => <ModChip id={id} size="small" />)}</span>
       <span class="muted">workspaces that do not collide · measurement of the process</span>
     </div>
@@ -94,14 +97,16 @@ const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
   }
   {
     variant === "mini" ? (
-      <div class="legend after" role="list" aria-label="Station status">
-        <span role="listitem"><StatusMark kind="skill" size={9} />a skill</span>
-        <span role="listitem"><StatusMark kind="person" size={9} />a person</span>
-        <span role="listitem"><StatusMark kind="todo" size={9} />not built yet</span>
+      <div class="legend after" role="list" aria-label="Who runs a station">
+        <span role="listitem"><StatusMark kind="skill" size={13} />a skill</span>
+        <span role="listitem"><StatusMark kind="agent" size={13} />an agent</span>
+        <span role="listitem"><StatusMark kind="tool" size={13} />a tool</span>
+        <span role="listitem"><StatusMark kind="person" size={13} />a person</span>
+        <span role="listitem"><StatusMark kind="todo" size={13} />not built yet</span>
       </div>
     ) : (
       <figcaption id="xs-cap">
-        Figure 1: what a factory of agents runs on. The plugin's skills run the stations at the top (<a href="#levels">figure 2</a> has each one); they stand on the scaffolding, whose three jobs Jig's modules build. Jig ends at the solid line: below it, each module states what the repository needs from your platform, so any platform can supply it.
+        Figure 1: what a factory of agents runs on. The plugin's skills run the stations at the top (<a href="#levels">figure 2</a> has each one); they stand on the scaffolding, whose three jobs Jig's modules build. Jig ends at the solid line: below it, each module states what the repository needs from your platform, so any platform can supply it. <a href="/factory/scaffolding/">The scaffolding in full</a>.
       </figcaption>
     )
   }
@@ -174,12 +179,10 @@ const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
     font-size: 12.5px;
     color: var(--muted);
   }
-  .tick {
-    width: 1.5px;
-    height: 14px;
-    background: var(--line-strong);
-    margin-left: 16px;
-    flex: none;
+  .handoff :global(.handoff-arrow) {
+    margin: 0 8px 0 12px;
+    width: 14px;
+    height: 7px;
   }
   .loop {
     margin: 8px 0 0;
@@ -190,6 +193,20 @@ const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
     border-radius: var(--r-card);
     background: var(--sunk);
     padding: 12px;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+  .scaffold::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--ink);
+    -webkit-mask: url(/plates/lattice.webp) 0 0 / 480px repeat;
+    mask: url(/plates/lattice.webp) 0 0 / 480px repeat;
+    opacity: 0.1;
+    pointer-events: none;
   }
   .scaffold-head {
     display: flex;

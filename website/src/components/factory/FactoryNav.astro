@@ -1,0 +1,19 @@
+---
+// The factory's pages, as a switch between them: the overview, then one
+// page per part of FACTORY.md.
+import PageSwitch from "../PageSwitch.astro";
+
+interface Props {
+  current: "overview" | "scaffolding" | "design" | "execution" | "learning";
+}
+const { current } = Astro.props;
+const FACTORY_PAGES = [
+  { key: "overview", label: "Overview", href: "/factory/" },
+  { key: "scaffolding", label: "Scaffolding", href: "/factory/scaffolding/" },
+  { key: "design", label: "A · Design and planning", href: "/factory/design/" },
+  { key: "execution", label: "B · Execution", href: "/factory/execution/" },
+  { key: "learning", label: "Learning loop", href: "/factory/learning-loop/" },
+] as const;
+---
+
+<PageSwitch label="The factory's pages" pages={FACTORY_PAGES} current={current} />

@@ -1,5 +1,6 @@
 ---
-// A numbered part of a long page: "2 · The practice", with a short note.
+// A numbered part of a long page: "2 · The practice", with a short note. A
+// plate passed as the default slot sits at the row's end.
 interface Props {
   id?: string;
   label: string;
@@ -10,6 +11,7 @@ const { id, label, note } = Astro.props;
 
 <div class="section-head" id={id}>
   <span class="label">{label}</span>{note && <span class="note">{note}</span>}
+  {Astro.slots.has("default") && <span class="plate-slot"><slot /></span>}
 </div>
 
 <style>
@@ -25,5 +27,16 @@ const { id, label, note } = Astro.props;
   .note {
     font-size: 13.5px;
     color: var(--muted);
+  }
+  .plate-slot {
+    margin-left: auto;
+    align-self: center;
+    display: flex;
+    justify-content: flex-end;
+  }
+  @media (max-width: 700px) {
+    .plate-slot {
+      display: none;
+    }
   }
 </style>

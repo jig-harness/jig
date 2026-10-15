@@ -7,7 +7,10 @@ import { parseCriteria } from "./criteria.ts";
 import { parseFlywheel } from "./flywheel.ts";
 import {
   DESIGN_NOT_BUILT,
+  HANDOFFS,
   NOT_BUILT,
+  VERIFY_PHASES,
+  VERIFY_WHEN,
   jobsByModule,
   parseFactory,
 } from "./factory.ts";
@@ -295,6 +298,43 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
       expect(text, item).toMatch(
         item === "Later" ? /ROADMAP\.md, Later/ : new RegExp(`item ${item}\\b`),
       );
+  });
+
+  test("every station has a handoff, and its own text still says what it stands for", () => {
+    const stations = [...f.pipeline, ...f.line];
+    expect(Object.keys(HANDOFFS).sort()).toEqual(
+      stations.map((s) => s.id).sort(),
+    );
+    for (const s of stations) {
+      const h = HANDOFFS[s.id];
+      expect(s.what, `${s.id}: ${h?.label}`).toMatch(h?.says ?? /^$/);
+    }
+  });
+
+  test("the verification axis places exactly the verification job's modules", () => {
+    const job = f.jobs.find((j) => j.id === "verification");
+    expect(job).toBeDefined();
+    const guides = new Set(job?.modules);
+    const catches = new Set(job?.catches);
+    expect(Object.keys(VERIFY_WHEN).sort()).toEqual(
+      [...new Set([...guides, ...catches])].sort(),
+    );
+    const placed = Object.entries(VERIFY_WHEN);
+    for (const [id, w] of placed)
+      for (const at of w.at)
+        expect(
+          Number.isInteger(at) && at >= 0 && at < VERIFY_PHASES.length,
+          `${id} at ${at}`,
+        ).toBe(true);
+    // The first two phases guide, the last two catch: each set the axis
+    // draws is exactly the set the job names.
+    const drawn = (catching: boolean) =>
+      placed
+        .filter(([, w]) => w.at.some((at) => at >= 2 === catching))
+        .map(([id]) => id)
+        .sort();
+    expect(drawn(false)).toEqual([...guides].sort());
+    expect(drawn(true)).toEqual([...catches].sort());
   });
 
   test("every roadmap item marked not built is still open", () => {

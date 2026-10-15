@@ -1,7 +1,9 @@
 ---
 // What Jig provides to build the scaffolding, and how it fits an organization: the configuration layers and the tracker interface.
 import "../../styles/factory.css";
+import ActorChip from "../ActorChip.astro";
 import ActorLine from "../ActorLine.astro";
+import Arrow from "../Arrow.astro";
 import SectionHead from "../SectionHead.astro";
 import { factory, layers, trackerInterface } from "../../lib/data/index.ts";
 import { md, mdInline } from "../../lib/markdown.ts";
@@ -42,14 +44,14 @@ const layerRows = await Promise.all(
         <div class="trk">
           <div class="trk-col">
             <span class="label">The skills</span>
-            {["do-item", "drive-pr"].map((k) => <a class="trk-skill" href={`/skills/${k}/`}>{k}</a>)}
+            {["do-item", "drive-pr"].map((k) => <span class="trk-skill"><ActorChip actor={{ kind: "skill", name: k }} /></span>)}
           </div>
-          <span class="trk-arrow" aria-hidden="true">→</span>
+          <span class="trk-arrow"><Arrow /></span>
           <div class="trk-iface">
             <span class="label accent">Tracker interface</span>
             <ul>{tracker.operations.map((o) => <li>{o}</li>)}</ul>
           </div>
-          <span class="trk-arrow" aria-hidden="true">→</span>
+          <span class="trk-arrow"><Arrow /></span>
           <div class="trk-col">
             <span class="label">Adapters</span>
             <div class="adapter">

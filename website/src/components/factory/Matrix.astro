@@ -1,0 +1,92 @@
+---
+// Who works where, as one grid: a row per actor, a column per station, a
+// mark where the actor runs the station. Derived from the stations' actors,
+// so it cannot disagree with figure 2.
+import "../../styles/factory.css";
+import { type Actor, EVERY_STAGE } from "../../lib/data/factory.ts";
+import { factory } from "../../lib/data/index.ts";
+import ActorChip from "../ActorChip.astro";
+import StatusMark from "../StatusMark.astro";
+
+const f = factory();
+interface Column {
+  id: string;
+  n: string;
+  name: string;
+  actors: Actor[];
+  level: "A" | "B";
+}
+const columns: Column[] = [
+  ...f.pipeline.map((s): Column => ({ id: s.id, n: String(s.n), name: s.name, actors: s.actors, level: "A" })),
+  { id: "band", n: "·", name: "every stage", actors: EVERY_STAGE, level: "A" },
+  ...f.line.map((s): Column => ({ id: s.id, n: String(s.n), name: s.name, actors: s.actors, level: "B" })),
+];
+const key = (a: Actor) => (a.kind === "person" || a.kind === "todo" ? a.kind : `${a.kind}:${a.name}`);
+const RANK: Record<Actor["kind"], number> = { skill: 0, agent: 1, tool: 2, person: 3, todo: 4 };
+const rows = new Map<string, Actor>();
+for (const c of columns) for (const a of c.actors) if (!rows.has(key(a))) rows.set(key(a), a);
+const ordered = [...rows.entries()].sort(([, a], [, b]) => RANK[a.kind] - RANK[b.kind]);
+const cell = (c: Column, k: string) => c.actors.find((a) => key(a) === k);
+const columnHref = (c: Column) => (c.id === "band" ? "#station-band" : `#station-${c.id}`);
+type Todo = Extract<Actor, { kind: "todo" }>;
+const todoHref = (t: Todo) => (t.item === "Later" ? "/whats-new/#rm-later" : `/whats-new/#rm-item-${t.item}`);
+const todoMark = (t: Todo) => (t.item === "Later" ? "L" : t.item);
+/** What a screen reader hears for a marked cell: the row's actor at the column's station. */
+function cellLabel(row: Actor, at: Actor, c: Column): string {
+  if (row.kind === "person") return `a person at ${c.name}`;
+  if (at.kind === "todo") return `not built: ${at.text} at ${c.name}`;
+  return `${"name" in row ? row.name : ""} at ${c.name}`;
+}
+---
+
+<figure class="matrix-fig" aria-labelledby="mx-cap">
+  <div class="matrix-wrap">
+    <table class="matrix">
+      <thead>
+        <tr class="levels">
+          <td></td>
+          <th scope="colgroup" colspan={columns.filter((c) => c.level === "A").length}><a href="#design-level">A · Design and planning</a></th>
+          <th scope="colgroup" colspan={columns.filter((c) => c.level === "B").length}><a href="#execution-level">B · Execution</a></th>
+        </tr>
+        <tr>
+          <th scope="col" class="who">Who</th>
+          {
+            columns.map((c) => (
+              <th scope="col" class:list={["st", c.level, { band: c.id === "band" }]}>
+                <a href={columnHref(c)}>
+                  <span class="st-n">{c.n}</span>
+                  <span class="st-name">{c.name}</span>
+                </a>
+              </th>
+            ))
+          }
+        </tr>
+      </thead>
+      <tbody>
+        {
+          ordered.map(([k, a]) => (
+            <tr class={a.kind}>
+              <th scope="row">{a.kind === "todo" ? <span class="todo-head"><StatusMark kind="todo" size={13} />not built yet</span> : <ActorChip actor={{ ...a, note: undefined } as Actor} />}</th>
+              {columns.map((c) => {
+                const at = cell(c, k);
+                return (
+                  <td class:list={[c.level, { on: !!at, band: c.id === "band" }]}>
+                    {at?.kind === "todo" ? (
+                      <a class="item" href={todoHref(at)} title={at.text}>{todoMark(at)}</a>
+                    ) : at ? (
+                      <StatusMark kind={at.kind} size={13} />
+                    ) : null}
+                    {at && <span class="vh">{cellLabel(a, at, c)}</span>}
+                  </td>
+                );
+              })}
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+  <figcaption id="mx-cap">
+    Figure 3: who works where. A row per skill, agent, tool and person, a column per station; a dashed cell holds the roadmap item of work not built yet. Only a person works one column, Merge; delegating that merge is a roadmap item.
+  </figcaption>
+</figure>

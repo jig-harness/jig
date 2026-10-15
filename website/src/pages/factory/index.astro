@@ -1,0 +1,52 @@
+---
+import CrossSection from "../../components/CrossSection.astro";
+import Boundary from "../../components/factory/Boundary.astro";
+import FactoryNav from "../../components/factory/FactoryNav.astro";
+import Stations from "../../components/factory/Stations.astro";
+import Plate from "../../components/Plate.astro";
+import Base from "../../layouts/Base.astro";
+import { factory } from "../../lib/data/index.ts";
+import { movedFactoryAnchors } from "../../lib/factory-anchors.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+import "../../styles/factory.css";
+
+const f = factory();
+const moved = movedFactoryAnchors(f.jobs.map((j) => j.id));
+const introHtml = await md(f.intro.slice(0, -1).join("\n\n"), "FACTORY.md");
+const mapHtml = await mdInline(f.intro[f.intro.length - 1] ?? "", "FACTORY.md");
+---
+
+<Base title="Jig as a software factory" description="A factory of agents runs on scaffolding: what Jig provides to build it, and the stations that stand on it.">
+  <section class="page wrap">
+    <div class="intro-row">
+      <div class="intro">
+        <span class="eyebrow">Jig as a software factory · FACTORY.md</span>
+        <h1 class="display">A factory of agents runs on scaffolding. The stations stand on it.</h1>
+        <div class="prose" set:html={introHtml} />
+        <p class="muted small" set:html={mapHtml} />
+      </div>
+      <span class="intro-plate"><Plate name="hall" /></span>
+    </div>
+    <FactoryNav current="overview" />
+    <CrossSection variant="full" />
+    <Stations />
+    <Boundary />
+  </section>
+  <script is:inline define:vars={{ moved }}>
+    // A link into a section that has a page of its own now (bookmarked, or
+    // shared from elsewhere) is forwarded to that page, anchor and all: on
+    // load, and when the fragment changes without one.
+    const forward = () => {
+      let id;
+      try {
+        id = decodeURIComponent(location.hash.slice(1));
+      } catch {
+        return;
+      }
+      if (!Object.hasOwn(moved, id)) return;
+      location.replace(`/factory/${moved[id]}/#${encodeURIComponent(id)}`);
+    };
+    forward();
+    window.addEventListener("hashchange", forward);
+  </script>
+</Base>

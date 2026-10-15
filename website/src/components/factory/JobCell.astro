@@ -2,6 +2,7 @@
 // One scaffolding job in the cross-section: its name, what it means, and the
 // modules that build it; verification splits into guides and catches.
 import type { Job } from "../../lib/data/factory.ts";
+import Arrow from "../Arrow.astro";
 import ModChip from "../ModChip.astro";
 
 interface Props {
@@ -12,7 +13,7 @@ const { job, short } = Astro.props;
 ---
 
 <div class:list={["job", { ver: job.id === "verification" }]}>
-  <a class="job-name" href={`/factory/#job-${job.id}`}>
+  <a class="job-name" href={`/factory/scaffolding/#job-${job.id}`}>
     {job.name}
   </a>
   <span class="job-short">{short}</span>
@@ -26,7 +27,7 @@ const { job, short } = Astro.props;
           ))}
         </span>
       </span>
-      <span class="side-arrow" aria-hidden="true">→</span>
+      <span class="side-arrow"><Arrow /></span>
       <span class="side">
         <span class="side-name">Catches · what slips through</span>
         <span class="chips">
@@ -100,9 +101,12 @@ const { job, short } = Astro.props;
     font-weight: 600;
   }
   .side-arrow {
-    font-family: var(--mono);
-    font-size: 14px;
     align-self: center;
+    width: 16px;
+  }
+  .side-arrow :global(.arrow-svg) {
+    width: 16px;
+    height: 8px;
   }
   @media (max-width: 900px) {
     .split {

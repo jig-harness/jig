@@ -1,0 +1,45 @@
+---
+// Level A in full: the stages as a row of stations with what each
+// hands on, the review band at every stage, the stages in text, and the
+// skills that run them.
+import "../../styles/factory.css";
+import ActorChip from "../ActorChip.astro";
+import DesignRow from "./DesignRow.astro";
+import Plate from "../Plate.astro";
+import SectionHead from "../SectionHead.astro";
+import { factory } from "../../lib/data/index.ts";
+import { mdInline } from "../../lib/markdown.ts";
+import { countWord } from "../../lib/view.ts";
+const f = factory();
+const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
+const stagesHtml = await Promise.all(f.pipeline.map(async (s) => ({ n: s.n, html: await inline(s.what) })));
+const designSkills = await Promise.all(
+  f.designSkills.map(async (d) => ({ name: d.name, html: await inline(d.station) })),
+);
+const designPerson = await inline(f.designPerson);
+---
+
+  <SectionHead id="design" label="A · Design and planning: the feature pipeline" note={`${countWord(f.pipeline.length)} stages, each reviewed before the next uses it`}><Plate name="drafting" width="150px" /></SectionHead>
+  <figure class="level-fig" aria-label={`The ${countWord(f.pipeline.length)} design stages, who runs each, and what each hands on`}>
+    <DesignRow />
+  </figure>
+  <div class="two">
+    <div>
+      <ol class="numbered">{stagesHtml.map((s) => <li><span class="num">{s.n}</span><p set:html={s.html} /></li>)}</ol>
+      <p class="small-p" set:html={await inline(f.everyStage)} />
+    </div>
+    <div>
+      <p class="small-p" set:html={await inline(f.designSkillsLead)} />
+      <ul class="skill-list">
+        {
+          designSkills.map((d) => (
+            <li>
+              <span class="skill-cell"><ActorChip actor={{ kind: "skill", name: d.name }} /></span>
+              <span set:html={d.html} />
+            </li>
+          ))
+        }
+      </ul>
+      <p class="person-line"><ActorChip actor={{ kind: "person" }} /><span set:html={designPerson} /></p>
+    </div>
+  </div>

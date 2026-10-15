@@ -1,10 +1,13 @@
 ---
-// The scaffolding's three jobs, the modules that build each, and running many agents at once.
+// The scaffolding's jobs, the modules that build each, and running many agents at once.
 import "../../styles/factory.css";
 import ModChip from "../ModChip.astro";
+import Plate from "../Plate.astro";
 import SectionHead from "../SectionHead.astro";
+import { VERIFY_PHASES, VERIFY_WHEN } from "../../lib/data/factory.ts";
 import { factory } from "../../lib/data/index.ts";
 import { mdInline } from "../../lib/markdown.ts";
+import { countWord } from "../../lib/view.ts";
 const f = factory();
 const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
 const jobs = await Promise.all(
@@ -22,16 +25,24 @@ const jobs = await Promise.all(
   }),
 );
 const manyHtml = await inline(f.many.text);
+const phases = VERIFY_PHASES.map((name, i) => ({
+  name,
+  side: i < 2 ? "guides" : "catches",
+  modules: Object.entries(VERIFY_WHEN)
+    .filter(([, w]) => w.at.includes(i))
+    .map(([id, w]) => ({ id, what: w.what })),
+}));
+const JOB_PLATE = { context: "map", verification: "gauge", knowledge: "catalog" } as const;
 ---
 
-  <SectionHead id="scaffolding" label="A factory of agents runs on scaffolding" note="three jobs, and the modules that build each" />
+  <SectionHead id="scaffolding" label="A factory of agents runs on scaffolding" note={`${countWord(f.jobs.length)} jobs, and the modules that build each`} />
   <p class="lead" set:html={await inline(f.scaffoldLead)} />
   <div class="jobs-table">
     <div class="th" aria-hidden="true"><span>Job</span><span>What it means</span><span>Jig's modules</span><span>Without it</span></div>
     {
       jobs.map((j) => (
         <div class="job-row" id={`job-${j.id}`}>
-          <span class="job-name">{j.name}</span>
+          <span class="job-name">{j.name}<Plate name={JOB_PLATE[j.id]} class="job-plate" width="96px" tone={0.75} /></span>
           <span set:html={j.meansHtml} />
           <span class="job-mods">
             {j.id === "verification" ? (
@@ -54,6 +65,33 @@ const manyHtml = await inline(f.many.text);
       ))
     }
   </div>
+  <figure class="axis" aria-labelledby="axis-cap">
+    <div class="axis-sides" aria-hidden="true">
+      <span class="axis-side guides">Guides · steer the agent</span>
+      <span class="axis-side catches">Catches · stop what slipped through</span>
+    </div>
+    <ol class="axis-row">
+      {
+        phases.map((p, i) => (
+          <li class:list={["phase", p.side]}>
+            <span class="phase-n">{i + 1}</span>
+            <span class="phase-name">{p.name}</span>
+            <ul class="phase-mods">
+              {p.modules.map((m) => (
+                <li>
+                  <ModChip id={m.id} size="small" />
+                  <span>{m.what}</span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))
+      }
+    </ol>
+    <figcaption id="axis-cap">
+      When each verification module acts, along one agent session and the change it makes: guides before and while the agent works, catches before the change merges and before it deploys. A module can act at more than one point.
+    </figcaption>
+  </figure>
   <div class="many" id="scaffolding-many">
     <span class="chips">{f.many.modules.map((id) => <ModChip id={id} />)}</span>
     <p set:html={manyHtml} />

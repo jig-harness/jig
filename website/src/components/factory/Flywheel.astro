@@ -1,7 +1,9 @@
 ---
 // The miss → lens flywheel from M8, step by step, and its two companion cycles.
 import "../../styles/factory.css";
+import Arrow from "../Arrow.astro";
 import SectionHead from "../SectionHead.astro";
+import ReturnRail from "./ReturnRail.astro";
 import { flywheel } from "../../lib/data/index.ts";
 import { md, mdInline } from "../../lib/markdown.ts";
 import { REPO_URL } from "../../lib/routes.ts";
@@ -31,13 +33,12 @@ const flySteps = await Promise.all(fw.steps.map(async (s) => ({ n: s.n, html: aw
               <span class="fly-lead">{s.lead}</span>
               {s.note && <span class="fly-note">{s.note}</span>}
             </div>
-            {i < flyStations.length - 1 && <span class="arrow" aria-hidden="true">→</span>}
+            {i < flyStations.length - 1 && <span class="arrow"><Arrow /></span>}
           </li>
         ))
       }
     </ol>
-    <div class="return fly-return" aria-hidden="true"><span>▲</span></div>
-    <p class="return-text">↺ The next miss runs the cycle again. The lens list only grows, so today's fix never deletes yesterday's coverage.</p>
+    <ReturnRail>↺ The next miss runs the cycle again. The lens list only grows, so today's fix never deletes yesterday's coverage.</ReturnRail>
     <figcaption>
       Figure: the miss → lens flywheel. The filled station is the oracle, outside the automated system; step 5 is where a fixture becomes blocking, and only after it is shown to catch the miss.
     </figcaption>

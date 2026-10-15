@@ -1,0 +1,18 @@
+---
+// Level A's stations as a row: the work not built yet, each stage with what
+// it hands on, and the review band at every stage.
+import ActorLine from "../ActorLine.astro";
+import StationBox from "../StationBox.astro";
+import { DESIGN_NOT_BUILT, EVERY_STAGE, HANDOFFS } from "../../lib/data/factory.ts";
+import { factory } from "../../lib/data/index.ts";
+const f = factory();
+---
+
+<div class="level-todo">{DESIGN_NOT_BUILT.level.map((a) => <ActorLine actor={a} />)}</div>
+<ol class="row five">
+  {f.pipeline.map((s, i) => <StationBox station={s} tag={s.n === 4 ? "UI work only" : undefined} arrow={i < f.pipeline.length - 1} handoff={HANDOFFS[s.id]?.label} />)}
+</ol>
+<div class="stage-band" id="station-band">
+  <span class="stage-head"><span class="label">At every stage</span><span>adversarial review → iterate until cleared → de-scar</span></span>
+  {EVERY_STAGE.map((a) => <ActorLine actor={a} />)}
+</div>

@@ -124,8 +124,14 @@ describe("resolveHref", () => {
       ),
     ).toBe("/whats-new/#rm-item-10");
     expect(resolveHref("#the-learning-loop-wraps-both", "FACTORY.md")).toBe(
-      "/factory/#learning",
+      "/factory/learning-loop/#learning",
     );
+    expect(resolveHref("#what-stays-with-a-person", "FACTORY.md")).toBe(
+      "/factory/#person",
+    );
+    expect(
+      resolveHref("FACTORY.md#execution-the-work-item-line", "README.md"),
+    ).toBe("/factory/execution/#execution");
   });
 });
 
