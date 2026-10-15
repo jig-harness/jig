@@ -610,6 +610,13 @@ make, use the entry's term instead.
   an acceptance into a decline, never the reverse, and the bar lives only in the
   repository's `.config/review-triage.yaml`
   ([triage rubric](plugin/skills/resolve-review-comments/references/triage-rubric.md#the-decline-ladder)).
+- **Human-decided span** — a part of a pull request that records a person's
+  decision (a "Decided by …" line, a decisions table, an operations follow-ups
+  block). A review fix may correct the facts or wording around it, but may not
+  change the decided value or add or change a **normative rule** inside it (a
+  "must", a limit, an exception, a condition) without that person's approval;
+  such a finding is escalated or parked
+  ([triage rubric](plugin/skills/resolve-review-comments/references/triage-rubric.md#guardrails)).
 - **Terminal state** — one of the named end states a *PR drive loop* stops
   in (converged, pull request merged or closed, round limit reached, waiting
   on a human, …), each reported with a documented exit code, so a script or a

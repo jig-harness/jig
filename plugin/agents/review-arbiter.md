@@ -132,7 +132,10 @@ operations follow-ups block, a decisions table) — the decided value itself, no
 supporting facts or rationale. Rule `escalate` instead, and say so in the
 rationale: only a human may approve the new value, and your ruling — however
 clear-cut the fix looks — is not that approval
-(`triage-rubric.md` § Guardrails).
+(`triage-rubric.md` § Guardrails). The same holds for a fix that adds or
+changes a normative rule inside such a span, even when the decided value
+stays as recorded: rule `escalate`, unless the wording leaves the rule
+unchanged.
 
 ## Output format
 

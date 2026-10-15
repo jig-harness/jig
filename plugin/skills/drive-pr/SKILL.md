@@ -556,6 +556,15 @@ could forge or forget.
    Do not raise `BASH_DEFAULT_TIMEOUT_MS` instead: it also becomes every
    foreground command's default.
 
+   A drive likely to run past the ceiling (8 hours here, or 2 hours on a
+   machine without `BASH_MAX_TIMEOUT_MS`) must start outside the harness
+   instead: a terminal or terminal-multiplexer pane of its own, or a launch
+   in a new session (a detached `spawn`, or `setsid` where it exists) with its
+   output redirected to a file. The harness stops the whole process group of
+   a background command at its ceiling whatever the driver is doing, so the
+   driver cannot outlive it; `nohup` alone is not enough, because it only
+   ignores hangups and leaves the command in that process group.
+
    `--bots-only` is always on: an unattended sweep never acts on human threads
    (§ 2). Forward the invocation's own drive flags — `--keep-draft`,
    `--max-rounds N`, `--handoff-at …` — to `drive.ts` **before** the `--`, and
@@ -1120,6 +1129,16 @@ bun ${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts \
   --category <token|unknown> --self-inflicted <true|false|unknown> [--pr <PR>] [--obligatory]
 ```
 
+`--tier` is the finding's rank in the rubric's
+[Priorities](../resolve-review-comments/references/triage-rubric.md#priorities):
+1 CI pipelines and quality gates, 2 production code, 3 docs, 4 tests (a
+vacuous test, one that cannot fail, ranks 1). Take it from the kind of file
+the finding sits on, not from the PR's overall kind: a docs PR can draw a
+finding on a gate script (tier 1), and a code PR a finding on its docs
+(tier 3). The ladder declines the higher-numbered, lower-priority tiers
+(docs, tests) first, so a tier taken from the PR instead of the file declines
+a gate defect as docs polish.
+
 `--severity` is step 2's `severity` label for this **thread** — `self-
 inflicted.ts` computes it by running `severityOf` (bold `**token**`, or a
 `[P1]`-style badge for a reviewer that emits one instead) against the
@@ -1155,6 +1174,13 @@ ${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts <threadId> [PR] <<'EOF'
 **accepted** — fixed the missing guard; landing in this round's still-unpushed commit.
 EOF
 ```
+
+The reply templates in this section close their heredocs on different
+delimiters (`EOF`, `REPLY_EOF`, `REASON_EOF`) on purpose. When several of
+these calls share one shell command, close each heredoc on the delimiter its
+own opener names. A terminator that does not match leaves the heredoc open, so
+the next command in the line becomes part of the body, and the body is posted
+to the PR verbatim.
 
 `triage-thread.ts` posts the reply via `reply-to-thread.ts` and records
 its disposition — `drive-state.ts hold` for accepted/moot, `resolve-thread.ts` for
@@ -1648,7 +1674,7 @@ loop cannot see, such as converging and wanting the local gates and the
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Resolve `round-plan.ts` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `base-sync.ts`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |
-| `2` / `1` | Usage error (including a checkout that is not the PR's own head branch) / a step failed | Fix the invocation, or read the step's diagnostic |
+| `2` / `1` | Usage error, including a worktree whose branch is not the PR's head branch / a step failed | Fix the invocation, or read the step's diagnostic. For the branch mismatch, stop and report it for a human: never rename the workspace's branch, or check out or detach another worktree's branch, to make the check pass |
 
 You do not have to remember to ask: § 1's gate already measured the drift and
 printed it (`base.drift` in its JSON, a `BASE:` line on stderr) whenever there
@@ -1699,6 +1725,13 @@ and it waits until the machine's load allows the heavy checks. If one of the
 plan's own local checks later refuses because the machine is loaded, run that
 same guard command again to wait — never a hand-rolled polling loop or a force
 override.
+
+Run each emitted check as its own top-level command and read its exit status
+before starting the next. Never paste a plan line that joins checks with `&&`
+into a script that runs under `set -e`: errexit exempts every command in a
+chain joined with `&&` except the last (bash and zsh alike), so a failure in
+the middle of the chain skips the checks after it, and the script can exit
+`0` if a later command succeeds.
 
 Its `Mandatory review skills:` line (the plan's `reviewSkills`) is part of the
 plan, not a footnote: before running the local checks and committing, invoke
@@ -1841,7 +1874,11 @@ Two hard edges keep this an instrument rather than a licence to under-validate:
 
 **exact** — Commit the validated tree and use the single scripted finish; retain the prescribed ordering and recovery guards.
 
-Commit the validated tree. Then:
+Commit the validated tree. If the held batch (`drive-state.ts held [PR]`)
+carries an item this pass did not hold — a thread's posted reply or a
+finding's stored reason — re-read it against its own finding first, as
+"Re-running after an interruption" below describes: the finish drains every
+hold and posts each finding's stored reason as it stands. Then:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
@@ -1974,7 +2011,23 @@ wait counts nothing, a dispatched thread is already gone from `held`, and a
 finding claimed-but-not-released refuses at `claim-held` — which is precisely
 what stops a second, non-idempotent answer comment. If the state lists a key
 you do not recognise, it is yours: you replied to it in an earlier, interrupted
-pass. Do not re-reply — reconcile and re-run. The same holds for code: a
+pass. Do not re-reply — reconcile and re-run. For a `thread` hold,
+reconciliation trusts whichever qualifying reply is already posted and never
+checks that it answers its own thread, so before treating an inherited held
+reply as settled, re-read the thread's finding against the reply body. On a mismatch, take § 3's
+deliberate-supersession path rather than draining the hold: post a fresh
+reply with `reply-to-thread.ts`, then invoke `triage-thread.ts` on the thread,
+which finds that reply as the qualifying one, dispatches its outcome and
+replaces the stale hold; confirm a reconciled `accepted`/`moot` hold as § 3
+describes. `--cleanup-only` is only for a human thread deliberately left open.
+A `finding` hold has no reply on GitHub yet: its reason lives only in the
+state (`drive-state.ts held`), and `finish-round.ts` posts it through the
+claim → `answer-summary-finding.ts` → release path (§ Guardrails). Re-read
+that reason against the finding before re-running. On a mismatch, drop the
+stale hold with `drive-state.ts release-held [PR] --key K --if-present` — a
+park alone leaves it in `held`, and the drain posts it anyway — then re-hold
+the finding with the correct reason (§ 3), or park it (§ 4) when the right
+answer needs a human. The same holds for code: a
 resumed pass rechecks `git log` and `git status` against its last-known HEAD
 before it starts fresh edits, not only before committing, since the
 interrupted pass (or a human) may already have committed the same fix.

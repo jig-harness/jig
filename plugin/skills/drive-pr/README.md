@@ -227,7 +227,12 @@ Eight hours does not cover every drive the driver itself allows. A quota
 sleep can last up to `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (6 hours by default)
 between passes, and a long `--max-rounds` adds 90 minutes a round, so such a
 drive is stopped at 8 hours all the same. Re-arm it after the checks above;
-it resumes where it stopped.
+it resumes where it stopped. A drive likely to run past the ceiling is better
+started outside the harness (a terminal or terminal-multiplexer pane of its
+own, or a launch in a new session, such as a detached `spawn` or `setsid`,
+with its output redirected): the harness stops the whole process group of a
+background command at its ceiling whatever the driver is doing, and `nohup`
+alone leaves the command in that group.
 
 Both variables are read when a session starts, so a drive already running
 keeps its old limit, and a harness other than Claude Code has its own. Claude

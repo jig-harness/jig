@@ -95,6 +95,11 @@ own (the plugin ships the `review-arbiter` agent) in their own instructions. Lat
 `.config/review-triage.yaml` (`JIG_REVIEW_TRIAGE_CONFIG` points at
 another file); absent or unreadable state restores the ordinary acceptance
 rubric and reports the anomaly rather than declining uncertain work.
+The bands decline by priority tier, and a finding's tier comes from the kind of
+file it sits on, not the pull request's kind: a finding on a gate script in a
+docs pull request is tier 1 (CI pipelines and quality gates), and a test that
+cannot fail ranks with the gates rather than with tests. Docs and tests are
+declined first.
 Do not infer another repository's policy from the examples in this skill.
 
 ## Usage and optional integrations

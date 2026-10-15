@@ -270,6 +270,13 @@ bun "${CLAUDE_SKILL_DIR}/scripts/triage-ladder.ts" \
 ```
 
 — run from the repository root with Bun available.
+`--tier` is the finding's rank in the rubric's
+[Priorities](references/triage-rubric.md#priorities): 1 CI pipelines and
+quality gates, 2 production code, 3 docs, 4 tests (a vacuous test ranks 1).
+Take it from the kind of file the finding sits on, not from the PR's overall
+kind: a docs PR can draw a finding on a gate script, which is tier 1, and
+the ladder declines the higher-numbered, lower-priority tiers (docs, tests)
+first.
 It prints the stance, the ready-to-post reply, and whether the band arms the
 late-round minimal-diff rule.
 `--category` is step 2's `category` label for this thread — pass it through
@@ -445,6 +452,11 @@ and batch genuine policy or scope questions for the human at round end.
 >   `*delivered)` pattern accepts `who-knows-delivered`, while a test using
 >   only `who knows` misses that near-match; a missing-path fixture does not
 >   prove handling of an existing unreadable file.
+> - **Check the reply's behaviour claims against the staged diff.** Each
+>   behaviour the reply asserts ("cleared", "expires", "retries") must be in
+>   the change being pushed, not in the code as it stood before. Test a
+>   temporal claim *after* the boundary it names: an assertion read right after
+>   the call cannot fail on a timer left armed.
 > - Write replacement factual claims ("X is stored in Y", "Z rejects this")
 >   from the source you just read, never inferred from surrounding patterns —
 >   and when claiming something is enforced, name the enforcing mechanism.

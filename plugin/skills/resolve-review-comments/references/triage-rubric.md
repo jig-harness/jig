@@ -560,9 +560,10 @@ Arbiter ground rules (enforced by its agent definition):
   question** to the human at round end, never one interruption per thread.
 - It decides disposition only; it never edits code.
 - It never rules `fix-now` for a finding that would change a value the PR
-  records as a human decision — that always resolves to `escalate`, since only
-  a human may approve the new value and the arbiter's own ruling is not that
-  approval (see [Guardrails](#guardrails), below).
+  records as a human decision, or add or change a normative rule inside such a
+  span — that always resolves to `escalate`, since only a human may approve the
+  new value or rule and the arbiter's own ruling is not that approval (see
+  [Guardrails](#guardrails), below).
 
 ## Guardrails
 
@@ -576,6 +577,17 @@ Arbiter ground rules (enforced by its agent definition):
   implementation. Route it to the Review Arbiter or park it for the human, but
   the arbiter may only assess it and must rule `escalate`, never `fix-now` —
   its ruling is not the human approval this guardrail requires.
+- **Nor does it add or change a rule inside a [human-decided span](https://github.com/docomply/jig/blob/main/GLOSSARY.md).** The
+  guardrail above covers the decided *value*; a fix can also leave the value
+  alone and add or change a **normative rule** (a "must", a limit, an
+  exception, a condition) inside a section the PR records as a human decision.
+  Such an addition is the decision rewritten by another route, and an
+  unattended loop that accepts one finding at a time can extend a decision
+  round after round until it contradicts what the human recorded. A finding
+  whose fix adds or changes a normative rule inside a human-decided span is
+  never an ordinary accept: park it for the human or rule it `escalate`, or
+  accept only wording that leaves the rule exactly as recorded (a clarified
+  sentence, a corrected cross-reference, a fixed typo).
 - **A new gate's exemption must be keyed on a signal the gate's own code
   emits** — never on a pre-existing artifact whose shape the old code, or a
   trusted human, could also produce. A grandfathering clause keyed on legacy
