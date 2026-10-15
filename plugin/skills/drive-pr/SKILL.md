@@ -1312,9 +1312,11 @@ than remembered — see below.
 **If step 1's report says `reflectDue: true`, reflect before triaging — and
 record it with `drive-state.ts set-reflected [PR]` once it completes.**
 Reflecting means stepping back from the findings to ask what their repetition
-says about the repository's scaffolding or the reviewer's configuration; use
-the repository's own reflection skill (a `/reflect`) where it has one. The
-field is derived from durable state (the round and attempt counters, minus the
+says about the repository's scaffolding or the reviewer's configuration, and
+recording it with [`/jig:reflect`](../reflect/SKILL.md) (unattended: it
+proceeds without asking). The field is `true` only while reflection is on (a
+`reflection` section in some configuration layer); with it off there is no
+store for the lesson to reach, and the duty never arms. The field is derived from durable state (the round and attempt counters, minus the
 round a reflect was last recorded at), and step 1's `--bump-attempt` records this
 pass *before* computing it, so the value you read already accounts for this pass.
 Under `drive.ts` the driver bumps the attempt itself and exports the same answer

@@ -206,8 +206,11 @@ export interface Tracker {
   listChildren(key: string): Promise<IssueSummary[]>;
   /** Move an issue to a canonical state. */
   transition(key: string, state: CanonicalState): Promise<void>;
-  /** Post a comment. `issue` is a key or the tracker's own id. */
-  postComment(issue: string, body: string): Promise<void>;
+  /**
+   * Post a comment. `issue` is a key or the tracker's own id. An aborted
+   * `signal` ends the request in flight and starts no further one.
+   */
+  postComment(issue: string, body: string, signal?: AbortSignal): Promise<void>;
 
   // ── Fleet metrics ──
   /** Issues of this team named by key; a key that resolves to nothing is absent. */
@@ -240,8 +243,14 @@ export interface Tracker {
     query: { label: string; project?: string },
     onPage?: (fetched: number) => void,
   ): Promise<LedgerIssue[]>;
-  /** Every issue of a label, with its state. */
-  labelledIssues(label: string): Promise<LabelledIssueState[]>;
+  /**
+   * Every issue of a label, with its state. An aborted `signal` ends the read
+   * in flight and starts no further page.
+   */
+  labelledIssues(
+    label: string,
+    signal?: AbortSignal,
+  ): Promise<LabelledIssueState[]>;
 
   // ── Candidate pools ──
   /**

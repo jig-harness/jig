@@ -384,19 +384,23 @@ describe("drive-status.ts --bump-attempt", () => {
     });
     // Passes 1-3 on one head: attempts 1..3, still under the default
     // threshold (due when depth > 3).
+    const on = { env: { JIG__REFLECTION__ENABLED: "true" } };
     for (let i = 0; i < 3; i++) {
-      const r = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"]);
+      const r = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"], on);
       expect(r.exitCode).toBe(0);
       expect(r.json.reflectDue).toBe(false);
     }
     // Pass 4 crosses the threshold, and this SAME call's own report already
     // says so — not a call later, which is the off-by-one this flag closes.
-    const r = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"]);
+    const r = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"], on);
     expect(r.json.reflectDue).toBe(true);
+    // With reflection off, the same depth asks for nothing.
+    const off = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"]);
+    expect(off.json.reflectDue).toBe(false);
 
     const s = JSON.parse((await driveState(stateDir, ["get", "999"])).stdout);
     expect(s.rounds).toBe(1);
-    expect(s.attempts).toBe(4);
+    expect(s.attempts).toBe(5);
   });
 
   it("a pass-start on the same head twice counts the head once, the attempts twice", async () => {

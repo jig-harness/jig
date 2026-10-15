@@ -158,6 +158,20 @@ const listUnresolved = join(here, "list-unresolved-threads.ts");
 /** `/drive-pr` — an optional sibling install. */
 const DRIVE_PR_ROOT = siblingSkill("drive-pr", import.meta.dirname);
 const SUMMARY_FINDINGS = join(DRIVE_PR_ROOT, "scripts", "summary-findings.ts");
+/**
+ * `/jig:reflect`'s capture helper, beside this skill in the plugin: absent
+ * when this skill is installed on its own. Not looked up in the repository,
+ * whose own `.claude/skills/reflect` may be an unrelated skill of that name.
+ */
+const REFLECT_CAPTURE = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "reflect",
+  "scripts",
+  "lib",
+  "capture.ts",
+);
 
 // Floor for --interval. A zero interval busy-loops against the forge API.
 const MIN_INTERVAL = 5;
@@ -731,25 +745,59 @@ async function main(): Promise<number> {
   // Emitted only at wind-down — when the rounds have actually stopped.
   // Mid-loop the detail is still arriving and the session has nothing settled
   // to reflect on; at convergence it is complete and about to decay.
-  const reportRoundsAndReset = (): void => {
+  const reportRoundsAndReset = async (): Promise<void> => {
     if (roundsFile === "") return;
     // A dry run (--no-count) only inspects; a converged preview must not
     // erase a real session's accumulated count or fire the reflect prompt in
     // its place.
     if (noCount) return;
     const n = readCount(roundsFile);
-    rmSync(roundsFile, { force: true });
-    rmSync(roundsHeadFile, { force: true });
-    if (n <= reflectThreshold) return;
+    const reset = (): void => {
+      rmSync(roundsFile, { force: true });
+      rmSync(roundsHeadFile, { force: true });
+    };
+    if (n <= reflectThreshold) return reset();
+    // Asked for only when reflection is on; with it off, or without the
+    // reflect skill installed, there is nowhere for the lesson to go and the
+    // prompt would only be noise.
+    if (!existsSync(REFLECT_CAPTURE)) return reset();
+    const capture = (await import(
+      REFLECT_CAPTURE
+    )) as typeof import("../../reflect/scripts/lib/capture.ts");
+    const reflection = capture.reflectionSwitch();
+    if (reflection instanceof Error)
+      console.error(
+        `reflection settings unreadable, not asking for /jig:reflect: ${reflection.message}`,
+      );
+    if (reflection !== true) return reset();
+    // The count is reset only once the journal holds it: after a failed
+    // write, the next convergence reads the same count and tries again.
+    let where =
+      "The round count is in the reflection journal; now that the rounds have\n  wound down,";
+    try {
+      capture.noteReviewRounds({
+        pullRequest: Number(pr),
+        rounds: n,
+        threshold: reflectThreshold,
+        skill: "resolve-review-comments",
+      });
+      reset();
+    } catch (error) {
+      console.error(
+        `could not note the round count in the reflection journal (kept for the next convergence): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      where =
+        "The round count could not be written to the reflection journal;\n  note it yourself, and now that the rounds have wound down,";
+    }
     console.error(`
 ──────────────────────────────────────────────────────────────
   #${pr} converged after ${n} rounds (> ${reflectThreshold}).
 
   That many rounds usually means the scaffolding under-served
-  this change, not that the reviewer was noisy. Now that the
-  rounds have wound down, run /reflect while the detail is
-  still recoverable, and consider whether the fix belongs in
-  an instruction file, a skill, a rule, or the reviewer config.
+  this change, not that the reviewer was noisy. ${where}
+  run /jig:reflect while the detail is still recoverable,
+  and consider whether the fix belongs in an instruction file,
+  a skill, a rule, or the reviewer config.
 ──────────────────────────────────────────────────────────────`);
   };
 
@@ -1017,7 +1065,7 @@ async function main(): Promise<number> {
     console.error(
       `converged: 0 unresolved thread(s) on #${pr}, checks settled`,
     );
-    reportRoundsAndReset();
+    await reportRoundsAndReset();
     return 3;
   }
 }

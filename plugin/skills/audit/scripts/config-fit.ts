@@ -65,6 +65,8 @@ import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
+import { journalPath } from "../../reflect/scripts/lib/context.ts";
+import { parseReflection } from "../../reflect/scripts/lib/settings.ts";
 import { parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
 import {
@@ -731,7 +733,11 @@ function crossFieldRules(config: Config): Finding[] {
  * refuse. Each validator gets the repository's file alone: the user layer and
  * the environment belong to whoever runs the audit, not to the repository.
  */
-function skillValidation(config: Config, path: string): Finding[] {
+function skillValidation(
+  config: Config,
+  path: string,
+  root: string,
+): Finding[] {
   const findings: Finding[] = [];
   const attempt = (skill: string, check: () => unknown) => {
     try {
@@ -751,6 +757,11 @@ function skillValidation(config: Config, path: string): Finding[] {
   });
   attempt("resolve-review-comments", () => parseReviewConfig(config.review));
   attempt("adr", () => adrConfig(path));
+  attempt("reflect", () => {
+    const reflection = parseReflection(config.reflection, root);
+    const journal = reflection.journal ?? null;
+    if (journal !== null) journalPath(journal, root);
+  });
   return findings;
 }
 
@@ -1537,7 +1548,7 @@ export async function configFit(opts: {
   if (report.configured) {
     config = readConfigFile(opts.file) ?? {};
     report.findings.push(...checkConfig(config, schema));
-    report.findings.push(...skillValidation(config, opts.file));
+    report.findings.push(...skillValidation(config, opts.file, opts.root));
     report.findings.push(...crossFieldRules(config));
     report.findings.push(...derivations(config, schema, opts.root));
   } else

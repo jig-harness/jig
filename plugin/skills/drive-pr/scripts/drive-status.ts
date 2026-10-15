@@ -264,6 +264,7 @@ import {
   structuralEscalationArmed,
   structuralEscalationInvariant,
 } from "./lib/state/schema.ts";
+import { reflectionSwitch } from "../../reflect/scripts/lib/settings.ts";
 import {
   emptyReport,
   evaluate,
@@ -628,6 +629,9 @@ async function main(): Promise<number> {
   // child, and `run` reports a timeout as a non-zero code, which this already
   // degrades to `false`.
   async function reflectDue(): Promise<boolean> {
+    // Only when reflection is on: with it off there is no store for the
+    // lesson to reach, and the duty would only cost a pass.
+    if (reflectionSwitch() !== true) return false;
     const r = await run(tsArgv(ctx.driveStateScript, ["get", pr]), {
       stderr: "ignore",
       timeoutSec: ctx.helperTimeoutSec,

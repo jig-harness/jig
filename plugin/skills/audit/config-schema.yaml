@@ -44,6 +44,7 @@ strict:
   - issue_tracker.states
   - issue_tracker.labels
   - resolve_conflicts
+  - reflection
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -249,7 +250,7 @@ fields:
     read_by: [do-item]
   issue_tracker.labels.pattern_prefix:
     type: string
-    read_by: [do-item]
+    read_by: [do-item, reflect, review-reflections]
   issue_tracker.labels.batch_sizes:
     type: list
     items: string
@@ -262,7 +263,7 @@ fields:
     read_by: [do-item]
   issue_tracker.file_command:
     type: string
-    read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory]
+    read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]
 
   do_item.agents.default:
     type: string
@@ -371,3 +372,40 @@ fields:
   explain.figure_build_command:
     type: command
     read_by: [explain]
+
+  reflection.enabled:
+    type: boolean
+    read_by: [reflect, review-reflections, drive-pr, resolve-review-comments]
+    since: 0.28.0
+  reflection.store:
+    type: enum
+    values: [filesystem, command]
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.path:
+    type: path
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.command:
+    type: any
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.journal:
+    type: path
+    read_by: [reflect, resolve-review-comments]
+    since: 0.28.0
+  reflection.escalate_after:
+    type: integer
+    min: 1
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.timeout_sec:
+    type: integer
+    min: 1
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.mode:
+    type: enum
+    values: [quick, comprehensive]
+    read_by: [reflect]
+    since: 0.28.0

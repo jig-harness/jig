@@ -50,8 +50,14 @@ port.
 
 When a worktree is torn down, the session is over and its lessons are freshest.
 Print a short prompt to run the reflection step so those lessons enter the
-learning loop instead of vanishing. Keep it a **nudge**, not a blocker — teardown
-should never fail because someone hasn't reflected.
+learning loop instead of vanishing. Keep the prompt a **nudge**, not a blocker —
+teardown should never fail because someone hasn't reflected. What may block it
+is losing what was already captured: with Jig's
+[`reflect`](https://github.com/docomply/jig/blob/main/plugin/skills/reflect/README.md)
+skill, findings noted in this worktree's journal but not yet sent to the store
+live in the worktree's git directory, which the removal deletes. The hook parks
+them where the next reflection in any worktree of the repository picks them up,
+and refuses the removal when it cannot.
 
 ```sh
 #!/usr/bin/env bash
@@ -62,15 +68,26 @@ id="$(basename "$PWD")"
 cat <<EOF
 Tearing down worktree "$id".
 Before the context is gone, capture what this session taught:
-  • run your reflection step (e.g. a /reflect-style command), or
+  • run your reflection step (with Jig's plugin: /jig:reflect), or
   • jot misses/surprises into your learning-loop inbox.
 See the M8 learning loop for where that feedback goes.
 EOF
-# Intentionally exits 0 — a missing reflection must not block teardown.
+
+# With Jig's reflect skill (JIG_REFLECT names its directory): keep the
+# journal's unsent findings for the next reflection. Does nothing when
+# reflection is off.
+if [ -n "${JIG_REFLECT:-}" ]; then
+  bun "$JIG_REFLECT/scripts/journal.ts" park || {
+    echo "could not park this worktree's reflection findings; not removing it" >&2
+    exit 1
+  }
+fi
+# Otherwise exits 0 — a missing reflection must not block teardown.
 ```
 
 The reflection destination and command are the **M8 learning loop**'s concern;
-this hook only fires the reminder at the right moment.
+this hook only fires the reminder at the right moment and keeps what was
+already captured.
 
 ## Where each manager wires these
 

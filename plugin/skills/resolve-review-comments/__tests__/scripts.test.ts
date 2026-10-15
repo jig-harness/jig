@@ -824,13 +824,77 @@ describe.skipIf(process.platform === "win32")(
       ).toBe(2);
     });
 
-    it("prompts /reflect at wind-down when the session exceeded the threshold, and resets the counter", () => {
+    it("with reflection on, notes the round count and asks for /jig:reflect at wind-down, and resets the counter", () => {
+      const fix = writeFixture({ threads: [] });
+      writeFileSync(roundsFile(fix.pr), "5\n");
+      const journal = join(fix.dir, "journal.jsonl");
+      const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
+        env: {
+          JIG__REFLECTION__ENABLED: "true",
+          JIG__REFLECTION__JOURNAL: journal,
+        },
+      });
+      expect(r.code).toBe(3);
+      expect(r.stderr).toContain("converged after 5 rounds");
+      expect(r.stderr).toContain("/jig:reflect");
+      expect(existsSync(roundsFile(fix.pr))).toBe(false);
+      const noted = JSON.parse(readFileSync(journal, "utf8").trim());
+      expect(noted).toMatchObject({
+        type: "finding",
+        class: "review-took-many-rounds",
+        change: { pull_request: Number(fix.pr) },
+        title: `Pull request #${fix.pr} took 5 review rounds to converge`,
+      });
+      expect(noted.session.skills).toEqual(["resolve-review-comments"]);
+
+      // Another long review of the same pull request is a new measurement.
+      writeFileSync(roundsFile(fix.pr), "7\n");
+      const again = runScript("await-round.ts", [fix.pr, "--once"], fix, {
+        env: {
+          JIG__REFLECTION__ENABLED: "true",
+          JIG__REFLECTION__JOURNAL: journal,
+        },
+      });
+      expect(again.code).toBe(3);
+      const titles = readFileSync(journal, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line).title);
+      expect(titles).toEqual([
+        `Pull request #${fix.pr} took 5 review rounds to converge`,
+        `Pull request #${fix.pr} took 7 review rounds to converge`,
+      ]);
+    });
+
+    it("keeps the round count when the journal cannot take it, and says so", () => {
+      const fix = writeFixture({ threads: [] });
+      writeFileSync(roundsFile(fix.pr), "5\n");
+      // A directory where the journal file should be: the write fails.
+      const journal = join(fix.dir, "journal-dir");
+      mkdirSync(journal);
+      const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
+        env: {
+          JIG__REFLECTION__ENABLED: "true",
+          JIG__REFLECTION__JOURNAL: journal,
+        },
+      });
+      expect(r.code).toBe(3);
+      expect(r.stderr).toContain(
+        "could not be written to the reflection journal",
+      );
+      expect(r.stderr).not.toContain("is in the reflection journal");
+      expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("5");
+      rmSync(roundsFile(fix.pr), { force: true });
+      rmSync(`${roundsFile(fix.pr)}.head`, { force: true });
+    });
+
+    it("with reflection off, resets the counter without asking for a reflection", () => {
       const fix = writeFixture({ threads: [] });
       writeFileSync(roundsFile(fix.pr), "5\n");
       const r = runScript("await-round.ts", [fix.pr, "--once"], fix);
       expect(r.code).toBe(3);
-      expect(r.stderr).toContain("converged after 5 rounds");
-      expect(r.stderr).toContain("/reflect");
+      expect(r.stderr).not.toContain("converged after 5 rounds");
+      expect(r.stderr).not.toContain("reflect");
       expect(existsSync(roundsFile(fix.pr))).toBe(false);
     });
 
@@ -841,9 +905,10 @@ describe.skipIf(process.platform === "win32")(
         "await-round.ts",
         [fix.pr, "--once", "--no-count"],
         fix,
+        { env: { JIG__REFLECTION__ENABLED: "true" } },
       );
       expect(r.code).toBe(3);
-      expect(r.stderr).not.toContain("/reflect");
+      expect(r.stderr).not.toContain("reflect");
       expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("5");
       rmSync(roundsFile(fix.pr), { force: true });
       rmSync(`${roundsFile(fix.pr)}.head`, { force: true });

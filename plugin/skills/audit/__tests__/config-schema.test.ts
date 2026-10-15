@@ -29,6 +29,11 @@ import {
   knownAdapters,
 } from "../../do-item/scripts/lib/tracker/index.ts";
 import { checkConfig, loadSchema, parseSchema } from "../scripts/lib/schema.ts";
+import {
+  MODES,
+  parseReflection,
+  STORE_KINDS,
+} from "../../reflect/scripts/lib/settings.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -124,6 +129,7 @@ describe("CONFIGURATION.md", () => {
     expect(findings.filter((f) => !f.id.startsWith("deprecated:"))).toEqual([]);
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
+    expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
     const set = (path: string) =>
       path
         .split(".")
@@ -148,6 +154,8 @@ describe("the reading skills", () => {
     ]);
     expect(field("issue_tracker.states")?.keys).toEqual([...CANONICAL_STATES]);
     expect(field("issue_tracker.adapter")?.values).toEqual(knownAdapters());
+    expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
+    expect(field("reflection.mode")?.values).toEqual([...MODES]);
   });
 
   test("use the defaults the schema lists", () => {

@@ -80,6 +80,7 @@ criteria:
     observe:
       - "the remove hook points at the reflection step / learning-loop inbox (ties to M8)"
       - "the nudge fires on teardown without blocking it"
+      - "with Jig's reflect skill: the remove hook parks the worktree's unsent reflection findings (`journal.ts park`) and refuses the removal only when parking fails"
 
   - id: footgun-bans-enforced-where-mechanizable
     level: strict

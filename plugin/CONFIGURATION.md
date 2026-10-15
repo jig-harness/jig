@@ -43,8 +43,8 @@ Contents: [the file](#the-file) ·
   are strict instead: there a misspelt key would silently keep the default it
   was written to change, so it is an error. They are `pull_requests`,
   `issue_tracker.states` (keys are canonical states),
-  `issue_tracker.labels` (keys are label roles) and `resolve_conflicts`
-  (including each `generated` entry). In `review.taxonomy` every
+  `issue_tracker.labels` (keys are label roles), `resolve_conflicts`
+  (including each `generated` entry) and `reflection`. In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
   distinct, nonempty strings, so an unrelated key there is an error too.
 - **Wrong types** are refused with an error that names the field, except by
@@ -319,10 +319,10 @@ not resolve it either.
 | `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item | A step a person performs outside the code; caps an epic at `ops_pending` |
 | `issue_tracker.labels.followup` | label | `review.taxonomy.provenance_label`, else `pr-followup` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue filed from a review finding |
 | `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-item | Any of these marks a bug |
-| `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item | A recurring pattern's label is `<prefix><slug>` |
+| `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
 | `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-item | Sizes whose issues the batch check may group into one pull request |
 | `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-item | Open sub-issues an epic may hand off instead of finishing |
-| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory | How an agent files a new issue by hand, such as a slash command |
+| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections | How an agent files a new issue by hand, such as a slash command |
 
 ## `do_item`
 
@@ -401,6 +401,37 @@ The team key comes from `issue_tracker.team` and the change-area catalog from
 `drive.change_areas_catalog`. The signal lifecycle and what a diagnosis
 comment looks like are described in the header of
 `skills/drive-pr/scripts/fleet-health.ts`.
+
+## `reflection`
+
+Session reflection ([reflect](skills/reflect/README.md) and
+[review-reflections](skills/review-reflections/README.md)). The section's
+presence in any layer turns reflection on; without it, the journal takes no
+notes and no skill asks for a reflection. Since every repository writes to the
+same store, it normally lives in the user layer (`~/.jig/jig.yaml`), which
+turns reflection on for every repository on the machine; a repository's own
+file can turn it on for everyone working in it, override the store, or turn it
+off with `enabled: false`.
+
+```yaml
+reflection:
+  path: ~/.jig/reflections
+```
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `reflection` | mapping | Reflection is off | reflect, review-reflections, drive-pr, resolve-review-comments, do-item | Its presence turns reflection on |
+| `reflection.enabled` | `true`, `false` | `true` when the section exists | reflect, review-reflections, drive-pr, resolve-review-comments | `false` turns reflection off: in a repository's file for that repository, or `JIG__REFLECTION__ENABLED=false` for one run |
+| `reflection.store` | `filesystem`, `command` | `filesystem` | reflect, review-reflections | Which store answers: the [filesystem store](skills/reflect/README.md#filesystem-store), or `reflection.command` |
+| `reflection.path` | folder; `~` is the home directory, a relative path is the repository's | `~/.jig/reflections` (under `JIG_HOME`) | reflect, review-reflections | The filesystem store's folder |
+| `reflection.command` | a command line, or a list of words | **Required** with `store: command` | reflect, review-reflections | The store command; the operation is appended to it. No shell runs it |
+| `reflection.journal` | file path | `<git-dir>/jig/reflection-journal.jsonl` | reflect, resolve-review-comments | The worktree's journal; a path git would track, or a file it already tracks, is refused. Parking still uses it when the section says `enabled: false` |
+| `reflection.escalate_after` | whole number, at least 1 | `3` | reflect, review-reflections | The recurrence count at which a class is escalated to one tracker issue |
+| `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections | The deadline for one store operation; `list` and `diagnose` get five times as long |
+| `reflection.mode` | `quick`, `comprehensive` | `quick` | reflect | The reflection's default depth: what went wrong only, or also what worked and what could improve |
+
+Escalation reads `issue_tracker.labels.pattern_prefix` (a class's issue is
+labelled `<prefix><class>`) and `issue_tracker.file_command`.
 
 ## Procedure skills
 
@@ -576,4 +607,13 @@ decide:
   escalation_labels: [agent:architect]
 explain:
   figure_build_command: "<your figure build command>"
+reflection:
+  enabled: true
+  store: filesystem
+  path: ~/.jig/reflections
+  command: "<your store command>"
+  journal: .scratch/reflection-journal.jsonl
+  escalate_after: 3
+  timeout_sec: 120
+  mode: quick
 ```

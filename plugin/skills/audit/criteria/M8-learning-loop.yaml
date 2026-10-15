@@ -36,6 +36,7 @@ criteria:
       for later processing (not lost at session end).
     observe:
       - "a reflect step / command appends feedback to a durable inbox"
+      - "with Jig's plugin: a `reflection` section in a configuration layer (usually `~/.jig/jig.yaml`, so ask the person), and `/jig:reflect` contributing to the store it names"
 
   - id: corpus-machine-readable
     level: standard
@@ -67,6 +68,7 @@ criteria:
     observe:
       - "reflection feedback becomes PROPOSED changes, gated on a human approval step"
       - "the approval is listed as a HITL decision (see M7 registry)"
+      - "with Jig's plugin: `/jig:review-reflections` proposes a change per group of findings and records a decision only after a person approves it"
 
   - id: validate-then-gate-enforced
     level: strict
@@ -123,3 +125,4 @@ criteria:
       - "the reflection record carries the triggering measurement — the change id and the count — written by the trigger rather than by hand"
       - "the threshold is configurable, and firing on every change is not the default"
       - "a record already filed for that change and count is not filed again, including after the inbox entry has been processed"
+      - "with Jig's plugin and reflection on: the review loop's wind-down notes the round count in the reflection journal under an id derived from the pull request, and asks for `/jig:reflect`"

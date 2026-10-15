@@ -19,9 +19,11 @@ jig: it applies to *any* evaluable agent behavior, not just review.
 > and **answered with an additive [lens](../../GLOSSARY.md)** (a check appended,
 > never a rewrite). A fixture joins the **regression corpus only after a live
 > run validates** it (`required: false` until then). Lenses are **kept or
-> killed by measurement**, not opinion. And **scaffolding changes proposed by
-> reflection require human approval** ([HITL](../../GLOSSARY.md)) — the system
-> may suggest changes to its own rules, but a person approves them.
+> killed by measurement**, not opinion. **Reflection records are
+> append-only, carry an id, and their state is computed** from them, never
+> stored beside them. And **scaffolding changes proposed by reflection
+> require human approval** ([HITL](../../GLOSSARY.md)) — the system may
+> suggest changes to its own rules, but a person approves them.
 
 Concrete per-runtime, per-tracker wiring is in [mappings.md](mappings.md).
 
@@ -58,10 +60,18 @@ missed. Then:
 ## The two companion cycles
 
 - **Session reflection** — a `/reflect`-style step accumulates end-of-session
-  feedback into an inbox; a separate step processes it into proposed scaffolding
-  changes **with mandatory human approval** before anything is edited. Changing
-  the rules the agents follow is self-modifying, so it is HITL by construction
-  (see [`HITL-REGISTRY`](../M7-pr-lifecycle-review/templates/HITL-REGISTRY.md)).
+  feedback into a shared store; a separate step processes it into proposed
+  scaffolding changes **with mandatory human approval** before anything is
+  edited. Changing the rules the agents follow is self-modifying, so it is HITL
+  by construction (see [`HITL-REGISTRY`](../M7-pr-lifecycle-review/templates/HITL-REGISTRY.md)).
+  The records are an append-only log of events (a finding, a decision about
+  it), each with an id fixed before it is first written, so a retried or
+  concurrent write never counts a finding twice; a finding's status, and how
+  often its class recurred, are computed from the log when it is read. That is
+  what lets every repository and worktree write to one store, a plain folder
+  included, without locks or conflicts. Jig's plugin runs this cycle as
+  [`reflect`](../../plugin/skills/reflect/README.md) and
+  [`review-reflections`](../../plugin/skills/review-reflections/README.md).
 - **Memory promotion** — an agent's private, per-session memory is periodically
   promoted (via a `/promote-memory`-style step) into git-tracked, shared team
   memory, so a lesson one agent learned survives the session and reaches the
@@ -109,7 +119,9 @@ Both properties are mechanical in the
 `CONVERGED` decision, and it writes the change id and round count into the
 [inbox record](templates/reflection-inbox.md) itself rather than trusting anyone
 to remember them. What it deliberately leaves to a person is the judgement —
-which lever, or whether the reviewer was the thing that was wrong.
+which lever, or whether the reviewer was the thing that was wrong. Jig's
+plugin applies the same trigger in its own review loop, recording the round
+count as a finding in the reflection journal at convergence.
 
 ## Maturity levels
 
@@ -143,7 +155,13 @@ which lever, or whether the reviewer was the thing that was wrong.
 4. Once you measure reviewers against oracles, feed the tallies to the
    [parity report](reference/parity-report/) and let `missed_blockers` /
    precision drive the [M7](../M7-pr-lifecycle-review/) promotion decisions.
-5. Copy [`reflection-inbox.md`](templates/reflection-inbox.md) and put the
+5. Turn on session reflection. With Jig's plugin, add a `reflection`
+   section to the user configuration (`~/.jig/jig.yaml`, see the
+   [plugin's configuration](../../plugin/CONFIGURATION.md#reflection)): the
+   review loop then asks for [`/jig:reflect`](../../plugin/skills/reflect/README.md)
+   after a hard review, and [`/jig:review-reflections`](../../plugin/skills/review-reflections/README.md)
+   turns the store into approved changes. Without the plugin, copy
+   [`reflection-inbox.md`](templates/reflection-inbox.md) and put the
    [reflection trigger](reference/reflection-trigger/) at the end of
    [M7](../M7-pr-lifecycle-review/)'s review loop, so a hard review prompts
    reflection at convergence rather than whenever someone thinks of it. Tune
@@ -161,9 +179,14 @@ Jig's [plugin](../../plugin/README.md): it checks that a private memory
 still holds before lifting it into the team's git-tracked docs. The review
 loop that feeds the reflection trigger runs as
 [`drive-pr`](../../plugin/skills/drive-pr/README.md) (see
-[M7](../M7-pr-lifecycle-review/README.md#status)). Session reflection itself
-is planned as two plugin skills with a pluggable store; the design is in
-[design/reflection.md](../../design/reflection.md).
+[M7](../M7-pr-lifecycle-review/README.md#status)). Session reflection runs as
+[`reflect`](../../plugin/skills/reflect/README.md), which records a session's
+findings in a shared store, and
+[`review-reflections`](../../plugin/skills/review-reflections/README.md),
+which turns them into changes a person approves. The store sits behind a
+contract with a conformance suite; the plugin ships a filesystem store and
+runs any other store command. The reflection trigger and its markdown inbox
+below remain the option for repositories without the plugin.
 
 ### What the module provides
 

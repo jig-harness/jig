@@ -853,10 +853,13 @@ showed one nearly exhausted.
 
 ### A long review is a scaffolding signal
 
-When a PR takes **more than three rounds** to converge, `await-round.ts` says so
-at **wind-down** — the moment it reports convergence, not during the loop — and
-asks for a [reflection](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (`/reflect`, where the repository has one). Tune
-the boundary with `REFLECT_THRESHOLD` (default `3`). Separately, every round
+When a PR takes **more than three rounds** to converge and reflection is on (a
+`reflection` section in some configuration layer), `await-round.ts` says so
+at **wind-down** — the moment it reports convergence, not during the loop —
+notes the round count in the reflection journal, and asks for a
+[reflection](https://github.com/docomply/jig/blob/main/GLOSSARY.md) with
+[`/jig:reflect`](../reflect/SKILL.md). With reflection off it asks for nothing.
+Tune the boundary with `REFLECT_THRESHOLD` (default `3`). Separately, every round
 counted past that boundary prints a reminder of
 "Two rounds on one root cause" in step 3.
 

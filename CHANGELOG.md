@@ -71,10 +71,8 @@ changes are marked **Breaking** and say what a consumer changes.
   **Create**). Linear is the first tracker, behind a tracker interface.
   `install.ts` wires it into Linear's desktop app; its configuration is
   `~/.linear/launcher.yaml`.
-- Session reflection is planned: [design/reflection.md](design/reflection.md)
-  describes the event log, the per-worktree journal, the `reflect` and
-  `review-reflections` skills, the store contract and the filesystem, Notion
-  and (future) Jira stores; [ROADMAP.md](ROADMAP.md) items 6 and 7 build it.
+- [design/reflection.md](design/reflection.md) describes the Notion store
+  for reflections ([ROADMAP.md](ROADMAP.md) item 7) and a future Jira store.
   [design/](design/README.md) holds the designs of roadmap items until they
   are built.
 - Every pull request re-evaluates the audit skill against its change
@@ -148,6 +146,59 @@ changes are marked **Breaking** and say what a consumer changes.
   only in merge-request pipelines, fails under a shell other than bash, and
   extracts the base tree's gate scripts, with the `lib/` they import, into a
   fresh directory outside the merge request's checkout.
+
+## [0.28.0] - 2026-10-15
+
+### Added
+
+- Session reflection, as two skills with a pluggable store.
+  [`/jig:reflect`](plugin/skills/reflect/README.md) records what a session
+  learned about the repository's scaffolding: findings are captured in a
+  per-worktree journal as they happen (`journal.ts note`), and at a natural
+  end the skill merges duplicates, names each finding's class, escalates a
+  class that recurs `reflection.escalate_after` times to one tracker issue
+  labelled `pattern:<class>`, and contributes the rest to a store every
+  repository on the machine (or in the team) shares.
+  [`/jig:review-reflections`](plugin/skills/review-reflections/README.md)
+  reads the findings the repository it runs in would fix (in Jig, every
+  finding about Jig's skills from every repository), reconciles approved
+  fixes with what merged, groups what recurred, proposes a change per group,
+  and records each decision once a person approves. The records are an
+  append-only log of findings and decisions, each with the session that
+  wrote it (Jig version, skills, harness, model, and which of those the agent
+  stated), and a finding's status and a class's recurrence are computed from
+  it. A store is any command that answers the store contract (`check`,
+  `append`, `list`, `diagnose`); `store-contract.ts` is its conformance
+  suite, and the plugin ships a filesystem store (a folder of JSONL files,
+  one per write, so synced or shared folders merge without conflicts).
+- The `reflection` configuration section
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#reflection)): its presence in
+  any layer turns reflection on, normally in `~/.jig/jig.yaml`.
+- M8's invariant now says reflection records are append-only, carry an id,
+  and have their state computed; its mappings list the reflection stores.
+  M12's worktree-remove hook parks a worktree's unsent findings for the next
+  reflection, and refuses the removal when it cannot.
+
+- The plugin's requirements name git 2.36 as the minimum, the first version
+  with both options the scripts use: `--path-format` and
+  `git worktree list -z`.
+
+### Changed
+
+- **Breaking:** `/jig:drive-pr`'s `reflectDue` and `$DRIVE_PR_REFLECT_DUE`,
+  and `/jig:resolve-review-comments`' wind-down prompt after a long review,
+  fire only when reflection is on, and ask for `/jig:reflect` rather than a
+  repository's own `/reflect`. The wind-down also notes the round count in
+  the reflection journal. A repository that relied on that nudge to run its
+  own `/reflect` stops being nudged until a configuration layer has a
+  `reflection` section: add one (`reflection: {}` uses the defaults) to keep
+  it.
+- The Linear tracker's requests can be cancelled. `labelledIssues` and
+  `postComment` take an `AbortSignal`; a cancelled signal ends the request in
+  flight and starts no further page. The `linear` command-line client now
+  runs without blocking, so a caller's timer fires while it runs, and the
+  client is stopped when the signal is cancelled or the calling process is
+  terminated.
 
 ## [0.27.1] - 2026-10-15
 
@@ -1333,7 +1384,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/docomply/jig/compare/v0.27.1...v0.28.0
+[0.27.1]: https://github.com/docomply/jig/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/docomply/jig/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/docomply/jig/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/docomply/jig/compare/v0.24.0...v0.25.0

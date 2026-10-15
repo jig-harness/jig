@@ -109,9 +109,22 @@ The two companion cycles are runtime commands with a human-approval checkpoint.
 
 | Runtime | Reflection | Memory promotion |
 |---------|-----------|------------------|
-| Claude Code | a `/reflect` command appends to a feedback inbox; a `/review-reflection-feedback` command proposes scaffolding changes for human approval | Jig's [`/jig:promote-memory`](../../plugin/skills/promote-memory/SKILL.md) lifts private memory into the git-tracked docs, after checking it still holds |
-| Codex | an end-of-session hook writing to the inbox; a periodic review step | the same [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) skill, from the Jig plugin |
-| Cursor / other | an end-of-session hook writing to the inbox; a periodic review step | a scripted promote step over the agent's memory store |
+| Claude Code | Jig's [`/jig:reflect`](../../plugin/skills/reflect/README.md) records a session's findings in the shared reflection store; [`/jig:review-reflections`](../../plugin/skills/review-reflections/README.md) proposes scaffolding changes for human approval | Jig's [`/jig:promote-memory`](../../plugin/skills/promote-memory/SKILL.md) lifts private memory into the git-tracked docs, after checking it still holds |
+| Codex | the same two skills, from the Jig plugin | the same [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) skill, from the Jig plugin |
+| Cursor / other | an end-of-session hook writing to the inbox (or, through the plugin's scripts, to the store); a periodic review step | a scripted promote step over the agent's memory store |
+
+### Reflection stores
+
+Where the reflection records live. Every store answers the same contract
+(`check`, `append`, `list`, `diagnose`; see the
+[reflect skill](../../plugin/skills/reflect/README.md#the-store-contract)), and
+its conformance suite checks any of them.
+
+| Store | `reflection.store` | Fits |
+|-------|--------------------|------|
+| A folder of JSONL files, one file per write | `filesystem` (the default) | One person's machine, or a team folder synced by a cloud drive or committed to a git repository |
+| Any command that answers the contract | `command` | A store a repository or a person already runs: a database, an internal service |
+| Without the plugin: the markdown [inbox](templates/reflection-inbox.md) the [reflection trigger](reference/reflection-trigger/) appends to | n/a | A repository that does not use Jig's plugin |
 
 ### Reflection: firing it on the round count
 

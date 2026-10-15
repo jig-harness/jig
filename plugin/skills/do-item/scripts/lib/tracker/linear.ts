@@ -12,7 +12,12 @@
  * nested connections silently, so every nested read carries its `pageInfo`.
  */
 
-import { spawnSync } from "node:child_process";
+import {
+  type RunHandle,
+  type RunResult,
+  run,
+} from "../../../../drive-pr/scripts/lib/proc.ts";
+import { registerCancellationGroup } from "../../../../resolve-review-comments/scripts/lib/proc.ts";
 import {
   CLOSED_STATE_TYPES,
   type CanonicalState,
@@ -36,11 +41,32 @@ import {
 export const LINEAR_API = "https://api.linear.app/graphql";
 export const LINEAR_TIMEOUT_MS = 30_000;
 
-/** A GraphQL request; resolves to the response's `data`. */
+/**
+ * A GraphQL request; resolves to the response's `data`. An aborted `signal`
+ * ends the request in flight and refuses to start one.
+ */
 export type LinearTransport = (
   query: string,
   variables: Record<string, unknown>,
+  signal?: AbortSignal,
 ) => Promise<unknown>;
+
+/**
+ * Has the caller cancelled? A function, not an inline test, so a check after
+ * an `await` is not narrowed away by the one before it.
+ */
+function cancelled(signal: AbortSignal | undefined): signal is AbortSignal {
+  return signal?.aborted === true;
+}
+
+/** The error for a request the caller's signal ended. */
+function abortedError(signal: AbortSignal): LinearApiError {
+  const reason: unknown = signal.reason;
+  return new LinearApiError(
+    `Linear request cancelled: ${reason instanceof Error ? reason.message : String(reason)}`,
+    null,
+  );
+}
 
 /**
  * Linear answered with an error. `notFound` is set when the answer is that the
@@ -92,16 +118,20 @@ export function httpTransport(
   token: string,
   fetchImpl: typeof fetch = fetch,
 ): LinearTransport {
-  return async (query, variables) => {
+  return async (query, variables, signal) => {
+    if (cancelled(signal)) throw abortedError(signal);
+    const timeout = AbortSignal.timeout(LINEAR_TIMEOUT_MS);
     let res: Response;
     try {
       res = await fetchImpl(LINEAR_API, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: token },
         body: JSON.stringify({ query, variables }),
-        signal: AbortSignal.timeout(LINEAR_TIMEOUT_MS),
+        signal:
+          signal === undefined ? timeout : AbortSignal.any([timeout, signal]),
       });
     } catch (err) {
+      if (cancelled(signal)) throw abortedError(signal);
       throw new LinearApiError(
         `Linear API unreachable: ${err instanceof Error ? err.message : String(err)}`,
         null,
@@ -129,44 +159,86 @@ export function httpTransport(
 }
 
 /**
+ * Runs the client through the shared runner, which puts it in its own process
+ * group, ends that whole group at `LINEAR_TIMEOUT_MS` or when `signal` aborts,
+ * settles without waiting for pipes a descendant holds, and bounds the output
+ * it captures. Taking the run's handle makes ending the group this caller's
+ * job, so the group is also registered with the shared signal forwarder while
+ * it runs: a SIGINT, SIGTERM or SIGHUP to this process ends the client too.
+ */
+async function runCli(
+  argv: string[],
+  signal: AbortSignal | undefined,
+): Promise<RunResult> {
+  let handle: RunHandle | undefined;
+  let release: (() => void) | undefined;
+  const stop = () => void handle?.stop();
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    return await run(argv, {
+      timeoutSec: LINEAR_TIMEOUT_MS / 1000,
+      onSpawn: (spawned) => {
+        handle = spawned;
+        if (spawned.pid !== undefined)
+          release = registerCancellationGroup(spawned.pid);
+        if (cancelled(signal)) stop();
+      },
+    });
+  } finally {
+    release?.();
+    signal?.removeEventListener("abort", stop);
+  }
+}
+
+/** Why a finished client run cannot be read as a response, if it cannot. */
+function cliFailure(r: RunResult): LinearApiError | null {
+  if (r.spawnFailed)
+    return new LinearApiError(
+      r.stderr.includes("ENOENT")
+        ? "no Linear credential: set LINEAR_API_KEY (or LINEAR_API_TOKEN), or install and log in to the `linear` command-line client"
+        : `linear api failed: ${r.stderr}`,
+      null,
+    );
+  if (r.timedOut) return new LinearApiError("linear api timed out", null);
+  if (r.bufferExceeded)
+    return new LinearApiError(
+      "linear api printed more output than can be held; stopped it",
+      null,
+    );
+  return null;
+}
+
+/**
  * Transport through the `linear` command-line client (`linear api`), which
  * keeps its own credential. Variables travel as JSON so a string that looks
  * like a number stays a string.
  */
 export function cliTransport(bin = "linear"): LinearTransport {
-  return async (query, variables) => {
-    const r = spawnSync(
-      bin,
-      ["api", query, "--variables-json", JSON.stringify(variables)],
-      { encoding: "utf8", timeout: LINEAR_TIMEOUT_MS },
+  return async (query, variables, signal) => {
+    if (cancelled(signal)) throw abortedError(signal);
+    const r = await runCli(
+      [bin, "api", query, "--variables-json", JSON.stringify(variables)],
+      signal,
     );
-    if (r.error !== undefined) {
-      const code = (r.error as NodeJS.ErrnoException).code;
-      throw new LinearApiError(
-        code === "ENOENT"
-          ? "no Linear credential: set LINEAR_API_KEY (or LINEAR_API_TOKEN), or install and log in to the `linear` command-line client"
-          : `linear api failed: ${r.error.message}`,
-        null,
-      );
-    }
-    if (r.signal !== null)
-      throw new LinearApiError("linear api timed out", null);
+    if (cancelled(signal)) throw abortedError(signal);
+    const failure = cliFailure(r);
+    if (failure !== null) throw failure;
     let body: unknown;
     try {
       body = JSON.parse(r.stdout);
     } catch {
       throw new LinearApiError(
-        `linear api returned no JSON (exit ${r.status}): ${(r.stderr || r.stdout).slice(0, 300)}`,
+        `linear api returned no JSON (exit ${r.code}): ${(r.stderr || r.stdout).slice(0, 300)}`,
         null,
       );
     }
     // A failed invocation is a failure even when its output parses: report
     // the errors it carries, else its exit status.
-    if (r.status !== 0) {
+    if (r.code !== 0) {
       if (isRecord(body) && Array.isArray(body.errors))
         unwrapResponse(body, null);
       throw new LinearApiError(
-        `linear api exited ${r.status}: ${(r.stderr || r.stdout).slice(0, 300)}`,
+        `linear api exited ${r.code}: ${(r.stderr || r.stdout).slice(0, 300)}`,
         null,
       );
     }
@@ -244,7 +316,8 @@ function stateOf(v: unknown, where: string): IssueState {
 /**
  * Read every page of one connection. `pick` finds the connection in a page's
  * data. A cursor seen twice, or an issue repeated across pages (the list moved
- * under the read), is an incomplete read, not a result.
+ * under the read), is an incomplete read, not a result. An aborted `signal`
+ * ends the read in flight and starts no further page.
  */
 export async function pageAll(
   transport: LinearTransport,
@@ -252,13 +325,14 @@ export async function pageAll(
   variables: Record<string, unknown>,
   pick: (data: Record<string, unknown>) => unknown,
   where: string,
+  signal?: AbortSignal,
 ): Promise<unknown[]> {
   const out: unknown[] = [];
   const seen = new Set<string>();
   const ids = new Set<string>();
   let after: string | null = null;
   for (;;) {
-    const data = await transport(query, { ...variables, after });
+    const data = await transport(query, { ...variables, after }, signal);
     if (!isRecord(data))
       throw new ShapeError(`${where}: response is not an object`);
     const conn = pick(data);
@@ -802,8 +876,12 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
 
   async function issueIdAndTeam(
     key: string,
+    signal?: AbortSignal,
   ): Promise<{ id: string; teamId: string }> {
-    const data = record(await transport(ISSUE_ID_QUERY, { id: key }), "data");
+    const data = record(
+      await transport(ISSUE_ID_QUERY, { id: key }, signal),
+      "data",
+    );
     const issue = record(data.issue, `issue ${key}`);
     return {
       id: str(issue.id, `issue ${key}.id`),
@@ -884,12 +962,12 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       assertMutationOk(result.issueUpdate, `moving ${key} to ${name}`);
     },
 
-    async postComment(issue, body) {
+    async postComment(issue, body, signal) {
       const issueId = UUID.test(issue)
         ? issue
-        : (await issueIdAndTeam(issue)).id;
+        : (await issueIdAndTeam(issue, signal)).id;
       const data = record(
-        await transport(COMMENT_MUTATION, { issueId, body }),
+        await transport(COMMENT_MUTATION, { issueId, body }, signal),
         "data",
       );
       assertMutationOk(data.commentCreate, `the comment on ${issue}`);
@@ -1141,13 +1219,14 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       return nodes.map(parseLedgerNode);
     },
 
-    async labelledIssues(label) {
+    async labelledIssues(label, signal) {
       const nodes = await pageAll(
         transport,
         LABELLED_QUERY,
         { teamKey: team, label },
         (d) => d.issues,
         `'${label}' issues`,
+        signal,
       );
       return nodes.map(parseLabelledNode);
     },

@@ -415,8 +415,12 @@ routing below remain **exact**.
 > siblings as separate `pattern:<slug>` issues via `issue_tracker.file_command`,
 > or (3) fix the single instance and accept the latent debt. Never silently
 > fix one instance when the scout shows many: the next agent re-fixes the
-> same class. Skip the pre-scout, and say so, when the issue is clearly
-> isolated or already carries the evidence.
+> same class. When the scout finds a class and reflection is on
+> (`bun "${CLAUDE_SKILL_DIR}/../reflect/scripts/reflect.ts" status`), also
+> run [`/jig:reflect`](../reflect/SKILL.md) for what let the class spread (a
+> missing gate, lint or instruction), so its recurrence reaches the review.
+> Skip the pre-scout, and say so, when the issue is clearly isolated or
+> already carries the evidence.
 
 > **Frontmatter pre-flight (documentation changes).** If the repository
 > validates documentation frontmatter against a schema and the plan proposes
@@ -728,9 +732,9 @@ routing below remain **exact**.
       Rebase onto a green `<base>`, repair the shared failure when it is
       safely in scope, or stop and report the blocker. If the failure looks
       systemic (flaky across branches, configuration drift, a missing CI
-      step), file a bug with `issue_tracker.file_command`, and use the
-      repository's reflection or feedback skill if it has one so the class
-      of failure gets a systematic fix.
+      step), file a bug with `issue_tracker.file_command`, and, when
+      reflection is on, record it with [`/jig:reflect`](../reflect/SKILL.md)
+      so the class of failure gets a systematic fix.
    4. **judgment** — If any error is related, fix it.
    5. **judgment** — If you cannot tell, assume related and investigate.
 

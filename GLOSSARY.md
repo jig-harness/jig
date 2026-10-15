@@ -665,6 +665,18 @@ make, use the entry's term instead.
 - **Reflection** — the cycle that accumulates end-of-session feedback into an
   inbox and processes it into *proposed* scaffolding changes, which a human
   approves before anything is edited (self-modifying rules stay *HITL*).
+- **Reflection store** — where reflection's records accumulate, shared by
+  every repository that reflects into it: an append-only log of *findings*
+  (what a session learned about the scaffolding) and *decisions* about them,
+  from which a finding's status is computed. Any store answering the same
+  contract (`check`, `append`, `list`, `diagnose`) will do; a folder of files
+  is the default.
+- **Reflection journal** — a worktree's own file of findings captured as they
+  happen and not yet sent to the *reflection store*, so capturing one never
+  depends on the store being reachable.
+- **Conformance suite** — a set of checks any implementation of a contract
+  must pass, run against the implementation itself, so a second
+  implementation is held to what the first was tested for.
 - **Memory promotion** — lifting a durable lesson from an agent's private,
   per-session memory into git-tracked, shared memory through a review point, so
   it survives the session and reaches other agents.

@@ -401,7 +401,7 @@ describe("drive.ts loop control", () => {
       { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
       ["--no-head-sync", "--max-rounds", "5", "--", ...PASS_ECHO_FLAG],
       undefined,
-      { env: { DRIVE_PR_STALL_ROUNDS: "0" } },
+      { env: { DRIVE_PR_STALL_ROUNDS: "0", JIG__REFLECTION__ENABLED: "true" } },
     );
     // The stub pass never advances the head, so `passes` drives the count:
     // rounds 1-3 unset, rounds 4-5 armed.
@@ -409,7 +409,27 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("REFLECT=[4]");
     expect(r.stderr).toContain("REFLECT=[5]");
     expect(r.stderr).not.toContain("REFLECT=[3]");
-    expect(r.stderr).toContain("/reflect is DUE");
+    expect(r.stderr).toContain("/jig:reflect is DUE");
+  });
+
+  it("never arms $DRIVE_PR_REFLECT_DUE while reflection is off", async () => {
+    const r = await runDrive(
+      { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
+      [
+        "--no-head-sync",
+        "--max-rounds",
+        "5",
+        "--",
+        "sh",
+        "-c",
+        'echo "pass for 999: REFLECT=[$DRIVE_PR_REFLECT_DUE]" >&2; exit 0',
+      ],
+      undefined,
+      { env: { DRIVE_PR_STALL_ROUNDS: "0" } },
+    );
+    expect(r.stderr).toContain("REFLECT=[]");
+    expect(r.stderr).not.toContain("REFLECT=[4]");
+    expect(r.stderr).not.toContain("is DUE");
   });
 
   describe("--handoff-at, the context-economy dial", () => {

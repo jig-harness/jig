@@ -72,8 +72,11 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    importable checklist in `branch-discipline.md`.
 5. **Teardown nudges reflection** — the worktree-remove hook prints a prompt to
    run the reflection step while the session is freshest, so lessons flow into
-   the [M8 learning loop](../M8-learning-loop/) instead of evaporating. It is a
-   nudge, never a blocker. Skeletons for both create and remove hooks are
+   the [M8 learning loop](../M8-learning-loop/) instead of evaporating. The
+   prompt is a nudge, never a blocker; what the hook does refuse is losing
+   findings already captured in the worktree (with Jig's
+   [`reflect`](../../plugin/skills/reflect/README.md) skill it parks them for
+   the next reflection). Skeletons for both create and remove hooks are
    [`templates/worktree-hooks.md`](templates/worktree-hooks.md).
 
 The whole copyable model — all its rules in one place, ready to drop into a docs

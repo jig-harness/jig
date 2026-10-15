@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,10 +21,27 @@ import {
   LinearApiError,
   type LinearTransport,
   linearTracker,
+  pageAll,
   parseIssueFact,
   unwrapResponse,
 } from "../scripts/lib/tracker/linear.ts";
 import { CANONICAL_STATES } from "../scripts/lib/tracker/port.ts";
+
+/**
+ * Whether a process has ended within `ms`: gone from the process table, or
+ * a zombie, which a host whose PID 1 does not reap leaves behind after a
+ * successful kill.
+ */
+async function endsWithin(pid: number, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const ps = Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]);
+    const stat = ps.stdout.toString().trim();
+    if (ps.exitCode !== 0 || stat === "" || stat.startsWith("Z")) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
 
 const STATES = parseTrackerConfig({}).states;
 
@@ -201,6 +224,30 @@ describe("Linear transport", () => {
     expect(headers.Authorization).toBe("lin_api_x");
   });
 
+  it("starts no further page once the caller's signal aborts", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const transport = async (
+      _q: string,
+      _v: Record<string, unknown>,
+      signal?: AbortSignal,
+    ) => {
+      if (signal?.aborted === true) throw new Error("aborted");
+      calls++;
+      controller.abort(new Error("deadline"));
+      return {
+        issues: {
+          nodes: [{ identifier: `ENG-${calls}` }],
+          pageInfo: { hasNextPage: true, endCursor: `c${calls}` },
+        },
+      };
+    };
+    await expect(
+      pageAll(transport, "q", {}, (d) => d.issues, "issues", controller.signal),
+    ).rejects.toThrow("aborted");
+    expect(calls).toBe(1);
+  });
+
   it("reports an HTTP error status", async () => {
     const t = httpTransport(
       "k",
@@ -234,6 +281,92 @@ describe("Linear transport", () => {
     it("rejects a failed invocation whose output parses as data", async () => {
       const t = cliTransport(client('{"data":{"ok":1}}', 1));
       await expect(t("query { ok }", {})).rejects.toThrow("exited 1");
+    });
+
+    it("kills the client when the caller's signal aborts", async () => {
+      dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
+      const bin = join(dir, "linear");
+      writeFileSync(bin, "#!/bin/sh\nexec sleep 30\n", { mode: 0o755 });
+      const controller = new AbortController();
+      // The client runs without blocking the event loop, so this timer fires.
+      setTimeout(() => controller.abort(new Error("deadline")), 50);
+      const started = Date.now();
+      await expect(
+        cliTransport(bin)("query { ok }", {}, controller.signal),
+      ).rejects.toThrow("Linear request cancelled: deadline");
+      expect(Date.now() - started).toBeLessThan(5_000);
+    });
+
+    it("ends a client whose descendant holds its output open", async () => {
+      dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
+      const bin = join(dir, "linear");
+      const pidFile = join(dir, "descendant.pid");
+      writeFileSync(
+        bin,
+        `#!/bin/sh\nsleep 30 &\necho $! > '${pidFile}'\nwait\n`,
+        { mode: 0o755 },
+      );
+      const controller = new AbortController();
+      // Cancel once the descendant exists, however slowly the shell starts.
+      let aborted = 0;
+      void (async () => {
+        const deadline = Date.now() + 10_000;
+        while (
+          Date.now() < deadline &&
+          !(existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "")
+        )
+          await new Promise((r) => setTimeout(r, 20));
+        aborted = Date.now();
+        controller.abort(new Error("deadline"));
+      })();
+      await expect(
+        cliTransport(bin)("query { ok }", {}, controller.signal),
+      ).rejects.toThrow("Linear request cancelled: deadline");
+      expect(Date.now() - aborted).toBeLessThan(5_000);
+      const pid = Number(readFileSync(pidFile, "utf8").trim());
+      expect(await endsWithin(pid, 1_000)).toBe(true);
+    });
+
+    it("ends the client when the calling process is terminated", async () => {
+      dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
+      const bin = join(dir, "linear");
+      const pidFile = join(dir, "client.pid");
+      writeFileSync(bin, `#!/bin/sh\necho $$ > '${pidFile}'\nexec sleep 30\n`, {
+        mode: 0o755,
+      });
+      const caller = join(dir, "caller.ts");
+      writeFileSync(
+        caller,
+        `import { cliTransport } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/tracker/linear.ts"))};\nawait cliTransport(${JSON.stringify(bin)})("query { ok }", {});\n`,
+      );
+      const child = Bun.spawn([process.execPath, caller], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      let pid = 0;
+      for (let i = 0; i < 200 && pid === 0; i++) {
+        await new Promise((r) => setTimeout(r, 25));
+        try {
+          pid = Number(readFileSync(pidFile, "utf8").trim());
+        } catch {
+          // not started yet
+        }
+      }
+      expect(pid).toBeGreaterThan(0);
+      child.kill("SIGTERM");
+      await child.exited;
+      expect(await endsWithin(pid, 2_000)).toBe(true);
+    });
+
+    it("stops a client that prints more than it can hold", async () => {
+      dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
+      const bin = join(dir, "linear");
+      writeFileSync(bin, "#!/bin/sh\nhead -c 70000000 /dev/zero\n", {
+        mode: 0o755,
+      });
+      await expect(cliTransport(bin)("query { ok }", {})).rejects.toThrow(
+        "more output than can be held",
+      );
     });
 
     it("reports the errors a failed invocation carries", async () => {

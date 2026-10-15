@@ -281,8 +281,9 @@ Do not turn an inferred preference into a rule or port one consumer's product
 policy into another repository.
 
 Keep recurring classes of against-policy findings in the consumer's reviewer
-configuration. An installed `/reflect` procedure can help identify the right
-policy or reviewer change after a long review.
+configuration. When reflection is on, `/jig:reflect` after a long review
+records which policy or reviewer change would have prevented the class, for
+`/jig:review-reflections` to act on.
 
 ## Contradictory findings
 

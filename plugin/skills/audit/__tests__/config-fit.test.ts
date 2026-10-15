@@ -321,6 +321,22 @@ other_tool:
     expect(all).toContain("rejected:do-item (tracker)");
   });
 
+  test("the reflect skill's own validation refuses what it would refuse", () => {
+    const refused = (reflection: string) =>
+      ids(
+        fit({ ".config/jig.yaml": `reflection:\n${reflection}` }).report,
+      ).includes("rejected:reflect");
+    expect(refused("  store: command\n")).toBe(true);
+    expect(refused("  store: command\n  command: 5\n")).toBe(true);
+    expect(refused("  store: command\n  command: [run, 5]\n")).toBe(true);
+    expect(refused("  timeout_sec: 1000000\n")).toBe(true);
+    // A journal git would track.
+    expect(refused("  journal: notes/journal.jsonl\n")).toBe(true);
+    expect(refused("  store: command\n  command: my-store --flag\n")).toBe(
+      false,
+    );
+  });
+
   test("rules across fields, and paths and commands that do not exist", () => {
     const { report } = fit({
       ".config/jig.yaml": `gates:

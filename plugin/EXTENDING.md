@@ -11,8 +11,7 @@ and which are fixed today, with the [roadmap](../ROADMAP.md) item that
 would open each one.
 
 Every field it names that exists today is in the
-[configuration reference](CONFIGURATION.md); the reflection store's fields
-are planned and say so. What a machine needs is in the plugin's [requirements](README.md#requirements).
+[configuration reference](CONFIGURATION.md). What a machine needs is in the plugin's [requirements](README.md#requirements).
 
 Contents: [ways to adapt](#ways-to-adapt-jig) ·
 [at a glance](#at-a-glance) ·
@@ -62,7 +61,7 @@ hook or the interface instead.
 | Local checks, generators, lints | Any command | [A command](#commands-a-repository-supplies) | — |
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
 | Issue tracker | Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
-| Reflection store | Planned: a folder of files, any command, then Notion | [A store command](#reflection-stores), no change to Jig | Roadmap items 6 and 7; Jira later |
+| Reflection store | A folder of files, or any command | [A store command](#reflection-stores), no change to Jig | Notion: roadmap item 7; Jira later |
 | AI reviewer | Any bot, by login, app and check name | [Configuration](#ai-reviewers) | Summary-comment severities in [the parsed formats](#ai-reviewers) only: roadmap item 10 |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
@@ -182,23 +181,21 @@ reporting operations.
 
 Session reflection keeps its findings in a store that every repository on a
 machine, or a whole team, writes to
-([design](../design/reflection.md#the-store-contract); roadmap items 6
-and 7). Unlike the tracker, a store is a command, not code inside Jig:
+([the store contract](skills/reflect/README.md#the-store-contract)). Unlike the tracker, a store is a command, not code inside Jig:
 
 - **The contract.** The store command takes an operation (`check`,
   `append`, `list`, `diagnose`) as its first argument, reads JSON or
   [JSONL](../GLOSSARY.md) on standard input, writes it on standard output,
   and exits 0 (done), 1 (failed), 2 (usage) or 3 (unavailable).
-- **Planned stores.** `filesystem`, a folder of files and the default;
-  `command`, any command that keeps the contract; then `notion`, a Notion
-  database people browse and filter. A Jira store is planned for later.
-- **To add one, once it is built.** The design has a store be a command in
-  any language that keeps the contract, checked by a conformance suite and
-  chosen with `reflection.store: command` and `reflection.command`. None of
-  this exists yet: the suite and both fields are planned, they are not in the
-  configuration reference, and setting them today enables no store. When it
-  ships, a store will need no change to Jig; one many teams want can still
-  be contributed as a built-in.
+- **The stores.** `filesystem`, a folder of files and the default, and
+  `command`, any command that keeps the contract. A Notion store, a database
+  people browse and filter, is roadmap item 7; a Jira store is planned for
+  later.
+- **To add one.** Write a command in any language that keeps the contract,
+  run the conformance suite (`store-contract.ts`) against it, and choose it
+  with `reflection.store: command` and `reflection.command`
+  ([fields](CONFIGURATION.md#reflection)). A store needs no change to Jig;
+  one many teams want can still be contributed as a built-in.
 
 ## AI reviewers
 

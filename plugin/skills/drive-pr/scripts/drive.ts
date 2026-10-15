@@ -211,6 +211,7 @@ import {
 } from "./lib/state/lease.ts";
 import { foldGateState, resolveMailboxDir } from "./lib/state/mailbox.ts";
 import { reflectDepthPastLast } from "./lib/state/schema.ts";
+import { reflectionSwitch } from "../../reflect/scripts/lib/settings.ts";
 import { resolveStateDir, worktreeLockName } from "./lib/state/store.ts";
 // TERMINAL_STATES is the canonical source — every driver-only exit
 // constant below is DERIVED from it, not an independently hand-typed literal
@@ -2285,6 +2286,22 @@ async function recordQuotaPark(
       `drive.ts: could not record the quota park for PR #${pr} (drive-state.ts exited ${park.code}) — continuing anyway.`,
     );
   }
+}
+
+/**
+ * Whether the reflect duty is armed: the depth past the last recorded
+ * reflection passes the threshold and reflection is on (the `reflection`
+ * configuration section); with it off the lesson has no store to reach.
+ * Unreadable settings are reported and read as off.
+ */
+function reflectDutyArmed(depth: number, threshold: number): boolean {
+  if (!(depth > threshold)) return false;
+  const reflection = reflectionSwitch();
+  if (reflection instanceof Error)
+    console.error(
+      `  reflection settings unreadable, so no /jig:reflect duty: ${reflection.message}`,
+    );
+  return reflection === true;
 }
 
 async function main(): Promise<number> {
@@ -4441,10 +4458,10 @@ async function main(): Promise<number> {
       lastReflectedRound: peekedLastReflectedRound,
       lastReflectedAttempts: peekedLastReflectedAttempts,
     });
-    if (depth > reflectAfter) {
+    if (reflectDutyArmed(depth, reflectAfter)) {
       process.env.DRIVE_PR_REFLECT_DUE = String(round);
       console.error(
-        `  ⚠ round ${round} is ${Number.isFinite(depth) ? depth : "an unreadable distance"} past the last recorded /reflect (threshold ${reflectAfter}): /reflect is DUE before triaging this round.`,
+        `  ⚠ round ${round} is ${Number.isFinite(depth) ? depth : "an unreadable distance"} past the last recorded reflection (threshold ${reflectAfter}): /jig:reflect is DUE before triaging this round.`,
       );
       console.error(
         "    Repeat findings at this depth are a scaffolding gap, not reviewer noise.",
