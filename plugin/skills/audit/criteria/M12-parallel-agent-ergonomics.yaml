@@ -41,7 +41,7 @@ criteria:
     observe:
       - "a doc tells contributors to add a per-change note file (changes/, .changeset/, changelog.d/, newsfragments/ or similar) instead of editing the changelog"
       - "expected-absent: the repository keeps no changelog or version that changes with each pull request"
-    since: next
+    since: 0.31.0
 
   - id: port-allocation-scripted
     level: standard
@@ -83,7 +83,7 @@ criteria:
     observe:
       - "a CI job or release tool on the integration branch writes the notes into the changelog and moves the version (Changesets, towncrier, scriv, changie, or a script)"
       - "a pull-request check fails a malformed note, or a direct edit to the changelog's release sections or the version"
-    since: next
+    since: 0.31.0
 
   - id: utilities-self-tested-in-ci
     level: strict
