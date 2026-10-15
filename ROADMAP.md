@@ -65,10 +65,13 @@ workspace, whose copies are deleted in the same rollout):
 
 ### 4. `changelog` skill
 
+Design: [design/changelog.md](design/changelog.md).
+
 Keeps a repository's changelog as a practice, not an afterthought, for a
 repository that opts in: the skill, its gate and the change-note requests
-below act only where `.config/jig.yaml` has a `changelog:` section, and a
-repository without one is never asked for a changelog. It works in either
+below act only where the repository's own `.config/jig.yaml` sets
+`changelog.file`, and a repository without it is never asked for a
+changelog. It works in either
 common format, detected from the file or set in configuration:
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) (an
 `Unreleased` section filled as changes merge; `Added`, `Changed`,
@@ -78,9 +81,9 @@ from the history; `Changed`, `Added`, `Removed`, `Fixed`; every entry
 imperative, one line, with references; breaking changes marked and listed
 first; no `Unreleased`).
 
-- **Draft** entries from the merged pull requests and commits since the last
-  release: rewritten for a reader, noise removed, related changes merged,
-  breaking changes marked with what a consumer must do.
+- **Draft** each pull request's change note when it opens, written for the
+  changelog's reader rather than the diff's reviewer, a breaking change
+  marked with what a consumer must do.
 - **Check**, against the rules of the detected format rather than a union of
   both: structure, category names and order, dates written year-month-day,
   link references, and release coverage. Each rule, its conditions and its
@@ -105,16 +108,18 @@ first; no `Unreleased`).
 - **How the release reaches the integration branch**, chosen per
   repository: a direct push by a GitHub App the branch's ruleset lets past
   its rules (Jig's own setup, ADR-0004), or a release pull request a person
-  merges, which needs no such exception. A workflow template per CI
-  provider, and a setup step that walks through the App, the ruleset and the
-  environment holding the key.
+  merges, which needs no such exception. A GitHub Action and workflow
+  template, and a setup step that walks through the App, the ruleset and the
+  environment holding the key; other CI providers' templates when a
+  repository needs one.
 - `do-item` and `drive-pr` ask for a change note when a pull request changes
   what users see, where the format keeps one per change.
 
 The practice itself (a changelog per released artifact, mechanically
-checked) belongs in a module; decide whether M10 (environments and deploy)
-holds it or a new release module does. M12 keeps the part about parallel
-work: one change note per pull request, written in after the merge.
+checked) gets a module of its own for releases and versions, M16, which
+applies to software that is downloaded, embedded or consumed, as M10 applies
+to a deployed service. M12 keeps the part about parallel work: one change
+note per pull request, written in after the merge.
 
 ### 5. A shared runtime kernel and diagnostics
 

@@ -783,6 +783,40 @@ make, use the entry's term instead.
 - **JSONL (JSON Lines)** — a text format with one complete JSON value per
   line. Appending a record is appending a line, and a reader can process the
   file line by line, so it suits logs that only grow.
+- **Front matter** — a block of `key: value` lines between two `---` lines
+  at the very top of a Markdown file, holding facts about the file rather
+  than its text, such as a change note's `release:`.
+- **Common Changelog** — a stricter changelog format than Keep a Changelog
+  ([common-changelog.org](https://common-changelog.org/)): written at
+  release time, no Unreleased section, the change types `Changed`,
+  `Added`, `Removed` and `Fixed`, and every entry one line with a reference
+  to the change and its authors (which a project with one contributor may
+  leave out).
+- **Ruleset** — GitHub's set of rules for a branch or tag (a pull request
+  required, checks that must pass, no force pushes), with a list of
+  *bypass actors*: the people, teams or apps allowed past the rules. The
+  older branch protection grants its exceptions one rule at a time (who may
+  push, who may skip the required pull request); a ruleset's bypass actor
+  passes every rule in that ruleset, so rules an actor must not pass go in a
+  ruleset that does not name it.
+- **GitHub App** — an identity an organization creates for automation, with
+  only the permissions it is given and on only the repositories it is
+  installed on. A workflow mints a token for it that lasts an hour, so no
+  person's credential is stored.
+- **Deployment environment** — a named GitHub Actions setting that holds
+  secrets and limits which branches may use them. A key kept in an
+  environment restricted to `main` cannot be read by a workflow running on
+  any other branch.
+- **Composite action** — a GitHub Actions action whose `action.yml` combines
+  several steps into one, used like a single step. A workflow uses one from
+  its own repository by path (`uses: ./path`) or from another repository
+  with `uses: owner/repo/path@ref`; GitHub then fetches it at the pinned
+  ref, so a workflow can run that repository's scripts without checking it
+  out.
+- **TOML (Tom's Obvious, Minimal Language)** — a configuration file format of
+  `key = value` lines grouped under `[section]` headings. Python projects
+  (`pyproject.toml`) and Rust crates (`Cargo.toml`) keep their name and
+  version in it.
 - **Configuration layer** — one source of configuration values, read in a
   fixed order so a later one overrides an earlier one: a person's own file
   for every repository, then the repository's *consumer overlay*, then
