@@ -1,0 +1,5 @@
+# The token lacks the permission: no number of attempts grants it.
+\(HTTP 403\)$
+
+# The repository does not exist under that name.
+^fatal: repository '.*' not found$

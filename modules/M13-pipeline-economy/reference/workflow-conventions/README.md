@@ -101,9 +101,24 @@ is a finding to rewrite or excuse, never a pass.
 
 ### ci-hold
 
-Applies only when `ci.hold_label` is set ([the CI hold](../../../../plugin/skills/drive-pr/README.md#ci-hold));
-otherwise a pass says it was not applicable.
+Applies only when `ci.hold_label` is set (the [CI hold](../../README.md#7-hold),
+whose driver side is [drive-pr](../../../../plugin/skills/drive-pr/README.md#ci-hold));
+otherwise a pass says it was not applicable. The rules check the hold's
+shape structurally, each by the one form that is provably safe,
+rather than by a list of unsafe spellings: a spelling the lint does not
+recognize is a finding to rewrite or excuse, never a pass.
 
+- `ci-hold-events`: every pull-request workflow that takes part in the
+  hold, one with a guarded heavy job or a call to a heavy workflow, or one
+  holding a required check, lists `opened`, `synchronize`, `reopened`,
+  `labeled` and `unlabeled` under each of its `pull_request` and
+  `pull_request_target` triggers. Applying the label fires only `labeled`,
+  so without it no run reports under the hold and every check keeps its
+  pre-hold result; removing it fires only `unlabeled`, so without it
+  nothing runs again on the released head. Listing any type replaces the
+  three defaults, so they are listed too. A `types:` that is not a list of
+  names could not be checked. A pull-request workflow with no heavy work
+  and no required check is outside the hold and needs none of this.
 - `ci-hold-guard`: every heavy job (see below) of a pull-request workflow
   skips while the label is present, and so does every job of a pull-request
   workflow that calls a heavy workflow of the repository, directly or
@@ -119,7 +134,12 @@ otherwise a pass says it was not applicable.
   run the job while held; nor does a term that only holds the test
   (`!!contains(…)`, `!contains(…) == false`), the test inside a quoted
   string, another first argument, or a label that only contains the
-  configured one (`on-hold` for `hold`).
+  configured one (`on-hold` for `hold`). The guard reads the pull request's
+  label set, never the event's action: with both label transitions
+  triggering runs, a guard that skipped on every `labeled` event would let
+  any unrelated label replace a failing head's result with a passing skip,
+  while this one skips only a pull request that carries the hold label and
+  runs real CI on any other label event.
 - `ci-hold-sentinel`: some job of a pull-request workflow that holds a
   required check fails while the label is present, and its failure reaches
   that check. The job is the required job, or one the required job needs
@@ -177,8 +197,9 @@ configuration.
 
 ### cache-env-parity
 
-Pipelines that share a cache have the same key-affecting environment;
-otherwise one writes entries the other reads under different conditions.
+Pipelines that share a cache have the same key-affecting environment
+([M13's piece 8](../../README.md#8-cache)); otherwise one writes entries
+the other reads under different conditions, in a namespace of its own.
 Groups are declared, since which jobs share a cache cannot be read reliably;
 with none, the rule is not applicable:
 
@@ -190,7 +211,10 @@ cache_groups:
 ```
 
 A job's environment is its workflow's `env:` overlaid with its own. A member
-differing from the first one is reported on its own job.
+differing from the first one is reported on its own job. The lint compares
+the declared text, so two jobs reading the same secret pass even when the
+secret is empty in one of them at run time: the step that fails on an empty
+credential is the job's own ([mappings](../../mappings.md#cache)).
 
 ### pinned-uses
 
@@ -287,7 +311,8 @@ required check reported by another workflow shape is not seen: set the field
 to name it. A `timeout-minutes` written
 as an expression is accepted unchecked, since its value is known only at run
 time. The lint finds the sentinel step by its condition but cannot prove the
-step fails: its script must exit non-zero, which review checks. Whether a concurrency key
+step fails or read what it says: its script must exit non-zero with a
+message that names the label to remove, which review checks. Whether a concurrency key
 covers what it cancels, and whether an aggregator's script judges each result
 correctly, stay with review.
 

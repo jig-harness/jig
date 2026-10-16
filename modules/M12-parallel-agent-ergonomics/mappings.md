@@ -2,8 +2,8 @@
 
 The module [invariant](README.md) — deterministic per-worktree ports, a
 cross-worktree heavy-run mutex with a CI bypass, branch reuse-before-create,
-change records of their own assembled after the merge, and banned shared-state
-footguns — is tool-independent. This file maps its mechanisms
+change records of their own assembled after the merge, banned shared-state
+footguns, and gate output shaped for an agent — is tool-independent. This file maps its mechanisms
 onto concrete worktree managers / agent runners, package managers, and
 [CI](../../GLOSSARY.md) providers. Replace `<placeholders>` with your values.
 
@@ -21,6 +21,7 @@ repository as the working directory.
 | `reference/resource-lock/with-resource-lock.ts` | around heavy local gate commands (build, test, e2e) | lock via `LOCK_NAME`/`--lock`; bypass via `CI`/`RESOURCE_LOCK_BYPASS` |
 | [`changelog/scripts/release.ts`](../../plugin/skills/changelog/scripts/release.ts) | on the integration branch after every merge, one run at a time | notes directory, changelog and version files via flags |
 | [`changelog/scripts/check.ts`](../../plugin/skills/changelog/scripts/check.ts) | in the branch gates | the same, plus `--base` and `--release-path` |
+| `reference/quiet-run/quiet-run.ts` | around each gate command an agent runs (a `test:quiet` script, or a runtime hook) | `--name` per part, `--tail` for the lines a green run shows |
 | `reference/worktree-namespace/namespace-for-worktree.ts` | the migration or dev command, and the create hook | the worktree's branch (arg or `WORKTREE_ID`), `--prefix`, `--max-length` |
 | `reference/worktree-namespace/find-stale-namespaces.ts` | the owner's reap command, before any drop | the inventory via `--inventory`, `git worktree list --porcelain` via `--live`, `--owner`, `--production` (required) |
 
@@ -156,3 +157,66 @@ that branch is protected, give the step an identity allowed past the
 protection (a GitHub App or a token stored as a secret, with contents write
 on that repository only), or have it open a release pull request a person
 merges.
+
+## Agent-facing gate output
+
+The invariant: a gate speaks to an agent in a condensed voice on green and
+in full on red, keeps its own exit status, and prints one verdict line per
+part. Two seams carry it: the runner's own flags, and a wrapper the
+repository or the agent runtime applies. The wrapper is
+[`reference/quiet-run/`](reference/quiet-run/); the flags below condense
+less than it does, but cost nothing to adopt.
+
+### Runner flags
+
+| Runner | Quieter on green | On red | Trap |
+|--------|------------------|--------|------|
+| `go test` (no `-v`) | one `ok` / `FAIL` line per package: the verdict-per-part shape, built in | a failing package prints its output in full | `-v` turns every test into a line again |
+| pytest | `-q` (or `-qq`), `--tb=short` | failures keep their traceback | an argument that matches nothing must fail the run, not report that no tests ran: the wrapper's shell sets its no-match option (`failglob`) for that reason |
+| vitest | `--reporter=dot` | failures print in full under every reporter | `--silent` drops the tests' own console output, which is often the diagnostic |
+| Jest | `--reporters=summary` | the same | `--silent`, the same |
+| `bun test` | no condensing flag: wrap it | — | — |
+| `cargo test` | `-q` | failures print in full | — |
+| Biome | `--reporter=summary` | the summary lists each failing rule | — |
+| ESLint | — | — | `--quiet` hides warnings, not success noise: with a ratchet counting warnings ([M1](../M1-gates-enforcement-ladder/README.md)) it hides what the ratchet counts |
+| `tsc` | prints nothing on success already | errors only | — |
+| Turborepo | `--output-logs=errors-only`: a task's log only when it fails | the failing tasks' logs | without `--continue`, the first failure stops the rest, and their missing verdicts mean did not run; with it, every part runs and gets its line |
+
+### The pipe trap
+
+`bun test | tail -n 30` exits with `tail`'s status, so the suite's failure is
+gone before anything reads it. `set -o pipefail` keeps the failing status
+in bash and zsh, but it is off by default and a hook's shell is not always
+the agent's; the wrapper captures the status from the command itself and
+needs no shell option.
+
+### Agent-runtime hooks
+
+A runtime that can rewrite a command before it runs applies the wrapper
+automatically; where it cannot, the quiet package script named in the
+instruction file is the seam, and the agent runs it by convention.
+
+| Runtime | Seam | Contract |
+|---------|------|----------|
+| Claude Code | a `PreToolUse` hook on the `Bash` tool | reads the tool call as JSON on standard input (`tool_input.command`), replies with `hookSpecificOutput.updatedInput.command` holding the rewritten command; it must not reply with a permission decision, since a rewrite is not a review of the command, and the rewritten call goes through the normal permission flow |
+| any runtime | the quiet script (`test:quiet`, `lint:quiet`) the instruction file names | the agent runs it by convention; no rewrite |
+
+The hook's safety model fails towards showing more, never towards hiding a
+failure:
+
+- it rewrites only a command that, trimmed, is a plain invocation of a
+  known runner (an allowlist of exact prefixes, each followed by a space or
+  the end), and the check for shell punctuation runs **before** the prefix
+  match, so a rewrite can never start a second command;
+- anything with a pipe, a redirect, a subshell, a quote, a newline or a
+  background run passes through untouched, and so does an inspection flag
+  (`--help`, a dry run, a collection-only run, a coverage or durations
+  report, a watch or debugger mode): those outputs are the payload, and a
+  tail of them would be wrong, not merely short;
+- the rewritten command captures the exit status from the runner itself and
+  bounds what it captures;
+- a cancellation prints what was captured before re-raising the signal, so
+  a run killed by the tool's own timeout leaves its diagnostics behind;
+- the shell the wrapper hands the command to fails an argument that matches
+  nothing (`failglob`), so a mistyped test path cannot pass as "no tests
+  ran".

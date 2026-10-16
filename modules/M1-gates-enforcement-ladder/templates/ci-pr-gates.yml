@@ -33,6 +33,12 @@ on:
   pull_request:
     branches: [<default-branch>]
     types: [opened, synchronize, reopened]
+    # CI hold (opt in; Jig module M13, piece 7): with a hold label, list both
+    # label transitions too. Applying the label fires only `labeled`, so
+    # without it the held head keeps its pre-hold result; removing it fires
+    # only `unlabeled`, so without it nothing runs again on the released head.
+    # Listing any type replaces the three defaults, so they stay listed:
+    #   types: [opened, synchronize, reopened, labeled, unlabeled]
 
 # Cancel in-progress runs for the same PR when new commits are pushed.
 concurrency:
@@ -118,6 +124,32 @@ jobs:
       - name: Setup toolchain
         if: needs.changes.outputs.code == 'true'
         run: <install language runtime + dependencies>
+      # Cache (opt in; Jig module M13, piece 8): the provider substitutes an
+      # empty string for a secret that is absent or rotated out rather than
+      # failing, and the task runner rarely fails on it either, so a job with
+      # an empty credential splits off silently: it runs without the shared
+      # cache, or, where the value selects the store, writes a cache
+      # namespace of its own that no other job reads. Fail before the first
+      # task instead. The secrets context is unavailable in `if:`, so the
+      # values go through env:. Only a trusted run is held to this: a pull
+      # request from a fork, or one Dependabot opened, receives no secrets by
+      # design and runs uncached (M13's trust boundary), so the condition
+      # leaves it out, and the task runner's remote cache must be switched
+      # off for it explicitly (for example its remote-cache setting set to
+      # off under the negated condition), so its gates still run.
+      # - name: Require the cache credentials
+      #   if: >-
+      #     needs.changes.outputs.code == 'true' &&
+      #     (github.event_name != 'pull_request' ||
+      #      (github.event.pull_request.head.repo.full_name == github.repository &&
+      #       github.actor != 'dependabot[bot]'))
+      #   env:
+      #     CACHE_TOKEN: ${{ secrets.<cache token> }}
+      #     CACHE_TEAM: ${{ secrets.<cache team> }}
+      #   run: |
+      #     for v in CACHE_TOKEN CACHE_TEAM; do
+      #       [ -n "${!v}" ] || { echo "::error::cache credential $v is empty: this job would run apart from the shared cache"; exit 1; }
+      #     done
       - name: Check formatting
         if: needs.changes.outputs.code == 'true'
         run: <format check command>
@@ -130,6 +162,13 @@ jobs:
       - name: Build
         if: needs.changes.outputs.code == 'true'
         run: <build command, scoped to changed packages + dependents if your task runner supports it>
+      # Cache (opt in): the hit rate from the task runner's run summary, into
+      # the job summary, so a cache that stores nothing or a namespace split
+      # shows as a zero beside the other jobs' numbers (M11's
+      # ci-cache-hit-rate metric reads it).
+      # - name: Report the cache hit rate
+      #   if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
+      #   run: <command that prints hits, misses and the rate from the run summary> >> "$GITHUB_STEP_SUMMARY"
 
   # Tests on a separate runner, in parallel with the build job. Skipped as a
   # whole when the change needs no tests; the aggregator tells that skip apart
@@ -137,6 +176,13 @@ jobs:
   tests:
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    # CI hold (opt in): on each job the hold may skip, add the guard as an
+    # &&-joined term of its condition. It tests the pull request's labels,
+    # never the event's action: with label events starting runs, a job that
+    # skipped on any `labeled` event would let an unrelated label turn a
+    # failing head into a passing skip, while this one skips only a held
+    # pull request and runs real CI on any other label event.
+    #   if: needs.changes.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, '<hold label>')
     runs-on: <runner, e.g. ubuntu-latest>
     timeout-minutes: <2-3x the slowest healthy run, at most 60, e.g. 30>
     steps:
@@ -168,6 +214,17 @@ jobs:
     runs-on: <smallest runner, e.g. ubuntu-latest>
     timeout-minutes: 5
     steps:
+      # CI hold (opt in): the held-head check. It fails this required check
+      # while the label is present, so a held head is visibly not mergeable
+      # from the moment the label lands, and its message says how to release
+      # it. Keep it first, in this job (which runs on `!cancelled()`, so a
+      # heavy job the hold skipped cannot skip it too), with no
+      # continue-on-error: a tolerated failure fails nothing.
+      # - name: Fail while held
+      #   if: contains(github.event.pull_request.labels.*.name, '<hold label>')
+      #   run: |
+      #     echo "::error::CI is held between review rounds: remove the <hold label> label to run every check on this head"
+      #     exit 1
       - name: Require every selected job
         env:
           CODE: ${{ needs.changes.outputs.code }}

@@ -1,0 +1,4 @@
+# A documented group
+^error: API rate limit exceeded
+
+connection reset by peer$

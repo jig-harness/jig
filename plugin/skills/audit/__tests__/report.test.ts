@@ -461,7 +461,6 @@ describe("the map", () => {
     expect(rows.map((r) => r.module.module)).toEqual([...input.profiles.order]);
     expect(rows.filter((r) => r.naReason).map((r) => r.module.module)).toEqual([
       "M6",
-      "M12",
     ]);
   });
 
@@ -837,7 +836,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toMatch(
-      /What changed \(47\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+      /What changed \(64\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
     );
     // A criterion Jig added after the prior audit's plugin was not assessed then.
     const added = addedAfter("0.14.0");
@@ -1101,7 +1100,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>46</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>63</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -1481,7 +1480,7 @@ describe("the Markdown copy", () => {
       [
         "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
         "",
-        "### What changed (47)",
+        "### What changed (64)",
         "",
         "| Module | Criterion | Before → after | Change |",
         "|--------|-----------|----------------|--------|",
@@ -1491,6 +1490,7 @@ describe("the Markdown copy", () => {
         "| M1 Gates enforcement ladder | `gate-outcomes-distinguish-could-not-check` | not scored → absent | Added by Jig |",
         "| M1 Gates enforcement ladder | `stale-exceptions-fail` | not scored → absent | Added by Jig |",
         "| M1 Gates enforcement ladder | `gate-self-tests-cover-empty-input` | not scored → absent | Added by Jig |",
+        "| M1 Gates enforcement ladder | `retries-classify-errors` | not scored → expected absent | Added by Jig |",
         "| M3 Change area catalog | `area-class-resolved` | not scored → expected absent | Added by Jig |",
         "| M4 Docs governance | `frontmatter-subset-declared` | not scored → absent | Added by Jig |",
         "| M4 Docs governance | `generators-stamp-sticky-utc` | not scored → expected absent | Added by Jig |",
@@ -1507,9 +1507,14 @@ describe("the Markdown copy", () => {
         "| M10 Environments deploy | `promotions-serialized-from-trusted-ref` | not scored → expected absent | Added by Jig |",
         "| M10 Environments deploy | `deploy-verifies-live-identity` | not scored → expected absent | Added by Jig |",
         "| M10 Environments deploy | `release-state-off-source-line` | not scored → expected absent | Added by Jig |",
+        "| M10 Environments deploy | `pipeline-index-derived-or-gated` | not scored → expected absent | Added by Jig |",
         "| M12 Parallel agent ergonomics | `change-records-one-file-per-change` | not scored → expected absent | Added by Jig |",
         "| M12 Parallel agent ergonomics | `worktree-namespaces-keyed-and-reaped` | not scored → expected absent | Added by Jig |",
         "| M12 Parallel agent ergonomics | `change-records-assembled-after-merge` | not scored → expected absent | Added by Jig |",
+        "| M12 Parallel agent ergonomics | `gate-quiet-invocation-named` | not scored → absent | Added by Jig |",
+        "| M12 Parallel agent ergonomics | `gate-output-quiet-on-green` | not scored → absent | Added by Jig |",
+        "| M12 Parallel agent ergonomics | `quiet-wrapper-self-tested` | not scored → absent | Added by Jig |",
+        "| M12 Parallel agent ergonomics | `verdict-line-per-part` | not scored → absent | Added by Jig |",
         "| M13 Pipeline economy | `superseded-pr-runs-cancelled` | not scored → absent | Added by Jig |",
         "| M13 Pipeline economy | `every-job-has-timeout` | not scored → absent | Added by Jig |",
         "| M13 Pipeline economy | `no-required-pipeline-path-filtered` | not scored → convention | Added by Jig |",
@@ -1520,6 +1525,17 @@ describe("the Markdown copy", () => {
         "| M13 Pipeline economy | `job-timeout-ceiling-linted` | not scored → absent | Added by Jig |",
         "| M13 Pipeline economy | `ci-cost-measured` | not scored → absent | Added by Jig |",
         "| M13 Pipeline economy | `queue-stall-watchdog` | not scored → absent | Added by Jig |",
+        "| M13 Pipeline economy | `ci-hold-fails-held-heads` | not scored → expected absent | Added by Jig |",
+        "| M13 Pipeline economy | `ci-hold-shape-linted` | not scored → expected absent | Added by Jig |",
+        "| M13 Pipeline economy | `cache-keys-complete` | not scored → absent | Added by Jig |",
+        "| M13 Pipeline economy | `cache-one-namespace` | not scored → expected absent | Added by Jig |",
+        "| M13 Pipeline economy | `cache-hit-rate-reported` | not scored → absent | Added by Jig |",
+        "| M13 Pipeline economy | `cache-retention-bounded` | not scored → absent | Added by Jig |",
+        "| M13 Pipeline economy | `cache-wiring-checked` | not scored → expected absent | Added by Jig |",
+        "| M13 Pipeline economy | `cache-trust-boundary` | not scored → expected absent | Added by Jig |",
+        "| M13 Pipeline economy | `runner-class-follows-work` | not scored → absent | Added by Jig |",
+        "| M13 Pipeline economy | `one-authoritative-leg` | not scored → expected absent | Added by Jig |",
+        "| M13 Pipeline economy | `cost-decisions-reopenable` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `test-tiers-declared` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `testing-rules-written` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `tier-budgets-enforced` | not scored → absent | Added by Jig |",

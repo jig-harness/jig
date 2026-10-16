@@ -74,6 +74,21 @@ is not written by the reference gate yet.
 | Allow pattern (Jig's `!` lines in `scripts/tracker-key-patterns.txt`) | `#` lines above the pattern | It matches nothing on a line the rule flags |
 | Structured list in the gate (`{ path, match, reason }`) | `reason` non-empty, checked when the list is read | No finding matches the entry in this run |
 
+## Retries
+
+A retry is classified before it is taken ([README, core piece 3](README.md#core-pieces)):
+only an error the step has classified as transient is retried, anything
+else aborts at once with the command's own message, and the classifier is
+tested against messages recorded from the real tool. The reference wrapper
+is [`reference/retry-classified/`](reference/retry-classified/).
+
+| | GitHub Actions | GitLab CI |
+|---|---|---|
+| Step-level retry | None built in: the step runs the reference wrapper, or its own loop, around the command | `retry:` on the job, with `when:` naming the failure classes the runner itself tells apart (`runner_system_failure`, `stuck_or_timeout_failure`, `api_failure`); never `when: always`, which retries a permission error as readily as a dropped connection |
+| What the classifier reads | The command's standard error and output, matched line by line against the pattern list, each pattern under its reason | The runner's failure class; a distinction the runner cannot make (a rate limit against a missing permission, both `script_failure`) still needs the wrapper inside the script |
+| The classifier's test | A test that feeds `--classify` the messages kept in `fixtures/recorded/` and asserts the answer for each | The same, for the patterns the wrapper reads |
+| What a retry must never hide | The original message and exit status: the last attempt's output is printed as the command wrote it, and an error outside the transient set ends the step on its first attempt | The same; `retry:` keeps each attempt's log |
+
 ## Custom lint rules and the ratchet
 
 A project-specific rule (a pattern the repository has decided against) is
@@ -121,6 +136,7 @@ update or unexplained version ceiling is hidden maintenance debt.
 | CI gate set | `templates/ci-pr-gates.yml` | `.github/workflows/` or `.gitlab-ci.yml` per the table above |
 | Suppression registry | `templates/suppression-registry.md` | Your docs tree, one page, linked from the instruction file |
 | Commit-msg marker | `reference/commit-msg-marker/` | `scripts/` + the manager's commit-msg hook + a CI re-check |
+| Classified retry | `reference/retry-classified/` | Around a command a CI step or a hook retries, with the pattern list and its recorded messages beside the workflow |
 | Ratchet gate | `reference/ratchet/` | A wiring file of counters and configuration files (Jig's: `tools/quality/ratchet.jsonc`), run by a package script in the gate set; CI checks out full history so the merge base exists |
 
 ## Non-JavaScript repositories

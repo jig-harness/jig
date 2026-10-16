@@ -1,0 +1,1 @@
+fatal: unable to access 'https://git.example.invalid/repo.git/': Could not resolve host: git.example.invalid

@@ -85,3 +85,12 @@ MongoDB
 CircleCI
 # the .NET platform
 NET
+
+# operating-system signal names, as in SIGTERM; a reader looks them up in the
+# platform manual, and the documents using them say what each does
+SIGHUP
+SIGINT
+SIGTERM
+
+# units of data size, not terms of art
+MiB

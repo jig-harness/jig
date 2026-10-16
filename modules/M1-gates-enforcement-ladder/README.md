@@ -95,6 +95,17 @@ behind is a place the rule silently no longer applies.
      states it. In CI the findings are also written as the platform's
      annotations, so they appear on the changed lines
      ([mappings.md](mappings.md#actionable-findings-in-ci)).
+   - **Classify before retrying.** A step that retries a command retries
+     only an error it has classified as transient, and aborts at once on
+     any other with the command's own message and status. The transient
+     patterns live in a list with the reason beside each, and the
+     [error classifier](../../GLOSSARY.md) is tested against messages
+     recorded from the real tool: wording written from memory never
+     matches, so an untested retry either never fires or retries
+     everything, and a permission error retried to the end of its budget
+     is reported as a timeout. The reference wrapper is
+     [`reference/retry-classified/`](reference/retry-classified/)
+     ([mappings.md](mappings.md#retries) places it per provider).
 4. **CI as authority** — every hook-enforced check re-runs in CI; local
    bypasses (`--no-verify`) exist for emergencies but change nothing about
    what merges. A check that was skipped, or that ran on an earlier commit,
@@ -165,8 +176,9 @@ behind is a place the rule silently no longer applies.
 - **Strict** — suppression-token registry; commit-msg process markers for
   mandatory reviews; gate self-tests required, each including a case with
   nothing to examine (the input missing, or empty where its format requires
-  content) that must not pass; advisory gates carry promotion conditions with dates;
-  cross-worktree resource mutex where parallel agents share a machine (see
+  content) that must not pass; advisory gates carry promotion conditions with dates; a retry is
+  taken only on an error classified as transient, by a classifier tested
+  against messages recorded from the real tool; cross-worktree resource mutex where parallel agents share a machine (see
   M12).
 
 ## Adoption steps
@@ -223,6 +235,11 @@ What this module provides:
   findings per rule in the working tree and the merge base, fails when a
   count grows or a configuration loosens a rule, and reports rules ready for
   promotion; with its self-tests.
+- [`reference/retry-classified/`](reference/retry-classified/) — the
+  classified retry: runs a command, retries it only on an error the pattern
+  list classifies as transient, aborts at once on any other with the
+  command's own output and status, and answers for a recorded message so
+  the list is tested against the real tool's wording; with its self-test.
 - [`mappings.md`](mappings.md) — hook managers (lefthook, husky, pre-commit),
   CI providers (GitHub Actions, GitLab CI) and pin-and-update providers; and
   the module's [maturity criteria](../../plugin/skills/audit/criteria/M1-gates-enforcement-ladder.yaml).
@@ -250,7 +267,8 @@ names GitLab's Code Quality report as the equivalent, and emitting one is
 future work for when a GitLab repository adopts the gate.
 
 The audit scores these gate-authoring rules: the three outcomes, stale
-exceptions failing, and a self-test with nothing to examine. The other rules
+exceptions failing, a self-test with nothing to examine, and retries that
+classify. The other rules
 (a scope line on green runs, actionable findings, a self-test recognizer
 broader than the gate's, mutation-tested fixtures, the size of the parsed
 population) and the gate lifecycle are not yet scored. Each needs an

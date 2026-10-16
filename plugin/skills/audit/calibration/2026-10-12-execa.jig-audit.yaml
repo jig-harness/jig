@@ -112,6 +112,10 @@ criteria:
     # A rule that still has findings is ratcheted rather than left advisory: a required gate fails a change that adds a finding to it or loosens its configuration, measured against the merge base, and a rule whose count reaches zero is promoted to blocking.
     score: absent
     evidence: "xo runs each rule as an error or switches it off (package.json xo overrides); nothing counts findings against a base"
+  M1/retries-classify-errors:   # strict, requires mechanical
+    # Every retry in the pipeline's steps and in the gates and scripts it runs retries only an error a classifier marks transient, aborts at once on any other with the command's own message and status, and the classifier is tested against messages recorded from the real tool.
+    score: expected-absent
+    evidence: "Nothing in the pipeline or its scripts retries: main.yml's steps run each command once, and package.json's scripts (xo, c8 with node --test, tsd and tsc) carry no retry"
   # M2 generated-artifact-freshness
   M2/derived-inventory-exists:   # lite, requires convention
     # Every committed derived file is listed in one canonical place together with the command that regenerates it.
@@ -521,6 +525,10 @@ criteria:
     # Release pointers only fast-forward to verified source, and rendered deployment state lives on its own ref, written only by a dedicated machine identity that the ref's protection admits (expected-absent for a repository with neither a release pointer nor rendered deployment state in git; a repository with only one of them is scored on that one).
     score: expected-absent
     evidence: "No rendered deployment state or GitOps controller; release tags are cut by the maintainer."
+  M10/pipeline-index-derived-or-gated:   # standard, requires mechanical
+    # Where the repository keeps a page listing its pipelines, that page is generated from the pipeline files or a check fails when a pipeline is missing from it or it names one that no longer exists; a hand-kept page with no check does not count.
+    score: expected-absent
+    evidence: "No page lists the pipelines: main.yml is the only workflow, and the provider's list is the index"
   # M11 process-observability
   M11/process-events-documented:   # lite, requires convention
     # The process events the team measures (review outcome + cost, gate pass/fail + duration, cycle times) are named and documented as a closed set, distinct from product analytics.
@@ -595,6 +603,22 @@ criteria:
     # The footgun bans are enforced where mechanizable — e.g. a hook or lint rejects a root install with a package manager the repo did not declare.
     score: expected-absent
     evidence: "No footguns to enforce: one package manager (npm, no packageManager field, package-lock=false in .npmrc) and no parallel agents."
+  M12/verdict-line-per-part:   # standard, requires convention
+    # A gate run with several parts ends each part with one named verdict line, and its reader treats a part without one as not run, never as passed.
+    score: absent
+    evidence: "package.json's test script chains lint, unit and type with &&: npm prints each part's banner as it starts but no line names a part's outcome, and the chain stops at the first failure so a later part prints nothing; in main.yml the parts are separate steps whose status is the provider's, and no written rule says what a missing verdict means"
+  M12/gate-quiet-invocation-named:   # lite, requires convention
+    # The gate commands name a quiet invocation for agents (a reporter flag or a script), with the rule that no filter in a pipe stands between a gate and its exit status.
+    score: absent
+    evidence: "No quiet invocation is named: package.json's scripts carry no reporter flag or quiet script, the repository has no instruction file, and no written rule forbids piping a gate through a filter"
+  M12/gate-output-quiet-on-green:   # standard, requires mechanical
+    # Each gate command an agent runs has a quiet form that prints a summary on success and the full output on failure, and exits with the gate's own status rather than a filter's.
+    score: absent
+    evidence: "No quiet form: package.json's test, lint, unit and type scripts print their full output on success and failure alike, and nothing names a condensed form for agents"
+  M12/quiet-wrapper-self-tested:   # strict, requires mechanical
+    # The quiet wrapper ships a self-test, run in CI, proving that a failing run keeps its status and prints in full, and the agent runtime applies the quiet form by itself where it has a hook for that.
+    score: absent
+    evidence: "No quiet wrapper exists to self-test (see M12/gate-output-quiet-on-green), and no tracked agent hook applies a quiet form"
   # M13 pipeline-economy
   M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
     # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.
@@ -636,6 +660,50 @@ criteria:
     # A watchdog fails loudly when runs wait for a runner longer than a set bound, because job timeouts do not count time spent in the queue.
     score: absent
     evidence: "No scheduled workflow"
+  M13/ci-hold-fails-held-heads:   # standard, requires mechanical
+    # Where a hold label suppresses CI on intermediate heads, a required check fails on every held head from the instant the label is applied, every workflow that honours the label runs on its application and its removal, and only the pull request's own hold label, never the kind of label event, skips work.
+    score: expected-absent
+    evidence: "No hold label is configured: no .config/jig.yaml, and no job in main.yml is conditioned on a label"
+  M13/ci-hold-shape-linted:   # strict, requires mechanical
+    # Where a hold label is configured, the CI-configuration lint fails a workflow of the hold that misses a label event, a skipped job whose condition is not a negated test of the pull request's labels for the exact hold label, and a hold with no step that fails a required check while the label is present.
+    score: expected-absent
+    evidence: "No hold label is configured, so there is no hold shape to lint"
+  M13/cache-keys-complete:   # standard, requires convention
+    # Every cache the pipeline uses has a written key scheme naming every input that changes its output, the values of the environment variables the task reads included, and no workflow carries a standing cache bypass in place of a complete key.
+    score: absent
+    evidence: "One cache, actions/cache for the link checker's .lycheecache in main.yml, keyed by the commit sha with a prefix restore key; no document names the cache or what its key covers, and no step bypasses it"
+  M13/cache-one-namespace:   # standard, requires mechanical
+    # Pipelines that share a cache produce an identical key-affecting environment, checked by a lint, and a job whose cache credential is empty fails before its first task rather than writing a namespace of its own.
+    score: expected-absent
+    evidence: "The one cache (actions/cache in main.yml) is keyed by the commit sha with no environment value or credential in its key, and no job shares a remote cache"
+  M13/cache-hit-rate-reported:   # standard, requires mechanical
+    # Every run that uses a cache reports its hit rate (hits and misses) in the run's summary, and the rate is a registered process metric.
+    score: absent
+    evidence: "main.yml's actions/cache step for .lycheecache writes nothing about hits or misses to the run summary, and no metric registry exists"
+  M13/cache-retention-bounded:   # strict, requires mechanical
+    # Every cache has a retention bound that a scheduled prune or the store's own eviction enforces, with the window written beside its key scheme, and a declared cache that stores nothing is detected.
+    score: absent
+    evidence: "The .lycheecache cache relies on the provider's own eviction: no window is written beside a key scheme (none exists), and nothing reads the cache's usage or alarms on zero hits"
+  M13/cache-wiring-checked:   # strict, requires mechanical
+    # A gate fails a cache wired on some steps and not on others: in a container build, every step that invokes the package manager in a stage whose store is on a cache mount carries the mount, and no step pins the store with a per-command flag.
+    score: expected-absent
+    evidence: "No Dockerfile or container build in the tree; the only cache is the link checker's"
+  M13/cache-trust-boundary:   # strict, requires mechanical
+    # Only trusted contexts write to a shared cache, its entries are signed or verified on read, and an untrusted run (a pull request from a fork) gets no cache credentials and runs uncached rather than under a namespace of its own.
+    score: expected-absent
+    evidence: "The only cache is the provider's own actions/cache, scoped by the provider and reached without a credential; no remote task-runner cache is shared"
+  M13/runner-class-follows-work:   # standard, requires convention
+    # Each CI job's runner class is written down with the measurement behind it, the jobs that only decide or report (the resolver, the aggregator, an echo job) run on the smallest class, and a machine's parallelism is set once as a product, the task runner's package concurrency times the workers per package, at or below its cores.
+    score: absent
+    evidence: "Every job runs on ${{ matrix.os }}-latest, the default hosted class, with no measurement recorded beside it; there is no resolver or aggregator to put on the smallest class, and node --test runs with --test-concurrency=1 under no task runner"
+  M13/one-authoritative-leg:   # standard, requires convention
+    # CI is the single authority for every check: the written record says so and that skipping a hook never changes what merges, each leg before CI (a hook, a remote sandbox) selects no more work than CI does for the same change, and a leg that holds a machine beyond CI is an opt-in recorded with the failure class it catches that CI cannot and a checkable reopen condition in each direction.
+    score: expected-absent
+    evidence: "No leg runs before CI: no hook manager, no pre-push hook and no sandbox; main.yml is the only place the checks run"
+  M13/cost-decisions-reopenable:   # strict, requires mechanical
+    # Every decision that changed what the pipeline spends (a runner resized, a leg narrowed or added, a suite moved, a cache turned on) is in a cost ledger with its measurement before and after in one unit, or a due date for the after, and a reopen condition naming a registered metric, a comparator, a threshold and a window; a gate fails an entry without them.
+    score: absent
+    evidence: "No cost ledger and no recorded pipeline-spend decision: main.yml runs one matrix job on the default runners"
   # M14 testing-strategy
   M14/test-tiers-declared:   # lite, requires convention
     # Every test suite has a written tier (unit, integration, end-to-end or the repository's own names) with the trigger that runs it and its time budget.

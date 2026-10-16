@@ -31,6 +31,11 @@ event_types:
   # (see M1); pass-rate and duration-trend metrics roll up from these.
   - type: gate_result
     required: [gate, result, duration_ms]
+    # optional: cache_hit_rate (hits over hits plus misses, 0-100) from the
+    # hit rate the run writes to its summary; M13's ci-cache-hit-rate reads it
+    # optional: queue_wait_ms (the job's start less its creation) and
+    # runner_class, from the provider's job record; M13's ci-queue-wait and
+    # ci-runner-minutes read them
 
   # Time elapsed between two lifecycle stages (open->ready, ready->merged,
   # merged->deployed). One event per stage transition.

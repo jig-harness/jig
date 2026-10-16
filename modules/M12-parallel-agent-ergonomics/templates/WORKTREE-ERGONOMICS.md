@@ -128,6 +128,23 @@ not reaped. The decision script and the per-database commands:
 and the module's
 **[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.
 
+### 8. Gate output written for an agent
+
+An agent reads a gate's output line by line, so a clean run that prints
+every passing test spends the agent's budget on nothing, and the obvious
+filter (`| tail`) replaces the run's exit status with its own, so a red run
+comes out green. Each gate command has a quiet form, a script of the
+repository's own (`test:quiet`, `lint:quiet`): on success it prints a
+verdict line and the last few lines, on failure the full output, and it
+exits with the gate's own status, taken from the command itself and never
+from a pipe. A run with several parts ends each with one named verdict
+line; a part without one did not run, and never counts as passed. The
+portable wrapper:
+**[reference/quiet-run](https://github.com/docomply/jig/tree/main/modules/M12-parallel-agent-ergonomics/reference/quiet-run)**;
+the runners' own flags and the shape of a hook that applies the wrapper in
+an agent runtime are in the module's
+**[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md#agent-facing-gate-output)**.
+
 ## Adopt it
 
 1. Vendor `reference/port-allocator/` and `reference/resource-lock/` (or copy the
@@ -143,3 +160,7 @@ and the module's
 6. If worktrees share a database, derive each one's namespace (rule 7) in the
    migration command, write owner and expiry on create, and give every owner
    the reap command.
+7. Give each gate command a quiet form (`test:quiet`, `lint:quiet`) by
+   wrapping it with `quiet-run.ts` or the runner's own flag, name it in the
+   instruction file as what agents run, and keep the gate's exit status out
+   of any pipe (rule 8).

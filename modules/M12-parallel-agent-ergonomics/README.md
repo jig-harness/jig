@@ -13,8 +13,12 @@ own), so the agent misdiagnoses them and burns a session chasing a ghost. The co
 continue past the machine: when every pull request adds its line to the top of
 the changelog and bumps the version, each merge puts every other open pull
 request in conflict, and each conflict costs a resolution and another full CI
-run. This module treats "N agents in parallel" as a **designed-for
-condition** and engineers the collisions away up front.
+run. And the agents collide with their own budgets: a clean test run
+prints hundreds of lines an agent pays to read and learns nothing from,
+while the filter that would quiet it (`| tail`) swallows the run's exit
+status, so a red run comes out green. This module treats "N agents in
+parallel" as a **designed-for condition** and engineers the collisions away
+up front.
 
 ## Invariant
 
@@ -31,7 +35,9 @@ condition** and engineers the collisions away up front.
 > reflection** so a session's lessons reach the learning loop; and **no pull
 > request edits a file every pull request edits**: a change's changelog entry
 > and version bump are a **change note** of its own, which a release step
-> writes into the changelog after the merge.
+> writes into the changelog after the merge; and a **gate speaks to an
+> agent** in a condensed voice on green and in full on red, keeping its own
+> exit status, with one named verdict line per part.
 
 Everything below is one tool-independent statement made mechanical; the
 per-ecosystem wiring lives in [mappings.md](mappings.md).
@@ -100,7 +106,6 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    `check.ts` + self-test) for a
    [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) file; the tools
    that do the same per ecosystem are in [mappings.md](mappings.md).
-
 7. **Per-worktree data namespaces** — several worktrees share one database
    server, so each derives its own namespace (a schema, a database, a key
    prefix) from its identity, the way it derives its port: the same worktree
@@ -117,6 +122,29 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    [M10's symmetric teardown](../M10-environments-deploy/README.md#environment-hygiene)
    applied on the developer's machine.
 
+8. **Agent-facing gate output** — a gate command an agent runs is read by
+   the agent, line by line, so its output is shaped for that reader. On
+   success its **[quiet mode](../../GLOSSARY.md)** prints a summary (a
+   [verdict line](../../GLOSSARY.md) and the last few lines); on failure it
+   prints the full output; and it **keeps the gate's own exit status**,
+   which a filter in a pipe (`| tail`, `| grep`) would replace with its
+   own, turning a red run green. A run with several parts prints **one
+   named verdict line per part**, and its reader treats a **missing verdict
+   line as "did not run"**, never as passed, so a part that was skipped or
+   a wrapper that died cannot pass by silence. The quiet form is a script
+   of the repository's own (`test:quiet`, `lint:quiet`), so every agent
+   runtime and every person runs the same one. A runtime that can rewrite
+   a command before it runs (an agent hook) applies it automatically, under
+   a safety model that fails towards showing more: it rewrites only a plain
+   invocation of a known runner; leaves anything with shell punctuation, a
+   pipe, a redirect, a background run or an inspection flag (`--help`, a
+   dry run, a coverage report, a watch mode) untouched; bounds what it
+   captures; and fails a mistyped test path instead of reporting that no
+   tests ran. The portable wrapper is
+   [`reference/quiet-run/`](reference/quiet-run/) (`quiet-run.ts` +
+   self-test); the runners' own flags and the hook shape per runtime are in
+   [mappings.md](mappings.md#agent-facing-gate-output).
+
 The whole copyable model — all its rules in one place, ready to drop into a docs
 tree — is [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md).
 The branch-discipline block is written to be **imported into an agent instruction
@@ -129,7 +157,10 @@ governs how those files layer), so every agent inherits the rules.
   written down (a convention agents can follow), and a port-allocation
   convention exists (even if only "each worktree picks a port from this range");
   and a change records its changelog entry and version bump as a change note
-  of its own, not as an edit to the changelog or the version.
+  of its own, not as an edit to the changelog or the version; and the gate
+  commands name a quiet invocation for agents (a reporter flag or a script),
+  with the rule that no filter in a pipe stands between a gate and its exit
+  status.
 - **Standard** — deterministic per-worktree port allocation is **scripted**
   (mechanical, not eyeballed); the cross-worktree heavy-run mutex is **scripted
   with a CI bypass**; and worktree create/remove hooks are wired so the port slot
@@ -139,12 +170,16 @@ governs how those files layer), so every agent inherits the rules.
   reaper drops the stale ones; and a release
   step **assembles the change notes after the merge**, one run at a time,
   while a check fails a malformed note or a direct edit to what that step
-  writes.
+  writes; and the quiet form is **scripted**: a summary on green, the full
+  output on red, the gate's own exit status, one verdict line per part.
 - **Strict** — the port allocator and the resource lock each **ship a self-test
   that runs in CI**, so a broken utility fails loudly; the teardown hook's
   reflection nudge is wired to the [M8](../M8-learning-loop/) loop; and the
   footgun bans are **enforced where mechanizable** (e.g. a hook or lint that
-  rejects the wrong package manager at the repo root).
+  rejects the wrong package manager at the repo root); and the quiet wrapper
+  ships a **self-test** proving a failing run keeps its status and prints in
+  full, and the agent runtime applies it automatically where it has a hook
+  for that, under the fail-towards-showing-more rule.
 
 ## Adoption steps
 
@@ -171,6 +206,11 @@ governs how those files layer), so every agent inherits the rules.
    [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md), run the release step
    on the integration branch after each merge, and the branch check on every
    pull request. Convert open pull requests' changelog edits into notes once.
+7. Give each gate command a quiet form: a reporter flag from
+   [mappings.md](mappings.md#agent-facing-gate-output) or
+   [`reference/quiet-run/`](reference/quiet-run/) around it, named in the
+   package scripts the instruction file lists; where the agent runtime has a
+   command-rewriting hook, wire the wrapper there.
 
 ## Status
 
@@ -185,7 +225,8 @@ governs how those files layer), so every agent inherits the rules.
 | [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree mutex for heavy runs, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
 | [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md) | The release step that writes change notes into a Keep a Changelog file and moves the version, and the branch check that holds pull requests to it |
 | [`reference/worktree-namespace/`](reference/worktree-namespace/) | The per-worktree data namespace: the name derived from a worktree's identity, and the reaper's decision (which of one owner's namespaces are expired or orphaned, which were created unlabelled, with production refused) |
-| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools, per-database namespace commands |
+| [`reference/quiet-run/`](reference/quiet-run/) | The quiet-run wrapper: a verdict line and the tail on green, everything on red, the command's own exit status; with its self-test |
+| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools, per-database namespace commands, test-runner quiet flags and the command-rewriting hook per agent runtime |
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference utility is a Bun script with a self-test. The port allocator
@@ -203,10 +244,14 @@ the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
   the release step's commit needs an identity allowed past that protection,
   or a release pull request that a person merges; which one is the
   repository's decision, and its CI provider's settings hold it.
-- **Repositories without parallel agents.** The module is **expected-absent**
-  for a repository that never runs parallel agents on one machine: with a
-  single checkout there is nothing to partition, so scoring it "absent" is
-  correct, not a gap. The change-note criteria are expected-absent where no
+- **Repositories without parallel agents.** The worktree practices
+  (branches and footguns, ports, the heavy-run mutex, worktree hooks and
+  namespaces, the teardown nudge) are **expected-absent** for a repository
+  that never runs parallel agents on one machine: with a single checkout there
+  is nothing to partition, so scoring them "absent" is correct, not a gap.
+  The gate-output practices (the quiet form, its self-test, one verdict line
+  per part) apply to any repository where an agent runs the gates, single
+  checkout or not. The change-note criteria are expected-absent where no
   changelog or version changes with each pull request.
 
 ### Future
@@ -221,3 +266,12 @@ the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
   caches and containers keyed to worktrees that no longer exist), run by the
   owner with the same report-first rule as the namespace reaper, is designed
   and not yet validated in a working repository.
+- **A copyable command-rewriting hook** that applies the quiet wrapper in
+  an agent runtime: the contract and the safety model are in
+  [mappings.md](mappings.md#agent-facing-gate-output), and each repository
+  writes its own until a second runtime shows what two such hooks share.
+- **Jig's own gate runner in the quiet form.** `scripts/gates.ts` runs each
+  step with its full output and prints one line at the end, so Jig's record
+  scores piece 8 absent; wrapping its steps in
+  [`reference/quiet-run/`](reference/quiet-run/), one verdict line per step,
+  is open work.

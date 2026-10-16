@@ -389,8 +389,9 @@ the currency step's matrix.
   from job to job; artifacts are built once and promoted by digest; the
   watchdog runs on a schedule, counting only code-bearing lag; every
   resource the pipeline creates has a scheduled, owner-keyed reaper that
-  reports by default; and the promotion gap is computed from ancestry on a
-  schedule.
+  reports by default; the promotion gap is computed from ancestry on a
+  schedule; and a page that lists the pipelines, where one is kept, is
+  generated or checked, never hand-kept.
 - **Strict** — the verified-pointer watchdog and the promote-safety lint
   both run in [CI](../../GLOSSARY.md) with their self-tests; the watchdog
   decides by cause, heals only a dropped trigger and within a budget of
@@ -463,7 +464,7 @@ it recognises when the repository names no document of its own
 
 | Piece | What it is |
 |-------|------------|
-| [`templates/CI-ARCHITECTURE.md`](templates/CI-ARCHITECTURE.md) | The copyable four-stage contract (PR gates, post-merge verification, deploy, promotion), with the preview-environment and test-data-factory contracts |
+| [`templates/CI-ARCHITECTURE.md`](templates/CI-ARCHITECTURE.md) | The copyable four-stage contract (PR gates, post-merge verification, deploy, promotion), with the preview-environment and test-data-factory contracts, and the rule for a [pipeline index](../../GLOSSARY.md): derived or gated, never hand-kept |
 | [`templates/pipeline.example.yaml`](templates/pipeline.example.yaml) | A provider-neutral spine of the four stages |
 | [`reference/verified-pointer/`](reference/verified-pointer/) | The watchdog: decides why the `verified` pointer lags (nothing to verify, verifying, blocked, within grace, a dropped trigger to heal, heals exhausted, ran but stale, diverged) and whether a verification run is stalled waiting for a runner; or, from two numbers, whether the pointer lags at all |
 | [`reference/promote-safety/`](reference/promote-safety/) | The lint that fails a production deploy that can fire on its own, ships a mutable ref, or looks its commit up again by name |

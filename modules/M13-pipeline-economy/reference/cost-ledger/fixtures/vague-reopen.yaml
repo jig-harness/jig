@@ -1,0 +1,10 @@
+version: 1
+decisions:
+  - id: tests-on-4-cores
+    decision: the test shards run on the 4-core class
+    measured:
+      unit: minutes per shard
+      before: 9
+      after: 5
+    reopen:
+      - condition: if it gets expensive

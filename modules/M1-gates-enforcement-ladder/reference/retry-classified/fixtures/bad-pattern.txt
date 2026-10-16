@@ -1,0 +1,2 @@
+# A pattern that does not compile
+^error: (unclosed

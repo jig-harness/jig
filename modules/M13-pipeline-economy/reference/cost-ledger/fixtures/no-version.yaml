@@ -1,0 +1,6 @@
+decisions:
+  - id: tests-on-4-cores
+    decision: the test shards run on the 4-core class
+    measured: { unit: minutes per shard, before: 9, after: 5 }
+    reopen:
+      - { metric: ci-runner-minutes, comparator: ">", threshold: 100, window: 30d }

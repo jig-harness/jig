@@ -1,0 +1,33 @@
+version: 1
+decisions:
+  - id: resolver-on-smallest-class
+    date: 2025-11-02
+    decision: the resolver and the aggregator run on the smallest runner class
+    measured:
+      unit: runner-minutes per run
+      before: 1.4
+      after: 0.7
+      windows: [2025-10-01/2025-10-31, 2025-11-03/2025-12-03]
+    reopen:
+      - metric: ci-queue-wait
+        comparator: ">"
+        threshold: 10
+        window: 30d
+        then: the small class's pool is short
+  - id: "sandbox-opt-in-per-area"   # quoted ids are found too
+    date: 2025-12-20
+    decision: the remote sandbox runs only for areas that opt in
+    measured:
+      unit: share of the period's runner-minutes
+      before: 0.3
+      after: null
+      measure_by: 2026-01-01
+    reopen:
+      - metric: ci-runner-minutes
+        comparator: ">="
+        threshold: 0.1
+        window: 4w
+      - metric: ci-cost-per-change
+        comparator: "<"
+        threshold: 20
+        window: 100 runs

@@ -527,12 +527,14 @@ function heavyOnPullRequests(pipelines: Pipelines) {
   });
 }
 
-/** With a CI hold, heavy pull-request jobs carry its guard, and a sentinel
- * fails a required check while the label is present. */
+/** With a CI hold, heavy pull-request jobs carry its guard, every workflow
+ * that takes part runs on both label transitions, and a sentinel fails a
+ * required check while the label is present. */
 export function ciHold(pipelines: Pipelines): Found[] {
   const label = pipelines.settings.holdLabel;
   if (!label) return [];
-  const unguarded = heavyOnPullRequests(pipelines).flatMap(({ wf, jobs }) => {
+  const heavy = heavyOnPullRequests(pipelines);
+  const unguarded = heavy.flatMap(({ wf, jobs }) => {
     return jobs
       .filter((job) => !guarded(condition(job), label))
       .map((job) =>
@@ -546,7 +548,71 @@ export function ciHold(pipelines: Pipelines): Found[] {
         ),
       );
   });
-  return [...unguarded, ...missingSentinel(pipelines, label)];
+  return [
+    ...unguarded,
+    ...missingEvents(pipelines, heavy, label),
+    ...missingSentinel(pipelines, label),
+  ];
+}
+
+/** The pull-request event types a workflow that honours the hold runs on:
+ * the three a trigger without `types:` runs on, since listing any replaces
+ * them, and the two label transitions. Applying the label must start a run,
+ * so the sentinel fails at once instead of the check keeping a pre-hold
+ * result; removing it must start one, so every required check runs again on
+ * the same head. */
+const HOLD_EVENT_TYPES = [
+  "opened",
+  "synchronize",
+  "reopened",
+  "labeled",
+  "unlabeled",
+];
+
+/** The pull-request workflows that take part in the hold: those with a
+ * guarded heavy job or a call to a heavy workflow, and those holding a
+ * required check, which the release must run again. */
+function holdParticipants(
+  { workflows, settings }: Pipelines,
+  heavy: { wf: Workflow }[],
+): Workflow[] {
+  const taking = new Set(heavy.map(({ wf }) => wf));
+  for (const wf of workflows)
+    if (isPullRequest(wf) && requiredJobs(wf, settings).length) taking.add(wf);
+  return workflows.filter((wf) => taking.has(wf));
+}
+
+/** Each pull-request trigger of a workflow that takes part in the hold lists
+ * every type the hold needs. inputs.ts has checked the shape: `types` is
+ * absent or a list of names. */
+function missingEvents(
+  pipelines: Pipelines,
+  heavy: { wf: Workflow }[],
+  label: string,
+): Found[] {
+  return holdParticipants(pipelines, heavy).flatMap((wf) =>
+    PR_EVENTS.filter((event) => event in wf.on).flatMap((event): Found[] => {
+      const listed = (wf.on[event]?.types as string[] | undefined) ?? [];
+      const missing = HOLD_EVENT_TYPES.filter((t) => !listed.includes(t));
+      if (!missing.length) return [];
+      const problem = listed.length
+        ? `the workflow honours the hold label '${label}' but its ${event} trigger lists types ${listed.join(", ")} and not ${missing.join(", ")}`
+        : `the workflow honours the hold label '${label}' but its ${event} trigger has no types:, so it never runs when the label is applied or removed`;
+      return [
+        {
+          ...at(
+            wf,
+            undefined,
+            "ci-hold-events",
+          )(
+            `${problem}: applying the label would leave the checks' pre-hold results in place, and removing it would run nothing again`,
+            `list types: [${HOLD_EVENT_TYPES.join(", ")}] under on.${event}; the guard reads the pull request's labels, so an unrelated label event still runs real CI (${README}#ci-hold)`,
+          ),
+          line: triggerLine(wf, event),
+        },
+      ];
+    }),
+  );
 }
 
 /** The jobs whose failure fails a required check: the required jobs, and

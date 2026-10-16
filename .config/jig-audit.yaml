@@ -133,6 +133,10 @@ criteria:
     # prior: convention: No continue-on-error/allow_failure in .github/workflows/gates.yml; rules at warn in biome.json and the flags in tsconfig.ratchet.json are ratcheted, and AGENTS.md § Ways of working states their promotion condition (promote at zero, which the ratchet reports)
     score: convention
     evidence: "No gate is advisory, so no review date is owed: no continue-on-error/allow_failure in .github/, and the warn-level Biome rules and tsconfig.ratchet.json flags are ratcheted (a change adding a finding fails the required gates check), which M1/existing-findings-ratcheted counts as not advisory; AGENTS.md § The ratchet adds their promotion condition, promote at zero"
+  M1/retries-classify-errors:   # strict, requires mechanical
+    # Every retry in the pipeline's steps and in the gates and scripts it runs retries only an error a classifier marks transient, aborts at once on any other with the command's own message and status, and the classifier is tested against messages recorded from the real tool.
+    score: convention
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no step of .github/workflows/gates.yml retries; the one retry loop in the gates the pipeline runs, the reflection lock in lib/module-gates.ts, retries only a closed set of error codes (TRANSIENT_LOCK_ERRORS: ENOENT, EPERM, EBUSY, EACCES), the platform's own enumeration rather than guessed wording, and returns any other error with its message at once; the classifier is not tested as the criterion asks: lib/module-gates.test.ts feeds it no recorded message and asserts no answer of it, exercising only one live condition from the set (a lock left unreadable by chmod 0, which the loop retries and then gives up on with its own message), and no test shows a code outside the set aborting at once, so the rule holds in the code alone"
   # M2 generated-artifact-freshness
   M2/derived-inventory-exists:   # lite, requires convention
     # Every committed derived file is listed in one canonical place together with the command that regenerates it.
@@ -626,6 +630,10 @@ criteria:
     # Release pointers only fast-forward to verified source, and rendered deployment state lives on its own ref, written only by a dedicated machine identity that the ref's protection admits (expected-absent for a repository with neither a release pointer nor rendered deployment state in git; a repository with only one of them is scored on that one).
     score: expected-absent
     evidence: "No release pointer and no rendered deployment state: v<version> tags are pushed by hand after merge to pin versions (plugin/README.md § Release), not to say what a deployment runs, and no GitOps controller exists"
+  M10/pipeline-index-derived-or-gated:   # standard, requires mechanical
+    # Where the repository keeps a page listing its pipelines, that page is generated from the pipeline files or a check fails when a pipeline is missing from it or it names one that no longer exists; a hand-kept page with no check does not count.
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .github/workflows/ holds one workflow (gates.yml) and no page lists the pipelines (no .github/workflows/README.md, no docs page naming them); the provider's list is the index"
   # M11 process-observability
   M11/process-events-documented:   # lite, requires convention
     # The process events the team measures (review outcome + cost, gate pass/fail + duration, cycle times) are named and documented as a closed set, distinct from product analytics.
@@ -715,6 +723,22 @@ criteria:
     # prior: absent: No hook rejects a root install with another package manager (only package.json packageManager and CI `bun install --frozen-lockfile`); lib/guarded-git-spawn.ts guards one GIT_DIR leak class only
     score: absent
     evidence: "Nothing rejects a root install with another package manager (only package.json packageManager, bun.lock and CI `bun install --frozen-lockfile`); lib/guarded-git-spawn.ts covers one GIT_DIR leak class"
+  M12/gate-quiet-invocation-named:   # lite, requires convention
+    # The gate commands name a quiet invocation for agents (a reporter flag or a script), with the rule that no filter in a pipe stands between a gate and its exit status.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: AGENTS.md, CONTRIBUTING.md and package.json name no quiet form of `bun run gates` or its parts, and no written rule forbids piping a gate through a filter"
+  M12/gate-output-quiet-on-green:   # standard, requires mechanical
+    # Each gate command an agent runs has a quiet form that prints a summary on success and the full output on failure, and exits with the gate's own status rather than a filter's.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: scripts/gates.ts runs each step with inherited output and ends with one line, all gates passed; package.json has no quiet script and no reporter flag on test or lint; no agent-runtime hook is tracked"
+  M12/quiet-wrapper-self-tested:   # strict, requires mechanical
+    # The quiet wrapper ships a self-test, run in CI, proving that a failing run keeps its status and prints in full, and the agent runtime applies the quiet form by itself where it has a hook for that.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no quiet wrapper is tracked (M12/gate-output-quiet-on-green scores it absent), so there is none to self-test, and no agent-runtime hook is tracked"
+  M12/verdict-line-per-part:   # standard, requires convention
+    # A gate run with several parts ends each part with one named verdict line, and its reader treats a part without one as not run, never as passed.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: scripts/gates.ts prints no line per step, stops at the first failing step and prints all gates passed only when every step passed; no rule in AGENTS.md or CONTRIBUTING.md reads a missing verdict as not run"
   # M13 pipeline-economy
   M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
     # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.
@@ -756,6 +780,50 @@ criteria:
     # A watchdog fails loudly when runs wait for a runner longer than a set bound, because job timeouts do not count time spent in the queue.
     score: absent
     evidence: "Scored by hand at dacc6f0, after this record's commit, because M13 postdates the audit: no watchdog: nightly.yml, the only scheduled workflow, runs suites and reads no queue times; modules/M13-pipeline-economy/reference/queue-watchdog/ is an example for other repositories"
+  M13/ci-hold-fails-held-heads:   # standard, requires mechanical
+    # Where a hold label suppresses CI on intermediate heads, a required check fails on every held head from the instant the label is applied, every workflow that honours the label runs on its application and its removal, and only the pull request's own hold label, never the kind of label event, skips work.
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so no head is held; gates.yml triggers on pull_request with the default types and runs every job in full on each push"
+  M13/ci-hold-shape-linted:   # strict, requires mechanical
+    # Where a hold label is configured, the CI-configuration lint fails a workflow of the hold that misses a label event, a skipped job whose condition is not a negated test of the pull request's labels for the exact hold label, and a hold with no step that fails a required check while the label is present.
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so there is no hold whose shape a lint could check, and no workflow of the one tracked (.github/workflows/gates.yml) reads a label"
+  M13/cache-keys-complete:   # standard, requires convention
+    # Every cache the pipeline uses has a written key scheme naming every input that changes its output, the values of the environment variables the task reads included, and no workflow carries a standing cache bypass in place of a complete key.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: the one cache is the tool cache of jdx/mise-action in gates.yml, the only workflow, on by that action's default, keyed by the action itself (its prefix and version, the platform, the mise configuration's hash); no page in the repository names the cache or what its key covers; no step forces a rerun or disables it"
+  M13/cache-one-namespace:   # standard, requires mechanical
+    # Pipelines that share a cache produce an identical key-affecting environment, checked by a lint, and a job whose cache credential is empty fails before its first task rather than running apart from the shared cache.
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: the mise-action tool cache's key takes no environment variable and no credential from the workflow, so there is no key-affecting environment to compare and no credential to require; no job of gates.yml runs a task runner with a remote cache, so no two jobs share a cache"
+  M13/cache-hit-rate-reported:   # standard, requires mechanical
+    # Every run that uses a cache reports its hit rate (hits and misses) in the run's summary, and the rate is a registered process metric.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no step reads mise-action's cache-hit output or writes it to the job summary, and the repository keeps no metric registry (M11/metrics-registry-no-dark-instruments scores it absent)"
+  M13/cache-retention-bounded:   # strict, requires mechanical
+    # Every cache has a retention bound that a scheduled prune or the store's own eviction enforces, with the window written beside its key scheme, and a declared cache that stores nothing is detected.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: the provider evicts a cache entry unused for 7 days, but no page records the tool cache or its bound, and nothing reads the repository's cache usage or alarms on a run that never hits"
+  M13/cache-wiring-checked:   # strict, requires mechanical
+    # A gate fails a cache wired on some steps and not on others: in a container build, every step that invokes the package manager in a stage whose store is on a cache mount carries the mount, and no step pins the store with a per-command flag.
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no tracked file is a Dockerfile and no workflow builds a container image, so no build keeps a store on a cache mount"
+  M13/cache-trust-boundary:   # strict, requires mechanical
+    # Only trusted contexts write to a shared cache, its entries are signed or verified on read, and an untrusted run (a pull request from a fork) gets no cache credentials and runs uncached rather than under a namespace of its own.
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no cache is shared through credentials; the mise-action tool cache is the provider's own, scoped by branch by the provider, and gates.yml runs on pull_request, never pull_request_target, so a fork's run gets no secrets"
+  M13/runner-class-follows-work:   # standard, requires convention
+    # Each CI job's runner class is written down with the measurement behind it, the jobs that only decide or report (the resolver, the aggregator, an echo job) run on the smallest class, and a machine's parallelism is set once as a product, the task runner's package concurrency times the workers per package, at or below its cores.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: gates.yml runs every job on the provider's hosted default class, areas (the resolver) and gates (the aggregator) on ubuntu-latest and platform-gates on a matrix of three operating systems (ubuntu-latest, macos-latest, windows-latest) of that one class, and no page or comment records a measurement behind a class; no task runner runs packages in parallel (bun test is one process per run), so there is no parallelism product to cap"
+  M13/one-authoritative-leg:   # standard, requires convention
+    # CI is the single authority for every check: the written record says so and that skipping a hook never changes what merges, each leg before CI (a hook, a remote sandbox) selects no more work than CI does for the same change, and a leg that holds a machine beyond CI is an opt-in recorded with the failure class it catches that CI cannot and a checkable reopen condition in each direction.
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no hook configuration is tracked (no lefthook.yml, .husky/ or .pre-commit-config.yaml; modules/M1's hook file is a template) and no remote sandbox exists, so no leg runs before CI and gates.yml is the only leg; AGENTS.md at that commit states no authority rule and nothing about skipping a hook, which becomes the criterion's question once a hook exists"
+  M13/cost-decisions-reopenable:   # strict, requires mechanical
+    # Every decision that changed what the pipeline spends (a runner resized, a leg narrowed or added, a suite moved, a cache turned on) is in a cost ledger with its measurement before and after in one unit, or a due date for the after, and a reopen condition naming a registered metric, a comparator, a threshold and a window; a gate fails an entry without them.
+    score: absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no cost ledger exists and no decision about what CI spends (the runner classes in gates.yml included) is recorded with a measurement or a reopen condition, and nothing checks for one"
   # M14 testing-strategy
   M14/test-tiers-declared:   # lite, requires convention
     # Every test suite has a written tier (unit, integration, end-to-end or the repository's own names) with the trigger that runs it and its time budget.

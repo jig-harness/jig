@@ -274,3 +274,16 @@ criteria:
       - "rendered manifests are committed to a dedicated ref that a GitOps controller reads (Argo CD targetRevision, Flux GitRepository ref)"
       - "only one job holds the writer identity's credentials, and the ref's protection restricts pushes to that identity with no pull-request requirement (or an explicit bypass for it)"
     since: 0.20.0
+
+  - id: pipeline-index-derived-or-gated
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      Where the repository keeps a page listing its pipelines, that page is
+      generated from the pipeline files or a check fails when a pipeline is
+      missing from it or it names one that no longer exists; a hand-kept
+      page with no check does not count.
+    observe:
+      - "a generator writes the page from the pipeline files (header comments, names) with a drift gate in CI, or a CI check compares the page's entries with the pipeline files in both directions"
+      - "expected-absent when no such page exists: the provider's list is the index"

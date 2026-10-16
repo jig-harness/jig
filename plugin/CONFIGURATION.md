@@ -308,7 +308,7 @@ not resolve it either.
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `ci.required_checks` | list of distinct check names; `[]` means none | Derived from the protection and rulesets of the pull request's base, and of the branch its stack lands on | drive-pr | Checks that must complete on the converged head before the drive certifies it. Required, and not empty, when `ci.hold_label` is set |
-| `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md) |
+| `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md); the workflow side is [M13's CI hold](../modules/M13-pipeline-economy/README.md#7-hold) |
 
 ## `issue_tracker`
 

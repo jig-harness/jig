@@ -33,7 +33,7 @@ runs, what it hands over to.
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
 | [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/jig:review` | Its tiers are the ones [do-item](skills/do-item/SKILL.md)'s pre-pull-request gate runs; reads the rules [adr](skills/adr/SKILL.md) derives; posts none of its findings to the pull-request threads [resolve-review-comments](skills/resolve-review-comments/README.md) settles, which come from the pull request's own reviewers |
-| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, caching and the repository's own workflow conventions | `/jig:github-actions` | The workflow-specific form of [review](skills/review/SKILL.md); sends a red CI run to [fix-ci](skills/fix-ci/SKILL.md) |
+| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, concurrency keys, caching and the repository's own workflow conventions | `/jig:github-actions` | The workflow-specific form of [review](skills/review/SKILL.md); sends a red CI run to [fix-ci](skills/fix-ci/SKILL.md) |
 
 **Understand, decide and record.** Design-level work: learn how it works today, settle the question, write the answer where the next session finds it.
 

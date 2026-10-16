@@ -30,6 +30,15 @@ export function cli(run: () => number | Promise<number>): void {
     });
 }
 
+/** The value of the option at `at`, the next argument; throw a usage error
+ * when it is missing or empty, so a dropped value never weakens a check. */
+export function optionValue(args: string[], at: number, usage: string): string {
+  const value = args[at + 1];
+  if (value === undefined || value === "")
+    throw new Error(`${args[at]} needs a value\n${usage}`);
+  return value;
+}
+
 /** Translate the POSIX character classes used by the former grep gates. */
 export function ere(pattern: string, flags = ""): RegExp {
   const classes: Record<string, string> = {

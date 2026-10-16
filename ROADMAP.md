@@ -133,6 +133,9 @@ logger that replace them; what is left moves the code onto them.
   and one process-wide registry that releases resources (`using` and
   `DisposableStack`) on return, error and signal, newest first, replacing
   each lock's own signal handlers and `drive.ts`'s hand-ordered release.
+  The retry takes a classifier: it retries only an error the caller has
+  classified as transient and rethrows the rest at once, as M1's
+  gate-authoring rule says.
   `JIG_TRACE=1` writes timed spans as JSON lines under
   `~/.local/state/jig/traces/` for every `gh` and `git` call, lock wait,
   poll and pass, carried to child processes through `TRACEPARENT` and
@@ -251,21 +254,6 @@ Done when:
   roles or the catalog's `tracker.flags` supply;
 - `do-item`'s batch check names `/jig:work-batch`;
 - the audit skill's schema and fit check cover the `work_batch` section.
-
-### 14. M13 Pipeline economy: the rest of the module
-
-[M13](modules/M13-pipeline-economy/README.md) states honest signal,
-selection, superseding, bounds, ordering and placement. Still to come:
-
-- **The CI hold**, as a practice: a held head fails a required check rather
-  than skipping it, and only results that started after the release count.
-  drive-pr's `ci.hold_label` is its runnable side.
-- **Caches.** Complete keys, one namespace, bounded retention, a reported hit
-  rate, and a trust boundary.
-- **Cost.** Runner sizing, one authoritative run of each check, and cost
-  measured with conditions that reopen a decision.
-
-Done when these are in the module with their criteria.
 
 ### 15. M14 Testing strategy: the rest
 

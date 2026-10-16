@@ -1,0 +1,9 @@
+version: 1
+decisions:
+  - id: tests-on-4-cores
+    decision: the test shards run on the 4-core class
+    reopen:
+      - metric: ci-runner-minutes
+        comparator: ">"
+        threshold: 100
+        window: 30d

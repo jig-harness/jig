@@ -1,0 +1,82 @@
+# TEMPLATE — copy to your repo (e.g. .config/ci-cost-ledger.yaml) and replace
+# the examples with your own decisions. This is the cost ledger: one entry
+# per decision that changed what the pipeline spends (a runner resized, a leg
+# narrowed or added, a suite moved to a schedule, a cache turned on), with
+# the measurement that motivated it, the measurement after it, and the
+# condition that reopens it. Jig's cost-ledger check
+# (modules/M13-pipeline-economy/reference/cost-ledger/) FAILS an entry
+# without its measurements, whose after-measurement is past its due date,
+# whose reopen condition is not checkable, or whose metric the metrics
+# registry does not carry; it fails closed on a ledger it cannot read or
+# that has no `decisions` list. An empty list passes: a pipeline that has
+# made no cost decision yet.
+#
+#   id          stable kebab-case id of the decision
+#   date        when it took effect (YYYY-MM-DD)
+#   decision    one line: what changed
+#   measured    the same unit before and after, over comparable windows
+#     unit        what the numbers are (runner-minutes per run, minutes, …)
+#     before      the number that motivated the decision
+#     after       the number once the decision had run; null until measured,
+#                 with `measure_by` naming the date the check fails without it
+#     windows     the two windows the numbers come from (before, after)
+#   reopen      one or more conditions, each checkable against a registered
+#               metric (the id in metrics-registry.yaml), a comparator
+#               (> >= < <=), a numeric threshold and a window (30d, 4w, 100 runs)
+#     then        OPTIONAL — what reopening means: the next lever to pull
+#
+# The numbers are yours; the shape is Jig's.
+
+version: 1
+
+decisions:
+  - id: resolver-and-aggregator-on-smallest-class
+    date: <YYYY-MM-DD>
+    decision: the resolver and the aggregator run on the smallest runner class
+    measured:
+      unit: runner-minutes per run
+      before: 1.4
+      after: 0.7
+      windows: [<YYYY-MM-DD/YYYY-MM-DD>, <YYYY-MM-DD/YYYY-MM-DD>]
+    reopen:
+      - metric: ci-queue-wait
+        comparator: ">"
+        threshold: 10
+        window: 30d
+        then: the small class's pool is short; size the pool before the jobs
+
+  - id: pre-push-scoped-like-ci
+    date: <YYYY-MM-DD>
+    decision: the pre-push hook selects suites by the change-area catalog, as CI does
+    measured:
+      unit: test tasks selected for a one-package change
+      before: 25
+      after: 1
+      windows: [<YYYY-MM-DD/YYYY-MM-DD>, <YYYY-MM-DD/YYYY-MM-DD>]
+    reopen:
+      - metric: ci-cost-per-change
+        comparator: ">"
+        threshold: 20
+        window: 30d
+        then: pushes fail in CI that the hook passed; widen the catalog's areas, not the hook
+
+  - id: sandbox-opt-in-per-area
+    date: <YYYY-MM-DD>
+    decision: the remote sandbox runs only for areas that opt in; no area does
+    measured:
+      unit: share of the period's runner-minutes
+      before: 0.3
+      after: null
+      measure_by: <YYYY-MM-DD>
+      windows: [<YYYY-MM-DD/YYYY-MM-DD>, <YYYY-MM-DD/YYYY-MM-DD>]
+    reopen:
+      - metric: ci-sandbox-minutes-share
+        comparator: ">"
+        threshold: 0.1
+        window: 30d
+        then: the sandbox still holds over a tenth of the period's runner-minutes, so it is being started by habit, not by the opt-in; find who starts it
+      - metric: ci-cost-per-change
+        comparator: ">"
+        threshold: 20
+        window: 30d
+        then: CI alone keeps failing an area's changes the hook passed; opt that area in

@@ -89,6 +89,101 @@ to `<channel or alert>`.
 A scheduled suite reports its failures to `<channel or issue>`, and a
 schedule that stopped running counts as failing.
 
+## 7. Hold
+
+> Delete this section if no review driver holds CI between review rounds.
+
+The hold label is `<ci:hold>`; `<the review driver>` applies it once the
+opening head's full run has completed and removes it when review converges.
+While a pull request carries it:
+
+- these jobs skip: `<e2e, …>`, each by testing the pull request's labels for
+  the label, never by the event that started the run;
+- `<the aggregator job>` fails at its first step with a message naming the
+  label, so a held head is never mergeable;
+- every workflow above runs on `labeled` and `unlabeled` as well as on
+  `opened`, `synchronize` and `reopened`, so applying the label fails the
+  head at once and removing it runs everything again on the same head.
+
+Only results that started after the label's removal count. A driver that
+died leaves the label on: remove it by hand
+(`<gh pr edit <PR> --remove-label ci:hold>`); never rerun the held run, which
+replays the event that carried the label. Merge queue:
+`<how a queued pull request is released, or "no merge queue">`.
+
+## 8. Caches
+
+> One row per cache. A cache answers only for the inputs its key names,
+> every pipeline that shares it keys it the same way, its size is bounded
+> and its hit rate is seen, and only a trusted run writes to it. Delete
+> the section if the pipeline uses no cache.
+
+| Cache | Key covers | Shared by | Retention bound, enforced by | Hit rate reported in |
+|-------|------------|-----------|------------------------------|----------------------|
+| `<dependency store>` | `<the lockfile's hash, the runner's operating system, the toolchain version>` | `<pull-request and post-merge workflows>` | `<7 days unused, 10 gigabytes; the provider's eviction>` | `<the restore step's cache-hit output, in the job summary>` |
+| `<task runner's remote cache>` | `<every tracked file of the package, the declared environment values, the lockfile>` | `<every workflow that runs the task runner>` | `<the service's own retention>` | `<hits and misses from the run summary, in the job summary>` |
+| `<container layer cache>` | `<each instruction and the files it copies; the store on a cache mount>` | `<the image-build jobs>` | `<the builder's prune: entries older than 7 days>` | `<CACHED steps in the build log>` |
+| `<shared local cache on developer machines>` | `<as the task runner's>` | `<every working copy of the clone>` | `<7 days by modification time; the scheduled prune>` | `<—>` |
+
+- A job that shares `<the remote cache>` fails before its first task when
+  `<the token, the team or the signature key>` is empty; the jobs are
+  declared as one cache group for the workflow-convention lint.
+- A result that went stale is fixed by completing the key. `<--force or the
+  equivalent>` is never a standing fix.
+- `<The remote cache>` is signed with `<the signature key>`; an entry that
+  does not verify is recomputed. A pull request from a fork gets no cache
+  credentials and runs uncached.
+- Every step of a container build that reads the store mounts it; the
+  cache-mount check runs on changes to `<the Dockerfiles>`.
+
+## 9. Runner classes and parallelism
+
+> One row per job, or per family of jobs. The jobs that only decide or
+> report run on the smallest class; a larger class carries the measurement
+> that earned it, and the decision is in the cost ledger.
+
+| Job | Runner class | Measured work behind the class |
+|-----|--------------|--------------------------------|
+| `<resolver>`, `<aggregator>` | `<the smallest class>` | they decide or report; nothing to measure |
+| `<gates and build>` | `<the smallest class>` | `<wall time at this class; processor use below half>` |
+| `<tests, per shard>` | `<a 4-core class>` | `<wall time 9 min at 2 cores, 5 min at 4; ledger entry tests-on-4-cores>` |
+
+On one machine, `<the task runner>`'s package concurrency (`<n>`) times each
+package's worker cap (`<m>`) is at most the cores (`<n × m ≤ cores>`); the
+cap is set in every package that invokes `<the test runner>`.
+
+## 10. Legs before CI
+
+CI is the authority for every check: its verdict on the merged head is the
+one a merge waits for, and skipping a hook never changes what merges. Each
+leg before it selects no more work than CI does for the same change.
+
+| Leg | What it runs | How it selects | Holds a machine? |
+|-----|--------------|----------------|------------------|
+| pre-commit hook | `<format and the staged-file fixes>` | the staged files | no |
+| pre-push hook | `<the fast gates>` | `<the resolver over the change-area catalog, as CI; or the task runner's changed-since filter>` | no |
+| `<remote sandbox>` | `<the CI command list>` | `<the package list the dispatching leg resolved>` | yes: opt-in for `<the areas listed in the catalog>`, because `<the failure class it catches that CI cannot>`; reopen conditions in the ledger |
+
+## 11. Cost
+
+The measures below are collected by `<the scheduled job>` every `<week>`
+from `<the provider's jobs and billing records>` and published in
+`<the report or dashboard>`; each is a metric in `<the metrics registry>`.
+
+| Measure | Metric | Window |
+|---------|--------|--------|
+| runner-minutes per pipeline and job | `ci-runner-minutes` | `<30 days>` |
+| cost per change | `ci-cost-per-change` | `<30 days>` |
+| queue wait | `ci-queue-wait` | `<30 days>` |
+| cache hit rate | `ci-cache-hit-rate` | `<per run>` |
+
+Every decision that changed what the pipeline spends (a resize, a leg
+narrowed or added, a suite moved, a cache turned on) is an entry in
+`<.config/ci-cost-ledger.yaml>` with its measurement before and after in one
+unit and a reopen condition over one of the metrics above; the cost-ledger
+check runs on changes to it, and a decision whose after-measurement is not
+in by its due date fails the check.
+
 ## Checklist for a new or changed workflow
 
 - [ ] No trigger-level path filter, if it reports a required check.
@@ -102,3 +197,19 @@ schedule that stopped running counts as failing.
 - [ ] Its jobs are in the aggregator's `needs`, and the aggregator judges
       them by the resolver's selection.
 - [ ] Its placement is in the table above.
+- [ ] If a job of it is one the hold skips, or it reports a required check:
+      it runs on both label events, the skip tests the pull request's labels
+      for the hold label, and the held-head check's failure reaches the
+      required check.
+- [ ] If it uses a cache: the cache is in the table above with its key
+      scheme and bound, its credentials are checked non-empty before the
+      first task, its hit rate goes to the job summary, and its jobs are in
+      the cache group the lint compares.
+- [ ] Each job's runner class is in the table above; a job that only
+      decides or reports is on the smallest class, and a larger class has
+      its measurement and its ledger entry.
+- [ ] If it runs a test runner under a task runner: the workers per package
+      are capped and the product with the package concurrency is at or
+      below the cores.
+- [ ] If it changes what the pipeline spends: the ledger has the entry,
+      with its before, its after or its due date, and its reopen condition.

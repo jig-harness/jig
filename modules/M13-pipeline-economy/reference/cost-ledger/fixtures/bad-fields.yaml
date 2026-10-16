@@ -1,0 +1,14 @@
+version: 1
+decisions:
+  - id: Tests On Cores
+    decision: ""
+    measured:
+      unit: ""
+      before: nine
+      after: five
+      windows: [only-one]
+    reopen:
+      - metric: ci-runner-minutes
+        comparator: "~"
+        threshold: many
+        window: soon

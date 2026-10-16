@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const gate = join(import.meta.dir, "check-workflow-conventions.ts");
 const fixture = (name: string) => join(import.meta.dir, "fixtures", name);
@@ -52,7 +53,7 @@ const cases: [string, number, string[]][] = [
   ["aggregator-not-required", 0, []],
   ["required-checks-fail", 1, ["aggregator-unless-cancelled"]],
   ["ci-hold-pass", 0, []],
-  ["ci-hold-fail", 1, ["ci-hold-guard", "ci-hold-sentinel"]],
+  ["ci-hold-fail", 1, ["ci-hold-events", "ci-hold-guard", "ci-hold-sentinel"]],
   ["heavy-pass", 0, []],
   ["heavy-fail", 1, ["heavy-per-change"]],
   ["heavy-marker", 0, []],
@@ -201,6 +202,22 @@ function repo(files: Record<string, string>): string {
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const CONC = `concurrency:\n  group: ci-\${{ github.ref }}\n  cancel-in-progress: true\n`;
 const LABELS = "github.event.pull_request.labels.*.name";
+/** The trigger of a workflow that honours the hold: both label transitions
+ * beside the three types a trigger without `types:` runs on. */
+const PR_HOLD =
+  "on:\n  pull_request:\n    types: [opened, synchronize, reopened, labeled, unlabeled]\n";
+/** `expectSpawnExit` over `run`'s result, so a wrong exit code prints the
+ * gate's own output. */
+const exits = (
+  result: ReturnType<typeof run>,
+  expected: number,
+  label?: string,
+) =>
+  expectSpawnExit(
+    { exitCode: result.code, stdout: result.out, stderr: result.err },
+    expected,
+    label,
+  );
 
 /** A pull-request workflow whose required `verdict` job needs a heavy `e2e`
  * job; `e2eIf` is e2e's condition and `stepIf` the condition of verdict's
@@ -211,7 +228,7 @@ function holdRepo(label: string, e2eIf: string, stepIf: string) {
     ".config/workflow-conventions.yaml": "heavy:\n  - ci.yml#e2e\n",
     ".config/workflow-conventions-exceptions.txt":
       "# The merge waits for it.\nheavy-per-change .github/workflows/ci.yml e2e\n",
-    ".github/workflows/ci.yml": `on: pull_request\n${CONC}jobs:\n  e2e:\n    if: "${e2eIf}"\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n  verdict:\n    needs: [e2e]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n      - if: "${stepIf}"\n        run: exit 1\n`,
+    ".github/workflows/ci.yml": `${PR_HOLD}${CONC}jobs:\n  e2e:\n    if: "${e2eIf}"\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n  verdict:\n    needs: [e2e]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n      - if: "${stepIf}"\n        run: exit 1\n`,
   });
 }
 const rulesOf = (err: string) =>
@@ -354,7 +371,7 @@ test("a heavy job that needs every other job is not the aggregator", () => {
       ".config/workflow-conventions.yaml": "heavy:\n  - e2e.yml#e2e\n",
       ".config/workflow-conventions-exceptions.txt":
         "# The merge waits for it.\nheavy-per-change .github/workflows/e2e.yml e2e\n",
-      ".github/workflows/e2e.yml": `on: pull_request\n${CONC}jobs:\n${job("build")}${job("e2e", `    needs: [build]\n    if: \${{ !cancelled() }}\n`)}`,
+      ".github/workflows/e2e.yml": `${PR_HOLD}${CONC}jobs:\n${job("build")}${job("e2e", `    needs: [build]\n    if: \${{ !cancelled() }}\n`)}`,
     }),
   ]);
   expect(code).toBe(1);
@@ -369,13 +386,13 @@ test("a pull-request job calling a heavy workflow carries the hold guard", () =>
     ".config/workflow-conventions-exceptions.txt":
       "# The merge waits for it.\nheavy-per-change .github/workflows/e2e.yml\n",
     ".github/workflows/e2e.yml": `on: workflow_call\njobs:\n${job("e2e")}`,
-    ".github/workflows/ci.yml": `on: pull_request\n${CONC}jobs:\n  e2e:\n${callerIf}    uses: ./.github/workflows/e2e.yml\n  verdict:\n    needs: [e2e]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${SENTINEL_STEP}`,
+    ".github/workflows/ci.yml": `${PR_HOLD}${CONC}jobs:\n  e2e:\n${callerIf}    uses: ./.github/workflows/e2e.yml\n  verdict:\n    needs: [e2e]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${SENTINEL_STEP}`,
   });
   const unguarded = run(["--root", repo(files(""))]);
   expect(unguarded.code).toBe(1);
   expect(rulesOf(unguarded.err)).toEqual(["ci-hold-guard"]);
   expect(unguarded.err).toContain(
-    ".github/workflows/ci.yml:6: [ci-hold-guard] heavy job 'e2e'",
+    ".github/workflows/ci.yml:8: [ci-hold-guard] heavy job 'e2e'",
   );
   expect(
     run([
@@ -439,7 +456,7 @@ test("in a whole heavy workflow a derived aggregator still needs the guard", () 
     ".config/workflow-conventions.yaml": "heavy:\n  - e2e.yml\n",
     ".config/workflow-conventions-exceptions.txt":
       "# The merge waits for it.\nheavy-per-change .github/workflows/e2e.yml\n",
-    ".github/workflows/e2e.yml": `on: pull_request\n${CONC}jobs:\n${job("build", `    if: \${{ !contains(${LABELS}, 'hold') }}\n`)}  e2e:\n    needs: [build]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${SENTINEL_STEP}      - run: make e2e\n`,
+    ".github/workflows/e2e.yml": `${PR_HOLD}${CONC}jobs:\n${job("build", `    if: \${{ !contains(${LABELS}, 'hold') }}\n`)}  e2e:\n    needs: [build]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${SENTINEL_STEP}      - run: make e2e\n`,
   });
   const derived = run(["--root", repo(files(""))]);
   expect(derived.code).toBe(1);
@@ -492,7 +509,7 @@ function sentinelRepo(e2eSteps: string, verdictSteps: string, between = "") {
     ".config/workflow-conventions.yaml": "heavy:\n  - ci.yml#e2e\n",
     ".config/workflow-conventions-exceptions.txt":
       "# The merge waits for it.\nheavy-per-change .github/workflows/ci.yml e2e\n",
-    ".github/workflows/ci.yml": `on: pull_request\n${CONC}jobs:\n  e2e:\n    if: \${{ !contains(${LABELS}, 'hold') }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n${e2eSteps}      - run: make e2e\n${between}  verdict:\n    needs: [${between ? "build" : "e2e"}]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${verdictSteps}      - run: make verdict\n`,
+    ".github/workflows/ci.yml": `${PR_HOLD}${CONC}jobs:\n  e2e:\n    if: \${{ !contains(${LABELS}, 'hold') }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n${e2eSteps}      - run: make e2e\n${between}  verdict:\n    needs: [${between ? "build" : "e2e"}]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${verdictSteps}      - run: make verdict\n`,
   });
 }
 
@@ -521,7 +538,7 @@ test("a sentinel counts only where its failure is proven to reach the required c
   const direct = (cond = "", verdictIf = `    if: \${{ !cancelled() }}\n`) =>
     repo({
       ".config/jig.yaml": `ci:\n  required_checks: [verdict]\n  hold_label: "hold"\n`,
-      ".github/workflows/ci.yml": `on: pull_request\n${CONC}jobs:\n${sentinelJob(cond)}  verdict:\n    needs: [sentinel]\n${verdictIf}    runs-on: x\n    timeout-minutes: 5\n    steps:\n      - run: make verdict\n`,
+      ".github/workflows/ci.yml": `${PR_HOLD}${CONC}jobs:\n${sentinelJob(cond)}  verdict:\n    needs: [sentinel]\n${verdictIf}    runs-on: x\n    timeout-minutes: 5\n    steps:\n      - run: make verdict\n`,
     });
   expect(run(["--root", direct()]).code).toBe(0);
   expect(run(["--root", direct(`    if: \${{ !cancelled() }}\n`)]).code).toBe(
@@ -658,4 +675,82 @@ test("a folder named on the command line must exist", () => {
   expect(run(["--root", root]).code).toBe(0);
   for (const option of ["--workflows", "--actions"])
     expect(run(["--root", root, option, join(root, "missing")]).code).toBe(2);
+});
+
+/** A pull-request workflow under the trigger `on`, with a guarded heavy
+ * `e2e` and a required `verdict` carrying the sentinel: the hold's shape
+ * except for the trigger under test. */
+function holdTrigger(on: string) {
+  return repo({
+    ".config/jig.yaml": `ci:\n  required_checks: [verdict]\n  hold_label: "hold"\n`,
+    ".config/workflow-conventions.yaml": "heavy:\n  - ci.yml#e2e\n",
+    ".config/workflow-conventions-exceptions.txt":
+      "# The merge waits for it.\nheavy-per-change .github/workflows/ci.yml e2e\n",
+    ".github/workflows/ci.yml": `${on}${CONC}jobs:\n  e2e:\n    if: \${{ !contains(${LABELS}, 'hold') }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n  verdict:\n    needs: [e2e]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${SENTINEL_STEP}      - run: make verdict\n`,
+  });
+}
+const types = (event: string, list: string) =>
+  `on:\n  ${event}:\n    types: [${list}]\n`;
+
+test("a workflow that honours the hold runs on both label transitions", () => {
+  exits(run(["--root", holdTrigger(PR_HOLD)]), 0, "every type listed");
+  for (const [what, on, reported] of [
+    ["no types", "on: pull_request\n", "has no types:"],
+    [
+      "the defaults only",
+      types("pull_request", "opened, synchronize, reopened"),
+      "lists types opened, synchronize, reopened and not labeled, unlabeled",
+    ],
+    [
+      "no labeled",
+      types("pull_request", "opened, synchronize, reopened, unlabeled"),
+      "and not labeled:",
+    ],
+    [
+      "no unlabeled",
+      types("pull_request", "opened, synchronize, reopened, labeled"),
+      "and not unlabeled:",
+    ],
+    [
+      "the transitions only",
+      types("pull_request", "labeled, unlabeled"),
+      "and not opened, synchronize, reopened:",
+    ],
+    [
+      "pull_request_target",
+      types("pull_request_target", "opened, synchronize, reopened"),
+      "its pull_request_target trigger lists types",
+    ],
+  ] as const) {
+    const result = run(["--root", holdTrigger(on)]);
+    exits(result, 1, what);
+    expect({ what, rules: rulesOf(result.err) }).toEqual({
+      what,
+      rules: ["ci-hold-events"],
+    });
+    expect(result.err).toContain(reported);
+    expect(result.err).toContain(
+      `.github/workflows/ci.yml:${on.startsWith("on: ") ? 1 : 2}: [ci-hold-events]`,
+    );
+  }
+});
+
+test("a pull-request workflow outside the hold needs no label events", () => {
+  const root = holdTrigger(PR_HOLD);
+  writeFileSync(
+    join(root, ".github/workflows/docs.yml"),
+    `on: pull_request\n${CONC}jobs:\n${job("docs")}`,
+  );
+  exits(run(["--root", root]), 0, "a workflow with no heavy or required job");
+});
+
+test("a types: that is not a list of names could not be checked", () => {
+  const result = run([
+    "--root",
+    holdTrigger("on:\n  pull_request:\n    types: synchronize\n"),
+  ]);
+  exits(result, 2);
+  expect(result.err).toContain(
+    ".github/workflows/ci.yml on.pull_request types: not a list of event types",
+  );
 });

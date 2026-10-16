@@ -48,6 +48,42 @@ metrics:
     source: event:gate_result.duration_ms
     owner: <build-team>
 
+  # --- pipeline economy (M13) ---
+  - id: ci-runner-minutes
+    description: minutes a runner was held, summed per job and per pipeline over
+      the window, from the provider's job records — where the time goes, and the
+      number a resize or a dropped leg is measured in
+    source: query:runner_minutes_per_job
+    owner: <build-team>
+
+  - id: ci-sandbox-minutes-share
+    description: the remote-sandbox leg's runner-minutes over all runner-minutes
+      in the window, a fraction from 0 to 1 — the leg a per-area opt-in is
+      meant to keep small, read from the same job records as ci-runner-minutes
+    source: query:sandbox_runner_minutes_share
+    owner: <build-team>
+
+  - id: ci-cost-per-change
+    description: runner-minutes of every run on a change's heads and its
+      post-merge run, over the merged changes of the window — the number that
+      makes a per-push leg comparable with CI
+    source: query:runner_minutes_over_merged_changes
+    owner: <build-team>
+
+  - id: ci-queue-wait
+    description: minutes between a job's creation and its start, per job, from
+      gate_result.queue_wait_ms over 60 000 — the queue-stall watchdog bounds
+      the worst case, this trend sizes the pool
+    source: query:queue_wait_minutes_per_job
+    owner: <build-team>
+
+  - id: ci-cache-hit-rate
+    description: cache hits over hits plus misses per run, from the hit rate each
+      run writes to its summary — a run at zero while others hit shows a cache
+      that stores nothing or a namespace split, which nothing else reports
+    source: event:gate_result.cache_hit_rate
+    owner: <build-team>
+
   # --- delivery (M10) ---
   - id: promotion-gap-items
     description: work items whose commits the earlier environment's pointer

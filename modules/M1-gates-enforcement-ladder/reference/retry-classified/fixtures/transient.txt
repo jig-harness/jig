@@ -1,0 +1,12 @@
+# The hosting service's rate limit: the quota refills, so the same call
+# succeeds after a pause.
+^error: API rate limit exceeded
+
+# The connection dropped mid-transfer; the server was reachable a moment
+# before and the retry is a fresh connection.
+connection reset by peer$
+
+# The name server did not answer for the host; resolution is retried on the
+# next connection, and a host that does not exist fails every attempt the
+# same way, which the attempt count bounds.
+^fatal: unable to access '.*': Could not resolve host

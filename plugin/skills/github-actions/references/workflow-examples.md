@@ -72,3 +72,50 @@ steps:
       node-version: ${{ env.NODE_VERSION }}
       cache: 'pnpm'
 ```
+
+## Concurrency keys
+
+Pull-request runs cancel the older head; a manual dispatch is a group of its
+own; serialized post-merge verification keeps a fixed group and checks the
+range from the verified pointer:
+
+```yaml
+# Pull-request gates: a new push cancels the runs of the older head
+concurrency:
+  group: pr-gates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+```
+
+```yaml
+# A scheduled suite that can also be dispatched: the event name keeps a
+# manual run out of the scheduled run's group, and a dispatch is keyed by its
+# run id rather than by its inputs (group names compare case-insensitively)
+concurrency:
+  group: nightly-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: true
+```
+
+```yaml
+# Post-merge verification: one run at a time on the integration branch, never
+# cancelled; the run checks every commit since the verified pointer, so the
+# survivor covers a dropped intermediate push. A dispatch from any other ref
+# cannot cover that range, so it gets a slot of its own.
+concurrency:
+  group: verify-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+  cancel-in-progress: false
+```
+
+## Expression through env
+
+An expression inside `run:` is substituted into the script before the shell
+reads it, so a value an outsider sets runs as code. Pass it through `env:`:
+
+```yaml
+# BAD: the title is pasted into the script text
+- run: echo "Reviewing ${{ github.event.pull_request.title }}"
+
+# GOOD: the title reaches the shell as a variable's value
+- env:
+    PR_TITLE: ${{ github.event.pull_request.title }}
+  run: echo "Reviewing $PR_TITLE"
+```

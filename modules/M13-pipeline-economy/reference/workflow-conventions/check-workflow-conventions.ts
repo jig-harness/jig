@@ -3,10 +3,11 @@
 // actions instead of left to prose, where they regress silently.
 //
 // Rules (README.md says why each exists): job-timeout, pr-concurrency,
-// required-not-path-filtered, aggregator-unless-cancelled, ci-hold-guard and
-// ci-hold-sentinel, heavy-per-change, cache-env-parity, pinned-uses,
-// push-pr-paths, catalog-paths. Every exception carries a reason, and one
-// that suppresses no finding is itself a finding (exception-list).
+// required-not-path-filtered, aggregator-unless-cancelled, ci-hold-guard,
+// ci-hold-events and ci-hold-sentinel, heavy-per-change, cache-env-parity,
+// pinned-uses, push-pr-paths, catalog-paths. Every exception carries a
+// reason, and one that suppresses no finding is itself a finding
+// (exception-list).
 //
 // Exit 0: every convention holds. Exit 1: findings, each with its rule,
 // file:line, problem and fix. Exit 2: could not check: a folder that cannot be
@@ -73,6 +74,7 @@ const RULES: Record<string, (p: Pipelines) => Found[]> = {
 const RULE_NAMES = [
   ...Object.keys(RULES).filter((rule) => rule !== "ci-hold"),
   "ci-hold-guard",
+  "ci-hold-events",
   "ci-hold-sentinel",
 ];
 

@@ -1,0 +1,10 @@
+version: 1
+metrics:
+  - id: ci-runner-minutes
+    source: query:runner_minutes_per_job
+  - id: ci-queue-wait
+    source: event:gate_result.queue_wait_ms
+  - id: ci-cost-per-change
+    source: query:runner_minutes_over_merged_changes
+  - id: ci-cache-hit-rate
+    source: event:gate_result.cache_hit_rate

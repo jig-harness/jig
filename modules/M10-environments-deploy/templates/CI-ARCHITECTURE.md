@@ -206,6 +206,29 @@ a per-change trigger drifts back into everyone's wait. A scheduled suite
 reports its failures where someone will see them, and a schedule that
 silently stopped running counts as failing, not as passing.
 
+## The index of pipelines
+
+A page that lists the pipelines by hand (what each workflow is for, where
+it runs) is a derived fact kept by people, and it drifts the way every such
+fact does: it lists what existed when it was written, and a pipeline added
+without its line is invisible to the reader the page exists for. Treat the
+page by the ladder for derived artifacts in
+[M2](https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md#the-decision-ladder-drop--check--commit),
+in this order:
+
+1. **Drop it.** The provider's own list and a header comment at the top of
+   each pipeline file are the index; a reader opens the folder. Choose this
+   when nobody needs the page.
+2. **Check it.** Keep the page, and a CI check fails when a pipeline file is
+   missing from it or it names a file that no longer exists. The page stays
+   hand-written, but it cannot drift silently.
+3. **Generate it.** Write the page from the pipeline files' header comments,
+   with a drift gate in CI and the generator wired into the pre-commit
+   hook, as M2's triad.
+
+Never the fourth option, a hand-kept page with no check: nothing says how
+far it is behind.
+
 ## The environment kit that makes verification real
 
 Verification and preview are only as honest as the environments and data behind

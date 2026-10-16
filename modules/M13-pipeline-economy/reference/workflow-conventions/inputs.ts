@@ -123,23 +123,28 @@ function cronEntries(value: unknown, where: string): Map {
   return {};
 }
 
+const names = (value: unknown) =>
+  Array.isArray(value) && value.every((p: unknown) => typeof p === "string");
+
 /** One event's settings: absent or a map whose filters are lists of
- * patterns. Read as unfiltered, a malformed one would pass a rule that never
- * saw its filter. */
+ * patterns and whose `types`, when present, is a list of names. Read as
+ * unfiltered, a malformed one would pass a rule that never saw its filter. */
 function eventFilters(event: string, value: unknown, where: string): Map {
   if (event === "schedule") return cronEntries(value, where);
   if (value === undefined || value === null) return {};
   if (!isRecord(value)) throw new Unreadable(`${where}: not a map`);
-  for (const key of PATTERN_FILTERS)
-    if (
-      key in value &&
-      !(
-        Array.isArray(value[key]) &&
-        value[key].every((p: unknown) => typeof p === "string")
-      )
-    )
-      throw new Unreadable(`${where} ${key}: not a list of patterns`);
+  checkFilters(value, where);
   return value;
+}
+
+/** Throw unless each pattern filter present is a list of patterns and
+ * `types`, when present, a list of names. */
+function checkFilters(value: Record<string, unknown>, where: string): void {
+  for (const key of PATTERN_FILTERS)
+    if (key in value && !names(value[key]))
+      throw new Unreadable(`${where} ${key}: not a list of patterns`);
+  if ("types" in value && !names(value.types))
+    throw new Unreadable(`${where} types: not a list of event types`);
 }
 
 /** A workflow's `on:`, written as one event, a list or a map, as a map. An

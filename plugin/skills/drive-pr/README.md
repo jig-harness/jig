@@ -133,10 +133,25 @@ the drive simply waits for it on the final head. A repository whose CI is too
 expensive for that can let the drive suppress it between review rounds:
 
 1. Name a label in `ci.hold_label` and list `ci.required_checks`.
-2. Make every expensive workflow honour it: skip the heavy jobs on a
-   `synchronize` event while the label is present, run in full on the
-   `unlabeled` event for that label, and fail (rather than skip) a required
-   check while held, so a held head is visibly not mergeable.
+2. Make every workflow that reports a required check, and every one with
+   expensive jobs, honour it in the shape
+   [M13's piece 7](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold)
+   states. Trigger on `labeled` and `unlabeled` beside `opened`,
+   `synchronize` and `reopened` (listing any type replaces the defaults):
+   without `labeled`, applying the label starts no run and every required
+   check keeps its pre-hold result until the next push, which may never
+   come; without `unlabeled`, the release runs nothing again. Skip the
+   heavy jobs by testing the pull request's labels for the hold label,
+   `!contains(github.event.pull_request.labels.*.name, '<label>')`, never
+   by the event's action: with label events starting runs, a job that
+   skipped on any `labeled` event would let an unrelated label replace a
+   failing head's result with a passing skip, so an unrelated label event
+   on an unheld pull request runs real CI. And fail, rather than skip, a
+   required check while the label is present, from the run the label's
+   application starts onward, with a message naming the label, so a held
+   head is visibly not mergeable throughout. M13's
+   [workflow-convention lint](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md#ci-hold)
+   checks all three.
 
 The drive then adds the label before its first intermediate push, once the
 PR-open run of every required check has completed, and records the GitHub

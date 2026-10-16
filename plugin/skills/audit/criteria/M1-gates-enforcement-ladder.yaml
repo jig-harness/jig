@@ -231,3 +231,18 @@ criteria:
     observe:
       - "continue-on-error / allow_failure gates carry a promotion condition
         and date in config comments or the gate catalog"
+
+  - id: retries-classify-errors
+    level: strict
+    requires: mechanical
+    since: next
+    statement: >-
+      Every retry in the pipeline's steps and in the gates and scripts it
+      runs retries only an error a classifier marks transient, aborts at
+      once on any other with the command's own message and status, and the
+      classifier is tested against messages recorded from the real tool.
+    observe:
+      - "each retry loop (a CI step, a gate, a script the pipeline runs) classifies the failure before retrying: a pattern list with reasons, a closed set of error codes, or the provider's own failure classes"
+      - "an error outside the transient set ends the step with the original message and exit status, not after the retry budget"
+      - "a test feeds the classifier messages recorded from the real tool (a fixture file, a copied log line) and asserts its answer"
+      - "expected-absent when nothing in the pipeline or its scripts retries"

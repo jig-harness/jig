@@ -152,6 +152,33 @@ Example: [secret check](references/workflow-examples.md#secret-check).
 - Where a downstream workflow must trigger (for example, advancing a verified
   branch that starts the deploy), the push needs a personal access token or a
   GitHub App token. Check that it has the minimal scopes.
+- A bot that writes a machine-advanced ref (the
+  [verified pointer](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+  a rendered-state ref:
+  [M10](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/README.md))
+  has an identity of its own, scoped to that ref: a GitHub App whose
+  installation token is minted in the one job that advances the ref, with
+  contents read and write (and workflows, where the ref carries workflow
+  files) and nothing more, and the only identity the ref's protection lets
+  push. Check that no other job references the App's credentials and that no
+  broader token (a personal access token, a bot shared with other jobs)
+  writes the ref: an identity that can push any ref makes a release path of
+  every job that holds it.
+
+**1.4 Expression injection**
+
+Never put a workflow expression inside `run:`. GitHub substitutes the
+expression into the script text before the shell reads it, so a value an outsider can set (a
+branch name, a pull-request title or body, a commit message, an issue
+comment, a dispatch input) runs as shell: an
+[expression injection](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+Pass the value through `env:` and read the variable in the script, where the
+shell treats it as data (example:
+[expression through env](references/workflow-examples.md#expression-through-env)).
+The same holds for the `script:` of a JavaScript action step and for a
+composite action's `run:`. Where the repository runs a static workflow
+auditor, it reports this class; point the author at it
+([Checks the repository may already enforce](#checks-the-repository-may-already-enforce)).
 
 ---
 
@@ -167,6 +194,12 @@ Every job needs an explicit `timeout-minutes`. Starting points:
 - Build check: 15 minutes
 - Container build: 15 minutes
 - Artifact packaging: 10 minutes
+
+`timeout-minutes` counts run time only: a job waiting for a runner is not
+timed, so a [queue stall](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+shows as a run that never starts, never as a timeout. A longer timeout does
+nothing for it; the bound on waiting is M13's scheduled queue watchdog, where
+the repository runs one.
 
 **2.2 Conditional execution**
 
@@ -201,6 +234,67 @@ Name artifacts after the commit SHA, so each can be traced to its source, and
 set `if-no-files-found: error` so an empty upload fails (example:
 [artifact naming](references/workflow-examples.md#artifact-naming)).
 
+**2.5 Concurrency keys**
+
+Apply M13's superseding rules (piece 3): two runs share a
+[concurrency group](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+only when the survivor covers everything the displaced run would have
+checked. For each workflow the change touches:
+
+- **Pull-request runs** group on the pull request number or ref with
+  `cancel-in-progress: true`, so a new push cancels the runs of the older
+  head; a group without it queues every push. The workflow-convention lint
+  checks this where the repository runs it.
+- **The key covers every input that changes what the run does**: the ref or
+  commit, `github.event_name` wherever a dispatch, a push and a schedule
+  could land on the same ref, and the dispatch inputs, through
+  `github.run_id`. GitHub keeps one pending run per group and cancels the
+  older one silently, also with `cancel-in-progress: false`, so a key that
+  two non-interchangeable runs share drops one of them and nothing reports
+  an error. Audit: list the workflow's `workflow_dispatch` inputs; a group
+  that stays the same when an input changes is a finding, and so is a group
+  with no ref or commit term.
+- **A dispatch is keyed by its run id, never by an interpolated input.**
+  Group names compare case-insensitively while refs, tags and environment
+  names do not, and the expression language has no hash to encode around
+  it, so two dispatches naming `Release` and `release` would share one group
+  and cancel each other. Two deliberate manual runs both running is the
+  harmless outcome; one dropped is not.
+- **A schedule and a manual run on the same ref** are separated by the
+  event name in the key, so a manual backfill never cancels the scheduled
+  run; a dispatch that operates on another ref takes it as an input and is
+  keyed by its run id as above.
+- **Serialized post-merge verification** uses a fixed group with
+  `cancel-in-progress: false`, sound only because the surviving run checks
+  the whole range from the
+  [verified pointer](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+  to its head; a run that cannot cover that range (a dispatch from another
+  branch) falls back to its run id, so it cannot displace one that does.
+- **A push scan that covers a commit range keeps a per-commit group**:
+  each run answers for its own range, and a cancelled run's range is never
+  scanned.
+
+Example: [concurrency keys](references/workflow-examples.md#concurrency-keys).
+The lint checks that a pull-request group cancels; what each key must
+cover is the reviewer's to decide.
+
+**2.6 Which workflow file runs**
+
+- A `workflow_dispatch` run executes the workflow file of the ref it is
+  dispatched from, and checks that ref out by default. Dispatched from a
+  branch that lags the integration branch, it runs an old copy: gates added
+  since are skipped and nothing says so. Check that the runbook and any
+  script that dispatches the workflow name the branch whose file is current,
+  and that a run which operates on another ref takes it as an input and
+  checks it out explicitly rather than being dispatched from it.
+- A `workflow_run`-triggered workflow executes the default branch's file,
+  with `github.ref` set to the default branch, whatever branch the
+  triggering run was on. A condition on `github.ref` there checks nothing
+  about the triggering run; its identity is in `github.event.workflow_run`
+  (`head_branch`, `head_sha`, `event`, `conclusion`, `head_repository`), and
+  a change to such a workflow takes effect only once it is on the default
+  branch, so no pull request can exercise it.
+
 ---
 
 ### Phase 3: Performance
@@ -218,6 +312,38 @@ version in the workflow in step with the repository's own pin (for example
 the `packageManager` field of `package.json`). Example:
 [caching](references/workflow-examples.md#caching).
 
+Then the four cache rules of M13's piece 8, on every cache the change
+touches:
+
+- **Complete key.** The key covers every input that changes the output,
+  environment values included: `hashFiles()` over every lockfile with the
+  runner's operating system and the toolchain version for a dependency
+  cache; the task runner's declared environment list for its cache. A
+  `--force`, `--skip-cache` or equivalent that stays in the workflow is a
+  finding: a stale result is fixed by completing the key.
+- **One namespace.** Every job that shares a cache has the same
+  key-affecting `env:` (a lint with cache groups, where the repository runs
+  one, compares them). A job that uses a remote cache checks its credentials
+  are non-empty before the first task: GitHub substitutes an empty string
+  for a secret that is absent or rotated out, and an empty value splits the
+  job off the shared cache with no error (it runs without it, or, where the
+  value selects the store, in a cache namespace of its own). The `secrets`
+  context is unavailable in `if:`, so the check reads the value from `env:`
+  (a composite action takes it as an input).
+- **Bounded and measured.** The cache's key scheme and retention bound are
+  written in the repository's pipeline-economy page; a persistent runner
+  volume keeps exact keys only, so its key follows the written convention.
+  The run writes its hit rate (hits and misses) to `$GITHUB_STEP_SUMMARY`.
+  A `cache-to: type=gha` on a build whose builder is the default `docker`
+  driver, without the containerd image store, exports nothing (declared,
+  inert); it needs the `docker-container` driver or that image store. A container build whose store is on a cache mount carries the
+  mount on every `RUN` that invokes the package manager, which M13's
+  cache-mount check enforces where the repository runs it.
+- **Trust boundary.** A `pull_request` run from a fork has no secrets, so it
+  runs without the remote cache: never `pull_request_target` to give it
+  credentials. The task runner's remote cache is signed, and a cache written
+  on a pull-request branch stays readable from that branch alone.
+
 **3.2 Parallelization**
 
 Independent jobs should run in parallel. Use `needs:` only where one job
@@ -225,10 +351,13 @@ really depends on another's result.
 
 **3.3 Redundant operations**
 
-- Coverage: collect it in one place, never again in post-merge
-  verification. When no merge waits for the figure, that place is a
-  schedule (M13's placement table); only a coverage threshold that gates the
-  merge belongs in the PR gates.
+- Coverage: a scheduled trend, collected in one place and published also
+  when it is below target
+  ([M14](https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/README.md)
+  piece 10; M13's placement table), never again in post-merge verification.
+  A per-file blocking threshold is a finding in itself (M14 says why), and
+  only a threshold that gates the merge belongs in the PR gates; the trend
+  job measures, it does not gate.
 - Build: do not build the same thing twice in one workflow.
 - Checkout: use `fetch-depth: 0` only when the job needs the git history.
 
@@ -259,9 +388,11 @@ Produce a structured Markdown report with these sections: **Overall
 assessment** (status and risk level), **Security findings**, **Correctness
 findings**, **Performance findings**, **Documentation drift**, **Recommended
 actions** (in priority order), and a **Checklist summary** covering action
-pinning, permissions, secret exposure, timeouts, conditional execution,
-task-runner scope, artifact naming, caching, parallelization and documentation
-alignment.
+pinning, permissions, secret exposure, tokens, expression injection,
+timeouts, conditional execution, task-runner scope, artifact naming,
+concurrency keys, the file a dispatch or `workflow_run` executes, caching
+(key, namespace, bound and hit rate, trust boundary), parallelization,
+coverage placement and documentation alignment.
 
 ---
 
@@ -281,7 +412,9 @@ and passes, and point the author at it, rather than checking by eye:
 | Concern | Typical enforcing check |
 |---------|-------------------------|
 | Mutable (non-SHA) action references | an action-pin check over `.github/workflows/**` and `.github/actions/**`, or a workflow-convention lint |
-| Job timeouts, cancelling pull-request concurrency, unfiltered required workflows, a `!cancelled()` aggregator, heavy suites off the per-change path | a workflow-convention lint; Jig's reference is [M13's](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md), whose exceptions each carry a reason |
+| Job timeouts, cancelling pull-request concurrency, unfiltered required workflows, a `!cancelled()` aggregator, heavy suites off the per-change path, one key-affecting environment per cache group | a workflow-convention lint; Jig's reference is [M13's](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md), whose exceptions each carry a reason |
+| A container build's cache mount on every step that reads the store, and no per-command store flag | a cache-mount check over the Dockerfiles; Jig's reference is [M13's](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/cache-mount-coverage/README.md) |
+| Expressions inside `run:`, over-broad permissions, secrets written to outputs, and `uses:` references a plain grep misses (YAML allows `uses : …`) | a static workflow auditor (for example zizmor) over `.github/workflows/` and `.github/actions/`, pinned to one version so finding counts stay comparable, each suppression with a reason; advisory until the tree is clean at the chosen level, blocking after |
 | Unpinned `curl \| sh` or install scripts | an install-script allowlist |
 | Merge strategy (for example squash-only) | a merge-strategy validation |
 | Secrets leaked in the diff | a secret scan |
@@ -296,6 +429,12 @@ gh run list --limit 10
 
 # Recent runs of one workflow
 gh run list --workflow <workflow>.yml --limit 5
+
+# Runs waiting for a runner (that wait is outside timeout-minutes)
+gh run list --status queued
+
+# Dispatch from the branch whose workflow file is current (2.6)
+gh workflow run <workflow>.yml --ref <branch> -f <input>=<value>
 
 # Dry-run a workflow locally (needs the `act` tool)
 act pull_request -W .github/workflows/<workflow>.yml --dryrun

@@ -121,6 +121,13 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    exported status file: its exit code is the loop's control flow, so neither
    rule depends on the person driving the loop remembering it at the point they
    are most keen to stop.
+
+   A repository whose CI is expensive may hold it between rounds: the
+   [CI hold](../../GLOSSARY.md)
+   ([M13, piece 7](../M13-pipeline-economy/README.md#7-hold)) skips the
+   heavy jobs on intermediate heads while a required check fails, so no held
+   head is mergeable, and the release at convergence runs everything again
+   on the final head.
 8. **The reviewed change cannot define its reviewer** — the authoritative
    reviewer runtime, prompts, and active policy are loaded from an immutable
    external version, a separately hosted service, or the target base branch.
