@@ -19,12 +19,9 @@ import {
   globProblem,
   matchesGlob,
 } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
-import { fail } from "../../../resolve-review-comments/scripts/lib/cli.ts";
-import { fieldInMessage } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
-import {
-  readConfig,
-  sourceIn,
-} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+import { fail } from "../../../../shared/cli.ts";
+import { fieldInMessage } from "../../../../shared/config-layers.ts";
+import { readConfig, sourceIn } from "../../../../shared/consumer.ts";
 
 export type PathClass = "lockfile" | "generated" | "binary" | "text";
 

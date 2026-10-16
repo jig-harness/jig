@@ -1,5 +1,5 @@
 /**
- * The plugin cache holds a copy of the skills outside any repository, with no
+ * The plugin cache holds a copy of the plugin outside any repository, with no
  * `node_modules` above it. The whole procedure has to run from such a copy,
  * started from a consumer repository with its own configuration.
  */
@@ -9,13 +9,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { CONFIG_COMBINED, mergeConflict, Scratch } from "./scratch.ts";
 
-const skills = join(import.meta.dir, "..", "..");
+const plugin = join(import.meta.dir, "..", "..", "..");
 let cache: string;
 let s: Scratch;
 
 beforeAll(() => {
   cache = realpathSync(mkdtempSync(join(tmpdir(), "resolve-conflicts-cache-")));
-  cpSync(skills, join(cache, "skills"), {
+  cpSync(plugin, cache, {
     recursive: true,
     filter: (path) => !path.split(sep).includes("__tests__"),
   });

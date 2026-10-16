@@ -34,13 +34,13 @@ import { load } from "./yaml.ts";
 export const OVERLAY_RELPATH = ".config/jig.yaml";
 
 /** The user layer's file name, inside the Jig home directory. */
-export const USER_CONFIG_FILE = "jig.yaml";
+const USER_CONFIG_FILE = "jig.yaml";
 
 /** The prefix of an environment-layer variable; `__` separates the levels. */
 export const ENV_PREFIX = "JIG__";
 
 /** Set to `off`, the user layer is not read. */
-export const USER_LAYER_SWITCH = "JIG_USER_LAYER";
+const USER_LAYER_SWITCH = "JIG_USER_LAYER";
 
 /** Fields only a repository (or one run) may set; the user layer refuses them. */
 export const REPOSITORY_ONLY_FIELDS: readonly string[] = [

@@ -25,7 +25,7 @@ import {
   QUOTA_PARKED_EXIT,
   resolveHandoffAt,
 } from "../scripts/drive";
-import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load as loadYaml } from "../../../shared/yaml.ts";
 import { cloneKey } from "../scripts/lib/state/clone-key";
 import { appendDirective } from "../scripts/lib/state/mailbox";
 

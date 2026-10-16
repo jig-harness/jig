@@ -62,11 +62,12 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
+import { consumerRoot } from "../../../shared/consumer.ts";
 import { loadCatalogFile } from "./lib/change-areas-catalog.ts";
 import { readStdinAll } from "./lib/cli.ts";
 import { changeAreasCatalogPath } from "./lib/overlay.ts";
 import { gitIdentityEnv, run, tsArgv } from "./lib/proc.ts";
+import { isRecord as isPlainObject } from "../../../shared/guards.ts";
 
 const VERDICTS = ["over-strict", "proportionate", "under-strict"] as const;
 type Verdict = (typeof VERDICTS)[number];
@@ -147,10 +148,6 @@ function sanitizeGitRemoteUrl(raw: string | null): string | null {
   } catch {
     return raw;
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // ── arguments ────────────────────────────────────────────────────────────────

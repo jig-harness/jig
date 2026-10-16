@@ -18,13 +18,14 @@ import {
   readConfig,
   readOverlay,
   withSource,
-} from "../../../../resolve-review-comments/scripts/lib/consumer.ts";
+} from "../../../../../shared/consumer.ts";
 import {
   parseTrackerLabels,
   type TrackerLabels,
-} from "../../../../resolve-review-comments/scripts/lib/tracker-labels.ts";
+} from "../../../../../shared/tracker-labels.ts";
 import { refuseRenamedSection } from "../overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./port.ts";
+import { isRecord } from "../../../../../shared/guards.ts";
 
 export interface TrackerConfig {
   adapter: string;
@@ -48,10 +49,6 @@ export function defaultStateName(state: CanonicalState): string {
 
 /** A team key as issue identifiers carry it. */
 export const TEAM_KEY_PATTERN = /^[A-Z][A-Z0-9]*$/;
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
 
 /**
  * States that may share one tracker name: each group reads the same way

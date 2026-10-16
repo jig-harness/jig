@@ -12,14 +12,14 @@ import {
   mergeLayers,
   parseField,
   sourceOf,
-} from "../scripts/lib/config-layers.ts";
-import { trackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
+} from "../config-layers.ts";
+import { trackerConfig } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import {
   configSource,
   readConfig,
   readOverlay,
   withSource,
-} from "../scripts/lib/consumer.ts";
+} from "../consumer.ts";
 
 const SAVED = {
   home: process.env.JIG_HOME,
@@ -186,7 +186,15 @@ test("an unparseable flow value names its variable", () => {
   );
 });
 
-const JIG_CONFIG = join(import.meta.dirname, "..", "scripts", "jig-config.ts");
+const JIG_CONFIG = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "skills",
+  "resolve-review-comments",
+  "scripts",
+  "jig-config.ts",
+);
 
 function jigConfig(...args: string[]) {
   const run = Bun.spawnSync(["bun", JIG_CONFIG, ...args], {

@@ -1,4 +1,4 @@
-import { fail } from "../../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail } from "../../../../shared/cli.ts";
 
 /**
  * The reflection scripts' command lines: positional arguments, options that

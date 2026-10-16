@@ -17,9 +17,10 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { withSource } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+import { withSource } from "../../../../shared/consumer.ts";
 import { readOptionalOverlay } from "./overlay.ts";
 import { ghCall, git } from "./proc.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 
 export const STACKING_MODES = ["none", "native", "branch"] as const;
 export type Stacking = (typeof STACKING_MODES)[number];
@@ -70,10 +71,6 @@ export const KNOWN_KEYS = [
   "labels",
   "title_format",
 ] as const;
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
 
 function oneOf<T extends string>(
   section: Record<string, unknown>,

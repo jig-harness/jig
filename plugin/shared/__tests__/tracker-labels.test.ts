@@ -1,5 +1,5 @@
 /**
- * The tracker label vocabulary (`scripts/lib/tracker-labels.ts`): a default
+ * The tracker label vocabulary (`shared/tracker-labels.ts`): a default
  * for every role, the consumer's names in `issue_tracker.labels`, and the
  * older `review.taxonomy` fields as a fallback that may not disagree.
  */
@@ -8,7 +8,7 @@ import {
   DEFAULT_TRACKER_LABELS,
   labelsAsConfig,
   parseTrackerLabels,
-} from "../scripts/lib/tracker-labels.ts";
+} from "../tracker-labels.ts";
 
 const labels = (l: unknown, taxonomy?: Record<string, unknown>) =>
   parseTrackerLabels({

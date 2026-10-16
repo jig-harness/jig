@@ -54,21 +54,17 @@ function json(path: string): Record<string, unknown> {
 
 let scratch: string;
 let scripts: string;
+let shared: string;
 beforeAll(() => {
   scratch = realpathSync(mkdtempSync(join(tmpdir(), "jig-plugin-")));
-  // The plugin cache copies the plugin directory; tests are not part of it.
-  cpSync(join(root, "plugin", "skills"), join(scratch, "cache", "skills"), {
+  // The plugin cache copies the whole plugin directory (skills, shared code,
+  // agents, assets, manifests); tests are not part of it.
+  cpSync(join(root, "plugin"), join(scratch, "cache"), {
     recursive: true,
-    filter: (path) => !path.includes("__tests__"),
+    filter: (path) => !path.split(/[\\/]/).includes("__tests__"),
   });
-  cpSync(join(root, "plugin", "shared"), join(scratch, "cache", "shared"), {
-    recursive: true,
-  });
-  for (const manifest of [".claude-plugin", ".codex-plugin"])
-    cpSync(join(root, "plugin", manifest), join(scratch, "cache", manifest), {
-      recursive: true,
-    });
   scripts = join(scratch, "cache", "skills", skill, "scripts");
+  shared = join(scratch, "cache", "shared");
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -151,6 +147,150 @@ test("both marketplaces list plugin/ as the plugin", () => {
     source: "local",
     path: "./plugin",
   });
+});
+
+/**
+ * The relative specifiers `file` imports at run time (static, side-effect,
+ * re-export, dynamic and `require`), as Bun's own parser reads them, so a
+ * specifier counts exactly when Bun would load it. That parser erases
+ * type-only imports; the compiler checks those in shared code (below). A
+ * script's `#!` line, which the scanner rejects, is blanked first.
+ */
+function relativeImports(text: string, file = "source.ts"): string[] {
+  const loader = file.endsWith(".mjs") ? "js" : "ts";
+  return new Bun.Transpiler({ loader })
+    .scanImports(text.replace(/^#!.*/, ""))
+    .map((entry) => entry.path)
+    .filter((path) => /^\.{1,2}\//.test(path));
+}
+
+/** One relative import per line, in every run-time form, with the traps between. */
+const SCANNER_SOURCE = [
+  'import { a } from "./a.ts";',
+  'export { f } from "./f.ts";',
+  'export * from "./h.ts";',
+  'import "../skills/drive-pr/scripts/drive.ts";',
+  'const i = await import("./i.ts");',
+  "const j = await import(`../skills/drive-pr/scripts/j.ts`);",
+  'const r = require("./r.ts");',
+  'let n = 1; const ratio = n++ / 2; await import("./after-division.ts");',
+  'import "\\u002e/escaped.ts";',
+  "await import(`\\u002e/escaped-template.ts`);",
+  'await import(("./parenthesized.ts"));',
+  'require(("./parenthesized-require.ts"));',
+  "const u = /[\"'`/]{/;\nimport './after-regex.ts';",
+  "// import './commented.ts';",
+  'const s = "import \\"./in-string.ts\\"";',
+  'const y = import.meta.dir; obj.require("./not-y.ts");',
+  'import { e } from "node:fs";',
+  "a; e; i; j; r; ratio; s; u; y;",
+].join("\n");
+
+const SCANNER_FOUND = [
+  "./a.ts",
+  "./f.ts",
+  "./h.ts",
+  "../skills/drive-pr/scripts/drive.ts",
+  "./i.ts",
+  "../skills/drive-pr/scripts/j.ts",
+  "./r.ts",
+  "./after-division.ts",
+  "./escaped.ts",
+  "./escaped-template.ts",
+  "./parenthesized.ts",
+  "./parenthesized-require.ts",
+  "./after-regex.ts",
+];
+
+test("the import scanner sees every run-time form of relative import", () => {
+  expect(relativeImports(SCANNER_SOURCE).toSorted()).toEqual(
+    SCANNER_FOUND.toSorted(),
+  );
+});
+
+test("every relative import in the copied plugin resolves inside the copy", () => {
+  // A skill reaches shared code by relative path, so the copy must hold it;
+  // shared code never reaches into a skill, so a skill can be removed or
+  // renamed without breaking the others.
+  const cache = join(scratch, "cache");
+  const unresolved: string[] = [];
+  const intoSkills: string[] = [];
+  const files = readdirSync(cache, { recursive: true, encoding: "utf8" })
+    .filter((path) => /\.(ts|mts|mjs)$/.test(path))
+    .map((path) => join(cache, path));
+  expect(files.some((path) => path.startsWith(join(cache, "shared")))).toBe(
+    true,
+  );
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    for (const path of relativeImports(text, file)) {
+      const target = resolve(dirname(file), path);
+      const where = `${file.slice(cache.length + 1)} -> ${path}`;
+      if (!target.startsWith(cache) || !existsSync(target))
+        unresolved.push(where);
+      if (
+        file.startsWith(join(cache, "shared")) &&
+        target.startsWith(join(cache, "skills"))
+      )
+        intoSkills.push(where);
+    }
+  }
+  expect(unresolved).toEqual([]);
+  expect(intoSkills).toEqual([]);
+});
+
+/**
+ * Type-checks `dir/shared` with no `skills/` beside it. The include names no
+ * extension, so the compiler takes every file kind it reads (`.ts`, `.mts`,
+ * `.cts`, declaration files), and declaration files are checked rather than
+ * skipped, so an import in any of them must resolve.
+ */
+function compileSharedAlone(dir: string): {
+  status: number | null;
+  output: string;
+} {
+  writeFileSync(
+    join(dir, "tsconfig.json"),
+    JSON.stringify({
+      extends: join(root, "tsconfig.json"),
+      compilerOptions: {
+        typeRoots: [join(root, "node_modules", "@types")],
+        skipLibCheck: false,
+      },
+      include: ["shared/**/*"],
+      exclude: [],
+    }),
+  );
+  const tsc = spawnSync(
+    process.execPath,
+    [join(root, "node_modules", "typescript", "bin", "tsc"), "-p", dir],
+    { cwd: dir, env },
+  );
+  return { status: tsc.status, output: `${tsc.stdout}${tsc.stderr}` };
+}
+
+test("shared code compiles with no skill beside it, type imports included", () => {
+  // The compiler resolves every form an import can take, type-only ones
+  // too, so with skills/ absent any import of a skill fails to resolve.
+  const alone = join(scratch, "shared-alone");
+  cpSync(shared, join(alone, "shared"), { recursive: true });
+  expect(compileSharedAlone(alone)).toEqual({ status: 0, output: "" });
+  // One type-only import of a skill in each file kind shared code can hold.
+  const leaks = [
+    "leak.ts",
+    "leak-module.mts",
+    "leak-common.cts",
+    "leak-types.d.ts",
+  ];
+  for (const [index, name] of leaks.entries())
+    writeFileSync(
+      join(alone, "shared", name),
+      `import type * as Drive from "\\u002e./skills/drive-pr/scripts/drive.ts";\nexport type Leak${index} = typeof Drive;\n`,
+    );
+  const leak = compileSharedAlone(alone);
+  expect(leak.status).not.toBe(0);
+  for (const name of leaks) expect(leak.output).toContain(`shared/${name}(1,`);
+  expect(leak.output.match(/TS2307/g)?.length).toBe(leaks.length);
 });
 
 test("every shipped skill is named after its directory and avoids repository paths", () => {
@@ -514,7 +654,7 @@ test("an explicit consumer root and a dangling sibling link are honoured", () =>
   const probe = join(consumer, "sibling-probe.ts");
   writeFileSync(
     probe,
-    `import { siblingSkill } from ${JSON.stringify(join(scripts, "lib/consumer.ts"))}; console.log(siblingSkill("drive-pr", ${JSON.stringify(scripts)}));\n`,
+    `import { siblingSkill } from ${JSON.stringify(join(shared, "consumer.ts"))}; console.log(siblingSkill("drive-pr", ${JSON.stringify(scripts)}));\n`,
   );
   const sibling = spawnSync(process.execPath, [probe], {
     cwd: consumer,
@@ -536,7 +676,7 @@ test("an explicit consumer root and a dangling sibling link are honoured", () =>
     process.execPath,
     [
       "-e",
-      `import { siblingSkill } from ${JSON.stringify(join(scripts, "lib/consumer.ts"))}; console.log(siblingSkill("drive-pr", ${JSON.stringify(scripts)}));`,
+      `import { siblingSkill } from ${JSON.stringify(join(shared, "consumer.ts"))}; console.log(siblingSkill("drive-pr", ${JSON.stringify(scripts)}));`,
     ],
     { cwd: danglingParent, env, encoding: "utf8" },
   );
@@ -550,7 +690,7 @@ test("an explicit consumer root and a dangling sibling link are honoured", () =>
     process.execPath,
     [
       "-e",
-      `import { siblingSkill } from ${JSON.stringify(join(scripts, "lib/consumer.ts"))}; console.log(siblingSkill("drive-pr", ${JSON.stringify(scripts)}));`,
+      `import { siblingSkill } from ${JSON.stringify(join(shared, "consumer.ts"))}; console.log(siblingSkill("drive-pr", ${JSON.stringify(scripts)}));`,
     ],
     { cwd: plain, env, encoding: "utf8" },
   );
@@ -569,7 +709,7 @@ test("an explicit consumer root and a dangling sibling link are honoured", () =>
         process.execPath,
         [
           "-e",
-          `import { siblingSkill } from ${JSON.stringify(join(scripts, "lib/consumer.ts"))}; console.log(siblingSkill("drive-pr", ${JSON.stringify(scripts)}));`,
+          `import { siblingSkill } from ${JSON.stringify(join(shared, "consumer.ts"))}; console.log(siblingSkill("drive-pr", ${JSON.stringify(scripts)}));`,
         ],
         { cwd: locked, env, encoding: "utf8" },
       );
@@ -1091,10 +1231,10 @@ if (query.includes("node(id:$threadId)")) {
 );
 
 test("the vendored YAML parser is the pinned js-yaml build", () => {
-  // The plugin cache has no node_modules, so the skill ships js-yaml's own
+  // The plugin cache has no node_modules, so the plugin ships js-yaml's own
   // ESM build with its licence. CONTRIBUTING.md § Derived files says how to
   // refresh both when the dependency is updated.
-  const vendor = join(root, "plugin", "skills", skill, "scripts/lib/vendor");
+  const vendor = join(root, "plugin", "shared", "vendor");
   const pinned = join(root, "node_modules/js-yaml");
   expect(readFileSync(join(vendor, "js-yaml.mjs"), "utf8")).toBe(
     readFileSync(join(pinned, "dist/js-yaml.mjs"), "utf8"),
@@ -1109,7 +1249,7 @@ test("plugin cancellation registrations release only their own ownership", () =>
   writeFileSync(
     probe,
     `
-import { registerCancellationGroup } from ${JSON.stringify(join(scripts, "lib/proc.ts"))};
+import { registerCancellationGroup } from ${JSON.stringify(join(shared, "proc.ts"))};
 const signals: number[] = [];
 process.kill = ((pid: number) => { signals.push(pid); return true; }) as typeof process.kill;
 process.on("SIGTERM", () => {});

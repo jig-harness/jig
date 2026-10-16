@@ -12,7 +12,7 @@
  * each recommendation against them.
  */
 import { createHash } from "node:crypto";
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
 import type { GlossaryEntry } from "../../../decide/scripts/sheet-kit/inline.ts";
 import { Checker } from "../../../decide/scripts/sheet-kit/source.ts";
 import type { Severity } from "../lib/schema.ts";

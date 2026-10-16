@@ -218,15 +218,14 @@ describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
 // gone, so the sweep enforces the whole directory. Anything reaching for `gh`
 // without the wrapper is the regression this sweep exists to catch.
 //
-// It sweeps resolve-review-comments' TypeScript scripts too, because the drive
-// loop SPAWNS them (SKILL.md §§ 2 and 6): an unbounded call there parks an
+// It sweeps resolve-review-comments' TypeScript scripts and the plugin's
+// shared code too, because the drive loop SPAWNS those scripts (SKILL.md §§ 2
+// and 6): an unbounded call there parks an
 // unattended driver exactly as one here would, and both shipped that way —
 // `resolve-thread.ts` and `list-unresolved-threads.ts` each spawned `gh` through
 // a bare `spawnSync` while this sweep, scoped to drive-pr's own directory,
-// stayed green. That skill carries its own
-// chokepoint rather than importing this one (drive-pr already depends on it;
-// importing back would make the two mutually dependent), so the sweep is
-// parameterised by root, each with its own sanctioned files.
+// stayed green. The sweep is parameterised by root, each with its own
+// sanctioned files.
 describe("no raw `gh` spawn escapes the deadline wrapper", () => {
   // The bare binary in argv HEAD position — `['gh', …]` under
   // run()/spawn()/Bun.spawn(), or the (cmd, args) form `<anything>('gh', …)`.
@@ -312,12 +311,15 @@ describe("no raw `gh` spawn escapes the deadline wrapper", () => {
         "resolve-review-comments",
         "scripts",
       ),
-      // A chokepoint per shape of caller: `lib/gh.ts` is the synchronous
-      // spawn-print-exit helper for the straight-line scripts, `lib/proc.ts`
-      // the async deadline runner the polling scripts (await-round.ts,
-      // converge.ts, reply-to-thread.ts) took over from `lib/gh-deadline.sh`
-      // when the skill's bash surface was ported to TypeScript.
-      allowed: new Set(["lib/gh.ts", "lib/proc.ts"]),
+      // `lib/gh.ts` is the spawn-print-exit helper for the straight-line
+      // scripts; the polling scripts use the shared `proc.ts` below.
+      allowed: new Set(["lib/gh.ts"]),
+    },
+    {
+      label: "shared",
+      dir: join(import.meta.dir, "..", "..", "..", "shared"),
+      // The async deadline runner every skill's polling scripts use.
+      allowed: new Set(["proc.ts"]),
     },
   ];
 
@@ -327,6 +329,7 @@ describe("no raw `gh` spawn escapes the deadline wrapper", () => {
   // this).
   const scan = (dir: string) =>
     [...new Bun.Glob("**/*.ts").scanSync(dir)]
+      .filter((rel) => !rel.startsWith("__tests__/"))
       .sort()
       .map((rel) => ({ rel, path: join(dir, rel) }));
   const tsScripts = scan(SCRIPTS);
@@ -383,13 +386,11 @@ describe("no raw `gh` spawn escapes the deadline wrapper", () => {
 
   // And no bash remains under this root either: the whole surface —
   // await-round, converge, reply-to-thread, and the gh-deadline lib they
-  // sourced — was ported to TypeScript, so `lib/proc.ts` is where their
+  // sourced — was ported to TypeScript, so the shared `proc.ts` is where their
   // deadline lives now and the sweep above covers every caller. One
-  // implementation, one sweep, one claim. (The bash-era sweep and the
-  // executed probes over `lib/gh-deadline.sh` retired with the port; their
-  // measured behaviours — group kills, stdin preservation, trap restoration,
-  // the alarm() range — are carried by lib/proc.ts and pinned by
-  // resolve-review-comments' own suite.)
+  // implementation, one sweep, one claim. (The measured behaviours — group
+  // kills, stdin preservation, trap restoration, the alarm() range — are
+  // carried by the shared proc.ts and pinned by its own suite.)
   it("leaves no shell script under resolve-review-comments/scripts/", () => {
     const rrc = ROOTS.find((r) => r.label === "resolve-review-comments");
     if (rrc === undefined)

@@ -217,17 +217,22 @@
  * only carries the POSIX direct-execution path.
  */
 
-import { readOverlay, reviewConfig, withSource } from "./lib/consumer.ts";
+import {
+  readOverlay,
+  reviewConfig,
+  withSource,
+} from "../../../shared/consumer.ts";
 import {
   DEFAULT_TRACKER_LABELS,
   parseTrackerLabels,
-} from "./lib/tracker-labels.ts";
-import { fail, readStdinAll, runMain } from "./lib/cli.ts";
+} from "../../../shared/tracker-labels.ts";
+import { fail, readStdinAll, runMain } from "../../../shared/cli.ts";
 import {
   CANONICAL_SEVERITIES,
   CATEGORY_UNKNOWN,
   SEVERITY_UNKNOWN,
 } from "./lib/ladder.ts";
+import { type Clock, systemClock } from "../../../shared/clock.ts";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 const LINEAR_TIMEOUT_MS = 30_000;
@@ -272,7 +277,7 @@ const consumer = (() => {
 export const BATCH_SIZES = consumer.taxonomy?.sizes ?? ["xs", "small"];
 /**
  * The follow-up and epic labels: `issue_tracker.labels`, else the older
- * `review.taxonomy` fields, else the defaults (`lib/tracker-labels.ts`).
+ * `review.taxonomy` fields, else the defaults (`shared/tracker-labels.ts`).
  */
 const labels = (() => {
   try {
@@ -480,50 +485,16 @@ export function retryBackoffMs(
 }
 
 /**
- * The pause between retries, injectable so tests do not sleep for real.
- *
- * `signal` is OPTIONAL and exists only so `realSleep` can clear its own
- * timer promptly on abort (see its own doc) — a test double is free to
- * ignore it entirely, exactly as before this parameter existed; the actual
- * cross-implementation cancellation guarantee is `sleepUnlessAborted`, the
- * caller's OUTER race, not this parameter.
+ * The pause between retries: the clock's `sleep`, injectable so tests do not
+ * sleep for real. A test double is free to ignore `signal`; the cancellation
+ * guarantee is `sleepUnlessAborted`, the caller's outer race.
  */
-export type Sleeper = (ms: number, signal?: AbortSignal) => Promise<void>;
-
-/**
- * A plain `setTimeout` left uncleared when the abort side of the caller's race
- * won instead kept a live timer on the event loop — and `runMain` deliberately
- * sets `process.exitCode` rather than calling `process.exit()` (so pending
- * stdout writes flush), so the CLI process did not actually exit until that
- * leaked timer fired, up to `RETRY_MAX_MS` after the run had already aborted.
- * Checking `aborted` synchronously first (a signal already aborted before this
- * call would never fire a LATER `'abort'` event), and removing its own listener
- * on the timer's NORMAL completion too: `{ once: true }` alone only
- * self-removes a listener when the event actually FIRES, so on every ORDINARY
- * retry (the timer winning, not the signal aborting — the common case) the
- * listener from an earlier attempt stayed registered on the shared,
- * run-lifetime `signal` for the rest of the run. Bounded by `APPEND_ATTEMPTS`,
- * not unbounded, but real.
- */
-const realSleep: Sleeper = (ms, signal) => {
-  if (signal?.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-};
+export type Sleeper = Clock["sleep"];
 
 /**
  * Races `sleeper(ms)` against `signal` aborting, cleaning up after itself
  * either way — the call site's half of the same listener-leak class
- * `realSleep` closes for its own half (see that function's own doc).
+ * `systemClock.sleep` closes for its own half (see `shared/clock.ts`).
  *
  * A bare `Promise.race([sleeper(ms), abortedPromise])` left THIS side's
  * `{ once: true }` `'abort'` listener registered on `signal` for the rest of
@@ -2114,7 +2085,7 @@ export async function appendWithRetry(
   incomingOwnership: string[],
   requiredContext: string[],
   signal: AbortSignal,
-  sleep: Sleeper = realSleep,
+  sleep: Sleeper = systemClock.sleep,
   /**
    * Does `seedDescription` actually DIFFER from the batch's description as
    * read at the initial find (`appended` at the call site) — i.e. does
@@ -2626,7 +2597,7 @@ async function main(): Promise<number> {
   }
 
   // UNSET and EMPTY both fall through — the same `${VAR:-…}` semantics
-  // lib/cli.ts's envOrDefault documents (an empty export from optional
+  // shared/cli.ts's envOrDefault documents (an empty export from optional
   // templating must not shadow the fallback name).
   const token =
     [process.env.LINEAR_API_TOKEN, process.env.LINEAR_API_KEY].find(

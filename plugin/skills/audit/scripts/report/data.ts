@@ -6,7 +6,7 @@
  * as JSON, which YAML reads as it is, so `parseRecord` accepts the extracted
  * record unchanged.
  */
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
 import { type AuditRecord, declinedData } from "../lib/record.ts";
 import type { ReportInput } from "./model.ts";
 import { type Fit, type ReportSource, reportFingerprint } from "./source.ts";

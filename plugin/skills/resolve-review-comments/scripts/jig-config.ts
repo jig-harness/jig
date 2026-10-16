@@ -20,7 +20,7 @@
  * 2 usage, or the field is set in no layer.
  */
 
-import { fail, runMain } from "./lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import {
   formatField,
   isMapping,
@@ -29,8 +29,8 @@ import {
   parseField,
   sourceOf,
   valueAt,
-} from "./lib/config-layers.ts";
-import { consumerRoot, layeredConfig } from "./lib/consumer.ts";
+} from "../../../shared/config-layers.ts";
+import { consumerRoot, layeredConfig } from "../../../shared/consumer.ts";
 
 const USAGE = "usage: jig-config.ts [<field>] [--json]";
 

@@ -1,7 +1,8 @@
 // Flags a child process whose standard error is discarded: when the child
 // fails, the reason it printed is gone. Covers Bun's `stderr` option and
 // Node's `stdio`, as one value for all three streams or as a list whose
-// third entry is standard error.
+// third entry is standard error. The plugin's `run()` (plugin/shared/proc.ts)
+// keeps the last 4 KiB of a failed child's error output as `stderrTail`.
 or {
   `stderr: "ignore"`,
   `stdio: "ignore"`,
@@ -9,7 +10,7 @@ or {
 } as $option where {
   register_diagnostic(
     span = $option,
-    message = "jig/stderr-ignore: the child's error output is discarded. Pipe it and include its tail when the call fails.",
+    message = "jig/stderr-ignore: the child's error output is discarded. Pipe it and include its tail when the call fails: run() in plugin/shared/proc.ts keeps it as stderrTail.",
     severity = "warn"
   )
 }

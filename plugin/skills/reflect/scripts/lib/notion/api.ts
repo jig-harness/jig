@@ -10,7 +10,7 @@
  * error; 1 for anything Notion refused.
  */
 import { setTimeout as sleep } from "node:timers/promises";
-import { isMapping } from "../../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../../../shared/config-layers.ts";
 
 /** The API version every request names, and the tests run against. */
 export const NOTION_VERSION = "2026-03-11";

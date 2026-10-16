@@ -1,9 +1,9 @@
 /**
  * Process spawning with deadlines — the TypeScript successor to
- * `lib/gh-deadline.sh`, and (with `gh.ts`) the place `gh` is spawned from.
+ * `lib/gh-deadline.sh`, and the place every skill's `gh` is spawned from.
  *
  * Bound every outbound `gh` call. `gh` has no timeout of its own, and none of
- * this skill's scripts can supply one from their poll loops: a deadline is only
+ * the scripts can supply one from their poll loops: a deadline is only
  * ever consulted BETWEEN calls, so an accepted-but-never-completed connection
  * parks the driver past every advertised deadline — mode 13 in drive-pr's
  * references/terminal-states.md.
@@ -118,6 +118,71 @@ export interface RunResult {
    * caller's exit-status reading changes.
    */
   spawnFailed: boolean;
+  /**
+   * The last `STDERR_TAIL_BYTES` of the child's error output when it failed
+   * (any non-zero `code`), and `""` when it succeeded. Kept past the
+   * `maxBufferBytes` cap, so a child killed for its output still says why.
+   * Empty under `stderr: "inherit"` (the output went to this process's own
+   * error stream) and `stderr: "ignore"` (it went nowhere).
+   */
+  stderrTail: string;
+}
+
+/** How much of a failed child's error output `RunResult.stderrTail` keeps. */
+export const STDERR_TAIL_BYTES = 4 * 1024;
+
+/** The last `STDERR_TAIL_BYTES` of `text`, cut on a character boundary. */
+export function lastBytes(text: string): string {
+  if (text.length <= STDERR_TAIL_BYTES / 4) return text;
+  const bytes = Buffer.from(text);
+  if (bytes.length <= STDERR_TAIL_BYTES) return text;
+  return bytes
+    .subarray(bytes.length - STDERR_TAIL_BYTES)
+    .toString("utf8")
+    .replace(/^\uFFFD+/, "");
+}
+
+/**
+ * Programs whose second word is a subcommand. For any other program the
+ * second word can be anything (a URL with a credential in it, a path), so
+ * only the program is named.
+ */
+const SUBCOMMAND_PROGRAMS = new Set(["gh", "git"]);
+
+/**
+ * A child that failed, as an error: the command (the program, and its second
+ * word when the program is one of `SUBCOMMAND_PROGRAMS` and that word is a
+ * plain subcommand name; never the other arguments' contents), its exit code
+ * and the tail of its error output.
+ * Pass it as the `cause` of the error a caller throws (`failFrom` in
+ * `cli.ts`), so the command-line boundary shows it under `JIG_LOG=debug`.
+ */
+export class ChildFailure extends Error {
+  readonly command: string;
+  readonly code: number;
+  readonly stderrTail: string;
+  constructor(argv: readonly string[], result: RunResult) {
+    const [program = "", next] = argv;
+    const name = program.split(/[\\/]/).pop() ?? "";
+    const command =
+      next !== undefined &&
+      SUBCOMMAND_PROGRAMS.has(name) &&
+      /^[a-z][a-z0-9-]*$/.test(next)
+        ? `${program} ${next}`
+        : program;
+    const how = result.spawnFailed
+      ? "could not start"
+      : result.timedOut
+        ? "was killed at its deadline"
+        : result.bufferExceeded
+          ? "was killed for too much output"
+          : `exited ${result.code}`;
+    super(`${command} ${how}`);
+    this.name = "ChildFailure";
+    this.command = command;
+    this.code = result.code;
+    this.stderrTail = result.stderrTail;
+  }
 }
 
 /**
@@ -365,6 +430,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
         bufferExceeded: false,
         timedOut: false,
         spawnFailed: true,
+        stderrTail: "empty command",
       });
       return;
     }
@@ -403,15 +469,17 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     try {
       child = spawn(cmd, args, spawnOpts);
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       resolve({
         code: 127,
         stdout: "",
-        stderr: e instanceof Error ? e.message : String(e),
+        stderr: message,
         timedOut: false,
         bufferExceeded: false,
         // `spawn` threw before any child existed — the synchronous half of
         // the same fact `child.on('error')` reports asynchronously below.
         spawnFailed: true,
+        stderrTail: lastBytes(message),
       });
       return;
     }
@@ -428,6 +496,9 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
 
     let out = "";
     let err = "";
+    // The last bytes of stderr, past whatever the cap discards: bounded,
+    // and what a failure report needs.
+    let errTail = "";
     let timedOut = false;
     let bufferExceeded = false;
     let spawnFailed = false;
@@ -480,6 +551,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     });
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (d: string) => {
+      errTail = lastBytes(errTail + d);
       const captured = !(bufferExceeded || timedOut);
       if (captured) {
         err += d;
@@ -504,6 +576,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
         timedOut,
         bufferExceeded,
         spawnFailed,
+        stderrTail: code === 0 ? "" : lastBytes(errTail || (extraErr ?? "")),
       });
     };
 
@@ -637,8 +710,8 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
  * `timeoutSec` is an optional TIGHTENING, never a loosening: a caller holding a
  * budget smaller than `GH_CALL_TIMEOUT` can pass it, and the effective deadline
  * is whichever is smaller. Omitting it keeps the env default exactly as before.
- * Mirrors `drive-pr`'s `ghCall`, and exists here because the parity copy of
- * `lib/gh-conditional.ts` passes its caller's budget through it.
+ * Mirrors `drive-pr`'s `ghCall`, and exists here because `gh-conditional.ts`
+ * passes its caller's budget through it.
  */
 export function ghCall(
   args: string[],
@@ -656,7 +729,7 @@ export function ghCall(
 }
 
 /**
- * `git`. Undeadlined BY DEFAULT: every call in this skill is local
+ * `git`. Undeadlined BY DEFAULT: the calls it serves are local
  * (`rev-parse`) and cannot hang on a network the way `gh` can — which is why
  * `ghCall` carries a deadline and this does not. A caller adding a
  * remote-facing subcommand (`fetch`, `push`, `ls-remote`) must pass its own

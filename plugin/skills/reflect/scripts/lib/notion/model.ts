@@ -9,7 +9,7 @@
  * people without changing what the skills read.
  */
 import { createHash } from "node:crypto";
-import { isMapping } from "../../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../../../shared/config-layers.ts";
 import {
   type ComputedState,
   type DecisionEvent,

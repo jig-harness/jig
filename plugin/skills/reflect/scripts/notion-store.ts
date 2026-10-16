@@ -30,7 +30,7 @@
  * Exit codes: 0 done; 1 failed (the reason on stderr); 2 usage; 3 Notion is
  * unreachable, or the token is missing or refused.
  */
-import { runMain } from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { runMain } from "../../../shared/cli.ts";
 import { NotionApi, NotionError } from "./lib/notion/api.ts";
 import { notionId } from "./lib/notion/ids.ts";
 import { appendInput, sinceInput } from "./lib/store-io.ts";

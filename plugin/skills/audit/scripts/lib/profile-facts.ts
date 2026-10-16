@@ -10,8 +10,8 @@
  * holds the dial, and a heavier profile than the facts call for costs work
  * nobody asked for.
  */
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
-import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
+import { load } from "../../../../shared/yaml.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "./repo.ts";

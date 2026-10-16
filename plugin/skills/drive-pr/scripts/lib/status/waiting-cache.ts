@@ -6,6 +6,7 @@ import {
   ghConditionalProbe,
 } from "../gh-conditional.ts";
 import type { EvaluateContext, StatusReport } from "./evaluate.ts";
+import { type Clock, systemClock } from "../../../../../shared/clock.ts";
 
 export function waitingChecksMaxAgeMs(
   raw = process.env.AWAIT_ROUND_CHECKS_MAX_AGE ?? "300",
@@ -30,9 +31,8 @@ type WaitingContext = Pick<
 >;
 
 /** The injectable reader lets tests drive changes without sharing real cache state. */
-export interface WaitingCacheDependencies {
+export interface WaitingCacheDependencies extends Pick<Clock, "now"> {
   enabled(): boolean;
-  now(): number;
   signals(ctx: WaitingContext): Promise<Signals | null>;
 }
 
@@ -100,7 +100,7 @@ export class WaitingEvaluationCache {
     maxAgeMs: number,
     deps: WaitingCacheDependencies = {
       enabled: () => ghCacheDir() !== null,
-      now: Date.now,
+      now: systemClock.now,
       signals: readSignals,
     },
   ) {

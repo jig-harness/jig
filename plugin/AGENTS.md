@@ -14,11 +14,11 @@ once.
   APIs and the `node:` modules it provides) or a vendored single-file build
   only. The details are in
   [README.md § Add or change a skill](README.md#add-or-change-a-skill);
-  `tools/plugin/plugin.test.ts` checks the skills from a copy.
+  `tools/plugin/plugin.test.ts` checks the whole plugin from a copy.
 - **Consumer values are configuration.** A repository's values (bots, teams,
   labels, branch names, commands) are read at run time from its
   `.config/jig.yaml` and the other configuration layers, always through the
-  shared reader in `skills/resolve-review-comments/scripts/lib/consumer.ts`,
+  shared reader in `shared/consumer.ts`,
   never by parsing the file directly. Every field is documented in
   [CONFIGURATION.md](CONFIGURATION.md) in the same pull request that adds or
   changes it, with its default and the skills that read it.
@@ -34,6 +34,11 @@ once.
   [CONFIGURATION.md](CONFIGURATION.md), and its tests in
   `skills/<name>/__tests__/`. A suite that needs POSIX or runs long is listed in
   [scripts/gates.ts](../scripts/gates.ts) with the reason.
+- **Code more than one skill uses lives in `shared/`**, beside `skills/`:
+  skills import it by relative path, and nothing in `shared/` imports from a
+  skill. A module moves
+  there, with its tests in `shared/__tests__/`, when a second skill needs it.
+  A skill's own logic that another skill reads stays in the skill.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **`SKILL.md` is the agent's contract; `README.md` (where a skill has one) is

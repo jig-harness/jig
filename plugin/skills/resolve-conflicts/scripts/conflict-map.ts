@@ -28,10 +28,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  fail,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import { generatedEntries, regenerateFor } from "./lib/classify.ts";
 import { git, readBlob, splitNul, topLevel } from "./lib/git.ts";
 import { parseHunks } from "./lib/markers.ts";

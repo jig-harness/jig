@@ -780,6 +780,24 @@ make, use the entry's term instead.
   that an agent tool loads in every session. Jig ships its skills and
   its review agent as one plugin for Claude Code and Codex, installed once
   per machine ([plugin/README.md](plugin/README.md)).
+- **Shared code (`plugin/shared/`)** — the plugin's code that more than one
+  skill uses: the configuration reader, the process runner, the
+  command-line boundary, the logger. Skills import it by relative path; it
+  imports nothing from a skill.
+- **Command-line boundary** — the one wrapper around a script's entry point
+  that turns its result or failure into an exit code and a message, so every
+  script reports failures the same way.
+- **Type guard** — a function that checks at run time that a value has a
+  given shape, and tells the type checker so when it does. Data read from
+  outside the program (JSON, a configuration file) is checked by one before
+  it is used.
+- **Standard error (stderr)** — the output stream a program writes its
+  diagnostics to, separate from standard output, which carries its result.
+- **Stack trace** — the list of function calls that were in progress when an
+  error was raised, innermost first; it shows where a failure happened.
+- **Log level** — how severe a log line is (error, warn, info, debug). A
+  program set to one level writes the lines at that level and the more
+  severe ones, and leaves out the rest.
 - **Marketplace** — a catalog an agent tool installs plugins from; usually a
   Git repository with a manifest listing its plugins. This repository is its
   own marketplace.

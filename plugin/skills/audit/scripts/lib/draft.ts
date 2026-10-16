@@ -10,7 +10,7 @@
  * says so: pasted as a second section, it would be a duplicate key, which
  * every skill refuses.
  */
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
 import { at, type Field, type Schema } from "./schema.ts";
 
 /** A value the repository implies for one field, and the fact that shows it. */

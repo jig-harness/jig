@@ -5,12 +5,12 @@
  * complete example that passes) and the skills that read the fields (the
  * value sets they accept).
  */
-import { REPOSITORY_ONLY_FIELDS } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { REPOSITORY_ONLY_FIELDS } from "../../../shared/config-layers.ts";
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
-import { LABEL_ROLES } from "../../resolve-review-comments/scripts/lib/tracker-labels.ts";
+import { load } from "../../../shared/yaml.ts";
+import { LABEL_ROLES } from "../../../shared/tracker-labels.ts";
 import {
   ISSUE_LINKS,
   KNOWN_KEYS,

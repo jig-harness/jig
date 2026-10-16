@@ -19,6 +19,7 @@
  * that reads labels already depends on this directory, and it on none of
  * them.
  */
+import { isRecord } from "./guards.ts";
 
 export const LABEL_ROLES = [
   "epic",
@@ -53,7 +54,7 @@ export interface TrackerLabels {
   declared: Set<LabelRole>;
 }
 
-export const DEFAULT_LABELS = {
+const DEFAULT_LABELS = {
   epic: "epic",
   hitl: "hitl",
   manual_ops: "manual-ops",
@@ -64,11 +65,7 @@ export const DEFAULT_LABELS = {
 } as const;
 
 /** The facets of the human-in-the-loop flag that an epic may hand off. */
-export const EXTRACTABLE_HITL_FACETS = ["legal", "tactical"] as const;
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
+const EXTRACTABLE_HITL_FACETS = ["legal", "tactical"] as const;
 
 function oneLabel(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "")

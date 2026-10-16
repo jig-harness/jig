@@ -1,6 +1,6 @@
 /**
- * The bounded `gh` for this skill's TypeScript scripts — its chokepoint, the
- * counterpart to drive-pr's `lib/proc.ts`.
+ * The bounded `gh` for this skill's TypeScript scripts — its chokepoint, built
+ * on the plugin's shared `proc.ts`.
  *
  * Every outbound `gh` call must carry a deadline. `gh` has no timeout of its
  * own, and no caller can supply one from a poll loop: a deadline between calls
@@ -10,32 +10,55 @@
  * (drive-pr SKILL.md §§ 2 and 6), so an unbounded call here hangs an
  * unattended driver exactly as one in drive-pr itself would.
  *
- * Built on the sibling `lib/proc.ts`'s `run()` rather than `spawnSync`.
- * The straight-line callers here used to justify a separate
- * synchronous implementation — `spawnSync`'s own `timeout` was the deadline,
- * and a killed child surfaced as `status === null` with a `signal`. But while
- * the parent is blocked in that syscall it cannot run a JS signal handler, and
+ * Built on `shared/proc.ts`'s `run()` rather than `spawnSync`. While the
+ * parent is blocked in `spawnSync` it cannot run a JS signal handler, and
  * `spawnSync`'s child is not detached — so a SIGTERM delivered to the
- * script's pid alone killed the parent at kernel level mid-syscall and
- * orphaned `gh`, which ran a mutation to completion after the operator
- * believed it was cancelled. `run()` already solves exactly this for the
- * skill's polling scripts: a deadlined child is detached into its own process
- * group, and `lib/proc.ts`'s module-load signal handler forwards a
- * cancellation into that group. Routing through it closes the gap rather than
- * reimplementing it. The "SEPARATE implementation" boundary this header used
- * to document was about not importing *drive-pr's* `proc.ts` across a skill
- * boundary — this skill has carried its own `lib/proc.ts` in the same
- * directory since the TypeScript port, so that duplication is no longer
- * buying the isolation it was written for.
+ * script's pid alone kills the parent at kernel level mid-syscall and orphans
+ * `gh`, which runs a mutation to completion after the operator believes it
+ * was cancelled. `run()` detaches a deadlined child into its own process
+ * group, and `proc.ts`'s module-load signal handler forwards a cancellation
+ * into that group.
  */
 
-import { fail } from "./cli.ts";
-import { cachedRepoView } from "./gh-conditional.ts";
-import { ghCallTimeoutSeconds, MAX_BUFFER_BYTES, run } from "./proc.ts";
+import { fail, failFrom } from "../../../../shared/cli.ts";
+import { cachedRepoView } from "../../../../shared/gh-conditional.ts";
+import {
+  ChildFailure,
+  ghCallTimeoutSeconds,
+  MAX_BUFFER_BYTES,
+  type RunResult,
+  run,
+} from "../../../../shared/proc.ts";
+
+/**
+ * Exit 1 for a `gh` killed at its deadline or for its output. A killed child
+ * printed no exit status of its own, so the last of its error output is the
+ * only explanation there is: shown with the refusal, not only under
+ * `JIG_LOG=debug`.
+ */
+function failKilled(
+  label: string,
+  argv: string[],
+  r: RunResult,
+  what: string,
+): never {
+  const tail = r.stderrTail.trimEnd();
+  failFrom(
+    new ChildFailure(argv, r),
+    1,
+    `${label}: ${what}`,
+    ...(tail === "" ? [] : [`${label}: the end of gh's error output:`, tail]),
+  );
+}
+
+/** Exit with `gh`'s own status, after its error output. */
+function failExited(argv: string[], r: RunResult): never {
+  failFrom(new ChildFailure(argv, r), r.code, ...(r.stderr ? [r.stderr] : []));
+}
 
 /**
  * Run `gh` with the deadline and return its stdout, throwing an `ExitError`
- * on any failure — `runMain` (lib/cli.ts) converts that into the process exit
+ * on any failure — `runMain` (shared/cli.ts) converts that into the process exit
  * code. `label` names the calling script in the diagnostics, the way each
  * script's own inline helper did.
  *
@@ -73,31 +96,32 @@ export async function ghOrExit(
       `${label}: GH_CALL_TIMEOUT (${baseSeconds}s) × deadlineFactor (${factor}) overflows the deadline timer — refusing`,
     );
   }
-  const r = await run(["gh", ...args], { timeoutSec });
+  const argv = ["gh", ...args];
+  const r = await run(argv, { timeoutSec });
   // A killed child's partial stdout is NOT an answer — returning it would
   // hand the caller a truncated document to parse as if it were complete.
-  if (r.timedOut) {
-    fail(
-      1,
-      `${label}: gh ${args[0] ?? ""} killed after ${timeoutSec * 1000}ms`,
+  if (r.timedOut)
+    failKilled(
+      label,
+      argv,
+      r,
+      `gh ${args[0] ?? ""} killed after ${timeoutSec * 1000}ms`,
     );
-  }
-  if (r.bufferExceeded) {
-    fail(
-      1,
-      `${label}: gh ${args[0] ?? ""} output exceeded ${MAX_BUFFER_BYTES / (1024 * 1024)}MiB — killed`,
+  if (r.bufferExceeded)
+    failKilled(
+      label,
+      argv,
+      r,
+      `gh ${args[0] ?? ""} output exceeded ${MAX_BUFFER_BYTES / (1024 * 1024)}MiB — killed`,
     );
-  }
-  if (r.code !== 0) {
-    fail(r.code, ...(r.stderr ? [r.stderr] : []));
-  }
+  if (r.code !== 0) failExited(argv, r);
   return r.stdout;
 }
 
 /**
  * `gh repo view <args>` with `ghOrExit`'s failure discipline, answered from the
  * cross-process cache when a previous call for this repository succeeded
- * (`lib/gh-conditional.ts`). The repository's owner/name never
+ * (`shared/gh-conditional.ts`). The repository's owner/name never
  * changes for a clone, but `gh repo view` is a GraphQL call — one point per
  * script invocation, which a drive multiplies by every script it spawns.
  */
@@ -106,14 +130,14 @@ export async function repoViewOrExit(
   args: string[],
 ): Promise<string> {
   const r = await cachedRepoView(args);
-  if (r.timedOut) {
-    fail(
-      1,
-      `${label}: gh repo view killed after ${ghCallTimeoutSeconds() * 1000}ms`,
+  const argv = ["gh", "repo", "view"];
+  if (r.timedOut)
+    failKilled(
+      label,
+      argv,
+      r,
+      `gh repo view killed after ${ghCallTimeoutSeconds() * 1000}ms`,
     );
-  }
-  if (r.code !== 0) {
-    fail(r.code, ...(r.stderr ? [r.stderr] : []));
-  }
+  if (r.code !== 0) failExited(argv, r);
   return r.stdout;
 }

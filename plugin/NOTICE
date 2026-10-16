@@ -51,7 +51,7 @@ modules/M9-tasks-memory/templates/phase-formula.yaml
 Third-party code, each under the licence in the file listed, which sits
 beside it:
 
-plugin/skills/resolve-review-comments/scripts/lib/vendor/js-yaml.LICENSE
+plugin/shared/vendor/js-yaml.LICENSE
   js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
 lib/vendor/js-yaml.LICENSE
   js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin

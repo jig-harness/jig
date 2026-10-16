@@ -11,6 +11,7 @@ import {
   ghConditionalProbe,
 } from "./gh-conditional.ts";
 import { waitingChecksMaxAgeMs } from "./status/waiting-cache.ts";
+import { type Clock, systemClock } from "../../../../shared/clock.ts";
 
 export interface FinalCiSignals {
   head: string;
@@ -20,8 +21,7 @@ export interface FinalCiSignals {
   observedAt: number;
 }
 
-export interface FinalCiWaitDeps {
-  now(): number;
+export interface FinalCiWaitDeps extends Pick<Clock, "now"> {
   signals(pr: string): Promise<FinalCiSignals | null>;
 }
 
@@ -91,7 +91,7 @@ export class FinalCiWait {
   constructor(
     pr: string,
     maxAgeMs = ghCacheDir() === null ? 0 : waitingChecksMaxAgeMs(),
-    deps: FinalCiWaitDeps = { now: Date.now, signals },
+    deps: FinalCiWaitDeps = { now: systemClock.now, signals },
   ) {
     this.pr = pr;
     this.maxAgeMs = maxAgeMs;

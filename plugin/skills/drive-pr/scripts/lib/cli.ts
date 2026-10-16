@@ -8,41 +8,13 @@
 import { fstatSync, statSync } from "node:fs";
 import { setTimeout as sleepMs } from "node:timers/promises";
 
-/** Exit codes travel as exceptions so `main()` can return them in one place. */
-export class ExitError extends Error {
-  readonly code: number;
-  constructor(code: number, message?: string) {
-    super(message ?? `exit ${code}`);
-    this.code = code;
-  }
-}
+// The exit plumbing and the command-line boundary are the plugin's shared
+// ones, so a failure thrown by shared code (`proc.ts`'s refusals) exits with
+// its own code here too, and `JIG_LOG=debug` reports every failure's stack
+// and causes the same way.
+import { fail } from "../../../../shared/cli.ts";
 
-/** Print `lines` to stderr and throw the exit code. */
-export function fail(code: number, ...lines: string[]): never {
-  for (const line of lines) console.error(line);
-  throw new ExitError(code);
-}
-
-/**
- * Run an async `main` and translate its outcome into the process exit code —
- * via `process.exitCode`, never `process.exit()`, so pending stdout writes to
- * a pipe are flushed rather than truncated.
- */
-export function runMain(name: string, main: () => Promise<number>): void {
-  main().then(
-    (code) => {
-      process.exitCode = code;
-    },
-    (e) => {
-      if (e instanceof ExitError) {
-        process.exitCode = e.code;
-        return;
-      }
-      console.error(`${name}: ${e instanceof Error ? e.message : String(e)}`);
-      process.exitCode = 1;
-    },
-  );
-}
+export { ExitError, fail, failFrom, runMain } from "../../../../shared/cli.ts";
 
 /** Digits-only, per the bash `case` guards on PR numbers and counters. */
 export function isDigits(s: string): boolean {

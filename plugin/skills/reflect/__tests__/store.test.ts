@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { tsArgv } from "../../resolve-review-comments/scripts/lib/proc.ts";
+import { tsArgv } from "../../../shared/proc.ts";
 import { EXIT, runStore, Store } from "../scripts/lib/store-client.ts";
 import { runConformance, sampleFinding } from "../scripts/store-contract.ts";
 

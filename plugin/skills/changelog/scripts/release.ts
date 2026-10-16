@@ -26,10 +26,7 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import {
-  fail,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import { applyNotes, nextVersion, rebaseLinks } from "./change-notes.ts";
 import {
   currentVersion,

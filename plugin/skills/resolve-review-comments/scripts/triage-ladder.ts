@@ -77,7 +77,7 @@
  */
 
 import { join } from "node:path";
-import { fail, isDigits, isSafeDigits, runMain } from "./lib/cli.ts";
+import { fail, isDigits, isSafeDigits, runMain } from "../../../shared/cli.ts";
 import {
   CANONICAL_SEVERITIES,
   CATEGORY_UNKNOWN,
@@ -89,7 +89,7 @@ import {
   resolveStance,
   SEVERITY_UNKNOWN,
 } from "./lib/ladder.ts";
-import { type RunResult, resolvePr, run } from "./lib/proc.ts";
+import { type RunResult, resolvePr, run } from "../../../shared/proc.ts";
 
 const CURRENT_ROUND = join(import.meta.dirname, "current-round.ts");
 

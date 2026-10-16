@@ -2,7 +2,7 @@
  * The standard input of the store contract's operations, read the same way
  * by every built-in store.
  */
-import { readStdinAll } from "../../../resolve-review-comments/scripts/lib/cli.ts";
+import { readStdinAll } from "../../../../shared/cli.ts";
 import {
   jsonlLines,
   parseEvent,

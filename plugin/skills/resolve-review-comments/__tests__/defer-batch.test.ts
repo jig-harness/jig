@@ -78,7 +78,7 @@ import {
   TYPE_GROUP,
   threadUrlPattern,
 } from "../scripts/defer-batch.ts";
-import { ExitError } from "../scripts/lib/cli.ts";
+import { ExitError } from "../../../shared/cli.ts";
 import {
   CANONICAL_SEVERITIES,
   CATEGORY_UNKNOWN,
@@ -3707,7 +3707,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
   });
 
   it("a signal that aborts DURING the retry pause is caught immediately, not after the full backoff", async () => {
-    // `realSleep` is a plain `setTimeout` with no signal awareness, and
+    // A sleeper need not watch the signal at all, and
     // `checkDeadline` previously ran only BEFORE and AFTER the retry pause,
     // never DURING it — so a deadline that fired while the loop was asleep
     // between attempts waited out the full `retryBackoffMs` pause (up to

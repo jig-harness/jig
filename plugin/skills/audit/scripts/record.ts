@@ -39,7 +39,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs as parseOptions } from "node:util";
-import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
+import { consumerRoot } from "../../../shared/consumer.ts";
 import {
   gaps,
   loadProfiles,

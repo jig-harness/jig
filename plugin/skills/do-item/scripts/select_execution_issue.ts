@@ -11,10 +11,7 @@
  * The block name comes from `do_item.execution_plan_block` in the consumer
  * overlay (default `execution-plan-v1`).
  */
-import {
-  readConfig,
-  withSource,
-} from "../../resolve-review-comments/scripts/lib/consumer.ts";
+import { readConfig, withSource } from "../../../shared/consumer.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import {
   DEFAULT_BLOCK,

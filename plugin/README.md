@@ -429,6 +429,9 @@ with a clear message when none is found:
 3. Codex: the `version` of `jig@jig` in `codex plugin list --json`,
    then `${CODEX_HOME:-~/.codex}/plugins/cache/jig/jig/<version>/skills`.
 
+The modules more than one skill uses (the configuration reader, the process
+runner, the YAML parser) are in `shared/`, beside that `skills` directory.
+
 Paths inside the cache change with each release, so never store them.
 
 ## Update, pin or remove
@@ -468,10 +471,10 @@ runs as you:
 | A terminal session in any clone or worktree | Nothing beyond the one-time install |
 | Conductor, herdr, or any tool that creates worktrees and starts sessions | Nothing: new workspaces are ordinary directories on a machine that has the plugin |
 | `claude -p`, `codex exec`, scripts and loops | Nothing; plugins load in headless runs too |
-| A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace …`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` |
+| A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace …`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` and `plugin/shared/` to `/etc/codex/shared/`: the scripts import the shared code from the folder beside the skills folder |
 | CI jobs that only run tests and gates | Nothing: they do not need the skills |
 | A runner that gives each session its own Claude Code configuration directory (`CLAUDE_CONFIG_DIR`) | A user-level install lives in the default directory and is not seen there. Build a seed once (as for containers) and set `CLAUDE_CODE_PLUGIN_SEED_DIR` in the runner's environment; repositories enable the plugin through `enabledPlugins` in `.claude/settings.json` |
-| A tool without plugin support | Copy or link every folder of `plugin/skills/` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`), side by side: skills import scripts from their siblings, so one skill alone does not run. The command name is then the bare skill name |
+| A tool without plugin support | Copy or link every folder of `plugin/skills/` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`), side by side, and `plugin/shared/` into a `shared/` folder beside that directory (`~/.claude/shared/`, `~/.agents/shared/`): skills import scripts from their siblings and code from `shared/`, so one skill alone, or the skills without `shared/`, do not run. The command name is then the bare skill name |
 
 ## Troubleshooting
 
@@ -512,6 +515,7 @@ plugin/.claude-plugin/plugin.json        Claude Code plugin manifest
 plugin/.codex-plugin/plugin.json         Codex plugin manifest
 plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
+plugin/shared/                           code more than one skill's scripts import
 plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
 ```
 
@@ -536,8 +540,10 @@ they can; a change that needs a configuration edit is a breaking release (see
 [release](#release-a-new-version)), and the skill's first step names the edit.
 
 [tools/plugin/plugin.test.ts](../tools/plugin/plugin.test.ts) checks both
-manifests and marketplaces and runs the scripts from a copy outside this repository against a
-scratch consumer repository, the way a plugin cache holds them.
+manifests and marketplaces, copies the whole `plugin/` directory outside this
+repository the way a plugin cache holds it, checks that every import resolves
+inside that copy, and runs the scripts from it against a scratch consumer
+repository.
 
 ## Add or change a skill
 
@@ -547,6 +553,8 @@ of the plugin:
 
 - **Location:** `plugin/skills/<name>/SKILL.md`, with `name: <name>` in its
   frontmatter. Supporting files sit beside it (`scripts/`, `references/`).
+  Code more than one skill uses lives in `plugin/shared/` and is imported by
+  relative path ([AGENTS.md](AGENTS.md)).
 - **Paths:** reach your own files as `${CLAUDE_SKILL_DIR}/…` in `SKILL.md`, and
   explain the placeholder once for other tools, as
   [resolve-review-comments](skills/resolve-review-comments/SKILL.md#paths-and-working-directory)
@@ -556,7 +564,7 @@ of the plugin:
 - **Working directory:** scripts run with the consumer repository as the
   working directory and must not depend on being run from the skill directory.
 - **Consumer values:** read them at run time through
-  `resolve-review-comments/scripts/lib/consumer.ts` (`readConfig`, or
+  `shared/consumer.ts` (`readConfig`, or
   `readOverlay` where the skill requires an adopted repository), which merges
   every [configuration layer](CONFIGURATION.md#configuration-layers); never
   parse `.config/jig.yaml` directly, or the user file and the environment are
@@ -568,7 +576,7 @@ of the plugin:
 - **Dependencies:** the plugin cache has no `node_modules`. Use Bun's
   built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
   with its licence and a test that keeps it identical to the pinned package
-  (as `resolve-review-comments/scripts/lib/vendor/js-yaml.mjs` is).
+  (as `shared/vendor/js-yaml.mjs` is).
 - **Description:** keep the frontmatter `description` (and an agent's) at 512
   characters or fewer; 1,024 is the hard limit. Every repository that installs
   the plugin pays for it in every session, so

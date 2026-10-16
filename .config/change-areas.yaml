@@ -23,9 +23,10 @@ areas:
     category: skill
     paths: ["plugin/skills/drive-pr/**"]
     workspace: []
-    # Its scripts import or spawn the other two skills' scripts, and its
-    # tests run with the shared test preloads and the toolchain.
-    impliedBy: [resolve-review-comments, do-item, shared-lib, toolchain]
+    # Its scripts import the plugin's shared code and spawn the other two
+    # skills' scripts, and its tests run with the shared test preloads and
+    # the toolchain.
+    impliedBy: [resolve-review-comments, do-item, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
 
   resolve-review-comments:
@@ -33,7 +34,7 @@ areas:
     category: skill
     paths: ["plugin/skills/resolve-review-comments/**"]
     workspace: []
-    impliedBy: [shared-lib, toolchain]
+    impliedBy: [plugin-shared, shared-lib, toolchain]
     deployTier: plugin
 
   do-item:
@@ -41,13 +42,21 @@ areas:
     category: skill
     paths: ["plugin/skills/do-item/**"]
     workspace: []
-    impliedBy: [resolve-review-comments, shared-lib, toolchain]
+    impliedBy: [resolve-review-comments, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
 
   plugin:
     title: "The plugin: other skills, agents, manifests and documentation"
     category: skill
     paths: ["plugin/**", ".claude-plugin/**", ".agents/**"]
+    workspace: []
+    impliedBy: [plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  plugin-shared:
+    title: "The plugin's shared code: what more than one skill imports"
+    category: library
+    paths: ["plugin/shared/**"]
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: plugin

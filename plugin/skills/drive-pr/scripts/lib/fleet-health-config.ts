@@ -34,16 +34,13 @@ import {
   fieldInMessage,
   type LayeredConfig,
   sourceOf,
-} from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
-import {
-  consumerRoot,
-  layeredConfig,
-} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+} from "../../../../shared/config-layers.ts";
+import { consumerRoot, layeredConfig } from "../../../../shared/consumer.ts";
 import {
   parseTrackerLabels,
   type TrackerLabels,
-} from "../../../resolve-review-comments/scripts/lib/tracker-labels.ts";
-import { load as loadYaml } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+} from "../../../../shared/tracker-labels.ts";
+import { load as loadYaml } from "../../../../shared/yaml.ts";
 
 /** Repo-relative default — also the config's display label in errors. */
 export const CONFIG_RELPATH = ".config/fleet-health.yaml";

@@ -25,7 +25,7 @@
 import { loadProfiles } from "./lib/profiles.ts";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
+import { consumerRoot } from "../../../shared/consumer.ts";
 import {
   CRITERIA_DIR,
   type Criterion,

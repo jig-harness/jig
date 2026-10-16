@@ -6,7 +6,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isMapping } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../shared/config-layers.ts";
 import { loadModules } from "../scripts/lib/criteria.ts";
 import { loadProfiles } from "../scripts/lib/profiles.ts";
 import { parseRecord } from "../scripts/lib/record.ts";

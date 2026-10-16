@@ -11,11 +11,8 @@ import {
   consumerRoot,
   readConfig,
   withSource,
-} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
-import {
-  isMapping,
-  jigHome,
-} from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+} from "../../../../shared/consumer.ts";
+import { isMapping, jigHome } from "../../../../shared/config-layers.ts";
 import { notionId } from "./notion/ids.ts";
 
 export const STORE_KINDS = ["filesystem", "command", "notion"] as const;

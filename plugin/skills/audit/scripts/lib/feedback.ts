@@ -37,8 +37,8 @@
  * the record's heading-to profile, as the record itself allows). A block
  * written for another audit changes nothing.
  */
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
-import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
+import { load } from "../../../../shared/yaml.ts";
 import type { Module, Score } from "./criteria.ts";
 import { extractEmbedded } from "../../../decide/scripts/sheet-kit/html.ts";
 import { DATA_BLOCK_ID, parseEmbedded } from "../report/data.ts";

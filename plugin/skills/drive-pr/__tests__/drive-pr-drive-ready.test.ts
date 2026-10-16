@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load as loadYaml } from "../../../shared/yaml.ts";
 
 import {
   SCRIPTS,

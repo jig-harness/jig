@@ -306,7 +306,13 @@ background outlives the session that spawned it, so its console is not where
 you look:
 
 - **Driver log** — every line the driver prints is also appended to
-  `<state dir>/drive-pr-<PR>.log`, next to the per-PR state. The driver's
+  `<state dir>/drive-pr-<PR>.log`, next to the per-PR state, each line
+  starting with its time in UTC (`2026-01-02T03:04:05.006Z`) and a level
+  (`INFO` for standard output, `WARN` for standard error). Before it grows
+  past 10 megabytes (10,485,760 bytes) the file moves to
+  `drive-pr-<PR>.log.1`, replacing the previous one; only the driver
+  holding the drive's locks moves it, and a single write larger than the
+  bound keeps only its last 10 megabytes. The driver's
   narrative only: round decisions, refusals, mark-Ready outcomes, the terminal
   state. The pass streams to whatever spawned the drive and is deliberately
   not captured — routing it through a pipe would change `run()`'s close
@@ -601,7 +607,8 @@ could forge or forget.
      report its own reason.
    - still running → armed. Do not poll.
 5. **Report and stop.** State: armed, the PR, the verified driver-log path
-   (`drive.ts: driver log → …` in its output; confirm it is a regular file
+   (`drive.ts: driver log → …` in its output, or `drive.ts: driver log
+   unavailable: <reason>` when it keeps none; confirm it is a regular file
    and can be opened for append (`test -f <path> && test -w <path>`) before
    quoting it — `drive.ts` prints the path before taking its locks and its log
    writes are best effort — never a `<state dir>` template), and the handles

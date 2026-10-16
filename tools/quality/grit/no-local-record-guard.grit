@@ -1,7 +1,8 @@
 // Flags another local definition of a plain-object guard under one of the
-// names such guards are usually given: one shared definition keeps every
-// caller's notion of "a record" the same. It matches the name, not the body,
-// so a guard under another name is not found.
+// names such guards are usually given: one shared definition
+// (plugin/shared/guards.ts, re-exported for the rest of the repository by
+// lib/record.ts) keeps every caller's notion of "a record" the same. It
+// matches the name, not the body, so a guard under another name is not found.
 or {
   `function $name($...) { $... }`,
   `function $name($...): $_ { $... }`,
@@ -9,9 +10,10 @@ or {
   `const $name = ($...): $_ => $_`
 } as $definition where {
   $name <: or { `isRecord`, `isObject`, `asRecord`, `isPlainObject` },
+  not $filename <: r".*plugin[/\\]shared[/\\]guards\.ts$",
   register_diagnostic(
     span = $definition,
-    message = "jig/no-local-record-guard: another local copy of a record guard. Import an existing one.",
-    severity = "warn"
+    message = "jig/no-local-record-guard: another local copy of a record guard. Import isRecord from plugin/shared/guards.ts (lib/record.ts outside the plugin).",
+    severity = "error"
   )
 }

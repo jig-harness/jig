@@ -99,7 +99,7 @@
  * posted yet" — a raw count from this script cannot tell those apart.
  */
 
-import { runMain } from "./lib/cli.ts";
+import { runMain } from "../../../shared/cli.ts";
 import { ghOrExit, repoViewOrExit } from "./lib/gh.ts";
 
 interface ThreadCommentNode {

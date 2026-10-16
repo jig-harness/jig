@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load } from "../../../shared/yaml.ts";
 import { checkRecord, compare, parseRecord } from "../scripts/lib/record.ts";
 import { TEXT_PAIRS } from "../scripts/report/css.ts";
 import {

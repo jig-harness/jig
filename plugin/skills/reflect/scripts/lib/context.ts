@@ -15,11 +15,8 @@ import {
   relative,
   resolve,
 } from "node:path";
-import {
-  consumerRoot,
-  readConfig,
-} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
-import { jigHome } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { consumerRoot, readConfig } from "../../../../shared/consumer.ts";
+import { jigHome } from "../../../../shared/config-layers.ts";
 import {
   type Change,
   type Harness,

@@ -28,10 +28,7 @@
  * concluded either way.
  */
 import { existsSync, readFileSync } from "node:fs";
-import {
-  fail,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import { unmergedPaths } from "./conflict-map.ts";
 import { droppedLines } from "./lib/drops.ts";
 import {

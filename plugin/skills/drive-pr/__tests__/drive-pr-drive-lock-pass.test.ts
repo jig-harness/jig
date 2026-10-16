@@ -13,11 +13,14 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAILBOX_STOPPED_EXIT, QUOTA_PARKED_EXIT } from "../scripts/drive";
+import { DRIVER_LOG_MAX_BYTES } from "../scripts/lib/driver-log.ts";
 import { claudeAdapter } from "../scripts/lib/quota/claude.ts";
 import { appendDirective } from "../scripts/lib/state/mailbox";
 
@@ -182,6 +185,57 @@ describe("drive.ts loop control", () => {
       // Past the grandchild's own sleep: nothing in the pass tree survived.
       await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
       expect(existsSync(join(dir, "pass-late"))).toBe(false);
+    }, 15000);
+
+    it("stops rotating the driver log once another driver recovers the lock", async () => {
+      // Rotation is the current owner's alone: a driver whose lock was
+      // recovered keeps writing its shutdown lines, and renaming the file
+      // then would race the successor's own rotation and lose history.
+      const { dir, stateDir } = writeFixture({
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      });
+      const { worktree } = lockDirs(dir, stateDir);
+      const logPath = join(stateDir, "drive-pr-999.log");
+      const proc = Bun.spawn(
+        [
+          join(SCRIPTS, "drive.ts"),
+          "999",
+          "--no-head-sync",
+          "--max-rounds",
+          "1",
+          "--",
+          ...passWithLateGrandchild(dir),
+        ],
+        {
+          env: {
+            ...process.env,
+            PATH: `${binDir}:${process.env.PATH}`,
+            DRIVE_PR_FIXTURES: dir,
+            DRIVE_PR_STATE_DIR: stateDir,
+            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const startedAt = await awaitPassStart(dir);
+      // Full, so the next line the old driver writes would rotate the file.
+      // Filled BEFORE the takeover is published: once it is, the driver's
+      // heartbeat may notice and write its shutdown lines at any moment, and
+      // a truncation after them would erase what this test asserts on. The
+      // driver writes nothing while its pass runs, so it cannot rotate first.
+      truncateSync(logPath, DRIVER_LOG_MAX_BYTES);
+      simulateTakeover(worktree, "successor01");
+      const [stderr, exitCode] = await Promise.all([
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      expect(exitCode).toBe(11);
+      expect(stderr).toContain("recovered by another driver");
+      expect(existsSync(`${logPath}.1`)).toBe(false);
+      expect(statSync(logPath).size).toBeGreaterThan(DRIVER_LOG_MAX_BYTES);
+      await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
     }, 15000);
 
     it("does not attribute a PRE-EXISTING session's wall to the pass it spawned", async () => {

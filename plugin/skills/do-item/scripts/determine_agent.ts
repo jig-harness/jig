@@ -44,14 +44,15 @@ import {
   consumerRoot,
   readOverlay,
   withSource,
-} from "../../resolve-review-comments/scripts/lib/consumer.ts";
-import { formatField } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
+} from "../../../shared/consumer.ts";
+import { formatField } from "../../../shared/config-layers.ts";
 import {
   type ChangeAreaCatalog,
   loadCatalogFile,
 } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { doItemSection } from "./lib/overlay.ts";
+import { isRecord } from "../../../shared/guards.ts";
 
 /** The agent used when the consumer declares none. */
 export const DEFAULT_AGENT = "general-purpose";
@@ -64,10 +65,6 @@ export interface AgentRouting {
   labels: Record<string, string>;
   titleKeywords: Record<string, string>;
   scouts: Record<string, string[]>;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function stringMap(v: unknown, where: string): Record<string, string> {

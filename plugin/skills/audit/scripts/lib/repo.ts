@@ -8,7 +8,7 @@
  * names. A derivation reads the checkout as the skills would run in it, and
  * flags a configured program that is present but not tracked.
  */
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";

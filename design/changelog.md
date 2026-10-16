@@ -83,20 +83,16 @@ an explicit environment free of the git variables a hook exports (`GIT_DIR`,
 `GIT_INDEX_FILE`, …, its `LEAKY_GIT_ENV`). Each moved script therefore
 builds that environment, as the reference's `notes-dir.ts` does today, so a
 branch check run from a hook reads the repository it was asked about. It
-goes to `plugin/shared/`, the directory [ROADMAP.md](../ROADMAP.md) item 5
-creates for code several skills share, so its path changes once. If this is
-built before item 5, its first step creates `plugin/shared/` with only this
-file, and item 5 adds the rest.
+goes to `plugin/shared/`, the directory for code more than one skill uses.
 
 The command-line boundary does not move. The reference's `lib/cli.ts`
-`cli()` maps a thrown error to exit 2; the plugin's
-`resolve-review-comments/scripts/lib/cli.ts` already has `runMain()`, which
-maps an `ExitError` to its own code and any other error to exit 1. The moved
-scripts use `runMain()` and raise an invalid input as `fail(2, …)`, so an
-invalid input still exits 2 and nothing that failed exits 0; item 5 then
-has one boundary to move, not two. The vendored YAML parser, the
-configuration reader and `runMain()` are used by sibling path, as other
-skills use them today.
+`cli()` maps a thrown error to exit 2; the plugin's `plugin/shared/cli.ts`
+already has `runMain()`, which maps an `ExitError` to its own code and any
+other error to exit 1. The moved scripts use `runMain()` and raise an
+invalid input as `fail(2, …)`, so an invalid input still exits 2 and nothing
+that failed exits 0. The vendored YAML parser, the configuration reader and
+`runMain()` are imported from `plugin/shared/` by relative path, as other
+skills import them.
 
 ### Configuration
 

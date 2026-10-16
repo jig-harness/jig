@@ -31,9 +31,10 @@ import { type SpawnOptions, spawn } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import {
+  lastBytes,
   readTimeoutEnv,
   registerCancellationGroup,
-} from "../../../resolve-review-comments/scripts/lib/proc.ts";
+} from "../../../../shared/proc.ts";
 import { fail, testPacing } from "./cli.ts";
 
 // The review skill's process layer is the shared base: its timeout reader,
@@ -301,6 +302,11 @@ export interface RunResult {
    * folded into `code` so no existing caller's exit-status reading changes.
    */
   spawnFailed: boolean;
+  /**
+   * The last 4 KiB of the child's error output when it failed (any non-zero
+   * `code`), `""` when it succeeded: the shared `RunResult.stderrTail`.
+   */
+  stderrTail: string;
 }
 
 /**
@@ -677,15 +683,17 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     try {
       child = spawn(cmd ?? "", args, spawnOpts);
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       resolve({
         code: 127,
         stdout: "",
-        stderr: e instanceof Error ? e.message : String(e),
+        stderr: message,
         timedOut: false,
         bufferExceeded: false,
         // `spawn` threw before any child existed — the synchronous half of
         // the same fact `child.on('error')` reports asynchronously below.
         spawnFailed: true,
+        stderrTail: lastBytes(message),
       });
       return;
     }
@@ -707,6 +715,8 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
 
     let out = "";
     let err = "";
+    // The last bytes of stderr, past whatever the cap discards.
+    let errTail = "";
     let timedOut = false;
     let bufferExceeded = false;
     let spawnFailed = false;
@@ -771,6 +781,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
     });
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (d: string) => {
+      errTail = lastBytes(errTail + d);
       const captured = !(bufferExceeded || timedOut);
       if (captured) {
         err += d;
@@ -796,6 +807,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
         timedOut,
         bufferExceeded,
         spawnFailed,
+        stderrTail: code === 0 ? "" : lastBytes(errTail || (extraErr ?? "")),
       });
       exitedResolve();
     };

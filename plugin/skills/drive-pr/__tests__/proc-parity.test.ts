@@ -1,15 +1,15 @@
 /**
- * drive-pr's process layer (`scripts/lib/proc.ts`) is built on the review
- * skill's, not a copy of it: the timeout reader is the same function, and
+ * drive-pr's process layer (`scripts/lib/proc.ts`) is built on the plugin's
+ * shared one, not a copy of it: the timeout reader is the same function, and
  * loading both modules in one process installs one cancellation forwarder per
  * signal, with one registry of process groups behind it.
  */
 import { expect, it } from "bun:test";
 import { join } from "node:path";
-import * as review from "../../resolve-review-comments/scripts/lib/proc.ts";
+import * as review from "../../../shared/proc.ts";
 import * as drive from "../scripts/lib/proc.ts";
 
-it("re-exports the review skill's timeout reader rather than a copy", () => {
+it("re-exports the shared timeout reader rather than a copy", () => {
   expect(drive.readTimeoutEnv).toBe(review.readTimeoutEnv);
 });
 
@@ -19,9 +19,8 @@ it("one forwarder per cancellation signal with both modules loaded", () => {
     import.meta.dir,
     "..",
     "..",
-    "resolve-review-comments",
-    "scripts",
-    "lib",
+    "..",
+    "shared",
     "proc.ts",
   );
   const r = Bun.spawnSync(
@@ -74,3 +73,11 @@ await p;`,
   },
   20_000,
 );
+
+it("uses the shared command-line boundary, so a shared refusal keeps its exit code", async () => {
+  const sharedCli = await import("../../../shared/cli.ts");
+  const driveCli = await import("../scripts/lib/cli.ts");
+  expect(driveCli.ExitError).toBe(sharedCli.ExitError);
+  expect(driveCli.runMain).toBe(sharedCli.runMain);
+  expect(driveCli.fail).toBe(sharedCli.fail);
+});

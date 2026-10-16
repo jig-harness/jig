@@ -37,17 +37,10 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  fail,
-  readStdinAll,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
-import { isMapping } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
-import {
-  consumerRoot,
-  readConfig,
-} from "../../resolve-review-comments/scripts/lib/consumer.ts";
-import { ghCall, git } from "../../resolve-review-comments/scripts/lib/proc.ts";
+import { fail, readStdinAll, runMain } from "../../../shared/cli.ts";
+import { isMapping } from "../../../shared/config-layers.ts";
+import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
+import { ghCall, git } from "../../../shared/proc.ts";
 import {
   chooseOperation,
   last,

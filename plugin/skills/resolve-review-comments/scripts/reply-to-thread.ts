@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { siblingSkill } from "./lib/consumer.ts";
+import { siblingSkill } from "../../../shared/consumer.ts";
 /**
  * Reply IN-THREAD on a review thread, keyed off its GraphQL node id — the SAME
  * id that drives resolve-thread.ts (one id for both actions, per
@@ -31,8 +31,8 @@ import { siblingSkill } from "./lib/consumer.ts";
 
 import { existsSync, lstatSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fail, readStdinAll, runMain } from "./lib/cli.ts";
-import { ghCall, run } from "./lib/proc.ts";
+import { fail, readStdinAll, runMain } from "../../../shared/cli.ts";
+import { ghCall, run } from "../../../shared/proc.ts";
 import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 
 const OUTCOME_HELP = `reply-to-thread.ts: body must begin with an outcome token.

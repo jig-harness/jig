@@ -4,7 +4,8 @@
  * GitHub does not offer an open-state precondition on these mutations, so a
  * merge between this read and the write remains possible; this is not atomic.
  */
-import { fail } from "./cli.ts";
+import { fail, failFrom } from "../../../../shared/cli.ts";
+import { decodeJson, isRecord } from "../../../../shared/guards.ts";
 import { ghOrExit } from "./gh.ts";
 
 interface LivenessResponse {
@@ -18,6 +19,14 @@ interface LivenessResponse {
   };
 }
 
+/**
+ * An object, the shape every field below is read from optionally; the checks
+ * after the read decide whether it answers the question.
+ */
+function isLivenessResponse(value: unknown): value is LivenessResponse {
+  return isRecord(value);
+}
+
 export async function assertThreadPrOpen(
   label: string,
   threadId: string,
@@ -26,7 +35,7 @@ export async function assertThreadPrOpen(
   try {
     // One uncached request resolves ownership and reads state. No current-branch
     // lookup or DRIVE_PR_TARGET: either could name a different PR.
-    response = JSON.parse(
+    response = decodeJson(
       await ghOrExit(label, [
         "api",
         "graphql",
@@ -35,9 +44,12 @@ export async function assertThreadPrOpen(
         "-f",
         `threadId=${threadId}`,
       ]),
+      isLivenessResponse,
+      `the owning pull request of thread ${threadId}`,
     );
-  } catch {
-    fail(
+  } catch (err) {
+    failFrom(
+      err,
       1,
       `${label}: cannot read owning PR liveness for thread ${threadId}; refusing mutation — stop the review pass.`,
     );

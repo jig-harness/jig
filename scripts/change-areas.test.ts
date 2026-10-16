@@ -129,7 +129,7 @@ test("Jig's catalog runs the drive-pr suite for what it depends on, and not for 
   for (const file of [
     "plugin/skills/drive-pr/scripts/drive.ts",
     "plugin/skills/drive-pr/SKILL.md",
-    "plugin/skills/resolve-review-comments/scripts/lib/proc.ts",
+    "plugin/shared/proc.ts",
     "plugin/skills/do-item/scripts/lib/tracker/port.ts",
     "lib/test-tmpdir-bun-preload.ts",
     "bun.lock",

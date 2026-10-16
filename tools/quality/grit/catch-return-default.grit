@@ -2,7 +2,8 @@
 // handler does not use) and returns a default value: the failure becomes an
 // ordinary answer and its cause is lost. Any use of the binding counts as
 // keeping the cause, so a handler that only mentions it (`void error`) is
-// not found.
+// not found. The plugin's way to drop an error on purpose is
+// `swallow(err, reason)` (plugin/shared/errors.ts), which logs it at debug.
 or {
   `try { $body } catch { $handler }`,
   `try { $body } catch ($error) { $handler }` where {
@@ -14,7 +15,7 @@ or {
   },
   register_diagnostic(
     span = $try,
-    message = "jig/catch-return-default: the error is dropped and a default returned. Bind it and keep its cause, or let it propagate.",
+    message = "jig/catch-return-default: the error is dropped and a default returned. Let it propagate, keep it as a cause, or, where the default is right, bind it and call swallow(err, reason) from plugin/shared/errors.ts, which logs it at debug.",
     severity = "warn"
   )
 }

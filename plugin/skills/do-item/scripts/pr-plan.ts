@@ -33,7 +33,7 @@
  *   1  the policy or a repository fact could not be read
  */
 
-import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
+import { consumerRoot } from "../../../shared/consumer.ts";
 import {
   baseBranch,
   reviewsDrafts,

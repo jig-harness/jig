@@ -1,4 +1,5 @@
-import { consumerRoot } from "./consumer.ts";
+import { consumerRoot } from "../../../../shared/consumer.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 /**
  * The escalating decline ladder: load `.config/review-triage.yaml`
  * and resolve one otherwise-`accepted` finding to a stance.
@@ -166,11 +167,9 @@ export interface LadderVerdict {
 
 class ConfigError extends Error {}
 
-function asRecord(v: unknown, what: string): Record<string, unknown> {
-  if (typeof v !== "object" || v === null || Array.isArray(v)) {
-    throw new ConfigError(`${what} must be a mapping`);
-  }
-  return v as Record<string, unknown>;
+function mappingAt(v: unknown, what: string): Record<string, unknown> {
+  if (!isRecord(v)) throw new ConfigError(`${what} must be a mapping`);
+  return v;
 }
 
 /**
@@ -336,7 +335,7 @@ const ACCEPT_IF_KEYS = [
 ];
 
 function parseBand(raw: unknown, index: number): Band {
-  const b = asRecord(raw, `bands[${index}]`);
+  const b = mappingAt(raw, `bands[${index}]`);
   assertKnownKeys(b, BAND_KEYS, `bands[${index}]`);
   const id = b.id;
   if (typeof id !== "string" || id.trim() === "") {
@@ -373,7 +372,7 @@ function parseBand(raw: unknown, index: number): Band {
   if (typeof b.minimal_diff !== "boolean") {
     throw new ConfigError(`bands[${index}].minimal_diff must be a boolean`);
   }
-  const a = asRecord(b.accept_if, `bands[${index}].accept_if`);
+  const a = mappingAt(b.accept_if, `bands[${index}].accept_if`);
   assertKnownKeys(a, ACCEPT_IF_KEYS, `bands[${index}].accept_if`);
   const accept: AcceptClauses = {};
   if (a.unconditional !== undefined) {
@@ -463,7 +462,7 @@ function parseSeverityMapping(
   severityOrder: readonly string[],
 ): SeverityMapping | null {
   if (v === undefined || v === null) return null;
-  const root = asRecord(v, "severity_mapping");
+  const root = mappingAt(v, "severity_mapping");
   // Exactly the ranked tokens plus `unknown` — no more, no fewer. A missing
   // row makes `SEVERITY_TO_PRIORITY[token]` undefined at the one call site
   // that consumes it, which sends no `priority` at all rather than failing.
@@ -481,7 +480,7 @@ function parseSeverityMapping(
   const out: SeverityMapping = {};
   for (const token of expected) {
     const what = `severity_mapping.${token}`;
-    const row = asRecord(root[token], what);
+    const row = mappingAt(root[token], what);
     assertKnownKeys(row, ["linear_priority", "acceptance"], what);
     const priority = row.linear_priority;
     // Token-aware, not a single shared `0-4` range: `unknown` is the
@@ -593,7 +592,7 @@ export function acceptancePriority(
 }
 
 export function validateLadder(doc: unknown): LadderConfig {
-  const root = asRecord(doc, "review-triage.yaml");
+  const root = mappingAt(doc, "review-triage.yaml");
   // `calibration` is documentation-only (never read below) — allowed but
   // unvalidated, as the configuration file's own comment describes it.
   assertKnownKeys(
@@ -670,7 +669,7 @@ export function validateLadder(doc: unknown): LadderConfig {
       );
     }
   }
-  const failOpen = asRecord(root.fail_open, "fail_open");
+  const failOpen = mappingAt(root.fail_open, "fail_open");
   assertKnownKeys(failOpen, ["inert_when_unknown"], "fail_open");
   const inertWhenUnknown = Array.isArray(failOpen.inert_when_unknown)
     ? failOpen.inert_when_unknown
@@ -762,7 +761,7 @@ export function validateLadder(doc: unknown): LadderConfig {
       }
     }
   }
-  const reply = asRecord(root.reply, "reply");
+  const reply = mappingAt(root.reply, "reply");
   assertKnownKeys(reply, ["marker", "wont_fix", "deferred"], "reply");
   const marker = reply.marker;
   if (typeof marker !== "string" || marker.trim() === "") {
@@ -864,7 +863,7 @@ export async function loadLadder(path: string): Promise<LoadResult> {
   }
   let doc: unknown;
   try {
-    const { load } = await import("./yaml.ts");
+    const { load } = await import("../../../../shared/yaml.ts");
     doc = load(text);
   } catch (err) {
     return {

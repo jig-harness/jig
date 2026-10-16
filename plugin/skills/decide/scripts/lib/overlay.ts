@@ -11,10 +11,7 @@
  */
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import {
-  layeredConfig,
-  withSource,
-} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+import { layeredConfig, withSource } from "../../../../shared/consumer.ts";
 import { CANDIDATE_DIRS } from "../../../adr/scripts/locate.ts";
 
 /** Where the ADRs live when `adr.directory` is not set and none is detected (Jig module M5). */

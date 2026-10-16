@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { siblingSkill } from "./lib/consumer.ts";
+import { siblingSkill } from "../../../shared/consumer.ts";
 /**
  * Drive resolve-review-comments passes until the PR converges — from ANY agent
  * harness.
@@ -72,8 +72,8 @@ import {
   isSafeDigits,
   runMain,
   shellQuote,
-} from "./lib/cli.ts";
-import { resolvePr, run, tsArgv } from "./lib/proc.ts";
+} from "../../../shared/cli.ts";
+import { resolvePr, run, tsArgv } from "../../../shared/proc.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const awaitRound = join(here, "await-round.ts");

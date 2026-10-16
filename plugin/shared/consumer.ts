@@ -20,7 +20,7 @@ import {
 export { OVERLAY_RELPATH };
 
 /** Where to read about adopting the skill, quoted in configuration errors. */
-export const ADOPTION_DOC =
+const ADOPTION_DOC =
   "https://github.com/docomply/jig/blob/main/plugin/README.md#configure-a-repository";
 
 export interface ReviewConfig {
@@ -72,7 +72,7 @@ function code(error: unknown): string | undefined {
  * an inspection error (EACCES, ENOTDIR, ...), or an ancestor that is a
  * dangling link (ENOENT below it says nothing about the intended target).
  */
-export function present(path: string): boolean {
+function present(path: string): boolean {
   try {
     lstatSync(path);
     return true;

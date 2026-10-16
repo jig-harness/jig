@@ -9,10 +9,10 @@
  * evidence for the agent, which still scores the criterion. A search that
  * could not read a file it needed is unchecked, and the agent scores it.
  */
-import { isMapping as isRecord } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load } from "../../../../shared/yaml.ts";
 import { compareVersions, matchGlob, skillDir, isSince } from "./repo.ts";
 
 export const LEVELS = ["lite", "standard", "strict"] as const;

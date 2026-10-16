@@ -22,7 +22,8 @@
  * more field, such as `agent`.
  */
 import { readFileSync } from "node:fs";
-import { load as loadYaml } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load as loadYaml } from "../../../../shared/yaml.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 
 export interface CatalogArea {
   /** `paths` and every `generated[].source`, in that order. */
@@ -39,10 +40,6 @@ export interface CatalogArea {
 
 /** The catalog's areas by key, in the catalog's order. */
 export type ChangeAreaCatalog = ReadonlyMap<string, CatalogArea>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 // Only an omitted field reads as empty. A present one, `null` included, must
 // have its shape: read as empty, a malformed area would silently drop its

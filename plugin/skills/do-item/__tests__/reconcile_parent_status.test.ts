@@ -21,7 +21,7 @@ import {
   reconcileParentStatus,
 } from "../scripts/reconcile_parent_status.ts";
 import { DEFAULT_VOCABULARY } from "../scripts/reconcile_parent_status.ts";
-import { parseTrackerLabels } from "../../resolve-review-comments/scripts/lib/tracker-labels.ts";
+import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import { classifyChildState, issueResult } from "../scripts/get_issue.ts";
 
 // `opts.labels` defaults to `[]`, not `undefined`. The two now decide the

@@ -35,7 +35,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, relative } from "node:path";
-import { runMain } from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { runMain } from "../../../shared/cli.ts";
 import {
   distinctById,
   idConflicts,

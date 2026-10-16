@@ -9,12 +9,9 @@
  * everything it started are stopped and the operation counts as unavailable.
  */
 import { join } from "node:path";
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
-import {
-  run,
-  tsArgv,
-} from "../../../resolve-review-comments/scripts/lib/proc.ts";
-import { fail } from "../../../resolve-review-comments/scripts/lib/cli.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
+import { run, tsArgv } from "../../../../shared/proc.ts";
+import { fail } from "../../../../shared/cli.ts";
 import {
   type ComputedState,
   computeState,

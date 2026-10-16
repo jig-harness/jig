@@ -28,7 +28,6 @@
 import { describe, expect, it } from "bun:test";
 import { spawn, spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -41,7 +40,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { run } from "../scripts/lib/proc.ts";
+import { run } from "../../../shared/proc.ts";
 import {
   skillsParentIsIntact,
   validateOutcomeBody,
@@ -61,6 +60,7 @@ import {
   runScript,
   roundsFile,
   useStubForge,
+  copySkillScripts,
 } from "./scripts-harness.ts";
 
 // ── Outcome grammar (unit) ──────────────────────────────────────────────────
@@ -570,9 +570,7 @@ describe.skipIf(process.platform === "win32")(
       ) {
         const fix = convergedFixture();
         const skills = join(tmpRoot, `skills-summary-${name}`);
-        const rrc = join(skills, "resolve-review-comments", "scripts");
-        mkdirSync(join(skills, "resolve-review-comments"), { recursive: true });
-        cpSync(SCRIPTS, rrc, { recursive: true });
+        const rrc = copySkillScripts(skills);
         const dp = join(skills, "drive-pr");
         if (sibling.kind === "script") {
           mkdirSync(join(dp, "scripts"), { recursive: true });
@@ -1830,8 +1828,7 @@ function runWithSibling(
   opts: { stdin?: string; env?: Record<string, string> } = {},
 ) {
   const skills = mkdtempSync(join(tmpRoot, "optional-sibling-"));
-  const scripts = join(skills, "resolve-review-comments", "scripts");
-  cpSync(SCRIPTS, scripts, { recursive: true });
+  const scripts = copySkillScripts(skills);
   if (Object.keys(siblingScripts).length) {
     const sibling = join(skills, "drive-pr", "scripts");
     mkdirSync(sibling, { recursive: true });
@@ -2078,9 +2075,7 @@ it.skipIf(process.platform === "win32")(
     // probe or otherwise altering production code to be testable.
     const fix = writeFixture({});
     const skills = join(tmpRoot, "skills-parent-vanishes");
-    const rrc = join(skills, "resolve-review-comments", "scripts");
-    mkdirSync(join(skills, "resolve-review-comments"), { recursive: true });
-    cpSync(SCRIPTS, rrc, { recursive: true });
+    const rrc = copySkillScripts(skills);
 
     // Readiness is HANDSHAKED, not timed. A fixed `setTimeout` was the first
     // cut and is unsound on a loaded worker: module loading has no upper

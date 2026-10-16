@@ -27,10 +27,7 @@
  * 2 usage; 3 the store is unavailable, and the findings stay in the journal
  * until the next run.
  */
-import {
-  fail,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import {
   currentChange,
   journalPath,

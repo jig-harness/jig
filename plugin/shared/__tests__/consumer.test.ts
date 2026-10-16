@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { reviewConfig } from "../scripts/lib/consumer.ts";
+import { reviewConfig } from "../consumer.ts";
 
 function withOverlay(value: unknown, check: () => void): void {
   const directory = mkdtempSync(join(tmpdir(), "review-consumer-"));

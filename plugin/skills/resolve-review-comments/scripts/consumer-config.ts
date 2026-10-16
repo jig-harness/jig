@@ -11,7 +11,7 @@
  * Exit codes: 0 configuration usable; 2 configuration missing or invalid.
  */
 
-import { fail, runMain } from "./lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import {
   consumerRoot,
   overlayPath,
@@ -20,8 +20,8 @@ import {
   reviewerSelection,
   sourceIn,
   withSource,
-} from "./lib/consumer.ts";
-import { parseTrackerLabels } from "./lib/tracker-labels.ts";
+} from "../../../shared/consumer.ts";
+import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;

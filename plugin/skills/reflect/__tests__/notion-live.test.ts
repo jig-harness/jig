@@ -10,7 +10,7 @@ import { afterAll, beforeAll, expect, it } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { run, tsArgv } from "../../resolve-review-comments/scripts/lib/proc.ts";
+import { run, tsArgv } from "../../../shared/proc.ts";
 import { runConformance } from "../scripts/store-contract.ts";
 
 const NOTION_STORE = join(import.meta.dir, "..", "scripts", "notion-store.ts");

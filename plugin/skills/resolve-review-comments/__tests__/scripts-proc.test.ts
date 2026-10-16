@@ -1,5 +1,5 @@
 /**
- * scripts-proc.test.ts — how `lib/proc.ts`'s `run()` ends a child: a
+ * scripts-proc.test.ts — how the shared `proc.ts`'s `run()` ends a child: a
  * cancellation delivered to a script reaches its deadlined child and the
  * thread mutation in flight, and the output cap and the deadline stop
  * capturing a runaway child through the SIGKILL grace.
@@ -32,6 +32,15 @@ import {
   useStubForge,
 } from "./scripts-harness.ts";
 
+const SHARED_PROC = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "..",
+  "shared",
+  "proc.ts",
+);
+
 useStubForge();
 
 // ── Cancellation forwarding ─────────────────────────────────────────────
@@ -39,7 +48,7 @@ useStubForge();
 /**
  * A deadlined child is DETACHED into its own process group so the deadline can
  * kill the whole tree. That isolation also puts it beyond the reach of a signal
- * delivered to this process, or to its group — so without `lib/proc.ts`'s
+ * delivered to this process, or to its group — so without `proc.ts`'s
  * source-time forwarding, terminating `await-round.ts` / `converge.ts` /
  * `reply-to-thread.ts` leaves the in-flight `gh` running to completion and the
  * GraphQL mutation lands after the operator believes the operation was
@@ -55,7 +64,7 @@ useStubForge();
 describe.skipIf(process.platform === "win32")(
   "cancellation reaches a deadlined child",
   () => {
-    const PROC = join(SCRIPTS, "lib", "proc.ts");
+    const PROC = SHARED_PROC;
 
     /** Wait up to five seconds for `path` to appear; throw `failure` if not. */
     async function awaitMarker(path: string, failure: string): Promise<void> {
@@ -393,7 +402,7 @@ describe.skipIf(process.platform === "win32")(
       writeFileSync(
         join(dir, "fixture.ts"),
         [
-          `import { run } from ${JSON.stringify(join(SCRIPTS, "lib", "proc.ts"))};`,
+          `import { run } from ${JSON.stringify(SHARED_PROC)};`,
           `let discardedChunks = 0;`,
           `let discardedBytes = 0;`,
           `const r = await run(['bash', '-c', ${JSON.stringify(script)}], {`,
@@ -488,7 +497,7 @@ describe.skipIf(process.platform === "win32")(
       writeFileSync(
         join(dir, "fixture.ts"),
         [
-          `import { run } from ${JSON.stringify(join(SCRIPTS, "lib", "proc.ts"))};`,
+          `import { run } from ${JSON.stringify(SHARED_PROC)};`,
           `let discardedChunks = 0;`,
           `let discardedBytes = 0;`,
           `const r = await run(['bash', '-c', ${JSON.stringify(script)}], {`,

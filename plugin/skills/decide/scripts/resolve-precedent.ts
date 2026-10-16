@@ -47,8 +47,8 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
-import { load as loadYaml } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { consumerRoot } from "../../../shared/consumer.ts";
+import { load as loadYaml } from "../../../shared/yaml.ts";
 import {
   type PrecedentSources,
   precedentSources,

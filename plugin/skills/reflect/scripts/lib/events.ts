@@ -9,7 +9,7 @@
  * store keeps.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
 
 export const EVENT_VERSION = 1;
 

@@ -490,6 +490,8 @@ These are set per machine or per run, not committed:
 | `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/jig/gh-cache` |
 | `JIG_GH_CACHE` | `off` disables that cache |
 | `GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30 |
+| `JIG_LOG` | How much the scripts' diagnostics say on standard error: `error`, `warn` (the default), `info` or `debug`. At `debug` a failing script also prints the stack of the failure and its causes, with the last 4,096 bytes of a failed command's error output where the failure carries it (`resolve-review-comments`' `gh` calls), and an error dropped on purpose is printed with the reason |
+| `JIG_LOG_FORMAT` | `text` (the default) writes `<script>: <message>`; `json` writes one JSON object per line with the time, level, script, message and fields |
 | `AWAIT_ROUND_CHECKS_MAX_AGE` | Seconds a still-waiting read of a pull request's checks may be reused while nothing on GitHub changed; default 300, `0` always reads |
 | `JIG_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
 | `BASH_MAX_TIMEOUT_MS` | Claude Code's own variable, not Jig's: the longest `timeout` an agent may give a background command in an unattended session, 2 hours unless raised. Set it to `28800000` so a drive can outlast 2 hours (see [the background time limit](skills/drive-pr/README.md#the-background-time-limit)) |

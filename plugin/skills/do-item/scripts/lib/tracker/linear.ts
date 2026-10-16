@@ -17,7 +17,7 @@ import {
   type RunResult,
   run,
 } from "../../../../drive-pr/scripts/lib/proc.ts";
-import { registerCancellationGroup } from "../../../../resolve-review-comments/scripts/lib/proc.ts";
+import { registerCancellationGroup } from "../../../../../shared/proc.ts";
 import {
   CLOSED_STATE_TYPES,
   type CanonicalState,
@@ -37,6 +37,7 @@ import {
   type Tracker,
   type WindowSpec,
 } from "./port.ts";
+import { isRecord } from "../../../../../shared/guards.ts";
 
 export const LINEAR_API = "https://api.linear.app/graphql";
 export const LINEAR_TIMEOUT_MS = 30_000;
@@ -87,10 +88,6 @@ export class LinearApiError extends Error {
 /** The credential from the environment, or `null`. */
 export function resolveLinearToken(env = process.env): string | null {
   return env.LINEAR_API_KEY?.trim() || env.LINEAR_API_TOKEN?.trim() || null;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 /** Turn a GraphQL response body into its `data`, or throw. */

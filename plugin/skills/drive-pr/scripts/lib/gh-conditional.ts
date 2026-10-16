@@ -42,13 +42,12 @@
  * caller already treats as INDETERMINATE and retries. A cache problem can only
  * make a poll cost more, never make it wrong.
  *
- * A PARITY COPY: this file is byte-identical in `resolve-review-comments` and
- * `drive-pr` (each skill ships standalone, so neither imports the other's lib —
- * the boundary `proc.ts` documents — and each skill's own `ghCall` must accept
- * `timeoutSec` as a tightening, since `CallContext.timeoutSec` is passed through
- * it). `drive-pr/__tests__/gh-conditional-parity.test.ts`
- * pins the two together; `resolve-review-comments/__tests__/gh-conditional.test.ts`
- * holds the behavioural suite.
+ * A PARITY COPY: this file is byte-identical in the plugin's `shared/` and in
+ * `drive-pr`'s `scripts/lib/`, each importing the `ghCall` beside it, which
+ * must accept `timeoutSec` as a tightening, since `CallContext.timeoutSec` is
+ * passed through it. `drive-pr/__tests__/gh-conditional-parity.test.ts` pins
+ * the two together; `shared/__tests__/gh-conditional.test.ts` holds the
+ * behavioural suite.
  *
  * Cache: `$JIG_GH_CACHE_DIR`, else `~/.cache/jig/gh-cache`. One small file
  * per (repo scope, request), overwritten in place, pruned to a bound — the
@@ -138,7 +137,7 @@ function budgetLeftSec(ctx: CallContext, startMs: number): number | undefined {
  * the answer is about the repository AT `cwd`), must get that repository's
  * identity, never the ambient one.
  */
-export function repoScope(ctx: CallContext = {}): Promise<string | null> {
+function repoScope(ctx: CallContext = {}): Promise<string | null> {
   const env = ctx.env ?? process.env;
   // Deliberately NOT memoised: the remotes and `gh-resolved` config are what
   // `gh` resolves `{owner}/{repo}` from on every call, and they can change (or
@@ -503,6 +502,7 @@ export async function cachedRepoView(
         timedOut: false,
         bufferExceeded: false,
         spawnFailed: false,
+        stderrTail: "",
       };
       return hit;
     }
@@ -520,6 +520,7 @@ export async function cachedRepoView(
       timedOut: true,
       bufferExceeded: false,
       spawnFailed: false,
+      stderrTail: "gh repo view: caller budget exhausted",
     };
   }
   const r = await ghCall(["repo", "view", ...args], {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { LEAKY_GIT_ENV, spawn, spawnSync } from "./guarded-git-spawn.ts";
+import { LEAKY_GIT_ENV, spawn, spawnSync } from "../guarded-git-spawn.ts";
 
 const safe = Object.fromEntries(
   Object.entries(process.env).filter(

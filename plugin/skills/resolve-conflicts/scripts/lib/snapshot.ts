@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { fail } from "../../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail } from "../../../../shared/cli.ts";
 import type { PathClass, Regenerate } from "./classify.ts";
 import { gitPath } from "./git.ts";
 import type { Hunk } from "./markers.ts";
@@ -28,6 +28,7 @@ import {
   type Side,
   type SideName,
 } from "./operation.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 
 export const DECISIONS = [
   "combined",
@@ -194,10 +195,6 @@ const KINDS: readonly unknown[] = [
   "added-by-theirs",
 ];
 const CLASSES: readonly unknown[] = ["lockfile", "generated", "binary", "text"];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isStringOrNull(value: unknown): boolean {
   return value === null || typeof value === "string";

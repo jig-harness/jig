@@ -15,10 +15,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import {
-  fail,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import {
   parseNote,
   releasedVersions,

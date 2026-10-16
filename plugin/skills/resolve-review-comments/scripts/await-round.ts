@@ -3,7 +3,7 @@ import {
   reviewConfig,
   reviewerSelection,
   siblingSkill,
-} from "./lib/consumer.ts";
+} from "../../../shared/consumer.ts";
 
 /**
  * Block until the next review round is ready to work, or until the PR
@@ -67,7 +67,7 @@ import {
  * Polling cost. Every `gh pr view` / `gh pr checks` is a GraphQL
  * call, and one token's 5,000-point hourly bucket backs every driver on the
  * machine. So the PR's state and head SHA are read over conditional REST
- * (`lib/gh-conditional.ts`; an unchanged PR answers 304, which is free), and
+ * (`shared/gh-conditional.ts`; an unchanged PR answers 304, which is free), and
  * `gh pr checks` — still the ONLY source of the checks verdict — is skipped
  * for a tick only when the PR's check runs and commit statuses are confirmed
  * unchanged since a keep-waiting read (`pending` or `no-reviewer`) in this same
@@ -125,7 +125,7 @@ import {
  *   while bun await-round.ts --bots-only; do <run one agent pass>; done
  * `converge.ts` in this directory wraps exactly that for either harness.
  *
- * Every `gh` call is bounded by GH_CALL_TIMEOUT (lib/proc.ts): --timeout only
+ * Every `gh` call is bounded by GH_CALL_TIMEOUT (shared/proc.ts): --timeout only
  * bounds the poll/sleep loop and says nothing about any ONE call, which has no
  * timeout of its own — a connection that's accepted but never completes would
  * otherwise hang here forever regardless of --timeout, since this deadline is
@@ -148,9 +148,14 @@ import {
   isSafeDigits,
   runMain,
   sleep,
-} from "./lib/cli.ts";
-import { checkSignalsUnchanged, readPrLiveness } from "./lib/gh-conditional.ts";
-import { ghCall, git, resolvePr, run, tsArgv } from "./lib/proc.ts";
+} from "../../../shared/cli.ts";
+import { errnoCode, swallow } from "../../../shared/errors.ts";
+import {
+  checkSignalsUnchanged,
+  readPrLiveness,
+} from "../../../shared/gh-conditional.ts";
+import { log } from "../../../shared/log.ts";
+import { ghCall, git, resolvePr, run, tsArgv } from "../../../shared/proc.ts";
 import { skillsParentIsIntact } from "./reply-to-thread.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -587,7 +592,7 @@ async function main(): Promise<number> {
   // validity: an explicitly supplied empty value (`--once-budget-sec ''`)
   // must be refused, not silently read as "flag not passed". The value is
   // also bounded the same way `readTimeoutEnv` bounds every other
-  // timeout-shaped flag/env var in this skill (`lib/proc.ts`): `setTimeout`
+  // timeout-shaped flag/env var in this skill (`shared/proc.ts`): `setTimeout`
   // takes a 32-bit signed millisecond delay, so a digit-only value whose
   // `* 1000` overflows that range would otherwise fire immediately instead of
   // after the requested delay.
@@ -684,7 +689,15 @@ async function main(): Promise<number> {
     let n = "";
     try {
       n = readFileSync(file, "utf8").trim();
-    } catch {
+    } catch (err) {
+      // No counter yet is the first round's normal state; any other failure
+      // to read one is worth a warning, and still counts from 0.
+      if (errnoCode(err) === "ENOENT")
+        swallow(err, `no round count at ${file} yet; counting from 0`);
+      else
+        log.warn(`cannot read the round count at ${file}; counting from 0`, {
+          error: err,
+        });
       return 0;
     }
     return isDigits(n) && n !== "" ? Number.parseInt(n, 10) : 0;

@@ -29,12 +29,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join, posix } from "node:path";
-import { readConfigFile } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { readConfigFile } from "../../../shared/config-layers.ts";
 import {
   consumerRoot,
   readConfig,
   sourceIn,
-} from "../../resolve-review-comments/scripts/lib/consumer.ts";
+} from "../../../shared/consumer.ts";
 
 export const CANDIDATE_DIRS = [
   "docs/adr",

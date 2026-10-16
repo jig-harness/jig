@@ -23,9 +23,9 @@
  * A declined entry's `refs` name criteria (`M<n>/<id>`) or configuration
  * findings (`config/<finding id>`).
  */
-import { isMapping as isRecord } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import type { Profiles } from "./profiles.ts";
-import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load } from "../../../../shared/yaml.ts";
 import {
   type Attainment,
   attained,

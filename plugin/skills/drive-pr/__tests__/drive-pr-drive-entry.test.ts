@@ -271,6 +271,22 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain(`drive.ts: driver log → ${logPath}`);
   });
 
+  it("says the driver log is unavailable, with the reason, when it cannot be written", async () => {
+    // do-item quotes the announced path as the drive's log; a log that could
+    // not be started must not be announced as one.
+    const { dir, stateDir } = writeFixture({ prState: "MERGED", threads: [] });
+    const logPath = join(stateDir, "drive-pr-999.log");
+    mkdirSync(join(logPath, "squatter"), { recursive: true });
+    const r = await runDriveIn(dir, stateDir, [
+      "--no-head-sync",
+      "--",
+      ...PASS_NOOP,
+    ]);
+    expect(r.exitCode).toBe(5);
+    expect(r.stderr).toContain("drive.ts: driver log unavailable: ");
+    expect(r.stderr).not.toContain("drive.ts: driver log →");
+  });
+
   it("enriches the exit-11 refusal with the holder claim’s diagnostics", async () => {
     const { dir, stateDir } = writeFixture({ threads: [] });
     // The claim is planted as LITERAL bytes, not through formatClaim: the

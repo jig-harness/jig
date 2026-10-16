@@ -17,11 +17,8 @@
  * Output: one line per check, `ok` or `FAIL` with the reason. Exit codes: 0
  * every check passed; 1 a check failed; 2 usage.
  */
-import { tsArgv } from "../../resolve-review-comments/scripts/lib/proc.ts";
-import {
-  fail,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { tsArgv } from "../../../shared/proc.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import { last, parseArgs } from "./lib/args.ts";
 import {
   type DecisionEvent,
@@ -32,7 +29,7 @@ import {
   type ReflectionEvent,
 } from "./lib/events.ts";
 import { EXIT, runStore } from "./lib/store-client.ts";
-import { isMapping } from "../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping } from "../../../shared/config-layers.ts";
 import { splitWords } from "./lib/settings.ts";
 
 export interface CheckResult {

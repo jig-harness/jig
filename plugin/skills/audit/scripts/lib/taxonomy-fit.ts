@@ -9,8 +9,8 @@
  */
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { isMapping } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
-import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import { isMapping } from "../../../../shared/config-layers.ts";
+import { load } from "../../../../shared/yaml.ts";
 import { probedFiles } from "./criteria.ts";
 import { at, type Finding } from "./schema.ts";
 

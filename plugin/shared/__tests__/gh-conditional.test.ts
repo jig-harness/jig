@@ -1,5 +1,5 @@
 /**
- * `lib/gh-conditional.ts` — conditional REST reads and the
+ * `shared/gh-conditional.ts` — conditional REST reads and the
  * cross-process `gh repo view` cache.
  *
  * Shell-backed HTTP fixture groups run on macOS/Linux; pure cache tests and
@@ -26,7 +26,7 @@ import {
   expect,
   it,
 } from "bun:test";
-import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
+import { spawnSync } from "../guarded-git-spawn.ts";
 import type { SpawnSyncOptions } from "node:child_process";
 import {
   chmodSync,
@@ -50,7 +50,7 @@ import {
   ghConditionalProbe,
   readPrLiveness,
   resetProbeBaselines,
-} from "../scripts/lib/gh-conditional.ts";
+} from "../gh-conditional.ts";
 
 function runScratch(
   command: string,

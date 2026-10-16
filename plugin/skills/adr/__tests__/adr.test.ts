@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { gitIdentityEnv } from "../../drive-pr/scripts/lib/proc.ts";
-import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load } from "../../../shared/yaml.ts";
 import {
   adrConfig,
   isRulesFile,

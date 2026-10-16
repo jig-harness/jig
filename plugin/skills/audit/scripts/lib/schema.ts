@@ -7,10 +7,10 @@
  * or a refused section), a value of the wrong shape, and a field kept only
  * under an older name.
  */
-import { isMapping as isRecord } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { load } from "../../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load } from "../../../../shared/yaml.ts";
 import { skillDir, isSince } from "./repo.ts";
 
 export const FIELD_TYPES = [

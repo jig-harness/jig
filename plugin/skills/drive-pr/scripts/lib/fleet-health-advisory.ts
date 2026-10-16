@@ -26,10 +26,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import {
-  consumerRoot,
-  readConfig,
-} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+import { consumerRoot, readConfig } from "../../../../shared/consumer.ts";
 import {
   LIFECYCLE_ACTIVITY,
   prWarnings,
@@ -37,6 +34,7 @@ import {
   SIGNAL_KINDS,
   type Signal,
 } from "./fleet-health.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 
 export const PANEL = "fleet-health";
 
@@ -100,10 +98,6 @@ export function dashboardDir(
   return configured === null
     ? join(home, ...DEFAULT_SNAPSHOT_SUBDIR)
     : expandDir(configured, home);
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 /**

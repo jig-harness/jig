@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { LEAKY_GIT_ENV, spawnSync } from "../../../shared/guarded-git-spawn.ts";
-import { isRecord } from "../../drive-pr/scripts/lib/fleet-health-sources.ts";
+import { isRecord } from "../../../shared/guards.ts";
 import { type ChangeNote, parseNote } from "./change-notes.ts";
 
 /** Where a repository keeps its notes, its changelog and its version. */

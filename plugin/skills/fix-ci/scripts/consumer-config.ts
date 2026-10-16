@@ -20,17 +20,14 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  fail,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import {
   configSource,
   consumerRoot,
   hasRepositoryConfig,
   overlayPath,
   readConfig,
-} from "../../resolve-review-comments/scripts/lib/consumer.ts";
+} from "../../../shared/consumer.ts";
 
 export interface PackageManager {
   name: string;

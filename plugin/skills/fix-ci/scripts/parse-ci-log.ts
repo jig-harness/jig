@@ -31,8 +31,8 @@
  */
 
 import { readFileSync } from "node:fs";
-import { runMain } from "../../resolve-review-comments/scripts/lib/cli.ts";
-import { run } from "../../resolve-review-comments/scripts/lib/proc.ts";
+import { runMain } from "../../../shared/cli.ts";
+import { run } from "../../../shared/proc.ts";
 
 export type Category =
   | "schema_drift"

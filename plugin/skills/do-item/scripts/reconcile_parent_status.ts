@@ -23,7 +23,7 @@
 import {
   DEFAULT_TRACKER_LABELS,
   type TrackerLabels,
-} from "../../resolve-review-comments/scripts/lib/tracker-labels.ts";
+} from "../../../shared/tracker-labels.ts";
 import {
   classifyChildState,
   KNOWN_STATE_TYPES,

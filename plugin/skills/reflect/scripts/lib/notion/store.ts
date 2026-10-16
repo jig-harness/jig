@@ -13,10 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import {
-  isMapping,
-  jigHome,
-} from "../../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { isMapping, jigHome } from "../../../../../shared/config-layers.ts";
 import {
   computeState,
   type ComputedState,

@@ -49,7 +49,7 @@ import {
   readConfigFile,
   userConfigPath,
   userLayerEnabled,
-} from "../../resolve-review-comments/scripts/lib/config-layers.ts";
+} from "../../../shared/config-layers.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import {
@@ -58,7 +58,7 @@ import {
   overlayPath,
   parseReviewConfig,
   reviewerSelection,
-} from "../../resolve-review-comments/scripts/lib/consumer.ts";
+} from "../../../shared/consumer.ts";
 import { adrConfig } from "../../adr/scripts/locate.ts";
 import { parsePrPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";

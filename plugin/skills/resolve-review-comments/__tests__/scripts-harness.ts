@@ -9,6 +9,7 @@ import { afterAll, beforeAll } from "bun:test";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import {
   chmodSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -16,9 +17,26 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 export const SCRIPTS = join(import.meta.dir, "..", "scripts");
+const SHARED = join(import.meta.dir, "..", "..", "..", "shared");
+
+/**
+ * Copy this skill's scripts into `<skills>/resolve-review-comments/scripts`
+ * and the plugin's shared code beside `skills` (`<skills>/../shared`), the
+ * layout a plugin cache holds, so the copy's imports resolve. Returns the
+ * copied scripts directory.
+ */
+export function copySkillScripts(skills: string): string {
+  const scripts = join(skills, "resolve-review-comments", "scripts");
+  cpSync(SCRIPTS, scripts, { recursive: true });
+  cpSync(SHARED, join(dirname(skills), "shared"), {
+    recursive: true,
+    filter: (path) => !path.includes("__tests__"),
+  });
+  return scripts;
+}
 export const HEAD_A = "aaaa19d8a22488d233ac3f5081020f081d4388f1";
 export const HEAD_B = "bbbb19d8a22488d233ac3f5081020f081d4388f1";
 
@@ -119,7 +137,7 @@ function setUpStubForge(): void {
     encoding: "utf8",
     env: gitCleanEnv(),
   });
-  // A real checkout always has a remote. `lib/gh-conditional.ts` derives its
+  // A real checkout always has a remote. `shared/gh-conditional.ts` derives its
   // cache scope from the remotes and refuses to cache without one, so a repo
   // that lacks one would silently exercise the uncached path everywhere.
   checkedSpawn(
@@ -199,7 +217,7 @@ case "$1 $2" in
     [ -f "$FIX/checks-exit" ] && exit "$(cat "$FIX/checks-exit")"
     exit 0 ;;
   "api -i")
-    # The conditional REST reads lib/gh-conditional.ts makes. Serves
+    # The conditional REST reads shared/gh-conditional.ts makes. Serves
     # the SAME fixtures the GraphQL-backed 'pr view' / 'pr checks' branches do,
     # reshaped as GitHub's REST documents, with the ETag behaviour of the real
     # API: a request whose If-None-Match equals the current ETag gets 304 and

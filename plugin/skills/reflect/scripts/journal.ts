@@ -32,11 +32,7 @@
  *
  * Exit codes: 0 done (or reflection off); 1 failed; 2 usage.
  */
-import {
-  fail,
-  readStdinAll,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail, readStdinAll, runMain } from "../../../shared/cli.ts";
 import { chooseOperation, last, type ParsedArgs } from "./lib/args.ts";
 import { journalPath, repositoryId } from "./lib/context.ts";
 import { parseObject } from "./lib/events.ts";

@@ -31,7 +31,7 @@
  * parsed.
  */
 import { readFileSync } from "node:fs";
-import { load } from "../../resolve-review-comments/scripts/lib/yaml.ts";
+import { load } from "../../../shared/yaml.ts";
 
 const POSIX_CLASSES: Record<string, string> = {
   space: "\\s",

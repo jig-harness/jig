@@ -535,6 +535,10 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
     assertNoProgressStampInfrastructure(extractFunctionBody("touchLock"));
   });
 
+  it("noteTakeover, which touchLock calls, never references openStore, a state store call, or a progress-stamping subprocess", () => {
+    assertNoProgressStampInfrastructure(extractFunctionBody("noteTakeover"));
+  });
+
   it("startHeartbeat never references openStore, a state store call, or a progress-stamping subprocess", () => {
     assertNoProgressStampInfrastructure(extractFunctionBody("startHeartbeat"));
   });
@@ -569,21 +573,13 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
   // driver the lock exists to prevent, so record it and let the loop stop;
   // \`release\` will not touch the successor's lock, because the only name it
   // removes is ours.
-  //
-  // Recording it is not enough on its own: the loop only reads \`compromised\`
-  // at a round boundary, and a pass already running does not pause at one. So
-  // the pass is stopped HERE, the moment ownership is lost — the
-  // fire-and-forget is deliberate, since a timer callback cannot block and
-  // \`stop()\` is synchronous up to the SIGTERM; the loop below awaits the same
-  // handle before it decides anything.
+  noteTakeover(lock);
+}`;
+
+  const NOTE_TAKEOVER_GOLDEN = `{
   if (compromised !== "") return;
   compromised = lock.what;
   void stopActivePass(\`the \${lock.what} lock was recovered by another driver\`);
-  // The quota-sleep counterpart to the line above: \`stopActivePass\` is a
-  // no-op when nothing is running, which is exactly the state the driver is
-  // in for up to six hours while sleeping out a short quota window. Abort
-  // unconditionally — a controller with no listener (no sleep in progress)
-  // is a harmless no-op, so this never needs to know which state applies.
   quotaSleepAbort?.abort();
 }`;
 
@@ -599,6 +595,10 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
 
   it("touchLock body is byte-for-byte the reviewed snapshot — closes the differently-named-helper gap the denylist above cannot", () => {
     expect(extractFunctionBody("touchLock")).toBe(TOUCH_LOCK_GOLDEN);
+  });
+
+  it("noteTakeover body is byte-for-byte the reviewed snapshot — touchLock's one callee is pinned like touchLock itself", () => {
+    expect(extractFunctionBody("noteTakeover")).toBe(NOTE_TAKEOVER_GOLDEN);
   });
 
   it("startHeartbeat body is byte-for-byte the reviewed snapshot — closes the differently-named-helper gap the denylist above cannot", () => {

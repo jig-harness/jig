@@ -10,12 +10,12 @@
  * rather than a silent default.
  */
 import { isAbsolute, join } from "node:path";
-import { layersFingerprint } from "../../../resolve-review-comments/scripts/lib/config-layers.ts";
+import { layersFingerprint } from "../../../../shared/config-layers.ts";
 import {
   configSource,
   consumerRoot,
   readConfig,
-} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+} from "../../../../shared/consumer.ts";
 import { verifyOriginIsPrRepo } from "./base-drift.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 

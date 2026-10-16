@@ -18,7 +18,7 @@
  * cannot tell. Without a hold label every push runs normal CI and the drive
  * never touches labels.
  */
-import { consumerRoot } from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+import { consumerRoot } from "../../../../shared/consumer.ts";
 import {
   baseBranch,
   ciHoldLabelSetting,

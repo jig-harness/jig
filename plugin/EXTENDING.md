@@ -293,10 +293,12 @@ the [Codex notes](README.md#codex-notes): Codex does not fill in the skill's
 folder path, loads plugin agents only from its own folders, and the drive's
 default pass starts Claude Code. Any other agent tool can use the skills by
 copying or linking the whole `plugin/skills/` directory into its skill
-folder, keeping every skill beside the others
-([where it works](README.md#where-it-works)): many skills' scripts import
-code from sibling skills (`fix-ci` from `resolve-review-comments`, for
-one), so a single skill copied alone does not run. The scripts need Bun, git
+folder, keeping every skill beside the others, and `plugin/shared/` into a
+`shared/` folder beside that skill folder
+([where it works](README.md#where-it-works)): skills' scripts import code
+from `shared/` and from sibling skills (`fix-ci` from
+`resolve-review-comments`, for one), so a single skill copied alone does not
+run. The scripts need Bun, git
 and the GitHub command line ([requirements](README.md#requirements)), and no
 packages.
 Supporting a third tool as a plugin means a manifest for it beside the existing ones in

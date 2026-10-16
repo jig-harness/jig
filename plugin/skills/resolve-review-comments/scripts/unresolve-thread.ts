@@ -15,7 +15,7 @@
  * instead; the reply sequence is the audit trail.
  */
 
-import { runMain } from "./lib/cli.ts";
+import { runMain } from "../../../shared/cli.ts";
 import { ghOrExit } from "./lib/gh.ts";
 import { assertThreadPrOpen } from "./lib/thread-liveness.ts";
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { siblingSkill } from "./lib/consumer.ts";
+import { siblingSkill } from "../../../shared/consumer.ts";
 /**
  * Print the ordinal of the review round currently being worked on a PR — the
  * mechanical read behind the decline ladder's round bands
@@ -72,8 +72,8 @@ import { siblingSkill } from "./lib/consumer.ts";
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fail, isDigits, isSafeDigits, runMain } from "./lib/cli.ts";
-import { git, resolvePr, run } from "./lib/proc.ts";
+import { fail, isDigits, isSafeDigits, runMain } from "../../../shared/cli.ts";
+import { git, resolvePr, run } from "../../../shared/proc.ts";
 
 /** `drive-state.ts rounds` is a pure read — no lock, no lease, no write. */
 const DRIVE_STATE = join(
@@ -148,7 +148,7 @@ async function drivePrRounds(pr: string): Promise<[number, string]> {
  * this one PUBLISHES the ordinal to a rule that declines findings, so it has
  * to answer for what it read.
  *
- * Built on the shared `isSafeDigits` (`lib/cli.ts`) rather than its own
+ * Built on the shared `isSafeDigits` (`shared/cli.ts`) rather than its own
  * `Number.isSafeInteger` check, so the safety bound and the canonical-form
  * (no leading zero, no `0` itself) check cannot drift apart the way this
  * file's own two counters once did, and so a THIRD script accepting a bare

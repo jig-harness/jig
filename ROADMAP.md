@@ -125,21 +125,10 @@ The plugin's scripts each solve the same problems by hand: decoding JSON
 from `gh` and configuration files, retrying, releasing locks on a signal,
 reading the clock. When one fails, the cause is often lost (an error turned
 into a default answer, a child's error output discarded), and nothing
-records how long anything took. The ratchet now counts those patterns; this
-item gives each a named replacement and then moves the code onto it.
+records how long anything took. The ratchet counts those patterns, and
+`plugin/shared/` holds the guards, error helpers, clock and
+logger that replace them; what is left moves the code onto them.
 
-- **Shared code and logging.** A `plugin/shared/` directory, beside
-  `skills/` (both manifests already ship `assets/` there; check both tools'
-  installs before merging), for code more than one skill uses. It starts
-  with: type guards and `decodeJson(text, guard)`; an error helper that
-  keeps the cause; an injectable clock; and a logger that writes to standard
-  error at the level `JIG_LOG` sets (`JIG_LOG_FORMAT=text|json`). The shared
-  modules other skills import today from `resolve-review-comments` move
-  there. The command-line boundary prints the stack under `JIG_LOG=debug`.
-  `run()` keeps the last few kilobytes of a failed child's error output. The
-  driver log gets a timestamp and level per line and a size cap. The 11
-  local record guards move onto the shared one, and that rule becomes an
-  error.
 - **The drive loop on the kernel, and traces.** Shared retry and polling,
   and one process-wide registry that releases resources (`using` and
   `DisposableStack`) on return, error and signal, newest first, replacing
@@ -148,11 +137,11 @@ item gives each a named replacement and then moves the code onto it.
   `~/.local/state/jig/traces/` for every `gh` and `git` call, lock wait,
   poll and pass, carried to child processes through `TRACEPARENT` and
   reaped by `reap-state.ts`; records hold command names, exit codes and
-  durations, never arguments' contents or output. Kept apart from the first
-  step because it changes the drive loop's signal handling.
+  durations, never arguments' contents or output. A step of its own because
+  it changes the drive loop's signal handling.
 - **Burn-downs**, as code is touched: the 91 `exactOptionalPropertyTypes`
-  errors; the copies of `proc.ts`, `cli.ts` and `gh-conditional.ts` that
-  drive-pr and resolve-review-comments each keep; the duplicated block in
+  errors; drive-pr's own copies of `proc.ts`, `cli.ts` and
+  `gh-conditional.ts` beside the shared ones; the duplicated block in
   `fleet-health.ts`; fallow's complexity hotspots.
 
 ### 7. The Notion store, run against Notion

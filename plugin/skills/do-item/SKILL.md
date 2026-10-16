@@ -797,7 +797,8 @@ routing below remain **exact**.
 
       Include the drive's **observability handles** in the same comment. Take
       the candidate log path from `drive.ts: driver log → ...` in the arm
-      output, or, when the arm was refused, from the refusing driver's
+      output (a `drive.ts: driver log unavailable: <reason>` line instead
+      means this driver keeps none: say so and include the reason), or, when the arm was refused, from the refusing driver's
       diagnostics or its row in
       `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --json`. A
       per-PR lock refusal always names this PR's own driver; a worktree lock

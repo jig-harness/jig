@@ -23,10 +23,7 @@
  * (run conflict-map.ts).
  */
 import { relative, resolve, sep } from "node:path";
-import {
-  fail,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { fail, runMain } from "../../../shared/cli.ts";
 import { droppedLines, resolvedText } from "./lib/drops.ts";
 import { topLevel } from "./lib/git.ts";
 import {

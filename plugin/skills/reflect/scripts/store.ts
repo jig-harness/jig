@@ -12,10 +12,7 @@
  * Exit codes: the store's own (0 done, 1 failed, 2 usage, 3 unavailable); a
  * deadline that passes is 3. With reflection off, exits 0 and says so.
  */
-import {
-  readStdinAll,
-  runMain,
-} from "../../resolve-review-comments/scripts/lib/cli.ts";
+import { readStdinAll, runMain } from "../../../shared/cli.ts";
 import { reflectionSettings } from "./lib/settings.ts";
 import {
   EXIT,

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { run, tsArgv } from "../../resolve-review-comments/scripts/lib/proc.ts";
+import { run, tsArgv } from "../../../shared/proc.ts";
 import { eventText, type ReflectionEvent } from "../scripts/lib/events.ts";
 import {
   EXIT,

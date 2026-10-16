@@ -101,7 +101,8 @@ export const PLAIN_ENTRIES: readonly {
   readonly key: "pr" | "actor";
   readonly family: ArtifactFamily;
 }[] = [
-  { re: /^drive-pr-([0-9]+)\.log$/, key: "pr", family: "log" },
+  // The driver log, and the generation `lib/driver-log.ts` rotates it to.
+  { re: /^drive-pr-([0-9]+)\.log(?:\.1)?$/, key: "pr", family: "log" },
   {
     re: /^drive-pr-([0-9]+)\.ready-claim(?:\.released\.[0-9]+)?$/,
     key: "pr",

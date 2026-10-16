@@ -11,10 +11,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { SpawnSyncReturns } from "node:child_process";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRoundCount } from "../scripts/current-round.ts";
+import { copySkillScripts } from "./scripts-harness.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "current-round.ts");
 describe("parseRoundCount", () => {
@@ -164,20 +165,22 @@ describe("current-round.ts probes", () => {
     stdout: string,
   ): SpawnSyncReturns<string> & { cleanup: () => void } => {
     const fake = mkdtempSync(join(tmpdir(), "current-round-stub-"));
-    cpSync(
-      join(import.meta.dir, "..", "scripts"),
-      join(fake, "resolve-review-comments", "scripts"),
-      { recursive: true },
-    );
-    mkdirSync(join(fake, "drive-pr", "scripts"), { recursive: true });
+    copySkillScripts(join(fake, "skills"));
+    mkdirSync(join(fake, "skills", "drive-pr", "scripts"), { recursive: true });
     writeFileSync(
-      join(fake, "drive-pr", "scripts", "drive-state.ts"),
+      join(fake, "skills", "drive-pr", "scripts", "drive-state.ts"),
       `console.log(${JSON.stringify(stdout)});\n`,
     );
     const r = spawnSync(
       process.execPath,
       [
-        join(fake, "resolve-review-comments", "scripts", "current-round.ts"),
+        join(
+          fake,
+          "skills",
+          "resolve-review-comments",
+          "scripts",
+          "current-round.ts",
+        ),
         "4270",
       ],
       { cwd: repo, env: childEnv(), encoding: "utf8" },
@@ -244,13 +247,11 @@ describe("current-round.ts probes", () => {
   it("stays silent when the sibling drive-pr skill is not installed", () => {
     const solo = mkdtempSync(join(tmpdir(), "current-round-solo-"));
     try {
-      // A copy of scripts/ with no ../../drive-pr beside it.
-      cpSync(join(import.meta.dir, "..", "scripts"), join(solo, "scripts"), {
-        recursive: true,
-      });
+      // A copy of the skill with no ../../drive-pr beside it.
+      const scripts = copySkillScripts(join(solo, "skills"));
       const r = spawnSync(
         process.execPath,
-        [join(solo, "scripts", "current-round.ts"), "4260"],
+        [join(scripts, "current-round.ts"), "4260"],
         { cwd: repo, env: childEnv(), encoding: "utf8" },
       );
       expect(r.status).toBe(0);

@@ -26,10 +26,7 @@ import type {
   IssueComments,
   Tracker,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
-import {
-  consumerRoot,
-  layeredConfig,
-} from "../../../resolve-review-comments/scripts/lib/consumer.ts";
+import { consumerRoot, layeredConfig } from "../../../../shared/consumer.ts";
 import {
   areasOf,
   type ChangeAreaCatalog,
@@ -42,6 +39,7 @@ import { ghCall as realGhCall } from "./proc.ts";
 export type Gh = typeof realGhCall;
 
 import type { Repo } from "./sample.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 
 // ── GitHub ─────────────────────────────────────────────────────────────────
 
@@ -488,10 +486,6 @@ export function connectTracker(cfg: FleetHealthConfig): Tracker {
   return openTracker(
     trackerConfigFrom(layeredConfig(cfg.root ?? consumerRoot()).values),
   );
-}
-
-export function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 /** Issues named by key, keyed by key. A key that resolves to nothing is simply absent. */

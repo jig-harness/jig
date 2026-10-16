@@ -38,7 +38,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { extractEmbedded } from "../../decide/scripts/sheet-kit/html.ts";
-import { consumerRoot } from "../../resolve-review-comments/scripts/lib/consumer.ts";
+import { consumerRoot } from "../../../shared/consumer.ts";
 import { loadModules } from "./lib/criteria.ts";
 import { loadProfiles } from "./lib/profiles.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";

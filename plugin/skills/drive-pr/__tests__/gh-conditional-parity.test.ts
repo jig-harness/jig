@@ -1,11 +1,10 @@
 /**
- * `lib/gh-conditional.ts` exists in two skills as a byte-identical PARITY COPY
- *: each skill ships standalone, so neither imports the other's lib —
- * the boundary `lib/proc.ts` documents. Two copies of the code that decides
- * whether a rate-limited poll may be skipped is exactly the kind of thing that
- * drifts silently, so this pins them together. Behavioural coverage lives in
- * `resolve-review-comments/__tests__/gh-conditional.test.ts`, against the
- * canonical copy.
+ * `gh-conditional.ts` exists twice as a byte-identical PARITY COPY: in the
+ * plugin's `shared/` and in drive-pr's `scripts/lib/`, each built on the
+ * `proc.ts` beside it. Two copies of the code that decides whether a
+ * rate-limited poll may be skipped is exactly the kind of thing that drifts
+ * silently, so this pins them together. Behavioural coverage lives in
+ * `shared/__tests__/gh-conditional.test.ts`, against the shared copy.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -17,13 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const skills = join(here, "..", "..");
 const COPIES = [
   join(skills, "drive-pr", "scripts", "lib", "gh-conditional.ts"),
-  join(
-    skills,
-    "resolve-review-comments",
-    "scripts",
-    "lib",
-    "gh-conditional.ts",
-  ),
+  join(skills, "..", "shared", "gh-conditional.ts"),
 ];
 
 describe("gh-conditional.ts parity copies", () => {

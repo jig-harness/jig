@@ -135,7 +135,6 @@
 
 import { randomBytes } from "node:crypto";
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -171,6 +170,8 @@ import {
   testPacing,
 } from "./lib/cli.ts";
 import { FinalCiWait } from "./lib/final-ci-wait.ts";
+import { DriverLog, type DriverLogLevel } from "./lib/driver-log.ts";
+import { errnoCode } from "../../../shared/errors.ts";
 import {
   type AccountIdentity,
   formatAccountIdentity,
@@ -1427,21 +1428,30 @@ function touchLock(lock: DriveLock): void {
   // driver the lock exists to prevent, so record it and let the loop stop;
   // `release` will not touch the successor's lock, because the only name it
   // removes is ours.
-  //
-  // Recording it is not enough on its own: the loop only reads `compromised`
-  // at a round boundary, and a pass already running does not pause at one. So
-  // the pass is stopped HERE, the moment ownership is lost — the
-  // fire-and-forget is deliberate, since a timer callback cannot block and
-  // `stop()` is synchronous up to the SIGTERM; the loop below awaits the same
-  // handle before it decides anything.
+  noteTakeover(lock);
+}
+
+/**
+ * The one response to a detected takeover, called the moment one is detected
+ * and before anything else is done or printed about it: `compromised` is what
+ * stops the driver log rotating (`mayRotateDriverLog`), and a diagnostic
+ * written while it is still unset could rename the log over the successor's
+ * history.
+ *
+ * Recording it is not enough on its own: the loop only reads `compromised`
+ * at a round boundary, and a pass already running does not pause at one. So
+ * the pass is stopped HERE, the moment ownership is lost — the
+ * fire-and-forget is deliberate, since a timer callback cannot block and
+ * `stop()` is synchronous up to the SIGTERM; the loop awaits the same handle
+ * before it decides anything. The quota sleep is aborted for the same
+ * reason: `stopActivePass` is a no-op when nothing is running, which is
+ * exactly the state the driver is in for up to six hours while sleeping out a
+ * short quota window, and a controller with no listener is a harmless no-op.
+ */
+function noteTakeover(lock: DriveLock): void {
   if (compromised !== "") return;
   compromised = lock.what;
   void stopActivePass(`the ${lock.what} lock was recovered by another driver`);
-  // The quota-sleep counterpart to the line above: `stopActivePass` is a
-  // no-op when nothing is running, which is exactly the state the driver is
-  // in for up to six hours while sleeping out a short quota window. Abort
-  // unconditionally — a controller with no listener (no sleep in progress)
-  // is a harmless no-op, so this never needs to know which state applies.
   quotaSleepAbort?.abort();
 }
 
@@ -1521,23 +1531,6 @@ function refreshAccountIdentity(
   if (locks.every((l) => l.diag === undefined)) return true; // never taken, or diag never stamped — nothing to synchronize
   const fresh = resolveAccountIdentity(passArgv);
   let allSynced = true;
-  // Mirrors `touchLock`'s own takeover response exactly: setting
-  // `compromised` alone stops the ROUND LOOP at its next boundary, but a
-  // takeover discovered here can land while the driver is mid quota-sleep —
-  // no round boundary to reach for up to six hours — or, in principle, while
-  // a pass is active. Without this, only `touchLock`'s OWN detection aborts
-  // either; a takeover this function notices first (its rewrite races a
-  // successor's recovery) left `quotaSleepAbort` untouched, stranding the
-  // sleep for its full bound while the old driver still believes it holds
-  // the lock.
-  const noteCompromised = (lock: DriveLock): void => {
-    if (compromised !== "") return;
-    compromised = lock.what;
-    void stopActivePass(
-      `the ${lock.what} lock was recovered by another driver`,
-    );
-    quotaSleepAbort?.abort();
-  };
   for (const lock of locks) {
     if (lock.diag === undefined || lock.nonce === undefined) continue;
     // Checked PER LOCK, not once up front against a single shared `current`:
@@ -1615,6 +1608,8 @@ function refreshAccountIdentity(
         // former.
         claimWasTakenOver(afterRewrite.claimNames, claimName(lock.nonce))
       ) {
+        // First, before the cleanup below can print anything.
+        noteTakeover(lock);
         if (afterRewrite.claimNames.length > 1) {
           try {
             rmSync(dest, { force: true });
@@ -1625,7 +1620,7 @@ function refreshAccountIdentity(
             // one is real — so a resurrected entry that survives this removal
             // wedges the lock PERMANENTLY: no future driver, this generation's
             // takeover included, can ever auto-recover `lock.dir` again. This
-            // generation is about to stop (via `compromised` below) either
+            // generation is about to stop (via `compromised`, set above) either
             // way, so print the one thing an operator needs and cannot
             // otherwise discover on their own: which directory needs manual
             // cleanup, and why automatic recovery will never happen for it.
@@ -1645,7 +1640,6 @@ function refreshAccountIdentity(
         // exactly the destructive cross-driver mutation this generation
         // exists to avoid, so both cases only ever stop driving, never
         // mutate the directory.
-        noteCompromised(lock);
         allSynced = false;
         // Stop entirely, not just this lock: `held` is ordered worktree lock
         // first, PR lock second, so a `continue` here would proceed straight
@@ -1688,7 +1682,7 @@ function refreshAccountIdentity(
         // overwrites its own tmp path, and this one shares no name with it.
       }
       if (!existsSync(dest)) {
-        noteCompromised(lock);
+        noteTakeover(lock);
       }
       allSynced = false;
     }
@@ -1956,6 +1950,29 @@ function release(lock: DriveLock): void {
 // ── Durable driver log ──────────────────────────────────────────────────────
 
 /**
+ * Install the tee, then announce the log: its path, or why there is none.
+ * do-item quotes the announced path as the drive's log, so a log that could
+ * not be started is never announced by path.
+ */
+/**
+ * True while this driver holds the drive's locks; cleared before it releases
+ * them. Rotation also stops once another driver has recovered a lock
+ * (`compromised`), so only the current owner ever renames the log.
+ */
+let driverLogRotates = false;
+const mayRotateDriverLog = (): boolean =>
+  driverLogRotates && compromised === "";
+
+function startDriverLog(logPath: string): void {
+  const unavailable = teeConsoleTo(logPath);
+  console.error(
+    unavailable === null
+      ? `drive.ts: driver log → ${logPath}`
+      : `drive.ts: driver log unavailable: ${unavailable}`,
+  );
+}
+
+/**
  * Mirror everything this process writes to stdout/stderr into `logPath`,
  * append-only and BEST-EFFORT: the console stays authoritative, and a log
  * write that fails (disk full, directory vanished) must never take the drive
@@ -1976,36 +1993,63 @@ function release(lock: DriveLock): void {
  * with inherited stdio writes to the fd itself and is NOT captured — that is
  * the pass, and it is deliberate (see the log's comment in `main`). Appends
  * are synchronous, so the tail survives the exit path without the async-pipe
- * truncation macOS is known for.
+ * truncation macOS is known for. Each line carries its time and level, and
+ * the file rotates at a size bound (`lib/driver-log.ts`).
+ *
+ * Returns `null` once the tee is installed, or the reason there is no log.
  */
-function teeConsoleTo(logPath: string): void {
+function teeConsoleTo(logPath: string): string | null {
+  // An armed drive outlives the session that started it; once that session
+  // closes the pipe, a console write fails with EPIPE. That one error is
+  // absorbed whether or not the durable log starts: with a log it carries
+  // the narrative from then on, and without one the drive still runs on.
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (err) => {
+      if (errnoCode(err) !== "EPIPE") throw err;
+    });
+  }
+  // Problems with the log are reported straight to the terminal, never
+  // through the tee, which would only try the failing log again.
+  const rawStderrWrite = process.stderr.write.bind(process.stderr);
+  let starting = true;
+  const driverLog = new DriverLog(logPath, {
+    report: (message) => {
+      if (!starting) rawStderrWrite(`drive.ts: warning: ${message}\n`);
+    },
+    // Several drivers can write this log (one that refuses to start writes
+    // its refusal here); only the one holding the drive's locks rotates it.
+    mayRotate: mayRotateDriverLog,
+  });
   try {
     mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(
-      logPath,
-      `\n── drive.ts pid ${process.pid} @ ${new Date().toISOString()} — driver narrative (pass output streams to the launching session) ──\n`,
-    );
-  } catch {
-    // Best-effort from the very first byte: an unwritable log — full disk, a
-    // directory squatting on the path, permissions — must not stop the drive
-    // (this header append once sat outside the guard every later append had).
+  } catch (err) {
+    return `cannot create ${dirname(logPath)} (${err instanceof Error ? err.message : String(err)})`;
   }
+  driverLog.startRun(
+    `── drive.ts pid ${process.pid} — driver narrative (pass output streams to the launching session) ──`,
+  );
+  starting = false;
+  const unavailable = driverLog.firstProblem;
+  if (unavailable !== null) {
+    // Best-effort from the very first byte: an unwritable log — full disk, a
+    // directory squatting on the path, permissions — must not stop the drive.
+    // `startDriverLog` prints the one line that says so.
+    return unavailable;
+  }
+  const append = (level: DriverLogLevel, text: string | Uint8Array): void =>
+    driverLog.append(level, text);
   // Reentrancy flag for the Node path, where the original console methods
   // dispatch through the patched `stream.write` below — without it every
   // console line is appended twice. Console calls are synchronous, so a
   // plain boolean cannot interleave across writers.
   let teeingConsole = false;
   const consoleTee =
-    (original: (...args: unknown[]) => void) =>
+    (level: DriverLogLevel, original: (...args: unknown[]) => void) =>
     (...args: unknown[]): void => {
-      try {
-        // `util.format` — the same formatter console.log itself applies —
-        // so the durable copy keeps placeholders, object inspection and
-        // Error stacks instead of degrading to `[object Object]`.
-        appendFileSync(logPath, `${format(...args)}\n`);
-      } catch {
-        // Best-effort by design — the console copy is the authoritative one.
-      }
+      // `util.format` — the same formatter console.log itself applies —
+      // so the durable copy keeps placeholders, object inspection and
+      // Error stacks instead of degrading to `[object Object]`.
+      append(level, `${format(...args)}\n`);
       teeingConsole = true;
       try {
         original(...args);
@@ -2013,28 +2057,26 @@ function teeConsoleTo(logPath: string): void {
         teeingConsole = false;
       }
     };
-  console.log = consoleTee(console.log.bind(console));
-  console.error = consoleTee(console.error.bind(console));
-  for (const stream of [process.stdout, process.stderr]) {
+  console.log = consoleTee("INFO", console.log.bind(console));
+  console.error = consoleTee("WARN", console.error.bind(console));
+  for (const [stream, level] of [
+    [process.stdout, "INFO"],
+    [process.stderr, "WARN"],
+  ] as const) {
     const original = stream.write.bind(stream);
     const teed: typeof stream.write = (
       chunk: Uint8Array | string,
       encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
       cb?: (err?: Error | null) => void,
     ): boolean => {
-      if (!teeingConsole) {
-        try {
-          appendFileSync(logPath, chunk);
-        } catch {
-          // Best-effort by design — the console copy is the authoritative one.
-        }
-      }
+      if (!teeingConsole) append(level, chunk);
       return typeof encodingOrCb === "function"
         ? original(chunk, encodingOrCb)
         : original(chunk, encodingOrCb, cb);
     };
     stream.write = teed;
   }
+  return null;
 }
 
 // `drive.ts` is itself very often launched from inside a live Claude Code
@@ -2464,8 +2506,7 @@ async function main(): Promise<number> {
   // round. This log is the DRIVER's narrative: round decisions, refusals,
   // mark-Ready outcomes, and the terminal state.
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
-  teeConsoleTo(logPath);
-  console.error(`drive.ts: driver log → ${logPath}`);
+  startDriverLog(logPath);
 
   // What this driver publishes about itself into its lock claims — the answer
   // to "who is working my worktree, and on what?" that the exit-11 refusal
@@ -2506,6 +2547,7 @@ async function main(): Promise<number> {
   ];
   const held: DriveLock[] = [];
   const releaseAll = (): void => {
+    driverLogRotates = false; // a successor may own the log from here on
     for (const lock of held.reverse()) release(lock);
     held.length = 0;
   };
@@ -2556,6 +2598,7 @@ async function main(): Promise<number> {
     acquire(lock, pr);
     held.push(lock);
   }
+  driverLogRotates = true;
   // Renewal starts the moment the last lock is held, and runs on its own timer
   // for the rest of the drive — a claim must stay fresh DURING a pass, not
   // only between passes.

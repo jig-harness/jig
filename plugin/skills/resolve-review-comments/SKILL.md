@@ -832,7 +832,7 @@ machine — a handful of parallel drives exhaust it. `await-round.ts` therefore
 spends as little of it as it can while keeping `gh pr checks` the only source of
 the checks verdict:
 
-- **State and head commit identifier ([SHA](https://github.com/docomply/jig/blob/main/GLOSSARY.md))** are read over conditional REST (`lib/gh-conditional.ts`).
+- **State and head commit identifier ([SHA](https://github.com/docomply/jig/blob/main/GLOSSARY.md))** are read over conditional REST (`shared/gh-conditional.ts`).
   An unchanged PR answers `304 Not Modified`, which does not count against the
   primary rate limit. The PR argument must be a number: a URL or branch name is
   refused up front with exit 2, as `list-unresolved-threads.ts` would refuse it

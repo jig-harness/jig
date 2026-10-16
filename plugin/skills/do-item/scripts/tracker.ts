@@ -24,7 +24,7 @@ import {
   type CanonicalState,
   openTracker,
 } from "./lib/tracker/index.ts";
-import { labelsAsConfig } from "../../resolve-review-comments/scripts/lib/tracker-labels.ts";
+import { labelsAsConfig } from "../../../shared/tracker-labels.ts";
 
 const USAGE = `usage:
   tracker.ts children <issue-key>

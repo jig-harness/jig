@@ -1,6 +1,6 @@
 /**
  * Shared CLI helpers for the do-item scripts — the counterpart to
- * resolve-review-comments' `scripts/lib/cli.ts`: the entry runner and the
+ * the plugin's `shared/cli.ts`: the entry runner and the
  * argv walk every entry script shares.
  */
 
