@@ -10,7 +10,7 @@ import { firstParagraph } from "../source.ts";
 import { parseBrownfield, parseGreenfield } from "./adoption.ts";
 import { type Criterion, parseCriteria } from "./criteria.ts";
 import { parseLayers, parseTrackerInterface } from "./config.ts";
-import { parseFactory } from "./factory.ts";
+import { type Actor, parseFactory } from "./factory.ts";
 import { parseFeatures } from "./features.ts";
 import { parseFlywheel } from "./flywheel.ts";
 import {
@@ -132,6 +132,13 @@ export function skillSummary(name: string): string {
   const skill = skills().find((s) => s.name === name);
   if (!skill) throw new Error(`no skill ${name}`);
   return clip(plain(skill.purpose), 220);
+}
+
+/** A plugin entry as the actor that runs something: a skill, or the agent. */
+export function skillActor(name: string): Actor {
+  const skill = skills().find((s) => s.name === name);
+  if (!skill) throw new Error(`no skill ${name}`);
+  return { kind: skill.agent ? "agent" : "skill", name };
 }
 
 /** The problem a tool under tools/ solves, from its README's first paragraph. */

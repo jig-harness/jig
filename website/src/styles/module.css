@@ -323,13 +323,10 @@
 .rail-text strong {
   font-weight: 600;
 }
-.cmd:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--ink);
-}
-.cmd-prefix {
-  color: var(--accent);
+.rail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .job {
   display: flex;

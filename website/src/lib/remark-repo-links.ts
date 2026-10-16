@@ -10,7 +10,9 @@
  * - A link to a skill, the agent or a tool carries what it does
  *   (`data-tip-*`), so hovering it opens the same popover as the actor chips
  *   in the figures, and a link whose text is the bare name draws the actor's
- *   glyph before it (`class="actor-ref"`).
+ *   glyph before it (`class="actor-ref"`). A link to a module carries the
+ *   problem it solves, as the module chips do, and one whose text is the bare
+ *   id reads as an id (`class="module-ref"`).
  * - In GLOSSARY.md, each entry's list item gets the entry's anchor as its id,
  *   so `/glossary/#drift` lands on the definition, and an italic phrase that
  *   names another entry (the glossary's cross-reference form) links to it.
@@ -19,7 +21,13 @@
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { clip, plain } from "./data/modules.ts";
+import {
+  clip,
+  type ModuleMeta,
+  parseModule,
+  parseModuleIndex,
+  plain,
+} from "./data/modules.ts";
 import { parseSkills, type Skill } from "./data/skills.ts";
 import { firstParagraph } from "./source.ts";
 import { anchorFor, type GlossaryEntry, parseGlossary } from "./glossary.ts";
@@ -186,12 +194,68 @@ function actorTips(repoRoot: string): ActorTips {
   };
 }
 
-/** Marks a resolved link as a term, an actor, or a link to the source. */
-function markLink(node: MdNode, tips: ActorTips): void {
+/** What a link to a module opens beside itself. */
+interface ModuleTip {
+  id: string;
+  head: string;
+  body: string;
+}
+
+/** The popover a link opens, by the module its address names, or null. */
+type ModuleTips = (url: string) => ModuleTip | null;
+
+function moduleTips(repoRoot: string): ModuleTips {
+  let index: ModuleMeta[] | undefined;
+  const summaries = new Map<string, string>();
+  return (url) => {
+    const id = /^\/modules\/(M\d+)\/(?:#.*)?$/.exec(url)?.[1];
+    if (!id) return null;
+    index ??= parseModuleIndex(
+      readFileSync(join(repoRoot, "modules/README.md"), "utf8"),
+    );
+    const meta = index.find((m) => m.id === id);
+    if (!meta) return null;
+    if (!summaries.has(id))
+      summaries.set(
+        id,
+        clip(
+          plain(
+            parseModule(
+              readFileSync(join(repoRoot, `${meta.dir}/README.md`), "utf8"),
+            ).problem,
+          ),
+          220,
+        ),
+      );
+    return {
+      id,
+      head: `${id} · ${meta.title}`,
+      body: summaries.get(id) ?? "",
+    };
+  };
+}
+
+/** The popovers a link can open: an actor's or a module's. */
+interface Tips {
+  actor: ActorTips;
+  module: ModuleTips;
+}
+
+/** Marks a resolved link as a term, an actor, a module, or a link to the source. */
+function markLink(node: MdNode, tips: Tips): void {
   const url = node.url ?? "";
   const term = /^\/glossary\/#(.+)$/.exec(url)?.[1];
-  const actor = tips(url);
+  const actor = tips.actor(url);
+  const module = tips.module(url);
   if (term) withProps(node, { className: ["term"], "data-term": term });
+  else if (module)
+    withProps(node, {
+      className: [textOf(node) === module.id ? "module-ref" : "module-link"],
+      "data-tip-head": module.head,
+      "data-tip-kind": "Practice module",
+      "data-tip-body": module.body,
+      "data-tip-more": "Open the module →",
+    });
   else if (actor) {
     const bare = textOf(node) === actor.name;
     withProps(node, {
@@ -215,7 +279,7 @@ function markLink(node: MdNode, tips: ActorTips): void {
 function glossaryNode(
   node: MdNode,
   entries: GlossaryEntry[],
-  tips: ActorTips,
+  tips: Tips,
 ): void {
   if (node.type === "listItem") {
     const term = entryTerm(node);
@@ -243,7 +307,10 @@ export function remarkRepoLinks(options: { repoRoot: string }) {
     readFileSync(join(options.repoRoot, "GLOSSARY.md"), "utf8"),
   );
   const glossaryAnchor = (text: string) => anchorFor(entries, text);
-  const tips = actorTips(options.repoRoot);
+  const tips: Tips = {
+    actor: actorTips(options.repoRoot),
+    module: moduleTips(options.repoRoot),
+  };
   const exists = (path: string) => existsSync(join(options.repoRoot, path));
   const isFile = (path: string) =>
     statSync(join(options.repoRoot, path), {

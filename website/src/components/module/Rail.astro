@@ -1,11 +1,12 @@
 ---
 // The module at a glance: its commands, its job in the scaffolding, its target per profile and its place in the adoption order.
 import "../../styles/module.css";
+import ActorChip from "../ActorChip.astro";
 import LevelGlyph from "../LevelGlyph.astro";
-import { criteriaOf, moduleMeta, modules, profiles } from "../../lib/data/index.ts";
+import { criteriaOf, moduleMeta, modules, profiles, skillActor } from "../../lib/data/index.ts";
 import { LEVEL_NAME, LEVELS } from "../../lib/data/modules.ts";
 import { REPO_URL } from "../../lib/routes.ts";
-import { commandOf, factoryPlace, jobTags, levelRank, ordinal } from "../../lib/view.ts";
+import { factoryPlace, jobTags, levelRank, ordinal } from "../../lib/view.ts";
 
 interface Props {
   id: string;
@@ -40,18 +41,9 @@ const place = factoryPlace(id);
       <span class="rail-cap">Run it with</span>
       {
         meta.skills.length ? (
-          meta.skills.map((s) => {
-            const c = commandOf(s);
-            return (
-              <a class="cmd" href={`/skills/${s}/`}>
-                <span>
-                  <span class="cmd-prefix">{c.prefix}</span>
-                  {c.name}
-                </span>
-                <span aria-hidden="true">→</span>
-              </a>
-            );
-          })
+          <span class="rail-chips">
+            {meta.skills.map((s) => <ActorChip actor={skillActor(s)} />)}
+          </span>
         ) : (
           <span class="rail-text">No skill runs this module. Adopt it from its templates and reference gates.</span>
         )

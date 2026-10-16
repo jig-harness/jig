@@ -78,11 +78,6 @@ export function factoryPlace(
   return null;
 }
 
-/** How a skill or agent is invoked. */
-export function commandOf(name: string): { prefix: string; name: string } {
-  return { prefix: name === "review-arbiter" ? "jig:" : "/jig:", name };
-}
-
 export function ordinal(n: number): string {
   const teen = n % 100 >= 11 && n % 100 <= 13;
   const suffix = teen ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");

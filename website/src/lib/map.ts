@@ -4,10 +4,10 @@
  * carries all its states so the profile switch (scripts/map.ts) only moves
  * attributes; without it the map shows the first profile.
  */
-import { modules, profiles } from "./data/index.ts";
+import { modules, profiles, skillActor } from "./data/index.ts";
 import { LEVEL_NAME, LEVELS, type Level } from "./data/modules.ts";
 import { mdInline } from "./markdown.ts";
-import { commandOf, jobTags } from "./view.ts";
+import { jobTags } from "./view.ts";
 
 type State = "on" | "cond" | "off";
 
@@ -56,8 +56,7 @@ export async function mapRows() {
         id,
         title: m.title,
         area: await mdInline(m.area, "modules/README.md"),
-        skills: m.skills.map(commandOf),
-        skillNames: m.skills,
+        skills: m.skills.map(skillActor),
         jobs: jobTags(id),
         cells: LEVELS.map((level) => {
           const states = p.profiles.map((_, pi) => stateOf(id, pi, level));

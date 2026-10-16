@@ -2,6 +2,7 @@
 // The modules page's map: a row per module in id order, with its area,
 // scaffolding jobs, levels, the chosen profile's note and its skills.
 import { LEVEL_NAME } from "../../lib/data/modules.ts";
+import ActorChip from "../ActorChip.astro";
 import { mapRows } from "../../lib/map.ts";
 
 const rows = await mapRows();
@@ -46,12 +47,7 @@ const rows = await mapRows();
       </div>
       <div class="skills">
         {r.skills.length ? (
-          r.skills.map((s, i) => (
-            <a class="skill" href={`/skills/${r.skillNames[i]}/`}>
-              {s.prefix}
-              {s.name}
-            </a>
-          ))
+          r.skills.map((s) => <ActorChip actor={s} />)
         ) : (
           <span class="none">No skill; adopt from templates</span>
         )}
@@ -168,22 +164,9 @@ const rows = await mapRows();
   }
   .skills {
     display: flex;
-    gap: 6px;
+    gap: 4px 6px;
     flex-wrap: wrap;
     align-items: center;
-  }
-  .skill {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    text-decoration: none;
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 3px 7px;
-    color: var(--ink);
-  }
-  .skill:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
   }
   .none {
     font-size: 13px;

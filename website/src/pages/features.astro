@@ -6,7 +6,7 @@ import SideIndex from "../components/SideIndex.astro";
 import Base from "../layouts/Base.astro";
 import type { Actor } from "../lib/data/factory.ts";
 import { FEATURE_PLATES } from "../lib/data/features.ts";
-import { features, skills } from "../lib/data/index.ts";
+import { features, skillActor } from "../lib/data/index.ts";
 import { md, mdInline } from "../lib/markdown.ts";
 import { REPO_URL } from "../lib/routes.ts";
 import { stationsRunBy } from "../lib/skills-view.ts";
@@ -15,7 +15,6 @@ import { headingId } from "../lib/view.ts";
 const FROM = "FEATURES.md";
 const f = features();
 const introHtml = await md(f.intro, FROM);
-const isAgent = new Map(skills().map((s) => [s.name, s.agent]));
 // The Practice field beside its module chips: what it says besides the module
 // links the chips already show.
 const besideModules = (practice: string) =>
@@ -35,7 +34,7 @@ const list = await Promise.all(
       plate,
       bodyHtml: await md(x.body, FROM),
       practiceHtml: await mdInline(besideModules(x.practice), FROM),
-      runs: x.skills.map((name): Actor => ({ kind: isAgent.get(name) ? "agent" : "skill", name })),
+      runs: x.skills.map(skillActor),
       stations: stationsRunBy(...x.skills),
       notBuilt: await Promise.all(
         x.notBuiltEntries.map(async (e) => ({
