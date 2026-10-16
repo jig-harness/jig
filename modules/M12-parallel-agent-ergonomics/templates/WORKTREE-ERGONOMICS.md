@@ -100,7 +100,7 @@ release run at a time on the integration branch writes the notes into the
 changelog, moves the version and deletes the notes; a pull-request check
 fails a malformed note and a direct edit to what that run writes. The
 portable release step and check:
-**[reference/change-notes](https://github.com/docomply/jig/tree/main/modules/M12-parallel-agent-ergonomics/reference/change-notes)**;
+**[changelog scripts](https://github.com/docomply/jig/tree/main/plugin/skills/changelog/scripts)**;
 the tools that do the same per ecosystem (Changesets, towncrier, scriv,
 changie) are in the module's
 **[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.

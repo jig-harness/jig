@@ -8,7 +8,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
 import type { Catalog } from "./change-areas.ts";
 import {
   NotAncestor,

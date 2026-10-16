@@ -1,5 +1,5 @@
 // Scope: Jig's release step, through M12's change-notes mechanism
-// (modules/M12-parallel-agent-ergonomics/reference/change-notes) with Jig's
+// (plugin/skills/changelog/scripts) with Jig's
 // values from check-changelog.ts. After a merge to main it writes the change
 // notes under changes/ into CHANGELOG.md, moves both plugin manifests to the
 // next version when a note asks for a release, and deletes the notes.
@@ -11,7 +11,7 @@
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { cli } from "../lib/cli.ts";
-import { runRelease } from "../modules/M12-parallel-agent-ergonomics/reference/change-notes/release.ts";
+import { runRelease } from "../plugin/skills/changelog/scripts/release.ts";
 import { CHANGE_NOTES } from "./check-changelog.ts";
 
 if (import.meta.main)

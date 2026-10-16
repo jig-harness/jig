@@ -11,8 +11,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { prose } from "../lib/files.ts";
-import { checkNotes } from "../modules/M12-parallel-agent-ergonomics/reference/change-notes/check.ts";
-import { versionOf } from "../modules/M12-parallel-agent-ergonomics/reference/change-notes/notes-dir.ts";
+import { checkNotes } from "../plugin/skills/changelog/scripts/check.ts";
+import { versionOf } from "../plugin/skills/changelog/scripts/notes-dir.ts";
 
 export const MANIFESTS = [
   "plugin/.claude-plugin/plugin.json",

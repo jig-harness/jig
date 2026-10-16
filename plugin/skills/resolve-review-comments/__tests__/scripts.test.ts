@@ -26,7 +26,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { spawn, spawnSync } from "../../../../lib/guarded-git-spawn.ts";
+import { spawn, spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import {
   cpSync,
   existsSync,

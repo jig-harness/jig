@@ -35,7 +35,11 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { cli } from "../lib/cli.ts";
-import { LEAKY_GIT_ENV, spawn, spawnSync } from "../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawn,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
 
 /** Elements whose start begins a new line of text. */
 const BLOCK =

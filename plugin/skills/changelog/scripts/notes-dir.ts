@@ -2,8 +2,8 @@
 // merged, and git's view of a branch. Shared by release.ts and check.ts.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
-import { LEAKY_GIT_ENV, spawnSync } from "../../../../lib/guarded-git-spawn.ts";
-import { isRecord } from "../../../../lib/record.ts";
+import { LEAKY_GIT_ENV, spawnSync } from "../../../shared/guarded-git-spawn.ts";
+import { isRecord } from "../../drive-pr/scripts/lib/fleet-health-sources.ts";
 import { type ChangeNote, parseNote } from "./change-notes.ts";
 
 /** Where a repository keeps its notes, its changelog and its version. */

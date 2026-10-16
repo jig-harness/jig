@@ -11,14 +11,16 @@ onto concrete worktree managers / agent runners, package managers, and
 
 The module ships portable scripts for the mechanisms below; the rest is
 convention. Point one variable at wherever you vendored the module and build
-paths from it, exactly as the other modules do.
+paths from it, exactly as the other modules do. The change-note commands
+ship inside the plugin; run them from its installed cache with the consumer
+repository as the working directory.
 
 | Utility | Runs where | Signal it reads |
 |---------|-----------|-----------------|
 | `reference/port-allocator/allocate-port.ts` | worktree-create hook and/or the dev script | worktree id (arg or `WORKTREE_ID`), range via `PORT_BASE`/`PORT_SPAN` |
 | `reference/resource-lock/with-resource-lock.ts` | around heavy local gate commands (build, test, e2e) | lock via `LOCK_NAME`/`--lock`; bypass via `CI`/`RESOURCE_LOCK_BYPASS` |
-| `reference/change-notes/release.ts` | on the integration branch after every merge, one run at a time | notes directory, changelog and version files via flags |
-| `reference/change-notes/check.ts` | in the branch gates | the same, plus `--base` and `--release-path` |
+| [`changelog/scripts/release.ts`](../../plugin/skills/changelog/scripts/release.ts) | on the integration branch after every merge, one run at a time | notes directory, changelog and version files via flags |
+| [`changelog/scripts/check.ts`](../../plugin/skills/changelog/scripts/check.ts) | in the branch gates | the same, plus `--base` and `--release-path` |
 
 ## Worktree managers / agent runners — where the hooks wire
 
@@ -98,7 +100,7 @@ which changelog format they write.
 
 | Tool | Ecosystem | Notes | Release step | Changelog it writes |
 |------|-----------|-------|--------------|---------------------|
-| [`reference/change-notes/`](reference/change-notes/) | any (Bun script) | `changes/*.md`, front matter `release: patch\|minor\|major`, Keep a Changelog sections | `release.ts` after each merge; the caller commits, tags and pushes | Keep a Changelog, with Unreleased for notes that ask for no release; versions in JSON files |
+| [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md) | any (Bun script) | `changes/*.md`, front matter `release: patch\|minor\|major`, Keep a Changelog sections | `release.ts` after each merge; the caller commits, tags and pushes | Keep a Changelog, with Unreleased for notes that ask for no release; versions in JSON files |
 | [Changesets](https://github.com/changesets/changesets) | JavaScript / TypeScript packages | `.changeset/*.md`, front matter naming each package and its bump | `changeset version`; its GitHub Action keeps a "Version Packages" pull request open that a person merges | its own format, grouped by bump (Major / Minor / Patch Changes), per package; versions in `package.json` only |
 | [towncrier](https://towncrier.readthedocs.io/) | Python, any | `newsfragments/<id>.<type>` files | `towncrier build --version <v>`; the version is given, not computed; `towncrier check` fails a branch without a fragment | configurable template and types |
 | [scriv](https://scriv.readthedocs.io/) | Python, any | `changelog.d/*.md` or `.rst` | `scriv collect --version <v>` | Keep a Changelog's types by default |

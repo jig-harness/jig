@@ -243,7 +243,7 @@ rule that applies to `main`.
 ### Removed
 
 - **Breaking**: `release.ts` in
-  [M12's change-notes reference](modules/M12-parallel-agent-ergonomics/reference/change-notes/README.md)
+  [change-note scripts](plugin/skills/changelog/scripts/README.md)
   no longer has `--per-merge`, and its `--json` output no longer has
   `remaining`. A caller that looped until none remained runs it once.
 
@@ -400,7 +400,7 @@ a change note, and the release is written after the merge.
   it needs in a file of its own instead of editing the changelog and the
   version that every pull request edits, so merging one no longer puts the
   others in conflict. The portable form is
-  [reference/change-notes/](modules/M12-parallel-agent-ergonomics/reference/change-notes/README.md):
+  [change-note scripts](plugin/skills/changelog/scripts/README.md):
   `release.ts` writes the notes into a Keep a Changelog file after the merge
   (Unreleased for a note that asks for no release, the next version's
   section otherwise), moves the version files to the largest bump asked for,

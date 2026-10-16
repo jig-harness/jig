@@ -15,7 +15,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { cli } from "../../../../lib/cli.ts";
+import {
+  fail,
+  runMain,
+} from "../../resolve-review-comments/scripts/lib/cli.ts";
 import {
   parseNote,
   releasedVersions,
@@ -174,27 +177,31 @@ export function runCheck(options: CheckOptions): number {
 }
 
 if (import.meta.main)
-  cli(() => {
-    const { values } = parseArgs({
-      options: {
-        root: { type: "string", default: "." },
-        notes: { type: "string" },
-        changelog: { type: "string" },
-        "version-file": { type: "string", multiple: true },
-        "release-path": { type: "string", multiple: true },
-        base: { type: "string" },
-      },
-    });
-    if (!values.notes || !values.changelog || !values["version-file"]?.length)
-      throw new Error(
-        "usage: check.ts --notes <dir> --changelog <file> --version-file <json> […] [--release-path <prefix> …] [--base <ref>]",
-      );
-    return runCheck({
-      root: resolve(values.root),
-      notes: values.notes,
-      changelog: values.changelog,
-      versionFiles: values["version-file"],
-      releasePaths: values["release-path"] ?? [],
-      base: values.base ?? null,
-    });
+  runMain("check", async () => {
+    try {
+      const { values } = parseArgs({
+        options: {
+          root: { type: "string", default: "." },
+          notes: { type: "string" },
+          changelog: { type: "string" },
+          "version-file": { type: "string", multiple: true },
+          "release-path": { type: "string", multiple: true },
+          base: { type: "string" },
+        },
+      });
+      if (!values.notes || !values.changelog || !values["version-file"]?.length)
+        throw new Error(
+          "usage: check.ts --notes <dir> --changelog <file> --version-file <json> […] [--release-path <prefix> …] [--base <ref>]",
+        );
+      return runCheck({
+        root: resolve(values.root),
+        notes: values.notes,
+        changelog: values.changelog,
+        versionFiles: values["version-file"],
+        releasePaths: values["release-path"] ?? [],
+        base: values.base ?? null,
+      });
+    } catch (error) {
+      fail(2, error instanceof Error ? error.message : String(error));
+    }
   });

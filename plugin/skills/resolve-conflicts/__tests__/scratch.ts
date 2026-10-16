@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { spawnSync } from "../../../../lib/guarded-git-spawn.ts";
+import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 

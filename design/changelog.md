@@ -9,25 +9,28 @@ the changelog is written from memory and the release goes out late or not at
 all. Jig solved this for itself: each pull request adds a
 [change note](../GLOSSARY.md), and a release step on the integration branch
 writes the notes into the changelog, moves the version and tags it after the
-merge. Today that mechanism is a reference script inside
-[M12](../modules/M12-parallel-agent-ergonomics/README.md) that an adopting
-repository would have to copy and wire up by hand. With this built, a
+merge. Today that mechanism ships as scripts in the plugin, implementing
+[M12](../modules/M12-parallel-agent-ergonomics/README.md), that an adopting
+repository still has to wire up by hand. With this built, a
 repository turns it on with one section of its `.config/jig.yaml`, Jig's
 agents write and keep the notes as part of their normal work, and a GitHub
 Action and a guided setup take care of the check and the release.
 
 This is the design of [ROADMAP.md](../ROADMAP.md) item 4. Built so far:
 
-- the change-notes mechanism, as M12's
-  [reference/change-notes/](../modules/M12-parallel-agent-ergonomics/reference/change-notes/README.md):
-  the note format and its checker, the release step (`release.ts`, with one
-  release per merge and version placeholders) and the branch check
-  (`check.ts`), with their self-test;
+- the change-notes mechanism, as the plugin
+  [changelog scripts](../plugin/skills/changelog/scripts/README.md):
+  the note format and its checker, the release step (`release.ts`, which
+  releases everything waiting as one version, with version placeholders) and
+  the branch check (`check.ts`), with their self-test;
 - Jig's own use of it: `scripts/release.ts`, `scripts/check-changelog.ts`,
   `.github/workflows/release.yml`, the `jig-release`
   [GitHub App](../GLOSSARY.md), `main`'s [ruleset](../GLOSSARY.md) and the
   `release` environment
   ([ADR-0004](../docs/adr/ADR-0004-change-notes-released-after-the-merge.md));
+- one version for everything a release run finds, with
+  [ADR-0002](../docs/adr/ADR-0002-the-plugin-is-its-directory.md) and
+  ADR-0004 amended for it (build step 3);
 - M12's audit criteria `change-records-one-file-per-change` and
   `change-records-assembled-after-merge`.
 
@@ -293,12 +296,12 @@ versions are left out ([§ Left out](#left-out)).
 ### Releasing several merges at once
 
 The release run is serialized and starts right after each merge, so it
-usually finds one merge's notes. When several merges are waiting (a run
-failed, or merges landed while one was running), the reference writes one
-version per merge, each a commit and a tag of its own. Each of those tags
-points at a commit whose tree already holds every waiting merge, so an
-earlier tag can carry a later merge's change under the earlier merge's
-version, a breaking change under a patch version included.
+usually finds one merge's notes. Several merges can be waiting (a run
+failed, or merges landed while one was running). Writing one version per
+merge, each a commit and a tag of its own, would point each of those tags
+at a commit whose tree already holds every waiting merge, so an earlier tag
+could carry a later merge's change under the earlier merge's version, a
+breaking change under a patch version included.
 
 A release run therefore releases **everything waiting as one version**: the
 largest bump any waiting note asks for, all their entries, one commit, one
@@ -309,7 +312,7 @@ on it. A person ruled this way on 2026-10-15. It reverses what
 [ADR-0002](../docs/adr/ADR-0002-the-plugin-is-its-directory.md) rejected
 ("release only now and then, batching changes") and changes
 [ADR-0004](../docs/adr/ADR-0004-change-notes-released-after-the-merge.md)'s
-decision, so build step 3 amends both. The amendment to ADR-0002 states that
+decision; both are amended. The amendment to ADR-0002 states that
 the release versions already reached consumers together: each merge lands
 on the integration branch first, and a run that found several pushed all
 their release commits and tags in one atomic push.
@@ -562,9 +565,8 @@ recorded. Every decision below is settled.
    three. Tagging after verification does not change how often it happens,
    since the release still runs right after each merge; only the tags come
    later. One version per merge also cannot pass the tag rule: a run's
-   intermediate release commits get no CI run of their own. The reference's
-   per-merge mode then has no user left, and build step 3 deletes it unless
-   a person asks to keep it.
+   intermediate release commits get no CI run of their own. The reference
+   therefore has no per-merge mode.
 2. **Settled 2026-10-15: a new module for releases and versions**, M16,
    rather than M10 widened
    ([§ Where the practice lives](#where-the-practice-lives)).
@@ -603,10 +605,9 @@ Each step is one pull request with its change note and, where it changes
    `status.ts`; Jig's own values move into its `.config/jig.yaml`. The skill
    gets its `SKILL.md`, `README.md`, a row in the plugin's skills table and
    its name in both manifests.
-3. **One release per run**: `release.ts` writes everything
-   waiting as one version (the reference's batch mode); Jig's
-   `scripts/release.ts` stops setting `perMerge`, and the per-merge mode is
-   kept or deleted as the ruling says; ADR-0002 and ADR-0004 amended.
+3. **One release per run** (built): `release.ts` writes everything
+   waiting as one version, with no per-merge mode; ADR-0002 and ADR-0004
+   amended.
 4. **Converting, and the agents.** `convert.ts`; `do-item`, `drive-pr`,
    `resolve-review-comments` and `resolve-conflicts` taking part;
    `/followup` reading `status.ts`.

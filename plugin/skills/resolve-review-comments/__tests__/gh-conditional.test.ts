@@ -26,7 +26,7 @@ import {
   expect,
   it,
 } from "bun:test";
-import { spawnSync } from "../../../../lib/guarded-git-spawn.ts";
+import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import type { SpawnSyncOptions } from "node:child_process";
 import {
   chmodSync,

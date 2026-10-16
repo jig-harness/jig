@@ -78,7 +78,7 @@ areas:
   shared-lib:
     title: "Shared library and test preloads"
     category: library
-    paths: ["lib/**"]
+    paths: ["lib/**", "plugin/shared/**"]
     workspace: []
     impliedBy: []
     deployTier: none

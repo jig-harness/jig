@@ -21,7 +21,10 @@
 // Exit: 0 no tag can be made yet, 1 a merged version is owed its tag, 2 a
 // usage error or a git failure.
 import { cli } from "../lib/cli.ts";
-import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
 
 export const MANIFEST = "plugin/.claude-plugin/plugin.json";
 const RELEASE_HEADING = /^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\]/gm;

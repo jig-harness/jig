@@ -26,7 +26,10 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { cli } from "../../../../lib/cli.ts";
+import {
+  fail,
+  runMain,
+} from "../../resolve-review-comments/scripts/lib/cli.ts";
 import { applyNotes, nextVersion, rebaseLinks } from "./change-notes.ts";
 import {
   currentVersion,
@@ -203,39 +206,43 @@ function withVersion(path: string, from: string, to: string): string {
 }
 
 if (import.meta.main)
-  cli(() => {
-    const { values } = parseArgs({
-      options: {
-        root: { type: "string", default: "." },
-        notes: { type: "string" },
-        changelog: { type: "string" },
-        "version-file": { type: "string", multiple: true },
-        "tag-prefix": { type: "string", default: "v" },
-        stamp: { type: "string", multiple: true },
-        "stamp-from": { type: "string" },
-        "stamp-to": { type: "string" },
-        date: { type: "string" },
-        "dry-run": { type: "boolean", default: false },
-        json: { type: "boolean", default: false },
-      },
-    });
-    if (!values.notes || !values.changelog || !values["version-file"]?.length)
-      throw new Error(
-        "usage: release.ts --notes <dir> --changelog <file> --version-file <json> […]",
+  runMain("release", async () => {
+    try {
+      const { values } = parseArgs({
+        options: {
+          root: { type: "string", default: "." },
+          notes: { type: "string" },
+          changelog: { type: "string" },
+          "version-file": { type: "string", multiple: true },
+          "tag-prefix": { type: "string", default: "v" },
+          stamp: { type: "string", multiple: true },
+          "stamp-from": { type: "string" },
+          "stamp-to": { type: "string" },
+          date: { type: "string" },
+          "dry-run": { type: "boolean", default: false },
+          json: { type: "boolean", default: false },
+        },
+      });
+      if (!values.notes || !values.changelog || !values["version-file"]?.length)
+        throw new Error(
+          "usage: release.ts --notes <dir> --changelog <file> --version-file <json> […]",
+        );
+      return runRelease(
+        {
+          root: resolve(values.root),
+          notes: values.notes,
+          changelog: values.changelog,
+          versionFiles: values["version-file"],
+          tagPrefix: values["tag-prefix"],
+          stamps: stampsFrom(values),
+          date: values.date,
+          dryRun: values["dry-run"],
+        },
+        values.json,
       );
-    return runRelease(
-      {
-        root: resolve(values.root),
-        notes: values.notes,
-        changelog: values.changelog,
-        versionFiles: values["version-file"],
-        tagPrefix: values["tag-prefix"],
-        stamps: stampsFrom(values),
-        date: values.date,
-        dryRun: values["dry-run"],
-      },
-      values.json,
-    );
+    } catch (error) {
+      fail(2, error instanceof Error ? error.message : String(error));
+    }
   });
 
 /** The one stamp the command line can give. */

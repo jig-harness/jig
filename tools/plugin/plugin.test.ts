@@ -21,7 +21,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
-import { LEAKY_GIT_ENV, spawnSync } from "../../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../../plugin/shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   claudeMarketplace,
@@ -58,6 +61,9 @@ beforeAll(() => {
     recursive: true,
     filter: (path) => !path.includes("__tests__"),
   });
+  cpSync(join(root, "plugin", "shared"), join(scratch, "cache", "shared"), {
+    recursive: true,
+  });
   for (const manifest of [".claude-plugin", ".codex-plugin"])
     cpSync(join(root, "plugin", manifest), join(scratch, "cache", manifest), {
       recursive: true,
@@ -65,6 +71,54 @@ beforeAll(() => {
   scripts = join(scratch, "cache", "skills", skill, "scripts");
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+test("change-note commands run from the plugin cache with unchanged exits", () => {
+  const consumer = join(scratch, "changelog-consumer");
+  mkdirSync(join(consumer, "changes"), { recursive: true });
+  writeFileSync(join(consumer, "package.json"), '{"version":"1.0.0"}\n');
+  writeFileSync(
+    join(consumer, "CHANGELOG.md"),
+    "# Changelog\n\n## [Unreleased]\n\n## [1.0.0] - 2026-01-01\n",
+  );
+  writeFileSync(
+    join(consumer, "changes", "entry.md"),
+    "---\nrelease: patch\n---\n\n### Fixed\n\n- Repair the example.\n",
+  );
+  const commands = join(scratch, "cache", "skills", "changelog", "scripts");
+  const args = [
+    "--notes",
+    "changes",
+    "--changelog",
+    "CHANGELOG.md",
+    "--version-file",
+    "package.json",
+  ];
+  const run = (command: string, flags: string[]) =>
+    spawnSync(process.execPath, [join(commands, command), ...flags], {
+      cwd: consumer,
+      env,
+    });
+  const check = run("check.ts", args);
+  expectSpawnExit({ ...check, exitCode: check.status }, 0);
+  expect(check.stdout).toContain("every note reads");
+  const release = run("release.ts", [...args, "--dry-run", "--json"]);
+  expectSpawnExit({ ...release, exitCode: release.status }, 0);
+  expect(JSON.parse(release.stdout).version).toBe("1.0.1");
+  expect(readFileSync(join(consumer, "package.json"), "utf8")).toContain(
+    "1.0.0",
+  );
+  expect(existsSync(join(consumer, "changes", "entry.md"))).toBe(true);
+  for (const command of ["check.ts", "release.ts"]) {
+    const usage = run(command, []);
+    expectSpawnExit({ ...usage, exitCode: usage.status }, 2);
+    expect(usage.stderr).toContain("usage:");
+    const unreadable = run(command, [...args, "--notes", "package.json"]);
+    expectSpawnExit({ ...unreadable, exitCode: unreadable.status }, 2);
+    expect(unreadable.stderr).toContain("ENOTDIR");
+    const unknown = run(command, ["--unknown"]);
+    expectSpawnExit({ ...unknown, exitCode: unknown.status }, 2);
+  }
+});
 
 test("both harness manifests describe the same plugin", () => {
   const claude = json("plugin/.claude-plugin/plugin.json");
@@ -105,6 +159,17 @@ test("every shipped skill is named after its directory and avoids repository pat
   }).filter((entry) => entry.isDirectory());
   expect(skills.length).toBeGreaterThan(0);
   for (const entry of skills) {
+    if (entry.name === "changelog") {
+      expect(
+        existsSync(join(root, "plugin", "skills", entry.name, "SKILL.md")),
+      ).toBe(false);
+      expect(
+        existsSync(
+          join(root, "plugin", "skills", entry.name, "scripts", "release.ts"),
+        ),
+      ).toBe(true);
+      continue;
+    }
     const text = readFileSync(
       join(root, "plugin", "skills", entry.name, "SKILL.md"),
       "utf8",

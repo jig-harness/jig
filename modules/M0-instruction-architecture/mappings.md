@@ -131,7 +131,7 @@ Bun's built-ins, so they run before the dependency install, on every pull
 request and with no path filter. Run them from a pinned Jig checkout, or
 vendor the folder with the Jig files it imports, keeping their paths
 relative to it: `lib/cli.ts` and `lib/files.ts` for the checks, and
-`lib/test-helpers/expect-spawn-exit.ts` and `lib/guarded-git-spawn.ts` as
+`lib/test-helpers/expect-spawn-exit.ts` and `plugin/shared/guarded-git-spawn.ts` as
 well to run their self-tests. All four use only Bun's built-ins.
 
 The chain check models Codex's `AGENTS.md` chain. A repository whose

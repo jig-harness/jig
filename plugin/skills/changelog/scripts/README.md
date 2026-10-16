@@ -1,6 +1,6 @@
 # Change notes
 
-Keep a [changelog](../../../../GLOSSARY.md) and a version that every pull
+Keep a [changelog](https://github.com/docomply/jig/blob/main/GLOSSARY.md) and a version that every pull
 request contributes to, without every pull request editing the same lines.
 Each pull request adds a **change note**, a small file of its own; after the
 merge, a release step writes the notes into the changelog, moves the version
@@ -117,9 +117,12 @@ checked, and the output says so; a `--base` git cannot compare against is a
 finding, so the branch rules never pass by not running.
 Exit 0 clean, 1 findings, 2 a usage error.
 
-Both commands share `lib/` with the rest of Jig (`lib/cli.ts`,
-`lib/guarded-git-spawn.ts`, `lib/record.ts`); vendor it beside them or run
-them from a pinned Jig checkout. `change-notes.test.ts` is the self-test.
+Both commands run from the installed plugin cache, with the consumer
+repository as the working directory; no Jig checkout or dependencies are
+needed. Their helpers live inside the plugin, including the guarded spawn
+in `shared/` and the command-line boundary in the sibling
+`resolve-review-comments` skill. `change-notes.test.ts` is the self-test.
 Jig runs both on itself: `scripts/release.ts` from
 `.github/workflows/release.yml`, and `scripts/check-changelog.ts` in
-`bun run gates`.
+`bun run gates`. The practice is
+[M12's change records](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md).

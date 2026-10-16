@@ -6,7 +6,7 @@
  */
 
 import { afterAll, beforeAll } from "bun:test";
-import { spawnSync } from "../../../../lib/guarded-git-spawn.ts";
+import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import {
   chmodSync,
   mkdirSync,

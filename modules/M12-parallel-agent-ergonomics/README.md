@@ -93,8 +93,8 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    notes into the changelog, moves the version to the largest bump asked for,
    and deletes the notes; a branch check fails a note the step could not read
    and a direct edit to what the step writes. Pull requests then touch
-   disjoint files, and no two claim the same version. The portable form is
-   [`reference/change-notes/`](reference/change-notes/) (`release.ts`,
+   disjoint files, and no two claim the same version. The plugin ships the
+   [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md) (`release.ts`,
    `check.ts` + self-test) for a
    [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) file; the tools
    that do the same per ecosystem are in [mappings.md](mappings.md).
@@ -141,8 +141,8 @@ governs how those files layer), so every agent inherits the rules.
 5. Add the two self-tests to CI so the utilities can't rot silently.
 6. Where the repository keeps a changelog or a version that every pull request
    touches, move it to change notes: pick the tool for your ecosystem from
-   [mappings.md](mappings.md) or vendor
-   [`reference/change-notes/`](reference/change-notes/), run the release step
+   [mappings.md](mappings.md) or use the plugin’s
+   [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md), run the release step
    on the integration branch after each merge, and the branch check on every
    pull request. Convert open pull requests' changelog edits into notes once.
 
@@ -157,7 +157,7 @@ governs how those files layer), so every agent inherits the rules.
 | [`templates/worktree-hooks.md`](templates/worktree-hooks.md) | Create-hook (allocate and print the port slot) and remove-hook (nudge reflection) skeletons |
 | [`reference/port-allocator/`](reference/port-allocator/) | The deterministic per-worktree port allocator |
 | [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree mutex for heavy runs, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
-| [`reference/change-notes/`](reference/change-notes/) | The release step that writes change notes into a Keep a Changelog file and moves the version, and the branch check that holds pull requests to it |
+| [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md) | The release step that writes change notes into a Keep a Changelog file and moves the version, and the branch check that holds pull requests to it |
 | [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools |
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 

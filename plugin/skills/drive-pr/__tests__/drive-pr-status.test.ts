@@ -4405,8 +4405,14 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // so a transient helper failure that cleared mid-window was never retried.
     //
     // Counted via the sweep's OWN liveness probe (`--json state`, that field
-    // alone), which is one per attempt. `4` is the verdict throughout, so this
-    // measures the retry rather than any degrade path.
+    // alone), which is one per attempt. `4` is the verdict of every
+    // evaluation, so this measures the retry rather than any degrade path.
+    // The window can still end on one of the two deadline guards instead,
+    // each stopping as INDETERMINATE: the post-sweep overrun guard, when the
+    // deadline expires *during* a sweep, and the loop-top guard, when a
+    // scheduling delay carries a permitted sleep past it. Which stop ends the
+    // run is wall-clock timing, not behaviour, so all three are accepted —
+    // exit 1 only with one of those guards' own diagnostics.
     const { dir, stateDir } = writeFixture({
       threads: [repliedThread("PRRT_retry_forever", "**rejected**")],
       checkRuns: [DORMANT_ARM],
@@ -4428,7 +4434,13 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
       },
     );
 
-    expect(r.exitCode).toBe(4);
+    if (r.exitCode === 1) {
+      expect(r.stderr).toMatch(
+        /budget was spent (by the replied-thread reconciliation sweep|before this iteration could reconcile and judge)/,
+      );
+    } else {
+      expect(r.exitCode).toBe(4);
+    }
     const attempts = Number.parseInt(
       readFileSync(join(dir, "live-probes"), "utf8"),
       10,

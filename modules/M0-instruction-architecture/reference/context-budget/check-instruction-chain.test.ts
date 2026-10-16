@@ -8,7 +8,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LEAKY_GIT_ENV, spawnSync } from "../../../../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../../../../plugin/shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   chainConfig,

@@ -13,7 +13,10 @@ import {
   normalizeSchema,
   reconcileStepMs,
 } from "../modules/M2-generated-artifact-freshness/reference/ephemeral-replay/check-schema-drift.ts";
-import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 
 // Filter after merging overrides, including Windows' case-insensitive spelling.

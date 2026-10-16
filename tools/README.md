@@ -11,7 +11,7 @@ Jig keeps those reusable command-line tools in one place.
 - `tools/<area>/` — operated development commands grouped by responsibility.
 - `lib/` — shared code used by multiple commands, with no consumer-specific values.
   `lib/test-helpers/` and the temp-dir scope (`lib/test-tmpdir*.ts`) are the shared
-  test support; `lib/guarded-git-spawn.ts` is the only sanctioned route to a raw
+  test support; `plugin/shared/guarded-git-spawn.ts` is the only sanctioned route to a raw
   spawn in tests that build scratch git repositories.
 - `modules/M*/reference/` — the practice gates and worked examples already shipped
   with the modules. They stay beside the doctrine they enforce.

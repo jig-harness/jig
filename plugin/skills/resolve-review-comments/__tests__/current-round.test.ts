@@ -10,7 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { SpawnSyncReturns } from "node:child_process";
-import { spawnSync } from "../../../../lib/guarded-git-spawn.ts";
+import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

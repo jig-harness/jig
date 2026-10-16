@@ -6,7 +6,7 @@
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { LEAKY_GIT_ENV, spawnSync } from "../../../../lib/guarded-git-spawn.ts";
+import { LEAKY_GIT_ENV, spawnSync } from "../../../shared/guarded-git-spawn.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 

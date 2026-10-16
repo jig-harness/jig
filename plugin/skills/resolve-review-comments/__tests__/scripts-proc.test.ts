@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { spawn } from "../../../../lib/guarded-git-spawn.ts";
+import { spawn } from "../../../shared/guarded-git-spawn.ts";
 import {
   existsSync,
   mkdtempSync,

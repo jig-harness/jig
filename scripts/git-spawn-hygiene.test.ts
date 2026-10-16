@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 
 const root = resolve(import.meta.dir, "..");

@@ -42,7 +42,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { cli } from "../../../../lib/cli.ts";
 import { couldNotCheck } from "../../../../lib/findings.ts";
-import { LEAKY_GIT_ENV } from "../../../../lib/guarded-git-spawn.ts";
+import { LEAKY_GIT_ENV } from "../../../../plugin/shared/guarded-git-spawn.ts";
 
 /** One command whose output is counted, or a set of patterns to grep for. */
 export type Counter =

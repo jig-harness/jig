@@ -10,7 +10,10 @@ import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { repoFiles } from "../lib/files.ts";
 import { isRecord } from "../lib/record.ts";
-import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
 import { couldNotCheck } from "../lib/findings.ts";
 import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 

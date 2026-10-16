@@ -38,7 +38,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { cli } from "../lib/cli.ts";
-import { LEAKY_GIT_ENV, spawnSync } from "../lib/guarded-git-spawn.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
 import { isRecord } from "../lib/record.ts";
 import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 import {

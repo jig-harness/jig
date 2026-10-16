@@ -96,12 +96,10 @@ first; no `Unreleased`).
   detects the format, validates the rules above, and takes the current version
   from the repository rather than from fixed paths; Jig's `bun run
   gates` keeps calling it.
-- **Release**: for Keep a Changelog, M12's change-notes release step
-  ([reference/change-notes/](modules/M12-parallel-agent-ergonomics/reference/change-notes/README.md))
-  already writes each pull request's note into the version's section or
-  Unreleased, moves the version and the comparison links. The skill moves
-  that step and its branch check into the plugin (self-contained, so they run
-  from the plugin cache), takes the notes directory, the changelog, the
+- **Release**: for Keep a Changelog, the plugin's [change-note release scripts](plugin/skills/changelog/scripts/README.md)
+  already write each pull request's note into the version's section or
+  Unreleased and move the version and the comparison links, and they run
+  from the plugin cache. The skill takes the notes directory, the changelog, the
   version files (`package.json`, `pyproject.toml` and others, not only JSON),
   the released paths and the version placeholders from configuration, and
   adds the Common Changelog form.
