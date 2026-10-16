@@ -215,6 +215,22 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.35.2] - 2026-10-16
+
+### Changed
+
+- The plugin's code comments and tests state each rule directly instead of
+  pointing at an unnamed earlier change, and the tests no longer carry the
+  placeholder issue keys a mechanical scrub left behind. No behaviour
+  changes.
+- The origin-reference gate (`scripts/check-no-tracker-refs.ts`) reads the
+  organization's name and tracker team key from the repository's own
+  `.config/jig.yaml` (`review.repo_slug` and `issue_tracker.team`), so its
+  pattern file spells out neither. A pattern that names a value the
+  configuration does not supply makes the gate fail rather than pass. The
+  gate also catches a tracker key folded into a name (`eng1234-main`,
+  `PRE_ENG_1234_ACCOUNT` for a team `ENG`).
+
 ## [0.35.1] - 2026-10-16
 
 ### Changed
@@ -1788,7 +1804,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.35.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.35.2...HEAD
+[0.35.2]: https://github.com/docomply/jig/compare/v0.35.1...v0.35.2
 [0.35.1]: https://github.com/docomply/jig/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/docomply/jig/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/docomply/jig/compare/v0.33.1...v0.34.0
