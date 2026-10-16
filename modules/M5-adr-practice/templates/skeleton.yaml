@@ -1,0 +1,43 @@
+# Skeleton inventory — Jig module M5.
+#
+# Copy to .config/skeleton.yaml. The skeleton is the set of files that hold
+# the architecture's contracts (layer rules, published interfaces, the schema
+# of record, the instruction files themselves): owned by people, read-only for
+# agents. Everything else is tissue, which agents may change freely.
+#
+# A change that touches a file below merges only with recorded authority:
+#   - the same change edits THIS file (a person reviews the inventory), or
+#   - a commit trailer names an approved decision record, e.g.
+#       Decision-Record: ADR-0007
+#
+# Own this file and the decision-record directory with the people who own the
+# architecture (a code-owners rule or a required reviewer): the gate checks
+# that authority is recorded, not who recorded it.
+# Reference gate: https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/reference/skeleton-gate/README.md
+
+# Where the records live; a trailer's `ADR-0007` resolves to
+# <decision_records>/ADR-0007-*.md. Default: docs/adr.
+decision_records: docs/adr
+
+# The `status` values that count as approved. A record a later one superseded
+# (`superseded_by` set) never counts. Default: [approved, amended].
+approved_statuses: [approved, amended]
+
+# The trailer key that names a record. Default: Decision-Record.
+trailer: Decision-Record
+
+# One entry per skeleton file: `path` is literal (a file, or a directory with
+# a trailing `/`), `glob` is a pattern; give one of the two. `path` never
+# matches as a pattern, so `app/[id]/page.tsx` means that file only. `why` is
+# required: say which contract the file holds, so the next reader can judge
+# whether it still belongs here. An entry that matches no file fails the gate
+# as stale, so a rename updates this list.
+skeleton:
+  - path: AGENTS.md
+    why: the instructions every agent session reads first
+  - path: docs/architecture/layers.md
+    why: the layer rules every package follows
+  - path: src/contracts/
+    why: the published interfaces other packages build on
+  - glob: "db/schema/*.sql"
+    why: the schema of record

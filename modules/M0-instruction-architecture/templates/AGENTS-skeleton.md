@@ -100,5 +100,9 @@ this one with local conventions; it never contradicts it:
 
 - **Architecture**: `<docs/ARCHITECTURE.md>`
 - **Decision records**: `<docs/adr/>`
+- **Skeleton files**: `<.config/skeleton.yaml>` — read it before modifying
+  anything it lists. Those files hold the architecture's contracts and are
+  read-only for agents: stop and ask a person, who updates the inventory or
+  names an approved decision record. Everything else is yours to change.
 - **Glossary**: `/GLOSSARY.md`
 - <Other single-source-of-truth files agents must consult, one line each.>

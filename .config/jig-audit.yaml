@@ -315,6 +315,10 @@ criteria:
     # prior: absent: adr-rules-check.test.ts runs in CI only as a self-test of the reference example; Jig applies no decision-rule checker to its own code
     score: absent
     evidence: "adr-rules-check.test.ts runs only as a self-test of the reference example; no rule checker applied to Jig's code"
+  M5/skeleton-changes-need-recorded-authority:   # strict, requires mechanical
+    # The files that hold the architecture's contracts are listed in a machine-readable inventory, and a check blocks a change to one unless the change edits the inventory or a commit trailer names an approved decision record; the check fails when an inventory entry matches no file, and the agent instructions tell agents to read the inventory before modifying and treat those files as read-only.
+    score: absent
+    evidence: "No skeleton inventory is tracked (only modules/M5-adr-practice/templates/skeleton.yaml, a template), no commit-msg hook and no CI step runs modules/M5-adr-practice/reference/skeleton-gate/, which exists as a reference only"
   # M6 feature-delivery-pipeline
   M6/pipeline-stages-documented:   # lite, requires convention
     # The pipeline stages — research spike, PRD, architecture, design-prototype loop, epic decomposition — are named in one document, with the per-stage review-then-de-scar rule stated.

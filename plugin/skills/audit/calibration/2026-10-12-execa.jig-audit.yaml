@@ -263,6 +263,10 @@ criteria:
     # The ADR-rule checker ships with a self-test proving it still catches known violations, run in CI so a broken rule gate fails loudly.
     score: absent
     evidence: "No ADR-rule checker exists to self-test."
+  M5/skeleton-changes-need-recorded-authority:   # strict, requires mechanical
+    # The files that hold the architecture's contracts are listed in a machine-readable inventory, and a check blocks a change to one unless the change edits the inventory or a commit trailer names an approved decision record; the check fails when an inventory entry matches no file, and the agent instructions tell agents to read the inventory before modifying and treat those files as read-only.
+    score: absent
+    evidence: "No skeleton inventory, no commit-msg hook and no ADRs for a trailer to name"
   # M6 feature-delivery-pipeline
   M6/pipeline-stages-documented:   # lite, requires convention
     # The pipeline stages — research spike, PRD, architecture, design-prototype loop, epic decomposition — are named in one document, with the per-stage review-then-de-scar rule stated.

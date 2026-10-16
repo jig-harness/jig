@@ -5,10 +5,14 @@ threads, then lost — so they get re-litigated, or worse, silently violated by
 code written months later. Architecture decision records (ADRs — see
 [GLOSSARY.md](../../GLOSSARY.md)) fix the memory problem: one short numbered
 document per decision, its context, and its consequences, kept append-only.
-This module adds the two mechanical pieces that keep the practice honest at
-scale: a gate that prevents duplicate ADR numbers, and a pipeline that turns
+This module adds the mechanical pieces that keep the practice honest at
+scale: a gate that prevents duplicate ADR numbers, a pipeline that turns
 pattern-checkable ADR decisions into actual gates — so "we decided X" becomes
-"CI enforces X" instead of a prose file nobody re-reads.
+"CI enforces X" instead of a prose file nobody re-reads — and a gate that
+stops a change to a file holding an architectural contract from merging
+without an approved decision behind it. Without that last one, an agent
+asked to make a build pass will quietly rewrite the layer rules or an
+interface everything else depends on, and the diff looks like any other.
 
 ## Invariant
 
@@ -18,6 +22,17 @@ pattern-checkable ADR decisions into actual gates — so "we decided X" becomes
 > supersession, never silent rewrite**; and each ADR is triaged for
 > "decisions-become-checks" extraction — a rule pattern a gate can verify
 > (see [M1](../M1-gates-enforcement-ladder/)).
+
+Files that hold the architecture's contracts are protected by a second
+invariant:
+
+> The repository splits **skeleton** files, which hold the architecture's
+> contracts and are owned by people, from **tissue**, the implementation
+> agents may change freely. Skeleton files are listed in a machine-readable
+> inventory. A change to one merges only with recorded authority: the change
+> updates the inventory, or a commit trailer names an *approved* decision
+> record. The gate fails closed when the inventory is stale or a skeleton file
+> is renamed, and agents treat skeleton files as read-only.
 
 ## Core pieces
 
@@ -43,6 +58,20 @@ pattern-checkable ADR decisions into actual gates — so "we decided X" becomes
    forbidden construct) and **require-nearby** (a construct that must be
    accompanied by a companion). The rest stay as prose (or as LLM-reviewed
    "semantic" rules — the unproven tier, left out here).
+5. **Skeleton files** — the inventory
+   ([`templates/skeleton.yaml`](templates/skeleton.yaml)) names the files
+   whose change needs a decision: each entry is a literal path or directory,
+   or a glob, with the contract it holds. The agent instructions tell agents to read the
+   inventory before modifying and to treat what it lists as read-only
+   ([M0](../M0-instruction-architecture/)'s template carries the line). The
+   gate ([`reference/skeleton-gate/`](reference/skeleton-gate/)) extends
+   [M1](../M1-gates-enforcement-ladder/)'s commit-msg marker: where the marker
+   asks for a tag, this asks for a `Decision-Record: ADR-NNNN` trailer, then
+   resolves the record and reads its status. Only an approved (or amended)
+   record that nothing superseded counts. Run it as a `commit-msg` hook and as
+   the authoritative CI check on the pull request. Own the inventory and the
+   decision-record directory with the people who own the architecture: the
+   gate checks that authority is recorded, not who recorded it.
 
 ## Maturity levels
 
@@ -54,7 +83,9 @@ pattern-checkable ADR decisions into actual gates — so "we decided X" becomes
   (`supersedes` / `superseded_by`) is required and used.
 - **Strict** — pattern-checkable decisions are extracted into `adr-rules.yaml`
   and enforced by a checker in pre-commit + CI, each rule citing its ADR; the
-  numbering gate is mirrored client- and server-side.
+  numbering gate is mirrored client- and server-side. Contract files
+  are inventoried, and a change to one needs the inventory edit or an approved
+  record, checked in CI and in a `commit-msg` hook.
 
 ## Adoption steps
 
@@ -71,6 +102,16 @@ pattern-checkable ADR decisions into actual gates — so "we decided X" becomes
    [`reference/decisions-to-checks/`](reference/decisions-to-checks/) and its
    self-test in pre-commit and CI; run the numbering gate in a pre-push hook as
    well. This is **Strict**.
+4. Copy [`templates/skeleton.yaml`](templates/skeleton.yaml) to
+   `.config/skeleton.yaml` and list the files that hold your contracts; add
+   the "read before modifying" line to your agent instructions (the
+   [M0 template](../M0-instruction-architecture/templates/AGENTS-skeleton.md)
+   has it); run
+   [`reference/skeleton-gate/`](reference/skeleton-gate/) in a `commit-msg`
+   hook and in CI on pull requests; and give the inventory, `docs/adr/`, the
+   CI definition that runs the gate and the ownership file itself owners
+   ([mappings](mappings.md#ownership-of-the-two-authority-paths)). This is
+   also **Strict**.
 
 ## Status
 
@@ -84,6 +125,13 @@ What this module provides:
   ADRs share a number.
 - [`reference/decisions-to-checks/`](reference/decisions-to-checks/) — a
   generic interpreter that applies the rules catalog to changed files.
+- [`templates/skeleton.yaml`](templates/skeleton.yaml) and
+  [`reference/skeleton-gate/`](reference/skeleton-gate/) — the skeleton
+  inventory and the gate that requires an inventory edit or an approved
+  decision record for a change to a listed file. The practice of keeping a
+  contract set that only people change is long established where it was
+  observed; this blocking gate is young, so it is the Strict rung and its
+  first weeks should be read as feedback on the inventory's breadth.
 - [`mappings.md`](mappings.md) (hook managers, CI providers, issue trackers)
   and the module's [maturity criteria](../../plugin/skills/audit/criteria/M5-adr-practice.yaml).
 
@@ -95,7 +143,9 @@ the rules catalog and validates them against the interpreter's format.
 question against the existing records first, and hands a ruling that clears
 its bar to `/jig:adr`.
 
-Deliberately left out: one hand-written script per rule, because a per-rule
+Deliberately left out: checking *who* approved a record or edited the
+inventory (the gate reads recorded status; ownership of those two paths is the
+repository's review rule, not a script); one hand-written script per rule, because a per-rule
 script is what a rules catalog exists to replace; and the semantic,
 model-reviewed rule tier with its routing map, which stays out until a working
 repository has validated it — it belongs with the review harness

@@ -349,6 +349,14 @@ make, use the entry's term instead.
 - **ADR (architecture decision record)** — a short numbered document capturing
   one significant decision, its context, and its consequences. Append-only
   history: superseded ADRs are marked, not rewritten.
+- **Skeleton file / tissue** — a *skeleton file* holds an architectural contract
+  (layer rules, a published interface, the schema of record), is owned by
+  people and is read-only for agents; everything else is *tissue*, the
+  implementation agents may change freely. Skeleton files are listed in an
+  inventory, and a change to one needs recorded authority: an edit to the
+  inventory, or a commit trailer naming an approved *ADR*
+  ([skeleton-file gate](modules/M5-adr-practice/reference/skeleton-gate/README.md)).
+  Unrelated to the "skeleton" templates, which are starting points to copy.
 - **Frontmatter** — the machine-readable metadata block at the top of a
   document (a YAML header: type, status, lifecycle, owner, freshness date).
   Validated against a schema so a docs tree stays queryable and its lifecycle

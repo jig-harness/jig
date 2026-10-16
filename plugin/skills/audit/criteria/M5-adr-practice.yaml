@@ -90,3 +90,20 @@ criteria:
       known violations, run in CI so a broken rule gate fails loudly.
     observe:
       - "a self-test exercises each rule shape and runs in CI"
+
+  - id: skeleton-changes-need-recorded-authority
+    level: strict
+    requires: mechanical
+    since: next
+    statement: >-
+      The files that hold the architecture's contracts are listed in a
+      machine-readable inventory, and a check blocks a change to one unless
+      the change edits the inventory or a commit trailer names an approved
+      decision record; the check fails when an inventory entry matches no
+      file, and the agent instructions tell agents to read the inventory
+      before modifying and treat those files as read-only.
+    observe:
+      - "a machine-readable inventory lists skeleton files, each with the contract it holds"
+      - "a commit-msg hook and a required CI check fail a change to a listed file that neither edits the inventory nor names an approved decision record"
+      - "the check fails closed on an inventory entry that matches no file and on a named record that does not resolve or is not approved"
+      - "the agent instructions say to read the inventory before modifying and to treat listed files as read-only"
