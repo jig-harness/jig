@@ -235,7 +235,7 @@ criteria:
   - id: retries-classify-errors
     level: strict
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Every retry in the pipeline's steps and in the gates and scripts it
       runs retries only an error a classifier marks transient, aborts at

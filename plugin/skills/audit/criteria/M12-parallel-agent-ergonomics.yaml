@@ -137,7 +137,7 @@ criteria:
   - id: gate-quiet-invocation-named
     level: lite
     requires: convention
-    since: next
+    since: 0.38.0
     statement: >-
       The gate commands name a quiet invocation for agents (a reporter flag or
       a script), with the rule that no filter in a pipe stands between a gate
@@ -149,7 +149,7 @@ criteria:
   - id: gate-output-quiet-on-green
     level: standard
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Each gate command an agent runs has a quiet form that prints a summary
       on success and the full output on failure, and exits with the gate's
@@ -162,7 +162,7 @@ criteria:
   - id: quiet-wrapper-self-tested
     level: strict
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       The quiet wrapper ships a self-test, run in CI, proving that a failing
       run keeps its status and prints in full, and the agent runtime applies
@@ -175,7 +175,7 @@ criteria:
   - id: verdict-line-per-part
     level: standard
     requires: convention
-    since: next
+    since: 0.38.0
     statement: >-
       A gate run with several parts ends each part with one named verdict
       line, and its reader treats a part without one as not run, never as

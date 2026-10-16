@@ -278,7 +278,7 @@ criteria:
   - id: pipeline-index-derived-or-gated
     level: standard
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Where the repository keeps a page listing its pipelines, that page is
       generated from the pipeline files or a check fails when a pipeline is

@@ -144,7 +144,7 @@ criteria:
   - id: ci-hold-fails-held-heads
     level: standard
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Where a hold label suppresses CI on intermediate heads, a required
       check fails on every held head from the instant the label is applied,
@@ -161,7 +161,7 @@ criteria:
   - id: ci-hold-shape-linted
     level: strict
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Where a hold label is configured, the CI-configuration lint fails a
       workflow of the hold that misses a label event, a skipped job whose
@@ -178,7 +178,7 @@ criteria:
   - id: cache-keys-complete
     level: standard
     requires: convention
-    since: next
+    since: 0.38.0
     statement: >-
       Every cache the pipeline uses has a written key scheme naming every
       input that changes its output, the values of the environment variables
@@ -193,7 +193,7 @@ criteria:
   - id: cache-one-namespace
     level: standard
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Pipelines that share a cache produce an identical key-affecting
       environment, checked by a lint, and a job whose cache credential is
@@ -208,7 +208,7 @@ criteria:
   - id: cache-hit-rate-reported
     level: standard
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Every run that uses a cache reports its hit rate (hits and misses) in
       the run's summary, and the rate is a registered process metric.
@@ -220,7 +220,7 @@ criteria:
   - id: cache-retention-bounded
     level: strict
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Every cache has a retention bound that a scheduled prune or the store's
       own eviction enforces, with the window written beside its key scheme,
@@ -234,7 +234,7 @@ criteria:
   - id: cache-wiring-checked
     level: strict
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       A gate fails a cache wired on some steps and not on others: in a
       container build, every step that invokes the package manager in a stage
@@ -248,7 +248,7 @@ criteria:
   - id: cache-trust-boundary
     level: strict
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Only trusted contexts write to a shared cache, its entries are signed
       or verified on read, and an untrusted run (a pull request from a fork)
@@ -263,7 +263,7 @@ criteria:
   - id: runner-class-follows-work
     level: standard
     requires: convention
-    since: next
+    since: 0.38.0
     statement: >-
       Each CI job's runner class is written down with the measurement behind
       it, the jobs that only decide or report (the resolver, the aggregator,
@@ -279,7 +279,7 @@ criteria:
   - id: one-authoritative-leg
     level: standard
     requires: convention
-    since: next
+    since: 0.38.0
     statement: >-
       CI is the single authority for every check: the written record says so
       and that skipping a hook never changes what merges, each leg before CI
@@ -297,7 +297,7 @@ criteria:
   - id: cost-decisions-reopenable
     level: strict
     requires: mechanical
-    since: next
+    since: 0.38.0
     statement: >-
       Every decision that changed what the pipeline spends (a runner resized,
       a leg narrowed or added, a suite moved, a cache turned on) is in a cost
