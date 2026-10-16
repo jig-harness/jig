@@ -247,6 +247,22 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.43.0] - 2026-10-16
+
+### Added
+
+- Opt-in drive timing traces with child-process context and command
+  durations. Enable them with `JIG_TRACE=1` or choose a file with
+  `JIG_TRACE_FILE`; `reap-state.ts` removes trace days older than 14 days.
+
+### Changed
+
+- Share retry and polling policies across the runtime (a retry takes a
+  required classifier and rethrows any error it does not name as transient
+  at once), and release live resources in reverse acquisition order through
+  one process-wide cleanup registry on normal completion, errors and
+  termination signals.
+
 ## [0.42.0] - 2026-10-16
 
 M15 Contracts and error handling, a practice module for the failures and interfaces that callers and stored data depend on.
@@ -2143,7 +2159,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/docomply/jig/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/docomply/jig/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/docomply/jig/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/docomply/jig/compare/v0.39.0...v0.40.0
