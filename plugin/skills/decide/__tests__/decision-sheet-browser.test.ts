@@ -724,6 +724,16 @@ describe("narrow screen", () => {
 describe("picks and the copy tray", () => {
   const KEY = (id: string) => `decision-sheet:${id}`;
   const preview = (page: Page) => page.locator(".tray .preview").innerText();
+  /** The sheet restores stored picks in its own load-time work, so wait for the first restored pick to show before counting anything. */
+  const picksRestored = (page: Page, selector: string) =>
+    page.waitForFunction(
+      (sel) =>
+        [...document.querySelectorAll(sel)].some(
+          (e) => (e as HTMLElement).offsetParent !== null,
+        ),
+      selector,
+      { timeout: 5000 },
+    );
 
   browserIt(
     "a pick on a one-call sheet is kept, shown in the bar, and named in the copy text",
@@ -733,6 +743,7 @@ describe("picks and the copy tray", () => {
       expect(await page.locator('.pick[aria-pressed="true"]').count()).toBe(2);
       expect(await page.locator(".bar-picks b").innerText()).toBe("3");
       await page.reload();
+      await picksRestored(page, '.pick[aria-pressed="true"]');
       expect(await page.locator('.pick[aria-pressed="true"]').count()).toBe(2);
       await page.locator(".bar-picks").click();
       expect(await preview(page)).toBe(
@@ -810,6 +821,7 @@ describe("picks and the copy tray", () => {
       );
       await page.reload();
       // Only call c, which is open and has an option 1, keeps its pick.
+      await picksRestored(page, ".bar-c .p");
       expect(await page.locator(".bar-c .p:visible").count()).toBe(1);
       expect(
         await page.locator('.bar-c[href="#call-c"] .p:visible').textContent(),
