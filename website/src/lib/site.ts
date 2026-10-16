@@ -34,12 +34,14 @@ export function currentRelease(): Release {
   return { version, date: heading.exec(read("CHANGELOG.md"))?.[1] ?? "" };
 }
 
+/* What Jig is and its scope, then the steps of putting it to use, then the
+   reference behind it, each deeper into the detail. */
 export const NAV: readonly { label: string; href: string }[] = [
   { label: "Features", href: "/features/" },
-  { label: "Adopt", href: "/adopt/" },
-  { label: "Modules", href: "/modules/" },
   { label: "Factory", href: "/factory/" },
+  { label: "Adopt", href: "/adopt/" },
   { label: "Install", href: "/plugin/" },
+  { label: "Modules", href: "/modules/" },
   { label: "Skills", href: "/skills/" },
   { label: "Principles", href: "/principles/" },
   { label: "Glossary", href: "/glossary/" },

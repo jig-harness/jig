@@ -81,8 +81,14 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
           }
         </nav>
         <span class="spacer narrow-only"></span>
-        <button type="button" class="theme" data-theme-switch aria-label="Theme: follows your system">
-          <span class="theme-dot" aria-hidden="true"></span><span class="theme-label wide-only">System</span>
+        <button type="button" class="theme" data-theme-switch aria-label="Theme: your system's">
+          <svg class="theme-icon theme-sun" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.5" />
+            <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" />
+          </svg>
+          <svg class="theme-icon theme-moon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
+          </svg>
         </button>
         <div class="search" role="search" data-search hidden>
           <label class="search-field">
@@ -100,7 +106,7 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
           <div id="search-results" class="search-results" role="listbox" hidden data-search-results></div>
         </div>
         <a class="repo" href={REPO_URL} aria-label="Jig on GitHub">
-          <GithubMark /><span class="wide-only">{repoName}</span>
+          <GithubMark /><span class="repo-name wide-only">{repoName}</span>
         </a>
         <details class="menu narrow-only">
           <summary>Menu</summary>
@@ -127,13 +133,13 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
       </div>
       <div class="foot-links">
         <a href="/features/">What you get</a>
+        <a href="/factory/">Jig as a software factory</a>
         <a href="/adopt/">Adoption guide</a>
         <a href="/adopt/greenfield/">Greenfield guide</a>
-        <a href="/modules/">Modules</a>
-        <a href="/factory/">Jig as a software factory</a>
+        <a href="/plugin/">Install the plugin</a>
       </div>
       <div class="foot-links">
-        <a href="/plugin/">Install the plugin</a>
+        <a href="/modules/">Modules</a>
         <a href="/skills/">Skills</a>
         <a href="/principles/">Principles</a>
         <a href="/glossary/">Glossary</a>
@@ -253,26 +259,43 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
-    font: 500 14px var(--sans);
+    flex: none;
     background: transparent;
     color: var(--ink);
     border: 1px solid var(--line);
     border-radius: 999px;
-    padding: 0 12px;
-    min-height: 38px;
+    width: 38px;
+    height: 38px;
+    padding: 0;
     cursor: pointer;
   }
   .theme:hover {
     border-color: var(--line-strong);
     background: var(--card);
   }
-  .theme-dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 1.5px solid currentColor;
-    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+  /* The icon names the theme in effect: the system's until the reader picks. */
+  .theme-icon {
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .theme-moon,
+  :global([data-theme="dark"]) .theme-sun {
+    display: none;
+  }
+  :global([data-theme="dark"]) .theme-moon {
+    display: block;
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .theme-sun {
+      display: none;
+    }
+    :global(:root:not([data-theme="light"])) .theme-moon {
+      display: block;
+    }
   }
 
   .search {
@@ -410,15 +433,11 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
   .narrow-only {
     display: none;
   }
-  /* Between the phone layout and a wide window the switch is its glyph alone. */
-  @media (max-width: 1279px) {
-    .theme-label {
+  /* Below a wide window the repository is its mark alone, so the site's
+     links keep to one row. */
+  @media (max-width: 1199px) {
+    .repo-name {
       display: none;
-    }
-    .theme {
-      width: var(--tap);
-      height: var(--tap);
-      padding: 0;
     }
   }
   @media (max-width: 1079px) {

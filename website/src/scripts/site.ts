@@ -4,60 +4,52 @@
  * a term, and search. Definitions and the search index load on first use.
  */
 
-// ---------- theme: system → light → dark ----------
-const THEMES = ["system", "light", "dark"] as const;
-type Theme = (typeof THEMES)[number];
-const THEME_LABEL: Record<Theme, string> = {
-  system: "System",
-  light: "Light",
-  dark: "Dark",
-};
+// ---------- theme: the system's until the reader picks light or dark ----------
+type Theme = "light" | "dark";
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
-function storedTheme(): Theme {
-  try {
-    const t = localStorage.getItem("jig-theme");
-    return t === "light" || t === "dark" ? t : "system";
-  } catch {
-    return "system";
-  }
+/** The reader's pick, which the page's head script restores from storage
+ *  before it paints; without one the system decides. */
+const restored = document.documentElement.dataset.theme;
+let chosenTheme: Theme | undefined =
+  restored === "light" || restored === "dark" ? restored : undefined;
+
+function themeInEffect(): Theme {
+  return chosenTheme ?? (systemDark.matches ? "dark" : "light");
 }
 
-/** The theme in effect; storage only remembers it across pages. */
-let currentTheme: Theme = storedTheme();
-
-function applyTheme(theme: Theme): void {
-  currentTheme = theme;
-  const root = document.documentElement;
-  if (theme === "system") delete root.dataset.theme;
-  else root.dataset.theme = theme;
-  try {
-    if (theme === "system") localStorage.removeItem("jig-theme");
-    else localStorage.setItem("jig-theme", theme);
-  } catch {
-    // Storage refused (private mode): the choice holds for this page only.
-  }
+/** The switch's icon follows the theme in CSS; its name is set here. */
+function labelThemeSwitch(): void {
+  const theme = themeInEffect();
+  const other = theme === "light" ? "dark" : "light";
   for (const button of document.querySelectorAll<HTMLButtonElement>(
     "[data-theme-switch]",
   )) {
-    const label = button.querySelector(".theme-label");
-    if (label) label.textContent = THEME_LABEL[theme];
     button.setAttribute(
       "aria-label",
-      theme === "system"
-        ? "Theme: follows your system. Switch to light"
-        : `Theme: ${theme}. Switch to ${theme === "light" ? "dark" : "your system's"}`,
+      `Theme: ${theme}${chosenTheme ? "" : " (your system's)"}. Switch to ${other}`,
     );
   }
 }
 
-applyTheme(currentTheme);
+function chooseTheme(theme: Theme): void {
+  chosenTheme = theme;
+  document.documentElement.dataset.theme = theme;
+  try {
+    localStorage.setItem("jig-theme", theme);
+  } catch {
+    // Storage refused (private mode): the choice holds for this page only.
+  }
+  labelThemeSwitch();
+}
+
+labelThemeSwitch();
+systemDark.addEventListener("change", labelThemeSwitch);
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
-  if (target.closest("[data-theme-switch]")) {
-    const next = THEMES[(THEMES.indexOf(currentTheme) + 1) % THEMES.length];
-    if (next) applyTheme(next);
-  }
+  if (target.closest("[data-theme-switch]"))
+    chooseTheme(themeInEffect() === "light" ? "dark" : "light");
 });
 
 // ---------- Copy buttons ----------
