@@ -144,6 +144,10 @@ changes are marked **Breaking** and say what a consumer changes.
 - The website highlights the code in fenced blocks (such as the examples on
   the skill pages) in the site's own colors, in both the light and the dark
   theme.
+- The roadmap's later work gains an evaluation of Bun's own linter and
+  formatter (`bun lint`, `bun fmt`) as a replacement for Biome once they ship
+  in a stable Bun release, with what the move would cost: the custom rules,
+  the ratchet's counting, the rule settings and the module mappings.
 
 ### Changed
 
