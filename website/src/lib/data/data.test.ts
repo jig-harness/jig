@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parseBrownfield, parseGreenfield } from "./adoption.ts";
 import { parseLayers, parseTrackerInterface } from "./config.ts";
 import { parseCriteria } from "./criteria.ts";
+import { parseFeatures } from "./features.ts";
 import { parseFlywheel } from "./flywheel.ts";
 import {
   DESIGN_NOT_BUILT,
@@ -387,4 +388,156 @@ test("the README's factory section and its ways to use Jig", () => {
     "Reference",
     "Shared tooling",
   ]);
+});
+
+describe("FEATURES.md", () => {
+  const f = parseFeatures(read("FEATURES.md"));
+  const skills = new Set(
+    parseSkills(read("plugin/README.md")).map((s) => s.name),
+  );
+  const moduleIds = new Set<string>(MODULE_IDS);
+  const roadmap = parseRoadmap(read("ROADMAP.md"));
+  const open = new Set(roadmap.groups.flatMap((g) => g.items.map((i) => i.n)));
+  const groups = new Set(roadmap.groups.map((g) => g.name));
+
+  test("has an intro and a feature per section, each with prose and a practice", () => {
+    expect(f.intro).toMatch(/modules/);
+    expect(f.features.length).toBeGreaterThanOrEqual(10);
+    for (const x of f.features) {
+      expect(x.body.length, x.title).toBeGreaterThan(120);
+      expect(x.practice, x.title).not.toBe("");
+    }
+  });
+
+  test("every skill, module, roadmap item and roadmap group a feature names exists", () => {
+    for (const x of f.features) {
+      for (const s of x.skills)
+        expect(skills.has(s), `${x.title}: ${s}`).toBe(true);
+      for (const m of x.modules)
+        expect(moduleIds.has(m), `${x.title}: ${m}`).toBe(true);
+      for (const n of x.roadmapItems)
+        expect(open.has(n), `${x.title}: item ${n}`).toBe(true);
+      for (const g of x.roadmapGroups)
+        expect(groups.has(g), `${x.title}: ${g}`).toBe(true);
+    }
+  });
+
+  test("every skill the plugin ships is named by some feature", () => {
+    const named = new Set(f.features.flatMap((x) => x.skills));
+    for (const s of skills) expect(named.has(s), s).toBe(true);
+  });
+
+  test("reads the fields and refuses an unknown one", () => {
+    const one = parseFeatures(`# What you get
+
+Intro.
+
+## A thing
+
+Prose about the thing, long enough to count.
+
+- **Skills:** [\`a\`](plugin/skills/a/SKILL.md), [\`b\`](plugin/agents/b.md)
+- **Practice:** [M1](modules/M1-x/), [M12](modules/M12-y/)
+- **Not built yet:** this (item 4); that (items 14 and 15); more (item 9);
+  the rest (Later)
+`);
+    expect(one.intro).toBe("Intro.");
+    expect(one.features[0]).toMatchObject({
+      title: "A thing",
+      body: "Prose about the thing, long enough to count.",
+      skills: ["a", "b"],
+      modules: ["M1", "M12"],
+      roadmapItems: ["4", "14", "15", "9"],
+      roadmapGroups: ["Later"],
+    });
+    expect(() =>
+      parseFeatures(
+        "# T\n\n## A\n\nProse.\n\n- **Runs:** x\n- **Practice:** M1\n",
+      ),
+    ).toThrow(/field must be one of/);
+    expect(() => parseFeatures("# T\n\n## A\n\nProse.\n")).toThrow(
+      /no Practice/,
+    );
+    expect(() =>
+      parseFeatures(
+        "# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n\nMore.\n\n- **Runs:** x\n",
+      ),
+    ).toThrow(/text after its field list/);
+    expect(() =>
+      parseFeatures(
+        "# T\n\n## A\n\nProse.\n\n- **Skills:** see plugin/skills/a/SKILL.md\n- **Practice:** M1\n",
+      ),
+    ).toThrow(/more than links/);
+    expect(() =>
+      parseFeatures(
+        "# T\n\n## A\n\nProse.\n\n- **Skills:** [`b`](plugin/skills/a/SKILL.md)\n- **Practice:** M1\n",
+      ),
+    ).toThrow(/must link/);
+    for (const hidden of [
+      "- **Practice:** M1\n - **Runs:** x\n",
+      "- **Practice:** M1\n  - **Practice:** M2\n",
+      "- **Practice:** M1\n  * **Skills:** x\n",
+      "- **Practice:** M1\n  1. **Skills:** x\n",
+      "- **Practice:** M1\n  **Runs:** x\n",
+      "- **Practice:** M1\n  + **Runs:** x\n",
+      "- **Practice:** M1\n  1) **Skills:** x\n",
+      "- **Practice:** M1\n  12) **Skills:** x\n",
+      "- **Practice:** M1\n  -\n",
+    ])
+      expect(
+        () => parseFeatures(`# T\n\n## A\n\nProse.\n\n${hidden}`),
+        hidden,
+      ).toThrow(/continues a field/);
+    for (const before of [
+      "+ **Runs:** x\n",
+      "1) **Runs:** x\n",
+      " - **Runs:** x\n",
+      "  - **Practice:** M2\n",
+      "**Skills:** x\n",
+      "    indented\n",
+    ])
+      expect(
+        () =>
+          parseFeatures(
+            `# T\n\n## A\n\nProse.\n\n${before}\n- **Practice:** M1\n`,
+          ),
+        before,
+      ).toThrow(/in its prose/);
+    for (const plain of [
+      "- **Practice:** M1\n  and +1 more, -5 off, 1)x, 2.5 times\n",
+      "- **Practice:** M1\n  covers M2 (see 1) above)\n",
+    ])
+      expect(
+        () => parseFeatures(`# T\n\n## A\n\nProse.\n\n${plain}`),
+        plain,
+      ).not.toThrow();
+  });
+
+  test("refuses a Not built yet parenthetical that is not a roadmap reference", () => {
+    const notBuilt = (text: string) =>
+      parseFeatures(
+        `# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **Not built yet:** ${text}\n`,
+      ).features[0];
+    expect(notBuilt("missing work ( item 999 )")?.roadmapItems).toEqual([
+      "999",
+    ]);
+    expect(notBuilt("more ( Later )")?.roadmapGroups).toEqual(["Later"]);
+    for (const bad of [
+      "missing work (item #999)",
+      "missing work (Item 999)",
+      "missing work (items 1 & 2)",
+      "missing work (item 9; item 10)",
+      "missing work (see item 9)",
+      "missing work (later)",
+      "missing work (Not Yet)",
+      "missing work ()",
+      "missing work item 999",
+      "missing work (item 999",
+      "missing work item 999)",
+      "first (item 9); second (item 999",
+      "first (item 9); second without a reference",
+      "missing work ((item 9))",
+    ])
+      expect(() => notBuilt(bad), bad).toThrow(/must name roadmap work/);
+  });
 });

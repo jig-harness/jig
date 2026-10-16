@@ -31,7 +31,7 @@ kind, its README included.
 | Instructions | the `AGENTS.md` files, and [CONTRIBUTING.md](../CONTRIBUTING.md) they point to | in the pull request that changes the rule |
 | Terms | [GLOSSARY.md](../GLOSSARY.md) | a term enters in the commit that first uses it |
 | Reference | every document no other row places: `SKILL.md`, [CONFIGURATION.md](../plugin/CONFIGURATION.md), the skills' references, and the READMEs outside the doctrine and plans directories | describes what exists now; changes with what it describes |
-| Doctrine | [modules/](../modules/README.md), [principles/](../principles/README.md), [profiles/](../profiles/README.md), [adoption/](../adoption/brownfield.md), [FACTORY.md](../FACTORY.md), [dispositions.md](dispositions.md) | rewritten to stay current, never appended to |
+| Doctrine | [modules/](../modules/README.md), [principles/](../principles/README.md), [profiles/](../profiles/README.md), [adoption/](../adoption/brownfield.md), [FACTORY.md](../FACTORY.md), [FEATURES.md](../FEATURES.md), [dispositions.md](dispositions.md) | rewritten to stay current, never appended to |
 | Plans | [ROADMAP.md](../ROADMAP.md), [design/](../design/README.md) | open work only; an item and its design leave when it is finished |
 | History | [CHANGELOG.md](../CHANGELOG.md) (written from [change notes](../changes/README.md) by the release step), the audit's dated [calibration runs](../plugin/skills/audit/calibration/), git, pull requests | appended to; never edited to state what is true now |
 

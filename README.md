@@ -73,6 +73,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | Path | What it holds |
 |------|---------------|
 | [GLOSSARY.md](GLOSSARY.md) | Plain-language definitions of every term of art |
+| [FEATURES.md](FEATURES.md) | What a team gets from Jig today: each feature with the skills that run it, the practice it carries out and what is not built yet |
 | [FACTORY.md](FACTORY.md) | Jig as a software factory: the scaffolding it runs on, and its stations at the design-and-planning and execution levels |
 | [ROADMAP.md](ROADMAP.md) | Open work, in priority order |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |

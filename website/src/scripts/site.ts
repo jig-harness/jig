@@ -219,6 +219,7 @@ function loadIndex(): Promise<Entry[]> {
 
 const KIND_RANK: Record<string, number> = {
   Page: 0,
+  Feature: 1,
   Module: 1,
   Level: 2,
   Station: 3,

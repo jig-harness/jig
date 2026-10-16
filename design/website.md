@@ -27,7 +27,8 @@ nothing the site states is typed twice.
   parts its page lays out: a module README into its problem, invariant,
   three levels, adoption steps, status and mechanics sections; the criteria
   YAML; `profiles.yaml` with the profiles README; FACTORY.md into its jobs,
-  levels and stations; the plugin README's skill tables; the glossary; the
+  levels and stations; FEATURES.md into a feature per section with its
+  skills, modules and roadmap items; the plugin README's skill tables; the glossary; the
   changelog and roadmap; M8's flywheel. `website/src/lib/data/index.ts`
   loads each once per build. The parsers are pure functions over text, and
   `data.test.ts` runs them against the real files, so a document whose
@@ -56,6 +57,7 @@ nothing the site states is typed twice.
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
 | `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement, two reader paths, the compact module map, the factory miniature, the limits, the enforcement ladder, the profiles, the live audit, the ways to use Jig and the principles |
+| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md | what a team gets, one section per feature: its prose, the skills that run it as commands, the modules that state the practice as chips, and what is not built yet linked to its roadmap item |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
 | `/modules/<Mn>/mappings/` | mappings.md | the whole file, for links that name it |
@@ -66,7 +68,7 @@ nothing the site states is typed twice.
 | `/adopt/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
 | `/plugin/`, `/plugin/configuration/` | plugin/README.md, CONFIGURATION.md | five stations from nothing installed to a first audit; the rest of the README folded; the configuration reference |
 | `/skills/`, `/skills/<name>/`, `/skills/<name>/skill/` | plugin README tables, each skill's README or SKILL.md | what each skill runs (stations and modules), the stations no skill runs, each skill's own page, and its agent contract where the page is its README |
-| `/principles/`, `/principles/<n>/` | principles/ | each principle's statement, why and consequences; principle 4 draws the ladder |
+| `/principles/`, `/principles/<n>/` | principles/ | the index shows each principle's statement and the first paragraph of its why, with a link to where it is visible on the site; each principle's page has its statement, why and consequences; principle 4 draws the ladder |
 | `/glossary/` | GLOSSARY.md | every term in its group, an anchor per term, a find filter |
 | `/whats-new/` | CHANGELOG.md, ROADMAP.md | every release beside the roadmap, each item foldable and anchored (`#rm-item-<n>`) |
 | `/glossary.json`, `/search.json` | the same data | term definitions for the popovers, and the search index |
@@ -209,8 +211,9 @@ linter would otherwise report them.
 ### Keeping it current
 
 A document change reaches the site on the next deploy, but the site's
-hand-written copy, a parser that finds a section by its heading, and a page
-that lists modules or skills by hand do not follow it. The
+hand-written copy, a parser that finds a section by its heading, a page
+that lists modules or skills by hand, and FEATURES.md, which describes the
+skills and the roadmap, do not follow it. The
 [`website-update`](../.claude/skills/website-update/SKILL.md) skill, run
 with `/website-update`, reviews every commit to `main` after the one
 recorded in `website/content-sync.yaml` (`bun scripts/website-sync.ts`

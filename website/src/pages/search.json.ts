@@ -3,6 +3,7 @@
 // filters it (scripts/site.ts).
 import {
   factory,
+  features,
   glossary,
   moduleDoc,
   modules,
@@ -10,6 +11,7 @@ import {
 } from "../lib/data/index.ts";
 import { type Actor, jobsByModule } from "../lib/data/factory.ts";
 import { LEVEL_NAME, LEVELS } from "../lib/data/modules.ts";
+import { headingId } from "../lib/view.ts";
 
 const plain = (md: string) =>
   md
@@ -29,6 +31,11 @@ const JOB_LABEL: Record<string, string> = {
 };
 
 const PAGES: [string, string, string][] = [
+  [
+    "What you get",
+    "/features/",
+    "features what you get tooling skills gates audit learning loop reflection change notes changelog tracker configuration launcher",
+  ],
   [
     "Install and configure the plugin",
     "/plugin/",
@@ -168,6 +175,15 @@ const jobEntries = (): Entry[] =>
     };
   });
 
+const featureEntries = (): Entry[] =>
+  features().features.map((x) => ({
+    kind: "Feature",
+    label: x.title,
+    sub: clip(plain(x.body)),
+    href: `/features/#${headingId(x.title)}`,
+    key: `${x.title} ${plain(x.body)} ${x.skills.join(" ")} ${x.modules.join(" ")}`.toLowerCase(),
+  }));
+
 const skillEntries = (): Entry[] =>
   skills().map((s) => ({
     kind: s.agent ? "Agent" : "Skill",
@@ -192,6 +208,7 @@ export function GET() {
     ...moduleEntries(),
     ...stationEntries(),
     ...jobEntries(),
+    ...featureEntries(),
     ...skillEntries(),
     ...termEntries(),
   ];

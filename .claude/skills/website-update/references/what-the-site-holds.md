@@ -19,7 +19,7 @@ Ask these of every `content` commit. One yes is enough to look closer.
    paragraph's opening words changed where a parser looks for them.
 3. **Did it add, rename or remove a kind of thing** the site lists: a
    module, skill, agent, principle, profile, scaffolding job, station,
-   configuration layer, glossary group?
+   configuration layer, glossary group, feature in FEATURES.md?
 4. **Did it renumber, finish or remove a roadmap item** a page links to
    (`#rm-item-<n>`) or describes as not built yet?
 5. **Did it change the audit's renderer, its report or record format, or the
@@ -44,6 +44,15 @@ Ask these of every `content` commit. One yes is enough to look closer.
 - **Views** (`website/src/lib/view.ts`, `skills-view.ts`, `map.ts`): notes
   per scaffolding job and per module, which skills run at every stage, the
   number words (they stop at twelve), the review-arbiter special case.
+- **What you get** (`website/src/pages/features.astro`): nothing typed by
+  hand; the page is FEATURES.md, and its tests fail when a feature names a
+  skill, module or roadmap item that no longer exists, or when a skill the
+  plugin ships is named by no feature. The document itself goes stale when a
+  skill, a store or an adapter is added, or when a roadmap item it names as
+  not built is finished: then the feature's text and its "Not built yet"
+  field are what to edit (SKILL.md § Phase 3).
+- **Principles** (`website/src/pages/principles/index.astro`): where each
+  principle is said to be visible on the site, by number, with the link.
 - **Adoption** (`website/src/pages/adopt/*.astro`): the kickoff phase count,
   the step count, which step carries the audit command.
 - **Skills and plugin** (`website/src/pages/skills/**`,
@@ -82,10 +91,11 @@ The parsers and what they read:
 | `modules.ts` | `modules/README.md`, each module README and `mappings.md` | the module table's columns; `**What problem this solves.**`, `## Invariant` with a quote, `## Maturity levels` with Lite, Standard and Strict items, `## Adoption steps`, `## Status`; mapping sections titled by CI provider |
 | `criteria.ts` | `plugin/skills/audit/criteria/M*.yaml` | the criteria keys, levels and `requires` values |
 | `profiles.ts` | `plugin/skills/audit/profiles.yaml`, `profiles/README.md` | `version: 1`; `## Choosing` table; a section per profile; a line starting "Graduate" |
-| `principles.ts` | `principles/` | `# N — Title`, `**Why.**`, `**Consequences**`, the index table's third column |
+| `principles.ts` | `principles/` | `# N — Title`, `**Why.**`, `**Consequences**`, the index table's third column; the index page also shows the README's first paragraph |
 | `skills.ts` | `plugin/README.md` | the `Skill` and `Agent` tables; the paragraph on how skills reach the tracker |
 | `factory.ts` | `FACTORY.md` | its section titles, the jobs, stations and levels tables and their column counts, the paragraphs it finds by their opening words |
 | `readme.ts` | `README.md` | "Jig as a software factory" and "Ways to use" |
+| `features.ts` | `FEATURES.md` | one `##` section per feature; a list of `**Skills:**`, `**Practice:**` and `**Not built yet:**` fields after the prose, skills by their link paths, modules by id, roadmap items as "item N"; an unknown field or a feature without prose or a practice fails the build |
 | `adoption.ts` | `adoption/*.md` | the brownfield sections; the greenfield heading that names the phase count |
 | `flywheel.ts` | M8's README | "The flywheel", "The two companion cycles", the "Both cycles" paragraph |
 | `config.ts` | `plugin/CONFIGURATION.md` | the "Configuration layers" table |

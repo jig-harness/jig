@@ -10,6 +10,7 @@ const docs = defineCollection({
     pattern: [
       "README.md",
       "FACTORY.md",
+      "FEATURES.md",
       "GLOSSARY.md",
       "CHANGELOG.md",
       "ROADMAP.md",

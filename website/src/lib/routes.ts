@@ -23,9 +23,11 @@ function principleNumber(file: string): string {
   return String(Number.parseInt(file, 10));
 }
 
-const FIXED: Record<string, string> = {
+/** The documents whose page is one fixed route, by repository path. */
+export const FIXED: Readonly<Record<string, string>> = {
   "README.md": "/",
   "FACTORY.md": "/factory/",
+  "FEATURES.md": "/features/",
   "GLOSSARY.md": "/glossary/",
   "CHANGELOG.md": "/whats-new/",
   "ROADMAP.md": "/whats-new/#roadmap",

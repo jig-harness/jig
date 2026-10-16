@@ -92,7 +92,7 @@ function inlineReference(node: MdNode, definitions: Map<string, MdNode>): void {
 }
 
 /** What a site page is called when a link names it by its file. */
-const PAGE_NAMES: Record<string, string> = {
+export const PAGE_NAMES: Readonly<Record<string, string>> = {
   "/": "the overview",
   "/adopt/": "the adoption guide",
   "/adopt/greenfield/": "the greenfield guide",
@@ -101,6 +101,9 @@ const PAGE_NAMES: Record<string, string> = {
   "/whats-new/": "What's new",
   "/whats-new/#roadmap": "the roadmap",
   "/factory/": "the factory page",
+  "/features/": "What you get",
+  "/plugin/extending/": "the extending page",
+  "/adopt/#profiles": "the profiles",
   "/modules/": "the module map",
   "/principles/": "the principles",
   "/glossary/": "the glossary",

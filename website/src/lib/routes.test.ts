@@ -9,6 +9,7 @@ const repoRoot = join(import.meta.dir, "../../..");
 describe("siteRoute", () => {
   test("places the documents the site has a page for", () => {
     expect(siteRoute("GLOSSARY.md")).toBe("/glossary/");
+    expect(siteRoute("FEATURES.md")).toBe("/features/");
     expect(siteRoute("modules/M2-generated-artifact-freshness/")).toBe(
       "/modules/M2/",
     );

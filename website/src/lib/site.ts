@@ -35,6 +35,7 @@ export function currentRelease(): Release {
 }
 
 export const NAV: readonly { label: string; href: string }[] = [
+  { label: "Features", href: "/features/" },
   { label: "Adopt", href: "/adopt/" },
   { label: "Modules", href: "/modules/" },
   { label: "Factory", href: "/factory/" },

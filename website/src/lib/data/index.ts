@@ -11,6 +11,7 @@ import { parseBrownfield, parseGreenfield } from "./adoption.ts";
 import { type Criterion, parseCriteria } from "./criteria.ts";
 import { parseLayers, parseTrackerInterface } from "./config.ts";
 import { parseFactory } from "./factory.ts";
+import { parseFeatures } from "./features.ts";
 import { parseFlywheel } from "./flywheel.ts";
 import {
   clip,
@@ -132,6 +133,8 @@ export function toolSummary(name: string): string {
 }
 
 export const factory = once(() => parseFactory(read("FACTORY.md")));
+
+export const features = once(() => parseFeatures(read("FEATURES.md")));
 
 export const brownfield = once(() =>
   parseBrownfield(read("adoption/brownfield.md")),

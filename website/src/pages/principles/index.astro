@@ -1,26 +1,63 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { principles } from "../../lib/data/index.ts";
+import { md } from "../../lib/markdown.ts";
+import { read } from "../../lib/site.ts";
+import { firstParagraph, withoutTitle } from "../../lib/source.ts";
 import { countWord } from "../../lib/view.ts";
 
-const count = principles().length;
+const all = principles();
+const count = all.length;
+const introHtml = await md(firstParagraph(withoutTitle(read("principles/README.md"))).replace(/:$/, "."), "principles/README.md");
+
+// Site-owned copy: where each principle is visible on the site, by its number.
+const SEEN: Record<string, { label: string; href: string }> = {
+  "1": { label: "A module's mappings: M1's gates per hook manager and CI provider", href: "/modules/M1/mappings/" },
+  "2": { label: "The profiles, and the module map's profile switch", href: "/adopt/#profiles" },
+  "3": { label: "The factory: what Jig provides to build the scaffolding", href: "/factory/" },
+  "4": { label: "The enforcement ladder, drawn on the principle's page", href: "/principles/4/" },
+  "5": { label: "The miss → lens flywheel on the learning-loop page", href: "/factory/learning-loop/#learning" },
+  "6": { label: "The audit, first among what you get", href: "/features/#an-audit-of-where-you-stand" },
+  "7": { label: "The glossary, and a definition beside every term", href: "/glossary/" },
+};
+
+const list = await Promise.all(
+  all.map(async (p) => ({
+    ...p,
+    statementHtml: await md(p.statement, p.file),
+    whyHtml: await md(firstParagraph(p.why), p.file),
+    seen: SEEN[p.n],
+  })),
+);
 ---
 
 <Base title="Principles" description={`The ${countWord(count)} principles behind every module.`}>
-  <section class="page wrap" style="max-width:calc(860px + 2 * var(--gutter))">
-    <span class="eyebrow">{countWord(count, true)} principles</span>
-    <h1 class="display">The principles behind every module.</h1>
+  <section class="page wrap" style="max-width:calc(900px + 2 * var(--gutter))">
+    <div class="intro">
+      <span class="eyebrow">{countWord(count, true)} principles</span>
+      <h1 class="display">The principles behind every module.</h1>
+      <div class="prose" set:html={introHtml} />
+    </div>
     <ol class="list">
       {
-        principles().map((p) => (
-          <li>
-            <a href={`/principles/${p.n}/`}>
-              <span class="num">{p.n}</span>
-              <span class="text">
-                <span class="title">{p.title}</span>
-                <span class="muted">{p.oneLiner}</span>
-              </span>
-            </a>
+        list.map((p) => (
+          <li id={`p-${p.n}`}>
+            <span class="num">0{p.n}</span>
+            <div class="text">
+              <h2 class="title"><a href={`/principles/${p.n}/`}>{p.title}</a></h2>
+              <span class="one">{p.oneLiner}</span>
+              <div class="prose statement" set:html={p.statementHtml} />
+              {p.whyHtml && (
+                <div class="why">
+                  <span class="label">Why</span>
+                  <div class="prose" set:html={p.whyHtml} />
+                </div>
+              )}
+              <div class="links">
+                <a href={`/principles/${p.n}/`}>Consequences and the whole principle →</a>
+                {p.seen && <a class="seen" href={p.seen.href}>{p.seen.label} →</a>}
+              </div>
+            </div>
           </li>
         ))
       }
@@ -31,7 +68,7 @@ const count = principles().length;
 <style>
   h1 {
     font-size: clamp(30px, 3.2vw, 46px);
-    margin: 12px 0 24px;
+    margin: 12px 0 8px;
   }
   .list {
     list-style: none;
@@ -39,29 +76,82 @@ const count = principles().length;
     padding: 0;
   }
   li {
-    border-top: 1px solid var(--line);
-  }
-  a {
     display: grid;
-    grid-template-columns: 36px 1fr;
-    gap: 10px;
-    padding: 14px 0;
-    text-decoration: none;
-    color: var(--ink);
+    grid-template-columns: 64px 1fr;
+    gap: 12px;
+    border-top: 1px solid var(--line);
+    padding: 26px 0 22px;
+    scroll-margin-top: 80px;
   }
-  a:hover .title {
-    color: var(--accent-hover);
+  .num {
+    font-family: var(--serif);
+    font-size: clamp(30px, 3vw, 40px);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: var(--muted);
   }
   .text {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 8px;
+    min-width: 0;
   }
   .title {
-    font-weight: 600;
-    font-size: 18px;
-    text-decoration: underline;
-    text-decoration-color: var(--accent);
-    text-underline-offset: 3px;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(22px, 2.2vw, 28px);
+    line-height: 1.2;
+    margin: 0;
+  }
+  .title a {
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .title a:hover {
+    color: var(--accent-hover);
+  }
+  .one {
+    font-size: 15.5px;
+    color: var(--muted);
+  }
+  .statement {
+    margin-top: 6px;
+  }
+  .statement :global(p) {
+    margin-bottom: 0;
+  }
+  .why {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 10px;
+    align-items: baseline;
+    margin-top: 4px;
+    padding-left: 14px;
+    border-left: 2px solid var(--line);
+    font-size: 15px;
+  }
+  .why .label {
+    font-size: 12px;
+  }
+  .why :global(p) {
+    margin-bottom: 0;
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    margin-top: 6px;
+    font-weight: 500;
+    font-size: 15px;
+  }
+  .seen {
+    color: var(--muted);
+  }
+  @media (max-width: 640px) {
+    li {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
   }
 </style>

@@ -1,0 +1,198 @@
+---
+import ModChip from "../components/ModChip.astro";
+import SideIndex from "../components/SideIndex.astro";
+import StatusMark from "../components/StatusMark.astro";
+import Base from "../layouts/Base.astro";
+import { features, roadmap, skills } from "../lib/data/index.ts";
+import { md, mdInline } from "../lib/markdown.ts";
+import { REPO_URL } from "../lib/routes.ts";
+import { headingId } from "../lib/view.ts";
+
+const FROM = "FEATURES.md";
+const f = features();
+const introHtml = await md(f.intro, FROM);
+const commandOf = new Map(skills().map((s) => [s.name, s.command]));
+const itemTitle = new Map(
+  roadmap().groups.flatMap((g) =>
+    g.items.map((i) => [i.n, i.title.replace(/`/g, "")] as const),
+  ),
+);
+const groupId = new Map(roadmap().groups.map((g) => [g.name, g.id]));
+// The Practice field beside its module chips: what it says besides the module
+// links the chips already show.
+const besideModules = (practice: string) =>
+  practice
+    .replace(/\[M\d+\]\([^)]*\)/g, "")
+    .replace(/^[\s,;]+|[\s,;]+$/g, "")
+    .replace(/(?:\s*,)+\s*/g, ", ");
+const list = await Promise.all(
+  f.features.map(async (x, i) => ({
+    ...x,
+    n: i + 1,
+    id: headingId(x.title),
+    bodyHtml: await md(x.body, FROM),
+    practiceHtml: await mdInline(besideModules(x.practice), FROM),
+    notBuiltHtml: x.notBuilt ? await mdInline(x.notBuilt, FROM) : "",
+    runs: x.skills.map((name) => ({ name, command: commandOf.get(name) ?? name })),
+    items: x.roadmapItems.map((n) => ({ n, title: itemTitle.get(n) ?? "" })),
+    groups: x.roadmapGroups.map((name) => ({ name, id: groupId.get(name) ?? "" })),
+  })),
+);
+---
+
+<Base title="What you get" description="What a team can run, install or copy from Jig today, each with the practice it carries out and what is not built yet.">
+  <section class="page wrap with-side">
+    <SideIndex title={`${list.length} things you get`} items={list.map((x) => ({ label: x.title, href: `#${x.id}`, num: String(x.n) }))} />
+    <article class="main" style="--main-max:820px">
+      <span class="eyebrow">What you get · FEATURES.md</span>
+      <h1 class="display">What a team gets from Jig, and what runs it.</h1>
+      <div class="prose lede-block" set:html={introHtml} />
+      {
+        list.map((x) => (
+          <section class="feature" id={x.id}>
+            <h2><span class="num">{x.n}</span>{x.title}</h2>
+            <div class="prose" set:html={x.bodyHtml} />
+            <dl class="rail">
+              {x.runs.length > 0 && (
+                <div class="row">
+                  <dt>Runs as</dt>
+                  <dd class="runs">
+                    {x.runs.map((r) => (
+                      <a class="run" href={`/skills/${r.name}/`}><code>{r.command}</code></a>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              <div class="row">
+                <dt>Practice</dt>
+                <dd class="chips">
+                  {x.modules.map((m) => <ModChip id={m} />)}
+                  {x.practiceHtml && <span class="practice" set:html={x.practiceHtml} />}
+                </dd>
+              </div>
+              {x.notBuiltHtml && (
+                <div class="row todo">
+                  <dt><StatusMark kind="todo" />Not built yet</dt>
+                  <dd>
+                    <span set:html={x.notBuiltHtml} />
+                    <span class="items">
+                      {x.items.map((it) => (
+                        <a href={`/whats-new/#rm-item-${it.n}`}>Roadmap item {it.n}{it.title ? `: ${it.title}` : ""} →</a>
+                      ))}
+                      {x.groups.map((g) => (
+                        <a href={`/whats-new/#${g.id}`}>Roadmap, {g.name} →</a>
+                      ))}
+                    </span>
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </section>
+        ))
+      }
+      <p class="source"><a class="out" href={`${REPO_URL}/blob/main/${FROM}`}>Source: {FROM}</a></p>
+    </article>
+  </section>
+</Base>
+
+<style>
+  h1 {
+    font-size: clamp(30px, 3.2vw, 46px);
+    margin: 12px 0 18px;
+  }
+  .lede-block {
+    font-size: 17px;
+    margin-bottom: 8px;
+  }
+  .feature {
+    border-top: 1px solid var(--line);
+    padding: 28px 0 8px;
+    scroll-margin-top: 80px;
+  }
+  .feature h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(22px, 2.2vw, 28px);
+    line-height: 1.2;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .feature .num {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+    min-width: 1.6em;
+  }
+  .rail {
+    margin: 4px 0 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 14.5px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 108px 1fr;
+    gap: 10px;
+    align-items: baseline;
+  }
+  dt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--sans);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  dd {
+    margin: 0;
+    min-width: 0;
+  }
+  .runs,
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    align-items: center;
+  }
+  .run {
+    text-decoration: none;
+  }
+  .run code {
+    font-size: 13px;
+  }
+  .run:hover code {
+    color: var(--accent-hover);
+  }
+  .practice {
+    font-size: 14.5px;
+  }
+  .todo dd {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--muted);
+  }
+  .items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    font-size: 14px;
+  }
+  .source {
+    margin-top: 32px;
+    font-size: 14px;
+  }
+  @media (max-width: 640px) {
+    .row {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
+  }
+</style>

@@ -126,6 +126,7 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
         </span>
       </div>
       <div class="foot-links">
+        <a href="/features/">What you get</a>
         <a href="/adopt/">Adoption guide</a>
         <a href="/adopt/greenfield/">Greenfield guide</a>
         <a href="/modules/">Modules</a>
@@ -223,14 +224,14 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
   .nav {
     display: flex;
     gap: 2px;
-    flex: 1;
+    flex: 1 1 auto;
     flex-wrap: wrap;
   }
   .nav a {
     text-decoration: none;
     font-weight: 500;
     font-size: 15px;
-    padding: 6px 10px;
+    padding: 6px 9px;
     border-radius: var(--r);
     color: var(--ink);
     white-space: nowrap;
@@ -276,7 +277,7 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
 
   .search {
     position: relative;
-    width: clamp(230px, 21vw, 300px);
+    width: clamp(200px, 18vw, 300px);
   }
   .search-field {
     display: flex;
@@ -408,6 +409,17 @@ const pageTitle = title === "Jig" ? "Jig — delivery practices for teams buildi
 
   .narrow-only {
     display: none;
+  }
+  /* Between the phone layout and a wide window the switch is its glyph alone. */
+  @media (max-width: 1279px) {
+    .theme-label {
+      display: none;
+    }
+    .theme {
+      width: var(--tap);
+      height: var(--tap);
+      padding: 0;
+    }
   }
   @media (max-width: 1079px) {
     .wide-only {
