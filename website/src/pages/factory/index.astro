@@ -18,7 +18,7 @@ const mapHtml = await mdInline(f.intro[f.intro.length - 1] ?? "", "FACTORY.md");
 
 <Base title="Jig as a software factory" description="A factory of agents runs on scaffolding: what Jig provides to build it, and the stations that stand on it.">
   <section class="page wrap">
-    <div class="intro-row">
+    <div class="intro-row bleed">
       <div class="intro">
         <span class="eyebrow">Jig as a software factory · FACTORY.md</span>
         <h1 class="display">A factory of agents runs on scaffolding. The stations stand on it.</h1>
@@ -26,7 +26,7 @@ const mapHtml = await mdInline(f.intro[f.intro.length - 1] ?? "", "FACTORY.md");
         <p class="muted small" set:html={mapHtml} />
         <p class="muted small">The same skills, sorted by what a team gets from each: <a href="/features/">What you get →</a></p>
       </div>
-      <span class="intro-plate"><Plate name="hall" /></span>
+      <span class="intro-plate"><Plate name="hall" tone={0.72} /></span>
     </div>
     <FactoryNav current="overview" />
     <CrossSection variant="full" />

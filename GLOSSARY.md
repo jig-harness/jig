@@ -1032,6 +1032,10 @@ make, use the entry's term instead.
   making web pages usable by people with disabilities. Its levels A, AA and
   AAA are increasingly strict; Jig's website holds every text color pair to
   the AA contrast minimum in both themes ([design/website.md](design/website.md)).
+- **Bleed** — a picture that runs past the edge of the page or window
+  instead of stopping at its column, a term taken from print. On Jig's
+  website a bleed plate sits larger and behind a page's intro, its edges
+  fading into the page ([design/website.md](design/website.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`
   writes it to a snapshot file and *Refocus* puts it back in front of an agent

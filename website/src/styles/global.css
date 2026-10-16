@@ -624,6 +624,43 @@ a.out::after {
   }
 }
 
+/* A bleed: the plate leaves the column, larger and behind the intro, its
+   frame reaching past the window's right edge and feathered on its left,
+   right and lower edges so the drawing eases into the page from beyond it. Add `bleed` to an `.intro-row`; below 1000px it
+   is an ordinary intro and the plate drops out. */
+@media (width > 1000px) {
+  .page:has(.intro-row.bleed) {
+    overflow-x: clip;
+  }
+
+  .intro-row.bleed {
+    position: relative;
+    min-height: clamp(380px, 34vw, 520px);
+  }
+
+  .intro-row.bleed .intro {
+    position: relative;
+    z-index: 1;
+    flex: 0 1 56%;
+  }
+
+  .intro-row.bleed .intro-plate {
+    --bleed-w: min(58vw, 940px);
+    position: absolute;
+    top: 50%;
+    right: calc(-1 * var(--gutter) - 0.08 * var(--bleed-w));
+    width: var(--bleed-w);
+    translate: 0 -50%;
+    pointer-events: none;
+    -webkit-mask-image:
+      linear-gradient(to right, transparent 8%, #000 46%, #000 68%, transparent 92%), linear-gradient(to bottom, #000 72%, transparent);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(to right, transparent 8%, #000 46%, #000 68%, transparent 92%), linear-gradient(to bottom, #000 72%, transparent);
+    mask-composite: intersect;
+  }
+}
+
 .crumbs {
   font-size: 14px;
   display: flex;

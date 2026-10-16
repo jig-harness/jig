@@ -94,6 +94,11 @@ nothing the site states is typed twice.
   index, the ladder, the section head, the plate, the live audit specimen.
   A page that opens with a plate beside its intro uses `.intro-row` and
   `.intro-plate` (`global.css`); the plate drops out below 1000 pixels.
+  Adding `bleed` to the row makes the plate a
+  [bleed](../GLOSSARY.md) hero: larger, behind the
+  intro, its frame reaching past the window's right edge and feathered on
+  its left, right and lower edges so the drawing eases into the page from
+  beyond it (the factory overview uses it).
   Each closed set (levels, rungs, actors, scaffolding jobs) has one mapping
   site-wide and is never told apart by color alone.
 - **Marks**: the frame mark (`public/brand/jig-frame-*.svg`, inlined in the

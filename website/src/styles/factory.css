@@ -25,6 +25,32 @@
   gap: 20px clamp(28px, 4vw, 56px);
   align-items: start;
 }
+/* A block of the overview's close: its text, and its plate in a column of
+   the same width on every block. The plate drops out below 800px. */
+.bound-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(260px, 34%, 400px);
+  gap: clamp(28px, 5vw, 72px);
+  align-items: start;
+}
+.bound-text {
+  max-width: 76ch;
+}
+.bound-text > .small-p:first-child {
+  margin-top: 0;
+}
+.bound-plate {
+  display: block;
+  align-self: center;
+}
+@media (max-width: 800px) {
+  .bound-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bound-plate {
+    display: none;
+  }
+}
 .th {
   font-size: 12px;
   letter-spacing: 0.06em;

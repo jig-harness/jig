@@ -1,5 +1,6 @@
 ---
-// The learning loop, what stays with a person, and what Jig leaves to the platform.
+// The learning loop, what stays with a person, and what Jig leaves to the
+// platform: one above the other, each its text beside its plate.
 import "../../styles/factory.css";
 import Plate from "../Plate.astro";
 import SectionHead from "../SectionHead.astro";
@@ -12,20 +13,34 @@ const personItems = await Promise.all(f.person.map((p) => inline(p)));
 const platformItems = await Promise.all(f.platform.map(async (p) => ({ ...p, html: await inline(p.body) })));
 ---
 
-  <SectionHead id="learning" label="The learning loop, around both levels"><Plate name="flywheel" width="150px" /></SectionHead>
-  <p class="lead" set:html={await inline(f.learning)} />
-  <p><a href="/factory/learning-loop/">The miss → lens flywheel, step by step →</a></p>
+<div class="bound">
+  <SectionHead id="learning" label="The learning loop, around both levels" />
+  <div class="bound-body">
+    <div class="bound-text">
+      <p class="small-p" set:html={await inline(f.learning)} />
+      <p class="small-p"><a href="/factory/learning-loop/">The miss → lens flywheel, step by step →</a></p>
+    </div>
+    <span class="bound-plate"><Plate name="flywheel" /></span>
+  </div>
+</div>
 
-  <div class="two">
-    <div>
-      <SectionHead id="person" label="What stays with a person"><Plate name="lever" width="110px" /></SectionHead>
+<div class="bound">
+  <SectionHead id="person" label="What stays with a person" />
+  <div class="bound-body">
+    <div class="bound-text">
       <p class="small-p" set:html={await inline(f.personLead)} />
       <ul class="marked">
         {personItems.map((html) => <li><StatusMark kind="person" /><span class="vh">Stays with a person: </span><span set:html={html} /></li>)}
       </ul>
     </div>
-    <div>
-      <SectionHead id="platform" label="What Jig leaves to the platform" note="the scope line, and what crosses it"><Plate name="slab" width="140px" /></SectionHead>
+    <span class="bound-plate"><Plate name="lever" /></span>
+  </div>
+</div>
+
+<div class="bound">
+  <SectionHead id="platform" label="What Jig leaves to the platform" />
+  <div class="bound-body">
+    <div class="bound-text">
       <p class="small-p" set:html={await inline(f.platformLead)} />
       <ul class="platform-list">
         {
@@ -38,4 +53,6 @@ const platformItems = await Promise.all(f.platform.map(async (p) => ({ ...p, htm
       </ul>
       <p class="muted small">Each item is a requirement a module states, not a missing feature: Jig names what the repository needs from the platform and stops there.</p>
     </div>
+    <span class="bound-plate"><Plate name="slab" /></span>
   </div>
+</div>
