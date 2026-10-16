@@ -117,11 +117,19 @@ export interface IssueComments {
   comments: CommentFact[];
 }
 
-/** A started issue of a label (an epic) and the last activity on each child. */
+/**
+ * A started issue of a label (an epic), who and what it belongs to, and the
+ * state and last activity of each child.
+ */
 export interface StartedIssueActivity {
   epic: string;
   startedAt: string;
-  children: Array<{ issue: string; updatedAt: string }>;
+  /** The tracker project the epic sits in; `null` = none. */
+  project: string | null;
+  /** The epic's assignee; `null` = nobody. */
+  assignee: string | null;
+  labels: string[];
+  children: Array<{ issue: string; updatedAt: string; stateType: string }>;
 }
 
 /** An issue in a debt ledger. */

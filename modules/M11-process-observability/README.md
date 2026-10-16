@@ -111,7 +111,7 @@ the review process it runs, as scripts a repository can call on its own:
 | `loop-metrics.ts` | One pull request's review-loop cost: rounds, threads, the outcome mix, and how much of the final change landed after review began. A drive prints it when it stops |
 | `defect-escape.ts` | Whether findings the loop declined to fix (`wont-fix`, `deferred`) came back as defects |
 | `fractal-metrics.ts` | The cross-PR scoreboard: those figures over a window, each judged against a recorded baseline whose source document must still contain it, so a stale baseline is caught |
-| `fleet-health.ts` | Ceremony against progress: review rounds and follow-ups weighed against merged product work, with the thresholds in the repository's own fleet-health file |
+| `fleet-health.ts` | Ceremony against progress: review rounds and follow-ups weighed against merged product work, with the thresholds in the repository's own fleet-health file. Beside the stalled-epic signal it keeps an [epic census](../../GLOSSARY.md): started epics that are finished but still open, blocked on a last child or two, or owned by nobody. The census is read-only, feeds the closure step, and repeats that closing needs an acceptance verdict |
 
 Their configuration is `fleet_health` and `drive.escape_baseline_doc` in the
 [configuration reference](../../plugin/CONFIGURATION.md#fleet_health).

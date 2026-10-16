@@ -261,7 +261,8 @@ function checkTaxonomy(value: unknown): void {
   }
 }
 
-function isDistinctNonEmptyList(value: unknown): boolean {
+/** The shape every `review.taxonomy` list field must have; one rule for every reader. */
+export function isDistinctNonEmptyList(value: unknown): boolean {
   return (
     Array.isArray(value) &&
     value.length > 0 &&

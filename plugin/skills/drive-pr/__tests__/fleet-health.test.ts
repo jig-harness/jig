@@ -21,7 +21,14 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import yaml from "js-yaml";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
@@ -36,6 +43,7 @@ import {
 } from "../scripts/fleet-health.ts";
 import {
   activeSignals,
+  lifecycleTargets,
   buildReport,
   type CommentFact,
   ceremonyRatioSignal,
@@ -55,6 +63,9 @@ import {
   renderReport,
   reviewCarouselSignal,
   stuckEpicSignal,
+  finishedButOpenSignal,
+  tailBlockedSignal,
+  orphanRiskSignal,
   suspicionComment,
   suspicionMarker,
   type UnitsInput,
@@ -82,6 +93,7 @@ const CONTEXT: ConfigContext = {
   teamKey: "ENG",
   epicLabel: "epic",
   followupLabel: "follow-up",
+  repositoryLabels: ["repo-web", "repo-api"],
   catalogPath: join(FIXTURES, "change-areas-catalog.yaml"),
   configPath: join(FIXTURES, "fleet-health.yaml"),
 };
@@ -2551,7 +2563,10 @@ describe("stuck-epic keepalive", () => {
   const fact = {
     epic: "ENG-100",
     startedAt: old,
-    children: [{ issue: "ENG-101", updatedAt: old }],
+    project: "Platform",
+    assignee: "Ada",
+    labels: ["epic"],
+    children: [{ issue: "ENG-101", updatedAt: old, stateType: "started" }],
   };
   it("uses the configured threshold, epic start, and newest child activity", () => {
     const boundary = new Date(
@@ -2559,7 +2574,12 @@ describe("stuck-epic keepalive", () => {
     ).toISOString();
     expect(
       stuckEpicSignal(
-        { ...fact, children: [{ issue: "ENG-101", updatedAt: boundary }] },
+        {
+          ...fact,
+          children: [
+            { issue: "ENG-101", updatedAt: boundary, stateType: "started" },
+          ],
+        },
         UNTIL,
         CFG,
       )?.kind,
@@ -2580,6 +2600,7 @@ describe("stuck-epic keepalive", () => {
             {
               issue: "ENG-102",
               updatedAt: new Date(UNTIL - DAY).toISOString(),
+              stateType: "started",
             },
           ],
         },
@@ -2655,6 +2676,7 @@ describe("stuck-epic keepalive", () => {
               {
                 issue: "ENG-101",
                 updatedAt: new Date(UNTIL + 2 * DAY).toISOString(),
+                stateType: "started",
               },
             ],
           },
@@ -2676,4 +2698,306 @@ describe("stuck-epic keepalive", () => {
     );
     expect(partial.report.gaps.join(" ")).toContain("truncated epic page");
   });
+});
+
+describe("the epic census", () => {
+  const at = new Date(UNTIL - 60 * DAY).toISOString();
+  const kids = (...states: string[]) =>
+    states.map((stateType, i) => ({
+      issue: `ENG-${101 + i}`,
+      updatedAt: at,
+      stateType,
+    }));
+  const epic = (children: ReturnType<typeof kids>, over = {}) => ({
+    epic: "ENG-100",
+    startedAt: at,
+    project: "Platform",
+    assignee: "Ada",
+    labels: ["epic"],
+    children,
+    ...over,
+  });
+  const bare = { project: null, assignee: null, labels: ["epic"] };
+
+  describe("finished-but-open", () => {
+    it("raises when every child is closed, and says closing needs acceptance", () => {
+      const s = finishedButOpenSignal(epic(kids("completed", "completed")));
+      expect(s?.kind).toBe("finished-but-open");
+      expect(s?.scope).toEqual({ type: "epic", epic: "ENG-100" });
+      expect(s?.evidence.join(" ")).toContain("accepting acceptance verdict");
+    });
+    it("counts a canceled or duplicate child as closed, and names it", () => {
+      const s = finishedButOpenSignal(
+        epic(kids("completed", "canceled", "duplicate")),
+      );
+      expect(s?.evidence[0]).toContain("1 children completed, 2 abandoned");
+    });
+    it("stays quiet with one child open, and with no children", () => {
+      expect(
+        finishedButOpenSignal(epic(kids("completed", "started"))),
+      ).toBeNull();
+      expect(finishedButOpenSignal(epic([]))).toBeNull();
+    });
+  });
+
+  describe("tail-blocked", () => {
+    it("raises at 80% done with one or two children open", () => {
+      const four = tailBlockedSignal(
+        epic(
+          kids("completed", "completed", "completed", "completed", "started"),
+        ),
+        CFG,
+      );
+      expect(four?.kind).toBe("tail-blocked");
+      expect(four?.value).toBeCloseTo(0.8);
+      expect(four?.headline).toContain("ENG-105");
+      const nine = tailBlockedSignal(
+        epic(kids(...Array(8).fill("completed"), "started", "unstarted")),
+        CFG,
+      );
+      expect(nine?.value).toBeCloseTo(0.8);
+      expect(nine?.evidence.join(" ")).toContain(
+        "accepting acceptance verdict",
+      );
+    });
+    it("is exact at the boundary: below the share, or more than two open, stays quiet", () => {
+      expect(
+        tailBlockedSignal(
+          epic(kids("completed", "completed", "completed", "started")),
+          CFG,
+        ),
+      ).toBeNull();
+      // 80% done, so only the open-count limit decides.
+      const threeOpen = epic(
+        kids(...Array(12).fill("completed"), "started", "started", "started"),
+      );
+      expect(tailBlockedSignal(threeOpen, CFG)).toBeNull();
+      expect(
+        tailBlockedSignal(
+          epic(kids(...Array(8).fill("completed"), "started", "started")),
+          CFG,
+        )?.kind,
+      ).toBe("tail-blocked");
+    });
+    it("leaves abandoned children out of the denominator", () => {
+      expect(
+        tailBlockedSignal(
+          epic(
+            kids(
+              "completed",
+              "completed",
+              "completed",
+              "completed",
+              "canceled",
+              "canceled",
+              "started",
+            ),
+          ),
+          CFG,
+        )?.value,
+      ).toBeCloseTo(0.8);
+    });
+    it("is not raised for a finished epic or one with only abandoned children", () => {
+      expect(
+        tailBlockedSignal(epic(kids("completed", "completed")), CFG),
+      ).toBeNull();
+      expect(tailBlockedSignal(epic(kids("canceled")), CFG)).toBeNull();
+      expect(tailBlockedSignal(epic([]), CFG)).toBeNull();
+    });
+    it("reads its thresholds from the configuration", () => {
+      const tuned = (over: Record<string, number>) =>
+        cfgWith((raw) => {
+          (raw.signals as Record<string, unknown>).tail_blocked = over;
+        });
+      const halfDone = epic(
+        kids("completed", "completed", "started", "started"),
+      );
+      expect(tailBlockedSignal(halfDone, CFG)).toBeNull();
+      expect(
+        tailBlockedSignal(halfDone, tuned({ done_share: 0.5, max_open: 2 }))
+          ?.kind,
+      ).toBe("tail-blocked");
+      const threeOpen = epic(
+        kids(...Array(12).fill("completed"), "started", "started", "started"),
+      );
+      expect(
+        tailBlockedSignal(threeOpen, tuned({ done_share: 0.8, max_open: 2 })),
+      ).toBeNull();
+      expect(
+        tailBlockedSignal(threeOpen, tuned({ done_share: 0.8, max_open: 3 }))
+          ?.kind,
+      ).toBe("tail-blocked");
+    });
+  });
+
+  describe("orphan-risk", () => {
+    it("raises on no children, no project, no owner and no repository label", () => {
+      const s = orphanRiskSignal(epic([], bare), CFG);
+      expect(s?.kind).toBe("orphan-risk");
+      expect(s?.evidence[0]).toContain("repo-web, repo-api");
+      expect(s?.evidence.join(" ")).toContain("accepting acceptance verdict");
+    });
+    it.each([
+      ["a child", { children: kids("started") }],
+      ["a project", { project: "Platform" }],
+      ["an owner", { assignee: "Ada" }],
+      ["a repository label", { labels: ["epic", "repo-api"] }],
+    ])("stays quiet with %s", (_name, over) => {
+      expect(
+        orphanRiskSignal(epic([], { ...bare, ...over }) as never, CFG),
+      ).toBeNull();
+    });
+    it("is not measured when the consumer names no repository labels", () => {
+      const none = cfgWith((raw) => {
+        raw.labels = { repositories: [] };
+      });
+      expect(orphanRiskSignal(epic([], bare), none)).toBeNull();
+    });
+  });
+
+  describe("in the report", () => {
+    const report = (
+      facts: ReturnType<typeof epic>[],
+      comments: CommentFact[] = [],
+    ) =>
+      buildReport({
+        ...units(),
+        nowMs: UNTIL,
+        epicActivity: facts,
+        depthByPr: new Map(),
+        epicComments: new Map([["ENG-100", comments]]),
+        delivery: null,
+        gaps: [],
+        caveats: [],
+      });
+    it("a finished epic is reported as finished, not also as stuck", () => {
+      const kinds = report([epic(kids("completed"))]).signals.map(
+        (s) => s.kind,
+      );
+      expect(kinds).toEqual(["finished-but-open"]);
+    });
+    it("a tail-blocked epic that is also idle keeps its stuck-epic signal", () => {
+      const kinds = report([
+        epic(
+          kids("completed", "completed", "completed", "completed", "started"),
+        ),
+      ]).signals.map((s) => s.kind);
+      expect(kinds.sort()).toEqual(["stuck-epic", "tail-blocked"]);
+    });
+    it("census signals have no lifecycle and no durable address, so nothing is posted", () => {
+      const r = report([
+        epic(kids("completed")),
+        epic([], { ...bare, epic: "ENG-200" }),
+      ]);
+      for (const s of r.signals) {
+        expect(s.lifecycle).toBeNull();
+        expect(lifecycleTargets(s)).toEqual([]);
+      }
+      expect(
+        activeSignals(r)
+          .map((s) => s.kind)
+          .sort(),
+      ).toEqual(["finished-but-open", "orphan-risk"]);
+    });
+    it("renders census facts in their own section, not as suspicions", () => {
+      const text = renderReport(report([epic(kids("completed"))]));
+      const [suspicions, census] = text.split("EPIC CENSUS");
+      expect(census).toContain("finished-but-open — ENG-100");
+      expect(suspicions).not.toContain("finished-but-open");
+    });
+    it("reaches the command's report, with the not-measured caveat when no repository is named", async () => {
+      const run = (cfgPatch?: () => FleetHealthConfig) =>
+        runFleetHealth(
+          OPTS,
+          deps({
+            tracker: STUB_TRACKER,
+            fetchEpicActivity: async () => [epic(kids("completed"))],
+            ...(cfgPatch ? { cfg: cfgPatch() } : {}),
+          }),
+        );
+      const result = await run();
+      expect(result.report.signals.map((s) => s.kind)).toContain(
+        "finished-but-open",
+      );
+      expect(result.report.caveats.join(" ")).toContain("epic census");
+      const unmeasured = await run(() =>
+        cfgWith((raw) => {
+          raw.labels = { repositories: [] };
+        }),
+      );
+      expect(unmeasured.report.caveats.join(" ")).toContain(
+        "Orphan-risk is NOT MEASURED",
+      );
+    });
+  });
+});
+
+describe("repository labels from the overlay", () => {
+  // The overlay is read in a subprocess: the layered reader also reads the
+  // user's own layer and JIG_* variables, which the test must not inherit.
+  const CONFIG_MODULE = join(
+    import.meta.dir,
+    "..",
+    "scripts",
+    "lib",
+    "fleet-health-config.ts",
+  );
+  const readLabels = (repos: string) => {
+    const root = mkdtempSync(join(tmpdir(), "fleet-health-overlay-"));
+    try {
+      mkdirSync(join(root, ".config"));
+      writeFileSync(
+        join(root, ".config", "jig.yaml"),
+        `review:\n  taxonomy:\n    repos: ${repos}\n`,
+      );
+      const env = Object.fromEntries(
+        Object.entries(process.env).filter(([k]) => !k.startsWith("JIG_")),
+      );
+      const proc = Bun.spawnSync(
+        [
+          process.execPath,
+          "-e",
+          `const { overlayContext } = await import(${JSON.stringify(CONFIG_MODULE)});
+           console.log(JSON.stringify(overlayContext(${JSON.stringify(root)}).repositoryLabels));`,
+        ],
+        { env: { ...env, JIG_USER_LAYER: "off" }, cwd: root },
+      );
+      return {
+        code: proc.exitCode,
+        stdout: proc.stdout.toString().trim(),
+        stderr: proc.stderr.toString(),
+      };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  const REFUSAL =
+    /review\.taxonomy\.repos must contain distinct nonempty strings/;
+  it("reads a list of labels", () => {
+    const r = readLabels("[web, api]");
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual(["web", "api"]);
+  });
+  it("refuses a value that is not a list, naming the field", () => {
+    const r = readLabels("web");
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(REFUSAL);
+  });
+  it("refuses a list with a member that is not a label, rather than shortening it", () => {
+    const r = readLabels("[web, null]");
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toMatch(REFUSAL);
+  });
+  // Only an absent field means "none configured"; a present but empty or
+  // null list would otherwise turn orphan-risk off without a caveat.
+  for (const [what, repos] of [
+    ["an explicit null", "null"],
+    ["an empty list", "[]"],
+    ["a list with duplicates", "[web, web]"],
+  ] as const)
+    it(`refuses ${what}, as the overlay's own validator does`, () => {
+      const r = readLabels(repos);
+      expect(r.code).not.toBe(0);
+      expect(r.stderr).toMatch(REFUSAL);
+    });
 });

@@ -594,7 +594,10 @@ const ACTIVITY_QUERY = `
 query TrackerActivity($filter: IssueFilter!, $after: String, $includeArchived: Boolean!) {
   issues(first: 100, after: $after, filter: $filter, includeArchived: $includeArchived) {
     pageInfo { hasNextPage endCursor }
-    nodes { id identifier startedAt updatedAt state { type } }
+    nodes {
+      id identifier startedAt updatedAt state { type }
+      project { name } assignee { name } ${LABELS}
+    }
   }
 }`;
 
@@ -695,6 +698,51 @@ export function parseLedgerNode(raw: unknown): LedgerIssue {
       str(record(l, `${where}.labels[]`).name, `${where}.labels[].name`),
     ),
     truncated,
+  };
+}
+
+/** What an epic belongs to: its project, its assignee and its labels. */
+function parseEpicPlacement(
+  raw: Record<string, unknown>,
+  where: string,
+): Pick<StartedIssueActivity, "project" | "assignee" | "labels"> {
+  const named = (v: unknown, at: string): string | null =>
+    v === null ? null : str(record(v, at).name, `${at}.name`);
+  const labelPage = record(raw.labels, `${where}.labels`);
+  // A truncated label list would read an epic that carries a repository label
+  // as one that carries none.
+  if (
+    !Array.isArray(labelPage.nodes) ||
+    record(labelPage.pageInfo, `${where}.labels`).hasNextPage !== false
+  )
+    throw new ShapeError(`Unreadable or truncated labels on ${where}`);
+  return {
+    project: named(raw.project, `${where}.project`),
+    assignee: named(raw.assignee, `${where}.assignee`),
+    labels: labelPage.nodes.map((l) =>
+      str(record(l, `${where}.labels[]`).name, `${where}.labels[].name`),
+    ),
+  };
+}
+
+/** One child of a started epic: its state and its last update. */
+function parseChildActivity(
+  c: unknown,
+  epic: string,
+): StartedIssueActivity["children"][number] {
+  if (
+    !isRecord(c) ||
+    typeof c.identifier !== "string" ||
+    typeof c.updatedAt !== "string" ||
+    !Number.isFinite(Date.parse(c.updatedAt)) ||
+    !isRecord(c.state) ||
+    typeof c.state.type !== "string"
+  )
+    throw new ShapeError(`Unreadable child activity on ${epic}`);
+  return {
+    issue: c.identifier,
+    updatedAt: c.updatedAt,
+    stateType: c.state.type,
   };
 }
 
@@ -1076,21 +1124,12 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
           (d) => d.issues,
           `children of ${raw.identifier}`,
         );
+        const epic = raw.identifier;
         out.push({
-          epic: raw.identifier,
+          epic,
           startedAt: raw.startedAt,
-          children: children.map((c) => {
-            if (
-              !isRecord(c) ||
-              typeof c.identifier !== "string" ||
-              typeof c.updatedAt !== "string" ||
-              !Number.isFinite(Date.parse(c.updatedAt))
-            )
-              throw new ShapeError(
-                `Unreadable child activity on ${raw.identifier}`,
-              );
-            return { issue: c.identifier, updatedAt: c.updatedAt };
-          }),
+          ...parseEpicPlacement(raw, `started '${label}' issue ${epic}`),
+          children: children.map((c) => parseChildActivity(c, epic)),
         });
       }
       return out;

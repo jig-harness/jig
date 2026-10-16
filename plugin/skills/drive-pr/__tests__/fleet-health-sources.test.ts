@@ -1011,8 +1011,15 @@ describe("started epic activity census", () => {
     identifier: "ENG-100",
     state: { type: "started" },
     startedAt: "2026-08-01T00:00:00Z",
+    project: { name: "Platform" },
+    assignee: null,
+    labels: { pageInfo: { hasNextPage: false }, nodes: [{ name: "epic" }] },
   };
-  const child = { identifier: "ENG-101", updatedAt: "2026-08-02T00:00:00Z" };
+  const child = {
+    identifier: "ENG-101",
+    updatedAt: "2026-08-02T00:00:00Z",
+    state: { type: "started" },
+  };
   const connection = (
     nodes: unknown[],
     more = false,
@@ -1028,7 +1035,11 @@ describe("started epic activity census", () => {
         return vars.after === null
           ? connection([child], true, "next")
           : connection([
-              { identifier: "ENG-102", updatedAt: "2026-08-03T00:00:00Z" },
+              {
+                identifier: "ENG-102",
+                updatedAt: "2026-08-03T00:00:00Z",
+                state: { type: "completed" },
+              },
             ]);
       return connection([epic]);
     });
@@ -1037,14 +1048,21 @@ describe("started epic activity census", () => {
       {
         epic: "ENG-100",
         startedAt: epic.startedAt,
+        project: "Platform",
+        assignee: null,
+        labels: ["epic"],
         children: [
-          child,
-          { issue: "ENG-102", updatedAt: "2026-08-03T00:00:00Z" },
-        ].map((c) =>
-          "identifier" in c
-            ? { issue: c.identifier, updatedAt: c.updatedAt }
-            : c,
-        ),
+          {
+            issue: "ENG-101",
+            updatedAt: "2026-08-02T00:00:00Z",
+            stateType: "started",
+          },
+          {
+            issue: "ENG-102",
+            updatedAt: "2026-08-03T00:00:00Z",
+            stateType: "completed",
+          },
+        ],
       },
     ]);
     expect(calls).toHaveLength(3);
@@ -1076,12 +1094,27 @@ describe("started epic activity census", () => {
     for (const response of [
       connection([child], true, null),
       connection([{ ...child, updatedAt: "bad" }]),
+      connection([{ ...child, state: null }]),
       connection([child, child]),
     ]) {
       const port = trackerFor(async (_query, vars) =>
         "parent" in (vars.filter as Record<string, unknown>)
           ? response
           : connection([epic]),
+      );
+      await expect(fetchEpicActivity(port, "epic")).rejects.toThrow();
+    }
+  });
+  it("fails on an epic whose labels are truncated or unreadable", async () => {
+    for (const labels of [
+      { pageInfo: { hasNextPage: true }, nodes: [] },
+      { pageInfo: { hasNextPage: false } },
+      null,
+    ]) {
+      const port = trackerFor(async (_query, vars) =>
+        "parent" in (vars.filter as Record<string, unknown>)
+          ? connection([])
+          : connection([{ ...epic, labels }]),
       );
       await expect(fetchEpicActivity(port, "epic")).rejects.toThrow();
     }

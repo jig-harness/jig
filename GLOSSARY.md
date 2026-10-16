@@ -530,6 +530,13 @@ make, use the entry's term instead.
   finish, such as a legal sign-off, an operator step or review debt. At
   closure a tail is linked back and given a comment naming the epic, then
   unparented and moved to the standing destination for its kind.
+- **Epic census** — the read-only count of how a repository's started *epics*
+  stand, kept by the fleet-health sensor: *finished-but-open* (every child is
+  closed, the epic is not), *tail-blocked* (nearly all delivered, one or two
+  children still open) and *orphan-risk* (no children, project, owner or
+  repository). It changes nothing; it points at the epics the closure step
+  should look at, and closing one still takes an *acceptance verdict* or a
+  *waiver* ([M11](modules/M11-process-observability/README.md)).
 - **Shipping item** — the work item whose own pull request carries a change,
   as opposed to the *epic* that contains it. A *flag label* that fires a gate
   goes on the shipping item.

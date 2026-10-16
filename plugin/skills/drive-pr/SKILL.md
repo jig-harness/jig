@@ -2331,6 +2331,12 @@ in the repository's fleet-health file (`fleet_health.config`, by default
 cooldown) and what a diagnosis comment looks like are in the header of
 `scripts/fleet-health.ts`.
 
+The report also carries an **epic census** of the started epics beside
+`stuck-epic`: `finished-but-open`, `tail-blocked` and `orphan-risk`
+(thresholds and labels in the [configuration reference](../../CONFIGURATION.md#the-fleet-health-file)).
+The census is read-only even under `--post`; it points at epics for the
+closure step, and closing one still requires an accepting verdict or a waiver.
+
 Read-only unless `--post`: only `--post` comments on an epic, one comment per
 (signal kind, epic) however many PRs raised on it. Exit `3` means the run did not complete cleanly (gaps in the report, or a `--post` that was refused or failed) — read the stderr line, not the code alone. Its
 GraphQL sampling is the heaviest consumer of a budget every agent on the token

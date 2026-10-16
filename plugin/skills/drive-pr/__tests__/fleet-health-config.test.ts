@@ -22,6 +22,7 @@ import {
 } from "../scripts/lib/fleet-health-advisory.ts";
 import {
   defaultConfigPath,
+  EMPTY_CONTEXT,
   loadConfig,
   parseConfig,
 } from "../scripts/lib/fleet-health-config.ts";
@@ -66,6 +67,7 @@ describe("loadConfig", () => {
         "review:",
         "  taxonomy:",
         "    epic_label: initiative",
+        "    repos: [web, api]",
         "drive:",
         "  change_areas_catalog: areas.yaml",
       ].join("\n"),
@@ -77,6 +79,7 @@ describe("loadConfig", () => {
       epic: "initiative",
       followup: "follow-up",
       deliverySystem: "delivery-system",
+      repositories: ["web", "api"],
     });
     expect(cfg.catalogPath).toBe(join(repo, "areas.yaml"));
     expect(cfg.ledger).toEqual({
@@ -184,7 +187,43 @@ describe("loadConfig", () => {
       epic: "epic",
       followup: null,
       deliverySystem: null,
+      repositories: [],
     });
+    expect(plain.signals.tailBlocked).toEqual({
+      minDoneShare: 0.8,
+      maxOpen: 2,
+    });
+    const tuned = parseConfig(
+      {
+        ...base,
+        labels: { repositories: ["svc"] },
+        signals: {
+          ...(base.signals as object),
+          tail_blocked: { done_share: 0.5, max_open: 3 },
+        },
+      },
+      { ...EMPTY_CONTEXT, repositoryLabels: ["ignored"] },
+    );
+    expect(tuned.labels.repositories).toEqual(["svc"]);
+    expect(tuned.signals.tailBlocked).toEqual({
+      minDoneShare: 0.5,
+      maxOpen: 3,
+    });
+    for (const [tail, where] of [
+      [{ done_share: 1.5 }, /signals\.tail_blocked\.done_share/],
+      [{ max_open: 0 }, /signals\.tail_blocked\.max_open/],
+      [{ max_open: 1.5 }, /signals\.tail_blocked\.max_open/],
+      [{ days: 3 }, /signals\.tail_blocked\.days/],
+    ] as const)
+      expect(() =>
+        parseConfig({
+          ...base,
+          signals: { ...(base.signals as object), tail_blocked: tail },
+        }),
+      ).toThrow(where);
+    expect(() =>
+      parseConfig({ ...base, labels: { repositories: "web" } }),
+    ).toThrow(/labels\.repositories/);
     expect(plain.ledger.label).toBeNull();
     expect(() => parseConfig({ ...base, labels: { sdlc: "x" } })).toThrow(
       /labels\.sdlc/,

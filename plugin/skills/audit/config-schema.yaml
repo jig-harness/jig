@@ -94,7 +94,7 @@ fields:
     items: string
     distinct: true
     nonempty: true
-    read_by: [resolve-review-comments]
+    read_by: [resolve-review-comments, drive-pr]
   review.taxonomy.sizes:
     type: list
     items: string

@@ -35,7 +35,11 @@ import {
   type LayeredConfig,
   sourceOf,
 } from "../../../../shared/config-layers.ts";
-import { consumerRoot, layeredConfig } from "../../../../shared/consumer.ts";
+import {
+  consumerRoot,
+  isDistinctNonEmptyList,
+  layeredConfig,
+} from "../../../../shared/consumer.ts";
 import {
   parseTrackerLabels,
   type TrackerLabels,
@@ -55,6 +59,8 @@ export interface ConfigContext {
   epicLabel: string | null;
   /** `review.taxonomy.provenance_label`. */
   followupLabel: string | null;
+  /** `review.taxonomy.repos`: the labels that name a repository. */
+  repositoryLabels: string[];
   /** `drive.change_areas_catalog`, resolved. */
   catalogPath: string | null;
   /** `fleet_health.config`, resolved. */
@@ -66,6 +72,7 @@ export const EMPTY_CONTEXT: ConfigContext = {
   teamKey: null,
   epicLabel: null,
   followupLabel: null,
+  repositoryLabels: [],
   catalogPath: null,
   configPath: null,
 };
@@ -81,6 +88,25 @@ function stringAt(obj: unknown, ...path: string[]): string | null {
     cur = cur[k];
   }
   return typeof cur === "string" && cur.trim() !== "" ? cur.trim() : null;
+}
+
+/**
+ * `review.taxonomy.repos`: only an absent field is none. Any present value
+ * must satisfy the same list rule the overlay's own validator applies to
+ * every taxonomy list, so this reader cannot accept a value it rejects.
+ */
+function repositoryLabelsOf(config: LayeredConfig): string[] {
+  const path = ["review", "taxonomy", "repos"];
+  let cur: unknown = config.values;
+  for (const k of path) {
+    if (!isRecordValue(cur) || !Object.hasOwn(cur, k)) return [];
+    cur = cur[k];
+  }
+  if (!isDistinctNonEmptyList(cur))
+    throw new FleetHealthConfigError(
+      `${sourceOf(config, path)}: ${path.join(".")} must contain distinct nonempty strings`,
+    );
+  return cur as string[];
 }
 
 /**
@@ -120,6 +146,7 @@ export function overlayContext(root: string): ConfigContext {
     // means follow-ups are not measured, not that the default is measured.
     epicLabel: labels.declared.has("epic") ? labels.epic : null,
     followupLabel: labels.declared.has("followup") ? labels.followup : null,
+    repositoryLabels: repositoryLabelsOf(config),
     catalogPath: at(stringAt(overlay, "drive", "change_areas_catalog")),
     configPath: at(stringAt(overlay, "fleet_health", "config")),
   };
@@ -159,6 +186,8 @@ export interface FleetHealthConfig {
   };
   signals: {
     stuckEpic: { days: number };
+    /** An epic at least `minDoneShare` done, with at most `maxOpen` children open. */
+    tailBlocked: { minDoneShare: number; maxOpen: number };
     ceremonyRatio: { suspectAt: number; highAt: number; minCeremony: number };
     followupDepth: { suspectAt: number; maxWalk: number };
     /** `null` = reported, never raises. */
@@ -178,6 +207,8 @@ export interface FleetHealthConfig {
     followup: string | null;
     /** `null`: the delivery-system share and its issues are not measured. */
     deliverySystem: string | null;
+    /** Labels that name a repository; none = orphan-risk is not measured. */
+    repositories: string[];
   };
   ledger: {
     /** `null`: no ledger label, so the ledger is not measured. */
@@ -209,21 +240,59 @@ function optLabel(
   return v as string;
 }
 
+function optLabelList(
+  obj: Record<string, unknown>,
+  key: string,
+  where: string,
+): string[] | undefined {
+  const v = obj[key];
+  if (v === undefined) return undefined;
+  if (
+    !Array.isArray(v) ||
+    !v.every((r) => typeof r === "string" && r.trim() !== "")
+  )
+    bad(`${where}.${key}`, "must be a list of labels");
+  return v as string[];
+}
+
+/** The census's nearly-done thresholds; optional, the census's definition by default. */
+function parseTailBlocked(
+  raw: unknown,
+): FleetHealthConfig["signals"]["tailBlocked"] {
+  const where = "signals.tail_blocked";
+  const tail = raw === undefined ? {} : record(raw, where);
+  for (const k of Object.keys(tail))
+    if (!["done_share", "max_open"].includes(k))
+      bad(`${where}.${k}`, "is not a key the sensor reads");
+  return {
+    minDoneShare:
+      tail.done_share === undefined
+        ? 0.8
+        : num(tail, "done_share", where, { min: 0, max: 1 }),
+    maxOpen:
+      tail.max_open === undefined
+        ? 2
+        : num(tail, "max_open", where, { min: 1, integer: true }),
+  };
+}
+
 function parseLabels(
   raw: unknown,
   ctx: ConfigContext,
 ): FleetHealthConfig["labels"] {
   const obj = raw === undefined ? {} : record(raw, "labels");
   for (const k of Object.keys(obj))
-    if (!["epic", "followup", "delivery_system"].includes(k))
+    if (!["epic", "followup", "delivery_system", "repositories"].includes(k))
       bad(`labels.${k}`, "is not a key the sensor reads");
   const epic = optLabel(obj, "epic", "labels");
   const followup = optLabel(obj, "followup", "labels");
   const delivery = optLabel(obj, "delivery_system", "labels");
+  const repositories = optLabelList(obj, "repositories", "labels");
   return {
     epic: epic ?? ctx.epicLabel ?? "epic",
     followup: followup === undefined ? ctx.followupLabel : followup,
     deliverySystem: delivery ?? null,
+    repositories: repositories ?? ctx.repositoryLabels,
   };
 }
 
@@ -390,7 +459,13 @@ export function parseConfig(
     unmeasured[k] = v as string;
   }
 
-  const signals = record(root.signals, "signals");
+  // `tail_blocked` is optional (its defaults are the epic census's definition),
+  // so a file written before the census still loads.
+  const { tail_blocked: rawTail, ...requiredSignals } = record(
+    root.signals,
+    "signals",
+  );
+  const signals = requiredSignals;
   exactKeys(signals, "signals", [
     "stuck_epic",
     "ceremony_ratio",
@@ -502,6 +577,7 @@ export function parseConfig(
           integer: true,
         }),
       },
+      tailBlocked: parseTailBlocked(rawTail),
       ceremonyRatio: {
         suspectAt,
         highAt,

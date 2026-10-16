@@ -23,11 +23,12 @@
  * as zero, and a ratio is therefore a lower bound on ceremony.
  */
 
-import type {
-  CommentFact,
-  IssueFact,
-  StartedIssueActivity,
-  WindowSpec,
+import {
+  CLOSED_STATE_TYPES,
+  type CommentFact,
+  type IssueFact,
+  type StartedIssueActivity,
+  type WindowSpec,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
 import type { FleetHealthConfig } from "./fleet-health-config.ts";
 
@@ -38,6 +39,9 @@ export type EpicActivityFact = StartedIssueActivity;
 
 export const SIGNAL_KINDS = [
   "stuck-epic",
+  "finished-but-open",
+  "tail-blocked",
+  "orphan-risk",
   "ceremony-ratio",
   "followup-depth",
   "review-carousel",
@@ -45,11 +49,23 @@ export const SIGNAL_KINDS = [
 ] as const;
 export type SignalKind = (typeof SIGNAL_KINDS)[number];
 
-/** Kinds whose lifecycle is recorded on an epic (the rest are PR-level or org-level). */
+/**
+ * Kinds whose lifecycle is recorded on an epic (the rest are PR-level or
+ * org-level, or the epic census: a census signal states a fact about the
+ * epic's current shape, not a suspicion a diagnosis closes, and the census
+ * never comments on an epic).
+ */
 export const EPIC_LIFECYCLE_KINDS: readonly SignalKind[] = [
   "stuck-epic",
   "ceremony-ratio",
   "followup-depth",
+];
+
+/** The epic census: facts about an epic's current shape, reported apart from the suspicions. */
+export const EPIC_CENSUS_KINDS: readonly SignalKind[] = [
+  "finished-but-open",
+  "tail-blocked",
+  "orphan-risk",
 ];
 
 export type Severity = "elevated" | "high" | "maximum";
@@ -1025,6 +1041,136 @@ export function stuckEpicSignal(
   };
 }
 
+// ── The epic census ────────────────────────────────────────────────────────
+//
+// Signals about the shape of an open epic, read from the same started-epic
+// census as `stuck-epic`. They are read-only: they raise nothing a person must
+// answer and post nothing. They feed the closure step, and every one that
+// points at closing an epic repeats that closing needs an accepting verdict.
+
+const isClosed = (stateType: string): boolean =>
+  (CLOSED_STATE_TYPES as readonly string[]).includes(stateType);
+
+/** Abandoned work is not delivery: it leaves the denominator, as in the closure step. */
+const isAbandoned = (stateType: string): boolean =>
+  stateType === "canceled" || stateType === "duplicate";
+
+const ACCEPTANCE_REMINDER =
+  "Closing an epic requires an accepting acceptance verdict (or a recorded waiver): every child closed is not itself the authorization.";
+
+/** Every child closed, the epic still open. */
+export function finishedButOpenSignal(fact: EpicActivityFact): Signal | null {
+  if (!fact.children.length) return null;
+  if (!fact.children.every((c) => isClosed(c.stateType))) return null;
+  const scope: SignalScope = { type: "epic", epic: fact.epic };
+  const abandoned = fact.children.filter((c) => isAbandoned(c.stateType));
+  return {
+    kind: "finished-but-open",
+    scope,
+    severity: "elevated",
+    headline: `all ${fact.children.length} children are closed, but the epic is still open`,
+    evidence: [
+      abandoned.length === 0
+        ? `${fact.children.length} of ${fact.children.length} children completed`
+        : `${fact.children.length - abandoned.length} children completed, ${abandoned.length} abandoned (canceled or duplicate)`,
+      ACCEPTANCE_REMINDER,
+    ],
+    value: fact.children.length,
+    fingerprint: fingerprintOf("finished-but-open", scope),
+    lifecycle: null,
+  };
+}
+
+/** Nearly done: at least the configured share delivered, only a few children still open. */
+export function tailBlockedSignal(
+  fact: EpicActivityFact,
+  cfg: FleetHealthConfig,
+): Signal | null {
+  const counted = fact.children.filter((c) => !isAbandoned(c.stateType));
+  const open = counted.filter((c) => !isClosed(c.stateType));
+  if (counted.length === 0 || open.length === 0) return null;
+  const share = (counted.length - open.length) / counted.length;
+  const { minDoneShare, maxOpen } = cfg.signals.tailBlocked;
+  if (share < minDoneShare || open.length > maxOpen) return null;
+  const scope: SignalScope = { type: "epic", epic: fact.epic };
+  return {
+    kind: "tail-blocked",
+    scope,
+    severity: "elevated",
+    headline: `${Math.round(share * 100)}% done; ${open.length} child${open.length === 1 ? "" : "ren"} still open: ${open.map((c) => c.issue).join(", ")}`,
+    evidence: [
+      `${counted.length - open.length} of ${counted.length} children delivered (abandoned children excluded); thresholds: at least ${Math.round(minDoneShare * 100)}% done, at most ${maxOpen} open`,
+      "A tail child may be finished, handed off to its own owner, or dropped with a reason. " +
+        ACCEPTANCE_REMINDER,
+    ],
+    value: share,
+    fingerprint: fingerprintOf("tail-blocked", scope),
+    lifecycle: null,
+  };
+}
+
+/**
+ * Nothing ties the epic to a place or a person: no children, no project, no
+ * assignee and no repository label. Not measured (null) when the consumer
+ * names no repository labels, since "no repository" cannot then be asserted.
+ */
+export function orphanRiskSignal(
+  fact: EpicActivityFact,
+  cfg: FleetHealthConfig,
+): Signal | null {
+  if (cfg.labels.repositories.length === 0) return null;
+  if (
+    fact.children.length > 0 ||
+    fact.project !== null ||
+    fact.assignee !== null ||
+    fact.labels.some((l) => cfg.labels.repositories.includes(l))
+  )
+    return null;
+  const scope: SignalScope = { type: "epic", epic: fact.epic };
+  return {
+    kind: "orphan-risk",
+    scope,
+    severity: "elevated",
+    headline: "no children, no project, no owner and no repository",
+    evidence: [
+      `repository labels checked: ${cfg.labels.repositories.join(", ")}`,
+      "An epic like this has nobody who would notice it going stale: give it an owner, a project or a repository, or close it. " +
+        ACCEPTANCE_REMINDER,
+    ],
+    value: 0,
+    fingerprint: fingerprintOf("orphan-risk", scope),
+    lifecycle: null,
+  };
+}
+
+/** Standing limits on reading the census, and what it could not measure. */
+export function censusCaveats(cfg: FleetHealthConfig): string[] {
+  return [
+    "The epic census (finished-but-open, tail-blocked, orphan-risk) is CURRENT state of started epics only, read-only, and never commented on an epic; a finished-but-open epic is not also reported as stuck. Closing an epic requires an accepting acceptance verdict.",
+    ...(cfg.labels.repositories.length === 0
+      ? [
+          'Orphan-risk is NOT MEASURED: no repository labels are configured (labels.repositories in the fleet-health config, or review.taxonomy.repos), so "no repository" cannot be asserted of any epic.',
+        ]
+      : []),
+  ];
+}
+
+/** Every epic-scoped signal one started epic raises. */
+export function epicSignals(
+  fact: EpicActivityFact,
+  nowMs: number,
+  cfg: FleetHealthConfig,
+): Signal[] {
+  // A finished epic's idle children are not a stall; finished-but-open says
+  // what is true of it.
+  const finished = finishedButOpenSignal(fact);
+  return [
+    finished ?? stuckEpicSignal(fact, nowMs, cfg),
+    tailBlockedSignal(fact, cfg),
+    orphanRiskSignal(fact, cfg),
+  ].filter((s): s is Signal => s !== null);
+}
+
 export interface ReportInput extends UnitsInput {
   epicActivity?: ReadonlyArray<EpicActivityFact>;
   nowMs: number;
@@ -1057,10 +1203,8 @@ export function buildReport(input: ReportInput): FleetHealthReport {
   const { cfg } = input;
   const units = computeEpicUnits(input);
   const signals: Signal[] = [];
-  for (const fact of input.epicActivity ?? []) {
-    const stuck = stuckEpicSignal(fact, input.nowMs, cfg);
-    if (stuck !== null) signals.push(stuck);
-  }
+  for (const fact of input.epicActivity ?? [])
+    signals.push(...epicSignals(fact, input.nowMs, cfg));
 
   for (const u of units.values()) {
     const s = ceremonyRatioSignal(u, cfg);
@@ -1244,6 +1388,24 @@ function day(iso: string): string {
   return iso.slice(0, 10);
 }
 
+function signalLines(s: Signal): string[] {
+  const where =
+    s.scope.type === "epic"
+      ? s.scope.epic
+      : s.scope.type === "pr"
+        ? `PR #${s.scope.pr}${s.scope.epics.length > 0 ? ` (${s.scope.epics.join(", ")})` : ""}`
+        : "organization";
+  const state =
+    s.lifecycle === null
+      ? ""
+      : ` [${s.lifecycle.state}${s.lifecycle.disposition !== null ? `: ${s.lifecycle.disposition}` : ""}]`;
+  const severity = (s.severity ?? "").toUpperCase().padEnd(8);
+  return [
+    `  ${severity} ${s.kind} — ${where}: ${s.headline}${state}`,
+    ...s.evidence.map((e) => `             ${e}`),
+  ];
+}
+
 export function renderReport(r: FleetHealthReport): string {
   const lines: string[] = [];
   lines.push(
@@ -1251,7 +1413,9 @@ export function renderReport(r: FleetHealthReport): string {
     `${r.counts.prs} PR(s) read, ${r.counts.epicsWithActivity} epic(s) with activity`,
     "",
   );
-  const raised = r.signals.filter((s) => s.severity !== null);
+  const isCensus = (s: Signal): boolean => EPIC_CENSUS_KINDS.includes(s.kind);
+  const raised = r.signals.filter((s) => s.severity !== null && !isCensus(s));
+  const census = r.signals.filter(isCensus);
   const reported = r.signals.filter(
     (s) => s.severity === null && s.scope.type === "org",
   );
@@ -1259,21 +1423,13 @@ export function renderReport(r: FleetHealthReport): string {
     `SUSPICIONS (${raised.length}) — counts raise a suspicion; only a diagnosis on the epic confirms one`,
   );
   if (raised.length === 0) lines.push("  none");
-  for (const s of raised) {
-    const where =
-      s.scope.type === "epic"
-        ? s.scope.epic
-        : s.scope.type === "pr"
-          ? `PR #${s.scope.pr}${s.scope.epics.length > 0 ? ` (${s.scope.epics.join(", ")})` : ""}`
-          : "organization";
-    const state =
-      s.lifecycle === null
-        ? ""
-        : ` [${s.lifecycle.state}${s.lifecycle.disposition !== null ? `: ${s.lifecycle.disposition}` : ""}]`;
+  for (const s of raised) lines.push(...signalLines(s));
+  if (census.length > 0) {
     lines.push(
-      `  ${(s.severity as string).toUpperCase().padEnd(8)} ${s.kind} — ${where}: ${s.headline}${state}`,
+      "",
+      `EPIC CENSUS (${census.length}) — the epic's current shape, read-only; no diagnosis confirms or silences it`,
     );
-    for (const e of s.evidence) lines.push(`             ${e}`);
+    for (const s of census) lines.push(...signalLines(s));
   }
   if (reported.length > 0) {
     lines.push("", "REPORTED (no threshold)");

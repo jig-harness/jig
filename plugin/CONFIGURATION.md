@@ -172,7 +172,7 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 | `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments | Repository label put on filed follow-ups; must be one of `review.taxonomy.repos` |
 | `review.repo_slug` | `owner/name` | Empty, which fails unless `--repo-slug` is given | resolve-review-comments | Repository whose links a deferred finding must point into |
 | `review.taxonomy.types` | list of labels | none | resolve-review-comments | Type labels a follow-up may carry. Requires `ownership_prefixes` |
-| `review.taxonomy.repos` | list of labels | none | resolve-review-comments | Repository labels a follow-up may carry. Requires `ownership_prefixes` |
+| `review.taxonomy.repos` | list of labels | none | resolve-review-comments, drive-pr (fleet health) | Repository labels a follow-up may carry. Requires `ownership_prefixes` |
 | `review.taxonomy.sizes` | list of labels | `[xs, small]` | resolve-review-comments | Size labels a batch of follow-ups may carry |
 | `review.taxonomy.categories` | list of names | only `unknown` | resolve-review-comments | Allowed finding categories |
 | `review.taxonomy.context_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of labels carried from the pull request onto its follow-ups. Requires `ownership_prefixes` |
@@ -381,6 +381,8 @@ below marked required must be present, and an unknown key is an error.
 | `ceremony.weights.sdlc_issues_opened` | number ≥ 0 | yes | Ceremony units per issue opened against the delivery process itself |
 | `ceremony.unmeasured` | map from unit name to reason | yes (may be `{}`) | Ceremony the sensor cannot measure, each with the reason stated |
 | `signals.stuck_epic.days` | whole number, 1–366 | yes | Days without activity before a started epic counts as stuck |
+| `signals.tail_blocked.done_share` | number 0–1 | no; default `0.8` | Share of an epic's children (abandoned ones left out) that must be delivered for it to count as tail-blocked |
+| `signals.tail_blocked.max_open` | whole number ≥ 1 | no; default `2` | Most children that may still be open on a tail-blocked epic |
 | `signals.ceremony_ratio.suspect_at` | number ≥ 0 | yes | Ceremony-to-progress ratio at which an epic is suspected |
 | `signals.ceremony_ratio.high_at` | number ≥ `suspect_at` | yes | Ratio at which the suspicion is high. An epic with ceremony and no progress is raised at maximum severity |
 | `signals.ceremony_ratio.min_ceremony` | whole number ≥ 1 | yes | Least weighted ceremony before an epic can be raised at all |
@@ -394,11 +396,21 @@ below marked required must be present, and an unknown key is an error.
 | `labels.epic` | label, or `null` | no; default the overlay's epic label (`issue_tracker.labels.epic` or `review.taxonomy.epic_label`), else `epic` | Label marking an epic |
 | `labels.followup` | label, or `null` | no; default the overlay's explicitly declared follow-up label (`issue_tracker.labels.followup` or `review.taxonomy.provenance_label`); explicit `null`, or no label declared in either file, means follow-ups are not measured | Label marking a review follow-up |
 | `labels.delivery_system` | label, or `null` | no; unset means not measured | Label a delivery-system change area and its issues carry |
+| `labels.repositories` | list of labels | no; default the overlay's `review.taxonomy.repos`; none declared means orphan-risk is not measured | Labels that name a repository; an epic carrying none of them, with no children, project or owner, is an orphan risk |
 | `ledger.label` | label, or `null` | no; default `labels.followup` | Label of the debt ledger `fractal-metrics.ts` reports |
 | `ledger.project` | tracker project, or `null` | no | A project whose issues also belong to the ledger |
 | `ledger.closed_state_types` | non-empty list of state types | no; default `[completed, canceled, duplicate]` | Tracker state types that close a ledger issue |
 | `baselines.<metric>.value` | number | per baseline | A recorded baseline for one scoreboard metric |
 | `baselines.<metric>.source` | `{file, needle}` | no | The document recording that number and a substring that must still appear in it, so a stale baseline is caught |
+
+Beside `stuck-epic` the sensor reports an **epic census** of the started epics,
+read-only and never commented on an epic: `finished-but-open` (every child
+closed, the epic open; it replaces `stuck-epic` for that epic),
+`tail-blocked` (at least `signals.tail_blocked.done_share` delivered with at
+most `signals.tail_blocked.max_open` children open; canceled and duplicate
+children are left out of the share) and `orphan-risk` (no children, no
+project, no assignee and none of `labels.repositories`). Each states that
+closing an epic requires an accepting acceptance verdict or a recorded waiver.
 
 The team key comes from `issue_tracker.team` and the change-area catalog from
 `drive.change_areas_catalog`. The signal lifecycle and what a diagnosis
