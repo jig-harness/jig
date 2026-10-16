@@ -17,6 +17,7 @@
  * neither set there is no schedule to check.
  */
 
+import { registerSignalHandler } from "../../../shared/cleanup.ts";
 import { createHash, randomBytes } from "node:crypto";
 import {
   closeSync,
@@ -858,21 +859,6 @@ export function crontabHasScheduledReaper(
  * could still block for ~10s and mutate lock state before cancellation took
  * effect.
  */
-/**
- * Cancellation reaches THIS process as one of these — the same set
- * `lib/proc.ts`'s own import-time forwarder treats as cancellation, since
- * `onSpawn` below (see `PROCESS_SIGNAL_EXIT_CODE`'s own comment) removes this
- * probe's child from that forwarder's reach and this function has to cover
- * the same three itself.
- */
-const PROCESS_CANCEL_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
-
-/** Conventional 128+signum exit code, so a killed probe exits the way an unhandled signal would have. */
-const PROCESS_SIGNAL_EXIT_CODE: Record<
-  (typeof PROCESS_CANCEL_SIGNALS)[number],
-  number
-> = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
-
 export async function runProbe(
   argv: string[],
   signal: AbortSignal | undefined,
@@ -899,47 +885,15 @@ export async function runProbe(
     };
     signal.addEventListener("abort", onAbort, { once: true });
   });
-  // Taking `onSpawn` above is `lib/proc.ts`'s signal that THIS function now
-  // owns the child's cancellation — which excludes it from that library's
-  // own process-wide SIGINT/SIGTERM/SIGHUP forwarding
-  // (`cancellableGroups`). Left unhandled here, a signal to this process
-  // would leave the probe running as an orphan (it is a detached child, in
-  // its own process group) until its own internal `timeoutSec: 10` deadline
-  // — a `setTimeout` that dies with the process it was scheduled in, so it
-  // never fires either.
-  // Registering our own listener means `lib/proc.ts`'s forwarder sees more
-  // than one listener and defers termination to us, so this handler has to
-  // actually end the process once its own cleanup is done — the same
-  // ownership contract `drive.ts`'s SIGINT/SIGTERM handler already honors.
-  // That ownership includes AWAITING `handle.stop()`, not just starting it:
-  // `stop()` sends SIGTERM and arms a SIGKILL escalation timer scheduled in
-  // THIS process, so a synchronous `process.exit()` right behind a
-  // fire-and-forget `void handle?.stop()` tears the timer down before it can
-  // fire — a SIGTERM-ignoring probe then survives as an orphan, exactly the
-  // failure this handler exists to prevent.
-  const signalCleanups: Array<() => void> = [];
-  for (const sig of PROCESS_CANCEL_SIGNALS) {
-    const onProcessSignal = async (): Promise<void> => {
-      await handle?.stop();
-      for (const cleanup of signalCleanups) cleanup();
-      process.exit(PROCESS_SIGNAL_EXIT_CODE[sig]);
-    };
-    process.once(sig, onProcessSignal);
-    signalCleanups.push(() =>
-      // bun-types 1.4.0 regression: process.removeListener/off overloads
-      // collapse to only 'memoryPressure' (process.on/once still accept
-      // signals) — the same cast `lib/proc.ts`'s own forwarder already uses.
-      (process as unknown as import("node:events").EventEmitter).removeListener(
-        sig,
-        onProcessSignal,
-      ),
-    );
-  }
+  // onSpawn transfers child cancellation ownership to this scope.
+  using cancellation = registerSignalHandler(async () => {
+    await handle?.stop();
+  });
+  void cancellation;
   try {
     return await Promise.race([result, aborted]);
   } finally {
     if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
-    for (const cleanup of signalCleanups) cleanup();
   }
 }
 

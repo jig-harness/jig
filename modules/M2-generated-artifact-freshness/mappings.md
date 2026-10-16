@@ -11,6 +11,10 @@ Every command below is a TypeScript script run with [Bun](../../GLOSSARY.md):
 a pinned version first — see the toolchain note in
 [M1's mappings](../M1-gates-enforcement-ladder/mappings.md).
 
+Run the schema replay script from a pinned Jig checkout: it shares the
+plugin's retry, clock and trace helpers as well as `lib/`. A standalone
+copy must retain those relative dependencies.
+
 ## CI providers, per rung
 
 | Rung | Check | Reference script |

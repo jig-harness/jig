@@ -14,6 +14,9 @@
  * than the staleness window is broken rather than waited on.
  */
 
+import { poll, PollTimeoutError } from "../../../../../shared/retry.ts";
+import { swallow } from "../../../../../shared/errors.ts";
+import { registerCleanup } from "../../../../../shared/cleanup.ts";
 import { randomBytes } from "node:crypto";
 import {
   existsSync,
@@ -137,7 +140,7 @@ export function lockHeartbeatMs(): number {
   return testPacing("DRIVE_PR_LOCK_HEARTBEAT_MS", derived, 100);
 }
 
-export interface PathLock {
+export interface PathLock extends Disposable {
   /**
    * @param maxWaitSec optional cap on THIS call's wait, applied on top of the
    * configured timeout (never above it). For a caller waiting through many
@@ -146,18 +149,7 @@ export interface PathLock {
    */
   acquire(maxWaitSec?: number): Promise<void>;
   release(): void;
-  /**
-   * Detach this lock's process-exit/signal handlers. For a lock created in a
-   * LOOP and finished with — `clearAllLeases` makes one per lease file — where
-   * the handlers would otherwise accumulate for the process's whole life.
-   *
-   * Safe only after `release()`: the handlers exist to release an abnormally
-   * terminated hold, so disposing while still holding would forfeit exactly
-   * that. Disposing a released lock removes handlers that are already no-ops
-   * (`release` returns early once `lockHeld` is false).
-   *
-   * Idempotent, and unnecessary for the common case of one lock per process.
-   */
+  /** Release this lock and remove its process cleanup registration. Idempotent. */
   dispose(): void;
   /**
    * Refresh this lock directory's mtime so a hold that legitimately outlives
@@ -632,29 +624,9 @@ export function createLock(
       releaseRecoveringGate(gateHolder);
     }
   }
-  const onSigint = () => {
-    release();
-    process.exit(130);
-  };
-  const onSigterm = () => {
-    release();
-    process.exit(143);
-  };
-  process.on("exit", release);
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
-
-  let disposed = false;
+  const cleanup = registerCleanup(release);
   function dispose(): void {
-    if (disposed) return;
-    disposed = true;
-    // bun-types 1.4.0 regression: process.off overloads collapse to only
-    // "memoryPressure" (process.on still accepts these events). Cast through
-    // EventEmitter until upstream restores the overloads.
-    const emitter = process as unknown as import("node:events").EventEmitter;
-    emitter.off("exit", release);
-    emitter.off("SIGINT", onSigint);
-    emitter.off("SIGTERM", onSigterm);
+    cleanup[Symbol.dispose]();
   }
 
   // Test-only concurrency hook for `touch()`'s own existence-check-to-
@@ -773,6 +745,117 @@ export function createLock(
     }
   }
 
+  /** A failed marker write must not leave a lock this process cannot release. */
+  function abandonUnmarkedLock(error: unknown): never {
+    const generation = generationOf(lock);
+    owner = "";
+    if (generation !== null) {
+      const doomed = quarantinePath(generation);
+      try {
+        renameSync(lock, doomed);
+        tombstone(doomed, "abandoned");
+      } catch {
+        // A rename loser has moved nothing.
+      }
+    }
+    console.error(
+      `${label}: took ${lock} but could not create its ownership marker —`,
+    );
+    console.error(
+      `released it rather than hold a lock this process cannot release:`,
+    );
+    console.error(
+      `  ${error instanceof Error ? error.message : String(error)}`,
+    );
+    throw new ExitError(1);
+  }
+
+  /** Finalize only under the recovery gate, closing its restore-to-publication gap. */
+  function finalizeAcquisition(): boolean {
+    const gateHolder = acquireRecoveringGate();
+    if (gateHolder === null) {
+      try {
+        // Only return an empty directory: an intervening restore may own it.
+        rmdirSync(lock);
+      } catch {
+        // A restore already reclaimed this path.
+      }
+      return false;
+    }
+    try {
+      // Each hold needs its own permanent quarantine generation, even on reuse.
+      owner = join(lock, `owner.${randomBytes(12).toString("hex")}`);
+      try {
+        writeFileSync(owner, "", { flag: "wx" });
+      } catch (error) {
+        abandonUnmarkedLock(error);
+      }
+      lockHeld = true;
+      return true;
+    } finally {
+      releaseRecoveringGate(gateHolder);
+    }
+  }
+
+  function olderThan(path: string, ageMs: number): boolean {
+    try {
+      return Date.now() - statSync(path).mtimeMs > ageMs;
+    } catch (error) {
+      swallow(error, "lock age is unavailable; leave the entry untouched");
+      return false;
+    }
+  }
+
+  /** Claim before checking identity; restore any fresh generation caught in the gap. */
+  function recoverStaleLock(staleMs: number, staleMinutes: number): boolean {
+    const gateHolder = acquireRecoveringGate();
+    if (gateHolder === null) return false;
+    try {
+      const generation = generationOf(lock);
+      // Missing or malformed entries remain untouched: a path deletion could
+      // remove a fresh generation appearing between this read and the deletion.
+      if (generation === null) return false;
+      const doomed = quarantinePath(generation);
+      try {
+        renameSync(lock, doomed);
+      } catch (error) {
+        swallow(
+          error,
+          "lock generation was already claimed or vanished during recovery",
+        );
+        return false;
+      }
+      // The directory's own mtime travels through rename. A fresh replacement
+      // appearing since the outer staleness check must be restored, never broken.
+      if (olderThan(doomed, staleMs)) {
+        console.error(
+          `${label}: broke a stale lock (>${staleMinutes}m old) at ${lock}`,
+        );
+        tombstone(doomed, "broken");
+        return true;
+      }
+      try {
+        renameSync(doomed, lock);
+      } catch {
+        console.error(
+          `${label}: quarantined ${lock} but it was not actually stale, and it could not be restored (it is at ${doomed}).`,
+        );
+      }
+      return false;
+    } finally {
+      releaseRecoveringGate(gateHolder);
+    }
+  }
+
+  function attemptAcquisition(): "occupied" | "recovering" | "held" {
+    try {
+      mkdirSync(lock);
+    } catch {
+      return "occupied";
+    }
+    return finalizeAcquisition() ? "held" : "recovering";
+  }
+
   async function acquire(maxWaitSec?: number): Promise<void> {
     // Signed integers, not digits-only: the test suite arms an always-stale
     // window with `DRIVE_PR_LOCK_STALE_MIN=-1`, which the bash `find -mmin
@@ -841,304 +924,55 @@ export function createLock(
     // a lock nobody was contending for. Only a SECOND OR LATER attempt's
     // success is deadline-checked.
     let firstAttempt = true;
-    for (;;) {
-      let freshlyAcquired = false;
-      try {
-        mkdirSync(lock);
-        freshlyAcquired = true;
-      } catch {
-        freshlyAcquired = false;
+    function acceptAcquisition(): true {
+      // Finalization must give the recovery gate back before releasing a hold
+      // that consumed the remaining deadline. The first attempt is exempt.
+      if (!firstAttempt && performance.now() > acquireDeadline) {
+        release();
+        throw new PollTimeoutError();
       }
-      if (freshlyAcquired) {
-        // `lock` was vacant a moment ago — but a vacancy can also be the
-        // window a concurrent `.recovering` dance opens while giving a
-        // mistakenly-grabbed generation back (see `createLock`'s own doc
-        // comment above). A one-off check-then-write
-        // here (confirm no dance is live, THEN separately write the
-        // owner marker) left the identical gap one level up: a dance's
-        // rename-out could land in the window between the check and this
-        // process's own marker write, so an in-flight restore lands on
-        // top of a directory this process already believed it owned
-        // outright. Finalizing —
-        // confirming exclusivity AND writing the marker — must happen
-        // under the SAME `.recovering` hold, exactly like `release()`'s
-        // and the stale-break's own dances below.
-        const gateHolder = acquireRecoveringGate();
-        if (gateHolder === null) {
-          // Could not confirm exclusivity within the bound — genuine,
-          // sustained contention on the gate is itself extreme. Treat
-          // exactly like observing a live dance: give the empty
-          // directory back (`rmdirSync` only succeeds while it is still
-          // genuinely empty, so it can never clobber content a restore
-          // already placed here) and retry, rather than finalize an
-          // acquisition this process cannot prove is uncontested.
-          try {
-            rmdirSync(lock);
-          } catch {
-            // A restore already reclaimed this path — nothing of ours to
-            // clean up.
-          }
-          // Sleep the SMALLER of one interval and the remaining budget — both
-          // bounds are needed. Skipping the sleep entirely once the budget is
-          // spent matters because `acquireRecoveringGate()` can itself consume
-          // the WHOLE `RECOVERING_GATE_WAIT_MS`, and an unconditional
-          // `sleep(1)` on top made `DRIVE_PR_LOCK_TIMEOUT=0` take ~2s and any
-          // configured limit overshoot by nearly a full interval. Capping at
-          // the REMAINDER instead of skipping when less than a full interval
-          // fits matters too: skipping turned the final sub-interval of budget
-          // into a hot, unpaced retry loop — worst in the stale-lock branch,
-          // where every hot pass re-runs the recovery dance and mints a
-          // permanent tombstone. A sleep never extending past the deadline
-          // preserves the overshoot bound; the bottom-of-loop check still exits
-          // on time either way.
-          const remainingMs = acquireDeadline - performance.now();
-          if (remainingMs > 0) {
-            await sleep(Math.min(retryMs, remainingMs) / 1000);
-          }
-        } else {
-          try {
-            // The ownership marker, created INSIDE the lock we just
-            // took, still under the gate. `release` uses its name as
-            // this lock instance's generation key — and because
-            // `tombstone` makes every quarantine PERMANENT, that name
-            // must stay unique for the lifetime of this PR's lock, not
-            // just for one hold. 96 bits (`drive.ts`'s own `newNonce()`
-            // width) rather than the 24-bit `tempSuffix()` used for
-            // ordinary short-lived temp files elsewhere: `fsutil.ts`
-            // already calls 24 bits "small enough to collide," and a
-            // collision there just throws for a caller to retry, but one
-            // HERE lands two different lock instances on the same
-            // quarantine path forever — `release` renaming onto a
-            // stranger's old tombstone no-ops instead of freeing the
-            // canonical path, wedging every later contender's acquire
-            // permanently, not just for the staleness window.
-            owner = join(lock, `owner.${randomBytes(12).toString("hex")}`);
-            try {
-              writeFileSync(owner, "", { flag: "wx" });
-            } catch (e) {
-              // Ownership could not be established, so this process can never
-              // PROVE the lock is its own — and `release` refuses to remove a
-              // lock it cannot prove is its own, by design. Swallowing the
-              // failure and continuing therefore wedged the path for every
-              // later driver until the staleness window expired: held from this
-              // process's point of view, unreleasable on exit, and unbreakable
-              // by anyone else for `staleMinutes` minutes.
-              //
-              // Give the directory back instead, by quarantining it as
-              // `unowned` — this directory has no marker (that write is
-              // what just failed), so it is indistinguishable from one
-              // any other contender would also read as ownerless, and
-              // the SAME generation-keyed path is what a concurrent
-              // breaker would aim at too. This is narrower than the
-              // stale-break path below: this directory is one
-              // `mkdirSync` old, so no OTHER contender's default
-              // 10-minute staleness window will touch it, and it is
-              // unreachable at all outside the test suite's
-              // `DRIVE_PR_LOCK_STALE_MIN=-1` override.
-              const generation = generationOf(lock);
-              owner = "";
-              if (generation !== null) {
-                const doomed = quarantinePath(generation);
-                try {
-                  renameSync(lock, doomed);
-                  tombstone(doomed, "abandoned");
-                } catch {
-                  // the rename loser moves nothing — exactly as elsewhere
-                }
-              }
-              console.error(
-                `${label}: took ${lock} but could not create its ownership marker —`,
-              );
-              console.error(
-                `released it rather than hold a lock this process cannot release:`,
-              );
-              console.error(`  ${e instanceof Error ? e.message : String(e)}`);
-              throw new ExitError(1);
-            }
-            lockHeld = true;
-          } finally {
-            releaseRecoveringGate(gateHolder);
-          }
-          // Contention on `.recovering` can consume the whole budget before
-          // THIS attempt finishes, even though it went on to succeed — the
-          // deadline check at the bottom of the loop never runs for the success
-          // path, since it returns first. Checked here, AFTER the `finally`
-          // above already gave this hold back — calling `release()` from inside
-          // it would deadlock against this process's own still-held gate.
-          // Exempts the first attempt outright (see the `firstAttempt` comment
-          // above).
-          if (!firstAttempt && performance.now() > acquireDeadline) {
-            console.error(
-              `${label}: could not acquire ${lock} within ${limit}s.`,
-            );
-            console.error(
-              `Another driver is updating PR #${prLabel}'s state, or the lock is wedged.`,
-            );
-            release();
-            throw new LockAcquireTimeoutError();
-          }
-          return;
-        }
-      } else {
-        let stale = false;
-        try {
-          stale = Date.now() - statSync(lock).mtimeMs > staleMs;
-        } catch {
-          stale = false;
-        }
-        if (stale) {
-          await testAcquireStall();
-          // Hold `.recovering` for the whole generation-read-through-maybe-
-          // restore sequence below, so no OTHER recovery dance (or fresh
-          // acquirer, per the check above) can interleave with it. A bounded
-          // miss here (genuine, sustained contention on the gate itself) just
-          // skips this attempt — the outer loop re-evaluates staleness fresh
-          // next iteration.
-          const gateHolder = acquireRecoveringGate();
-          if (gateHolder !== null) {
-            // Set inside the hold, acted on AFTER it — sleeping while still
-            // holding `.recovering` would violate the "gate holders execute
-            // only a handful of synchronous syscalls" invariant every
-            // staleness check on `.recovering` itself relies on: a full
-            // second of asynchronous sleep while holding it lets ANOTHER
-            // caller consume its own entire `RECOVERING_GATE_WAIT_MS` and
-            // fail to get the gate at all, or — past `RECOVERING_STALE_MS`
-            // — have this still-live hold broken as abandoned out from
-            // under it.
-            let pendingBackoff = false;
-            try {
-              // The staleness check above and the generation read via
-              // `generationOf` below are two SEPARATE syscalls, and a
-              // replacement can land in the gap between them: this process
-              // would then be quarantining a FRESH lock under a name it
-              // never actually observed as stale.
-              // `rename(2)` cannot be asked "only if the source still looks
-              // like X" — it is atomic on identity, not on content — so the
-              // only way to close this is to re-check what actually moved,
-              // using ITS OWN mtime, which travels with the directory
-              // through the rename. A mismatch means this process grabbed a
-              // live lock by mistake; put it back.
-              const generation = generationOf(lock);
-              if (generation === null) {
-                // Either already gone, or a malformed non-directory node
-                // sitting at this exact path — deliberately left ALONE, not
-                // cleaned up: an `rmSync` here would trade this failure mode
-                // for a WORSE one. The read
-                // (`generationOf`) and any act on `lock` (rename OR delete) are
-                // two separate syscalls, and nothing — including holding
-                // `.recovering`, since a fresh acquirer does not consult it
-                // before its OWN initial `mkdirSync(lock)` — closes the gap
-                // where a legitimate fresh generation appears in between;
-                // deleting by canonical path there destroys it outright, which
-                // is worse than this branch's own failure mode (an unreachable
-                // entry that just makes every acquire attempt eventually time
-                // out, requiring manual cleanup but corrupting nothing).
-                // A real fix needs an atomic claim+identity redesign, not a
-                // narrower patch here.
-                //
-                // Still back off, though — as a bare no-op this branch
-                // makes every outer-loop iteration immediately
-                // re-acquire and re-release `.recovering`, minting a
-                // fresh permanent tombstone EVERY time with no delay at
-                // all: measured at 5,472 tombstones in one second before
-                // the default 30s timeout even elapsed.
-                pendingBackoff = true;
-              } else {
-                const doomed = quarantinePath(generation);
-                let moved = true;
-                try {
-                  renameSync(lock, doomed);
-                } catch {
-                  // This generation's slot is already claimed, or `lock`
-                  // vanished before this rename ran — either way, nothing of
-                  // this process's doing landed at `doomed`.
-                  moved = false;
-                }
-                if (moved) {
-                  // The rename could have moved either the stale directory
-                  // this process observed, or a fresher replacement that
-                  // appeared in the syscall gap above — distinguish by the
-                  // moved directory's own mtime, which travels with it
-                  // through the rename.
-                  let actuallyStale = false;
-                  try {
-                    actuallyStale =
-                      Date.now() - statSync(doomed).mtimeMs > staleMs;
-                  } catch {
-                    actuallyStale = false;
-                  }
-                  if (actuallyStale) {
-                    console.error(
-                      `${label}: broke a stale lock (>${staleMinutes}m old) at ${lock}`,
-                    );
-                    tombstone(doomed, "broken");
-                  } else {
-                    try {
-                      renameSync(doomed, lock);
-                    } catch {
-                      console.error(
-                        `${label}: quarantined ${lock} but it was not actually stale, and it could not be restored (it is at ${doomed}).`,
-                      );
-                    }
-                  }
-                } else {
-                  // Generation-fence collision: another process already claimed
-                  // this exact quarantine slot (already broke or released it).
-                  // Nothing of ours moved, so retrying instantly would just
-                  // re-observe the SAME stale `lock` and collide again —
-                  // hot-looping with no delay while also minting a fresh,
-                  // permanent `.recovering` tombstone on every pass. Back off
-                  // exactly like ordinary contention — OUTSIDE this gate hold,
-                  // see above.
-                  pendingBackoff = true;
-                }
-              }
-            } finally {
-              releaseRecoveringGate(gateHolder);
-            }
-            // Same both-bounds sleep as the fresh-acquisition contention branch
-            // above. Overshoot bound: with `DRIVE_PR_LOCK_TIMEOUT=0`, an
-            // unconditional sleep here made the collision/malformed-entry case
-            // take ~1s to report failure instead of returning after its single
-            // attempt; the overshoot is now bounded to `+ retryMs`. Hot-tail
-            // bound: the skip-when-a-full-interval-does-not-fit form spun this
-            // branch unpaced through the final sub-interval of budget,
-            // re-running the stale-recovery dance and minting a permanent
-            // tombstone per pass — so cap at the remainder instead of skipping.
-            if (pendingBackoff) {
-              const remainingMs = acquireDeadline - performance.now();
-              if (remainingMs > 0) {
-                await sleep(Math.min(retryMs, remainingMs) / 1000);
-              }
+      return true;
+    }
+    try {
+      await poll(
+        async () => {
+          const result = attemptAcquisition();
+          if (result === "held") return acceptAcquisition();
+          if (result === "occupied" && olderThan(lock, staleMs)) {
+            await testAcquireStall();
+            const recovered = recoverStaleLock(staleMs, staleMinutes);
+            // A successful stale break opened a vacancy. Claim it immediately
+            // while budget remains, rather than sleeping through that budget.
+            if (recovered && performance.now() <= acquireDeadline) {
+              firstAttempt = false;
+              if (attemptAcquisition() === "held") return acceptAcquisition();
             }
           }
-        } else {
-          // Same both-bounds sleep as the two backoff branches above.
-          // Overshoot bound: an unconditional sleep here made ordinary,
-          // non-stale contention take ~1s to report failure under
-          // `DRIVE_PR_LOCK_TIMEOUT=0` instead of returning after its single
-          // attempt. Hot-tail bound:
-          // skipping the sleep outright left the final sub-interval of
-          // budget spinning unpaced — cap
-          // at the remainder instead.
-          const remainingMs = acquireDeadline - performance.now();
-          if (remainingMs > 0) {
-            await sleep(Math.min(retryMs, remainingMs) / 1000);
-          }
-        }
-      }
-      firstAttempt = false;
-      if (performance.now() > acquireDeadline) {
-        console.error(`${label}: could not acquire ${lock} within ${limit}s.`);
-        console.error(
-          `Another driver is updating PR #${prLabel}'s state, or the lock is wedged.`,
-        );
-        throw new LockAcquireTimeoutError();
-      }
+          firstAttempt = false;
+          return false;
+        },
+        {
+          everyMs: retryMs,
+          until: (acquired) => acquired,
+          deadlineMs: acquireDeadline,
+          immediate: true,
+          clock: {
+            now: () => performance.now(),
+            sleep: (ms) => sleep(ms / 1000),
+          },
+        },
+      );
+    } catch (error) {
+      if (!(error instanceof PollTimeoutError)) throw error;
+      console.error(`${label}: could not acquire ${lock} within ${limit}s.`);
+      console.error(
+        `Another driver is updating PR #${prLabel}'s state, or the lock is wedged.`,
+      );
+      throw new LockAcquireTimeoutError();
     }
   }
 
-  return { acquire, release, dispose, touch };
+  return { acquire, release, dispose, touch, [Symbol.dispose]: dispose };
 }
 
 /**

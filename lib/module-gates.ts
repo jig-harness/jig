@@ -1344,18 +1344,12 @@ export async function reflection(
       } catch {}
     }
   };
-  const signals: [NodeJS.Signals, number][] = [
-    ["SIGINT", 130],
-    ["SIGTERM", 143],
-  ];
-  const handlers = signals.map(([signal, code]) => {
-    const handler = () => {
-      release();
-      process.exit(code);
-    };
-    return { signal, handler };
-  });
+  const { registerCleanup } = await import("../plugin/shared/cleanup.ts");
   let acquired = false;
+  using cleanup = registerCleanup(() => {
+    if (acquired) release();
+  });
+  void cleanup;
   try {
     if (fileOwners) writeFileSync(ownerFile, ownerRecord, { flag: "wx" });
     let transient = 0;
@@ -1434,8 +1428,6 @@ export async function reflection(
         waited++;
       }
     }
-    process.on("exit", release);
-    for (const { signal, handler } of handlers) process.on(signal, handler);
     const marker = `<!-- reflection: ${change} rounds=${round} -->`;
     for (const haystack of [inbox, ...(archive ? [archive] : [])]) {
       const text = readFileSync(haystack, "utf8"),
@@ -1483,11 +1475,7 @@ export async function reflection(
       `Recorded in ${inbox} — now run reflection while the detail is still there.`,
     );
   } finally {
-    if (acquired) {
-      release();
-      process.off("exit", release);
-      for (const { signal, handler } of handlers) process.off(signal, handler);
-    }
+    if (acquired) release();
     try {
       unlinkSync(staged);
     } catch {}

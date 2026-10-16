@@ -52,3 +52,12 @@ export function failureFields(err: unknown): Fields {
 export function swallow(err: unknown, reason: string): void {
   log.debug(reason, failureFields(err));
 }
+
+/**
+ * A bug or a broken invariant, such as a caller passing an argument no correct
+ * caller passes. Never caught to drive control flow; its type says "defect"
+ * so no caller has to read the message to tell.
+ */
+export class Defect extends Error {
+  override name = "Defect";
+}

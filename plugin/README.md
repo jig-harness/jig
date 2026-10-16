@@ -457,8 +457,9 @@ with a clear message when none is found:
 3. Codex: the `version` of `jig@jig` in `codex plugin list --json`,
    then `${CODEX_HOME:-~/.codex}/plugins/cache/jig/jig/<version>/skills`.
 
-The modules more than one skill uses (the configuration reader, the process
-runner, the YAML parser) are in `shared/`, beside that `skills` directory.
+The modules more than one skill uses (the configuration reader, process
+runner, retry and polling policies, cleanup registry, timing traces and YAML
+parser) are in `shared/`, beside that `skills` directory.
 
 Paths inside the cache change with each release, so never store them.
 

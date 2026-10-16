@@ -49,6 +49,10 @@
 //   LOCK_NAME=build with-resource-lock.ts make build
 //   with-resource-lock.ts --lock e2e -- ./run-e2e.ts   # -- ends option parsing
 import {
+  registerCleanup,
+  registerSignalHandler,
+} from "../../../../plugin/shared/cleanup.ts";
+import {
   accessSync,
   constants,
   lstatSync,
@@ -153,16 +157,12 @@ export async function main(
         child.kill(signal);
       } catch {}
     };
-    const interrupt = () => forward("SIGINT"),
-      terminate = () => forward("SIGTERM");
-    process.on("SIGINT", interrupt);
-    process.on("SIGTERM", terminate);
-    try {
-      return await child.exited;
-    } finally {
-      process.off("SIGINT", interrupt);
-      process.off("SIGTERM", terminate);
-    }
+    using cancellation = registerSignalHandler(async (signal) => {
+      forward(signal);
+      await child.exited;
+    });
+    void cancellation;
+    return await child.exited;
   };
   if (env.CI === "1" || env.CI === "true" || env.RESOURCE_LOCK_BYPASS === "1")
     return run();
@@ -244,14 +244,9 @@ export async function main(
     );
     return 3;
   }
-  const release = () => unpublish(lock);
-  process.on("exit", release);
-  try {
-    return await run();
-  } finally {
-    release();
-    process.off("exit", release);
-  }
+  using release = registerCleanup(() => unpublish(lock));
+  void release;
+  return await run();
 }
 if (import.meta.main) {
   try {

@@ -50,6 +50,12 @@ working directory and from their own location.
 
 ### Consumer configuration
 
+For timing diagnostics through [trace spans](https://github.com/docomply/jig/blob/main/GLOSSARY.md), set `JIG_TRACE=1` before arming the drive, or set
+`JIG_TRACE_FILE` to a specific JSON lines file. Child processes inherit the
+trace context. Records contain command names, exit codes and timeouts, never
+arguments, standard input or command output. See the human page's
+[timing traces](README.md#timing-traces) for retention and record fields.
+
 The repository's own values — the AI reviewer's GitHub App, the base branch,
 the command that turns a diff into a validation plan, the change-area catalog,
 whether the reviewer reviews drafts, when a draft is marked Ready — are optional fields in

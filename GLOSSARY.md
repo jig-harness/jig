@@ -1188,6 +1188,9 @@ make, use the entry's term instead.
   ([conditional reads](plugin/skills/drive-pr/scripts/lib/gh-conditional.ts)).
 - **NDJSON (newline-delimited JSON)** — structured JSON records written one per
   line, so a command can consume them as a stream.
+- **Trace span** — a timed record of one operation, such as a command or a
+  polling wait. A trace groups related spans, and each span identifies the
+  parent operation that started it, including across child processes.
 - **JSX** — an HTML-like markup syntax that some JavaScript and TypeScript
   files embed, compiled to ordinary function calls. A tool that reads source
   as text must handle it or say that it does not.

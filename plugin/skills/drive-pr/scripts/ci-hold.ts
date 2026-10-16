@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { retryAttempts } from "../../../shared/retry.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`) without ever
@@ -34,7 +35,7 @@ import {
   requirementsWithoutRun,
 } from "./lib/ci-hold.ts";
 import { type CiPolicy, ciPolicy, holdLabelPolicy } from "./lib/ci-policy.ts";
-import { fail, isDigits, isGitSha, runMain, sleep } from "./lib/cli.ts";
+import { fail, isDigits, isGitSha, runMain } from "./lib/cli.ts";
 import { ghCall, git, gitCallTimeoutSeconds, resolvePr } from "./lib/proc.ts";
 import {
   assertRemoteMutationAllowed,
@@ -169,7 +170,13 @@ async function transitionAfter(
 ): Promise<{ event: LabelTransition; intervening: boolean } | null> {
   // GitHub's timeline can trail the label mutation briefly. Bound the retry;
   // an unobserved event is not ownership and must never be persisted as one.
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for await (const attempt of retryAttempts({
+    attempts: 4,
+    baseMs: 2_000,
+    maxMs: 2_000,
+    random: () => 1,
+  })) {
+    void attempt;
     const all = await transitions(pr);
     if (all === null) return null;
     const beforeIndex =
@@ -180,7 +187,6 @@ async function transitionAfter(
     if (observed?.event === event && observed.actor === actor) {
       return { event: observed, intervening: after.length !== 1 };
     }
-    if (attempt < 3) await sleep(2);
   }
   return null;
 }

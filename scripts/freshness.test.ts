@@ -461,6 +461,38 @@ test("schema replay orders migrations, normalizes both sides and cleans up", asy
   expect(commands.at(-1)?.slice(0, 2)).toEqual(["rm", "-f"]);
 });
 
+test("schema replay still probes readiness when the log wait used the whole deadline", async () => {
+  const { checkSchema } = await import(
+    "../modules/M2-generated-artifact-freshness/reference/ephemeral-replay/check-schema-drift.ts"
+  );
+  const dir = join(temp, "replay-late-ready");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "001.sql"), "first\n");
+  const committed = join(temp, "late-ready-schema.sql");
+  writeFileSync(committed, "CREATE TABLE example ();\n");
+  const realNow = Date.now;
+  let probes = 0;
+  const runner = async (args: string[]): Promise<string> => {
+    if (args[0] === "logs") {
+      // The init wait consumed the shared 60-second deadline.
+      Date.now = () => realNow() + 61_000;
+      return "PostgreSQL init process complete; ready for start up.";
+    }
+    if (args.includes("pg_isready")) {
+      probes++;
+      Date.now = realNow;
+    }
+    if (args.includes("pg_dump")) return "CREATE TABLE example ();\n";
+    return "";
+  };
+  try {
+    expect(await checkSchema(dir, committed, runner)).toBe(0);
+  } finally {
+    Date.now = realNow;
+  }
+  expect(probes).toBe(1);
+});
+
 test("each schema replay uses its own container name", async () => {
   const { checkSchema } = await import(
     "../modules/M2-generated-artifact-freshness/reference/ephemeral-replay/check-schema-drift.ts"

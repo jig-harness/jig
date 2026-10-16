@@ -291,8 +291,9 @@ run's own start (a re-run on an unchanged head), all keep blocking (see mode
 2c in `__tests__/drive-pr-status.test.ts`) — the bypass must not race a review
 that is genuinely still running. Also not built: naming the stall itself (a
 `REVIEWER_STALLED` state once a check-run has been `in_progress` past some
-multiple of its observed duration), which needs duration telemetry this skill
-does not keep.
+multiple of its observed duration). Opt-in `JIG_TRACE` spans record drive and
+command durations, but a reviewer-stall policy still needs to distinguish a
+slow reviewer from one that will never finish.
 
 **And one residual the floor cannot close, stated rather than implied.**
 Elapsed time is not a completion witness. Condition 4 proves the reviewer's

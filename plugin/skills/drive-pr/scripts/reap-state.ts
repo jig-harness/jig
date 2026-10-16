@@ -144,6 +144,7 @@
  * snapshot failed to persist, 2 = bad arguments.
  */
 
+import { reapTraceDays } from "../../../shared/trace.ts";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -1222,6 +1223,32 @@ async function resolveStateDirForReport(dryRun: boolean): Promise<string> {
   return dryRun ? peekResolvedStateDir() : resolveStateDir();
 }
 
+function reportAbsentState(stateDir: string, args: Args): number {
+  const traceDays = reapTraceDays(args.del);
+  if (args.json) {
+    console.log(
+      JSON.stringify(
+        {
+          stateDir,
+          exists: false,
+          entries: 0,
+          ...(traceDays.days.length > 0 ? { traceDays: traceDays.days } : {}),
+          ...(traceDays.failures.length > 0
+            ? { failures: traceDays.failures }
+            : {}),
+        },
+        null,
+        2,
+      ),
+    );
+  } else {
+    console.log(
+      `reap-state.ts: ${stateDir} does not exist yet — nothing to reap.`,
+    );
+  }
+  return traceDays.failures.length === 0 ? 0 : 1;
+}
+
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
   const stateDir = await resolveStateDirForReport(!args.del);
@@ -1237,18 +1264,7 @@ async function main(): Promise<number> {
   // misleading lock-timeout error instead of the true "nothing to reap yet".
   // Bounded either way — this is not an indefinite hang — but the message a
   // reader gets back should name what actually happened.
-  if (!existsSync(stateDir)) {
-    if (args.json) {
-      console.log(
-        JSON.stringify({ stateDir, exists: false, entries: 0 }, null, 2),
-      );
-    } else {
-      console.log(
-        `reap-state.ts: ${stateDir} does not exist yet — nothing to reap.`,
-      );
-    }
-    return 0;
-  }
+  if (!existsSync(stateDir)) return reportAbsentState(stateDir, args);
 
   // Serialises this run's ENTIRE read-verdict-mutate-publish sequence — not
   // just the retire/compact mutation below — against a CONCURRENT `--delete`
@@ -1526,7 +1542,10 @@ async function main(): Promise<number> {
         ? null
         : entryCountWarningFor(postCleanupEntries, alreadyRelocated);
 
+    const traceDays = reapTraceDays(args.del);
+    failures.push(...traceDays.failures);
     const report = {
+      traceDays: traceDays.days,
       stateDir,
       entries: reportedEntries,
       // A regression in the generation rate must surface as a NUMBER in this
@@ -1693,6 +1712,9 @@ async function main(): Promise<number> {
       );
       console.log(
         `  untouched: ${foreign.length} foreign lock(s), ${unrecognised.length} unrecognised entry/entries`,
+      );
+      console.log(
+        `  ${args.del ? "expired" : "would expire"} ${traceDays.days.length} trace day(s)`,
       );
       if (!args.del) {
         console.log("  DRY RUN — nothing changed. Pass --delete to act.");

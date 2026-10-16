@@ -1022,3 +1022,32 @@ describe("sweepLockQuarantine", () => {
     expect(readFileSync(foreign, "utf8")).toBe("human debugging notes");
   });
 });
+
+it("acquires a recovered stale lock before a full polling interval consumes the deadline", () => {
+  const modulePath = new URL("../scripts/lib/state/lock.ts", import.meta.url)
+    .pathname;
+  mkdirSync(lock);
+  writeFileSync(join(lock, "owner.abandoned"), "");
+  ageLock(lock, 10);
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `
+    import { createLock } from ${JSON.stringify(modulePath)};
+    using lock = createLock(${JSON.stringify(file)}, 'stale deadline test', '999');
+    await lock.acquire();
+    console.log('acquired');
+  `,
+    ],
+    {
+      env: {
+        ...process.env,
+        DRIVE_PR_LOCK_TIMEOUT: "1",
+        DRIVE_PR_LOCK_RETRY_MS: "1000",
+      },
+    },
+  );
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout.toString()).toContain("acquired");
+});

@@ -1019,6 +1019,12 @@ export function useDrivePrSuite(): void {
     // rather than a paraphrase of them.
     const stub = `#!/usr/bin/env bash
 set -euo pipefail
+# One line per call a script makes, for a probe that checks each one was
+# traced; the stub's own nested calls are not the script's.
+if [ -n "\${DRIVE_PR_STUB_GH_LOG:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ]; then
+  printf '%s\\n' "\${1:-} \${2:-}" >> "$DRIVE_PR_STUB_GH_LOG"
+fi
+export DRIVE_PR_STUB_GH_NESTED=1
 (
   # Model gh's flag parser before any fixture response. A newly misspelled
   # production flag must fail even when a canned API response exists.

@@ -28,12 +28,18 @@
  */
 
 import { type SpawnOptions, spawn } from "node:child_process";
+import {
+  traceRunner,
+  traceEnv,
+  traceGhRunner,
+} from "../../../../shared/trace.ts";
 import { readdirSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import {
   lastBytes,
   readTimeoutEnv,
   registerCancellationGroup,
+  writeChildInput,
 } from "../../../../shared/proc.ts";
 import { fail, testPacing } from "./cli.ts";
 
@@ -646,7 +652,9 @@ const sleep = (ms: number): Promise<void> =>
  * says so directly instead: `spawnFailed`. Read that, never the
  * code, when the question is whether a child existed at all.
  */
-export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
+export const run = traceRunner<RunResult, RunOptions>(runProcess, {});
+
+function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
     const [cmd, ...args] = argv;
     // A DEADLINED child gets its own process group, so the deadline can kill
@@ -671,7 +679,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       (opts.detached === true || opts.timeoutSec !== undefined);
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
-      env: (opts.env ?? process.env) as NodeJS.ProcessEnv,
+      env: traceEnv(opts.env) as NodeJS.ProcessEnv,
       detached,
       stdio: [
         opts.stdin === undefined ? "ignore" : "pipe",
@@ -1123,25 +1131,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       settle(timedOut ? 124 : bufferExceeded ? 1 : (code ?? 1));
     });
 
-    if (opts.stdin !== undefined && child.stdin) {
-      // A child that exits, or closes its input, before this write completes
-      // makes the pipe emit EPIPE on the stream. A writable stream with no
-      // 'error' listener raises that as an UNHANDLED error, which terminates
-      // the driver outright instead of resolving the RunResult this function
-      // advertises — losing the child's exit code and whatever it actually
-      // did.
-      //
-      // Absorbed rather than reported, because the child's own status is the
-      // meaningful answer and `close` still settles the promise with it: a
-      // command that read part of its stdin and exited 0 succeeded, and one
-      // that died early fails on its own exit code. There is no outcome a
-      // separate stdin error would change.
-      child.stdin.on("error", () => {
-        // Deliberately empty: the listener's existence is the whole fix.
-      });
-      child.stdin.write(opts.stdin);
-      child.stdin.end();
-    }
+    writeChildInput(child.stdin, opts.stdin);
   });
 }
 
@@ -1159,20 +1149,11 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
  * call routes through this chokepoint — so clamping by dropping to `run` would
  * trade one fix for a regression of that guard (which the test catches).
  */
-export function ghCall(
-  args: string[],
-  opts: RunOptions = {},
-): Promise<RunResult> {
-  const envDeadline = ghCallTimeoutSeconds();
-  const { timeoutSec, ...rest } = opts;
-  return run(["gh", ...args], {
-    ...rest,
-    timeoutSec:
-      timeoutSec === undefined
-        ? envDeadline
-        : Math.max(1, Math.min(envDeadline, timeoutSec)),
-  });
-}
+export const ghCall = traceGhRunner<RunResult, RunOptions>(
+  (args, opts) => run(["gh", ...args], opts),
+  ghCallTimeoutSeconds,
+  {},
+);
 
 /**
  * `git`. Undeadlined BY DEFAULT, because every call in this skill but one is

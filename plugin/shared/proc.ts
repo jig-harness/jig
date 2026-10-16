@@ -1,3 +1,4 @@
+import { registerSignalHandler } from "./cleanup.ts";
 /**
  * Process spawning with deadlines — the TypeScript successor to
  * `lib/gh-deadline.sh`, and the place every skill's `gh` is spawned from.
@@ -33,6 +34,7 @@
  */
 
 import { type SpawnOptions, spawn } from "node:child_process";
+import { traceEnv, traceGhRunner, traceRunner } from "./trace.ts";
 import { fail } from "./cli.ts";
 
 /**
@@ -196,6 +198,18 @@ export class ChildFailure extends Error {
  */
 export const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
+/** A child may exit before consuming input; its own status owns that result. */
+export function writeChildInput(
+  input: import("node:stream").Writable | null,
+  text: string | undefined,
+): void {
+  if (text === undefined || input === null) return;
+  input.on("error", () => {
+    // EPIPE after early exit does not replace the child's own result.
+  });
+  input.end(text);
+}
+
 export interface RunOptions {
   /** Seconds before the child is killed. Omit for no deadline. */
   timeoutSec?: number;
@@ -243,16 +257,16 @@ export interface RunOptions {
  * involved there is gone, the isolated group it was compounded by is not).
  */
 interface CancellationRegistry {
+  handlerRegistered: boolean;
   groups: Map<number, Set<symbol>>;
-  handlers: Map<NodeJS.Signals, () => void>;
 }
 const registryKey = Symbol.for("jig.review.process-cancellation.v1");
 const globalRegistry = globalThis as typeof globalThis & {
   [key: symbol]: CancellationRegistry | undefined;
 };
 const cancellation = globalRegistry[registryKey] ?? {
+  handlerRegistered: false,
   groups: new Map<number, Set<symbol>>(),
-  handlers: new Map<NodeJS.Signals, () => void>(),
 };
 globalRegistry[registryKey] = cancellation;
 const cancellableGroups = cancellation.groups;
@@ -345,62 +359,12 @@ function cancelTrackedGroups(): void {
   for (const pgid of groups) signalGroup(pgid, "SIGKILL");
 }
 
-/**
- * Cancellation reaches a script as one of these. HUP is in the set because a
- * driver whose terminal goes away gets one instead of a TERM.
- */
-const CANCEL_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
-
-/**
- * Forward a cancellation from THIS process into the isolated groups it spawned.
- *
- * Installed at MODULE LOAD rather than per call, and that is the whole fix. The
- * bash predecessor installed its traps inside `with_deadline`, so they lived in
- * the `$( )` subshell every call site wrapped it in and no signal ever reached
- * them; the port replaced the subshell with an in-process timer but kept the
- * isolated group, so the same signal still reached nothing. A handler has to
- * exist in the process that actually receives the signal, before anything can
- * be spawned — which for a module is import time. Registration order matters
- * for the same reason: listeners run in the order they were added, and a
- * handler added later than `drive.ts`'s or `lock.ts`'s would run after they had
- * already called `process.exit()`, i.e. never.
- *
- * Registering a listener SUPPRESSES the signal's default disposition, so this
- * one restores it — but only once it is safe to, i.e. once nothing else is
- * still listening. It stays registered across repeat signals as long as a
- * caller listener is also present: removing itself unconditionally after the
- * first occurrence (an earlier version of this code did) stops forwarding on
- * every later occurrence of the same signal, so a caller that handles or
- * temporarily swallows one without exiting — a retry loop, a debounced
- * shutdown — silently regains the original unforwarded-cancellation bug for
- * every signal after its first. Only when this is the LAST listener does it
- * remove itself and re-raise, so the process dies from the signal exactly as
- * it would have with no handler at all — that's what keeps a cancellation
- * unmaskable by a caller that merely swallowed the `RunResult`. When another
- * listener is present, that listener runs next in this same dispatch and owns
- * the outcome; re-raising would only run it twice, so it's skipped, and the
- * forwarder is left in place for whatever signal comes next. This is the
- * guarantee that a caller's own INT/TERM/HUP handlers survive a `gh_call`,
- * kept by construction rather than by capture-and-restore.
- */
-for (const sig of CANCEL_SIGNALS) {
-  if (cancellation.handlers.has(sig)) continue;
-  const forward = (): void => {
+/** The kernel awaits owned child cancellation before releasing process resources. */
+if (!cancellation.handlerRegistered) {
+  cancellation.handlerRegistered = true;
+  registerSignalHandler(() => {
     cancelTrackedGroups();
-    if (process.listenerCount(sig) === 1) {
-      // bun-types 1.4.0 regression: process.removeListener/off overloads
-      // collapse to only "memoryPressure" (process.on still accepts signals).
-      // Cast through EventEmitter until upstream restores the overloads.
-      (process as unknown as import("node:events").EventEmitter).removeListener(
-        sig,
-        forward,
-      );
-      cancellation.handlers.delete(sig);
-      process.kill(process.pid, sig);
-    }
-  };
-  cancellation.handlers.set(sig, forward);
-  process.on(sig, forward);
+  });
 }
 
 /**
@@ -419,7 +383,24 @@ for (const sig of CANCEL_SIGNALS) {
  * says so directly instead: `spawnFailed`. Read that, never the
  * code, when the question is whether a child existed at all.
  */
-export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
+export const run = traceRunner<RunResult, RunOptions>(runProcess, {});
+
+/**
+ * `gh` with the GH_CALL_TIMEOUT deadline — the `gh_call` of the bash lib.
+ *
+ * `timeoutSec` is an optional TIGHTENING, never a loosening: a caller holding a
+ * budget smaller than `GH_CALL_TIMEOUT` can pass it, and the effective deadline
+ * is whichever is smaller. Omitting it keeps the env default exactly as before.
+ * Mirrors `drive-pr`'s `ghCall`, and exists here because `gh-conditional.ts`
+ * passes its caller's budget through it.
+ */
+export const ghCall = traceGhRunner<RunResult, RunOptions>(
+  (args, opts) => run(["gh", ...args], opts),
+  ghCallTimeoutSeconds,
+  {},
+);
+
+function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
     const [cmd, ...args] = argv;
     if (!cmd) {
@@ -453,7 +434,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       opts.timeoutSec !== undefined && process.platform !== "win32";
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
-      env: (opts.env ?? process.env) as NodeJS.ProcessEnv,
+      env: traceEnv(opts.env) as NodeJS.ProcessEnv,
       detached,
       stdio: [
         opts.stdinInherit
@@ -687,44 +668,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
       settle(timedOut ? 124 : bufferExceeded ? 1 : (code ?? 1));
     });
 
-    if (opts.stdin !== undefined && child.stdin) {
-      // A child that exits, or closes its input, before this write completes
-      // makes the pipe emit EPIPE on the stream. A writable stream with no
-      // 'error' listener raises that as an UNHANDLED error, which terminates
-      // the driver outright instead of resolving the RunResult this function
-      // advertises. Absorbed rather than
-      // reported: the child's own exit status is the meaningful answer, and
-      // `close` still settles the promise with it.
-      child.stdin.on("error", () => {
-        // Deliberately empty: the listener's existence is the whole fix.
-      });
-      child.stdin.write(opts.stdin);
-      child.stdin.end();
-    }
-  });
-}
-
-/**
- * `gh` with the GH_CALL_TIMEOUT deadline — the `gh_call` of the bash lib.
- *
- * `timeoutSec` is an optional TIGHTENING, never a loosening: a caller holding a
- * budget smaller than `GH_CALL_TIMEOUT` can pass it, and the effective deadline
- * is whichever is smaller. Omitting it keeps the env default exactly as before.
- * Mirrors `drive-pr`'s `ghCall`, and exists here because `gh-conditional.ts`
- * passes its caller's budget through it.
- */
-export function ghCall(
-  args: string[],
-  opts: RunOptions = {},
-): Promise<RunResult> {
-  const envDeadline = ghCallTimeoutSeconds();
-  const { timeoutSec, ...rest } = opts;
-  return run(["gh", ...args], {
-    ...rest,
-    timeoutSec:
-      timeoutSec === undefined
-        ? envDeadline
-        : Math.max(1, Math.min(envDeadline, timeoutSec)),
+    writeChildInput(child.stdin, opts.stdin);
   });
 }
 

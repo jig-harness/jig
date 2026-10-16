@@ -1,3 +1,4 @@
+import { retry } from "../../../../../shared/retry.ts";
 /**
  * The SESSION lease: which driving session may mutate one PR's drive state from
  * one working tree.
@@ -3088,9 +3089,8 @@ export async function claimLease(
           await remoteLock.acquire(LOCK_ACQUIRE_MAX_SEC);
         } catch (e) {
           // Never acquired, so nothing for `release()` to give back — but
-          // `createLock` registers this handle's process-exit/signal
-          // listeners unconditionally at construction, not on a successful
-          // acquire, so `dispose()` still has real cleanup to do here.
+          // A handle owns its cleanup registration before acquisition, so a
+          // failed attempt still needs disposal.
           remoteLock.dispose();
           // `LockAcquireTimeoutError` specifically, NOT the broader
           // `ExitError` every `acquire()` failure is: `acquire()` also
@@ -4167,71 +4167,75 @@ export async function assertRemoteMutationAllowed(
   // defensively — the decision is monotonic (legacyDir → newDir, never
   // back), so a real clone converges in one extra iteration at most; this
   // only guards against a defect turning that into a spin.
-  let remoteLock: PathLock | null = null;
-  for (let attempt = 0; ; attempt++) {
-    remoteLock =
-      canonicalPr === null
-        ? null
-        : prRemoteMutationLock(ctx.stateDir, canonicalPr);
-    if (remoteLock !== null) {
-      try {
-        await remoteLock.acquire(LOCK_ACQUIRE_MAX_SEC);
-      } catch (e) {
-        // Never acquired, so nothing for `release()` to give back — but
-        // `createLock` registers this handle's process-exit/signal listeners
-        // unconditionally at construction, not on a successful acquire, so
-        // `dispose()` still has real cleanup to do here, mirroring
-        // `claimPrLease`'s own identical fix (this acquisition once sat
-        // outside the `try` below entirely, so a caller that catches the
-        // rejection and continues — a test, or a future caller that retries
-        // — accumulated live listeners on every failed attempt).
+  const moved = Symbol("state directory moved");
+  const remoteLock = await retry(
+    async (iteration): Promise<PathLock | null> => {
+      const attempt = iteration - 1;
+      const remoteLock =
+        canonicalPr === null
+          ? null
+          : prRemoteMutationLock(ctx.stateDir, canonicalPr);
+      if (remoteLock !== null) {
+        try {
+          await remoteLock.acquire(LOCK_ACQUIRE_MAX_SEC);
+        } catch (e) {
+          // Even a failed acquisition owns a cleanup registration. Dispose it
+          // so repeated attempts do not retain unused handles.
+          remoteLock.dispose();
+          // `LockAcquireTimeoutError`, converted to the SAME exit 11 every
+          // other live-foreign-driver refusal in this module uses — not
+          // `acquire()`'s own generic exit 1 "or the lock is wedged": this is
+          // `guarded-push.ts`'s and `answer-summary-finding.ts`'s OWN fence,
+          // the one caller class this lock exists for, so misreporting an
+          // ordinary in-flight rival mutation as a possibly-wedged lock here
+          // would be the exact misdiagnosis `claimPrLease`'s identical
+          // conversion already avoids.
+          // Any OTHER `ExitError` (the ownership-marker infrastructure failure)
+          // keeps its own exit code and message, unchanged.
+          if (!(e instanceof LockAcquireTimeoutError)) throw e;
+          fail(
+            11,
+            `${label}: PR #${canonicalPr} has an irreversible remote mutation (a push or a posted reply) in flight from another worktree, and it has not cleared yet.`,
+            "",
+            "Refusing to post rather than proceed alongside it — the identical",
+            "cross-shipping hazard this PR-wide lock exists to close.",
+            "This is not necessarily wedged: a push can legitimately run for the",
+            "whole of $DRIVE_PR_PUSH_TIMEOUT (an hour, by default, pre-push hooks",
+            "included), longer than this wait was bounded to. Retry once it",
+            "completes.",
+          );
+        }
+      }
+      if (ctx.fromOverride || remoteLock === null) return remoteLock;
+      const freshStateDir = resolveLegacyFallbackDir(
+        ctx.legacyStateDirForFallback,
+      );
+      if (freshStateDir === ctx.stateDir) return remoteLock;
+      if (attempt >= MAX_DIR_REFRESH_ATTEMPTS) {
+        remoteLock.release();
         remoteLock.dispose();
-        // `LockAcquireTimeoutError`, converted to the SAME exit 11 every
-        // other live-foreign-driver refusal in this module uses — not
-        // `acquire()`'s own generic exit 1 "or the lock is wedged": this is
-        // `guarded-push.ts`'s and `answer-summary-finding.ts`'s OWN fence,
-        // the one caller class this lock exists for, so misreporting an
-        // ordinary in-flight rival mutation as a possibly-wedged lock here
-        // would be the exact misdiagnosis `claimPrLease`'s identical
-        // conversion already avoids.
-        // Any OTHER `ExitError` (the ownership-marker infrastructure failure)
-        // keeps its own exit code and message, unchanged.
-        if (!(e instanceof LockAcquireTimeoutError)) throw e;
         fail(
-          11,
-          `${label}: PR #${canonicalPr} has an irreversible remote mutation (a push or a posted reply) in flight from another worktree, and it has not cleared yet.`,
+          1,
+          `${label}: the legacy-vs-relocated state directory choice kept changing while acquiring PR #${canonicalPr}'s remote-mutation lock.`,
           "",
-          "Refusing to post rather than proceed alongside it — the identical",
-          "cross-shipping hazard this PR-wide lock exists to close.",
-          "This is not necessarily wedged: a push can legitimately run for the",
-          "whole of $DRIVE_PR_PUSH_TIMEOUT (an hour, by default, pre-push hooks",
-          "included), longer than this wait was bounded to. Retry once it",
-          "completes.",
+          "Refusing to post. This should converge in one retry (the choice only",
+          "ever moves legacyDir -> newDir, never back); repeated movement means",
+          "something is wrong rather than a genuine one-time migration handoff",
+          ".",
         );
       }
-    }
-    if (ctx.fromOverride || remoteLock === null) break;
-    const freshStateDir = resolveLegacyFallbackDir(
-      ctx.legacyStateDirForFallback,
-    );
-    if (freshStateDir === ctx.stateDir) break;
-    if (attempt >= MAX_DIR_REFRESH_ATTEMPTS) {
       remoteLock.release();
       remoteLock.dispose();
-      fail(
-        1,
-        `${label}: the legacy-vs-relocated state directory choice kept changing while acquiring PR #${canonicalPr}'s remote-mutation lock.`,
-        "",
-        "Refusing to post. This should converge in one retry (the choice only",
-        "ever moves legacyDir -> newDir, never back); repeated movement means",
-        "something is wrong rather than a genuine one-time migration handoff",
-        ".",
-      );
-    }
-    remoteLock.release();
-    remoteLock.dispose();
-    ctx = { ...ctx, stateDir: freshStateDir };
-  }
+      ctx = { ...ctx, stateDir: freshStateDir };
+      throw moved;
+    },
+    {
+      attempts: MAX_DIR_REFRESH_ATTEMPTS + 1,
+      baseMs: 0,
+      maxMs: 0,
+      retryIf: (error) => error === moved,
+    },
+  );
   // Re-enumerate the override snapshot AFTER the wait above, not before
   //: `ctx.overrideEntries` was
   // captured by the CALLER's own `resolveFenceContext`, before this
@@ -4548,34 +4552,45 @@ export async function assertTreeMutationAllowed(
     : resolveLegacyFallbackDir(ctx.legacyStateDirForFallback);
   let path = treeLeasePathFor(stateDir, ctx.actor);
   let lock = treeLeaseLock(path);
-  for (let attempt = 0; ; attempt++) {
-    // EXPLICIT bound — see `acquireSessionlessTreeGuardNow`'s identical
-    // comment; the same reasoning applies unchanged here.
-    await lock.acquire(LOCK_ACQUIRE_MAX_SEC);
-    if (ctx.fromOverride) break;
-    const freshStateDir = resolveLegacyFallbackDir(
-      ctx.legacyStateDirForFallback,
-    );
-    if (freshStateDir === stateDir) break;
-    if (attempt >= MAX_DIR_REFRESH_ATTEMPTS) {
+  const moved = Symbol("state directory moved");
+  await retry(
+    async (iteration) => {
+      const attempt = iteration - 1;
+      // EXPLICIT bound — see `acquireSessionlessTreeGuardNow`'s identical
+      // comment; the same reasoning applies unchanged here.
+      await lock.acquire(LOCK_ACQUIRE_MAX_SEC);
+      if (ctx.fromOverride) return;
+      const freshStateDir = resolveLegacyFallbackDir(
+        ctx.legacyStateDirForFallback,
+      );
+      if (freshStateDir === stateDir) return;
+      if (attempt >= MAX_DIR_REFRESH_ATTEMPTS) {
+        lock.release();
+        lock.dispose();
+        fail(
+          1,
+          `${label}: the legacy-vs-relocated state directory choice kept changing while acquiring this working tree's lease lock.`,
+          "",
+          "Refusing to post. This should converge in one retry (the choice only",
+          "ever moves legacyDir -> newDir, never back); repeated movement means",
+          "something is wrong rather than a genuine one-time migration handoff",
+          ".",
+        );
+      }
       lock.release();
       lock.dispose();
-      fail(
-        1,
-        `${label}: the legacy-vs-relocated state directory choice kept changing while acquiring this working tree's lease lock.`,
-        "",
-        "Refusing to post. This should converge in one retry (the choice only",
-        "ever moves legacyDir -> newDir, never back); repeated movement means",
-        "something is wrong rather than a genuine one-time migration handoff",
-        ".",
-      );
-    }
-    lock.release();
-    lock.dispose();
-    stateDir = freshStateDir;
-    path = treeLeasePathFor(stateDir, ctx.actor);
-    lock = treeLeaseLock(path);
-  }
+      stateDir = freshStateDir;
+      path = treeLeasePathFor(stateDir, ctx.actor);
+      lock = treeLeaseLock(path);
+      throw moved;
+    },
+    {
+      attempts: MAX_DIR_REFRESH_ATTEMPTS + 1,
+      baseMs: 0,
+      maxMs: 0,
+      retryIf: (error) => error === moved,
+    },
+  );
   try {
     checkAllowed();
   } catch (e) {

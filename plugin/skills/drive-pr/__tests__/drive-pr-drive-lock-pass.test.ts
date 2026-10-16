@@ -1480,56 +1480,60 @@ describe("drive.ts loop control", () => {
       }
     }, 15000);
 
-    it("stops the pass BEFORE releasing the locks on SIGTERM", async () => {
-      // A signal delivered to the driver pid alone — a supervisor, `kill
-      // <pid>`, a harness shutting a worker down — does not reach the pass. The
-      // old handler released both locks and exited anyway, so the next driver
-      // acquired a free lock on a tree that was still being written.
-      const { dir, stateDir } = writeFixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree, pr } = lockDirs(dir, stateDir);
-      const proc = Bun.spawn(
-        [
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          ...passWithLateGrandchild(dir),
-        ],
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+    it.each(["SIGTERM", "SIGHUP"] as const)(
+      "stops the pass BEFORE releasing the locks on %s",
+      async (signal) => {
+        // A signal delivered to the driver pid alone — a supervisor, `kill
+        // <pid>`, a harness shutting a worker down — does not reach the pass. The
+        // old handler released both locks and exited anyway, so the next driver
+        // acquired a free lock on a tree that was still being written.
+        const { dir, stateDir } = writeFixture({
+          threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+        });
+        const { worktree, pr } = lockDirs(dir, stateDir);
+        const proc = Bun.spawn(
+          [
+            join(SCRIPTS, "drive.ts"),
+            "999",
+            "--no-head-sync",
+            "--max-rounds",
+            "1",
+            "--",
+            ...passWithLateGrandchild(dir),
+          ],
+          {
+            env: {
+              ...process.env,
+              PATH: `${binDir}:${process.env.PATH}`,
+              DRIVE_PR_FIXTURES: dir,
+              DRIVE_PR_STATE_DIR: stateDir,
+              DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+            },
+            stdout: "pipe",
+            stderr: "pipe",
           },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-      const startedAt = await awaitPassStart(dir);
-      // The DRIVER only. The pass runs in its own process group precisely so
-      // this signal cannot reach it by accident, which is what leaves the
-      // handler as the only thing that can end it.
-      proc.kill("SIGTERM");
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
-      expect(exitCode).toBe(143);
-      expect(stderr).toContain("stopping the active pass");
-      expect(stderr).toContain("received SIGTERM");
-      // Both locks released — the pass was provably gone first, so releasing
-      // them is safe and the next driver need not recover them as stale.
-      expect(existsSync(worktree)).toBe(false);
-      expect(existsSync(pr)).toBe(false);
-      await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
-      expect(existsSync(join(dir, "pass-late"))).toBe(false);
-    }, 15000);
+        );
+        const startedAt = await awaitPassStart(dir);
+        // The DRIVER only. The pass runs in its own process group precisely so
+        // this signal cannot reach it by accident, which is what leaves the
+        // handler as the only thing that can end it.
+        proc.kill(signal);
+        const [stderr, exitCode] = await Promise.all([
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        expect(exitCode).toBe(signal === "SIGHUP" ? 129 : 143);
+        expect(stderr).toContain("stopping the active pass");
+        expect(stderr).toContain(`received ${signal}`);
+        // Both locks released — the pass was provably gone first, so releasing
+        // them is safe and the next driver need not recover them as stale.
+        expect(existsSync(worktree)).toBe(false);
+        expect(existsSync(pr)).toBe(false);
+        await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
+        expect(existsSync(join(dir, "pass-late"))).toBe(false);
+      },
+      15000,
+    );
 
     it("kills the pass GROUP even when the leader closes first", async () => {
       // `settle` clears the stop's escalation timer, so a leader that exits on

@@ -10,7 +10,9 @@ onto concrete worktree managers / agent runners, package managers, and
 ## The utilities, and where they plug in
 
 The module ships portable scripts for the mechanisms below; the rest is
-convention. Point one variable at wherever you vendored the module and build
+convention. Run the resource-lock script from a pinned Jig checkout, keeping
+`plugin/shared/cleanup.ts` at its relative path for the process cleanup
+registry. Point one variable at the module in that checkout and build
 paths from it, exactly as the other modules do. The change-note commands
 ship inside the plugin; run them from its installed cache with the consumer
 repository as the working directory.

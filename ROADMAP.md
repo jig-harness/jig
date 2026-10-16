@@ -129,19 +129,6 @@ records how long anything took. The ratchet counts those patterns, and
 `plugin/shared/` holds the guards, error helpers, clock and
 logger that replace them; what is left moves the code onto them.
 
-- **The drive loop on the kernel, and traces.** Shared retry and polling,
-  and one process-wide registry that releases resources (`using` and
-  `DisposableStack`) on return, error and signal, newest first, replacing
-  each lock's own signal handlers and `drive.ts`'s hand-ordered release.
-  The retry takes a classifier: it retries only an error the caller has
-  classified as transient and rethrows the rest at once, as M1's
-  gate-authoring rule says.
-  `JIG_TRACE=1` writes timed spans as JSON lines under
-  `~/.local/state/jig/traces/` for every `gh` and `git` call, lock wait,
-  poll and pass, carried to child processes through `TRACEPARENT` and
-  reaped by `reap-state.ts`; records hold command names, exit codes and
-  durations, never arguments' contents or output. A step of its own because
-  it changes the drive loop's signal handling.
 - **Burn-downs**, as code is touched: the 91 `exactOptionalPropertyTypes`
   errors; drive-pr's own copies of `proc.ts`, `cli.ts` and
   `gh-conditional.ts` beside the shared ones; the duplicated block in

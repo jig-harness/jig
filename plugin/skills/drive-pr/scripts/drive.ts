@@ -133,6 +133,11 @@
  *      Resume the pause directive and re-arm the drive.
  */
 
+import {
+  registerCleanup,
+  registerSignalHandler,
+} from "../../../shared/cleanup.ts";
+import { span } from "../../../shared/trace.ts";
 import { randomBytes } from "node:crypto";
 import {
   existsSync,
@@ -2199,16 +2204,18 @@ async function runRepairPass(
     return { dispatched: false, resumed: false, code: mailboxBeforeSpawn };
   if (mailboxBeforeSpawn === "resumed")
     return { dispatched: false, resumed: true };
-  const res = await run(agent, {
-    stdout: "inherit",
-    stderr: "inherit",
-    detached: true,
-    env: passEnv({ task, detail }),
-    ...(deadlineSec > 0 ? { timeoutSec: deadlineSec } : {}),
-    onSpawn: (h) => {
-      activePass = h;
-    },
-  });
+  const res = await span("pass", { kind: "repair" }, () =>
+    run(agent, {
+      stdout: "inherit",
+      stderr: "inherit",
+      detached: true,
+      env: passEnv({ task, detail }),
+      ...(deadlineSec > 0 ? { timeoutSec: deadlineSec } : {}),
+      onSpawn: (h) => {
+        activePass = h;
+      },
+    }),
+  );
   // Captured before `activePass` is cleared, same as the ordinary-pass
   // path's own `passHandle` — see its comment for why this has to happen
   // here rather than reading `activePass` again below.
@@ -2546,57 +2553,38 @@ async function main(): Promise<number> {
     { dir: join(stateDir, `pr-drive-${pr}.lock`), what: `PR #${pr}`, diag },
   ];
   const held: DriveLock[] = [];
+  using lockResources = new DisposableStack();
   const releaseAll = (): void => {
-    driverLogRotates = false; // a successor may own the log from here on
-    for (const lock of held.reverse()) release(lock);
+    driverLogRotates = false;
+    lockResources.dispose();
     held.length = 0;
   };
-  // Registered BEFORE the first acquire, so a `fail()` while taking the second
-  // lock still releases the first. `release` is ownership-checked, so a
-  // handler that runs against a lock this process never took is a no-op.
-  process.on("exit", releaseAll);
-  // Node runs 'exit' handlers on process.exit() and normal completion, not on
-  // termination signals — without these a Ctrl-C'd drive leaves locks that
-  // every later start must recover as stale.
-  //
-  // The pass is stopped FIRST, and the locks released only once it is gone. A
-  // signal that reaches the whole foreground process group (an interactive
-  // Ctrl-C) ends the pass anyway, but one delivered to the driver pid alone —
-  // a supervisor, `kill <pid>`, a harness shutting a worker down — does not:
-  // the old handler released both locks and exited while the agent and
-  // whatever it had spawned kept editing and pushing, so the next driver
-  // acquired a free lock on a tree that was still being written. Detaching
-  // the pass (below) is what makes this handler the sole route by which a
-  // signal reaches it, and what lets the stop reach its grandchildren rather
-  // than the agent alone.
   let shuttingDown = false;
-  for (const sig of ["SIGINT", "SIGTERM"] as const) {
-    process.on(sig, () => {
-      const code = sig === "SIGINT" ? 130 : 143;
-      // A second signal is an operator saying the graceful path is not working.
-      // Honour it literally: leave the locks rather than release them under a
-      // pass that is still alive.
-      //
-      // `held` must be emptied FIRST. `process.exit()` runs the 'exit' handler
-      // registered above, which is `releaseAll` — so exiting with the list
-      // still populated releases both locks on the way out, producing the exact
-      // live-pass/free-lock state this handler exists to prevent. The `!gone`
-      // branch below already does this; the forced path did not.
-      if (shuttingDown) {
-        held.length = 0;
-        process.exit(code);
-      }
-      shuttingDown = true;
-      void stopActivePass(`received ${sig}`).then((gone) => {
-        if (gone) releaseAll();
-        else held.length = 0; // suppress the 'exit' handler's release too
-        process.exit(code);
-      });
+  using cancellation = registerSignalHandler((sig) => {
+    const code = sig === "SIGINT" ? 130 : sig === "SIGTERM" ? 143 : 129;
+    // A repeated signal forces termination without unlocking a live pass.
+    if (shuttingDown) {
+      held.length = 0;
+      process.exit(code);
+    }
+    shuttingDown = true;
+    return stopActivePass(`received ${sig}`).then((gone) => {
+      if (gone) releaseAll();
+      else held.length = 0;
+      process.exit(code);
     });
-  }
+  });
+  void cancellation;
   for (const lock of locks) {
     acquire(lock, pr);
     held.push(lock);
+    lockResources.use(
+      registerCleanup(() => {
+        driverLogRotates = false;
+        // An unwitnessed pass termination deliberately abandons these locks.
+        if (held.includes(lock)) release(lock);
+      }),
+    );
   }
   driverLogRotates = true;
   // Renewal starts the moment the last lock is held, and runs on its own timer
@@ -3535,9 +3523,11 @@ async function main(): Promise<number> {
           continue;
         }
 
-        const finalCi = await run(
-          tsArgv(ciHold, ["final-ready", pr, "--expect-head", reviewedHead]),
-          { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
+        const finalCi = await span("ci.wait", {}, () =>
+          run(
+            tsArgv(ciHold, ["final-ready", pr, "--expect-head", reviewedHead]),
+            { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
+          ),
         );
         if (finalCi.code === 5) return 5;
         // What used to stand here read `status.ci` — the PRE-UNLABEL
@@ -4746,28 +4736,30 @@ async function main(): Promise<number> {
         `cannot record this pass against PR #${pr}'s head; stopping rather than driving unbounded`,
       );
     }
-    const passRes = await run(prepared?.argv ?? agent, {
-      stdout: "inherit",
-      stderr: "inherit",
-      detached: true,
-      env: prepared?.env ?? baseEnv,
-      // `0` disables, matching every other deadline knob in this skill; `run()`
-      // takes the absence of the field as "no deadline" rather than a zero.
-      ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
-      onSpawn: (handle) => {
-        activePass = handle;
-        passSpawnProgressStamp = run(
-          tsArgv(driveState, ["progress", pr, "--phase", "pass-spawned"]),
-          { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
-        ).then((progressStamp) => {
-          if (progressStamp.code !== 0) {
-            console.error(
-              `drive.ts: could not stamp progress for round ${round}'s pass (drive-state.ts exited ${progressStamp.code}) — continuing anyway.`,
-            );
-          }
-        });
-      },
-    });
+    const passRes = await span("pass", { round }, () =>
+      run(prepared?.argv ?? agent, {
+        stdout: "inherit",
+        stderr: "inherit",
+        detached: true,
+        env: prepared?.env ?? baseEnv,
+        // `0` disables, matching every other deadline knob in this skill; `run()`
+        // takes the absence of the field as "no deadline" rather than a zero.
+        ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
+        onSpawn: (handle) => {
+          activePass = handle;
+          passSpawnProgressStamp = run(
+            tsArgv(driveState, ["progress", pr, "--phase", "pass-spawned"]),
+            { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+          ).then((progressStamp) => {
+            if (progressStamp.code !== 0) {
+              console.error(
+                `drive.ts: could not stamp progress for round ${round}'s pass (drive-state.ts exited ${progressStamp.code}) — continuing anyway.`,
+              );
+            }
+          });
+        },
+      }),
+    );
     // Captured before `activePass` is cleared: the PASS_DEADLINE branch below
     // needs it to witness the pass tree's termination, which happens after
     // this point.
@@ -5293,5 +5285,5 @@ if (
   process.argv[1] !== undefined &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  runMain("drive.ts", main);
+  runMain("drive.ts", () => span("drive", {}, main));
 }

@@ -1,3 +1,5 @@
+import { registerSignalHandler } from "../../../../plugin/shared/cleanup.ts";
+import { poll, PollTimeoutError } from "../../../../plugin/shared/retry.ts";
 // Docker/Postgres replay skeleton. Engine normalization remains consumer-owned.
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -170,36 +172,53 @@ export async function checkSchema(
     // the daemon, which may still create the container after any listing, so
     // those outcomes end the bounded window with a warning even when every
     // listing was empty.
-    for (let attempt = 1; attempt <= RECONCILE_ATTEMPTS; attempt++) {
-      let gone = false;
-      try {
-        await remove();
-        const left = await docker(
-          ["ps", "-a", "--quiet", "--filter", `name=^/${container}$`],
-          undefined,
-          true,
-          budget(),
-          false,
-        );
-        gone = !left.trim();
-      } catch (error) {
-        warn(error);
-      }
-      if (gone && runResolved()) return;
-      if (attempt === RECONCILE_ATTEMPTS || Date.now() + step >= deadline)
-        break;
-      await Bun.sleep(step);
+    let attempt = 0;
+    let confirmedGone = false;
+    try {
+      await poll(
+        async () => {
+          attempt++;
+          let gone = false;
+          try {
+            await remove();
+            const left = await docker(
+              ["ps", "-a", "--quiet", "--filter", `name=^/${container}$`],
+              undefined,
+              true,
+              budget(),
+              false,
+            );
+            gone = !left.trim();
+          } catch (error) {
+            warn(error);
+          }
+          confirmedGone = gone && runResolved();
+          return (
+            confirmedGone ||
+            attempt === RECONCILE_ATTEMPTS ||
+            Date.now() + step >= deadline
+          );
+        },
+        {
+          everyMs: step,
+          deadlineMs: deadline,
+          immediate: true,
+          until: (done) => done,
+        },
+      );
+    } catch (error) {
+      if (!(error instanceof PollTimeoutError)) throw error;
     }
+    if (confirmedGone) return;
+
     console.error(
       `warning: ${container} may still exist; remove it manually with: docker rm -f ${container}`,
     );
   };
-  const interrupted = () => {
+  using cancellation = registerSignalHandler(() => {
     cancel.abort();
-    void cleanup().finally(() => process.exit(2));
-  };
-  process.once("SIGINT", interrupted);
-  process.once("SIGTERM", interrupted);
+    return cleanup().finally(() => process.exit(2));
+  });
   try {
     await docker([
       "run",
@@ -217,38 +236,77 @@ export async function checkSchema(
     const deadline = Date.now() + READY_TIMEOUT_MS;
     const remaining = () =>
       Math.min(operationTimeout(), Math.max(1, deadline - Date.now()));
-    for (;;) {
-      let logs = "";
-      try {
-        logs = await docker(["logs", container], undefined, false, remaining());
-      } catch (error) {
-        if (error instanceof DockerTimeout)
-          throw new Error("Postgres init did not complete within 60s");
-        throw error;
-      }
-      if (
-        logs.includes("PostgreSQL init process complete; ready for start up.")
-      )
-        break;
-      if (Date.now() >= deadline)
+    try {
+      await poll(
+        async () => {
+          try {
+            const logs = await docker(
+              ["logs", container],
+              undefined,
+              false,
+              remaining(),
+            );
+            return logs.includes(
+              "PostgreSQL init process complete; ready for start up.",
+            );
+          } catch (error) {
+            // A probe that outruns the shared deadline is the deadline passing.
+            if (error instanceof DockerTimeout) throw new PollTimeoutError();
+            throw error;
+          }
+        },
+        {
+          everyMs: 500,
+          deadlineMs: deadline,
+          signal: cancel.signal,
+          until: (ready) => ready,
+        },
+      );
+    } catch (error) {
+      if (error instanceof PollTimeoutError)
         throw new Error("Postgres init did not complete within 60s");
-      await Bun.sleep(500);
+      throw error;
     }
-    for (;;) {
-      try {
-        await docker(
-          ["exec", container, "pg_isready", "-U", "postgres", "-d", "postgres"],
-          undefined,
-          true,
-          remaining(),
-        );
-        break;
-      } catch (error) {
-        if (cancel.signal.aborted) throw error;
-        if (error instanceof DockerTimeout || Date.now() >= deadline)
-          throw new Error("Postgres did not become ready within 60s");
-        await Bun.sleep(500);
-      }
+    try {
+      await poll(
+        async () => {
+          try {
+            await docker(
+              [
+                "exec",
+                container,
+                "pg_isready",
+                "-U",
+                "postgres",
+                "-d",
+                "postgres",
+              ],
+              undefined,
+              true,
+              remaining(),
+            );
+            return true;
+          } catch (error) {
+            if (cancel.signal.aborted) throw error;
+            // A probe that outruns the shared deadline is the deadline passing.
+            if (error instanceof DockerTimeout) throw new PollTimeoutError();
+            return false;
+          }
+        },
+        {
+          everyMs: 500,
+          deadlineMs: deadline,
+          signal: cancel.signal,
+          // The log wait may use the whole shared deadline; readiness is still
+          // probed once.
+          immediate: true,
+          until: (ready) => ready,
+        },
+      );
+    } catch (error) {
+      if (error instanceof PollTimeoutError)
+        throw new Error("Postgres did not become ready within 60s");
+      throw error;
     }
     for (const file of files)
       await docker(
@@ -296,8 +354,7 @@ export async function checkSchema(
     console.log("OK: committed schema matches a clean replay");
     return 0;
   } finally {
-    process.removeListener("SIGINT", interrupted);
-    process.removeListener("SIGTERM", interrupted);
+    cancellation[Symbol.dispose]();
     await cleanup();
   }
 }

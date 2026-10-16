@@ -1,3 +1,4 @@
+import { retrySync } from "../../../../shared/retry.ts";
 /** Immutable pickup sources for late PR capture.
  * Identifier aliases and session copies describe the latest pickup; this
  * content-addressed envelope preserves the exact bytes and ownership of an
@@ -240,24 +241,25 @@ export function writePickup(
     // restarts without changing its content or inode. Validation and renewal
     // share one lock hold, so expiry deletion cannot interleave; a deletion
     // that wins before that hold leaves the slot empty, so publish again.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        linkSync(temporary, file);
-        break;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-      try {
+    let renewing = false;
+    retrySync(
+      () => {
+        renewing = false;
+        try {
+          linkSync(temporary, file);
+          return;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        }
+        renewing = true;
         renewPickup(chainDir, token, { verify: true });
-        break;
-      } catch (error) {
-        if (
-          (error as NodeJS.ErrnoException).code !== "ENOENT" ||
-          attempt >= PUBLISH_RETRIES
-        )
-          throw error;
-      }
-    }
+      },
+      {
+        attempts: PUBLISH_RETRIES + 1,
+        retryIf: (error) =>
+          renewing && (error as NodeJS.ErrnoException).code === "ENOENT",
+      },
+    );
   } catch (error) {
     failure = { error };
   }

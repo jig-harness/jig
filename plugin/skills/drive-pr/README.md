@@ -399,6 +399,25 @@ in each, needs distinct, clone-specific values.
 
 If a drive died mid-round hours ago, just re-arm — recovery is the designed path, not an exception.
 
+## Timing traces
+
+Set `JIG_TRACE=1` when starting a drive to see where its time goes. The runtime
+writes one JSON object per completed [trace span](https://github.com/docomply/jig/blob/main/GLOSSARY.md) under
+`~/.local/state/jig/traces/<date>/`. `JIG_TRACE_FILE` enables the same records
+at a chosen file path. The drive and its children share a trace through
+`TRACEPARENT`, so command calls can be followed back to the pass or wait that
+started them.
+
+Each record has `trace_id`, `span_id`, `parent_id`, `name`, `start`,
+`duration_ms`, `status` and `attrs`. Command records contain the command name,
+exit code and timeout information. Arguments, standard input and command
+output are excluded. Tracing is disabled unless explicitly enabled.
+
+`reap-state.ts` removes date directories older than 14 days from the default
+trace directory. A custom trace file is managed by whoever chose its path.
+Timing records help diagnose slow commands and waits; the reviewer-stall
+state still requires its own completion policy.
+
 ## Changing this skill
 
 Read [`references/consistency.md`](references/consistency.md) first. The

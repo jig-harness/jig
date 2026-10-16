@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { retryAttempts, retryDelay, wait } from "../../../shared/retry.ts";
 /**
  * Find-or-create the per-PR+Type BATCH follow-up issue for a deferred review
  * finding, append the finding as a self-contained entry, and print the issue
@@ -480,8 +481,7 @@ export function retryBackoffMs(
   attempt: number,
   random: () => number = Math.random,
 ): number {
-  const capped = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** (attempt - 1));
-  return Math.round(capped * (0.5 + random() / 2));
+  return retryDelay(attempt, RETRY_BASE_MS, RETRY_MAX_MS, random);
 }
 
 /**
@@ -518,18 +518,11 @@ async function sleepUnlessAborted(
   signal: AbortSignal,
   sleeper: Sleeper,
 ): Promise<void> {
-  if (signal.aborted) return;
-  // Placeholder reassigned synchronously below, before this function ever
-  // awaits — the Promise executor runs immediately.
-  let onAbort: () => void = () => undefined;
-  const aborted = new Promise<void>((resolve) => {
-    onAbort = resolve;
-  });
-  signal.addEventListener("abort", onAbort, { once: true });
   try {
-    await Promise.race([sleeper(ms, signal), aborted]);
-  } finally {
-    signal.removeEventListener("abort", onAbort);
+    await wait(ms, signal, { sleep: sleeper });
+  } catch (error) {
+    // The caller turns its run-wide cancellation into the established diagnostic.
+    if (!signal.aborted) throw error;
   }
 }
 
@@ -2287,8 +2280,18 @@ export async function appendWithRetry(
     missingLabels = rebuilt.missingLabels;
     addLabels = rebuilt.addLabels;
   }
-  for (let attempt = 1; attempt <= APPEND_ATTEMPTS; attempt++) {
+  let prepareNext: (() => Promise<void>) | undefined;
+  for await (const attempt of retryAttempts({
+    attempts: APPEND_ATTEMPTS,
+    baseMs: RETRY_BASE_MS,
+    maxMs: RETRY_MAX_MS,
+    clock: {
+      now: systemClock.now,
+      sleep: (ms) => sleepUnlessAborted(ms, signal, sleep),
+    },
+  })) {
     checkDeadline(attempt);
+    await prepareNext?.();
     if (needsWrite) {
       // Computed from `livePriority` as it stands AT THIS ATTEMPT — primed
       // fresh above ahead of attempt 1, or whatever the previous attempt's
@@ -2504,85 +2507,81 @@ export async function appendWithRetry(
     // waste, and a `fetchLabels` failure on this dead path would replace the
     // useful "concurrent writer keeps overwriting" result below with an
     // unrelated lookup error. Stop here and let the loop end.
-    if (attempt === APPEND_ATTEMPTS) break;
-    // Pace the next attempt BEFORE the label resolution below, not just
-    // before the write: `fetchLabels` is itself a remote call, so pausing
-    // any later would leave the lookup in the same burst as the verify that
-    // just failed. See `retryBackoffMs` for the bound and the jitter, and
-    // `sleepUnlessAborted`'s own doc for why this races the pause (rather
-    // than awaiting it alone) and why that race cleans up after itself.
-    await sleepUnlessAborted(retryBackoffMs(attempt), signal, sleep);
-    checkDeadline(attempt);
-    // Someone else's write landed on top of ours. Rebuild both effects
-    // from what is actually there now and try again — including the
-    // description, which a no-write pass may now need to restore. Shared
-    // with the pre-loop priming above via `rebuildDescriptionAndLabels`
-    //  — see that function's own doc — so this file has exactly
-    // ONE read-then-decide path, not two that can drift.
-    //
-    // The no-parent block, like the priming's own rebuild above, is derived
-    // from `issue.parent` — this FRESH read's own placement — never from
-    // this or any invocation's own rationale. `!= null`, not `!== null`: a
-    // response missing the field entirely (`undefined`) must read the same
-    // as an explicit `null` — treating it as "has a parent" would drop the
-    // no-parent block from a genuinely parentless batch, the opposite
-    // corruption. See `descriptionForRepair` / `noParentRationaleForRepair`.
-    const rebuilt = await rebuildDescriptionAndLabels(
-      linear,
-      liveDescription,
-      issue.parent != null,
-      liveLabels,
-      entry,
-      args,
-      wantedForRepair,
-      requiredContext,
-      signal,
-    );
-    // Compared against THIS attempt's own fresh `liveDescription`, not the
-    // pre-loop seed — mirrors `livePriority`'s refresh-from-the-latest-read
-    // discipline above. `entryOk`/`stillMissing`/`priorityOk` above already
-    // narrowed down WHY this attempt failed; a rebuild whose result equals
-    // what is already live (entry present, no wipe to repair) means the
-    // description was never the problem, and the next write must not resend
-    // it — see `needsDescriptionWrite`'s own doc.
-    description = rebuilt.description;
-    needsDescriptionWrite = rebuilt.needsDescriptionWrite;
-    // `descriptionForRepair` rebuilds only when `liveDescription` is itself
-    // wiped — see its own doc. Once true, stays true (never reset to
-    // false, hence `||=` rather than `=`): a later pass whose OWN
-    // `liveDescription` is non-empty does not rebuild again, but that
-    // non-empty description is non-empty PRECISELY because an earlier pass
-    // of this same run (or the pre-loop priming) wrote it, so this run
-    // stays responsible for its placement claim regardless. Contrast the
-    // priming block above, which REPLACES rather than ORs — it runs before
-    // this run has done anything, so there is nothing yet to accumulate.
-    everRebuiltScaffold = everRebuiltScaffold || rebuilt.scaffoldWasWiped;
-    // Recompute from what is LIVE now, not the snapshot taken before the
-    // loop started. `stillMissing`/`batchContractHolds` above just
-    // detected an erasure against the frozen `missingLabels` — without
-    // this, `addLabels` at the top of the next attempt is still built
-    // from names computed before any concurrent writer touched the
-    // issue, so an erased label that was never "missing" in that
-    // snapshot can never be restored and every remaining attempt fails
-    // the same way. `requiredContext`, not `inherited`/`extraLabels` alone —
-    // see `repairableMissingLabels`'s own doc: a context label the batch
-    // already carried before this run started is required by the contract
-    // but invisible to `inherited ∪ extraLabels`. `args.extraLabels` passed
-    // again as `requiredExtras`, so a non-context `--labels` flag erased
-    // mid-loop is repaired too, not just context labels. `wantedForRepair`,
-    // not `args` — see its doc: an erased Size must be restored to what the
-    // BATCH had, not this run's own value, and its resolved label must pass
-    // group-membership against that SAME expectation or `assertGroupMembership`
-    // rejects its own repair as a Size conflict.
-    missingLabels = rebuilt.missingLabels;
-    addLabels = rebuilt.addLabels;
-    needsWrite = true;
+    if (attempt === APPEND_ATTEMPTS)
+      return {
+        confirmed: false,
+        labelsAdded: [...labelsEverAdded],
+        unconfirmed,
+      };
+    prepareNext = async () => {
+      checkDeadline(attempt);
+      // Someone else's write landed on top of ours. Rebuild both effects
+      // from what is actually there now and try again — including the
+      // description, which a no-write pass may now need to restore. Shared
+      // with the pre-loop priming above via `rebuildDescriptionAndLabels`
+      //  — see that function's own doc — so this file has exactly
+      // ONE read-then-decide path, not two that can drift.
+      //
+      // The no-parent block, like the priming's own rebuild above, is derived
+      // from `issue.parent` — this FRESH read's own placement — never from
+      // this or any invocation's own rationale. `!= null`, not `!== null`: a
+      // response missing the field entirely (`undefined`) must read the same
+      // as an explicit `null` — treating it as "has a parent" would drop the
+      // no-parent block from a genuinely parentless batch, the opposite
+      // corruption. See `descriptionForRepair` / `noParentRationaleForRepair`.
+      const rebuilt = await rebuildDescriptionAndLabels(
+        linear,
+        liveDescription,
+        issue.parent != null,
+        liveLabels,
+        entry,
+        args,
+        wantedForRepair,
+        requiredContext,
+        signal,
+      );
+      // Compared against THIS attempt's own fresh `liveDescription`, not the
+      // pre-loop seed — mirrors `livePriority`'s refresh-from-the-latest-read
+      // discipline above. `entryOk`/`stillMissing`/`priorityOk` above already
+      // narrowed down WHY this attempt failed; a rebuild whose result equals
+      // what is already live (entry present, no wipe to repair) means the
+      // description was never the problem, and the next write must not resend
+      // it — see `needsDescriptionWrite`'s own doc.
+      description = rebuilt.description;
+      needsDescriptionWrite = rebuilt.needsDescriptionWrite;
+      // `descriptionForRepair` rebuilds only when `liveDescription` is itself
+      // wiped — see its own doc. Once true, stays true (never reset to
+      // false, hence `||=` rather than `=`): a later pass whose OWN
+      // `liveDescription` is non-empty does not rebuild again, but that
+      // non-empty description is non-empty PRECISELY because an earlier pass
+      // of this same run (or the pre-loop priming) wrote it, so this run
+      // stays responsible for its placement claim regardless. Contrast the
+      // priming block above, which REPLACES rather than ORs — it runs before
+      // this run has done anything, so there is nothing yet to accumulate.
+      everRebuiltScaffold = everRebuiltScaffold || rebuilt.scaffoldWasWiped;
+      // Recompute from what is LIVE now, not the snapshot taken before the
+      // loop started. `stillMissing`/`batchContractHolds` above just
+      // detected an erasure against the frozen `missingLabels` — without
+      // this, `addLabels` at the top of the next attempt is still built
+      // from names computed before any concurrent writer touched the
+      // issue, so an erased label that was never "missing" in that
+      // snapshot can never be restored and every remaining attempt fails
+      // the same way. `requiredContext`, not `inherited`/`extraLabels` alone —
+      // see `repairableMissingLabels`'s own doc: a context label the batch
+      // already carried before this run started is required by the contract
+      // but invisible to `inherited ∪ extraLabels`. `args.extraLabels` passed
+      // again as `requiredExtras`, so a non-context `--labels` flag erased
+      // mid-loop is repaired too, not just context labels. `wantedForRepair`,
+      // not `args` — see its doc: an erased Size must be restored to what the
+      // BATCH had, not this run's own value, and its resolved label must pass
+      // group-membership against that SAME expectation or `assertGroupMembership`
+      // rejects its own repair as a Size conflict.
+      missingLabels = rebuilt.missingLabels;
+      addLabels = rebuilt.addLabels;
+      needsWrite = true;
+    };
   }
-  return {
-    confirmed: false,
-    labelsAdded: [...labelsEverAdded],
-    unconfirmed,
-  };
+  return { confirmed: false, labelsAdded: [...labelsEverAdded], unconfirmed };
 }
 
 async function main(): Promise<number> {

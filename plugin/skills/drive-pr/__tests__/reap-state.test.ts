@@ -93,7 +93,13 @@ function cleanEnv(extra: Record<string, string>): Record<string, string> {
     if (k.startsWith("GIT_") || v === undefined) continue;
     env[k] = v;
   }
-  return { ...env, ...extra };
+  // The reaper also expires local trace days, independently of stateDir.
+  return {
+    ...env,
+    HOME: join(root, "home"),
+    USERPROFILE: join(root, "home"),
+    ...extra,
+  };
 }
 
 async function runReap(
@@ -1987,4 +1993,22 @@ describe("the CLI entry-point guard survives a symlinked invocation path", () =>
     expect(proc.exitCode).toBe(0);
     expect(proc.stdout.toString()).toContain("DRY RUN");
   });
+});
+
+it("expires trace days even when no drive state has been created", async () => {
+  const home = join(root, "trace-retention-home");
+  const traceDay = join(home, ".local", "state", "jig", "traces", "2000-01-01");
+  mkdirSync(traceDay, { recursive: true });
+  writeFileSync(join(traceDay, "trace.jsonl"), "{}\n");
+  const opts = {
+    stateDir: join(home, "missing-state"),
+    env: { HOME: home, USERPROFILE: home },
+  };
+  const dry = await runReap(["--json"], opts);
+  expect(dry.exitCode).toBe(0);
+  expect(existsSync(traceDay)).toBe(true);
+  expect(JSON.parse(dry.stdout).traceDays).toEqual(["2000-01-01"]);
+  const removed = await runReap(["--json", "--delete"], opts);
+  expect(removed.exitCode).toBe(0);
+  expect(existsSync(traceDay)).toBe(false);
 });

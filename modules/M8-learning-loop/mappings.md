@@ -16,7 +16,9 @@ runtimes. Replace `<placeholders>` with your values.
 
 The recipes run the gates from a pinned Jig checkout: each gate imports
 the shared implementation in `lib/module-gates.ts`, so keep the module and
-`lib/` together and set `M8` to the module's path inside that checkout.
+`lib/` together and set `M8` to the module's path inside that checkout. The
+reflection trigger also uses `plugin/shared/cleanup.ts` from that checkout
+to release its lock through the shared process registry.
 
 ### GitHub Actions
 

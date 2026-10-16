@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { retryAttempts } from "../../../shared/retry.ts";
 /**
  * Finish one drive-pr round: take a validated commit that exists locally all
  * the way to "the held batch is drained, or every refusal is named".
@@ -145,7 +146,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isTrustedBotConfirmation } from "./lib/bot-confirmation.ts";
-import { fail, isDigits, isGitSha, runMain, short, sleep } from "./lib/cli.ts";
+import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
 import {
   ciHoldTimeoutSeconds,
@@ -1525,7 +1526,13 @@ async function main(): Promise<number> {
   // runs, means there is nothing to give back — the map only ever holds each
   // key's current truth.
   const resultsByKey = new Map<string, ItemResult>();
-  for (let read = 0; read < MAX_BATCH_READS; read++) {
+  for await (const attempt of retryAttempts({
+    attempts: MAX_BATCH_READS,
+    baseMs: 250,
+    maxMs: 2_000,
+    random: () => 1,
+  })) {
+    void attempt;
     const heldRes = await run(tsArgv(driveState, ["held", pr]), {
       stderr: "inherit",
     });
@@ -1609,19 +1616,6 @@ async function main(): Promise<number> {
       }
     }
     if (!stale) break;
-    // Back off before the next re-read. `references/round-finish.md` documents
-    // this as this caller's own obligation — the per-key exit 4 contract only
-    // says "re-read"; it deliberately leaves retry pacing to the caller ("A
-    // caller MUST bound its own per-item retries (and back off between them)
-    // rather than relying on the outer pass counter") — and an immediate
-    // re-read failed that obligation: a stale exit 4 means some OTHER operation
-    // is racing this same key, and reading again instantly just races it again,
-    // turning sustained contention into a tight subprocess/API/lock loop
-    // instead of letting it settle. Exponential and keyed to `read` — a later
-    // re-read is more likely genuine sustained contention than a one-off race,
-    // so it backs off harder — capped at 2s so MAX_BATCH_READS's own bound on
-    // total wall-clock stays meaningful.
-    await sleep(Math.min(0.25 * 2 ** read, 2));
   }
 
   const refused = report.items.filter((i) => i.action === "refused").length;
