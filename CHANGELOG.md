@@ -226,6 +226,20 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.37.2] - 2026-10-16
+
+### Changed
+
+- The skills list (the plugin README's table and the website's Skills page)
+  is grouped into families (deliver a change, review a change,
+  understand, decide and record, learn from the work, inspect and analyse),
+  each in the order its skills are used: `do-item` before `drive-pr`,
+  `reflect` before `review-reflections`.
+- Every skill row has a "Works with" column saying what starts it, what it
+  runs and what it hands over to, for example `drive-pr` with
+  `resolve-review-comments` and `resolve-conflicts`. The Skills page
+  and each skill's page show it.
+
 ## [0.37.1] - 2026-10-16
 
 ### Fixed
@@ -1877,7 +1891,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.37.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.37.2...HEAD
+[0.37.2]: https://github.com/docomply/jig/compare/v0.37.1...v0.37.2
 [0.37.1]: https://github.com/docomply/jig/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/docomply/jig/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/docomply/jig/compare/v0.35.2...v0.36.0
