@@ -315,7 +315,8 @@ Practices a working repository validated, for modules that exist today:
   - a post-merge stage;
   - a lifecycle map with a check that every named skill exists.
 - **M0, M4, M5 and M8**:
-  - model routing with family-alias pins and a generated roster;
+  - a reference generator for the model roster, when the working tool moves
+    here;
   - instructions that keep working in every runtime;
   - deferred promises in documents that point at live tracker items;
   - an audit catalog;

@@ -239,11 +239,95 @@ optional discovery mirror; it never substitutes copies for the canonical skills.
 ## Model tiers per vendor
 
 The tiers of the [model routing policy](reference/model-routing-policy.md)
-are roles; these are the model families that filled them in mid-2026. Verify
+are roles; these are the model families that filled them in 2026. Verify
 against the vendor's current lineup and pricing before relying on them.
 
 | Tier | Anthropic | OpenAI |
 |------|-----------|--------|
+| **Judgment** | Claude Fable-class | no separate counterpart named; the top reasoning tier of the flagship family is the nearest |
 | **Strategic** | Claude Opus-class | GPT-5-class flagship |
 | **Execution** | Claude Sonnet-class | mid-tier GPT |
 | **Scout** | Claude Haiku-class | `*-mini` models |
+| **Pin as** | a bare family alias ([below](#family-aliases-and-pins-in-claude-code)) | the undated model name, which points at the current snapshot, never a dated snapshot; where a runtime offers neither, one central name the repository maps to a release in a single place |
+
+Long prompts can cost more than their length suggests: Anthropic's pricing
+has billed a request whose prompt passes a length threshold at a higher rate
+on some models (pricing documentation, checked 2026-10). That is why the
+policy keeps scouts short and bounded; check the vendor's current pricing
+page for the thresholds that apply.
+
+### Family aliases and pins in Claude Code
+
+From Claude Code's documentation on model configuration and sub-agents,
+checked 2026-10; re-check after a CLI upgrade.
+
+- **The aliases.** An agent's or skill's `model:` front matter takes a bare
+  family alias, `fable`, `opus`, `sonnet` or `haiku`, which ordinarily
+  resolves to that family's current release (the same-family and
+  third-party-provider bullets below give the exceptions). A versioned id
+  (`claude-…` with a date or release number) is accepted too, and that is the problem: it freezes the pin.
+  `inherit` (in an agent's or a skill's `model:`) keeps the caller's model,
+  as an omitted field does for a skill: neither is a pin, so a metadata
+  check accepts both and derives no tier from them.
+- **Invocation-time overrides.** A `model` passed when a subagent is invoked
+  takes precedence over the subagent's `model:` front matter, and `--model`
+  sets a spawned CLI's model the same way. A value chosen at the call site
+  assigns a model outside the metadata the check reads, so the policy
+  forbids it: route through a definition that carries the pin instead. A
+  value the caller reads from that checked metadata or skill configuration
+  and forwards unchanged declares nothing new and is allowed.
+- **A subagent in the session's own family.** A family alias in a subagent's
+  `model:` front matter, or in the model passed when it is invoked, resolves
+  to the session's exact model, not the family's current release, when the
+  session already runs a model of that family. A session on an older Opus
+  release therefore runs a `model: opus` subagent on that older release too.
+  An alias guarantees the current release only where neither this nor a
+  provider override applies.
+- **Third-party providers.** Through Amazon Bedrock, Google Cloud Vertex AI or
+  another provider, an alias may resolve to an older release than it does on
+  Anthropic's own API. A deployment there sets the provider's
+  `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL` and
+  `ANTHROPIC_DEFAULT_HAIKU_MODEL` (and the equivalent for any other family it
+  uses) to the intended releases. That is environment configuration, outside
+  what a repository's roster check can see.
+- **Session model and pinned model.** The model chosen for a session
+  (`/model`) runs the session and every skill that neither declares its own
+  `model:` nor hands off to a pinned agent. The two ways to pin differ in how
+  long the pin lasts. A subagent, and a skill that runs forked
+  (`context: fork`), runs on its pin inside its own context, and the caller
+  continues on its own model when it returns. An inline skill's `model:`
+  instead switches the session's model for the rest of the current turn: the
+  caller keeps running on it, gathering and editing included, until the next
+  user prompt restores the session model. So a premium tier meant for one
+  call belongs on a subagent or a forked skill, not an inline skill. A forked
+  skill with no `model:` of its own but an `agent:` field runs on that
+  agent's pin. Choosing
+  the session model is a person's own cost and quality decision; moving a pin
+  is governed by the policy.
+- **Effort.** The `effort:` front matter field sets an agent's or skill's
+  effort beside its pin; default effort differs between model generations, so
+  a scout sets `effort: low` explicitly.
+
+### Judgment-tier access and data retention
+
+Vendor terms and runtime behaviour that change without notice; each line
+carries the date it was observed. Re-check after a CLI upgrade and in each
+account before a Judgment-tier layer runs unattended.
+
+- **Data retention (vendor documentation, checked 2026-10).** Anthropic lists
+  its Fable models as Covered Models: they require 30-day data retention, zero
+  data retention is not available for them, and a request from an
+  organisation or workspace whose retention settings do not meet that is
+  rejected rather than downgraded
+  ([API and data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention#model-specific-data-retention-requirements)).
+  An arrangement that keeps other families' payloads unretained does not
+  extend to them.
+- **Usage credits (observed 2026-10, Claude Code 2.1.x).** The CLI reports
+  that a Fable session draws on usage credits rather than the plan's usage
+  limits: a separate pool that runs out independently of the plan.
+- **Enablement (observed 2026-10, Claude Code 2.1.x).** The CLI may ask for a
+  one-time interactive step (`/model fable` in an interactive session) to
+  review and enable the model. One headless run that spawned a subagent
+  pinned to `fable`, in an account that had never taken that step, completed
+  on the Fable model without an error: one data point, in one account and
+  build, not a guarantee.

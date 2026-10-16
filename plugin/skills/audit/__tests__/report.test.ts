@@ -1486,6 +1486,7 @@ describe("the Markdown copy", () => {
         "|--------|-----------|----------------|--------|",
         "| M1 Gates enforcement ladder | `gate-set-documented` | absent → convention | Fixed |",
         "| M0 Instruction architecture | `load-model-recorded` | not scored → absent | Added by Jig |",
+        "| M0 Instruction architecture | `model-pins-are-family-aliases` | not scored → expected absent | Added by Jig |",
         "| M0 Instruction architecture | `context-budget-gated` | not scored → absent | Added by Jig |",
         "| M1 Gates enforcement ladder | `gate-outcomes-distinguish-could-not-check` | not scored → absent | Added by Jig |",
         "| M1 Gates enforcement ladder | `stale-exceptions-fail` | not scored → absent | Added by Jig |",

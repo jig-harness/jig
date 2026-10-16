@@ -851,6 +851,38 @@ make, use the entry's term instead.
 - **Scout** — a small, cheap agent (fast model, read-only) sent ahead of
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
+- **Model tier** — the cost class of model an agent or skill runs on, named by
+  role: *Judgment*, Strategic, Execution or *Scout*. Derived from the model
+  family it declares, not from how important its job sounds. See the
+  [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md).
+  *Avoid*: model level (a *maturity level* is something else).
+- **Judgment tier** — the narrowest *model tier*: the top reasoning model,
+  admitted only for a *decision layer* that is judgment-only, low-volume and
+  high-leverage, and that a mechanical rule already tried and failed to
+  settle.
+- **Decision layer** — the one contested call inside a larger procedure, split
+  out so that it alone runs on an expensive *model tier* while the evidence
+  gathering and ranking around it run on cheaper ones. The unit the *Judgment
+  tier* is assigned to, rather than a whole skill or agent.
+- **Family alias** — a model name that selects a model family rather than
+  one release (`opus`, `sonnet`). A pin written with it ordinarily resolves to
+  the family's current release, though not always: a session already on an
+  older release of that family, or a third-party provider's mapping, can
+  resolve it to an older one
+  ([resolution exceptions](modules/M0-instruction-architecture/mappings.md#family-aliases-and-pins-in-claude-code)).
+  A versioned model id freezes the pin instead.
+- **A/B baseline** — the cheaper model a premium model assignment is compared
+  against, recorded in its own field next to the assignment: as a family
+  alias with the planned comparison until the comparison runs, then with the
+  exact release that was measured. It is what a downgrade returns to; it is
+  never itself a pin.
+- **Cost per completed task** — what a piece of agent work costs from start to
+  a finished, accepted result: every token stream billed, every turn, retry
+  and review round. The measure a move between *model tiers* on cost grounds
+  must compare; list price per token is not it.
+- **Model roster** — the list of which agent or skill runs on which *model
+  tier*, generated from their metadata and checked for drift, never kept by
+  hand.
 - **Auditor** — Jig's runnable assessment: parallel surveys of a
   repository, stack detection, per-module maturity scoring, and a prioritized
   recommendations report, recorded in the audited repository so a re-run

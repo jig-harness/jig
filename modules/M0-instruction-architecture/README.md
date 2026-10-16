@@ -78,7 +78,10 @@ Further invariants decide whether those instructions reach the agent at all:
   by an import or a native read, per-directory files where conventions differ,
   conditional rules with documented loading semantics, dispositions with flip
   conditions. What each runtime loads is recorded with dated evidence and a
-  procedure to check it again.
+  procedure to check it again. Model pins in agent and skill metadata are
+  family aliases, checked over the metadata itself, and a roster of them,
+  where one is kept, is generated from it
+  ([model routing policy](reference/model-routing-policy.md)).
 - **Strict** — instruction files carry freshness checks (M2): countable facts
   are CI-verified against reality, referenced paths are checked to exist, and
   the instruction set has a named owner and review cadence. CI fails a change
@@ -131,7 +134,11 @@ What this module provides:
   decisions that always stay with a human (shared with
   [M7](../M7-pr-lifecycle-review/)).
 - [`reference/model-routing-policy.md`](reference/model-routing-policy.md) —
-  which model tier handles which work, and why.
+  which model tier (Judgment, Strategic, Execution, Scout) handles
+  which work and at what effort, the decision rule for a new agent or skill,
+  cost measured per completed task, model pins as family aliases in
+  metadata with a generated roster, and the admission test that keeps the
+  Judgment tier narrow.
 - [`reference/sync-skills-mirror.ts`](reference/sync-skills-mirror.ts) — keeps
   a second runtime's skill directory as a symlink mirror of the canonical one;
   `--check` reports drift. Its self-test is in
@@ -162,8 +169,9 @@ instead. Whether a runtime received a rule at all is the observation in
 [mappings.md](mappings.md#what-each-runtime-loads); the checks measure what
 the repository asks each runtime to load, not what arrived.
 
-Future: a generator for a per-agent model roster (the routing policy describes
-the pattern; the generate-and-check mechanism belongs with
+Future: a reference generator for the model roster, which arrives when the
+working tool moves here (the routing policy states what it renders and
+rejects; its generate-and-check mechanism belongs with
 [M2](../M2-generated-artifact-freshness/)), and a pull-request review step that
 reads rule frontmatter to pick the rules relevant to a diff (it belongs with
 [M7](../M7-pr-lifecycle-review/)'s review harness).

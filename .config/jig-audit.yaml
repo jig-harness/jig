@@ -48,6 +48,10 @@ criteria:
     # prior: absent: git grep -il disposition outside templates/reference/fixtures hits only module docs, GLOSSARY.md, criteria yaml; no dispositions doc of Jig's own, none linked from AGENTS.md
     score: absent
     evidence: "No dispositions document of Jig's own; defaults with flip conditions are scattered in AGENTS.md prose (Ratchet-Loosen only when a person asked, second implementation when a consumer needs it, HITL flag-don't-act); modules/M0-instruction-architecture/templates/dispositions.md is not applied"
+  M0/model-pins-are-family-aliases:   # standard, requires mechanical
+    # Every model tier an agent or skill declares lives in its metadata (or, for a judgment pass inside a skill, in that skill's configuration) as a family alias, never a versioned model id (where the runtime has no family aliases, the vendor's most general model name, or one central name mapped to a release in a single place), a CI check over that metadata enforces it, and any committed roster of the assignments is generated from the metadata and drift-checked (expected-absent for a repository whose agents and skills pin no model, in metadata or at invocation).
+    score: expected-absent
+    evidence: "No agent or skill pins a model: at a66ee22 git grep for model: front matter in plugin/ and .claude/ finds none, plugin/agents/review-arbiter.md states that none is pinned and a consumer pins it in its own definition, no skill configuration carries a model setting, no skill or script passes a model at invocation (no --model flag or subagent model parameter in plugin/skills or plugin/agents), so there is no Judgment-tier assignment needing a baseline, and no roster file is tracked"
   M0/instruction-freshness-checked:   # strict, requires mechanical
     # Countable facts and referenced paths in instruction files are verified against reality by a CI check that fails on drift.
     # prior: convention: scripts/check-md-links.ts in `bun run gates` (required check 'gates') fails on broken Markdown links, but nothing re-derives countable facts such as AGENTS.md's ordered gate list against scripts/gates.ts, so the mechanical bar is not met

@@ -40,6 +40,10 @@ criteria:
     # Behavioral defaults (dispositions) are written down, and every disposition states the condition under which it flips.
     score: absent
     evidence: "No dispositions document. The nearest thing is .github/security.md:5 ('No AI slop will be accepted.'), a policy line with no flip condition."
+  M0/model-pins-are-family-aliases:   # standard, requires mechanical
+    # Every model tier an agent or skill declares lives in its metadata (or, for a judgment pass inside a skill, in that skill's configuration) as a family alias, never a versioned model id (where the runtime has no family aliases, the vendor's most general model name, or one central name mapped to a release in a single place), a CI check over that metadata enforces it, and any committed roster of the assignments is generated from the metadata and drift-checked (expected-absent for a repository whose agents and skills pin no model, in metadata or at invocation).
+    score: expected-absent
+    evidence: "No agent or skill definitions and no instruction files (same search as universal-instruction-file), so nothing pins a model and no roster exists."
   M0/instruction-freshness-checked:   # strict, requires mechanical
     # Countable facts and referenced paths in instruction files are verified against reality by a CI check that fails on drift.
     score: absent
