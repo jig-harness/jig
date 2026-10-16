@@ -148,6 +148,7 @@ changes are marked **Breaking** and say what a consumer changes.
   formatter (`bun lint`, `bun fmt`) as a replacement for Biome once they ship
   in a stable Bun release, with what the move would cost: the custom rules,
   the ratchet's counting, the rule settings and the module mappings.
+- The website serves every page as Markdown for coding agents (each page at a directory address; the not-found page has no twin): a request that asks for `text/markdown` gets the page's Markdown twin (also at the page's address with `index.md` added), and the site has an `llms.txt` at the root and one in each of the modules, skills, principles, factory, adopt and plugin sections, linking to those twins, the section overviews and the skills' agent contracts among them. The build converts each page, keeping the anchors twins link to, checks every link in the twins and the `llms.txt` files, and fails on a missing page, twin or anchor ([design/website.md](design/website.md#text-for-agents-markdown-and-llmstxt)); the glossary defines the term.
 
 ### Changed
 
