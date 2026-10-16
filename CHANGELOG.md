@@ -226,6 +226,15 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.37.1] - 2026-10-16
+
+### Fixed
+
+- Drive-pr's quota tests now exercise both acceptance and rejection of the legacy
+  `EST5EDT` zone independently of the runtime's zone database, so local gates
+  pass on runtimes that reject it. Unsupported reset zones continue to park the
+  drive rather than guessing a reset time.
+
 ## [0.37.0] - 2026-10-16
 
 M10's verified-pointer watchdog decides by cause, and the environment kit gains its hygiene rules: every created resource has a reaper, the promotion gap is read from git ancestry, and a check confirms an environment's currency before judging it; M12 gets per-worktree data namespaces with their reaper.
@@ -1868,7 +1877,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.37.1...HEAD
+[0.37.1]: https://github.com/docomply/jig/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/docomply/jig/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/docomply/jig/compare/v0.35.2...v0.36.0
 [0.35.2]: https://github.com/docomply/jig/compare/v0.35.1...v0.35.2
