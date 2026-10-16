@@ -14,10 +14,20 @@ const rows = await Promise.all(
   all.map(async (s) => ({
     ...s,
     purposeHtml: await mdInline(s.purpose, "plugin/README.md"),
+    relationsHtml: s.relations ? await mdInline(s.relations, "plugin/README.md") : "",
+    blurbHtml: s.family ? await mdInline(s.family.blurb, "plugin/README.md") : "",
     stations: stationsRunBy(s.name),
     mods: modulesRunBy(s.name),
   })),
 );
+// The groups in the order the plugin README lists them, then the agent.
+const groups: { title?: string; blurbHtml?: string; agent: boolean; rows: typeof rows }[] = [];
+for (const r of rows) {
+  const title = r.family?.name;
+  let g = groups.find((x) => x.agent === r.agent && x.title === title);
+  if (!g) groups.push((g = { title, blurbHtml: r.blurbHtml, agent: r.agent, rows: [] }));
+  g.rows.push(r);
+}
 const STATION_NOTE: Record<string, string> = {
   audit: "Inspects the factory itself, outside the stations",
   "promote-memory": "The learning loop around both levels",
@@ -44,37 +54,49 @@ unrun.push({ station: "Design · every stage", href: "/factory/#station-band", a
     </div>
     <div class="th"><span aria-hidden="true">Skill</span><span aria-hidden="true">What it does</span><span><span aria-hidden="true">Runs station</span><TermInfo term="station" /></span><span aria-hidden="true">Runs module</span></div>
     {
-      [false, true].map((agents) => (
+      groups.map((g) => (
         <>
-          {agents && (
+          {g.agent ? (
             <>
               <h2 class="h2">Agent</h2>
               <p class="muted small">Skills call it themselves when a finding is contested; you do not invoke it by hand.</p>
             </>
+          ) : (
+            g.title && (
+              <>
+                <h2 class="h2">{g.title}</h2>
+                {g.blurbHtml && <p class="muted small" set:html={g.blurbHtml} />}
+              </>
+            )
           )}
           <ol class="rows">
-            {rows
-              .filter((s) => s.agent === agents)
-              .map((s) => (
-                <li>
-                  <a class="name" href={`/skills/${s.name}/`}>{s.name}</a>
-                  <span class="purpose" set:html={s.purposeHtml} />
-                  <span class="stations">
-                    {s.stations.map((t) => (
-                      <a href={t.href}>
-                        <StatusMark kind="skill" />
-                        <span class="vh">Runs station: </span>
-                        <span>{t.label}</span>
-                      </a>
-                    ))}
-                    {s.stations.length === 0 && <span class="muted">{STATION_NOTE[s.name] ?? "Used at many stations"}</span>}
-                  </span>
-                  <span class="mods">
-                    {s.mods.map((m) => <ModChip id={m.id} />)}
-                    {s.mods.length === 0 && <span class="muted">{s.agent ? "Called by the review skills" : "Supports every module; runs none on its own"}</span>}
-                  </span>
-                </li>
-              ))}
+            {g.rows.map((s) => (
+              <li>
+                <a class="name" href={`/skills/${s.name}/`}>{s.name}</a>
+                <span class="purpose">
+                  <span set:html={s.purposeHtml} />
+                  {s.relationsHtml && (
+                    <span class="relations">
+                      <span class="rel-label">Works with</span> <span set:html={s.relationsHtml} />
+                    </span>
+                  )}
+                </span>
+                <span class="stations">
+                  {s.stations.map((t) => (
+                    <a href={t.href}>
+                      <StatusMark kind="skill" />
+                      <span class="vh">Runs station: </span>
+                      <span>{t.label}</span>
+                    </a>
+                  ))}
+                  {s.stations.length === 0 && <span class="muted">{STATION_NOTE[s.name] ?? "Used at many stations"}</span>}
+                </span>
+                <span class="mods">
+                  {s.mods.map((m) => <ModChip id={m.id} />)}
+                  {s.mods.length === 0 && <span class="muted">{s.agent ? "Called by the review skills" : "Supports every module; runs none on its own"}</span>}
+                </span>
+              </li>
+            ))}
           </ol>
         </>
       ))
@@ -129,6 +151,19 @@ unrun.push({ station: "Design · every stage", href: "/factory/#station-band", a
   .purpose {
     font-size: 15px;
     line-height: 1.55;
+  }
+  .relations {
+    display: block;
+    margin-top: 6px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .rel-label {
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
   }
   .stations {
     display: flex;

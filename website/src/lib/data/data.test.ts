@@ -213,6 +213,44 @@ test("the plugin's tables give every skill and the agent", () => {
   expect(skills.find((s) => s.agent)?.command).toBe("jig:review-arbiter");
 });
 
+test("the skills are in families, in the order they are used, each saying how it works with the others", () => {
+  const skills = parseSkills(read("plugin/README.md")).filter((s) => !s.agent);
+  for (const s of skills) {
+    expect(s.family?.blurb, s.name).toBeTruthy();
+    expect(s.relations, s.name).not.toBe("");
+  }
+  // Consecutive rows of one family form one group, so a family split in two
+  // shows up here as a repeated name.
+  const groups: [string | undefined, string[]][] = [];
+  for (const s of skills) {
+    const last = groups.at(-1);
+    if (last && last[0] === s.family?.name) last[1].push(s.name);
+    else groups.push([s.family?.name, [s.name]]);
+  }
+  expect(groups).toEqual([
+    [
+      "Deliver a change",
+      [
+        "do-item",
+        "drive-pr",
+        "resolve-review-comments",
+        "resolve-conflicts",
+        "fix-ci",
+      ],
+    ],
+    ["Review a change", ["review", "github-actions"]],
+    [
+      "Understand, decide and record",
+      ["explain", "decide", "adr", "design-brief-builder"],
+    ],
+    [
+      "Learn from the work",
+      ["reflect", "review-reflections", "promote-memory", "descar"],
+    ],
+    ["Inspect and analyse", ["audit", "programmatic-execution"]],
+  ]);
+});
+
 test("the adoption guides parse into steps and phases", () => {
   const b = parseBrownfield(read("adoption/brownfield.md"));
   expect(b.ladder.map((s) => s.lead)).toContain("Audit");

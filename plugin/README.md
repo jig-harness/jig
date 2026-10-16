@@ -14,25 +14,51 @@ step at all. Each repository keeps only its own values (its gate command,
 reviewer names, issue team) in one configuration file, which the skills read
 when they run.
 
-| Skill | What it does | Invoke as |
-|-------|--------------|-----------|
-| [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` |
-| [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` |
-| [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` |
-| [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/jig:review` |
-| [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` |
-| [resolve-conflicts](skills/resolve-conflicts/SKILL.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files, records every decision in the commit message and checks that no change was silently dropped | `/jig:resolve-conflicts` |
-| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, caching and the repository's own workflow conventions | `/jig:github-actions` |
-| [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/jig:adr` |
-| [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/jig:descar` |
-| [reflect](skills/reflect/README.md) | Records what a session learned about the repository's scaffolding (instructions, skills, gates) in a store every repository shares: merges duplicates, names each finding's class, escalates a class that keeps recurring to one tracker issue. On only when the configuration has a `reflection` section | `/jig:reflect` |
-| [review-reflections](skills/review-reflections/README.md) | Turns the stored findings into changes a person approves: reconciles approved fixes with what merged, groups what recurred, proposes a change, deferral, dismissal or escalation per group, and records each decision | `/jig:review-reflections` |
-| [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/jig:promote-memory` |
-| [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/jig:programmatic-execution` |
-| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool, grounded in the repository's real schema and code | `/jig:design-brief-builder` |
-| [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/jig:decide` |
-| [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/jig:explain` |
-| [audit](skills/audit/README.md) | Audits the repository against Jig's practice modules: checks its `.config/jig.yaml` against the repository, scores every module's maturity criteria with evidence, and records the result in the repository so the next audit reports what changed | `/jig:audit` |
+The skills come in groups, each in the order its skills are used. The
+last column says how a skill connects to the others: what starts it, what it
+runs, what it hands over to.
+
+**Deliver a change.** One item of work, from the tracker to a merged pull request. `do-item` opens the pull request and arms `drive-pr`; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
+
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
+| [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
+| [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md) |
+| [resolve-conflicts](skills/resolve-conflicts/SKILL.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files, records every decision in the commit message and checks that no change was silently dropped | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
+| [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
+
+**Review a change.** Check work against the repository's own standards before and during review.
+
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [review](skills/review/SKILL.md) | Reviews a diff, plan or pull request in tiers (pattern checks, contract checks, semantic review) against the repository's decision rules and change-area catalog | `/jig:review` | Its tiers are the ones [do-item](skills/do-item/SKILL.md)'s pre-pull-request gate runs; reads the rules [adr](skills/adr/SKILL.md) derives; posts none of its findings to the pull-request threads [resolve-review-comments](skills/resolve-review-comments/README.md) settles, which come from the pull request's own reviewers |
+| [github-actions](skills/github-actions/SKILL.md) | Reviews GitHub Actions workflow changes for security, pinning, caching and the repository's own workflow conventions | `/jig:github-actions` | The workflow-specific form of [review](skills/review/SKILL.md); sends a red CI run to [fix-ci](skills/fix-ci/SKILL.md) |
+
+**Understand, decide and record.** Design-level work: learn how it works today, settle the question, write the answer where the next session finds it.
+
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/jig:explain` | Comes before [decide](skills/decide/SKILL.md) and shares its sheet kit; cites the records [adr](skills/adr/SKILL.md) keeps |
+| [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/jig:decide` | Called by [do-item](skills/do-item/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/README.md) when a call is architectural; routes an outcome that clears the bar to [adr](skills/adr/SKILL.md) |
+| [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/jig:adr` | Records what [decide](skills/decide/SKILL.md) rules; its rules are what [review](skills/review/SKILL.md) checks against |
+| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool, grounded in the repository's real schema and code | `/jig:design-brief-builder` | Stands alone: the design-prototype station, ahead of the delivery skills |
+
+**Learn from the work.** What a session learned about the scaffolding goes into a shared store; a person approves what changes; lasting lessons end up in the repository's own documents.
+
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [reflect](skills/reflect/README.md) | Records what a session learned about the repository's scaffolding (instructions, skills, gates) in a store every repository shares: merges duplicates, names each finding's class, escalates a class that keeps recurring to one tracker issue. On only when the configuration has a `reflection` section | `/jig:reflect` | Offered at the end of a [drive-pr](skills/drive-pr/README.md) and by [do-item](skills/do-item/SKILL.md); its findings are what [review-reflections](skills/review-reflections/README.md) reads |
+| [review-reflections](skills/review-reflections/README.md) | Turns the stored findings into changes a person approves: reconciles approved fixes with what merged, groups what recurred, proposes a change, deferral, dismissal or escalation per group, and records each decision | `/jig:review-reflections` | The second half of [reflect](skills/reflect/README.md): run it periodically, or when a class of finding keeps recurring |
+| [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/jig:promote-memory` | Sends an architectural lesson to [adr](skills/adr/SKILL.md); a page it promotes gets a [descar](skills/descar/SKILL.md) pass before it becomes a permanent, approved document |
+| [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/jig:descar` | The pass a page [promote-memory](skills/promote-memory/SKILL.md) promoted gets before it becomes a permanent, approved document; runs on any docs page before it is promoted |
+
+**Inspect and analyse.** Tools that inspect the repository: `audit` records its findings; `programmatic-execution` runs read-only analysis.
+
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [audit](skills/audit/README.md) | Audits the repository against Jig's practice modules: checks its `.config/jig.yaml` against the repository, scores every module's maturity criteria with evidence, and records the result in the repository so the next audit reports what changed | `/jig:audit` | Opens the pull request for an applied recommendation under [do-item](skills/do-item/SKILL.md)'s pull-request policy and offers [drive-pr](skills/drive-pr/README.md) on it |
+| [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/jig:programmatic-execution` | Supports every other skill; none depends on it |
 
 The plugin also ships agents (a [subagent](../GLOSSARY.md) is a separately prompted helper
 that a skill hands a narrow job to):
@@ -341,10 +367,12 @@ lists them.
 
 ## The procedure skills
 
-The skills from `review` to `audit` in the table above need no
-configuration: each one detects what it can from the repository (its base
-branch, package manager, decision-record folder, documentation root) and falls
-back to generic guidance where a repository has nothing to detect. They read
+Every skill except `do-item`, `drive-pr` and `resolve-review-comments`
+(the drive loop, above) and `reflect` and `review-reflections` (on only
+with a `reflection` section) needs no configuration: each one detects what
+it can from the repository (its base branch, package manager,
+decision-record folder, documentation root) and falls back to generic
+guidance where a repository has nothing to detect. They read
 the fields the drive loop uses when present (`repository.base_branch`,
 `gates.command`, `drive.validation_plan_command`,
 `drive.change_areas_catalog`, `issue_tracker.*`, `review.bots`). Set one of

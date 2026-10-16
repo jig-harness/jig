@@ -30,6 +30,7 @@ const from = `${entry.id}.md`;
 const body = withoutTitle((entry.body ?? "").replace(/^---[\s\S]*?---\n/, ""));
 const bodyHtml = await md(body, from);
 const purposeHtml = skill ? await mdInline(skill.purpose, "plugin/README.md") : "";
+const relationsHtml = skill?.relations ? await mdInline(skill.relations, "plugin/README.md") : "";
 const mods = modulesRunBy(name);
 const stations = stationsRunBy(name);
 const command = skill?.command ?? (name === "review-arbiter" ? "jig:review-arbiter" : `/jig:${name}`);
@@ -65,6 +66,13 @@ const hasContract = entry.id.endsWith("/README");
       <h1>{name}</h1>
       <div class="cmd"><code><span class="accent">{prefix}</span>{name}</code><button type="button" class="copy" data-copy data-copy-text={command}>Copy</button></div>
       {purposeHtml && <p class="purpose" set:html={purposeHtml} />}
+      {
+        relationsHtml && (
+          <p class="relations">
+            <span class="label">Works with{skill?.family && ` · ${skill.family.name}`}</span> <span set:html={relationsHtml} />
+          </p>
+        )
+      }
       <div class="prose doc" set:html={bodyHtml} />
       <p class="source">
         <a class="out" href={`${REPO_URL}/blob/main/${from}`}>Source: {from}</a>
@@ -106,6 +114,12 @@ const hasContract = entry.id.endsWith("/README");
     line-height: 1.55;
     max-width: 66ch;
     text-wrap: pretty;
+  }
+  .relations {
+    margin: 12px 0 0;
+    font-size: 15px;
+    line-height: 1.55;
+    max-width: 66ch;
   }
   .doc {
     margin-top: 28px;
