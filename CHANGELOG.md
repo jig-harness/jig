@@ -219,6 +219,10 @@ changes are marked **Breaking** and say what a consumer changes.
   intro row. The overview's closing blocks (the learning loop, what stays
   with a person, what Jig leaves to the platform) now stand one above the
   other in the same layout, each with a larger drawing beside its text.
+- Website: What you get opens with its tool-wall drawing as a hero, the same
+  way the factory overview does: larger, behind the intro, fading into the
+  page on its left, right and lower edges. A page using the pattern can now
+  set the drawing's width and how far it reaches past the window's edge.
 
 ### Fixed
 
