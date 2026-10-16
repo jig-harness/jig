@@ -18,8 +18,8 @@ project-specific survey if the target has a large surface the four don't cover
 
 The four areas: agent scaffolding; documentation governance; automation &
 mechanical enforcement; review architecture & learning loop. They map onto the
-module map as: survey 1 → M0; survey 2 → M4/M5/M6; survey 3 → M1/M2/M3/M10/M12/M13/M14;
-survey 4 → M7/M8/M9/M11. (Tasks/memory, environments/CI, pipeline economy, testing strategy, process
+module map as: survey 1 → M0; survey 2 → M4/M5/M6; survey 3 → M1/M2/M3/M10/M12/M13/M14/M15;
+survey 4 → M7/M8/M9/M11. (Tasks/memory, environments/CI, pipeline economy, testing strategy, contracts and error handling, process
 observability and parallel-agent ergonomics are covered inside surveys 3–4 rather than each
 getting its own prompt — add a fifth survey only if one of those is a large
 surface in the target.)

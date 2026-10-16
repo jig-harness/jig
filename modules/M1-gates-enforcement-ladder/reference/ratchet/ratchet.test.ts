@@ -424,7 +424,7 @@ describe("loosening the configuration", () => {
     r.commit("narrow");
     const { code, out } = r.ratchet();
     expect(code).toBe(1);
-    expect(out).toContain("biome.json: includes[plugin:./p.grit]:!src/**");
+    expect(out).toContain("biome.json: includes[plugin:p.grit]:!src/**");
     expectApproved(r, out);
   });
 
@@ -911,9 +911,36 @@ describe("strictness and trailers", () => {
     });
     expect(loosened(before, after).sort()).toEqual([
       "linter.enabled",
-      "plugin:./p.grit",
+      "plugin:p.grit",
       "preset",
     ]);
+  });
+
+  test("a plugin moved to another directory keeps its strictness", () => {
+    const before = declared("biome", {
+      plugins: [{ path: "./tools/grit/p.grit", includes: ["**", "!src/**"] }],
+    });
+    const after = declared("biome", {
+      plugins: [
+        { path: "./modules/rules/p.grit", includes: ["**", "!src/**"] },
+      ],
+    });
+    expect(loosened(before, after)).toEqual([]);
+    const narrowed = declared("biome", {
+      plugins: [{ path: "./modules/rules/p.grit", includes: ["!src/**"] }],
+    });
+    expect(loosened(before, narrowed)).toEqual(["includes[plugin:p.grit]:**"]);
+    expect(loosened(before, declared("biome", {}))).toEqual(["plugin:p.grit"]);
+  });
+
+  test("two plugins with one file name are refused as ambiguous", () => {
+    expect(() =>
+      declared("biome", {
+        plugins: ["./a/p.grit", { path: "./b/p.grit" }],
+      }),
+    ).toThrow(
+      /plugins "\.\/a\/p\.grit" and "\.\/b\/p\.grit" share the file name p\.grit/,
+    );
   });
 
   test("naming a rule only to switch it off is a loosening", () => {

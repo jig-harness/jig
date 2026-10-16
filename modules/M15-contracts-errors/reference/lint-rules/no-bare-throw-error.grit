@@ -1,0 +1,44 @@
+// Flags a thrown native error: `throw new Error(...)` and the sibling
+// built-in constructors, with or without `new`, also spelled through
+// `globalThis`. A failure that crosses a module boundary carries a type and a
+// registered code, and a bug goes through the defect primitive; a native error
+// carries neither, so a caller can only branch on its message. The typed
+// error family's own module and the defect primitive construct native errors
+// on purpose: exclude those files by path in the plugin's `includes`, not
+// here. The constructor is matched as written; an alias (`const E = Error`)
+// is not followed, and a built error that is not thrown is not found. The
+// call form lists each constructor by name, since the pattern engine will not
+// bind a metavariable in the callee's position.
+or {
+  `throw new $ctor($...)` where {
+    $ctor <: or {
+      `Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError`,
+      `EvalError`, `URIError`, `AggregateError`,
+      `globalThis.Error`, `globalThis.TypeError`, `globalThis.RangeError`,
+      `globalThis.SyntaxError`, `globalThis.ReferenceError`,
+      `globalThis.EvalError`, `globalThis.URIError`, `globalThis.AggregateError`
+    }
+  },
+  `throw Error($...)`,
+  `throw TypeError($...)`,
+  `throw RangeError($...)`,
+  `throw SyntaxError($...)`,
+  `throw ReferenceError($...)`,
+  `throw EvalError($...)`,
+  `throw URIError($...)`,
+  `throw AggregateError($...)`,
+  `throw globalThis.Error($...)`,
+  `throw globalThis.TypeError($...)`,
+  `throw globalThis.RangeError($...)`,
+  `throw globalThis.SyntaxError($...)`,
+  `throw globalThis.ReferenceError($...)`,
+  `throw globalThis.EvalError($...)`,
+  `throw globalThis.URIError($...)`,
+  `throw globalThis.AggregateError($...)`
+} as $throw where {
+  register_diagnostic(
+    span = $throw,
+    message = "jig/no-bare-throw-error: a native error carries no type or code for the caller to branch on. Throw the typed error with a registered code, or the defect primitive for a bug.",
+    severity = "warn"
+  )
+}

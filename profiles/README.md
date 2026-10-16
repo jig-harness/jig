@@ -44,7 +44,8 @@ Production software, multiple contributors (human or agent). M0–M2 Standard;
 (delivery pipeline + PR lifecycle with layered review); **M9 Lite→Standard**
 (tracker labels that drive process); **M13 Lite** (superseded runs
 cancelled, a timeout on every job, no required pipeline filtered by paths);
-**M14 Lite** (test tiers and testing rules written down); **M12** if using
+**M14 Lite** (test tiers and testing rules written down); **M15 Lite** (the
+error contract written, one typed error with codes); **M12** if using
 parallel agent
 workspaces. M3 (change-area catalog) once the repo is big enough that "what
 does this change imply?" stops being obvious.
@@ -56,8 +57,10 @@ Everything in Team/Standard at Strict where defined, plus: **M1 Strict**
 freshness checked, a named owner), **M7 Strict** (HITL decision registry,
 merge reserved to humans), **M8** (learning loop with regression corpus), **M10 Standard+**
 (verify-then-promote, environment separation), **M11** (process
-observability/audit trails), **M13 Lite** and **M14 Standard** (enforced
-test budgets, tests with every change, type-checked tests). M13 Standard
+observability/audit trails), **M13 Lite**, **M14 Standard** (enforced
+test budgets, tests with every change, type-checked tests) and **M15
+Standard** (the swallowing forms linted, one error boundary that hides
+server-side detail). M13 Standard
 selects jobs from M3's change-area catalog, so neither profile's audit target
 goes past M13 Lite; a repository with a catalog has what Standard needs.
 Compliance artifacts (data-processing registers,

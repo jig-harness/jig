@@ -274,22 +274,6 @@ Still open:
 Done when the skip check is in M14's reference with its criterion, and the
 rest of the work listed above is in the module.
 
-### 16. M15 Contracts and error handling
-
-A new module for the failures and interfaces that callers and stored data
-depend on:
-
-- never swallow an error, and keep its cause (Jig's own lint rules for this
-  move into the module as its reference);
-- typed failure channels, and branching on code or type rather than message
-  text;
-- one boundary that maps errors to responses;
-- a registry of error codes as the single source, with every copy generated;
-- migrations that are immutable once applied, with ledger integrity;
-- a published interface that is internal by default.
-
-Done when the module, its criteria and the migration gate are in.
-
 ### 17. Corrected designs for the existing modules
 
 Practices a working repository validated, for modules that exist today:

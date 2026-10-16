@@ -1,0 +1,7 @@
+# The registered codes, one per line: the code, then the text a reference
+# to it is written as (a constant's qualified name). A code with no name is
+# referenced by its literal only.
+SYS-001 ErrorCodes.INTERNAL
+VAL-001 ErrorCodes.VALIDATION
+RES-001 ErrorCodes.NOT_FOUND
+RES-002 ErrorCodes.CONFLICT

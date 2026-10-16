@@ -1,0 +1,72 @@
+// Flags a test of an error's message text inside a catch clause: strict or
+// loose equality in either operand order, prefix, suffix, substring, index or
+// search, a regular-expression test, with optional chaining and case folding.
+// The message is for people; a caller branches on the error's type or code.
+// Only a catch clause is matched, which is what tells a caught error's
+// `.message` from an unrelated object's without a type checker; inside one,
+// every `.message` test is flagged, an unrelated object's included. Not found,
+// and left to review: a helper that tests the message of an error it received
+// as a parameter, a `switch` on the message, a destructured `{ message }`,
+// bracket access, another string method in the chain, and a promise's
+// `.catch(callback)`, which is not a catch clause.
+or {
+  `$obj.message.startsWith($_)`,
+  `$obj.message.endsWith($_)`,
+  `$obj.message.includes($_)`,
+  `$obj.message.match($_)`,
+  `$obj.message.indexOf($_)`,
+  `$obj.message.search($_)`,
+  `$obj?.message.indexOf($_)`,
+  `$obj?.message.search($_)`,
+  `$obj.message?.indexOf($_)`,
+  `$obj.message?.search($_)`,
+  `$obj?.message?.indexOf($_)`,
+  `$obj?.message?.search($_)`,
+  `$obj?.message.startsWith($_)`,
+  `$obj?.message.endsWith($_)`,
+  `$obj?.message.includes($_)`,
+  `$obj?.message.match($_)`,
+  `$obj.message?.startsWith($_)`,
+  `$obj.message?.endsWith($_)`,
+  `$obj.message?.includes($_)`,
+  `$obj.message?.match($_)`,
+  `$obj?.message?.startsWith($_)`,
+  `$obj?.message?.endsWith($_)`,
+  `$obj?.message?.includes($_)`,
+  `$obj?.message?.match($_)`,
+  `$obj.message.toLowerCase().startsWith($_)`,
+  `$obj.message.toLowerCase().endsWith($_)`,
+  `$obj.message.toLowerCase().includes($_)`,
+  `$obj.message.toUpperCase().startsWith($_)`,
+  `$obj.message.toUpperCase().endsWith($_)`,
+  `$obj.message.toUpperCase().includes($_)`,
+  `$obj.message === $_`,
+  `$obj.message !== $_`,
+  `$_ === $obj.message`,
+  `$_ !== $obj.message`,
+  `$obj.message == $_`,
+  `$obj.message != $_`,
+  `$_ == $obj.message`,
+  `$_ != $obj.message`,
+  `$obj?.message === $_`,
+  `$obj?.message !== $_`,
+  `$obj?.message == $_`,
+  `$obj?.message != $_`,
+  `$_ === $obj?.message`,
+  `$_ !== $obj?.message`,
+  `$_ == $obj?.message`,
+  `$_ != $obj?.message`,
+  `$obj.message.toLowerCase() === $_`,
+  `$obj.message.toLowerCase() !== $_`,
+  `$obj.message.toUpperCase() === $_`,
+  `$obj.message.toUpperCase() !== $_`,
+  `$_.test($obj.message)`,
+  `$_.exec($obj.message)`
+} as $test where {
+  $test <: within JsCatchClause(),
+  register_diagnostic(
+    span = $test,
+    message = "jig/no-message-branch: the message is for people, not a discriminant. Branch on the error's type or code.",
+    severity = "warn"
+  )
+}

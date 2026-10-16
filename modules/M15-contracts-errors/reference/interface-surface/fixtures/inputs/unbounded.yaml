@@ -1,0 +1,51 @@
+# Seven unbounded request fields, one accepted exception and one exception
+# without a reason, which fails at any count. Responses are not inputs and
+# are not counted.
+openapi: 3.1.0
+info: { title: Orders, version: "1.0.0" }
+paths:
+  /orders:
+    get:
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }                     # 1: no maxLength
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }        # 2: no maximum
+        - name: ids
+          in: query
+          schema:
+            type: array                                # 3: no maxItems
+            items: { type: string, format: uuid }
+        - name: trace
+          in: header                                   # 4: no schema at all
+      responses:
+        "200":
+          description: The orders
+          content:
+            application/json:
+              schema: { type: string }                 # a response: not counted
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                notes: { type: string, x-unbounded: "free text the editor caps" }   # accepted
+                meta: { type: object }                 # 5: an open map
+                anything: {}                           # 6: no type
+                lines:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      sku: { type: string, pattern: "^[A-Z0-9-]+$" }
+                      count: { type: number }          # 7: no maximum
+                raw: { type: string, x-unbounded: "" } # an exception without a reason
+      responses:
+        "201": { description: Created }

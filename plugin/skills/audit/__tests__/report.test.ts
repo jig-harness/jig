@@ -836,7 +836,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toMatch(
-      /What changed \(67\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+      /What changed \(89\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
     );
     // A criterion Jig added after the prior audit's plugin was not assessed then.
     const added = addedAfter("0.14.0");
@@ -1100,7 +1100,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>66</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>88</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -1480,7 +1480,7 @@ describe("the Markdown copy", () => {
       [
         "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
         "",
-        "### What changed (67)",
+        "### What changed (89)",
         "",
         "| Module | Criterion | Before → after | Change |",
         "|--------|-----------|----------------|--------|",
@@ -1551,6 +1551,28 @@ describe("the Markdown copy", () => {
         "| M14 Testing strategy | `developer-state-isolated` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `doubles-and-builders-typed` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `coverage-trend-scheduled` | not scored → absent | Added by Jig |",
+        "| M15 Contracts errors | `error-contract-written` | not scored → absent | Added by Jig |",
+        "| M15 Contracts errors | `typed-error-with-code` | not scored → absent | Added by Jig |",
+        "| M15 Contracts errors | `error-code-registry` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `swallowing-forms-linted` | not scored → absent | Added by Jig |",
+        "| M15 Contracts errors | `one-error-boundary` | not scored → absent | Added by Jig |",
+        "| M15 Contracts errors | `server-failures-hide-detail` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `detached-work-reported` | not scored → absent | Added by Jig |",
+        "| M15 Contracts errors | `error-code-copies-generated` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `no-inline-error-codes` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `native-throw-linted` | not scored → absent | Added by Jig |",
+        "| M15 Contracts errors | `message-branch-linted` | not scored → absent | Added by Jig |",
+        "| M15 Contracts errors | `error-code-orphans-audited` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `telemetry-keyed-on-code` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `migration-discipline-written` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `applied-migrations-immutable` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `migration-ledger-integrity` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `migrations-structure-only` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `interface-policy-written` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `published-contract-filtered` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `input-bounds-ratcheted` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `unbounded-inputs-zero` | not scored → expected absent | Added by Jig |",
+        "| M15 Contracts errors | `failure-statuses-declared` | not scored → expected absent | Added by Jig |",
         "",
         "### Still open within the target (4)",
         "",

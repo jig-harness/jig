@@ -1,0 +1,2 @@
+SYS-001 ErrorCodes.INTERNAL
+RES-1 ErrorCodes.NOT_FOUND

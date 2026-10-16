@@ -1,0 +1,2 @@
+# A line without a file and a fingerprint.
+inline/src/orders.ts

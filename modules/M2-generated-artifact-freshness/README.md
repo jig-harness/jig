@@ -98,7 +98,10 @@ beside the check and runs it.
 
 Deliberately left out: further triad instances (error-code catalogs, seed
 data), because they would add domain values without adding mechanism — the
-worked index example carries the whole pattern.
+worked index example carries the whole pattern. The registry practice an
+error-code catalog is generated from (one registry, every copy generated, no
+code minted elsewhere) is [M15's](../M15-contracts-errors/README.md), with
+neutral values.
 
 Future: a generic generator for the derived-file inventory. The Strict
 criterion that requires one is stated in the module's [maturity criteria](../../plugin/skills/audit/criteria/M2-generated-artifact-freshness.yaml).

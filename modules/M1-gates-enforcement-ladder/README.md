@@ -43,7 +43,9 @@ behind is a place the rule silently no longer applies.
    projection can scope the pre-push gate depth to what the change actually
    touched instead of always running the heaviest set.
 3. **Gate-authoring rules** — one small script per codebase-wide rule
-   ("no direct fetch calls in frontend", "no DML in migrations"), each with a
+   ("no direct fetch calls in frontend", or
+   [M15's](../M15-contracts-errors/reference/migration-immutability/) "a
+   merged migration never changes"), each with a
    paired self-test and fixtures, wired into both pre-push and CI. Every
    gate, a [grep gate](../../GLOSSARY.md) or any other, is written to these
    rules:

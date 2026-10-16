@@ -44,15 +44,23 @@
   },
   "plugins": [
     {
-      "path": "./tools/quality/grit/json-parse-cast.grit",
+      "path": "./modules/M15-contracts-errors/reference/lint-rules/json-parse-cast.grit",
       "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
     },
     {
-      "path": "./tools/quality/grit/catch-return-default.grit",
+      "path": "./modules/M15-contracts-errors/reference/lint-rules/catch-return-default.grit",
       "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
     },
     {
-      "path": "./tools/quality/grit/stderr-ignore.grit",
+      "path": "./modules/M15-contracts-errors/reference/lint-rules/stderr-ignore.grit",
+      "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    },
+    {
+      "path": "./modules/M15-contracts-errors/reference/lint-rules/no-bare-throw-error.grit",
+      "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    },
+    {
+      "path": "./modules/M15-contracts-errors/reference/lint-rules/no-message-branch.grit",
       "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
     },
     {

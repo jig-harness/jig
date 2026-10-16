@@ -583,7 +583,7 @@ describe("since the last audit", () => {
       ),
     ).toEqual([
       "Fixed 1",
-      "Added by Jig 66",
+      "Added by Jig 88",
       "Still open within the target 4",
       "Still open beyond the target 78",
       "Unchanged and met 36",

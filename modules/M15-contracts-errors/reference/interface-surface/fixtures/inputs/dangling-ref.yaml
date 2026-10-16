@@ -1,0 +1,12 @@
+# A reference to a schema the document does not hold.
+openapi: 3.1.0
+info: { title: Orders, version: "1.0.0" }
+paths:
+  /orders:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Missing" }
+      responses:
+        "201": { description: Created }

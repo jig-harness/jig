@@ -765,4 +765,93 @@ criteria:
     # A scheduled CI job publishes coverage as a trend, also when it is below target, refuses to publish incomplete data, and no merge is blocked on a per-file coverage threshold.
     score: absent
     evidence: "Coverage is uploaded to Codecov from every matrix leg on each push and pull request (.github/workflows/main.yml, fail_ci_if_error: false), not on a schedule, and nothing refuses incomplete data; .github/codecov.yml sets no per-file threshold"
+  # M15 contracts-errors
+  M15/error-contract-written:   # lite, requires convention
+    # The error contract is written where agents and people read it: the three failure channels and which situation takes which, never swallow and keep the cause, branch on type or code and never on message text, a failure inside a transaction aborts it (rolls it back, by the path the transaction tool rolls back on), and errors reach callers only through one boundary.
+    score: absent
+    evidence: "No contract for the library's own failures: docs/errors.md (Subprocess failure, Preventing exceptions, Exit code, Failure reason, Error message) tells callers how to handle an ExecaError, and no instruction or contributing file exists at the root to state a channel, cause or branching rule for the code itself"
+  M15/typed-error-with-code:   # lite, requires convention
+    # One shared module defines the typed error that crosses module boundaries, carrying the tag a caller branches on (the registered code and its metadata, severity, message key and recovery hint, where the system emits codes), and the one defect primitive beside it; a result type, where one is used, is one type whose error arm carries a tag (expected-absent where no failure crosses a module boundary to a caller that branches on it: a command-line tool whose every failure ends the process with a status and a message).
+    score: absent
+    evidence: "ExecaError and ExecaSyncError (lib/return/final-error.js) are the typed family and keep the original as error.cause, but carry no tag a caller branches on: a failure is told apart by boolean properties (docs/errors.md, Failure reason; error.code is Node's system error code, docs/api.md:706); DiscardedError there is a control-flow signal, not a defect primitive; no result type"
+  M15/error-code-registry:   # lite, requires convention
+    # Every error code the system can emit is declared once, in one registry (a data file or one code module), with its metadata (severity, message key, recovery hint, transport status) and in one declared code format; the error contract names the registry as the only place a code is minted (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "execa emits no codes of its own: a failure reaches the caller as a thrown ExecaError told apart by its properties (docs/errors.md, Failure reason), error.code is Node's system error code when the subprocess fails to spawn (docs/api.md:706), and no caller receives anything beyond that thrown error, so there is no registry to hold"
+  M15/swallowing-forms-linted:   # standard, requires mechanical
+    # A lint run in CI flags the forms that turn a failure into a default value, an empty result or silence: a catch that returns a default without looking at its error, a child process whose error output is discarded, and a parsed input cast to a concrete type; it blocks the merge directly or under a ratchet on its count.
+    score: absent
+    evidence: "xo (package.json, run by npm test in CI) accepts the forms: empty catch blocks in lib/io/pipeline.js:20 and lib/terminate/kill.js:92, a catch returning a fallback in lib/resolve/exit-async.js:35; no rule covers a discarded child error output (a feature of this library) or a cast (plain JavaScript)"
+  M15/one-error-boundary:   # standard, requires mechanical
+    # Errors reach callers only through one boundary per transport (an error-handler plugin, a top-level middleware, an interceptor, the exit code boundary of a command-line tool) that writes one fixed shape and maps an error it does not know to an opaque generic failure: on a transport that carries codes, a response of code, message key, severity, recovery hint and correlation id, with an unknown error mapped to a registered generic code; on a command-line transport, or where the system emits no codes, an exit status per outcome and one message line, with an unknown error mapped to the generic failure status. No route or command builds an error response or exit of its own.
+    score: absent
+    evidence: "No single boundary: a subprocess failure reaches the caller as an ExecaError or ExecaSyncError built in one place (makeError in lib/return/result.js through getFinalError in lib/return/final-error.js, thrown by handleResult in lib/return/reject.js) with one documented shape (docs/api.md), but option validation and the ipc methods throw TypeError and Error directly from 33 files under lib/ (see M15/native-throw-linted), so those failures reach the caller in no shared shape"
+  M15/server-failures-hide-detail:   # standard, requires mechanical
+    # On a server-side failure the boundary sends no internal detail (no exception text, no interpolated template, no identifier), logs the detail through an allowlist keyed by the correlation id, and a test run in CI sends an unknown error through the boundary and asserts that the body holds the public field set (code, message key, severity, recovery hint, correlation id) with the generic code, and that no internal detail (stack, cause, query text, file path, the internal message) is in it (expected-absent where the repository serves no network interface).
+    score: expected-absent
+    evidence: "A library: no network interface and no response to strip"
+  M15/detached-work-reported:   # standard, requires convention
+    # Work nobody awaits goes through one helper that reports a failure with its cause and never rejects, and each long-running entry point installs one process-level handler for unhandled rejections that reports the same way, falls back to standard error and never throws (expected-absent where a lint rejects un-awaited promises and the repository starts no detached work).
+    score: absent
+    evidence: "No helper for work nobody awaits and no process-level handler, which a library should not install; the un-awaited promise is not linted either: nothing in package.json's xo configuration names a floating-promise rule, and lib/ipc/send.js:15 reasons about unhandledRejection by hand"
+  M15/error-code-copies-generated:   # standard, requires mechanical
+    # Every other copy of the codes (the client's code union, each locale's message catalog, the public error reference) is generated from the registry and carries a drift check in CI that regenerates through the generator's own function and compares the whole text; a registered code with no message entry in a locale, or with a placeholder entry, fails the check (expected-absent where no client, locale catalog or public reference holds a copy of the codes).
+    score: expected-absent
+    evidence: "No code to copy: the library declares no codes, has no client package, no locale catalog and no public code reference (docs/api.md documents the error's properties)"
+  M15/no-inline-error-codes:   # standard, requires mechanical
+    # No code is constructed outside the registry: the constructor is not reachable from elsewhere, or a gate in CI rejects a construction outside the registry over every package that depends on the error module, with an allowlist that is empty or lists existing debt by identity (file and code) rather than by count (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "execa emits no codes of its own (see M15/error-code-registry): failures are TypeError, Error or the two ExecaError classes, so there is no code constructor to keep out of reach"
+  M15/native-throw-linted:   # strict, requires mechanical
+    # A lint flags a thrown native error (throw new Error and the built-in siblings) outside the typed error family's own module and the defect primitive, blocking the merge directly or under a ratchet on its count.
+    score: absent
+    evidence: "throw new TypeError and throw new Error are the throws in 33 files under lib/ (option validation, the ipc methods), the typed family being reserved for subprocess failure; no lint rule covers them"
+  M15/message-branch-linted:   # strict, requires mechanical
+    # A lint flags a branch on an error's message text (equality, prefix, substring, a regular expression on .message, str(e), err.Error(), getMessage()) in a catch clause, blocking the merge directly or under a ratchet on its count.
+    score: absent
+    evidence: "No lint rule covers a test of an error's message; lib/ branches on none (its uses of .message rewrite or forward the text, lib/arguments/cwd.js:16), so the rule has no finding to show, and nothing holds it"
+  M15/error-code-orphans-audited:   # strict, requires mechanical
+    # An audit in CI reports every registered code that nothing outside the registry references (an orphan) against a baseline that names each accepted orphan with its reason and fails on a stale entry, and every code-shaped literal in a hand-written document that no registry entry declares (a reverse orphan) (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "execa emits no codes of its own (see M15/error-code-registry), so there is no set of declared codes to audit against the code or the documents"
+  M15/telemetry-keyed-on-code:   # strict, requires convention
+    # Error metrics and span attributes are keyed on the error's code and its type, never its message; structured logs carry the code and type as fields and a message or cause chain only as diagnostic detail that passes through redaction; and a method that returns a result type records the arm it returned as an outcome rather than as an error (expected-absent where the repository emits no telemetry).
+    score: expected-absent
+    evidence: "A library that emits no telemetry: no metrics, spans or structured logs; the verbose option prints lines to standard error for a person (lib/verbose/)"
+  M15/migration-discipline-written:   # lite, requires convention
+    # Where the repository has database migrations, the discipline is written beside them or in the instruction file: a merged migration is never edited, renamed or deleted and is corrected by a new one, a migration changes structure only, each migration's ledger entry lands with it, and a migration's commit carries a review marker (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "A process-execution library with no database: lib/ spawns child processes and the repository holds no migrations directory, SQL file, journal or revision chain, so there is no discipline to write beside one"
+  M15/applied-migrations-immutable:   # standard, requires mechanical
+    # A gate in CI fails a change that modifies, renames or deletes a migration file the base branch already holds, allowing only a restoration to content the file held before on that branch, and the migration runner records each file's hash when it applies it and refuses to run while an applied file's hash differs or the file is gone (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migrations to hold immutable: the library stores nothing in a database, and npm test (lint, unit, type) runs no migration tool"
+  M15/migration-ledger-integrity:   # standard, requires mechanical
+    # A check in CI holds the migration ledger and the files one to one, in strictly increasing order with no gap in the sequence and every field the runner reads explicit on each entry, so no migration is skipped silently or left without an entry (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migration ledger: no journal, changelog or revision chain exists, since the library has no database"
+  M15/migrations-structure-only:   # strict, requires mechanical
+    # A check in CI parses each migration with the database's grammar and blocks on a data statement (insert, update, delete, merge) anywhere in the statement tree, a procedural block or a function body included, fails a file whose dynamic statements it cannot read, and takes its exceptions from an allowlist outside the migration files that names each statement by identity under a reviewer's reason (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migrations to parse: the library has no database and no migrations directory"
+  M15/interface-policy-written:   # lite, requires convention
+    # Where the repository serves an interface (HTTP, RPC, GraphQL), the interface policy is written beside the contract or in the instruction file: an operation is internal unless a named external consumer justifies publishing it, a change that publishes one names its consumer, every request input declares a bound, and an operation declares every failure status its code can produce (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "A process-execution library serves no interface: its surface is the functions index.js exports, versioned by semver, with no served contract to keep a policy beside"
+  M15/published-contract-filtered:   # standard, requires mechanical
+    # The published and the internal contract documents are generated from one source in which each operation is marked once (a tag, an extension field, a path prefix, a package or a schema directive), and a gate in CI fails when the published document holds an operation carrying the internal mark (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No contract document: the library declares no HTTP, RPC or GraphQL operation; its type declarations (index.d.ts) are the package's export surface, not a served interface"
+  M15/input-bounds-ratcheted:   # standard, requires mechanical
+    # A check in CI counts the request input fields of the contract that declare no bound (a string with no maximum length, pattern or format; a number with no maximum; an array with no maximum item count; a field with no type) and fails when the count exceeds the base branch's or a committed ceiling, with a field that is unbounded on purpose marked by a reason in the contract (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No request inputs: the library's options are validated by lib/arguments/ at the call, not through a served contract"
+  M15/unbounded-inputs-zero:   # strict, requires mechanical
+    # The count of request input fields of the contract that declare no bound is zero, and a check in CI holds it there by failing on any unbounded field (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No request inputs: the library serves no contract, so there is no count of unbounded fields to hold at zero"
+  M15/failure-statuses-declared:   # strict, requires convention
+    # Each operation's declared failure responses name every status its code can produce: the boundary's generic server-side status, the validation status, the authentication and authorization refusals where those layers run, and the transport status of each domain error the handler throws; the review checks the list against the handler (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No operations with failure statuses: failures are thrown ExecaError instances and the subprocess's own exit code (docs/errors.md), not a served interface's responses"
 declined: []

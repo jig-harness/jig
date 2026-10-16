@@ -37,5 +37,8 @@
     { "path": "tsconfig.ratchet.json", "kind": "tsconfig" },
     { "path": ".fallowrc.jsonc", "kind": "fallow" }
   ],
-  "support": ["tools/quality/grit"]
+  "support": [
+    "tools/quality/grit",
+    "modules/M15-contracts-errors/reference/lint-rules"
+  ]
 }

@@ -31,6 +31,7 @@ profiles:
       M9: standard
       M13: lite
       M14: lite
+      M15: lite
     conditional:
       M12:
         level: lite
@@ -55,6 +56,7 @@ profiles:
       M11: standard
       M13: lite
       M14: standard
+      M15: standard
     conditional:
       M12:
         level: lite
@@ -63,4 +65,4 @@ profiles:
         level: lite
         when: what a change implies is no longer obvious from its paths
 
-order: [M1, M2, M0, M4, M5, M6, M7, M14, M9, M13, M12, M10, M3, M8, M11]
+order: [M1, M2, M0, M4, M5, M6, M7, M14, M15, M9, M13, M12, M10, M3, M8, M11]

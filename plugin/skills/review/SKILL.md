@@ -462,6 +462,13 @@ example:
 - database schema drift: the live schema against the committed schema file;
 - generated API description freshness, and any policy on what the API
   surface may expose;
+- the published interface surface: an operation the change adds to the
+  published contract names its external consumer in the pull request (not
+  "future customers"), every request input it declares carries a bound (a
+  length, pattern or format, a maximum, an item count, a type), and its
+  declared failure statuses cover what its handler and the error boundary
+  can produce; an operation only the repository's own clients need carries
+  the internal mark;
 - hand-written type mirrors of a schema across a client and server boundary;
 - data-isolation filters on queries, in a repository that keeps several
   customers' data in one database;

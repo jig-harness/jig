@@ -1,0 +1,49 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Orders", "version": "1.0.0" },
+  "paths": {
+    "/orders/{id}": {
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "get": {
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "name": "sort", "in": "query", "schema": { "enum": ["asc", "desc"] } }
+        ],
+        "responses": { "200": { "description": "The order" } }
+      },
+      "patch": {
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/OrderPatch" } }
+          }
+        },
+        "responses": { "200": { "description": "The order" } }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }
+    },
+    "schemas": {
+      "OrderPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reference": { "type": "string", "maxLength": 64 },
+          "quantity": { "type": "integer", "minimum": 1, "exclusiveMaximum": 10000 },
+          "paid": { "type": "boolean" },
+          "tags": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 32 } },
+          "shipping": { "oneOf": [ { "$ref": "#/components/schemas/Pickup" }, { "$ref": "#/components/schemas/Delivery" } ] },
+          "attributes": { "type": "object", "additionalProperties": { "type": "string", "maxLength": 128 } },
+          "blob": { "type": "string", "x-unbounded": "an opaque payload the service validates against the vendor's schema" },
+          "parent": { "$ref": "#/components/schemas/OrderPatch" }
+        }
+      },
+      "Pickup": { "type": "object", "additionalProperties": false, "properties": { "store": { "type": "string", "maxLength": 16 } } },
+      "Delivery": { "type": "object", "additionalProperties": false, "properties": { "address": { "type": "string", "maxLength": 256 } } }
+    }
+  }
+}

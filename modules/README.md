@@ -28,6 +28,7 @@ and reference gates.
 | [M12 Parallel-agent ergonomics](M12-parallel-agent-ergonomics/) | Multiple agents, one machine/repo: ports, mutexes, branch discipline, gate output for agents | — |
 | [M13 Pipeline economy](M13-pipeline-economy/) | CI spent only where it changes a merge decision: honest signal, selection, superseding, bounds, ordering, placement, the CI hold, caches | [`github-actions`](../plugin/skills/github-actions/SKILL.md) reviews workflow changes |
 | [M14 Testing strategy](M14-testing-strategy/) | Test tiers with budgets, honest doubles, injected clock, polling, tests with every change | — |
+| [M15 Contracts & error handling](M15-contracts-errors/) | Failures keep their cause and travel on three typed channels, callers branch on type or code, one boundary maps errors to responses, a merged migration never changes, an interface is internal by default | — |
 
 Adoption ordering for brownfield projects is leverage-first — typically
 M1 → M2 → M0 → M4 — but the [audit](../plugin/skills/audit/README.md) report's recommendation

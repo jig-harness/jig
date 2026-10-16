@@ -1,0 +1,120 @@
+# TEMPLATE — copy to your repo (e.g. src/errors/error-codes.yaml) and replace
+# the example codes with YOUR codes. This is the error-code registry: the one
+# place every code the system can emit is declared, with its metadata, in one
+# format. Every other copy of the codes is GENERATED from it and never edited:
+# the client's exhaustive code union, each locale's message catalog, the
+# public error reference. No code is constructed anywhere else.
+#
+# The registry may equally be a code module (one constant per code with the
+# same fields); whichever form it takes, there is one, and the generators and
+# gates read it. Jig's gates for the rule (no code constructed outside the
+# registry; orphans and reverse orphans) are described at
+# https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/reference/error-registry/README.md
+# and the freshness of each generated copy is M2's:
+# https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
+#
+#   format        the shape every code has, as a regular expression without
+#                 anchors; every scanner reuses it, so it is declared once
+#   generated     every copy generated from this file: its output, the command
+#                 that regenerates it and the command that fails when it is
+#                 stale (M2's triad; the hook wiring is M2's)
+#   codes[]       one entry per code:
+#     code          the wire code, matching `format`
+#     name          the constant the code is referenced by in source
+#     status        the status the error boundary writes for it on the
+#                   transport (an HTTP status, a gRPC status name)
+#     severity      info | warning | error | fatal
+#     message_key   the key of the message shown to a person, in every locale's
+#                   catalog; never a sentence
+#     recovery      what the caller may do: retry | reauthenticate |
+#                   contact-support | none
+#     since         the release that introduced the code; a code is retired, never
+#                   renumbered, so a client that still handles it keeps working
+
+version: 1
+
+format: "[A-Z]{2,5}-[0-9]{3}"
+
+generated:
+  - name: client-union
+    output: <packages/client/src/error-codes.generated.ts>
+    regenerate: <bun tools/generate-error-codes.ts>
+    check: <bun tools/generate-error-codes.ts --check>
+  - name: message-catalogs
+    output: <apps/web/messages/<locale>/errors.json>
+    locales: [<en>, <fr>]
+    regenerate: <bun tools/generate-error-catalog.ts>
+    # Fails on any difference, and on a placeholder entry the generator
+    # inserted for a code whose copy has not been written in that locale.
+    check: <bun tools/generate-error-catalog.ts --check>
+  - name: public-reference
+    output: <docs/reference/error-codes.md>
+    regenerate: <bun tools/generate-error-docs.ts>
+    check: <bun tools/generate-error-docs.ts --check>
+
+codes:
+  # --- the generic failure every boundary needs ---
+  - code: SYS-001
+    name: INTERNAL
+    status: 500
+    severity: fatal
+    message_key: errors.sys.internal
+    recovery: contact-support
+    since: <1.0.0>
+
+  # --- the caller's input ---
+  - code: VAL-001
+    name: VALIDATION
+    status: 400
+    severity: warning
+    message_key: errors.val.validation
+    recovery: none
+    since: <1.0.0>
+
+  # --- identity and access ---
+  - code: AUTH-001
+    name: NOT_AUTHENTICATED
+    status: 401
+    severity: warning
+    message_key: errors.auth.notAuthenticated
+    recovery: reauthenticate
+    since: <1.0.0>
+  - code: AUTH-002
+    name: FORBIDDEN
+    status: 403
+    severity: warning
+    message_key: errors.auth.forbidden
+    recovery: none
+    since: <1.0.0>
+
+  # --- resources ---
+  - code: RES-001
+    name: NOT_FOUND
+    status: 404
+    severity: warning
+    message_key: errors.res.notFound
+    recovery: none
+    since: <1.0.0>
+  - code: RES-002
+    name: CONFLICT
+    status: 409
+    severity: warning
+    message_key: errors.res.conflict
+    recovery: retry
+    since: <1.0.0>
+
+  # --- the world outside ---
+  - code: UP-001
+    name: UPSTREAM_UNAVAILABLE
+    status: 503
+    severity: error
+    message_key: errors.up.unavailable
+    recovery: retry
+    since: <1.0.0>
+  - code: RATE-001
+    name: RATE_LIMITED
+    status: 429
+    severity: warning
+    message_key: errors.rate.limited
+    recovery: retry
+    since: <1.0.0>

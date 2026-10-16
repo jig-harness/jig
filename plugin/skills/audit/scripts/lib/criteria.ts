@@ -80,6 +80,7 @@ export const MODULE_IDS = [
   "M12",
   "M13",
   "M14",
+  "M15",
 ] as const;
 
 const CRITERION_KEYS = new Set([

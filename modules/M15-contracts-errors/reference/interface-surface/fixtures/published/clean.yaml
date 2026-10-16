@@ -1,0 +1,38 @@
+# A published contract with no internal operation: the generator filtered
+# them out, and the tag catalog lists only published tags.
+openapi: 3.1.0
+info: { title: Orders, version: "1.0.0" }
+tags:
+  - name: Orders
+paths:
+  /orders:
+    get:
+      tags: [Orders]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200": { description: The orders }
+        "400": { description: A caller's error }
+        "500": { description: A generic failure }
+    post:
+      tags: [Orders]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewOrder" }
+      responses:
+        "201": { description: Created }
+        "409": { description: A conflict }
+        "500": { description: A generic failure }
+components:
+  schemas:
+    NewOrder:
+      type: object
+      properties:
+        reference: { type: string, maxLength: 64 }
+        items:
+          type: array
+          maxItems: 100
+          items: { type: string, pattern: "^[a-z0-9-]+$" }

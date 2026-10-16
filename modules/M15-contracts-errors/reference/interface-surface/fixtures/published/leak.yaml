@@ -1,0 +1,33 @@
+# A published contract the generator did not filter: an operation tagged
+# internal, a path under /internal, an operation marked by extension, a
+# path item marked by extension, and an internal tag in the catalog.
+openapi: 3.1.0
+info: { title: Orders, version: "1.0.0" }
+tags:
+  - name: Orders
+  - name: Jobs (Internal)
+paths:
+  /orders:
+    get:
+      tags: [Orders]
+      responses:
+        "200": { description: The orders }
+  /jobs:
+    get:
+      tags: [Jobs (Internal)]
+      responses:
+        "200": { description: The jobs }
+  /internal/health:
+    get:
+      responses:
+        "200": { description: Alive }
+  /preview:
+    post:
+      x-internal: true
+      responses:
+        "200": { description: A preview }
+  /agents/ingest:
+    x-internal: true
+    post:
+      responses:
+        "202": { description: Accepted }

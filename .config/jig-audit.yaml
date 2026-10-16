@@ -885,6 +885,95 @@ criteria:
     # A scheduled CI job publishes coverage as a trend, also when it is below target, refuses to publish incomplete data, and no merge is blocked on a per-file coverage threshold.
     score: absent
     evidence: "No coverage job: neither gates.yml nor the scheduled nightly.yml measures coverage, and website.yml only deploys; no per-file threshold either"
+  # M15 contracts-errors
+  M15/error-contract-written:   # lite, requires convention
+    # The error contract is written where agents and people read it: the three failure channels and which situation takes which, never swallow and keep the cause, branch on type or code and never on message text, a failure inside a transaction aborts it (rolls it back, by the path the transaction tool rolls back on), and errors reach callers only through one boundary.
+    score: absent
+    evidence: "No error contract at this commit: AGENTS.md and CONTRIBUTING.md state no rule for failures, causes or channels; the swallowing rules in tools/quality/grit/ each carried a header comment and no doctrine; modules/M15-contracts-errors did not exist"
+  M15/typed-error-with-code:   # lite, requires convention
+    # One shared module defines the typed error that crosses module boundaries, carrying the tag a caller branches on (the registered code and its metadata, severity, message key and recovery hint, where the system emits codes), and the one defect primitive beside it; a result type, where one is used, is one type whose error arm carries a tag (expected-absent where no failure crosses a module boundary to a caller that branches on it: a command-line tool whose every failure ends the process with a status and a message).
+    score: absent
+    evidence: "No shared typed error: a dozen classes extend Error across lib/ and plugin/skills/ (git grep 'extends Error'), each its own family with no shared tag, and callers do branch on them (instanceof in lib/cli.ts, lib/module-gates.ts, plugin/skills/adr/scripts/locate.ts); no defect primitive; no result type"
+  M15/error-code-registry:   # lite, requires convention
+    # Every error code the system can emit is declared once, in one registry (a data file or one code module), with its metadata (severity, message key, recovery hint, transport status) and in one declared code format; the error contract names the registry as the only place a code is minted (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "Jig emits no codes: its scripts fail through lib/cli.ts with an exit status and a message read where it is printed (lib/findings.ts names a rule per finding, not a code), no caller beyond the shell receives a failure, and no file declares a code format or a code with metadata, so there is no registry to hold"
+  M15/swallowing-forms-linted:   # standard, requires mechanical
+    # A lint run in CI flags the forms that turn a failure into a default value, an empty result or silence: a catch that returns a default without looking at its error, a child process whose error output is discarded, and a parsed input cast to a concrete type; it blocks the merge directly or under a ratchet on its count.
+    score: mechanical
+    evidence: "biome.json registers tools/quality/grit/catch-return-default.grit, stderr-ignore.grit and json-parse-cast.grit as plugins over every .ts outside tests, at warn under the ratchet (tools/quality/ratchet.jsonc; bun run quality in scripts/gates.ts, which CI runs on every pull request)"
+  M15/one-error-boundary:   # standard, requires mechanical
+    # Errors reach callers only through one boundary per transport (an error-handler plugin, a top-level middleware, an interceptor, the exit code boundary of a command-line tool) that writes one fixed shape and maps an error it does not know to an opaque generic failure: on a transport that carries codes, a response of code, message key, severity, recovery hint and correlation id, with an unknown error mapped to a registered generic code; on a command-line transport, or where the system emits no codes, an exit status per outcome and one message line, with an unknown error mapped to the generic failure status. No route or command builds an error response or exit of its own.
+    score: convention
+    evidence: "lib/cli.ts is the exit-code boundary (0 passed, 1 findings, 2 could not check) and lib/findings.ts the reporting shape most gates run through, but nothing holds a script to it: tools/quality/grit/no-raw-exit.grit counts the scripts that exit on their own under the ratchet, and an error the boundary does not know exits 2 with its message on standard error, the generic failure status of a command-line boundary with no codes"
+  M15/server-failures-hide-detail:   # standard, requires mechanical
+    # On a server-side failure the boundary sends no internal detail (no exception text, no interpolated template, no identifier), logs the detail through an allowlist keyed by the correlation id, and a test run in CI sends an unknown error through the boundary and asserts that the body holds the public field set (code, message key, severity, recovery hint, correlation id) with the generic code, and that no internal detail (stack, cause, query text, file path, the internal message) is in it (expected-absent where the repository serves no network interface).
+    score: expected-absent
+    evidence: "Jig serves no network interface: its scripts and skills are command-line tools, and the website is static"
+  M15/detached-work-reported:   # standard, requires convention
+    # Work nobody awaits goes through one helper that reports a failure with its cause and never rejects, and each long-running entry point installs one process-level handler for unhandled rejections that reports the same way, falls back to standard error and never throws (expected-absent where a lint rejects un-awaited promises and the repository starts no detached work).
+    score: absent
+    evidence: "Biome's noFloatingPromises is at error, so an un-awaited promise is spelled with void: plugin/skills/drive-pr/scripts/drive.ts starts work it does not await (void stopActivePass(...)) through no helper, and no entry point installs an unhandled-rejection listener"
+  M15/error-code-copies-generated:   # standard, requires mechanical
+    # Every other copy of the codes (the client's code union, each locale's message catalog, the public error reference) is generated from the registry and carries a drift check in CI that regenerates through the generator's own function and compares the whole text; a registered code with no message entry in a locale, or with a placeholder entry, fails the check (expected-absent where no client, locale catalog or public reference holds a copy of the codes).
+    score: expected-absent
+    evidence: "Jig has no client, no locale catalog and no public error reference: its scripts and skills are command-line tools whose output is read where it is printed, and the website renders the repository's own Markdown, so no second copy of any code exists to generate"
+  M15/no-inline-error-codes:   # standard, requires mechanical
+    # No code is constructed outside the registry: the constructor is not reachable from elsewhere, or a gate in CI rejects a construction outside the registry over every package that depends on the error module, with an allowlist that is empty or lists existing debt by identity (file and code) rather than by count (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "Jig emits no codes (see M15/error-code-registry): its scripts fail through lib/cli.ts with an exit status and a message, errors are thrown as new Error(message) throughout lib/, scripts/ and plugin/skills/, and there is no code constructor to keep out of reach"
+  M15/native-throw-linted:   # strict, requires mechanical
+    # A lint flags a thrown native error (throw new Error and the built-in siblings) outside the typed error family's own module and the defect primitive, blocking the merge directly or under a ratchet on its count.
+    score: absent
+    evidence: "No such rule among biome.json's GritQL plugins (tools/quality/grit/ holds the three swallowing rules, no-local-record-guard, no-raw-exit and no-bare-signal-handlers); throw new Error is the usual throw in lib/, scripts/ and plugin/skills/"
+  M15/message-branch-linted:   # strict, requires mechanical
+    # A lint flags a branch on an error's message text (equality, prefix, substring, a regular expression on .message, str(e), err.Error(), getMessage()) in a catch clause, blocking the merge directly or under a ratchet on its count.
+    score: absent
+    evidence: "No such rule among biome.json's GritQL plugins; plugin/skills/decide/scripts/resolve-precedent.ts tests err.message with a regular expression inside a catch clause"
+  M15/error-code-orphans-audited:   # strict, requires mechanical
+    # An audit in CI reports every registered code that nothing outside the registry references (an orphan) against a baseline that names each accepted orphan with its reason and fails on a stale entry, and every code-shaped literal in a hand-written document that no registry entry declares (a reverse orphan) (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "Jig emits no codes (see M15/error-code-registry), so there is no set of declared codes to compare with the code that throws or with the documents"
+  M15/telemetry-keyed-on-code:   # strict, requires convention
+    # Error metrics and span attributes are keyed on the error's code and its type, never its message; structured logs carry the code and type as fields and a message or cause chain only as diagnostic detail that passes through redaction; and a method that returns a result type records the arm it returned as an outcome rather than as an error (expected-absent where the repository emits no telemetry).
+    score: absent
+    evidence: "drive-pr's loop and fleet metrics (plugin/skills/drive-pr/scripts/) are the only telemetry; they record round outcomes and carry no error code or type, and the failures they log carry the message"
+  M15/migration-discipline-written:   # lite, requires convention
+    # Where the repository has database migrations, the discipline is written beside them or in the instruction file: a merged migration is never edited, renamed or deleted and is corrected by a new one, a migration changes structure only, each migration's ledger entry lands with it, and a migration's commit carries a review marker (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "Jig has no database and no migrations: no migrations directory, SQL file, journal or revision chain is tracked (plugin/skills/drive-pr/scripts/migrate-state-dir.ts moves a skill's state files and touches no database), so there is no discipline to write beside one"
+  M15/applied-migrations-immutable:   # standard, requires mechanical
+    # A gate in CI fails a change that modifies, renames or deletes a migration file the base branch already holds, allowing only a restoration to content the file held before on that branch, and the migration runner records each file's hash when it applies it and refuses to run while an applied file's hash differs or the file is gone (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migrations to hold immutable: the repository stores nothing in a database, and scripts/gates.ts runs no migration tool or wrapper"
+  M15/migration-ledger-integrity:   # standard, requires mechanical
+    # A check in CI holds the migration ledger and the files one to one, in strictly increasing order with no gap in the sequence and every field the runner reads explicit on each entry, so no migration is skipped silently or left without an entry (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migration ledger: no journal, changelog or revision chain exists, since the repository has no database"
+  M15/migrations-structure-only:   # strict, requires mechanical
+    # A check in CI parses each migration with the database's grammar and blocks on a data statement (insert, update, delete, merge) anywhere in the statement tree, a procedural block or a function body included, fails a file whose dynamic statements it cannot read, and takes its exceptions from an allowlist outside the migration files that names each statement by identity under a reviewer's reason (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migrations to parse: the repository has no database and no migrations directory"
+  M15/interface-policy-written:   # lite, requires convention
+    # Where the repository serves an interface (HTTP, RPC, GraphQL), the interface policy is written beside the contract or in the instruction file: an operation is internal unless a named external consumer justifies publishing it, a change that publishes one names its consumer, every request input declares a bound, and an operation declares every failure status its code can produce (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "Jig serves no interface: its scripts and skills are command-line tools read where they print, and the website is static, so there is no contract to keep a policy beside"
+  M15/published-contract-filtered:   # standard, requires mechanical
+    # The published and the internal contract documents are generated from one source in which each operation is marked once (a tag, an extension field, a path prefix, a package or a schema directive), and a gate in CI fails when the published document holds an operation carrying the internal mark (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No contract document to generate or filter: Jig declares no HTTP, RPC or GraphQL operation"
+  M15/input-bounds-ratcheted:   # standard, requires mechanical
+    # A check in CI counts the request input fields of the contract that declare no bound (a string with no maximum length, pattern or format; a number with no maximum; an array with no maximum item count; a field with no type) and fails when the count exceeds the base branch's or a committed ceiling, with a field that is unbounded on purpose marked by a reason in the contract (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No request inputs to bound: Jig's scripts take their inputs as command-line arguments checked by each script's own option parser, not through a served contract"
+  M15/unbounded-inputs-zero:   # strict, requires mechanical
+    # The count of request input fields of the contract that declare no bound is zero, and a check in CI holds it there by failing on any unbounded field (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No request inputs to bound: Jig serves no contract, so there is no count of unbounded fields to hold at zero"
+  M15/failure-statuses-declared:   # strict, requires convention
+    # Each operation's declared failure responses name every status its code can produce: the boundary's generic server-side status, the validation status, the authentication and authorization refusals where those layers run, and the transport status of each domain error the handler throws; the review checks the list against the handler (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No operations with failure responses: Jig's one failure surface is the exit code of its scripts (0, 1, 2 through lib/cli.ts), which is not a served interface"
 declined:
   - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
     reason: "Deferred."

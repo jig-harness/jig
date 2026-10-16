@@ -93,7 +93,7 @@ test("every criteria file parses as the audit reads it", () => {
       return [module, criteria.length] as const;
     }),
   );
-  expect(counts.size).toBe(15);
+  expect(counts.size).toBe(16);
   for (const [module, n] of counts) expect(n, module).toBeGreaterThan(0);
 });
 

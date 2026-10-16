@@ -188,6 +188,73 @@ make, use the entry's term instead.
 - **GritQL** — a query language for matching patterns in source code by its
   structure rather than its text, used to write custom lint rules. Biome runs
   GritQL rules as plugins.
+- **Failure channel** — one of the three ways a failure travels, decided by
+  the situation rather than the author's taste: an expected outcome the
+  caller branches on is returned as the *result type*, a failure that crosses
+  a module boundary is thrown as a *domain error*, and a bug is raised as a
+  *defect*. See [M15](modules/M15-contracts-errors/README.md).
+- **Result type** — the one tagged union a function returns when an expected
+  outcome can go either way: a success arm holding the value, or an error arm
+  whose error carries a tag the caller branches on. One type per repository;
+  a second shape for the same idea is a second channel.
+- **Domain error** — a typed error carrying a registered code and the
+  metadata the code declares (severity, message key, recovery hint). It is
+  what crosses a module boundary, and the only error the *error boundary*
+  maps by its code.
+- **Defect** — a bug or a broken invariant, raised through one primitive
+  (`invariant(condition, message)` or a defect error type) so that "defect"
+  is a mechanical property of how it was raised, not an author's judgment. It
+  maps to a generic server-side failure and is never caught to drive control
+  flow.
+- **Error boundary** — the one place errors reach a caller: the handler that
+  maps each error to a fixed response shape (code, message key, severity,
+  recovery hint, *correlation id*: the complete public field set), turns an
+  error it does not know into an opaque generic code, and sends no internal
+  detail on a server-side failure. A command-line tool's boundary writes an
+  exit status per outcome and one line on standard error instead.
+- **Correlation id** — an identifier given to one request and carried
+  through its logs, spans and error response, so support can find the
+  server-side detail the response does not carry.
+- **Detached work** — work started and not awaited (fire-and-forget: a cache
+  warmed in the background, a notification sent after the response). Nothing
+  is waiting on it, so a failure in it is reported by one helper, with its
+  cause, and never surfaces as a rejection.
+- **Error-code registry** — the one place every error code a system can emit
+  is declared, with its metadata and in one format. Every other copy of the
+  codes (a client's code union, a locale's message catalog, the public
+  reference) is a *generated artifact* of it, and no code is constructed
+  anywhere else. See [M15](modules/M15-contracts-errors/README.md).
+- **Orphan code** — a registered error code that nothing outside the
+  *error-code registry* references: dead weight in every generated copy, and
+  a code a client handles that can never arrive. Its mirror, a **reverse
+  orphan**, is a code-shaped literal in a hand-written document that no
+  registry entry declares. An audit reports both.
+- **Migration ledger** — the record of the migrations that exist to apply,
+  in order: a journal file, a changelog, a revision chain, or the files'
+  own sequence. Distinct from the table the runner writes to say what it
+  applied. The ledger and the files match one to one, in strictly
+  increasing order, so no migration can be skipped silently. See
+  [M15](modules/M15-contracts-errors/README.md).
+- **Fix forward** — correcting a migration that has merged, or any applied
+  artifact that must not change, by adding a new one that makes the
+  change, never by editing the one that ran.
+- **Structure-only migration** — a migration that changes the schema
+  (tables, columns, indexes, constraints, functions, policies) and no
+  data. A data change is a backfill with a runtime, a lock and a rollback
+  story of its own, and lives in a seed, a job or a reviewed one-off.
+- **Published interface** — the part of the interface a system serves that
+  external consumers build against, as its contract document declares it
+  (an OpenAPI document, a protobuf package, a GraphQL schema). An operation
+  is internal unless a named external consumer justifies publishing it,
+  because a published operation is a commitment to its shape for as long as
+  anyone integrates against it; each operation is marked once at its
+  source, and the published and the internal documents are generated from
+  that one source. See [M15](modules/M15-contracts-errors/README.md).
+- **Bounded input** — a request input field whose contract declares what it
+  accepts: a maximum length, pattern or format on a string, a maximum on a
+  number, a maximum item count on an array, a closed shape on an object, a
+  type on everything. The count of unbounded fields in a contract is held
+  under a *ratchet*.
 - **Dead code** — code nothing uses: files no entry point reaches, exports no
   module imports, dependencies no file loads.
 - **Cyclomatic and cognitive complexity** — two counts of how hard a function
@@ -1121,6 +1188,9 @@ make, use the entry's term instead.
   ([conditional reads](plugin/skills/drive-pr/scripts/lib/gh-conditional.ts)).
 - **NDJSON (newline-delimited JSON)** — structured JSON records written one per
   line, so a command can consume them as a stream.
+- **JSX** — an HTML-like markup syntax that some JavaScript and TypeScript
+  files embed, compiled to ordinary function calls. A tool that reads source
+  as text must handle it or say that it does not.
 - **ASCII (American Standard Code for Information Interchange)** — the basic
   character set containing English letters, digits and common punctuation.
 - **SHA (Secure Hash Algorithm)** — a family of content fingerprints; Git uses

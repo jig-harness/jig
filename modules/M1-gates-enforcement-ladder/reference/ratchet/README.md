@@ -42,7 +42,11 @@ it, and the existing count falls as code is touched.
     that sets a rule below its rank outside the override (named
     `<rule>@<files>`) counts, and so does a narrowed file scope: a pattern
     dropped from, or an exclusion added to, the files, the linter's or a
-    plugin's `includes` (named `includes`). Where a later entry decides
+    plugin's `includes` (named `includes`). A plugin is named by its file,
+    so one moved to another directory under the same name keeps its
+    strictness, as a rule that graduates to another group does; a
+    configuration listing two plugins with one file name is refused, since
+    the two could not be told apart. Where a later entry decides
     over an earlier one (Biome's `includes` patterns and its overrides), the
     entries both trees share must keep their order: moving one counts, named
     by the file's path. Biome's presets rank `none`, `recommended`, `all`,
@@ -108,7 +112,7 @@ run by `bun run quality`.
 | File | Role |
 |------|------|
 | `ratchet.ts` | The gate |
-| `ratchet.test.ts` | Self-tests against scratch repositories: growth fails, moves pass, promotion is reported, loosening (a severity, an override, a narrowed plugin scope, `strict: false` through `extends`, a removed pattern, configuration file, support path or narrowed counter in the wiring, an added support path or configuration file over a file the base has, a base whose own configuration cannot run, an excluded directory, an ignored path, a group switched off, a lower preset, a package-extended configuration replaced, a reordered include list or override, two overrides of the same files swapped, whatever their key order) fails without a trailer and passes with the trailers its failure names, a wiring path outside the repository is refused, a compiler flag's trailer does not accept findings an unapproved exclusion lost, a trailer outside the last paragraph or without a reason is ignored, the `extends` resolution agrees with the compiler's own `--showConfig`, a package's `tsconfig` field and a file inside a package included, a missing base is skipped locally and fails in CI; parser tests on recorded outputs |
+| `ratchet.test.ts` | Self-tests against scratch repositories: growth fails, moves pass, promotion is reported, loosening (a severity, an override, a narrowed plugin scope, `strict: false` through `extends`, a removed pattern, configuration file, support path or narrowed counter in the wiring, an added support path or configuration file over a file the base has, a base whose own configuration cannot run, an excluded directory, an ignored path, a group switched off, a lower preset, a package-extended configuration replaced, a reordered include list or override, two overrides of the same files swapped, whatever their key order) fails without a trailer and passes with the trailers its failure names, a plugin moved to another directory keeps its strictness, two plugins with one file name are refused, a wiring path outside the repository is refused, a compiler flag's trailer does not accept findings an unapproved exclusion lost, a trailer outside the last paragraph or without a reason is ignored, the `extends` resolution agrees with the compiler's own `--showConfig`, a package's `tsconfig` field and a file inside a package included, a missing base is skipped locally and fails in CI; parser tests on recorded outputs |
 | `fixtures/` | A recorded Biome report and compiler output |
 
 The gate needs git and the pinned Bun runtime, and imports the repository's

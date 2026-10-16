@@ -1,0 +1,1 @@
+# A registry list with no code in it.

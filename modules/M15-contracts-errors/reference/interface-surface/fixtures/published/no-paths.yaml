@@ -1,0 +1,4 @@
+# A document with no operation: a generator that produced nothing.
+openapi: 3.1.0
+info: { title: Orders, version: "1.0.0" }
+paths: {}

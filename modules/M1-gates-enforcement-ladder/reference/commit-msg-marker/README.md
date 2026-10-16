@@ -7,7 +7,9 @@ enforce it. This piece closes the gap with a **process marker**: a literal
 tag (e.g. `[reviewed:db-migration]`) that the committer adds to the
 commit-message body once the review is done, checked by a commit-msg hook
 whenever protected files are staged — and re-checked by a later gate (CI)
-so the local hook is a convenience, not the authority.
+so the local hook is a convenience, not the authority. The migration review
+of the default example is one rung of
+[M15's migration discipline](../../../M15-contracts-errors/README.md#core-pieces).
 
 `check-review-marker.ts` is the native Bun/TypeScript hook script. Wire it
 into your hook manager's `commit-msg` hook — see

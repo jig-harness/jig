@@ -1,0 +1,2 @@
+# This code is referenced, so the entry no longer accepts anything.
+RES-001

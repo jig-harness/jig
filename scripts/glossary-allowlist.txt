@@ -41,6 +41,11 @@ ECONOMY
 AUDIT
 CATALOG
 TESTING
+ERROR
+HANDLING
+MIGRATIONS
+INTERFACE
+SURFACE
 RECOMMENDED
 SKILLS
 # git refs / plumbing
@@ -57,10 +62,8 @@ SDK
 ERE
 CRLF
 EOF
-OpenAPI
 ORM
 AST
-DML
 DTO
 SQL
 HTTP
@@ -83,10 +86,13 @@ GPT
 MySQL
 MariaDB
 PostgreSQL
+FastAPI
 MongoDB
 CircleCI
 # the .NET platform
 NET
+# remote procedure call, the industry's name for the interface style
+RPC
 
 # operating-system signal names, as in SIGTERM; a reader looks them up in the
 # platform manual, and the documents using them say what each does

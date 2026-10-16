@@ -510,7 +510,10 @@ function ruleSeverities(rules: Record<string, unknown>): Map<string, number> {
   return out;
 }
 
-function biomeStrictness(doc: Record<string, unknown>): Map<string, number> {
+function biomeStrictness(
+  doc: Record<string, unknown>,
+  where: string,
+): Map<string, number> {
   const out = new Map<string, number>();
   const linter = record(doc.linter);
   out.set("linter.enabled", linter.enabled === false ? 0 : 1);
@@ -522,17 +525,38 @@ function biomeStrictness(doc: Record<string, unknown>): Map<string, number> {
   for (const [rule, rank] of ruleSeverities(rules)) out.set(rule, rank);
   scope("files", record(doc.files).includes, out);
   scope("linter", linter.includes, out);
-  plugins(doc.plugins, out);
+  plugins(doc.plugins, out, where);
   overrides(doc.overrides, out);
   return out;
 }
 
-function plugins(list: unknown, out: Map<string, number>): void {
+/**
+ * A plugin by its file name: one moved to another directory keeps its
+ * strictness, as a rule that graduates to another group does. Two plugins
+ * with one file name in different directories would be compared as one, so
+ * a configuration that lists them is refused rather than read ambiguously.
+ */
+const pluginName = (path: string): string => path.split("/").pop() ?? path;
+
+/** A Biome configuration whose plugins the ratchet cannot tell apart. */
+class AmbiguousPluginsError extends Error {
+  readonly code = "ratchet-ambiguous-plugins";
+}
+
+function plugins(list: unknown, out: Map<string, number>, where: string) {
+  const seen = new Map<string, string>();
   for (const p of Array.isArray(list) ? list : []) {
     const path = typeof p === "string" ? p : record(p).path;
     if (typeof path !== "string") continue;
-    out.set(`plugin:${path}`, 3);
-    scope(`plugin:${path}`, record(p).includes, out);
+    const name = pluginName(path);
+    const other = seen.get(name);
+    if (other !== undefined)
+      throw new AmbiguousPluginsError(
+        `${where}: plugins "${other}" and "${path}" share the file name ${name}, so the ratchet cannot tell them apart; rename one`,
+      );
+    seen.set(name, path);
+    out.set(`plugin:${name}`, 3);
+    scope(`plugin:${name}`, record(p).includes, out);
   }
 }
 
@@ -569,7 +593,7 @@ export function strictness(
   const text = readable(tree, path);
   if (text === undefined) return undefined;
   const doc = record(parseJsonc(text));
-  if (kind === "biome") return biomeStrictness(doc);
+  if (kind === "biome") return biomeStrictness(doc, path);
   const out = new Map<string, number>();
   severities(record(doc.rules), out);
   return out;
@@ -700,7 +724,7 @@ export function ordering(
   for (const p of Array.isArray(doc.plugins) ? doc.plugins : [])
     if (typeof record(p).path === "string")
       out.set(
-        `plugins[${record(p).path}].includes`,
+        `plugins[${pluginName(String(record(p).path))}].includes`,
         patterns(record(p).includes),
       );
   return out;
