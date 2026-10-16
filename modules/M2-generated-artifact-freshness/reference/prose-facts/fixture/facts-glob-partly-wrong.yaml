@@ -1,0 +1,6 @@
+# One of two files globs is mistyped: it matches nothing, so the fact cannot derive.
+facts:
+  - id: guides
+    files: ["guides/**/*.md", "recpies/**/*.md"]
+    phrasings:
+      - N guides total

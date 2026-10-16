@@ -1,0 +1,4 @@
+facts:
+  - id: tools
+    command: echo 9007199254740993
+    phrasings: ["N tools listed"]

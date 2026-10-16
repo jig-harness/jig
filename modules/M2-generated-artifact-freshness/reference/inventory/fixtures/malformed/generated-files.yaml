@@ -1,0 +1,6 @@
+# An entry without a check: it does not parse, so a generator cannot be
+# declared without the check that proves its output fresh.
+generated:
+  - outputs: ["out/report.txt"]
+    source: ["src/*.txt"]
+    command: "echo regenerate report"

@@ -1,0 +1,7 @@
+# A source glob that matches no repository file: a mistyped source would
+# otherwise stop the coupling from ever firing.
+generated:
+  - outputs: ["out/report.txt"]
+    source: ["src/*.txt", "src/*.json"]
+    command: "echo regenerate report"
+    check: "exit 0"

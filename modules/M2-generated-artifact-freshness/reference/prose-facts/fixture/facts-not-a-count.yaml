@@ -1,0 +1,4 @@
+facts:
+  - id: tools
+    command: echo many
+    phrasings: ["N tools listed"]

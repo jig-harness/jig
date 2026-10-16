@@ -1,0 +1,6 @@
+# A declared output that is not a file: the check passes, the inventory does not.
+generated:
+  - outputs: ["out/report.txt", "out/gone.txt"]
+    source: ["src/*.txt"]
+    command: "echo regenerate report"
+    check: "exit 0"

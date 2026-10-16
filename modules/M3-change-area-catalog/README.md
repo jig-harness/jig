@@ -82,11 +82,13 @@ one shared change-area vocabulary, many thin per-consumer projections.
    (which gate rung runs) and [M12](../M12-parallel-agent-ergonomics/) (a
    shallow-enough answer can skip the cross-worktree heavy-run mutex).
 7. **Generated-output coupling (`generated:`)** — an area declares the
-   generated artifact it owns and the source paths that produce it, so a
+   derived files it owns, in [M2](../M2-generated-artifact-freshness/)'s
+   inventory format (outputs, source, regenerate command, check), so a
    shallow-profile area can carry one specific
    [freshness gate](../M2-generated-artifact-freshness/) without escalating to
-   full validation, and the regenerate command isn't triplicated across a
-   hook, CI, and prose.
+   full validation, the regenerate command isn't triplicated across a
+   hook, CI, and prose, and M2's generic runner reads the catalog as the
+   inventory and runs every declared check.
 
 ## Design rules
 

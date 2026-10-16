@@ -1,0 +1,7 @@
+# A field the format does not know (`regenerate` for `command`): refused,
+# so a misspelt field cannot silently drop a command.
+generated:
+  - outputs: ["out/report.txt"]
+    source: ["src/*.txt"]
+    regenerate: "echo regenerate report"
+    check: "exit 0"

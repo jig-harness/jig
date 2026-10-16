@@ -1,0 +1,14 @@
+# Registry of the facts instructions.md states: each derives from its source
+# and lists the phrasings a stated copy may take; N stands for the number.
+facts:
+  - id: guides
+    files: "guides/**/*.md"
+    exclude: ["**/index.md"]
+    phrasings:
+      - N guides total
+      - N guides available
+      - a total of N guides
+  - id: tools
+    command: echo 2
+    phrasings:
+      - N tools listed

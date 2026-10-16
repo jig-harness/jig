@@ -41,7 +41,7 @@ criteria:
     statement: >-
       A CI check enforces the graph invariants of the implied-by relation
       (referential integrity, no cycles) and, for any area declaring
-      `generated:`, that each `generated.from` glob resolves to a real
+      `generated:`, that each `generated[].source` glob resolves to a real
       on-disk path — a mistyped source path silently disables a freshness
       coupling (see M3's `reference/catalog/README.md`'s § Graph validation,
       point 7) and is otherwise invisible to a checker that only validates
@@ -57,8 +57,8 @@ criteria:
     observe:
       - "a CI job runs the catalog checker (referential integrity + cycle detection)"
       - "a cycle or dangling reference fails the build"
-      - "if any area declares `generated:`, the checker also expands each `generated.from` glob and fails the build when it matches no on-disk path — and this expansion runs on every CI event (or is triggered by a match against any declared `generated.from` glob, not just the catalog file), so deleting the last file a glob matches without touching the catalog still re-validates the now-broken declaration"
-      - "if any area declares `generated:`, a test fixture proves activation, not just glob resolution: a change under a `generated.from` path activates the *owning* area's freshness check (a freshness-projection-scoped selection, per M3's `reference/catalog/README.md`'s § Generated-output coupling, Activation — this must not add the area to the general seed set consumed by `validation:`, tracker labels, or other seed-reading projections), and the test fails if that source-only change does not activate the freshness check"
+      - "if any area declares `generated:`, the checker also expands each `generated[].source` glob and fails the build when it matches no on-disk path — and this expansion runs on every CI event (or is triggered by a match against any declared `generated[].source` glob, not just the catalog file), so deleting the last file a glob matches without touching the catalog still re-validates the now-broken declaration"
+      - "if any area declares `generated:`, a test fixture proves activation, not just glob resolution: a change under a `generated[].source` path activates the *owning* area's freshness check (a freshness-projection-scoped selection, per M3's `reference/catalog/README.md`'s § Generated-output coupling, Activation — this must not add the area to the general seed set consumed by `validation:`, tracker labels, or other seed-reading projections), and the test fails if that source-only change does not activate the freshness check"
       - "if the repo wires an agent-gate-depth consumer at all — whether or not any area currently declares `validation:` — a test fixture proves the computed profile: an unmatched file and a seeded area with no `validation:` block or no `validation.profile` both compute as `deep` by default, and `needsSandbox` is computed from the seeds' `impliedBy` closure, not from the seeds alone; a resolver relying entirely on the documented defaults (no area declares `validation:` yet) must still be exercised, not skipped just because there's no explicit block to point the fixture at"
       - "for each of deploy tiers, post-deploy actions, mandatory review flags (`tracker.flags`), the review-gate table (`review.skills`), and tracker labels that the repo actually generates a consumer view for, a test fixture proves that projection reads the correct side of § Seeds vs. closure (deploy tiers/post-deploy/review flags/review-gate table from the seeded areas' `impliedBy` closure, tracker labels from the seeds alone) — a fixture where a seed's closure differs from the seed set catches a projection reading the wrong side (e.g. a `core-lib` change whose closure reaches `api-service` must not skip `api-service`'s `review.skills`); a repo that generates none of these has nothing to fixture and is unaffected"
 

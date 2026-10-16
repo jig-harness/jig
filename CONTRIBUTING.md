@@ -136,7 +136,9 @@ design. Run all with one command: `bun run gates`. The set, in order:
    the changelog's open sections and the version to that step (with a note
    asking for a release when it changes `plugin/`); Jig's own audit record and configuration fitting the audit skill;
    every file belonging to an area of the change-area catalog
-   (`.config/change-areas.yaml`); and the AI reviewer's high-risk paths
+   (`.config/change-areas.yaml`); every derived file the catalog declares
+   fresh, through M2's runner (`scripts/check-generated-files.ts`, see
+   § Derived files); and the AI reviewer's high-risk paths
    matching the catalog's `reviewRisk: high` areas
    (`bun scripts/review-risk.ts --write` regenerates them).
 
@@ -195,24 +197,27 @@ so skipping never changes what merges.
 ## Derived files
 
 [Generated artifacts](GLOSSARY.md) (M2) are never edited by hand: regenerate
-them. Each row's drift check catches the failure named there. The example
-indexes open with a "generated" header naming their generator. The lockfiles
-and the vendored parsers cannot carry one, since each must stay byte for byte what
-its generator writes, so this list is their marker.
+them. Each of Jig's is declared once, as a `generated:` entry of the area
+that owns it in the change-area catalog (`.config/change-areas.yaml`, M3):
+its outputs, its source, the command that regenerates it and the check that
+fails when it is stale, with its limits in `notes`. That is M2's
+[generated-file inventory](GLOSSARY.md), and `bun run gates` runs every
+declared check through M2's generic runner
+(`modules/M2-generated-artifact-freshness/reference/inventory/`, called by
+`scripts/check-generated-files.ts`), so a derived file cannot be added without
+its check, a failing check names the regenerate command, and every check runs
+whatever the earlier ones found. To see them:
 
-| File | Regenerate | Drift check |
-| --- | --- | --- |
-| `bun.lock` | `bun install` after changing `package.json` | CI installs with `bun install --frozen-lockfile`, which fails when the lockfile no longer matches `package.json`; it does not catch an edit that keeps them in agreement |
-| `website/bun.lock` | `bun install` in `website/` after changing `website/package.json` | the `website` job in `gates.yml` and the deploy in `website.yml` install with `bun install --frozen-lockfile` in `website/`, with the same limit as the row above |
-| `plugin/shared/vendor/js-yaml.mjs` and its `js-yaml.LICENSE` | after updating `js-yaml`, copy `node_modules/js-yaml/dist/js-yaml.mjs` and `node_modules/js-yaml/LICENSE` (as `js-yaml.LICENSE`) into that folder | `tools/plugin/plugin.test.ts` compares both with the installed `js-yaml` |
-| `lib/vendor/js-yaml.mjs` and its `js-yaml.LICENSE` (a second copy, because `lib/` is vendored without `plugin/`) | the same copy, into `lib/vendor/` | `lib/module-gates.test.ts` compares both with the installed `js-yaml` |
-| `plugin/LICENSE` and `plugin/NOTICE` | `cp LICENSE NOTICE plugin/` after changing either (the plugin installs only `plugin/`) | `scripts/check-licences.ts` compares them with the root files |
-| `high_risk_path_patterns` in `.config/ai-review.yaml` | `bun scripts/review-risk.ts --write` after changing a `reviewRisk: high` area | the gates' `review-risk` check compares it with the catalog |
-| `modules/M2-generated-artifact-freshness/reference/triad/fixture/docs/index.md` | `bun modules/M2-generated-artifact-freshness/reference/triad/generate-index.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs` | `scripts/freshness.test.ts` runs `check-index-fresh.ts` against it |
-| `modules/M4-docs-governance/reference/index/fixtures/docs/INDEX.md` | `bun exec "DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts"` (Bun's shell sets the variable on every operating system) | `generate-index.test.ts` beside the generator compares it with a fresh generation |
-| `modules/M4-docs-governance/reference/index/fixtures/docs/.orphans.md` | the same command as `INDEX.md`, which writes both; its date is sticky, so it changes only when the report's content does | `generate-index.test.ts` compares it with a fresh generation dated another day |
+```sh
+bun modules/M2-generated-artifact-freshness/reference/inventory/run-generated-checks.ts --list .config/change-areas.yaml
+```
 
-A new derived file gets a row here in the pull request that adds it.
+The example indexes open with a "generated" header naming their generator.
+The lockfiles and the vendored parsers cannot carry one, since each must stay
+byte for byte what its generator writes, so their entry is their marker.
+
+A new derived file gets its entry in the pull request that adds it; the
+runner refuses an entry without a check.
 
 ## Keeping the auditor current
 

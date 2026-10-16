@@ -27,7 +27,7 @@ The catalog is a single top-level map `areas:` keyed by kebab-case area ids
 | `tracker` | optional | `{ labels?: [..], flags?: [..] }` — tracker labels/flags to derive, whichever tracker the repository uses |
 | `agent` | optional | owning-agent label (a closed enum) |
 | `validation` | optional | `{ profile: <deep\|shallow>, needsSandbox: bool, notes? }` — the gate depth a coding agent must run before commit/push for this area; omitting the block, or omitting `profile` within it, defaults to `deep`; see [§ Agent gate depth](#agent-gate-depth-validation) |
-| `generated` | optional | `{ from: [..] (source globs, ≥1), by: "<regenerate command>", notes? }` — declares a generated output this area owns; see [§ Generated-output coupling](#generated-output-coupling-generated) |
+| `generated` | optional | a list of `{ outputs: [..] (≥1), source: [..] (globs, ≥1), command: "<regenerate command>", check: "<freshness check>", notes? }` — the derived files this area owns, in [M2's inventory format](../../../M2-generated-artifact-freshness/reference/inventory/README.md); see [§ Generated-output coupling](#generated-output-coupling-generated) |
 
 Reserved-but-loosely-typed blocks (`ci`, `deploy`, `scaffolding`, `owner`) let
 later consumers attach their own projection without a schema break — leave them
@@ -43,9 +43,11 @@ Enforced structurally (a JSON/YAML schema does this cleanly):
 - `category`, `deployTier`, `agent`, `validation.profile`, `postDeploy[].envs`,
   tracker `flags` are **closed literal unions** (fixed vocabularies).
 - `paths` ≥1 non-empty string; `review.skills` ≥1; `postDeploy[]` each carry
-  ≥1 `envs`; `generated.from` ≥1 non-empty string and `generated.by`
-  non-empty — an empty `by` command passes every filesystem-level check
-  below while leaving nothing to run the freshness regeneration.
+  ≥1 `envs`; each `generated[]` entry carries ≥1 `outputs`, ≥1 `source`, a
+  non-empty `command` and a non-empty `check` — an empty `command` passes
+  every filesystem-level check below while leaving nothing to run the
+  freshness regeneration, and an entry without a `check` is a generator CI
+  cannot run.
 
 Schema validation deliberately does **not** check referential integrity or
 cycles — a schema-valid catalog may still have a dangling `impliedBy` ref. That
@@ -69,7 +71,7 @@ Run these after schema validation:
    adds it, instead of silently skipping all its gates. Brownfield adopters
    grandfather existing gaps in this check rather than blocking on day one —
    see [§ Grandfathering catalog coverage](#grandfathering-catalog-coverage).
-7. **Generated source exists** — each `generated.from` glob, expanded using
+7. **Generated source exists** — each `generated[].source` glob, expanded using
    the catalog's defined glob semantics, matches at least one real path on
    disk. A literal-prefix check (before the first wildcard) is not enough: a
    typo further inside the pattern (`src/**/rouets/*.ts`) or a mid-pattern
@@ -81,6 +83,11 @@ Run these after schema validation:
    needs no special-case rejection, since the full-glob match already proves
    whether it has real sources — see
    [§ Generated-output coupling](#generated-output-coupling-generated).
+8. **Generated outputs owned** — each `generated[].outputs` path is a file,
+   is declared by exactly one entry in the whole catalog, and is matched by
+   its own area's `paths`, so a hand-edit to the output seeds the area whose
+   check covers it rather than no area, or two areas running two generators
+   over one file.
 
 ## The resolver
 
@@ -130,7 +137,7 @@ Every projection must state, explicitly, which side it reads:
 | Review-gate table (`review.skills`) | closure | same fan-in reach as the mandatory review flags above — a `core-lib` change whose closure reaches `api-service` must request `api-service`'s `review.skills` too, or the dependent ships unreviewed |
 | Tracker labels | seeds | accuracy — a label describes what changed, not what might be affected |
 | `validation:` (agent gate depth) | seeds — except `needsSandbox`, which reads closure (see [§ Agent gate depth](#agent-gate-depth-validation)) | profile depth: an agent needs to know what it touched, not the whole consequence graph. `needsSandbox` is the one exception: it protects dependents the change didn't directly touch |
-| `generated:` (freshness coupling) | seeds — matched against `generated.from` as well as the area's own `paths` | a generated-output declaration binds to the specific area whose files produce it, and that area's own `paths` frequently do not cover its source (the source lives in a *different* area's `paths`) |
+| `generated:` (freshness coupling) | seeds — matched against `generated[].source` as well as the area's own `paths` | a generated-output declaration binds to the specific area whose files produce it, and that area's own `paths` frequently do not cover its source (the source lives in a *different* area's `paths`) |
 
 **Labels fail toward accuracy; mandatory review gates fail toward coverage** —
 they need opposite defaults, so a projection that reads the wrong side fails
@@ -271,21 +278,26 @@ directly-seeded ones.
 ## Generated-output coupling (`generated:`)
 
 [M2](../../../M2-generated-artifact-freshness/) covers artifact freshness;
-this field covers the seam between it and the catalog. Declaring a generated
-output *on its owning area* — see `api-schema` in the worked example — lets
-that area carry one specific freshness gate (the `generated.by` command, run
-against `generated.from`) without escalating the whole area to a `deep`
-validation profile, and stops the regenerate command being copy-pasted across
-a hook, a CI step, and a paragraph of prose that then drift independently.
+this field covers the seam between it and the catalog. Each entry is one of
+M2's [generated-file inventory](../../../M2-generated-artifact-freshness/reference/inventory/README.md)
+entries, declared *on its owning area* — see `api-schema` in the worked
+example — which lets that area carry one specific freshness gate (the
+entry's `check`, with `command` as the fix it names) without escalating the
+whole area to a `deep` validation profile, and stops the regenerate command
+being copy-pasted across a hook, a CI step, and a paragraph of prose that
+then drift independently. The catalog is then the inventory: M2's generic
+runner reads every area's `generated:` list and runs every declared check as
+one CI step, so a generator added to the catalog cannot ship without its
+check.
 
-The `from` paths are as load-bearing as `paths` itself: if a cross-area
+The `source` globs are as load-bearing as `paths` itself: if a cross-area
 generator's source path is mistyped, a naive glob-coverage check still passes
 (the string is *some* valid-looking glob) while the coupling silently stops
 firing — the area never sees the source change that should have triggered its
-regeneration. That is why `generated.from` is graph-checked against the
+regeneration. That is why `generated[].source` is graph-checked against the
 filesystem (§ Graph validation, above), not just schema-checked for shape.
 
-**Activation.** A changed file matching `generated.from` seeds the *owning*
+**Activation.** A changed file matching `generated[].source` seeds the *owning*
 area for this projection, exactly as a match against `paths` would — even
 though the source usually lives inside a *different* area's `paths`. In the
 worked example, `apps/api-service/src/routes/**` is covered by `api-service`'s
@@ -347,10 +359,10 @@ check that should catch that deletion would skip itself along with it.
 
 A trigger on the catalog file alone is enough only while no area declares
 `generated:`. Point 7 of § Graph validation can break without the catalog
-changing: deleting the last file a `generated.from` glob matches leaves the
-declaration dangling. So once any area declares `generated:`, either run the
-check on every CI event, or extend the trigger with a literal match on every
-`generated.from` glob, deletions included.
+changing: deleting the last file a `generated[].source` glob matches leaves
+the declaration dangling. So once any area declares `generated:`, either run
+the check on every CI event, or extend the trigger with a literal match on
+every `generated[].source` glob, deletions included.
 
 Where a trigger is used rather than an unconditional run, it is the single
 hand-written shortcut this module treats as *required*, not debt — every other hand-maintained path list (the regex-mirror shortcut

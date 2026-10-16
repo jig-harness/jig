@@ -1,0 +1,21 @@
+# TEMPLATE — copy this to your repository (for example .config/generated-files.yaml)
+# and declare every committed derived file once. Jig module M2's generic
+# runner reads it and runs every `check` as one CI step:
+#   bun run-generated-checks.ts .config/generated-files.yaml
+# A repository with a change-area catalog (module M3) declares the same
+# entries as the `generated:` list of the area that owns the files instead,
+# and points the runner at the catalog. A new generator adds an entry here,
+# never a CI step; an entry without a check does not parse.
+#
+# The format and the runner:
+#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/reference/inventory/README.md
+# The practice:
+#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
+
+generated:
+  # One entry per generator. Paths are relative to the repository root.
+  - outputs: ["<docs-dir>/INDEX.md"]      # the committed files it writes; each declared once
+    source: ["<docs-dir>/**/*.md"]         # globs of the files whose change calls for a regeneration; each must match a file
+    command: "<regenerate command>"       # rewrites the outputs; the fix a failing check names
+    check: "<check command>"              # exits 0 when fresh, 1 when stale, anything else when it cannot decide
+    notes: "<what it derives, and the check's limits>"   # optional

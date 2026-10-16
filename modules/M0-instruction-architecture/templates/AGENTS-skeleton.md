@@ -63,6 +63,14 @@ issues, or broken builds.
 
 <Rule + why. Link the ADR or doc that decided it, if one exists.>
 
+### 3. No hand-counted tallies in prose
+
+A number that constrains stays (`3 retries`, `≤ 8000 chars`). A number that
+counts an adjacent list (`the 6 passes`, `120 skills`) is a cache that
+drifts when the list changes: drop it and let the list speak, or register
+it as a fact a CI check derives (`<facts-check command>`); mark a counted
+number that is a real measurement with `<!-- measured -->`.
+
 <!-- Add guardrails sparingly: each one is context every agent pays for on
      every task. If a rule only applies to one area of the repo, make it a
      path-scoped conditional rule instead (see templates/rules-README.md). -->

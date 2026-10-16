@@ -88,6 +88,34 @@ test("the schema and graph checks reject malformed catalogs", () => {
     'reviewRisk `"low"`',
   );
   expect(problems({ a: { ...area(["x"]), reviewRisk: "high" } })).toBe("");
+  // The derived files an area owns take M2's inventory shape, checked by
+  // the runner's own validation: an entry without a check is refused.
+  expect(problems({ a: { ...area(["x"]), generated: {} } })).toContain(
+    "generated: must be a list of entries",
+  );
+  expect(
+    problems({
+      a: {
+        ...area(["x"]),
+        generated: [{ outputs: ["x/out"], source: ["x/src"], command: "gen" }],
+      },
+    }),
+  ).toContain("generated[0].check: must be a command");
+  expect(
+    problems({
+      a: {
+        ...area(["x"]),
+        generated: [
+          {
+            outputs: ["x/out"],
+            source: ["x/src"],
+            command: "gen",
+            check: "gen --check",
+          },
+        ],
+      },
+    }),
+  ).toBe("");
   expect(problems({ a: area([]) })).toContain("at least one glob");
   const { title: _, ...untitled } = area(["x"]);
   expect(problems({ a: untitled })).toContain("`title` is missing");

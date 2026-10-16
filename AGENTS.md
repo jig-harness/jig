@@ -66,6 +66,10 @@ Read in this order when starting a session here:
   traces, reviewer dialogue, or "addressed/fixed" annotations — that history
   lives in PRs and issues. State the rule as it is now, not the change that
   made it so.
+- **Numbers in prose.** A number that constrains stays ("3 retries"); a
+  number that tallies an adjacent list is dropped, or registered as a fact a
+  check derives
+  ([M2](modules/M2-generated-artifact-freshness/README.md#which-numbers-in-prose-may-stay)).
 - **Status pages say what is open, not what happened.** [ROADMAP.md](ROADMAP.md)
   lists open work only; a finished item leaves it in the same pull request
   that finishes it, and what changed goes into [CHANGELOG.md](CHANGELOG.md).

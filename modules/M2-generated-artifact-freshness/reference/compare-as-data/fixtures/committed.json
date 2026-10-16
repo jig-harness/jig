@@ -1,0 +1,8 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/orders": { "get": { "summary": "List orders", "tags": ["orders"] } },
+    "/users": { "get": { "summary": "List users" } }
+  },
+  "info": { "title": "Example", "version": "1.0.0" }
+}

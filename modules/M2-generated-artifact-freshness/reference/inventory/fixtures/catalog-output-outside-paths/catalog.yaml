@@ -1,0 +1,11 @@
+# The output is not matched by its own area's `paths`: a hand-edit to it
+# would select no area that checks it.
+areas:
+  docs:
+    title: "Documentation"
+    paths: ["docs/guides/**"]
+    generated:
+      - outputs: ["docs/INDEX.md"]
+        source: ["docs/guides/*.md"]
+        command: "echo regenerate index"
+        check: "exit 0"

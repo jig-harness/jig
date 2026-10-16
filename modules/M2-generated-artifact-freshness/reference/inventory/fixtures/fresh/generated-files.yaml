@@ -1,0 +1,12 @@
+# Two derived files, both fresh: each check exits 0. The checks are shell
+# `exit` lines because the runner, not a generator, is under test here.
+generated:
+  - outputs: ["out/report.txt"]
+    source: ["src/*.txt"]
+    command: "echo regenerate report"
+    check: "exit 0"
+  - outputs: ["out/summary.txt"]
+    source: ["src/a.txt"]
+    command: "echo regenerate summary"
+    check: "echo checking summary && exit 0"
+    notes: "A second entry, with a note."

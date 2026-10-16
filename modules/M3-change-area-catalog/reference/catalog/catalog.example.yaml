@@ -68,10 +68,12 @@ areas:
       profile: shallow
       needsSandbox: false
       notes: "Generated output; the source (api-service routes) carries the real code gates."
-    generated:
-      from: ["apps/api-service/src/routes/**"]
-      by: "npm run generate:api-schema"
-      notes: "Regenerated from route definitions; see M2's freshness triad for the drift check + hook wiring."
+    generated:                   # M2's inventory entries: the derived files this area owns
+      - outputs: ["packages/api-schema/openapi.json"]
+        source: ["apps/api-service/src/routes/**"]
+        command: "npm run generate:api-schema"
+        check: "npm run generate:api-schema -- --check"
+        notes: "Regenerated from route definitions; M2's generic runner runs the check, its triad wires the hook."
     tracker:
       labels: [area:api]
 

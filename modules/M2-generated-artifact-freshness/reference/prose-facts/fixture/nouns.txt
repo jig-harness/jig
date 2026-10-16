@@ -1,0 +1,3 @@
+# The things this repository counts.
+recipes
+guides   # also in the built-in list

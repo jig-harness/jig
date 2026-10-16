@@ -20,8 +20,14 @@ copy must retain those relative dependencies.
 | Rung | Check | Reference script |
 |------|-------|------------------|
 | 2 — CI-check, commit nothing | stated-counts drift; referenced-path-exists | [`reference/prose-facts/`](reference/prose-facts/) |
+| 2 — registered facts | each fact re-derived from its source, every registered phrasing of a stated copy checked | [`reference/prose-facts/check-registered-facts.ts`](reference/prose-facts/check-registered-facts.ts) |
+| 2 — unchecked tallies (advisory) | a number that reads as a tally with no check behind it; `<!-- measured -->` exempts a line | [`reference/prose-facts/lint-derivable-counts.ts`](reference/prose-facts/lint-derivable-counts.ts) |
 | 3 — commit + triad | regenerate-to-temp-and-diff drift gate | [`reference/triad/check-index-fresh.ts`](reference/triad/check-index-fresh.ts) |
 | 3 (Strict, schema-like) | ephemeral replay | [`reference/ephemeral-replay/check-schema-drift.ts`](reference/ephemeral-replay/check-schema-drift.ts) |
+| every rung-3 check, one CI step | the generic runner over the generated-file inventory | [`reference/inventory/run-generated-checks.ts`](reference/inventory/run-generated-checks.ts) |
+| 3 — generator coverage | the inputs the generator reads equal the inputs that exist | [`reference/generator-coverage/check-generator-coverage.ts`](reference/generator-coverage/check-generator-coverage.ts) |
+| 3 — structured artifacts | committed copy and fresh output compared as parsed data | [`reference/compare-as-data/compare-as-data.ts`](reference/compare-as-data/compare-as-data.ts) |
+| after the merge | regeneration published through a pull request on a fixed branch, merged by a person | [`templates/regenerate-after-merge.yml`](templates/regenerate-after-merge.yml) |
 
 ### GitHub Actions
 
@@ -35,6 +41,12 @@ steps:
     continue-on-error: true
   - name: Referenced paths exist (advisory)
     run: bun reference/prose-facts/check-referenced-paths.ts <instruction-file>
+    continue-on-error: true
+  - name: Registered facts (advisory)
+    run: bun reference/prose-facts/check-registered-facts.ts <facts.yaml> <instruction-file>
+    continue-on-error: true
+  - name: Unchecked tallies (advisory; stays advisory)
+    run: bun reference/prose-facts/lint-derivable-counts.ts --registry <facts.yaml> <prose-file>...
     continue-on-error: true
 ```
 
@@ -50,6 +62,16 @@ jobs:
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
       - run: bun reference/triad/check-index-fresh.ts <docs-dir>
+```
+
+```yaml
+# Every declared check, one step: the runner reads the inventory (or the
+# change-area catalog's `generated:` entries) and runs each entry's `check`.
+# A generator added later needs an inventory entry and no change here. Put
+# it in the workflow that is a required check.
+steps:
+  - uses: actions/checkout@<full-commit-sha> # v4
+  - run: bun reference/inventory/run-generated-checks.ts <inventory.yaml>
 ```
 
 ```yaml
@@ -78,6 +100,12 @@ prose-facts:
   script:
     - bun reference/prose-facts/check-stated-counts.ts <instruction-file> <dir> <noun>
     - bun reference/prose-facts/check-referenced-paths.ts <instruction-file>
+    - bun reference/prose-facts/check-registered-facts.ts <facts.yaml> <instruction-file>
+  allow_failure: true
+
+# The tally lint stays advisory: it judges by shape.
+unchecked-tallies:
+  script: bun reference/prose-facts/lint-derivable-counts.ts --registry <facts.yaml> <prose-file>...
   allow_failure: true
 
 # Rung 3 — triad drift gate, run only when the inputs changed.
@@ -85,6 +113,10 @@ index-freshness:
   script: bun reference/triad/check-index-fresh.ts <docs-dir>
   rules:
     - changes: ['<docs-dir>/**/*.md']
+
+# Every declared check in one job, whatever changed; blocking.
+generated-files:
+  script: bun reference/inventory/run-generated-checks.ts <inventory.yaml>
 
 # Rung 3 Strict — ephemeral replay via docker-in-docker...
 schema-drift:
@@ -102,6 +134,30 @@ can run all three rungs. The only provider-specific decisions are the
 advisory mechanism (`continue-on-error` / `allow_failure` / equivalent) and
 how the runner reaches a database (local docker, docker-in-docker, or a
 provider-managed service container).
+
+## Regeneration after merge, through a pull request
+
+The steps are the same on every provider: run on the push to the
+integration branch, filtered to the generator's inputs and never its
+outputs; serialize the generator's runs; regenerate; when something changed,
+commit on a fixed branch per generator, push it leased to the tip the run
+inspected and only while every commit on that branch is the generator's own,
+open the pull request if none is open, and stop there: a person merges it.
+No commit, the branch commit or the merge commit, carries any of the
+platform's skip instructions; the inputs-only filter and the no-change exit
+keep the run from starting itself again. When nothing changed, close a pull
+request an earlier run left open, deleting its branch under the same lease
+and ownership check. Where the platform evaluates a path filter
+against only part of a large push, a manual run is the recovery. A manual run from any ref other than the integration branch does
+nothing, and the pull request's base is the integration branch as
+configured, never the ref the run started from. The credential
+that pushes and opens the pull request has write to contents and pull
+requests and nothing else, and its absence fails the run before any work.
+
+| Provider | Where each step lives |
+|----------|-----------------------|
+| GitHub Actions | [`templates/regenerate-after-merge.yml`](templates/regenerate-after-merge.yml): `on.push.paths` for the inputs; a `concurrency` group per generator; a GitHub App installation token minted per run (`actions/create-github-app-token`, pinned) or a fine-grained token in a secret; the branch's commits checked through `gh api repos/:owner/:repo/compare`, then `git push --force-with-lease` and `gh pr create` on the fixed branch. The path filter sees only the first 3,000 changed files of a push; `workflow_dispatch` is the recovery |
+| GitLab CI | a job with `rules: [{ if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH, changes: [<inputs>] }]` and `resource_group: regenerate-<artifact>` to serialize; the branch's commits checked through the repository compare API, then `git push --force-with-lease -o merge_request.create -o merge_request.target=<branch> -o merge_request.remove_source_branch origin <fixed branch>` with a project access token that has `write_repository`; a person merges the merge request. When nothing changed, close the open merge request through the merge request API (`glab mr close`), which needs a token with the `api` scope, since `write_repository` alone cannot close it |
 
 ## Hook managers (rung 3's auto-stage twin)
 

@@ -1,0 +1,6 @@
+# The check exits 1: the output is stale, and the fix is the entry's command.
+generated:
+  - outputs: ["out/report.txt"]
+    source: ["src/*.txt"]
+    command: "echo regenerate report"
+    check: "exit 1"

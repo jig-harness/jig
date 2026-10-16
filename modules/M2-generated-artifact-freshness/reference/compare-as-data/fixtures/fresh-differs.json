@@ -1,0 +1,1 @@
+{"info":{"version":"1.1.0","title":"Example"},"openapi":"3.1.0","paths":{"/users":{"get":{"summary":"List users"}},"/orders":{"get":{"tags":["orders","public"],"summary":"List orders"}},"/reports":{"get":{}}}}

@@ -1,0 +1,193 @@
+# Regeneration after merge, through a pull request — GitHub Actions skeleton
+# (Jig module M2).
+#
+# Copy to .github/workflows/regenerate-<artifact>.yml, one per generator, and
+# replace every <placeholder>. The SHAPE is the point:
+#
+#   - It runs on the push to the integration branch, filtered to the
+#     generator's INPUTS and never its outputs, so the merge of its own pull
+#     request cannot start it again. This is the "every push to the
+#     integration branch" row of M13's placement table. An artifact with a
+#     required drift check keeps it on every pull request, and this run is
+#     the backstop for two pull requests each fresh on its own and stale
+#     once both merged; an artifact regenerated only here has no required
+#     drift check, or every pull request touching its inputs would fail it.
+#   - The filter is evaluated against at most the first 3,000 changed files
+#     of a push: a merge that changes more can leave this workflow unstarted
+#     when its inputs sort past that limit. The recovery is a manual run
+#     (workflow_dispatch) from the integration branch.
+#   - The regenerated commit reaches the protected branch the way every
+#     change does: through a pull request that passes the required checks
+#     and that a person merges (Jig module M7: the merge is a human act). A
+#     direct push cannot, since required checks are evaluated per commit and
+#     the ones that run only on pull requests never run for a pushed commit;
+#     the push is refused every time, so there is nothing to retry. The job
+#     opens or updates the pull request and returns; it never merges and
+#     never waits for the checks.
+#   - No commit carries a CI-skip marker. The branch commit carries none of
+#     the platform's skip instructions ([skip ci], [ci skip], [no ci],
+#     [skip actions], [actions skip]), or the pull request's checks would
+#     not run, and the publish step refuses one before it does any work. The
+#     merge commit carries none either, so every workflow on the branch,
+#     integration checks and downstream generators included, runs on it.
+#     Recursion is prevented by the inputs-only filter above, and by the
+#     no-change exit below: a run on the merged output regenerates the same
+#     content and opens nothing.
+#   - One fixed branch per generator: the open pull request is updated,
+#     never duplicated, and one that went stale while open is overwritten by
+#     the next run. The branch is overwritten only while every commit on it
+#     is the generator's own, authored and committed by its bot: a commit a
+#     person added or amended (a fix for a failing check, say) stops the run
+#     before the push, as does a branch longer than one comparison lists,
+#     and the push is leased to
+#     the branch tip the run inspected, so a commit landing in between is
+#     refused rather than overwritten.
+#   - It runs only from the integration branch: a manual dispatch from any
+#     other ref is skipped before the credential is minted or any code is
+#     checked out, and the base of the pull request is the integration
+#     branch as written here, never the ref the run was started from.
+#   - The credential that pushes and opens the pull request is not the
+#     ambient token: it is minted per run, scoped to this repository, with
+#     write to contents and pull requests and nothing else, and its absence
+#     fails the run before any work. The ambient token stays read-only.
+#   - When regeneration changes nothing, nothing is committed or opened, and
+#     a pull request an earlier run left open is closed with its branch: the
+#     content it carries is no longer what the generator produces. The
+#     branch is deleted by a push leased to the tip the run inspected, like
+#     the update push.
+#   - Every `uses:` is pinned to a full commit (Jig module M1); the
+#     workflow-convention lint of M13 checks the pins.
+#
+# The practice:
+#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
+# Other providers:
+#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/mappings.md
+name: Regenerate <artifact>
+
+on:
+  push:
+    branches: [<integration branch>]
+    paths:
+      - "<the generator's inputs, e.g. db/migrations/**>"
+      - "<the generator itself, e.g. tools/generate-schema.ts>"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    # workflow_dispatch can start this from any branch or tag; only the
+    # integration branch's own generator may run with the credential.
+    if: github.ref == 'refs/heads/<integration branch>'
+    # One run per generator at a time, set on the job so that a dispatch the
+    # condition above skips never joins the group. A run in progress is
+    # never cancelled, since that could stop it between the push and the
+    # pull request; a newer push replaces any run still waiting, which
+    # would regenerate from a state the newer one includes.
+    concurrency:
+      group: regenerate-<artifact>
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: <about three times the slowest healthy regeneration>
+    steps:
+      - name: Fail before any work when the publishing credential is missing
+        env:
+          APP_ID: ${{ secrets.<app id secret> }}
+          APP_KEY: ${{ secrets.<app private key secret> }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::error::the publishing credential is not set: provision an app with Contents: write and Pull requests: write on this repository and store its id and private key as secrets"
+            exit 2
+          fi
+      # A short-lived token with exactly the two permissions the publish step
+      # needs. A fine-grained token stored as a secret works the same way;
+      # the ambient github.token does not: a protected branch refuses it and
+      # its pushes start no workflow.
+      - name: Mint the publishing credential
+        id: credential
+        uses: actions/create-github-app-token@<pinned-sha> # v2
+        with:
+          app-id: ${{ secrets.<app id secret> }}
+          private-key: ${{ secrets.<app private key secret> }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@<pinned-sha> # v4
+        with:
+          ref: <integration branch>
+          token: ${{ steps.credential.outputs.token }}
+      - name: Install the toolchain
+        run: <install the pinned toolchain, e.g. a mise-action step or bun install --frozen-lockfile>
+      - name: Regenerate
+        # The inventory entry's `command` (M2's generated-file inventory).
+        run: <regenerate command>
+      - name: Publish through a pull request
+        # Context values reach the script through env:, never through
+        # ${{ }} inside run:, which would splice them into the shell source.
+        env:
+          GH_TOKEN: ${{ steps.credential.outputs.token }}
+          REPO: ${{ github.repository }}
+          BASE: <integration branch>
+          BRANCH: <fixed branch name, e.g. automation/regenerate-schema>
+          OUTPUTS: <the generator's outputs, space-separated, e.g. docs/schema.sql>
+          COMMIT_MESSAGE: "chore: regenerate <artifact>"
+          PR_TITLE: "chore: regenerate <artifact>"
+          PR_BODY: "Regenerated from <the inputs> after a merge. Merge it once the required checks pass."
+          BOT_NAME: <the app's bot user name>
+          BOT_EMAIL: <the app's bot user email>
+        run: |
+          set -euo pipefail
+          for marker in "[skip ci]" "[ci skip]" "[no ci]" "[skip actions]" "[actions skip]"; do
+            case "$COMMIT_MESSAGE" in *"$marker"*)
+              echo "::error::the branch commit must not carry $marker: the pull request's checks must run on it"; exit 2;; esac
+          done
+          # The fixed branch's tip, empty when the branch does not exist.
+          # Every commit it carries beyond the base must be the generator's
+          # own before the run may overwrite or delete it: authored and
+          # committed by the bot, since an amend, a rebase or an edit on the
+          # platform keeps the bot as author but records the person as
+          # committer. One comparison lists at most 250 commits; a branch
+          # with more than it listed is not inspected whole, so it stops the
+          # run too.
+          TIP=$(git ls-remote --heads origin "refs/heads/$BRANCH" | cut -f1)
+          if [ -n "$TIP" ]; then
+            FOREIGN=$(gh api "repos/$REPO/compare/$BASE...$TIP" \
+              --jq '(.total_commits - (.commits | length)) + ([.commits[] | select(.commit.author.email != env.BOT_EMAIL or .commit.committer.email != env.BOT_EMAIL)] | length)')
+            if [ "$FOREIGN" != "0" ]; then
+              echo "::error::$BRANCH carries $FOREIGN commit(s) that are not the generator's own or were not inspected; finish or close its pull request by hand, then run this again"
+              exit 1
+            fi
+          fi
+          # shellcheck disable=SC2086 # the outputs are a space-separated list on purpose
+          git add -A -- $OUTPUTS
+          if git diff --cached --quiet; then
+            STALE_PR=$(gh pr list --repo "$REPO" --state open --base "$BASE" --head "$BRANCH" --json url --jq '.[0].url // empty')
+            if [ -n "$STALE_PR" ] && [ -n "$TIP" ]; then
+              # The branch is deleted by a push leased to the tip inspected
+              # above, so a commit pushed since then refuses the deletion and
+              # leaves the branch and its pull request as they are. Deleting
+              # the branch closes its pull request.
+              git push --force-with-lease="refs/heads/$BRANCH:$TIP" origin ":refs/heads/$BRANCH"
+              gh pr comment "$STALE_PR" --repo "$REPO" --body "The committed output is fresh again on $BASE; this regeneration is obsolete."
+              echo "::notice::closed the obsolete pull request $STALE_PR"
+            fi
+            echo "nothing changed: no pull request to open"
+            exit 0
+          fi
+          git config user.name "$BOT_NAME"
+          git config user.email "$BOT_EMAIL"
+          git checkout -B "$BRANCH"
+          git commit -m "$COMMIT_MESSAGE"
+          # Leased to the tip inspected above (to the branch's absence when
+          # it had none): a commit pushed since then refuses the push.
+          git push --force-with-lease="refs/heads/$BRANCH:$TIP" origin "HEAD:refs/heads/$BRANCH"
+          PR_URL=$(gh pr list --repo "$REPO" --state open --base "$BASE" --head "$BRANCH" --json url --jq '.[0].url // empty')
+          if [ -n "$PR_URL" ]; then
+            echo "::notice::updated the open pull request $PR_URL with the fresh content"
+          else
+            PR_URL=$(gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" --title "$PR_TITLE" --body "$PR_BODY")
+            echo "::notice::opened $PR_URL; a person merges it once the required checks pass"
+          fi

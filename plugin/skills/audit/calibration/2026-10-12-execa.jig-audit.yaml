@@ -149,6 +149,22 @@ criteria:
     # The derived-file inventory is itself a generated artifact with its own drift gate, so the inventory cannot silently omit a new derived file.
     score: expected-absent
     evidence: "No derived files, so there is no inventory to generate (see derived-inventory-exists)."
+  M2/numbers-in-prose-rule-stated:   # standard, requires convention
+    # The universal instruction file states the test for a number in prose: one that constrains its content stays, one that tallies an adjacent list is dropped or registered as a fact a commit-nothing check derives.
+    score: absent
+    evidence: "No universal instruction file or linked rule at the root (readme.md and docs/*.md document the library for its users): the constraint-versus-tally test is stated nowhere"
+  M2/regeneration-after-merge-via-pull-request:   # strict, requires mechanical
+    # Every derived file regenerated after a merge reaches the protected branch through a pull request on a fixed branch per generator that a person merges, with no CI-skip marker on its branch commit or its merge commit, published with a credential scoped to contents and pull requests.
+    score: expected-absent
+    evidence: "No derived file is regenerated after a merge: main.yml runs checks only, and the tree holds no generator and no generated artifact"
+  M2/generator-reaches-every-input:   # standard, requires mechanical
+    # Every generator that selects its inputs by a list it maintains has a CI check that the set it reads equals the set of inputs that exist, reporting an unreached input and a listed input that no longer exists.
+    score: expected-absent
+    evidence: "No generator with a maintained input list: the tree holds no generated file"
+  M2/derivation-one-way-compared-as-data:   # standard, requires mechanical
+    # A contract artifact that disagrees with its source is regenerated, never edited to match; each link of a chain of derived files has its own drift check; a structured artifact's drift check compares parsed data with both sides normalized identically; and no derived schema is authored twice.
+    score: expected-absent
+    evidence: "No derived contract artifact: index.d.ts and types/ are hand-written declarations checked by test-d/, not generated from another file"
   # M3 change-area-catalog
   M3/catalog-is-single-source:   # lite, requires convention
     # One catalog file is the single place that maps path patterns to named change-areas and their implications; consumers reference area names rather than re-listing the path patterns.

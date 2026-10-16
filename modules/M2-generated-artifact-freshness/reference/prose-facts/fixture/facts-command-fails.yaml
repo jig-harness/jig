@@ -1,0 +1,4 @@
+facts:
+  - id: tools
+    command: exit 3
+    phrasings: ["N tools listed"]

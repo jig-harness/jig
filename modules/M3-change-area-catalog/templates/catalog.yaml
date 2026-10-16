@@ -31,9 +31,11 @@ areas:
     #                                  # (omitting this block, or `profile`, defaults to `deep`)
     #   needsSandbox: <true|false>     # does it need a CI-identical sandbox
     #   notes: "why this depth"
-    # generated:
-    #   from: ["<source-glob>/**"]     # must exist on disk — checked, not just glob-shaped;
-    #                                  # matching this activates THIS area's freshness check,
-    #                                  # even when the source lives under a different area's `paths`
-    #   by: "<regenerate command>"
-    #   notes: "what this generates and why it lives on this area"
+    # generated:                        # the derived files this area owns, in M2's inventory format
+    #   - outputs: ["<derived-file>"]   # each declared once, matched by this area's `paths`
+    #     source: ["<source-glob>/**"]  # must match a file — checked, not just glob-shaped;
+    #                                   # matching this activates THIS area's freshness check,
+    #                                   # even when the source lives under a different area's `paths`
+    #     command: "<regenerate command>"
+    #     check: "<freshness check>"    # exits 0 fresh, 1 stale; M2's runner runs every one
+    #     notes: "what this generates and why it lives on this area"

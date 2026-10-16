@@ -1,0 +1,5 @@
+# A catalog in which no area declares a generated file.
+areas:
+  docs:
+    title: "Documentation"
+    paths: ["docs/**"]

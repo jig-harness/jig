@@ -27,6 +27,18 @@ criteria:
       - "instruction file or inventory states the hand-editing ban"
       - "derived files open with a generated-file marker naming the regenerate command"
 
+  - id: numbers-in-prose-rule-stated
+    level: standard
+    requires: convention
+    statement: >-
+      The universal instruction file states the test for a number in prose:
+      one that constrains its content stays, one that tallies an adjacent
+      list is dropped or registered as a fact a commit-nothing check derives.
+    observe:
+      - "the universal instruction file, or a rule it links, states the constraint-versus-tally test with an example of each"
+      - "the rule names what a tally that stays needs: a registered fact with a check, or a marker saying the number is a measurement"
+    since: next
+
   - id: committed-derived-full-triad
     level: standard
     requires: mechanical
@@ -55,7 +67,8 @@ criteria:
       Derivable facts stated in prose (counts, rosters) are re-derived and
       compared by a CI check that commits no generated file.
     observe:
-      - "CI job re-derives each registered fact and fails when a stated copy disagrees"
+      - "a registry declares each fact once, with the source it derives from and the phrasings a stated copy may take"
+      - "CI job re-derives each registered fact and fails when a stated copy, in any registered phrasing, disagrees, and passes when none is stated"
       - "no generated cache of the derived facts is committed to the repo"
 
   - id: schema-artifacts-use-ephemeral-replay
@@ -73,8 +86,54 @@ criteria:
     level: strict
     requires: mechanical
     statement: >-
-      The derived-file inventory is itself a generated artifact with its own
-      drift gate, so the inventory cannot silently omit a new derived file.
+      Every derived file is declared once in one inventory, with its outputs,
+      its source, its regenerate command and its check, and CI runs every
+      declared check through one generic runner under a required check, with
+      no per-generator CI step, so a generator cannot ship without its check.
     observe:
-      - "a script generates the inventory from repo state"
-      - "a CI check fails when the committed inventory is stale"
+      - "one inventory (a standalone file or the change-area catalog's `generated:` entries) declares each derived file's outputs, source, regenerate command and check, each output once"
+      - "one CI step under a required check runs every declared check through a runner that reports every check's result and fails closed on an inventory it cannot read or a check that cannot start"
+      - "no generator's freshness check has a hand-added CI step or workflow of its own (a post-merge regeneration workflow publishes rather than checks, and is not one), and an entry without a check is refused by the inventory's validation"
+
+  - id: regeneration-after-merge-via-pull-request
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every derived file regenerated after a merge reaches the protected
+      branch through a pull request on a fixed branch per generator that a
+      person merges, with no CI-skip marker on its branch commit or its
+      merge commit, published with a credential scoped to contents and pull
+      requests.
+    observe:
+      - "a workflow on the push to the integration branch, filtered to the generator's inputs and never its outputs, regenerates and publishes through a pull request; no step pushes a generated commit straight to the protected branch"
+      - "the branch name is fixed per generator, so an open pull request is updated rather than duplicated; the job neither merges it nor arms an automatic merge, and overwrites the branch only while every commit on it is the generator's own, with the push leased to the tip it inspected"
+      - "the publish step refuses a branch commit message carrying any of the platform's CI-skip instructions, no merge commit message (subject, body or trailers) carries one, and the step fails before any work when the publishing credential is missing"
+    since: next
+
+  - id: generator-reaches-every-input
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every generator that selects its inputs by a list it maintains has a
+      CI check that the set it reads equals the set of inputs that exist,
+      reporting an unreached input and a listed input that no longer exists.
+    observe:
+      - "for each generator with a maintained input list (stubs, includes, a roster), a check enumerates the inputs that exist and the inputs the generator reads and fails on any difference"
+      - "the check runs under a required check, beside the artifact's freshness check or as part of its inventory entry's `check`"
+      - "the check fails closed when either enumeration cannot be read or finds nothing"
+    since: next
+
+  - id: derivation-one-way-compared-as-data
+    level: standard
+    requires: mechanical
+    statement: >-
+      A contract artifact that disagrees with its source is regenerated,
+      never edited to match; each link of a chain of derived files has its
+      own drift check; a structured artifact's drift check compares parsed
+      data with both sides normalized identically; and no derived schema is
+      authored twice.
+    observe:
+      - "the hand-edit ban names the source as the place to change and the regenerate command as the only fix; no artifact is both generated and maintained by hand"
+      - "the drift check of each JSON or YAML artifact parses both copies and compares data, naming the differing paths, and any normalization is one function applied to both sides"
+      - "where one derived file feeds another, each link has its own check with its own fresh output"
+    since: next

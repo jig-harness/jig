@@ -13,6 +13,7 @@ import { checkLicences } from "./check-licences.ts";
 import { checkChangelog } from "./check-changelog.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
 import { checkChangeAreas } from "./change-areas.ts";
+import { checkGeneratedFiles } from "./check-generated-files.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { checkWorkflowConventions } from "./check-workflow-conventions.ts";
 import { checkReviewRisk } from "./review-risk.ts";
@@ -88,6 +89,7 @@ export const CHECKS = [
   checkChangelog,
   checkAuditFit,
   checkChangeAreas,
+  checkGeneratedFiles,
   checkReviewRisk,
 ];
 

@@ -16,6 +16,10 @@
 # reviewer's high-risk list: scripts/review-risk.ts writes them into
 # .config/ai-review.yaml, and the gates fail when the two differ. A file may
 # belong to several areas, so a narrow area can mark part of a broader one.
+# An area's `generated:` list declares the derived files it owns, in M2's
+# inventory format (outputs, source, command, check): scripts/check-generated-files.ts
+# runs every declared check through M2's runner, so a derived file is added
+# with its check or not at all (CONTRIBUTING.md § Derived files).
 
 areas:
   drive-pr:
@@ -52,6 +56,14 @@ areas:
     workspace: []
     impliedBy: [plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    generated:
+      - outputs: ["plugin/LICENSE", "plugin/NOTICE"]
+        source: ["LICENSE", "NOTICE"]
+        command: "cp LICENSE NOTICE plugin/"
+        check: "git diff --no-index --exit-code LICENSE plugin/LICENSE && git diff --no-index --exit-code NOTICE plugin/NOTICE"
+        notes: >-
+          The plugin installs only plugin/, so it carries byte copies of the
+          root licence files; scripts/check-licences.ts compares them as well.
 
   plugin-shared:
     title: "The plugin's shared code: what more than one skill imports"
@@ -60,6 +72,19 @@ areas:
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: plugin
+    generated:
+      - outputs:
+          - "plugin/shared/vendor/js-yaml.mjs"
+          - "plugin/shared/vendor/js-yaml.LICENSE"
+        source: ["package.json", "bun.lock"]
+        command: "cp node_modules/js-yaml/dist/js-yaml.mjs plugin/shared/vendor/js-yaml.mjs && cp node_modules/js-yaml/LICENSE plugin/shared/vendor/js-yaml.LICENSE"
+        check: "git diff --no-index --exit-code node_modules/js-yaml/dist/js-yaml.mjs plugin/shared/vendor/js-yaml.mjs && git diff --no-index --exit-code node_modules/js-yaml/LICENSE plugin/shared/vendor/js-yaml.LICENSE"
+        notes: >-
+          The plugin runs from a copy without node_modules, so the plugin ships
+          js-yaml's own build, byte for byte (no generated header: the file
+          must stay what its generator writes). After updating js-yaml, copy
+          it again. tools/plugin/plugin.test.ts compares both files with the
+          installed js-yaml as well.
 
   plugin-manifests:
     title: "The plugin manifests: name, version and description"
@@ -91,6 +116,15 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    generated:
+      - outputs: ["lib/vendor/js-yaml.mjs", "lib/vendor/js-yaml.LICENSE"]
+        source: ["package.json", "bun.lock"]
+        command: "cp node_modules/js-yaml/dist/js-yaml.mjs lib/vendor/js-yaml.mjs && cp node_modules/js-yaml/LICENSE lib/vendor/js-yaml.LICENSE"
+        check: "git diff --no-index --exit-code node_modules/js-yaml/dist/js-yaml.mjs lib/vendor/js-yaml.mjs && git diff --no-index --exit-code node_modules/js-yaml/LICENSE lib/vendor/js-yaml.LICENSE"
+        notes: >-
+          A second copy of the plugin's vendored parser, because lib/ is
+          vendored without plugin/; lib/module-gates.test.ts compares both
+          files with the installed js-yaml as well.
 
   gates:
     title: "Repository gates and their self-tests"
@@ -127,6 +161,26 @@ areas:
     impliedBy: [shared-lib, toolchain]
     deployTier: none
     reviewRisk: high
+    generated:
+      - outputs: ["modules/M2-generated-artifact-freshness/reference/triad/fixture/docs/index.md"]
+        source:
+          - "modules/M2-generated-artifact-freshness/reference/triad/generate-index.ts"
+          - "modules/M2-generated-artifact-freshness/reference/triad/fixture/docs/**/*.md"
+        command: "bun modules/M2-generated-artifact-freshness/reference/triad/generate-index.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs"
+        check: "bun modules/M2-generated-artifact-freshness/reference/triad/check-index-fresh.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs"
+        notes: "The triad's worked example: its fixture index is itself a derived file."
+      - outputs:
+          - "modules/M4-docs-governance/reference/index/fixtures/docs/INDEX.md"
+          - "modules/M4-docs-governance/reference/index/fixtures/docs/.orphans.md"
+        source:
+          - "modules/M4-docs-governance/reference/index/generate-index.ts"
+          - "modules/M4-docs-governance/reference/index/fixtures/docs/**/*.md"
+        command: "bun exec \"DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts\""
+        check: "bun exec \"DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts --check\""
+        notes: >-
+          One generator writes both (Bun's shell sets the variable on every
+          operating system); the orphan report's date is sticky, so it changes
+          only when the report's content does.
 
   module-templates:
     title: "Module templates"
@@ -157,6 +211,16 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    generated:
+      - outputs: ["bun.lock"]
+        source: ["package.json"]
+        command: "bun install"
+        check: "bun install --frozen-lockfile --dry-run --silent"
+        notes: >-
+          Fails when the lockfile no longer matches package.json (CI installs
+          with --frozen-lockfile as well); an edit that keeps the two in
+          agreement passes. No generated header: the file must stay what bun
+          writes.
 
   ci:
     title: "CI workflows"
@@ -175,6 +239,15 @@ areas:
     impliedBy: []
     deployTier: none
     reviewRisk: high
+    generated:
+      - outputs: [".config/ai-review.yaml"]
+        source: [".config/change-areas.yaml", "scripts/review-risk.ts"]
+        command: "bun scripts/review-risk.ts --write"
+        check: "bun scripts/review-risk.ts --check"
+        notes: >-
+          Only its high_risk_path_patterns block is derived (one pattern per
+          path glob of every reviewRisk: high area); the rest of the file is
+          written by hand.
 
   instructions:
     title: "Agent instruction files"
@@ -204,6 +277,15 @@ areas:
     impliedBy:
       [docs, instructions, plugin, plugin-manifests, drive-pr, resolve-review-comments, do-item, audit-scoring, toolchain]
     deployTier: none
+    generated:
+      - outputs: ["website/bun.lock"]
+        source: ["website/package.json"]
+        command: "bun install --cwd website"
+        check: "bun install --cwd website --frozen-lockfile --dry-run --silent"
+        notes: >-
+          The website job in gates.yml and the deploy in website.yml install
+          with --frozen-lockfile in website/, with the same limit as the root
+          lockfile's entry.
 
   docs:
     title: "Documentation and vendored seed material"

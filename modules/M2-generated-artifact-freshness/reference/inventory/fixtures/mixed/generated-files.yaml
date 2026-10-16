@@ -1,0 +1,15 @@
+# One stale, one fresh, one that cannot start: every check runs and is
+# reported, and the run could not decide.
+generated:
+  - outputs: ["out/report.txt"]
+    source: ["src/*.txt"]
+    command: "echo regenerate report"
+    check: "echo first check && exit 1"
+  - outputs: ["out/summary.txt"]
+    source: ["src/a.txt"]
+    command: "echo regenerate summary"
+    check: "echo second check && exit 0"
+  - outputs: ["out/third.txt"]
+    source: ["src/a.txt"]
+    command: "echo regenerate third"
+    check: "no-such-command-for-this-fixture"

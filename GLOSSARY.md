@@ -161,10 +161,48 @@ make, use the entry's term instead.
 - **Freshness triad** — the three mechanisms every committed *generated
   artifact* ships with: a regenerate script, a CI drift check, and a
   pre-commit auto-regenerate-and-stage hook.
+- **Generated-file inventory** — the one declaration of every committed
+  *generated artifact*: its outputs, its source, its regenerate command and
+  its check. One generic runner runs every declared check in CI, so a
+  generator cannot ship without its check and none needs a CI step of its
+  own. It is a standalone file or the `generated:` entries of a
+  *change-area catalog*.
+- **Regeneration after merge** — regenerating a *generated artifact* on the
+  push to the *integration branch* instead of demanding it fresh on every
+  pull request: for a derivation the merge need not wait for, and as the
+  backstop for two pull requests each fresh on its own and stale once both
+  merged. The regenerated commit reaches the protected branch through a
+  pull request on a fixed branch per generator that a person merges, and no
+  commit carries a CI-skip marker.
+- **Generator coverage check** — a check that the set of inputs a generator
+  reads equals the set that exists, for a generator that selects its inputs
+  by a list it maintains. A *freshness gate* proves the artifact equals the
+  generator's output and cannot see an input the generator never reads.
+- **One-way derivation** — the rule that an artifact which disagrees with
+  its source is regenerated, never edited to match: the source layer emits
+  every constraint the artifact carries, each link of a chain of derived
+  files has its own check, a structured artifact is compared as parsed data
+  with both sides normalized identically, and no derived schema is authored
+  twice.
 - **Commit-nothing check** — a CI check that recomputes a derivable fact
   (a count, a roster) and compares it to what the prose claims, committing
   no generated file — freshness without the merge-conflict liability of a
   committed cache.
+- **Tally (versus constraint)** — the test for a number in prose. A
+  *constraint* (a limit, a budget, `3 retries`) is part of what the text
+  means and stays; a *tally* describes an adjacent list (`the 6 passes`,
+  `120 skills`) and is a hand-written cache of it, which drifts when the
+  list changes: it is dropped, or registered in a *facts registry* and
+  checked by a *commit-nothing check*.
+- **Facts registry** — the one declaration of each derivable fact prose
+  states: its source (globs over the repository's files, or a command) and
+  the phrasings a stated copy may take. A *commit-nothing check* re-derives
+  each fact on every run and fails when a stated copy disagrees; a fact
+  nobody states has nothing to check.
+- **Measured marker** — the inline comment `<!-- measured -->` that exempts
+  a line from the advisory lint over unchecked *tallies*: the number is a
+  constraint or a measurement that stays on purpose. A note after the word
+  may say how it was measured.
 - **Ephemeral replay** — the strongest drift check for schema-like
   artifacts: rebuild from absolute scratch in a throwaway environment
   (e.g. replay all migrations into a disposable container), normalize, and

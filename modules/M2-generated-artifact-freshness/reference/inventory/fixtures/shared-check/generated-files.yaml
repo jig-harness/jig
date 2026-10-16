@@ -1,0 +1,10 @@
+# Two entries that declare the same check command: it runs once.
+generated:
+  - outputs: ["out/report.txt"]
+    source: ["src/*.txt"]
+    command: "echo regenerate report"
+    check: "exit 0"
+  - outputs: ["out/summary.txt"]
+    source: ["src/a.txt"]
+    command: "echo regenerate summary"
+    check: "exit 0"

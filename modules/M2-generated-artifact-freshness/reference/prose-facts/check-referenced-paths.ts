@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { cli } from "../../../../lib/cli.ts";
-import { repoFiles } from "../../../../lib/files.ts";
+import { fenceAfter, repoFiles } from "../../../../lib/files.ts";
 // A leading-slash Markdown link is relative to the repository root, not to the
 // prose file's directory or the filesystem root. Outside a git checkout the
 // working directory stands in for the root.
@@ -25,22 +25,6 @@ const FOLDER_NAME = /^[\w.-]+\/$/;
 // A double-quoted argument may hold escaped quotes; a single-quoted one cannot.
 const QUOTED = /'[^']*'|"(?:\\.|[^"\\])*"/g;
 const SHELL_TEXT = /['"^]/;
-// A fence line, by CommonMark's grammar: up to three spaces, then three or more
-// backticks or tildes. A backtick fence's info string holds no backtick, so
-// ```example``` is an inline code span, not a fence.
-const FENCE = /^ {0,3}(`{3,}(?=[^`]*$)|~{3,})(.*)$/;
-/** The fence open after `line`, given the one open before it: a fence closes
- * only on a line of its own character, at least as long, with nothing after. */
-function fenceAfter(
-  open: string | undefined,
-  line: string,
-): string | undefined {
-  const [, marks = "", rest = ""] = FENCE.exec(line) ?? [];
-  if (open === undefined) return marks || undefined;
-  const closes =
-    marks[0] === open[0] && marks.length >= open.length && rest.trim() === "";
-  return closes ? undefined : open;
-}
 interface Target {
   part: string;
   link: boolean;

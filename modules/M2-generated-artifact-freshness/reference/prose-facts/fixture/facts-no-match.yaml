@@ -1,0 +1,4 @@
+facts:
+  - id: recipes
+    files: "recipes/**/*.md"
+    phrasings: ["N recipes total"]

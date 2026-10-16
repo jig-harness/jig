@@ -1,0 +1,6 @@
+# The check names a command that does not exist: it cannot start.
+generated:
+  - outputs: ["out/report.txt"]
+    source: ["src/*.txt"]
+    command: "echo regenerate report"
+    check: "no-such-command-for-this-fixture --check out/report.txt"

@@ -1,0 +1,5 @@
+facts:
+  - id: guides
+    files: "guides/**/*.md"
+    phrasings:
+      - the guides, counted

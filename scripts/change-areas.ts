@@ -16,6 +16,7 @@ import {
 } from "../plugin/shared/guarded-git-spawn.ts";
 import { couldNotCheck } from "../lib/findings.ts";
 import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
+import { generatedListProblems } from "../modules/M2-generated-artifact-freshness/reference/inventory/run-generated-checks.ts";
 
 export const CATALOG = ".config/change-areas.yaml";
 
@@ -33,6 +34,8 @@ export interface Area {
   deployTier: string;
   /** `high` puts the area's paths in the AI reviewer's high-risk list. */
   reviewRisk?: string;
+  /** The derived files the area owns, in M2's inventory format. */
+  generated?: unknown[];
 }
 export type Catalog = Record<string, Area>;
 
@@ -92,6 +95,15 @@ const FIELDS: Record<
     check: (v) => (typeof v === "string" ? null : "`notes` is not text"),
   },
   reviewRisk: { required: false, check: oneOf("reviewRisk", REVIEW_RISKS) },
+  // M2's inventory entries (outputs, source, command, check), which
+  // scripts/check-generated-files.ts runs; their shape is the runner's.
+  generated: {
+    required: false,
+    check: (v) => {
+      const problems = generatedListProblems(v, "generated");
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 };
 
 /**

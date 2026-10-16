@@ -1,0 +1,6 @@
+# A derive command given as a list: one command is the contract.
+facts:
+  - id: tools
+    command: ["echo 2", "echo 99"]
+    phrasings:
+      - N tools listed

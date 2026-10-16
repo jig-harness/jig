@@ -1,0 +1,14 @@
+# A change-area catalog (module M3) whose `docs` area owns one derived file;
+# the runner reads the area's `generated:` entries as the inventory.
+areas:
+  docs:
+    title: "Documentation"
+    paths: ["docs/**"]
+    generated:
+      - outputs: ["docs/INDEX.md"]
+        source: ["docs/*.md"]
+        command: "echo regenerate index"
+        check: "exit 0"
+  tooling:
+    title: "Tooling"
+    paths: ["tools/**"]

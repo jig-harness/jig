@@ -32,6 +32,8 @@ modules/M15-contracts-errors/templates/ERROR-HANDLING.md
 modules/M15-contracts-errors/templates/INTERFACE-SURFACE.md
 modules/M15-contracts-errors/templates/MIGRATIONS.md
 modules/M15-contracts-errors/templates/error-codes.yaml
+modules/M2-generated-artifact-freshness/templates/generated-files.yaml
+modules/M2-generated-artifact-freshness/templates/regenerate-after-merge.yml
 modules/M3-change-area-catalog/templates/catalog.yaml
 modules/M4-docs-governance/templates/WIKI-SCHEMA.md
 modules/M4-docs-governance/templates/frontmatter-schema.yaml

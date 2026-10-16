@@ -269,11 +269,6 @@ Practices a working repository validated, for modules that exist today:
   - supply chain beyond action pins (release cooldown, install-script
     allowlist, layered secret scanning);
   - agent-runtime hooks as a rung of the ladder.
-- **M2**:
-  - a declared inventory of generated files with one generic check runner;
-  - regeneration after merge through a pull request;
-  - a check that each generator reaches every input;
-  - which numbers in prose may stay.
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion;
   - a registry of external preconditions;
