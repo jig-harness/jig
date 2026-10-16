@@ -94,7 +94,7 @@ criteria:
   - id: skeleton-changes-need-recorded-authority
     level: strict
     requires: mechanical
-    since: next
+    since: 0.39.0
     statement: >-
       The files that hold the architecture's contracts are listed in a
       machine-readable inventory, and a check blocks a change to one unless

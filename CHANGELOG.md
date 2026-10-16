@@ -242,6 +242,24 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.39.0] - 2026-10-16
+
+The fleet-health sensor now reports an epic census beside its stuck-epic signal.
+
+M5 names the split between skeleton files, which hold the architecture's contracts and which agents treat as read-only, and tissue, which agents may change freely, and ships the gate that enforces it.
+
+### Added
+
+- `fleet-health.ts` reports read-only signals about started epics: `finished-but-open` (every child closed, the epic still open), `tail-blocked` (at least 80% delivered with one or two children open) and `orphan-risk` (no children, project, owner or repository label). None is commented on an epic, and each reminds that closing an epic requires an accepting acceptance verdict or a waiver. Configuration: `signals.tail_blocked.*` and `labels.repositories` in the [fleet-health file](plugin/CONFIGURATION.md#the-fleet-health-file); both are optional, so an existing file keeps loading.
+- M5 ADR practice: a skeleton-file inventory template (`templates/skeleton.yaml`) and a reference gate (`reference/skeleton-gate/check-skeleton-adr.ts`, with fixtures built in its self-test). A change to a listed file merges only when it edits the inventory or a `Decision-Record: ADR-NNNN` trailer names a record that resolves to one file and has an approved or amended status that nothing superseded. The gate runs as a `commit-msg` hook and, over a pull request's range, as the CI authority; it fails closed on an inventory entry that matches no file (a renamed or deleted skeleton file), on a skeleton file renamed out of a listed directory, and on input it cannot read. It extends M1's commit-msg marker, and M5's mappings give the hook, CI and code-owner wiring per host.
+- The M0 AGENTS template gains a "read before modifying" line for the skeleton inventory.
+- Audit: the M5 criterion `skeleton-changes-need-recorded-authority` (Strict, mechanical), scored in Jig's own record and the calibration record. The glossary gains "Skeleton file / tissue".
+
+### Changed
+
+- The tracker port's `startedIssueActivity` now also returns each child's state and the epic's project, assignee and labels. A custom tracker adapter must supply them.
+- A finished-but-open epic is no longer also reported as `stuck-epic`.
+
 ## [0.38.0] - 2026-10-16
 
 M13 Pipeline economy is complete: the CI hold, caches, runner sizing, one
@@ -2000,7 +2018,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/docomply/jig/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/docomply/jig/compare/v0.37.3...v0.38.0
 [0.37.3]: https://github.com/docomply/jig/compare/v0.37.2...v0.37.3
 [0.37.2]: https://github.com/docomply/jig/compare/v0.37.1...v0.37.2
