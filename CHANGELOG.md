@@ -207,6 +207,12 @@ changes are marked **Breaking** and say what a consumer changes.
   The factory overview links to it.
 - The website shows a skill the same way wherever it appears. On the module map and in a module page's "Run it with" panel, skills are now the factory pages' chips (`/` for a skill, `@` for the agent), and hovering one opens what it does.
 - A module named in a page's text (`M7`) now opens the problem it solves when hovered, as the module chips on the factory pages already did, and its bare id is set as an id.
+- Website: the top bar keeps to one row on every desktop width. Its links run
+  from what Jig is (Features, Factory) through putting it to use (Adopt,
+  Install) to the reference behind it (Modules, Skills, Principles, Glossary);
+  the footer follows the same order. The theme switch is an icon, a sun or a
+  moon for the theme in effect: it follows the system's setting until the
+  reader picks light or dark, then keeps that pick.
 
 ### Fixed
 
