@@ -20,7 +20,7 @@ criteria:
   - id: error-contract-written
     level: lite
     requires: convention
-    since: next
+    since: 0.42.0
     statement: >-
       The error contract is written where agents and people read it: the
       three failure channels and which situation takes which, never swallow
@@ -35,7 +35,7 @@ criteria:
   - id: typed-error-with-code
     level: lite
     requires: convention
-    since: next
+    since: 0.42.0
     statement: >-
       One shared module defines the typed error that crosses module
       boundaries, carrying the tag a caller branches on (the registered code
@@ -52,7 +52,7 @@ criteria:
   - id: error-code-registry
     level: lite
     requires: convention
-    since: next
+    since: 0.42.0
     statement: >-
       Every error code the system can emit is declared once, in one registry
       (a data file or one code module), with its metadata (severity, message
@@ -68,7 +68,7 @@ criteria:
   - id: swallowing-forms-linted
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       A lint run in CI flags the forms that turn a failure into a default
       value, an empty result or silence: a catch that returns a default
@@ -82,7 +82,7 @@ criteria:
   - id: one-error-boundary
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       Errors reach callers only through one boundary per transport (an
       error-handler plugin, a top-level middleware, an interceptor, the exit
@@ -103,7 +103,7 @@ criteria:
   - id: server-failures-hide-detail
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       On a server-side failure the boundary sends no internal detail (no
       exception text, no interpolated template, no identifier), logs the
@@ -121,7 +121,7 @@ criteria:
   - id: detached-work-reported
     level: standard
     requires: convention
-    since: next
+    since: 0.42.0
     statement: >-
       Work nobody awaits goes through one helper that reports a failure
       with its cause and never rejects, and each long-running entry point
@@ -136,7 +136,7 @@ criteria:
   - id: error-code-copies-generated
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       Every other copy of the codes (the client's code union, each locale's
       message catalog, the public error reference) is generated from the
@@ -152,7 +152,7 @@ criteria:
   - id: no-inline-error-codes
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       No code is constructed outside the registry: the constructor is not
       reachable from elsewhere, or a gate in CI rejects a construction
@@ -169,7 +169,7 @@ criteria:
   - id: native-throw-linted
     level: strict
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       A lint flags a thrown native error (throw new Error and the built-in
       siblings) outside the typed error family's own module and the defect
@@ -181,7 +181,7 @@ criteria:
   - id: message-branch-linted
     level: strict
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       A lint flags a branch on an error's message text (equality, prefix,
       substring, a regular expression on .message, str(e), err.Error(),
@@ -194,7 +194,7 @@ criteria:
   - id: error-code-orphans-audited
     level: strict
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       An audit in CI reports every registered code that nothing outside the
       registry references (an orphan) against a baseline that names each
@@ -210,7 +210,7 @@ criteria:
   - id: telemetry-keyed-on-code
     level: strict
     requires: convention
-    since: next
+    since: 0.42.0
     statement: >-
       Error metrics and span attributes are keyed on the error's code and
       its type, never its message; structured logs carry the code and type
@@ -225,7 +225,7 @@ criteria:
   - id: migration-discipline-written
     level: lite
     requires: convention
-    since: next
+    since: 0.42.0
     statement: >-
       Where the repository has database migrations, the discipline is
       written beside them or in the instruction file: a merged migration is
@@ -240,7 +240,7 @@ criteria:
   - id: applied-migrations-immutable
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       A gate in CI fails a change that modifies, renames or deletes a
       migration file the base branch already holds, allowing only a
@@ -256,7 +256,7 @@ criteria:
   - id: migration-ledger-integrity
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       A check in CI holds the migration ledger and the files one to one, in
       strictly increasing order with no gap in the sequence and every field
@@ -270,7 +270,7 @@ criteria:
   - id: migrations-structure-only
     level: strict
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       A check in CI parses each migration with the database's grammar and
       blocks on a data statement (insert, update, delete, merge) anywhere
@@ -286,7 +286,7 @@ criteria:
   - id: interface-policy-written
     level: lite
     requires: convention
-    since: next
+    since: 0.42.0
     statement: >-
       Where the repository serves an interface (HTTP, RPC, GraphQL), the
       interface policy is written beside the contract or in the instruction
@@ -302,7 +302,7 @@ criteria:
   - id: published-contract-filtered
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       The published and the internal contract documents are generated from
       one source in which each operation is marked once (a tag, an
@@ -317,7 +317,7 @@ criteria:
   - id: input-bounds-ratcheted
     level: standard
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       A check in CI counts the request input fields of the contract that
       declare no bound (a string with no maximum length, pattern or format;
@@ -333,7 +333,7 @@ criteria:
   - id: unbounded-inputs-zero
     level: strict
     requires: mechanical
-    since: next
+    since: 0.42.0
     statement: >-
       The count of request input fields of the contract that declare no
       bound is zero, and a check in CI holds it there by failing on any
@@ -346,7 +346,7 @@ criteria:
   - id: failure-statuses-declared
     level: strict
     requires: convention
-    since: next
+    since: 0.42.0
     statement: >-
       Each operation's declared failure responses name every status its
       code can produce: the boundary's generic server-side status, the
