@@ -43,18 +43,21 @@ One or two sentences that sum up the release, when it needs them.
   `Removed`, `Fixed`, `Security`. Each change is one list item, however many
   lines it takes.
 - **The text before the first section** is the release's summary, so only a
-  note with `release` may have one. Each merge that asks for a release is a
-  version of its own; when one merge adds several notes, their summaries are
-  joined in file-name order, and so are their items under each type.
+  note with `release` may have one. The notes waiting when the release step
+  runs are one release, at the largest bump any asks for; their summaries
+  are joined in the order the merges landed, then by file name, and so are
+  their items under each type.
 - No `#` or `##` heading: the release step writes the version and its date.
 - Links are relative to the note, as in any Markdown file here
   (`[M12](../modules/M12-parallel-agent-ergonomics/README.md)`); the release
   step rewrites them for CHANGELOG.md and leaves a link shown as code alone.
   Write links inline: a reference definition is refused, since every note's
   labels would share CHANGELOG.md's.
-- A note holds headings, list items, paragraphs, inline links and code spans,
-  nothing else: no fenced code block, no raw HTML, no line of only `=` or
-  `-`. Each could change how CHANGELOG.md renders after the note.
+- A note holds headings, list items, paragraphs, inline links, code spans and
+  emphasis, nothing else: no code block, raw HTML, quote, table, image or
+  line of only `=` or `-`. Each could change how CHANGELOG.md renders after
+  the note. Bun's Markdown parser reads the note, so what it reports as
+  another kind of element is refused, wherever the construct sits.
 
 `bun run gates` reads every note the way the release step will, and fails
 a branch that edits the changelog's Unreleased or release sections or moves
@@ -67,5 +70,5 @@ To see what the release step will write without writing it:
 bun scripts/release.ts --dry-run
 ```
 
-It writes one merge's notes per run, the earliest still waiting, and says how
-many remain (`remaining`, with `--json`).
+It writes every waiting note as one release, since the tree it releases
+already holds the code of every merge that landed before it ran.

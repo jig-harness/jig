@@ -34,11 +34,17 @@ An optional summary of the release.
 - The sections are [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/)'s
   change types: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`,
   `Security`. A section lists its changes as top-level list items.
-- A note holds only those sections, list items, paragraphs, inline links and
-  code spans. Anything else whose reach depends on what surrounds it is
-  refused: a fenced code block, raw HTML (a comment included), and a line of
-  only `=` or `-`, which makes the line above it a heading. Each could
-  change how the changelog renders after the note.
+- A note holds only those sections, list items, paragraphs, inline links,
+  code spans and emphasis. The note is parsed with Bun's Markdown parser
+  (`Bun.markdown`) and every other element type is refused, wherever it
+  sits: a code block, raw HTML (a comment included), a quote, a table, an
+  image, a task list, and a line of only `=` or `-`, which makes the line
+  above it a heading or a rule. Each could change how the changelog renders
+  after the note. A parser is used because Markdown's block and inline rules
+  interact (a code span cannot run from one list item into the next, an
+  escaping backslash counts only as the last of a run), and a hand-written
+  model of them is wrong at the edges. It needs a Bun that ships
+  `Bun.markdown` (Jig pins 1.4.3).
 - Text before the first section is the release's summary, so only a note with
   `release` may have one. No `#` or `##` heading: the step writes the version
   heading and its date.
@@ -56,7 +62,7 @@ An optional summary of the release.
 bun release.ts --notes changes --changelog CHANGELOG.md \
   --version-file package.json [--version-file …] \
   [--stamp 'criteria/*.yaml' --stamp-from 'since: next' --stamp-to 'since: {version}'] \
-  [--tag-prefix v] [--date YYYY-MM-DD] [--per-merge] [--dry-run] [--json]
+  [--tag-prefix v] [--date YYYY-MM-DD] [--dry-run] [--json]
 ```
 
 It reads every `*.md` directly in the notes directory but its README, in the
@@ -76,21 +82,21 @@ order the merges adding them landed on the branch's first-parent history
 4. deletes the notes.
 
 It computes every file before writing the first, and writes nothing when a
-note is malformed, the version files disagree or a version cannot be set. It never commits, tags or pushes: the caller does, which keeps the
+note is malformed, the version files disagree, a version cannot be set, or
+several notes wait in a checkout without its whole history (a shallow clone,
+or no git at all), where their merge order cannot be told. It never commits, tags or pushes: the caller does, which keeps the
 token that may push out of the script. Run it on the integration branch after
 every merge, one run at a time (a CI concurrency group), always from the
 branch's newest commit, so a run that waited writes whatever notes are left
 and no two runs pick the same version.
 
-With `--per-merge` it writes only the notes of the earliest merge still
-waiting; run it until `remaining` is 0, committing (and tagging) after each
-run, and each merge that asks for a release gets a version of its own. It
-replaces only the placeholders on lines that merge, or an earlier one, added
-(by `git blame --first-parent`), so a later merge's placeholder names its own
-version. It needs the whole history: it refuses a shallow clone, a directory
-git cannot read the history of, and a note not committed yet.
+Every waiting note is one release, even when several merges landed before the
+run: the step releases the tree it runs on, which already holds all of their
+code, so a version numbered and described for the earliest merge alone would
+carry the later ones' changes (a breaking change under a patch number). A
+merge that lands during a run is released by the run queued behind it.
 
-`--json` prints `{ "version", "previous", "notes", "stamped", "remaining" }`;
+`--json` prints `{ "version", "previous", "notes", "stamped" }`;
 `version` is null when no note asked for a release.
 
 ## The branch check

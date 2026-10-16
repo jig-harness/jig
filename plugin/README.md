@@ -617,8 +617,7 @@ the `release` environment, which only `main` may use. When the workflow
 cannot push (the App was uninstalled, its key revoked, or the ruleset no
 longer names it), the notes wait on `main` and nothing is lost: restore it,
 then run the workflow by hand (`gh workflow run release.yml`, or Run
-workflow on its Actions page). It writes every waiting note, one merge at a
-time. A release cannot go through a pull request instead: the gates refuse a
+workflow on its Actions page). It writes every waiting note as one release. A release cannot go through a pull request instead: the gates refuse a
 branch that moves the version or writes a release section, which only the
 release step may.
 

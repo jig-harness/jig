@@ -1,0 +1,46 @@
+{
+  "classic": {
+    "required_status_checks": {
+      "strict": true,
+      "contexts": [
+        "gates"
+      ]
+    },
+    "enforce_admins": {
+      "enabled": true
+    },
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 1,
+      "dismiss_stale_reviews": false,
+      "require_code_owner_reviews": false
+    },
+    "required_conversation_resolution": {
+      "enabled": true
+    },
+    "restrictions": null,
+    "allow_force_pushes": {
+      "enabled": false
+    },
+    "allow_deletions": {
+      "enabled": false
+    }
+  },
+  "rules": [
+    {
+      "type": "commit_message_pattern",
+      "ruleset_id": 11,
+      "parameters": {
+        "operator": "regex",
+        "pattern": "^(feat|fix)"
+      }
+    }
+  ],
+  "rulesets": [
+    {
+      "id": 11,
+      "name": "messages",
+      "enforcement": "active",
+      "bypass_actors": []
+    }
+  ]
+}

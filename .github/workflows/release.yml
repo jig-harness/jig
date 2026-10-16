@@ -4,9 +4,11 @@
 # docs/adr/ADR-0004-change-notes-released-after-the-merge.md). Runs one at a
 # time and always from main's newest commit, so a run that waited behind
 # another writes whatever notes are still there; a run that finds none does
-# nothing. It writes them one merge at a time, a commit (and a tag) each, so
-# every merge that asks for a release gets a version of its own even when
-# several merged before the run started.
+# nothing. Every note waiting is one release: when several merges landed before
+# the run started, they ship together as the largest bump any of them asks for,
+# with all of their notes, because the run releases the tree it checked out and
+# that tree already holds all of their code
+# (docs/adr/ADR-0002-the-plugin-is-its-directory.md).
 #
 # main's ruleset admits a change only through a pull request with its checks
 # green, and names the `jig-release` GitHub App as the one actor allowed to
@@ -45,17 +47,16 @@ jobs:
           # The push authenticates with the App's token below.
           persist-credentials: false
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      - name: Write, commit and tag the change notes, one merge at a time
+      - name: Write, commit and tag the change notes
         run: |
           git config user.name "jig-release[bot]"
           git config user.email "343182900+jig-release[bot]@users.noreply.github.com"
           start=$(git rev-parse HEAD)
           refs="HEAD:main"
-          while :; do
-            bun scripts/release.ts --json > "$RUNNER_TEMP/release.json"
-            cat "$RUNNER_TEMP/release.json"
-            notes=$(jq '.notes | length' "$RUNNER_TEMP/release.json")
-            [ "$notes" = 0 ] && break
+          bun scripts/release.ts --json > "$RUNNER_TEMP/release.json"
+          cat "$RUNNER_TEMP/release.json"
+          notes=$(jq '.notes | length' "$RUNNER_TEMP/release.json")
+          if [ "$notes" != 0 ]; then
             version=$(jq -r '.version // empty' "$RUNNER_TEMP/release.json")
             # Everything the release step wrote: the notes it deleted, the
             # changelog, the manifests and the files whose `since: next` it
@@ -69,8 +70,7 @@ jobs:
             else
               git commit -q -m "docs(changelog): write $notes change note(s) under Unreleased"
             fi
-            [ "$(jq '.remaining' "$RUNNER_TEMP/release.json")" = 0 ] && break
-          done
+          fi
           echo "start=$start" >> "$GITHUB_ENV"
           echo "refs=$refs" >> "$GITHUB_ENV"
       - name: Check whether there is anything to push

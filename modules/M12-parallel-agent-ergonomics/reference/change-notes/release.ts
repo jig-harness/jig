@@ -4,44 +4,35 @@
 // pull requests ever pick the same version or edit the same lines. It writes
 // files only; committing, tagging and pushing are the caller's.
 //
-// With --per-merge it writes the notes of one merge, the earliest still
-// waiting, and reports how many notes remain, so a caller that runs it until
-// none do releases each merge as its own version even when several merged
-// before it ran. It needs the branch's whole history, so it refuses a
-// shallow clone, history git cannot read, and a note not committed yet.
+// Every note waiting is one release: when several merges landed before the
+// step ran, they ship together, as the largest bump any of them asks for with
+// all of their notes. The step releases the tree it runs on, so it cannot
+// release an earlier merge on its own: that version would carry the later
+// merges' code under an earlier merge's number and notes.
 //
 // A file that must name the version a change ships in (a "since" field, say)
 // names a placeholder instead, which the step replaces with the version it
-// releases: a branch cannot know that version before it merges. With
-// --per-merge, only the placeholders on lines that landed by the merge it
-// releases are replaced; a later merge's placeholders wait for its own release.
+// releases: a branch cannot know that version before it merges.
 //
 // Usage: bun release.ts --notes <dir> --changelog <file>
 //          --version-file <json> [--version-file <json> …]
 //          [--stamp <glob> --stamp-from <text> --stamp-to <text with {version}>]
-//          [--root <dir>] [--tag-prefix v] [--date YYYY-MM-DD] [--per-merge]
+//          [--root <dir>] [--tag-prefix v] [--date YYYY-MM-DD]
 //          [--dry-run] [--json]
-// Prints what it released (with --json, `{ version, previous, notes, stamped,
-// remaining }`, where `version` is null when no note asked for a release).
+// Prints what it released (with --json, `{ version, previous, notes,
+// stamped }`, where `version` is null when no note asked for a release).
 // Exit: 0 written, or nothing to write; 1 a note is malformed; 2 a usage
 // error or an unreadable file.
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { cli } from "../../../../lib/cli.ts";
-import {
-  applyNotes,
-  type ChangeNote,
-  nextVersion,
-  rebaseLinks,
-} from "./change-notes.ts";
+import { applyNotes, nextVersion, rebaseLinks } from "./change-notes.ts";
 import {
   currentVersion,
-  isShallow,
-  lineLandings,
-  mergeOrder,
   type NotesConfig,
   readNotes,
+  tryGit,
   versionOf,
 } from "./notes-dir.ts";
 
@@ -62,8 +53,6 @@ export interface ReleaseOptions extends NotesConfig {
   date?: string | undefined;
   /** Report what would be written without writing it. */
   dryRun?: boolean;
-  /** Write only the notes of the earliest merge still waiting. */
-  perMerge?: boolean;
 }
 
 export interface ReleaseResult {
@@ -74,8 +63,6 @@ export interface ReleaseResult {
   notes: string[];
   /** The files whose placeholder now names the version. */
   stamped: string[];
-  /** How many notes are left for a later run (only with `perMerge`). */
-  remaining: number;
   /** The changelog as written (or as it would be, on a dry run). */
   changelog: string;
 }
@@ -86,15 +73,14 @@ export interface ReleaseResult {
  * the repository as it was.
  */
 export function release(options: ReleaseOptions): ReleaseResult {
-  requireHistory(options);
   const read = readNotes(options);
   const { errors } = read;
   if (errors.length)
     throw new MalformedNotes(
       `change notes the release cannot read:\n  ${errors.join("\n  ")}`,
     );
-  const notes = options.perMerge ? firstMerge(options.root, read) : read.notes;
-  const remaining = read.notes.length - notes.length;
+  const { notes } = read;
+  if (notes.length > 1) requireHistory(options.root);
   const previous = currentVersion(options);
   const changelogPath = join(options.root, options.changelog);
   const before = readFileSync(changelogPath, "utf8");
@@ -104,7 +90,6 @@ export function release(options: ReleaseOptions): ReleaseResult {
       previous,
       notes: [],
       stamped: [],
-      remaining,
       changelog: before,
     };
   const version = nextVersion(
@@ -121,17 +106,7 @@ export function release(options: ReleaseOptions): ReleaseResult {
     tagPrefix: options.tagPrefix,
   });
   const stamped = version
-    ? stamp(
-        options.root,
-        options.stamps ?? [],
-        version,
-        options.perMerge
-          ? landedBy(
-              options.root,
-              read.landedIn.get(notes[0]?.file ?? "") ?? null,
-            )
-          : undefined,
-      )
+    ? stamp(options.root, options.stamps ?? [], version)
     : new Map<string, string>();
   const writes = new Map<string, string>([
     ...(version ? versionWrites(options, previous, version) : []),
@@ -149,49 +124,22 @@ export function release(options: ReleaseOptions): ReleaseResult {
     previous,
     notes: notes.map((n) => n.file),
     stamped: [...stamped.keys()],
-    remaining,
     changelog,
   };
 }
 
 /**
- * Refuses, for `perMerge`, a root whose whole history git cannot read: a
- * shallow clone, or no repository at all. The merge order needs it.
+ * Refuses a root whose whole history git cannot read: notes are written in
+ * the order their merges landed, which a shallow clone, or a directory
+ * outside git, cannot tell.
  */
-function requireHistory(options: ReleaseOptions): void {
-  if (!options.perMerge) return;
-  const shallow = isShallow(options.root);
-  if (shallow === null)
+function requireHistory(root: string): void {
+  if (
+    tryGit(root, ["rev-parse", "--is-shallow-repository"])?.trim() !== "false"
+  )
     throw new Error(
-      `${options.root}: git cannot read its history, so the merge each note landed in cannot be told`,
+      `${root} is not a git repository with its whole history, so the order the notes merged in cannot be told: run \`git fetch --unshallow\` first`,
     );
-  if (shallow)
-    throw new Error(
-      `${options.root} is a shallow clone, so the merge each note landed in cannot be told: run \`git fetch --unshallow\` first`,
-    );
-}
-
-/**
- * The notes of the earliest merge still waiting. Every note must have landed
- * on the branch's first-parent history: one that has not belongs to no merge,
- * so it cannot be released as one.
- */
-function firstMerge(
-  root: string,
-  read: ReturnType<typeof readNotes>,
-): ChangeNote[] {
-  const order = mergeOrder(root);
-  const unplaced = read.notes.filter(
-    (n) => !order.has(read.landedIn.get(n.file) ?? ""),
-  );
-  if (unplaced.length)
-    throw new Error(
-      `per merge, every note must be committed on the branch first: ${unplaced.map((n) => n.file).join(", ")}`,
-    );
-  const first = read.notes[0];
-  if (!first) return [];
-  const merge = read.landedIn.get(first.file);
-  return read.notes.filter((n) => read.landedIn.get(n.file) === merge);
 }
 
 /** Each version file's path with its text moved from `previous` to `version`. */
@@ -207,37 +155,13 @@ function versionWrites(
 }
 
 /**
- * For each file, whether its line at an index had landed by `merge` (null for
- * changes not committed yet): blamed to a first-parent commit no later than
- * it. A line git cannot place counts as landing last.
- */
-function landedBy(
-  root: string,
-  merge: string | null,
-): (file: string) => (line: number) => boolean {
-  const order = mergeOrder(root);
-  const at = (commit: string | null | undefined) =>
-    order.get(commit ?? "") ?? Number.POSITIVE_INFINITY;
-  const limit = at(merge);
-  return (file) => {
-    const lines = lineLandings(root, file);
-    if (!lines)
-      throw new Error(
-        `${file}: git cannot blame it, so its placeholders cannot be placed in a merge`,
-      );
-    return (line) => at(lines[line]) <= limit;
-  };
-}
-
-/**
  * Each file holding a stamp's placeholder, with the placeholder replaced by
- * `version` on every line `ships` admits (every line without it).
+ * `version`.
  */
 function stamp(
   root: string,
   stamps: Stamp[],
   version: string,
-  ships?: (file: string) => (line: number) => boolean,
 ): Map<string, string> {
   const out = new Map<string, string>();
   for (const { files, from, to } of stamps)
@@ -245,15 +169,10 @@ function stamp(
       for (const file of new Bun.Glob(pattern).scanSync({ cwd: root })) {
         const text = out.get(file) ?? readFileSync(join(root, file), "utf8");
         if (!text.includes(from)) continue;
-        const admits = ships?.(file);
-        const replaced = text
-          .split("\n")
-          .map((line, i) =>
-            line.includes(from) && (admits?.(i) ?? true)
-              ? line.replaceAll(from, to.replaceAll("{version}", version))
-              : line,
-          )
-          .join("\n");
+        const replaced = text.replaceAll(
+          from,
+          to.replaceAll("{version}", version),
+        );
         if (replaced !== text) out.set(file, replaced);
       }
   return new Map([...out].sort(([a], [b]) => a.localeCompare(b)));
@@ -296,7 +215,6 @@ if (import.meta.main)
         "stamp-from": { type: "string" },
         "stamp-to": { type: "string" },
         date: { type: "string" },
-        "per-merge": { type: "boolean", default: false },
         "dry-run": { type: "boolean", default: false },
         json: { type: "boolean", default: false },
       },
@@ -314,7 +232,6 @@ if (import.meta.main)
         tagPrefix: values["tag-prefix"],
         stamps: stampsFrom(values),
         date: values.date,
-        perMerge: values["per-merge"],
         dryRun: values["dry-run"],
       },
       values.json,
@@ -344,11 +261,8 @@ export function runRelease(options: ReleaseOptions, json: boolean): number {
     console.error(error.message);
     return 1;
   }
-  const { version, previous, notes, stamped, remaining } = result;
-  if (json)
-    console.log(
-      JSON.stringify({ version, previous, notes, stamped, remaining }),
-    );
+  const { version, previous, notes, stamped } = result;
+  if (json) console.log(JSON.stringify({ version, previous, notes, stamped }));
   else if (!notes.length) console.log("release: no change notes to write");
   else
     console.log(

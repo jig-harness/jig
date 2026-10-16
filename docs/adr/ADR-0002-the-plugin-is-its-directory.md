@@ -4,8 +4,8 @@ type: adr
 status: amended
 description: "Agent tools install only plugin/ from main; everything a skill needs lives there, and each change is a tagged version"
 lifecycle: permanent
-version: "1.1"
-last_updated: 2026-10-15
+version: "1.2"
+last_updated: 2026-10-16
 owner: maintainers
 decision_date: 2026-10-09
 supersedes: ~
@@ -81,3 +81,24 @@ commit ([ADR-0004](ADR-0004-change-notes-released-after-the-merge.md)). Every
 change to `plugin/` still ships as its own version. The changelog gate now
 also fails a change under `plugin/` without such a note, which closes the gap
 the Extraction section named.
+
+### 2026-10-16 — Merges that wait together ship as one release (v1.2)
+
+Touches the 2026-10-15 amendment's "every change to `plugin/` still ships as
+its own version". A machine installs `plugin/` from `main`'s newest commit, and
+the release step releases the tree it runs on. When several merges landed
+before the step ran, that tree already holds all of their code, so a version
+numbered and described for the first merge alone would carry the others'
+changes: a breaking change could ship under a patch number, and the next
+version would differ from it only in its metadata. Releasing each merge from
+its own earlier tree is not available either, since the tag must sit on a
+commit of `main` and `main` has no commit with only that merge's code under a
+new version.
+
+So the merges waiting when the step runs are one release: the largest bump any
+of their notes asks for, with all of their notes in merge order. A merge that
+lands while a run is in progress is released by the run queued behind it,
+which keeps one version per run and still sends a change to machines within
+one release run of its merge. Rejected: releasing each merge from its own tree
+(a tag off `main`, or a branch machines never install), and a release pull
+request a person merges (a second merge before every change, against ADR-0004).

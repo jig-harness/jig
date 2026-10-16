@@ -1,11 +1,11 @@
 ---
 title: "ADR-0004: A pull request adds a change note; the release is written after the merge"
 type: adr
-status: approved
+status: amended
 description: "Pull requests never edit CHANGELOG.md's open sections or the plugin version; a release step on main writes their change notes, moves the version and tags it"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-10-15
+version: "1.1"
+last_updated: 2026-10-16
 owner: maintainers
 decision_date: 2026-10-15
 supersedes: ~
@@ -120,3 +120,15 @@ manifest version, and a change under `plugin/` without a note that asks for a
 release. The release workflow fails when it cannot mint the App's token or
 push. `scripts/check-branch-protection.ts` reads main's ruleset by hand
 (reading it needs an administrator's login) and reports its bypass list.
+
+## Amendments
+
+### 2026-10-16 — The run releases every waiting note at once (v1.1)
+
+Touches the Decision's "It does this one merge at a time, in the order the
+merges landed, so each merge that changes `plugin/` is still its own release".
+The run releases the tree it checked out, which holds every merge that landed
+before it started, so it writes all waiting notes as one release: the largest
+bump any asks for, their notes in merge order, one commit and one tag. The
+reason and the alternatives are in
+[ADR-0002](ADR-0002-the-plugin-is-its-directory.md)'s second amendment.

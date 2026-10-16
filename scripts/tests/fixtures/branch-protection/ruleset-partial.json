@@ -1,6 +1,9 @@
 {
   "rules": [
-    { "type": "deletion", "ruleset_id": 7 },
+    {
+      "type": "deletion",
+      "ruleset_id": 7
+    },
     {
       "type": "pull_request",
       "ruleset_id": 7,
@@ -10,5 +13,12 @@
       }
     }
   ],
-  "bypass_actors": []
+  "rulesets": [
+    {
+      "id": 7,
+      "name": "main",
+      "enforcement": "active",
+      "bypass_actors": []
+    }
+  ]
 }

@@ -1,0 +1,38 @@
+{
+  "rules": [
+    {
+      "type": "deletion",
+      "ruleset_id": 7
+    },
+    {
+      "type": "non_fast_forward",
+      "ruleset_id": 7
+    },
+    {
+      "type": "pull_request",
+      "ruleset_id": 7,
+      "parameters": {
+        "required_approving_review_count": 0,
+        "required_review_thread_resolution": true
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "ruleset_id": 7,
+      "parameters": {
+        "required_status_checks": [
+          {
+            "context": "gates"
+          }
+        ]
+      }
+    }
+  ],
+  "rulesets": [
+    {
+      "id": 7,
+      "name": "main",
+      "enforcement": "active"
+    }
+  ]
+}

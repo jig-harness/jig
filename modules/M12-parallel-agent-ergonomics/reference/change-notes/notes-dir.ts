@@ -42,13 +42,12 @@ export function noteFiles(config: NotesConfig): string[] {
 
 /**
  * Every note, read and checked, in the order the merges adding them landed on
- * the current branch, with the merge each landed in (null for a note not
- * committed yet, which sorts last). Notes from one merge keep file-name order.
+ * the current branch (a note not committed yet sorts last). Notes from one
+ * merge keep file-name order.
  */
 export function readNotes(config: NotesConfig): {
   notes: ChangeNote[];
   errors: string[];
-  landedIn: Map<string, string | null>;
 } {
   const notes: ChangeNote[] = [];
   const errors: string[] = [];
@@ -73,7 +72,7 @@ export function readNotes(config: NotesConfig): {
     (a, b) =>
       position(a.file) - position(b.file) || a.file.localeCompare(b.file),
   );
-  return { notes, errors, landedIn };
+  return { notes, errors };
 }
 
 /**
@@ -99,38 +98,6 @@ function landings(root: string, paths: string[]): Map<string, string | null> {
       ])?.trim() || null,
     ]),
   );
-}
-
-/**
- * The first-parent commit each line of `path` landed in, by line (null for a
- * line not committed yet): the merge that added a line, not the branch commit
- * that wrote it. Null when git cannot blame the file.
- */
-export function lineLandings(
-  root: string,
-  path: string,
-): (string | null)[] | null {
-  const lines: (string | null)[] = [];
-  const blame = tryGit(root, [
-    "blame",
-    "--first-parent",
-    "--porcelain",
-    "--",
-    path,
-  ]);
-  if (blame === null) return null;
-  for (const m of blame.matchAll(/^([0-9a-f]{40}) \d+ (\d+)/gm))
-    lines[Number(m[2]) - 1] = /^0+$/.test(m[1] ?? "") ? null : (m[1] ?? null);
-  return lines;
-}
-
-/**
- * Whether `root` is a shallow clone, whose history the merge order needs;
- * null when git cannot tell (no repository there).
- */
-export function isShallow(root: string): boolean | null {
-  const answer = tryGit(root, ["rev-parse", "--is-shallow-repository"])?.trim();
-  return answer === "true" ? true : answer === "false" ? false : null;
 }
 
 /** Each commit on the branch's first-parent line, by its position from the root. */

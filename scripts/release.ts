@@ -4,8 +4,7 @@
 // notes under changes/ into CHANGELOG.md, moves both plugin manifests to the
 // next version when a note asks for a release, and deletes the notes.
 // .github/workflows/release.yml runs it on every push to main and commits,
-// tags and pushes what it writes. It writes one merge's notes per run and
-// reports how many remain (`remaining` with --json).
+// tags and pushes what it writes. Every note waiting is one release (ADR-0002).
 //
 // Usage: bun scripts/release.ts [--dry-run] [--json] [--date YYYY-MM-DD]
 // Exit: 0 written, or nothing to write; 1 a note is malformed; 2 an error.
@@ -28,9 +27,6 @@ if (import.meta.main)
       {
         root: join(import.meta.dir, ".."),
         ...CHANGE_NOTES,
-        // Each merge that asks for a release is a version of its own
-        // (ADR-0002); the workflow runs this until no note remains.
-        perMerge: true,
         date: values.date,
         dryRun: values["dry-run"],
       },

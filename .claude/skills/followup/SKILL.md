@@ -96,12 +96,34 @@ Every Jig release is tagged `v<version>` on the commit that shipped it
 version](../../../plugin/README.md#release-a-new-version)). After the merge,
 the release workflow (`.github/workflows/release.yml`) writes the change notes
 into CHANGELOG.md, moves the version on a commit of its own and tags it.
-First check that it ran: once its run for the merge has finished, `changes/`
-on main holds only its README. A note still there means the workflow failed
-(most often, the `jig-release` App can no longer push: its key in the
-`release` environment was rotated or removed, or `main`'s ruleset no longer
-lets it past): report it
-with the run's link, as a person's step. Then check the tags on every merge,
+First check that it ran for this merge, by the merge's own notes and its own
+run, not by what `changes/` holds on main: another merge may have added a note
+since, and its run may be queued or running. The merge's notes are the notes
+it added, edited or renamed into place, counted as the release step counts
+them: Markdown files directly in `changes/`, other than a README in any letter
+case
+(`git diff --name-only --diff-filter=AMR <merge>^ <merge> -- ':(glob)changes/*.md'`,
+which names a renamed note by its new path, after `git fetch origin main`);
+the runs are
+`gh run list --workflow release.yml --limit 10 --json status,conclusion,headSha,url`,
+the merge's own and any later one. A run waiting behind another is cancelled
+when a newer one queues, and the newer run writes its notes. A note of the
+merge is still there only when its path is on main and main's last addition
+of that path is the same commit as its last addition at the merge, the way
+the release step dates a note
+(`git log --first-parent --diff-filter=A -1 --format=%H <ref> -- <note>`,
+with `<ref>` first `origin/main`, then the merge): a note the merge only
+edited is still the note it edited, while a file name a release deleted can
+be reused, and the later merge's note is not this one's. Then:
+
+| What you find | It means |
+|---------------|----------|
+| No note of the merge is still there, or the merge added none | Released, or nothing to release: go on to the tags |
+| A note of the merge is still there and a release run (the merge's or a later one) is not completed (queued, pending, waiting or in progress) | Pending: say so and fetch and check again when the run finishes; not an incident |
+| A note of the merge is still there and every release run has completed (the newest failed or was cancelled, or none wrote it) | The workflow failed (most often, the `jig-release` App can no longer push: its key in the `release` environment was rotated or removed, or `main`'s ruleset no longer lets it past): report it with the run's link, as a person's step |
+
+A note on main that a later merge added is that merge's to settle, not this one's.
+Then check the tags on every merge,
 whatever it changed: a tag an earlier release left owed is owed now.
 
 ```bash

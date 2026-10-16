@@ -148,6 +148,9 @@ for (const [name, status] of [
   ["bad-types", 2],
   ["ruleset-compliant", 0],
   ["ruleset-partial", 1],
+  ["ruleset-multiple", 0],
+  ["ruleset-bypass-unknown", 0],
+  ["classic-and-ruleset", 0],
 ] as const)
   test(`branch protection: ${name}`, () => {
     const args = [
@@ -181,15 +184,49 @@ for (const [fixture, needle] of [
   ["compliant", "4/4 controls satisfied"],
   ["ruleset-compliant", "Ruleset recheck"],
   ["ruleset-compliant", "4/4 controls satisfied"],
-  ["ruleset-compliant", "bypass actors (ruleset): app 123, repository admin"],
-  ["ruleset-compliant", "administrator enforcement off"],
+  [
+    "ruleset-compliant",
+    "ruleset 7 (main; active; rules: deletion, non_fast_forward, pull_request, required_status_checks): bypass actors: app 123 (always), repository admin (always)",
+  ],
   ["ruleset-partial", "FAIL  required CI status check(s) configured"],
   ["ruleset-partial", "FAIL  required conversation resolution"],
   ["ruleset-partial", "FAIL  force-push disallowed"],
   ["ruleset-partial", "PASS  branch deletion disallowed"],
-  ["ruleset-partial", "administrator enforcement on"],
-  ["ruleset-partial", "bypass actors (ruleset): none"],
+  ["ruleset-partial", "bypass actors: none"],
   ["ruleset-partial", "a human adds to the branch's ruleset"],
+  // Rules of one type in several rulesets add up rather than the first one winning.
+  ["ruleset-multiple", "required checks: lint, gates"],
+  ["ruleset-multiple", "PASS  required conversation resolution"],
+  [
+    "ruleset-multiple",
+    "not required by policy: strict checks on, approving reviews 2",
+  ],
+  // Each ruleset keeps its own bypass scope and mode.
+  [
+    "ruleset-multiple",
+    "ruleset 7 (commit hygiene; active; rules: required_status_checks, pull_request, deletion): bypass actors: repository admin (always)",
+  ],
+  [
+    "ruleset-multiple",
+    "ruleset 8 (merge gate; active; rules: required_status_checks, pull_request): bypass actors: app 123 (pull_request)",
+  ],
+  [
+    "ruleset-multiple",
+    "ruleset 9 (history; active; rules: non_fast_forward): bypass actors: none",
+  ],
+  // A list GitHub omitted is unknown, not empty.
+  [
+    "ruleset-bypass-unknown",
+    "ruleset 7 (main; active; rules: deletion, non_fast_forward, pull_request, required_status_checks): bypass actors: unknown (GitHub omits them without write access to the ruleset)",
+  ],
+  // A ruleset beside classic protection does not hide it.
+  ["classic-and-ruleset", "4/4 controls satisfied"],
+  ["classic-and-ruleset", "Branch protection and ruleset recheck"],
+  ["classic-and-ruleset", "administrator enforcement on"],
+  [
+    "classic-and-ruleset",
+    "ruleset 11 (messages; active; rules: commit_message_pattern): bypass actors: none",
+  ],
 ])
   test(`branch report includes ${needle}`, () =>
     expect(
@@ -198,6 +235,156 @@ for (const [fixture, needle] of [
         join(fixtures, "branch-protection", `${fixture}.json`),
       ]).stdout.toString(),
     ).toContain(needle ?? ""));
+test.skipIf(process.platform === "win32")(
+  "a live read fails rather than reading a protected branch's unreadable classic protection as none",
+  () => {
+    const dir = temp();
+    writeFileSync(
+      join(dir, "gh"),
+      `#!/bin/sh
+case "$*" in
+  "api --paginate --slurp repos/example/repo/rules/branches/main?per_page=100") echo '[[]]' ;;
+  "api repos/example/repo/branches/main/protection") echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+  "api repos/example/repo/branches/main") echo '{"protected":true}' ;;
+  *) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+`,
+    );
+    chmodSync(join(dir, "gh"), 0o755);
+    const result = safeSpawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "check-branch-protection.ts"),
+        "example/repo",
+        "main",
+      ],
+      { env: { PATH: `${dir}:${process.env.PATH}` } },
+    );
+    expectSpawnExit(result, 2);
+    expect(result.stderr.toString()).toContain(
+      "cannot read the classic protection",
+    );
+  },
+);
+test("a ruleset in evaluate mode enforces nothing", () => {
+  const file = join(temp(), "evaluate.json");
+  writeFileSync(
+    file,
+    JSON.stringify({
+      rules: [{ type: "deletion", ruleset_id: 7 }],
+      rulesets: [{ id: 7, enforcement: "evaluate", bypass_actors: [] }],
+    }),
+  );
+  const result = run("check-branch-protection", ["--input", file]);
+  expectSpawnExit(result, 1);
+  expect(result.stdout.toString()).toContain(
+    "FAIL  branch deletion disallowed",
+  );
+});
+test.each([
+  ["an unknown enforcement", { enforcement: 42 }, "enforcement of ruleset 7"],
+  ["a null enforcement", { enforcement: null }, "enforcement of ruleset 7"],
+  ["no id", { id: undefined }, "every ruleset needs its id"],
+])("a ruleset with %s is refused, not counted as active", (_, change, why) => {
+  const file = join(temp(), "malformed.json");
+  writeFileSync(
+    file,
+    JSON.stringify({
+      rules: [{ type: "deletion", ruleset_id: 7 }],
+      rulesets: [{ id: 7, enforcement: "active", ...change }],
+    }),
+  );
+  const result = run("check-branch-protection", ["--input", file]);
+  expectSpawnExit(result, 2);
+  expect(result.stderr.toString()).toContain(why);
+});
+test("a rule without the ruleset it comes from is refused", () => {
+  const file = join(temp(), "orphan.json");
+  writeFileSync(
+    file,
+    JSON.stringify({ rules: [{ type: "deletion" }], rulesets: [] }),
+  );
+  const result = run("check-branch-protection", ["--input", file]);
+  expectSpawnExit(result, 2);
+  expect(result.stderr.toString()).toContain("ruleset_id");
+});
+test("a ruleset bypass list is kept per ruleset, in the offline input only under rulesets", () => {
+  const file = join(temp(), "legacy.json");
+  writeFileSync(file, JSON.stringify({ rules: [], bypass_actors: [] }));
+  const result = run("check-branch-protection", ["--input", file]);
+  expectSpawnExit(result, 2);
+  expect(result.stderr.toString()).toContain("rulesets[]");
+});
+// The live read, against a stand-in `gh`: POSIX only, since it is a shell script.
+test.skipIf(process.platform === "win32")(
+  "a live read pages through every rule, keeps classic protection out of the way and reports a missing bypass list as unknown",
+  () => {
+    const dir = temp();
+    const pages = JSON.stringify([
+      [
+        {
+          type: "required_status_checks",
+          ruleset_id: 7,
+          parameters: { required_status_checks: [{ context: "lint" }] },
+        },
+        {
+          type: "pull_request",
+          ruleset_id: 7,
+          parameters: { required_review_thread_resolution: false },
+        },
+      ],
+      [
+        {
+          type: "required_status_checks",
+          ruleset_id: 8,
+          parameters: { required_status_checks: [{ context: "gates" }] },
+        },
+        {
+          type: "pull_request",
+          ruleset_id: 8,
+          parameters: { required_review_thread_resolution: true },
+        },
+        { type: "deletion", ruleset_id: 8 },
+        { type: "non_fast_forward", ruleset_id: 8 },
+      ],
+    ]);
+    writeFileSync(join(dir, "pages.json"), pages);
+    writeFileSync(
+      join(dir, "gh"),
+      `#!/bin/sh
+echo "$*" >> "${dir}/calls"
+case "$*" in
+  "api --paginate --slurp repos/example/repo/rules/branches/main?per_page=100") cat "${dir}/pages.json" ;;
+  "api repos/example/repo/rulesets/7") echo '{"id":7,"name":"first","enforcement":"active","bypass_actors":[]}' ;;
+  "api repos/example/repo/rulesets/8") echo "HTTP 404" >&2; exit 1 ;;
+  "api repos/example/repo/branches/main/protection") echo "HTTP 404: Branch not protected" >&2; exit 1 ;;
+  *) echo "unexpected: $*" >&2; exit 2 ;;
+esac
+`,
+    );
+    chmodSync(join(dir, "gh"), 0o755);
+    const result = safeSpawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "check-branch-protection.ts"),
+        "example/repo",
+        "main",
+      ],
+      { env: { PATH: `${dir}:${process.env.PATH}` } },
+    );
+    expectSpawnExit(result, 0);
+    const out = result.stdout.toString();
+    expect(out).toContain("required checks: lint, gates");
+    expect(out).toContain("4/4 controls satisfied");
+    expect(out).toContain(
+      "ruleset 7 (first; active; rules: required_status_checks, pull_request): bypass actors: none",
+    );
+    expect(out).toContain(
+      "ruleset 8 (rules: required_status_checks, pull_request, deletion, non_fast_forward): bypass actors: unknown",
+    );
+    expect(out).not.toContain("administrator enforcement");
+  },
+);
 test("offline branch audit needs no origin", () =>
   expectSpawnExit(
     run(
