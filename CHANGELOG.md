@@ -232,6 +232,12 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.37.3] - 2026-10-16
+
+### Fixed
+
+- The decision sheet's browser tests no longer fail now and then on a busy machine. After a reload they counted the restored picks at once, before the sheet had shown them; they now wait, up to five seconds, for the first restored pick to appear.
+
 ## [0.37.2] - 2026-10-16
 
 ### Changed
@@ -1897,7 +1903,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.37.2...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.37.3...HEAD
+[0.37.3]: https://github.com/docomply/jig/compare/v0.37.2...v0.37.3
 [0.37.2]: https://github.com/docomply/jig/compare/v0.37.1...v0.37.2
 [0.37.1]: https://github.com/docomply/jig/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/docomply/jig/compare/v0.36.0...v0.37.0
