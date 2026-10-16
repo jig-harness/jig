@@ -481,6 +481,10 @@ criteria:
     # prior: absent: No reflection-to-proposal flow or approval step; the AGENTS.md human-decision list does not cover scaffolding changes
     score: absent
     evidence: "No reflection-to-proposal flow; the AGENTS.md HITL list does not cover scaffolding changes"
+  M8/audit-catalog-maintained:   # standard, requires convention
+    # Every drift-prone area that no gate fully covers is a row in an audit catalog with an owner, a cadence, a last-audited date and its open work, and an area audited only by hand names the issue that tracks the gap in tooling (expected-absent for a repository whose every area a gate fully covers).
+    score: absent
+    evidence: "No audit catalog or equivalent list is tracked: the documentation prose, the website's rendering and the plugin skills' behaviour are not fully covered by a gate, and none has an owner, cadence or last-audited date recorded"
   M8/validate-then-gate-enforced:   # strict, requires mechanical
     # A fixture may enter the blocking regression corpus (required: true) only with a recorded live validation, enforced by the corpus lint.
     # prior: absent: No corpus of Jig's own, so no required fixtures; reference/corpus-lint is not applied to Jig

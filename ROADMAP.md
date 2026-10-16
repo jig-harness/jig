@@ -314,12 +314,11 @@ Practices a working repository validated, for modules that exist today:
   - the execution-plan format the pickup skill reads;
   - a post-merge stage;
   - a lifecycle map with a check that every named skill exists.
-- **M0, M4, M5 and M8**:
+- **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
   - instructions that keep working in every runtime;
   - deferred promises in documents that point at live tracker items;
-  - an audit catalog;
   - files that change only with an approved decision record.
 
 Done when each module states the practice with its mappings and criteria, and

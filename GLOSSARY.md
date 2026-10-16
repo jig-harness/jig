@@ -702,6 +702,18 @@ make, use the entry's term instead.
 - **Lever** — a durably numbered miss-and-its-answer (`L-NNNN`), filed once and
   referenced forever: a *lens*, an *eval fixture*, and a parity metric all point
   back to it. Numbering is guarded for uniqueness like *ADR* numbers.
+- **Audit catalog** — the one list of the *drift-prone areas* no gate fully
+  covers, each with an owner, a cadence, the tooling that audits it (or
+  `manual`), the date it was last audited and the work it left open. An area
+  audited only by hand is tracked there as a gap in tooling. It records the
+  health of a repository's code and systems; `/jig:audit` records whether the
+  repository has adopted Jig.
+- **Drift-prone area** — a part of a repository or its systems that can go
+  wrong without any gate failing, such as a diagram that no longer matches the
+  code or settings kept in a hosted service. See *drift*.
+- **Deep-review tracker** — an optional table beside the *audit catalog* that
+  versions the list of dimensions a deep review covers and queues a re-review
+  of every area last reviewed under an older version.
 - **Review harness** — an automated reviewer built as prompt *lenses* over a
   reusable engine, not a fixed static analyzer. Split into a repo-agnostic
   **core** (a tool registry of reviewers, a required verify step, and

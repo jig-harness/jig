@@ -70,6 +70,24 @@ criteria:
       - "the approval is listed as a HITL decision (see M7 registry)"
       - "with Jig's plugin: `/jig:review-reflections` proposes a change per group of findings and records a decision only after a person approves it"
 
+  - id: audit-catalog-maintained
+    level: standard
+    requires: convention
+    since: next
+    statement: >-
+      Every drift-prone area that no gate fully covers is a row in an audit
+      catalog with an owner, a cadence, a last-audited date and its open work,
+      and an area audited only by hand names the issue that tracks the gap in
+      tooling or states why the audit cannot be automated (expected-absent for a repository whose every area a gate fully
+      covers).
+    observe:
+      - "an audit catalog file lists each area with owner, cadence (continuous, per release, monthly, quarterly or ad hoc), tooling or manual, last-audited date and open work"
+      - "every `ad hoc` row names its trigger (for example, \"when the schema changes\") in its tooling or open-work cell, and every `continuous` row names a gate or schedule that actually runs; a row without one has no operational cadence and fails this observation"
+      - "every manual row's open-work cell names a tracker issue for the tooling gap, or states why none is possible"
+      - "no row is overdue by the template's own reading without an open issue that says why: a `monthly` or `quarterly` row is overdue when today is later than its last-audited date plus a month or a quarter; `continuous` and `ad hoc` rows are never overdue by date"
+      - "a `per release` row's last-audited cell names the release its audit followed, and that release is the latest one or the one before it (an audit after release A is what permits cutting B, so the row still names A once B ships); before the repository's first release, any finished audit date counts"
+      - "a row whose last-audited cell is `never` (an area listed but not yet audited) is due at once and names the open issue for its first audit; `never` is not a missing date"
+
   - id: validate-then-gate-enforced
     level: strict
     requires: mechanical

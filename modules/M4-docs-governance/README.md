@@ -67,6 +67,9 @@ Knowledge moves up three layers, each promoting into the next:
    lint run; a periodic lint table (index drift, stale >6mo, broken links,
    orphans, missing frontmatter, contradictions, retrospection backlog) keeps
    the tree healthy, its findings appended to the log.
+   The docs tree is one [drift-prone area](../../GLOSSARY.md) among others: list it, with its
+   cadence, owner and last-audited date, in the repository's
+   [audit catalog](../M8-learning-loop/README.md#the-audit-catalog-areas-no-gate-covers).
 
 ## Maturity levels
 

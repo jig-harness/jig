@@ -41,8 +41,10 @@ modules/M6-feature-delivery-pipeline/templates/research-note-template.md
 modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md
 modules/M7-pr-lifecycle-review/templates/PR-LIFECYCLE.md
 modules/M7-pr-lifecycle-review/templates/review-config.yaml
+modules/M8-learning-loop/templates/AUDIT-CATALOG.md
 modules/M8-learning-loop/templates/FLYWHEEL.md
 modules/M8-learning-loop/templates/corpus.yaml
+modules/M8-learning-loop/templates/deep-review-tracker.md
 modules/M8-learning-loop/templates/miss-taxonomy.yaml
 modules/M8-learning-loop/templates/reflection-inbox.md
 modules/M9-tasks-memory/templates/ISSUE-TEMPLATES.md

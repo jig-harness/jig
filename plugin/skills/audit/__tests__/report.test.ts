@@ -836,7 +836,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toMatch(
-      /What changed \(65\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+      /What changed \(67\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
     );
     // A criterion Jig added after the prior audit's plugin was not assessed then.
     const added = addedAfter("0.14.0");
@@ -1100,7 +1100,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>64</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>66</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -1480,7 +1480,7 @@ describe("the Markdown copy", () => {
       [
         "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
         "",
-        "### What changed (65)",
+        "### What changed (67)",
         "",
         "| Module | Criterion | Before → after | Change |",
         "|--------|-----------|----------------|--------|",
@@ -1498,6 +1498,7 @@ describe("the Markdown copy", () => {
         "| M4 Docs governance | `orphan-report-generated` | not scored → absent | Added by Jig |",
         "| M4 Docs governance | `path-rules-enforce-subtree-vocabulary` | not scored → expected absent | Added by Jig |",
         "| M5 ADR practice | `skeleton-changes-need-recorded-authority` | not scored → absent | Added by Jig |",
+        "| M8 Learning loop | `audit-catalog-maintained` | not scored → absent | Added by Jig |",
         "| M9 Tasks memory | `gate-flags-scoped-to-shipping-item` | not scored → absent | Added by Jig |",
         "| M9 Tasks memory | `epic-closure-requires-acceptance` | not scored → absent | Added by Jig |",
         "| M9 Tasks memory | `issues-prioritized-at-creation` | not scored → absent | Added by Jig |",

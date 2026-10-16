@@ -188,3 +188,21 @@ but not one side effect.
 The **human-approval** step on reflection-proposed scaffolding changes is
 [HITL](../../GLOSSARY.md) (see [M7](../M7-pr-lifecycle-review/)'s registry) — a
 system editing its own rules must stop for a person, whatever the runtime.
+
+## Audit cadence reminders
+
+The [audit catalog](templates/AUDIT-CATALOG.md) records when an audit is due;
+something still has to say so. Pick the reminder by cadence, and put the
+catalog's own file under the same review as any document (an
+[M4](../M4-docs-governance/README.md) owner and freshness date).
+
+| Cadence | Where the reminder lives |
+|---------|--------------------------|
+| `continuous` | Nowhere: a gate or a schedule runs the audit, and its failure is the reminder. A `continuous` row with no such check is mislabelled. |
+| `per release` | A step in the release procedure ([M10](../M10-environments-deploy/README.md)): the release is not cut until the area's `Last audited` names the previous release as the one its audit followed. |
+| `monthly`, `quarterly` | A scheduled job that reads the table and opens or updates one issue per overdue area, assigned to the row's owner: GitHub Actions `on: schedule` (cron), a GitLab CI pipeline schedule, or a recurring item in your tracker or calendar. One open issue per area, never a new one each run. |
+| `ad hoc` | The named trigger: a path filter on the change that should prompt the audit, or the checklist of the process that changes the area. |
+
+A `manual` row's gap in tooling is an ordinary tracker issue (label it as you
+label other tooling work); the catalog row links to it, and closing the issue
+is the moment the row's `Tooling` cell changes.

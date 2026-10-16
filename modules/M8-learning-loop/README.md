@@ -8,7 +8,8 @@ The usual failure mode is a Slack post-mortem, a nod, and no change to the
 system. This module packages the loop that converts a miss into a permanent
 improvement — the **miss→lens [flywheel](../../GLOSSARY.md)** — plus the two
 companion cycles (session reflection and memory promotion) that keep the
-scaffolding itself learning. It is the most transferable practice in
+scaffolding itself learning, and a catalog of the areas that drift without any
+miss to learn from. It is the most transferable practice in
 jig: it applies to *any* evaluable agent behavior, not just review.
 
 ## Invariant
@@ -23,7 +24,10 @@ jig: it applies to *any* evaluable agent behavior, not just review.
 > append-only, carry an id, and their state is computed** from them, never
 > stored beside them. And **scaffolding changes proposed by reflection
 > require human approval** ([HITL](../../GLOSSARY.md)) — the system may
-> suggest changes to its own rules, but a person approves them.
+> suggest changes to its own rules, but a person approves them. And every
+> **drift-prone area** that no gate fully covers has a named cadence, an owner
+> and a last-audited date in an **audit catalog**, an area audited only by hand
+> being tracked as a gap in tooling.
 
 Concrete per-runtime, per-tracker wiring is in [mappings.md](mappings.md).
 
@@ -123,6 +127,46 @@ which lever, or whether the reviewer was the thing that was wrong. Jig's
 plugin applies the same trigger in its own review loop, recording the round
 count as a finding in the reflection journal at convergence.
 
+## The audit catalog: areas no gate covers
+
+The flywheel answers misses that have already happened. Some parts of a
+repository drift without producing one: a diagram that no longer matches the
+code, settings kept in a hosted service, a policy that no lockfile can express,
+runbooks that were never rehearsed. No gate fails, so nobody looks, and the
+first sign is the incident. Jig's own [`/jig:audit`](../../plugin/skills/audit/README.md)
+does not cover this: it scores whether a repository has *adopted* Jig's
+practices, not the health of its code or its systems.
+
+The practice is a single list, the [audit catalog](../../GLOSSARY.md),
+with one row for every [drift-prone area](../../GLOSSARY.md) that no gate fully covers. Each row
+carries:
+
+- an **owner**, one person or team, who sees that the audit happens;
+- a **cadence**: `continuous`, `per release`, `monthly`, `quarterly` or `ad hoc`
+  (the last only with a named trigger, or the area has no cadence at all);
+- the **tooling** that performs or supports the audit, or `manual`;
+- the date the area was **last audited**, advanced when an audit finishes
+  whether or not it found anything;
+- the **open work** the last audit left, as tracker keys.
+
+An area audited only by hand is **tracked as a gap in tooling**: its open-work
+cell names the issue that would replace the manual step with a check, or says
+why the step cannot be automated. Manual
+audits are right while an area's rules are still being found; the row keeps the
+repeating cost visible instead of letting it become permanent.
+
+The catalog is the learning loop's second entry point. A miss the flywheel
+classifies often turns out to be an area the catalog did not list, and a manual
+row that keeps finding the same class of problem is the strongest case for the
+gate that would replace it ([M1](../M1-gates-enforcement-ladder/README.md)).
+The periodic wiki lint of [M4](../M4-docs-governance/README.md) is one row of
+such a catalog: the documentation tree, audited on a schedule.
+
+Where audits are deep reviews of a whole area along a fixed list of dimensions,
+an optional [deep-review tracker](templates/deep-review-tracker.md) keeps the
+list versioned and queues a re-review of every area last reviewed under an
+older version.
+
 ## Maturity levels
 
 - **Lite** — the flywheel is written down ([`FLYWHEEL.md`](templates/FLYWHEEL.md))
@@ -132,7 +176,9 @@ count as a finding in the reflection journal at convergence.
   where every entry has a **unique lever id**, a **valid taxonomy category**,
   and a **pinned pre-fix commit**, validated by [corpus-lint](reference/corpus-lint/)
   in CI; lenses are additive and numbered; reflection-proposed scaffolding
-  changes require human approval.
+  changes require human approval; an [audit catalog](templates/AUDIT-CATALOG.md)
+  gives every drift-prone area no gate covers a cadence, an owner and a
+  last-audited date.
 - **Strict** — the **validate-then-gate** promotion is mechanical (a fixture is
   `required: true` only with a recorded validation); a [parity report](reference/parity-report/)
   measures recall / precision / `missed_blockers` and gates reviewer promotion
@@ -168,6 +214,14 @@ count as a finding in the reflection journal at convergence.
    `ROUND_THRESHOLD` once you have seen a few fire.
 6. Wire the reflection + memory-promotion steps to your runtime (recipes in
    [mappings.md](mappings.md)), keeping the human-approval checkpoint.
+7. Copy [`AUDIT-CATALOG.md`](templates/AUDIT-CATALOG.md) and list the areas
+   that drift without a gate noticing, each with an owner, a cadence and a
+   last-audited date (`never` for an area not yet audited, which makes its
+   first audit due at once); file one issue per `manual` row for the gap in
+   tooling, or record in the row why its audit cannot be automated.
+   Add the [deep-review tracker](templates/deep-review-tracker.md) if you run
+   deep reviews. [mappings.md](mappings.md#audit-cadence-reminders) shows how
+   to remind owners when a row goes overdue.
 
 ## Status
 
@@ -196,10 +250,12 @@ below remain the option for repositories without the plugin.
 | [`templates/miss-taxonomy.yaml`](templates/miss-taxonomy.yaml) | A neutral, generic miss taxonomy to prune and grow |
 | [`templates/corpus.yaml`](templates/corpus.yaml) | The eval-corpus schema, with a validated and an unvalidated example |
 | [`templates/reflection-inbox.md`](templates/reflection-inbox.md) | The inbox the reflection trigger appends aggregable records to |
+| [`templates/AUDIT-CATALOG.md`](templates/AUDIT-CATALOG.md) | The audit catalog: one row per drift-prone area no gate covers, with owner, cadence, tooling, last audited and open work |
+| [`templates/deep-review-tracker.md`](templates/deep-review-tracker.md) | Optional: a versioned list of review dimensions and the re-reviews queued when it changes |
 | [`reference/corpus-lint/`](reference/corpus-lint/) | The corpus invariants as a gate: unique lever ids, known categories, pinned commits, validate-then-gate |
 | [`reference/parity-report/`](reference/parity-report/) | Recall, precision and `missed_blockers` per reviewer, failing on a missed blocker |
 | [`reference/reflection-trigger/`](reference/reflection-trigger/) | Fires reflection from [M7](../M7-pr-lifecycle-review/)'s convergence line when a change took many rounds, and writes the record |
-| [`mappings.md`](mappings.md) | Trackers for lever ids, eval runners, telemetry, per-runtime reflection and memory commands |
+| [`mappings.md`](mappings.md) | Trackers for lever ids, eval runners, telemetry, per-runtime reflection and memory commands, audit-cadence reminders |
 | [maturity criteria](../../plugin/skills/audit/criteria/M8-learning-loop.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference gate ships with a self-test and fixtures, and delegates to the
@@ -218,5 +274,9 @@ keep the module and `lib/` together when you vendor them.
   parity arithmetic and the reflection trigger.
 - **Eval fixtures.** Real fixtures are product-specific and unproven until a
   live run validates them, so none are included.
+- **A check on the catalog.** A script that flags an overdue row, or a
+  `manual` row without an issue for its gap, is future: it is worth writing
+  once a repository has kept a catalog long enough to show which failures
+  recur, so the template states the rule and leaves the dates to the owners.
 - **Telemetry wiring.** Event names and dashboards belong with
   [M11](../M11-process-observability/).
