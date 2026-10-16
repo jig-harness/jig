@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { parsePage, problemWith, srcsetUrls } from "./check-links.ts";
+import {
+  parseMarkdown,
+  parsePage,
+  problemWith,
+  srcsetUrls,
+} from "./check-links.ts";
 
 const pages = new Map([
   ["/", { ids: new Set(["top"]) }],
@@ -153,4 +158,106 @@ test("a file that sets its own base URL is marked, not resolved", async () => {
   expect(html.rebased).toBe(true);
   const plain = await parsePage(`<a href="/base/" data-base="x">x</a>`);
   expect(plain.rebased).toBe(false);
+});
+
+test("a Markdown file's links are every link, image and definition, outside code", async () => {
+  const page = await parseMarkdown(
+    [
+      "- [A](https://jig-harness.dev/a/): note (aside)",
+      '- [B](/b/#c "title") and [R][r] and <https://jig-harness.dev/auto/>',
+      "- [P](/p/(x)/) ![I](/i.png)",
+      "",
+      "```",
+      "[Example](/in-code/)",
+      "```",
+      "",
+      "[r]: /ref/",
+      "",
+      "See https://jig-harness.dev/missing/index.md for more.",
+      "",
+      '<a href="/raw/?a=1&amp;b=2">Raw</a> <img src="/raw.png">',
+      "",
+      '`<a href="/in-inline-code/">x</a>`',
+      "",
+      "```html",
+      '<a href="/in-fence/">x</a>',
+      "```",
+    ].join("\n"),
+  );
+  expect(page.hrefs.sort()).toEqual(
+    [
+      "https://jig-harness.dev/missing/index.md",
+      "/raw/?a=1&b=2",
+      "/raw.png",
+      "https://jig-harness.dev/a/",
+      "/b/#c",
+      "https://jig-harness.dev/auto/",
+      "/p/(x)/",
+      "/i.png",
+      "/ref/",
+    ].sort(),
+  );
+});
+
+test("a bare address in a twin is a link, so a missing page fails the check", async () => {
+  const twin = await parseMarkdown(
+    "See https://jig-harness.dev/missing/index.md\n",
+  );
+  expect(
+    twin.hrefs.map((href) => problemWith(href, "/", pages, isAsset)),
+  ).toEqual(["no such page"]);
+});
+
+test("HTML in a Markdown file is read as a page's: its base URL is reported", async () => {
+  const twin = await parseMarkdown('<base href="/other/">\n\n[x](y/)\n');
+  expect(twin.rebased).toBe(true);
+  const plain = await parseMarkdown('`<base href="/other/">`\n');
+  expect(plain.rebased).toBe(false);
+});
+
+test("a twin's anchors are the ones it carries, and a link to a twin needs the twin", async () => {
+  const twin = await parseMarkdown(
+    '## <a id="learning"></a>The loop\n\n<a id="a&amp;b"></a>Text\n',
+  );
+  expect([...twin.ids].sort()).toEqual(["a&b", "learning"]);
+  const withTwin = new Map([...pages, ["/factory/index.md", twin]]);
+  expect(
+    problemWith("/factory/index.md#learning", "/", withTwin, isAsset),
+  ).toBeNull();
+  expect(problemWith("/factory/index.md#other", "/", withTwin, isAsset)).toBe(
+    "no such anchor",
+  );
+  expect(problemWith("/factory/index.md#learning", "/", pages, isAsset)).toBe(
+    "no such page",
+  );
+});
+
+test("a % that starts no escape is checked as written", () => {
+  expect(check("#100%")).toBe("no such anchor");
+  expect(check("/no%zz/")).toBe("no such page");
+  const withId = new Map([["/factory/", { ids: new Set(["100%"]) }]]);
+  expect(problemWith("#100%", "/factory/", withId, isAsset)).toBeNull();
+  const mixed = new Map([["/factory/", { ids: new Set(["café100%"]) }]]);
+  expect(problemWith("#café100%", "/factory/", mixed, isAsset)).toBeNull();
+  expect(problemWith("#caf%C3%A9100%", "/factory/", mixed, isAsset)).toBeNull();
+});
+
+test("a page whose route holds reserved characters resolves from its encoded address", () => {
+  const reserved = new Map([["/notes/a&b/", { ids: new Set(["x"]) }]]);
+  for (const href of ["/notes/a%26b/#x", "/notes/a&b/#x", "/notes/a%26b#x"])
+    expect(problemWith(href, "/", reserved, isAsset)).toBeNull();
+  expect(problemWith("/notes/a%26b/#y", "/", reserved, isAsset)).toBe(
+    "no such anchor",
+  );
+});
+
+test("a link on a page whose route holds a ? or # resolves against that page", () => {
+  const odd = new Map([
+    ["/notes/a?b/", { ids: new Set(["x"]) }],
+    ["/notes/c#d/", { ids: new Set<string>() }],
+    ["/notes/e/", { ids: new Set<string>() }],
+  ]);
+  expect(problemWith("#x", "/notes/a?b/", odd, isAsset)).toBeNull();
+  expect(problemWith("#y", "/notes/a?b/", odd, isAsset)).toBe("no such anchor");
+  expect(problemWith("../e/", "/notes/c#d/", odd, isAsset)).toBeNull();
 });

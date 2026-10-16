@@ -1196,3 +1196,8 @@ make, use the entry's term instead.
 - **SHA (Secure Hash Algorithm)** — a family of content fingerprints; Git uses
   one to identify a commit, and Jig's tools use SHA-256 to record
   exactly which source a generated file was built from.
+- **llms.txt** — a Markdown file at the root of a website that gives language
+  models and coding agents a short index of the site's content, each entry a
+  link to a page as Markdown, so they need not read the site's HTML. Jig's
+  website derives its own from the same documents as its pages
+  ([design/website.md](design/website.md)).

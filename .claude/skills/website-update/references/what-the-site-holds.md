@@ -68,6 +68,15 @@ Ask these of every `content` commit. One yes is enough to look closer.
   navigation, the footer's claims and licences, the repository address and
   branch, the fixed document-to-route table, anchor renames, the search
   index's hand-written page list and keywords.
+- **Markdown twins** (`website/scripts/markdown-twins.ts`): a page's twin
+  follows its HTML, so most changes reach it; one that reads badly (a label
+  that should be a heading, a block that repeats) needs a rule there, not an
+  edit to the twin.
+- **`llms.txt` files** (`website/src/lib/llms.ts`): the sections, and the
+  fixed pages of each section (the modules, skills and principles overviews,
+  and the factory, adopt and plugin pages) with the line on each;
+  a page renamed, added or removed there is a change to those lists too. The
+  lists of modules, skills and principles follow their documents.
 - **Live audit example** (`website/scripts/audit-example.ts` and
   `website/src/components/AuditSpecimen.astro`): the committed run it renders
   and the caption naming its repository, commit, plugin version and date.

@@ -15,6 +15,16 @@
 // links are checked too; any other file has no ids, so an anchor on it is
 // broken.
 //
+// The site's `llms.txt` files and the Markdown twin of each page are Markdown,
+// not HTML, and are pages of their own: they are parsed as Markdown in the
+// dialect the twins are written in (GitHub-flavoured, so a bare address is a
+// link), every link, image and link definition in one is checked the same way
+// (an address in a code block is not a link), and the HTML a Markdown file
+// carries is read like a page: its links and sources are checked, its ids
+// (a twin's `<a id="...">` anchors) are its targets, and a `<base href>` in it
+// is reported. A link to a twin is therefore checked against the twin itself,
+// which must exist and have the anchor.
+//
 // A file that sets its own base URL (HTML's `<base href>`, or an `xml:base`
 // attribute in an SVG) is reported rather than checked: its links are not
 // resolved against the file's route, and a check that resolved them there
@@ -22,8 +32,17 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmFromMarkdown } from "mdast-util-gfm";
+import { gfm } from "micromark-extension-gfm";
+import { visit } from "unist-util-visit";
 import { cli } from "../../lib/cli.ts";
-import { SITE_ORIGIN } from "../src/lib/origin.ts";
+import {
+  percentDecoded,
+  routeAddress,
+  routePath,
+  SITE_ORIGIN,
+} from "../src/lib/origin.ts";
 
 const dist = fileURLToPath(new URL("../dist", import.meta.url));
 /**
@@ -46,6 +65,57 @@ function documentFiles(dir: string): string[] {
     if (statSync(path).isDirectory()) return documentFiles(path);
     return /\.(html|svg)$/.test(name) ? [path] : [];
   });
+}
+
+/** The built Markdown files: each page's twin, and the `llms.txt` files. */
+function textFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return textFiles(path);
+    return name === "llms.txt" || name.endsWith(".md") ? [path] : [];
+  });
+}
+
+/** An attribute value as written in HTML, with its character references read. */
+function decodeAttribute(value: string): string {
+  return value.replace(
+    /&(#x[\da-f]+|#\d+|quot|amp|apos|lt|gt);/gi,
+    (ref, name: string) => {
+      const lower = name.toLowerCase();
+      if (lower.startsWith("#x"))
+        return String.fromCodePoint(Number.parseInt(lower.slice(2), 16));
+      if (lower.startsWith("#"))
+        return String.fromCodePoint(Number(lower.slice(1)));
+      return { quot: '"', amp: "&", apos: "'", lt: "<", gt: ">" }[lower] ?? ref;
+    },
+  );
+}
+
+/**
+ * A Markdown file's links (inline, reference, autolink, bare address, image),
+ * and the links, sources and ids of the HTML it carries, read as a page's.
+ */
+export async function parseMarkdown(text: string): Promise<Page> {
+  const page: Page = { ids: new Set(), hrefs: [], rebased: false };
+  const html: string[] = [];
+  const tree = fromMarkdown(text, {
+    extensions: [gfm()],
+    mdastExtensions: [gfmFromMarkdown()],
+  });
+  visit(tree, (node) => {
+    if (
+      node.type === "link" ||
+      node.type === "image" ||
+      node.type === "definition"
+    )
+      page.hrefs.push(node.url);
+    if (node.type === "html") html.push(node.value);
+  });
+  const inner = await parsePage(html.join("\n"));
+  for (const id of inner.ids) page.ids.add(decodeAttribute(id));
+  page.hrefs.push(...inner.hrefs.map(decodeAttribute));
+  page.rebased = inner.rebased;
+  return page;
 }
 
 /** The route a built file serves: `modules/M2/index.html` -> `/modules/M2/`. */
@@ -128,11 +198,13 @@ export async function parsePage(html: string): Promise<Page> {
   return page;
 }
 
-/** Each built page's or SVG's route, with its ids and links. */
+/** Each built page's, SVG's or Markdown file's route, with its ids and links. */
 async function readPages(): Promise<Map<string, Page>> {
   const pages = new Map<string, Page>();
   for (const file of documentFiles(dist))
     pages.set(routeOf(file), await parsePage(readFileSync(file, "utf8")));
+  for (const file of textFiles(dist))
+    pages.set(routeOf(file), await parseMarkdown(readFileSync(file, "utf8")));
   return pages;
 }
 
@@ -145,16 +217,16 @@ export function problemWith(
 ): string | null {
   let url: URL;
   try {
-    url = new URL(href, `${ORIGIN}${route}`);
+    url = new URL(href, routeAddress(route, ORIGIN));
   } catch {
     return "not a valid address";
   }
   if (url.origin !== ORIGIN && url.origin !== SITE_ORIGIN) return null;
-  const path = decodeURI(url.pathname);
+  const path = routePath(url.pathname);
   const page =
     pages.get(normalRoute(path)) ??
     (path.endsWith("/") ? undefined : pages.get(`${path}/`));
-  const anchor = decodeURIComponent(url.hash.slice(1));
+  const anchor = percentDecoded(url.hash.slice(1));
   if (!page) {
     if (!isAsset(path)) return "no such page";
     return anchor ? "no such anchor" : null;
@@ -169,6 +241,18 @@ function isAsset(path: string): boolean {
   return !path.endsWith(".html") && existsSync(file) && statSync(file).isFile();
 }
 
+/** A line for each of `hrefs`, links on the file at `route`, that does not resolve. */
+function brokenLinks(
+  route: string,
+  hrefs: string[],
+  pages: Map<string, Page>,
+): string[] {
+  return hrefs.flatMap((href) => {
+    const problem = problemWith(href, route, pages, isAsset);
+    return problem ? [`${route}: ${href} (${problem})`] : [];
+  });
+}
+
 async function checkLinks(): Promise<number> {
   if (!existsSync(dist)) {
     console.error("check-links: no dist/ folder; run the build first");
@@ -180,18 +264,14 @@ async function checkLinks(): Promise<number> {
     return 2;
   }
   const broken: string[] = [];
-  for (const [route, { hrefs, rebased }] of pages) {
-    if (rebased) {
-      broken.push(
-        `${route}: sets its own base URL, which check-links does not resolve`,
-      );
-      continue;
-    }
-    for (const href of hrefs) {
-      const problem = problemWith(href, route, pages, isAsset);
-      if (problem) broken.push(`${route}: ${href} (${problem})`);
-    }
-  }
+  for (const [route, { hrefs, rebased }] of pages)
+    broken.push(
+      ...(rebased
+        ? [
+            `${route}: sets its own base URL, which check-links does not resolve`,
+          ]
+        : brokenLinks(route, hrefs, pages)),
+    );
   if (broken.length) {
     console.error(
       `check-links: ${broken.length} problem(s)\n${broken.join("\n")}`,

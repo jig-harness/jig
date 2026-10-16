@@ -219,6 +219,72 @@ screen).
   `gates.yml` (type check, build, link check) for any change to the site or
   to a document it renders; the required `gates` check waits for it.
 
+### Text for agents: Markdown and `llms.txt`
+
+A coding agent that is sent to Jig's site reads HTML poorly: navigation,
+scripts and layout surround the content. The site gives it the content as
+Markdown, and an index to find it by.
+
+- **A Markdown twin of every page.** The build converts the `<main>` of each
+  page at a directory address to Markdown and writes it beside the page
+  (`modules/M2/index.html` gets `modules/M2/index.md`,
+  `scripts/markdown-twins.ts`); the not-found page is not one, and has none. Converting the built
+  page, not the document it renders from, gives a page that combines several
+  documents or hand-written copy a twin as well, and a twin carries what the
+  page shows (the criteria beside a module's levels). What exists only for a
+  reader at a screen (navigation, buttons, tabs, the language label of a code
+  block, hidden elements) is left out, but a choice the page offers (an
+  adoption profile) is kept with the text shown for each option. What the
+  page says only through a label or an attribute is said in text: a mark
+  with only a label (a criterion's rung), a link whose marks are hidden
+  glyphs (a station box: who runs it), and a module-map cell's state under
+  each profile. A legend that keys those marks is left out, since the twin
+  says them in words, but the text it shows for each choice is kept. Code keeps every character and its language. A styled
+  section label becomes a heading, with its note as a paragraph after it. A
+  link to a page of the site, under any of the page's addresses, points at
+  that page's twin and keeps its `#anchor`; the twin carries
+  each anchor a twin links to as `<a id="...">` where that part begins, so
+  the anchor lands in the twin as it does on the page. A page whose layout the
+  converter reads badly is fixed by a rule in `markdown-twins.ts` or by
+  using the element that says what it is.
+- **Negotiation in the Worker.** A request that names `text/markdown` and
+  prefers it to `text/html` (a higher quality, or listed first at equal
+  quality; `*/*` does not count) gets the twin of the page it asks for
+  (`worker/markdown.ts`): `Content-Type: text/markdown; charset=utf-8`,
+  `Vary: Accept`, `X-Markdown-Tokens` (an estimate: characters divided by
+  four) and `Content-Signal: ai-train=yes, search=yes, ai-input=yes`, the
+  policy for the content once the site is open. Every page response carries
+  `Vary: Accept`, so a cache keeps the two apart. A twin can also be asked
+  for by its address, and gets the same headers. The Worker reads the twin
+  whole whatever the request's method or conditions, so a `HEAD` gets the
+  token estimate a `GET` would, and only a missing twin falls back to HTML. Cloudflare's own conversion setting is not used: the
+  Worker serves the twin, which is built from the page and checked.
+- **`llms.txt` at the root and in each section.** `/llms.txt` says what Jig
+  is, from the README, and links to the file of each section:
+  `/modules/llms.txt`, `/skills/llms.txt`, `/principles/llms.txt`,
+  `/factory/llms.txt`, `/adopt/llms.txt` and `/plugin/llms.txt`, plus the
+  pages that belong to no section (what you get, what's new). Each section
+  file lists its pages, its overview and the skills' agent contracts
+  included, each linked as its twin, with a line on it. The glossary has no
+  file: it is long, and most of it is not about Jig. See
+  [`llms.txt`](../GLOSSARY.md).
+- **Derived where a document holds the list.** The modules, skills and
+  principles come from the same parsers as their pages, so a document change
+  reaches the files on the next deploy. The few fixed pages of the factory,
+  adopt and plugin sections are named in `website/src/lib/llms.ts`, with the
+  description their page carries, as the search index names its pages.
+- **Links resolve.** `scripts/check-links.ts` parses each built `llms.txt`
+  and twin as Markdown in the dialect the twins are written in
+  (GitHub-flavoured: inline, reference and automatic links, bare addresses,
+  images; not code), reads the HTML the file carries as it reads a page, and
+  fails the build on a link to a missing page or twin, or to an anchor the
+  page or twin does not have, as it does for a page.
+- **Served like any page.** The private-link gate covers all of it: until the
+  site opens, only a reader or an agent given the link can fetch it, and
+  `robots.txt` asks crawlers to stay out. Opening the site removes the key
+  check, so any agent can fetch it, and takes `robots.txt` and `noindex` off,
+  so crawlers and search engines can find it.
+
 ### Working on the site
 
 ```sh
