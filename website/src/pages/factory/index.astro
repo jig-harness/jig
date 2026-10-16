@@ -24,6 +24,7 @@ const mapHtml = await mdInline(f.intro[f.intro.length - 1] ?? "", "FACTORY.md");
         <h1 class="display">A factory of agents runs on scaffolding. The stations stand on it.</h1>
         <div class="prose" set:html={introHtml} />
         <p class="muted small" set:html={mapHtml} />
+        <p class="muted small">The same skills, sorted by what a team gets from each: <a href="/features/">What you get →</a></p>
       </div>
       <span class="intro-plate"><Plate name="hall" /></span>
     </div>

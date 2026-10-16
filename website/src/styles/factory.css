@@ -1,23 +1,4 @@
 /* The factory page and its sections (components/factory/). */
-.intro-row {
-  display: flex;
-  gap: clamp(24px, 4vw, 56px);
-  align-items: center;
-  margin-bottom: 26px;
-}
-.intro-row .intro {
-  flex: 1 1 0;
-  min-width: 0;
-  margin-bottom: 0;
-}
-.intro-plate {
-  flex: 0 0 clamp(300px, 36%, 460px);
-}
-@media (max-width: 1000px) {
-  .intro-plate {
-    display: none;
-  }
-}
 .intro .prose {
   font-size: 16.5px;
 }

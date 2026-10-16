@@ -30,7 +30,14 @@ import {
 import { parseProfiles } from "./profiles.ts";
 import { parseReadme } from "./readme.ts";
 import { parseSkills } from "./skills.ts";
-import { parseChangelog, parseRoadmap, type RoadmapItem } from "./whats-new.ts";
+import {
+  parseChangelog,
+  parseRoadmap,
+  roadmapAnchor,
+  type RoadmapItem,
+} from "./whats-new.ts";
+
+export { isRoadmapGroup } from "./whats-new.ts";
 
 function once<T>(load: () => T): () => T {
   let value: { v: T } | undefined;
@@ -156,6 +163,16 @@ export function roadmapItem(n: string): RoadmapItem | undefined {
   return roadmap()
     .groups.flatMap((g) => g.items)
     .find((i) => i.n === n);
+}
+
+/**
+ * The link to a roadmap reference: an item by number, or a group by name
+ * ("Next", "Later"). A group the roadmap does not have fails the build.
+ */
+export function roadmapHref(ref: string): string {
+  const anchor = roadmapAnchor(roadmap().groups, ref);
+  if (!anchor) throw new Error(`roadmap: no group "${ref}"`);
+  return `/whats-new/#${anchor}`;
 }
 
 export const flywheel = once(() =>

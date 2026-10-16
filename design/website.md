@@ -57,7 +57,7 @@ nothing the site states is typed twice.
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
 | `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement, two reader paths, the compact module map, the factory miniature, the limits, the enforcement ladder, the profiles, the live audit, the ways to use Jig and the principles |
-| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md | what a team gets, one section per feature: its prose, the skills that run it as commands, the modules that state the practice as chips, and what is not built yet linked to its roadmap item |
+| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, number, title and skill chips) linking to its section, then one section per feature: its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is not built yet as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
 | `/modules/<Mn>/mappings/` | mappings.md | the whole file, for links that name it |
@@ -92,6 +92,8 @@ nothing the site states is typed twice.
   module chips, the actor line, the station box, the cross-section figure,
   the station-by-actor matrix, the module map, the plan rail, the side
   index, the ladder, the section head, the plate, the live audit specimen.
+  A page that opens with a plate beside its intro uses `.intro-row` and
+  `.intro-plate` (`global.css`); the plate drops out below 1000 pixels.
   Each closed set (levels, rungs, actors, scaffolding jobs) has one mapping
   site-wide and is never told apart by color alone.
 - **Marks**: the frame mark (`public/brand/jig-frame-*.svg`, inlined in the
@@ -107,6 +109,9 @@ nothing the site states is typed twice.
   the theme like text does and needs no light and dark pair. Plates
   decorate: every fact beside one is in the text, so they are hidden from
   assistive technology. [§ Drawing a plate](#drawing-a-plate) has the recipe.
+  Which plate stands beside which feature is the site's choice, kept in
+  `FEATURE_PLATES` (`website/src/lib/data/features.ts`) by the feature's
+  heading id; the tests check every feature has one and every plate is drawn.
 
 ### Drawing a plate
 
@@ -138,6 +143,20 @@ subjects:
 | `slab` | what Jig leaves to the platform, 16:9 | a building foundation in section: a concrete slab on driven piles, with service conduits and a drainage pipe passing through it |
 | `engine` | the 404 page, 16:9 | the preamble alone, with no subject |
 | `lattice` | behind sunk bands, a 1:1 tile | a seamless repeating tile of a faint isometric scaffolding lattice: thin poles, ledgers, diagonal braces and couplers in thin even lines, continuing across all four edges |
+| `toolwall` | the features page's intro, 16:9 | a pegboard tool wall with tools hung above their painted outlines, two outlines empty |
+| `theodolite` | feature 1, an audit of where you stand, 1:1 | a surveyor's theodolite on a tripod with a folded measuring staff |
+| `crate` | feature 2, a work item carried from pickup to merge, 1:1 | a tagged wooden crate on a roller conveyor |
+| `sieves` | feature 3, review in tiers with an arbiter, 1:1 | three stacked sieves over a tray, a balance scale beside them |
+| `ratchet` | feature 4, a learning loop built into the process, 1:1 | a ratchet wheel with its pawl engaged |
+| `ledger` | feature 5, decisions recorded, found again, turned into checks, 1:1 | an open bound ledger with a ribbon, a hand stamp and ink pad |
+| `pantograph` | feature 6, design and planning grounded in the repository, 1:1 | a pantograph copying a small drawing larger on a drawing board |
+| `stepladder` | feature 7, gates that ship with their tests, 1:1 | a five-rung stepladder with a plug gauge on its top step |
+| `spindle` | feature 8, change notes and a changelog, 1:1 | a desk spindle holding a stack of impaled notes, one note waiting |
+| `bays` | feature 9, workspaces for many agents on one machine, 1:1 | a long bench divided into four bays, each with a vise and a lamp |
+| `stencils` | feature 10, one configuration file read in layers, 1:1 | three stacked stencil plates with offset openings |
+| `scraper` | feature 11, documents that say what is true now, 1:1 | a drawing board with an erasing knife and its shavings |
+| `wrenches` | feature 12, adopt one module at a time, 1:1 | three sizes of one wrench on a pegboard, a hand taking the middle one |
+| `numberer` | not yet placed: the `changelog` skill, once FEATURES.md has a section for it ([ROADMAP.md](../ROADMAP.md) item 4), 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
 
 The conversion, from the image the model returns to the mask (ImageMagick and
 `cwebp`; the width is the plate's largest rendered size, 640 for a spot
@@ -151,8 +170,9 @@ cwebp -q 60 -alpha_q 70 -exact plate.png -o website/public/plates/<name>.webp
 ```
 
 The lattice uses `-level 0%,85%` so its faint strokes survive, and `-q 50`.
-`Plate.astro` lists every drawn plate with its width-to-height ratio; a new
-plate is added there. The lattice is a tile rather than a drawing, so it is
+`website/src/lib/plates.ts` lists every drawn plate with its
+width-to-height ratio, and `Plate.astro` draws from it; a new plate is added
+there. The lattice is a tile rather than a drawing, so it is
 not in that list: `global.css` lays it behind sunk bands and
 `CrossSection.astro` behind its scaffolding band, each at its own tile size.
 

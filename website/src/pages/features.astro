@@ -1,23 +1,21 @@
 ---
+import ActorChip from "../components/ActorChip.astro";
 import ModChip from "../components/ModChip.astro";
+import Plate from "../components/Plate.astro";
 import SideIndex from "../components/SideIndex.astro";
-import StatusMark from "../components/StatusMark.astro";
 import Base from "../layouts/Base.astro";
-import { features, roadmap, skills } from "../lib/data/index.ts";
+import type { Actor } from "../lib/data/factory.ts";
+import { FEATURE_PLATES } from "../lib/data/features.ts";
+import { features, skills } from "../lib/data/index.ts";
 import { md, mdInline } from "../lib/markdown.ts";
 import { REPO_URL } from "../lib/routes.ts";
+import { stationsRunBy } from "../lib/skills-view.ts";
 import { headingId } from "../lib/view.ts";
 
 const FROM = "FEATURES.md";
 const f = features();
 const introHtml = await md(f.intro, FROM);
-const commandOf = new Map(skills().map((s) => [s.name, s.command]));
-const itemTitle = new Map(
-  roadmap().groups.flatMap((g) =>
-    g.items.map((i) => [i.n, i.title.replace(/`/g, "")] as const),
-  ),
-);
-const groupId = new Map(roadmap().groups.map((g) => [g.name, g.id]));
+const isAgent = new Map(skills().map((s) => [s.name, s.agent]));
 // The Practice field beside its module chips: what it says besides the module
 // links the chips already show.
 const besideModules = (practice: string) =>
@@ -26,39 +24,87 @@ const besideModules = (practice: string) =>
     .replace(/^[\s,;]+|[\s,;]+$/g, "")
     .replace(/(?:\s*,)+\s*/g, ", ");
 const list = await Promise.all(
-  f.features.map(async (x, i) => ({
-    ...x,
-    n: i + 1,
-    id: headingId(x.title),
-    bodyHtml: await md(x.body, FROM),
-    practiceHtml: await mdInline(besideModules(x.practice), FROM),
-    notBuiltHtml: x.notBuilt ? await mdInline(x.notBuilt, FROM) : "",
-    runs: x.skills.map((name) => ({ name, command: commandOf.get(name) ?? name })),
-    items: x.roadmapItems.map((n) => ({ n, title: itemTitle.get(n) ?? "" })),
-    groups: x.roadmapGroups.map((name) => ({ name, id: groupId.get(name) ?? "" })),
-  })),
+  f.features.map(async (x, i) => {
+    const id = headingId(x.title);
+    const plate = FEATURE_PLATES[id];
+    if (!plate) throw new Error(`features: no plate for #${id}`);
+    return {
+      ...x,
+      n: i + 1,
+      id,
+      plate,
+      bodyHtml: await md(x.body, FROM),
+      practiceHtml: await mdInline(besideModules(x.practice), FROM),
+      runs: x.skills.map((name): Actor => ({ kind: isAgent.get(name) ? "agent" : "skill", name })),
+      stations: stationsRunBy(...x.skills),
+      notBuilt: await Promise.all(
+        x.notBuiltEntries.map(async (e) => ({
+          html: await mdInline(e.text, FROM),
+          todo: [...e.items, ...e.groups].map((item): Actor => ({ kind: "todo", item, text: e.text })),
+        })),
+      ),
+    };
+  }),
 );
 ---
 
 <Base title="What you get" description="What a team can run, install or copy from Jig today, each with the practice it carries out and what is not built yet.">
-  <section class="page wrap with-side">
+  <section class="page wrap">
+    <div class="intro-row">
+      <div class="intro">
+        <span class="eyebrow">What you get · FEATURES.md</span>
+        <h1 class="display">What a team gets from Jig, and what runs it.</h1>
+        <div class="prose" set:html={introHtml} />
+      </div>
+      <span class="intro-plate"><Plate name="toolwall" /></span>
+    </div>
+    <nav class="glance" aria-labelledby="glance-head">
+      <h2 class="glance-head" id="glance-head">At a glance <span class="muted">· {list.length} things you get</span></h2>
+      <ol>
+        {
+          list.map((x) => (
+            <li class="card">
+              <span class="card-plate"><Plate name={x.plate} /></span>
+              <span class="card-text">
+                <a class="card-link" href={`#${x.id}`}>
+                  <span class="num">{String(x.n).padStart(2, "0")}</span>
+                  <span class="card-title">{x.title}</span>
+                </a>
+                {x.runs.length > 0 && (
+                  <span class="card-chips">
+                    {x.runs.map((a) => (
+                      <ActorChip actor={a} />
+                    ))}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))
+        }
+      </ol>
+    </nav>
+  </section>
+  <section class="page wrap with-side detail">
     <SideIndex title={`${list.length} things you get`} items={list.map((x) => ({ label: x.title, href: `#${x.id}`, num: String(x.n) }))} />
     <article class="main" style="--main-max:820px">
-      <span class="eyebrow">What you get · FEATURES.md</span>
-      <h1 class="display">What a team gets from Jig, and what runs it.</h1>
-      <div class="prose lede-block" set:html={introHtml} />
       {
         list.map((x) => (
           <section class="feature" id={x.id}>
-            <h2><span class="num">{x.n}</span>{x.title}</h2>
+            <div class="feature-head">
+              <h2>
+                <span class="num">{x.n}</span>
+                {x.title}
+              </h2>
+              <span class="feature-plate"><Plate name={x.plate} /></span>
+            </div>
             <div class="prose" set:html={x.bodyHtml} />
             <dl class="rail">
               {x.runs.length > 0 && (
                 <div class="row">
                   <dt>Runs as</dt>
-                  <dd class="runs">
-                    {x.runs.map((r) => (
-                      <a class="run" href={`/skills/${r.name}/`}><code>{r.command}</code></a>
+                  <dd class="chips">
+                    {x.runs.map((a) => (
+                      <ActorChip actor={a} />
                     ))}
                   </dd>
                 </div>
@@ -66,23 +112,36 @@ const list = await Promise.all(
               <div class="row">
                 <dt>Practice</dt>
                 <dd class="chips">
-                  {x.modules.map((m) => <ModChip id={m} />)}
+                  {x.modules.map((m) => (
+                    <ModChip id={m} />
+                  ))}
                   {x.practiceHtml && <span class="practice" set:html={x.practiceHtml} />}
                 </dd>
               </div>
-              {x.notBuiltHtml && (
-                <div class="row todo">
-                  <dt><StatusMark kind="todo" />Not built yet</dt>
+              {x.stations.length > 0 && (
+                <div class="row">
+                  <dt>In the factory</dt>
+                  <dd class="stations">
+                    {x.stations.map((s) => (
+                      <a href={s.href}>{s.label}</a>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              {x.notBuilt.length > 0 && (
+                <div class="row">
+                  <dt>Not built yet</dt>
                   <dd>
-                    <span set:html={x.notBuiltHtml} />
-                    <span class="items">
-                      {x.items.map((it) => (
-                        <a href={`/whats-new/#rm-item-${it.n}`}>Roadmap item {it.n}{it.title ? `: ${it.title}` : ""} →</a>
+                    <ul class="todo">
+                      {x.notBuilt.map((e) => (
+                        <li>
+                          {e.todo.map((a) => (
+                            <ActorChip actor={a} />
+                          ))}{" "}
+                          <span set:html={e.html} />
+                        </li>
                       ))}
-                      {x.groups.map((g) => (
-                        <a href={`/whats-new/#${g.id}`}>Roadmap, {g.name} →</a>
-                      ))}
-                    </span>
+                    </ul>
                   </dd>
                 </div>
               )}
@@ -96,18 +155,114 @@ const list = await Promise.all(
 </Base>
 
 <style>
-  h1 {
-    font-size: clamp(30px, 3.2vw, 46px);
-    margin: 12px 0 18px;
+  .intro .prose {
+    font-size: 16.5px;
   }
-  .lede-block {
-    font-size: 17px;
-    margin-bottom: 8px;
+  .intro .prose :global(p + p) {
+    margin-top: 10px;
+  }
+  .glance {
+    margin-top: 8px;
+  }
+  .glance-head {
+    font-family: var(--sans);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+    margin: 0 0 16px;
+  }
+  .glance-head .muted {
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    font-size: 13.5px;
+  }
+  .glance ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 16px 14px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+  }
+  .card:hover,
+  .card:focus-within {
+    border-color: var(--line-strong);
+  }
+  .card-plate {
+    align-self: center;
+    width: 96px;
+  }
+  .card-text {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .card-link {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  /* The whole card follows the title's link; the chips sit above it. */
+  .card-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+  .card-link:hover .card-title {
+    color: var(--accent-hover);
+    text-decoration: underline;
+  }
+  .card-title {
+    font-family: var(--serif);
+    font-size: 17.5px;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  .card-chips {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: auto;
+  }
+  .num {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .detail {
+    padding-top: 12px;
   }
   .feature {
     border-top: 1px solid var(--line);
     padding: 28px 0 8px;
     scroll-margin-top: 80px;
+  }
+  .feature-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin: 0 0 14px;
   }
   .feature h2 {
     display: flex;
@@ -117,14 +272,15 @@ const list = await Promise.all(
     font-weight: 500;
     font-size: clamp(22px, 2.2vw, 28px);
     line-height: 1.2;
-    margin: 0 0 14px;
+    margin: 0;
     text-wrap: balance;
   }
   .feature .num {
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--muted);
     min-width: 1.6em;
+  }
+  .feature-plate {
+    flex: none;
+    width: 112px;
   }
   .rail {
     margin: 4px 0 18px;
@@ -135,14 +291,11 @@ const list = await Promise.all(
   }
   .row {
     display: grid;
-    grid-template-columns: 108px 1fr;
+    grid-template-columns: 120px 1fr;
     gap: 10px;
     align-items: baseline;
   }
   dt {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     font-family: var(--sans);
     font-size: 12px;
     letter-spacing: 0.06em;
@@ -154,45 +307,59 @@ const list = await Promise.all(
     margin: 0;
     min-width: 0;
   }
-  .runs,
   .chips {
     display: flex;
     flex-wrap: wrap;
     gap: 8px 10px;
     align-items: center;
   }
-  .run {
-    text-decoration: none;
-  }
-  .run code {
-    font-size: 13px;
-  }
-  .run:hover code {
-    color: var(--accent-hover);
-  }
   .practice {
     font-size: 14.5px;
   }
-  .todo dd {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    color: var(--muted);
-  }
-  .items {
+  .stations {
     display: flex;
     flex-wrap: wrap;
     gap: 4px 16px;
     font-size: 14px;
   }
+  .todo {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--muted);
+  }
   .source {
     margin-top: 32px;
     font-size: 14px;
   }
+  @media (max-width: 1000px) {
+    .glance ol {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
   @media (max-width: 640px) {
+    .glance ol {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+    }
+    .card {
+      flex-direction: row;
+      align-items: flex-start;
+      padding: 12px;
+    }
+    .card-plate {
+      width: 64px;
+      flex: none;
+    }
     .row {
       grid-template-columns: 1fr;
       gap: 4px;
+    }
+    .feature-plate {
+      width: 72px;
     }
   }
 </style>

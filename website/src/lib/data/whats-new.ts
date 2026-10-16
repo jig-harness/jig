@@ -54,6 +54,22 @@ export interface RoadmapGroup {
   items: RoadmapItem[];
 }
 
+/** Whether a roadmap reference names a group ("Later") rather than an item number. */
+export const isRoadmapGroup = (ref: string) => !/^\d+$/.test(ref);
+
+/**
+ * The anchor a roadmap reference has on /whats-new/: an item by number
+ * (`rm-item-4`), or a group by name (`rm-next`). Undefined for a group the
+ * roadmap does not have.
+ */
+export function roadmapAnchor(
+  groups: RoadmapGroup[],
+  ref: string,
+): string | undefined {
+  if (!isRoadmapGroup(ref)) return `rm-item-${ref}`;
+  return groups.find((g) => g.name === ref)?.id;
+}
+
 export function parseRoadmap(markdown: string): {
   intro: string;
   groups: RoadmapGroup[];

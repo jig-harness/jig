@@ -4,7 +4,7 @@
 // chip for work not built yet. Hovering or focusing it opens what the actor
 // does (scripts/site.ts), and it links to the actor's page.
 import type { Actor } from "../lib/data/factory.ts";
-import { factory, roadmapItem, skillSummary, toolSummary } from "../lib/data/index.ts";
+import { factory, isRoadmapGroup, roadmapHref, roadmapItem, skillSummary, toolSummary } from "../lib/data/index.ts";
 import { clip, plain } from "../lib/data/modules.ts";
 import { REPO_URL } from "../lib/routes.ts";
 import StatusMark from "./StatusMark.astro";
@@ -14,8 +14,7 @@ interface Props {
 }
 const { actor } = Astro.props;
 
-const roadmapHref = (item: string) => (item === "Later" ? "/whats-new/#rm-later" : `/whats-new/#rm-item-${item}`);
-const roadmapLabel = (item: string) => (item === "Later" ? "roadmap, Later" : `roadmap ${item}`);
+const roadmapLabel = (item: string) => (isRoadmapGroup(item) ? `roadmap, ${item}` : `roadmap ${item}`);
 
 interface Tip {
   href: string;

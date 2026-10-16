@@ -4,7 +4,7 @@
 // so it cannot disagree with figure 2.
 import "../../styles/factory.css";
 import { type Actor, EVERY_STAGE } from "../../lib/data/factory.ts";
-import { factory } from "../../lib/data/index.ts";
+import { factory, isRoadmapGroup, roadmapHref } from "../../lib/data/index.ts";
 import ActorChip from "../ActorChip.astro";
 import StatusMark from "../StatusMark.astro";
 
@@ -29,8 +29,7 @@ const ordered = [...rows.entries()].sort(([, a], [, b]) => RANK[a.kind] - RANK[b
 const cell = (c: Column, k: string) => c.actors.find((a) => key(a) === k);
 const columnHref = (c: Column) => (c.id === "band" ? "#station-band" : `#station-${c.id}`);
 type Todo = Extract<Actor, { kind: "todo" }>;
-const todoHref = (t: Todo) => (t.item === "Later" ? "/whats-new/#rm-later" : `/whats-new/#rm-item-${t.item}`);
-const todoMark = (t: Todo) => (t.item === "Later" ? "L" : t.item);
+const todoMark = (t: Todo) => (isRoadmapGroup(t.item) ? t.item[0] : t.item);
 /** What a screen reader hears for a marked cell: the row's actor at the column's station. */
 function cellLabel(row: Actor, at: Actor, c: Column): string {
   if (row.kind === "person") return `a person at ${c.name}`;
@@ -72,7 +71,7 @@ function cellLabel(row: Actor, at: Actor, c: Column): string {
                 return (
                   <td class:list={[c.level, { on: !!at, band: c.id === "band" }]}>
                     {at?.kind === "todo" ? (
-                      <a class="item" href={todoHref(at)} title={at.text}>{todoMark(at)}</a>
+                      <a class="item" href={roadmapHref(at.item)} title={at.text}>{todoMark(at)}</a>
                     ) : at ? (
                       <StatusMark kind={at.kind} size={13} />
                     ) : null}

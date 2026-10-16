@@ -10,12 +10,16 @@ export function modulesRunBy(name: string): { id: string; title: string }[] {
     .map((m) => ({ id: m.id, title: m.title }));
 }
 
-export function stationsRunBy(name: string): { label: string; href: string }[] {
+/** The stations any of the named skills or agents runs, in factory order. */
+export function stationsRunBy(
+  ...names: string[]
+): { label: string; href: string }[] {
   const f = factory();
   const out: { label: string; href: string }[] = [];
   for (const s of [...f.pipeline, ...f.line]) {
     const runs = s.actors.some(
-      (a) => (a.kind === "skill" || a.kind === "agent") && a.name === name,
+      (a) =>
+        (a.kind === "skill" || a.kind === "agent") && names.includes(a.name),
     );
     if (!runs) continue;
     const level = s.id.startsWith("a") ? "Design" : "Execution";
@@ -24,7 +28,7 @@ export function stationsRunBy(name: string): { label: string; href: string }[] {
       href: `/factory/#station-${s.id}`,
     });
   }
-  if (["review", "decide"].includes(name))
+  if (names.some((n) => ["review", "decide"].includes(n)))
     out.push({ label: "Design · every stage", href: "/factory/#station-band" });
   return out;
 }

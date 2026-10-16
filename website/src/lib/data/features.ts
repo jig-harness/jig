@@ -7,6 +7,7 @@
  * parentheses hold nothing else: items by number ("item 4", "items 14 and
  * 15") or a group by name ("Later").
  */
+import type { PlateName } from "../plates.ts";
 import {
   listItems,
   moduleIds,
@@ -27,10 +28,20 @@ export interface Feature {
   modules: string[];
   /** The Not built yet field, Markdown; empty when the feature is whole. */
   notBuilt: string;
+  /** The Not built yet field entry by entry, each with the work it names. */
+  notBuiltEntries: NotBuilt[];
   /** Roadmap item numbers the Not built yet field names. */
   roadmapItems: string[];
   /** Roadmap group names the Not built yet field names ("Later"). */
   roadmapGroups: string[];
+}
+
+/** One Not built yet entry: its text without the parentheticals, and its work. */
+export interface NotBuilt {
+  /** Markdown. */
+  text: string;
+  items: string[];
+  groups: string[];
 }
 
 export interface Features {
@@ -84,27 +95,25 @@ function skillNames(title: string, text: string): string[] {
 const ITEMS = /^items? ((?:\d+(?:,? and |, ))*\d+)$/;
 
 /**
- * The roadmap work the Not built yet field names. The field is entries
- * separated by semicolons; every entry names its work in at least one
- * parenthetical, every parenthetical is a reference (item numbers or a
- * group), and every parenthesis is matched, so no entry renders without its
- * roadmap link.
+ * The Not built yet field, entry by entry with the roadmap work each names.
+ * The field is entries separated by semicolons; every entry names its work in
+ * at least one parenthetical, every parenthetical is a reference (item
+ * numbers or a group), and every parenthesis is matched, so no entry renders
+ * without its roadmap link.
  */
-function roadmapRefs(
-  title: string,
-  text: string,
-): { items: string[]; groups: string[] } {
-  const items: string[] = [];
-  const groups: string[] = [];
+function notBuiltEntries(title: string, text: string): NotBuilt[] {
   const fail = (what: string) =>
     new Error(
       `FEATURES.md: "${title}" Not built yet must name roadmap work as (item N), (items N and M) or (Group): ${what}`,
     );
+  const out: NotBuilt[] = [];
   for (const entry of text.split(";").map((e) => e.trim())) {
     if (!entry) continue;
     const parens = [...entry.matchAll(/\(([^()]*)\)/g)];
     if (!parens.length || /[()]/.test(entry.replace(/\([^()]*\)/g, "")))
       throw fail(entry);
+    const items: string[] = [];
+    const groups: string[] = [];
     for (const [paren, inner = ""] of parens) {
       const ref = inner.trim();
       const m = ITEMS.exec(ref);
@@ -112,8 +121,16 @@ function roadmapRefs(
       else if (/^[A-Z][a-z]+$/.test(ref)) groups.push(ref);
       else throw fail(paren);
     }
+    out.push({
+      text: entry
+        .replace(/\s*\([^()]*\)/g, "")
+        .replace(/\s+([,.])/g, "$1")
+        .trim(),
+      items: [...new Set(items)],
+      groups: [...new Set(groups)],
+    });
   }
-  return { items: [...new Set(items)], groups: [...new Set(groups)] };
+  return out;
 }
 
 /** What `listItems` (source.ts) starts an item on, at column zero. */
@@ -178,7 +195,7 @@ function feature(title: string, body: string): Feature {
   const notBuilt = fields.get("Not built yet") ?? "";
   const prose = paragraphs(head).join("\n\n");
   if (!prose) throw new Error(`FEATURES.md: "${title}" has no prose`);
-  const refs = roadmapRefs(title, notBuilt);
+  const entries = notBuiltEntries(title, notBuilt);
   return {
     title,
     body: prose,
@@ -186,8 +203,9 @@ function feature(title: string, body: string): Feature {
     practice,
     modules: moduleIds(practice),
     notBuilt,
-    roadmapItems: refs.items,
-    roadmapGroups: refs.groups,
+    notBuiltEntries: entries,
+    roadmapItems: [...new Set(entries.flatMap((e) => e.items))],
+    roadmapGroups: [...new Set(entries.flatMap((e) => e.groups))],
   };
 }
 
@@ -198,3 +216,23 @@ export function parseFeatures(markdown: string): Features {
     features: rest.map((s) => feature(s.title, s.body)),
   };
 }
+
+/**
+ * The plate drawn beside each feature, by the id of its heading. The site
+ * owns this choice; the tests check every feature has one and every plate
+ * named is drawn.
+ */
+export const FEATURE_PLATES: Record<string, PlateName> = {
+  "an-audit-of-where-you-stand": "theodolite",
+  "a-work-item-carried-from-pickup-to-merge": "crate",
+  "review-in-tiers-with-an-arbiter-for-contested-findings": "sieves",
+  "a-learning-loop-built-into-the-process": "ratchet",
+  "decisions-recorded-found-again-and-turned-into-checks": "ledger",
+  "design-and-planning-grounded-in-the-repository": "pantograph",
+  "gates-that-ship-with-their-tests-each-on-a-named-rung": "stepladder",
+  "change-notes-and-a-changelog-nobody-fights-over": "spindle",
+  "workspaces-for-many-agents-on-one-machine": "bays",
+  "one-configuration-file-read-in-layers": "stencils",
+  "documents-that-say-what-is-true-now": "scraper",
+  "adopt-one-module-at-a-time-sized-by-a-profile": "wrenches",
+};

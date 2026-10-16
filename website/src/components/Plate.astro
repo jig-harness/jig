@@ -3,29 +3,17 @@
 // ink token so it follows the theme. The file is an alpha mask, black ink on
 // transparent; the mask is painted with the ink color at a set tone. Plates
 // decorate; every fact beside one is in the text, so they carry no alt.
+import { PLATES, type PlateName } from "../lib/plates.ts";
+
 interface Props {
   /** The file under public/plates/, without the extension. */
-  name: keyof typeof PLATES;
+  name: PlateName;
   /** The rendered width; the height follows the plate's own ratio. */
   width?: string;
   /** How dark the ink is drawn: 1 is the text color. */
   tone?: number;
   class?: string;
 }
-/** Every plate and its width to height ratio. */
-const PLATES = {
-  jig: 1.79,
-  hall: 1.79,
-  map: 1,
-  gauge: 1.79,
-  catalog: 1,
-  drafting: 1.79,
-  line: 3.03,
-  flywheel: 1.79,
-  lever: 1.79,
-  slab: 1.79,
-  engine: 1.79,
-} as const;
 const { name, width = "100%", tone = 0.82, class: cls } = Astro.props;
 const style = `--plate:url(/plates/${name}.webp);aspect-ratio:${PLATES[name]};width:${width};opacity:${tone}`;
 ---

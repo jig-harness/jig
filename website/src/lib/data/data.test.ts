@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { parseBrownfield, parseGreenfield } from "./adoption.ts";
 import { parseLayers, parseTrackerInterface } from "./config.ts";
 import { parseCriteria } from "./criteria.ts";
-import { parseFeatures } from "./features.ts";
+import { FEATURE_PLATES, parseFeatures } from "./features.ts";
 import { parseFlywheel } from "./flywheel.ts";
 import {
   DESIGN_NOT_BUILT,
@@ -25,7 +25,9 @@ import { parsePrinciple, parsePrincipleIndex } from "./principles.ts";
 import { parseProfiles } from "./profiles.ts";
 import { parseReadme } from "./readme.ts";
 import { parseSkills } from "./skills.ts";
-import { parseChangelog, parseRoadmap } from "./whats-new.ts";
+import { parseChangelog, parseRoadmap, roadmapAnchor } from "./whats-new.ts";
+import { PLATES } from "../plates.ts";
+import { headingId } from "../view.ts";
 import {
   MODULE_IDS,
   parseModule as auditModule,
@@ -231,6 +233,17 @@ test("the changelog and roadmap parse into releases and groups", () => {
   expect(r.groups.flatMap((g) => g.items).some((i) => i.n === "9")).toBe(true);
 });
 
+test("a roadmap reference links to its item by number, or to any group by name", () => {
+  const { groups } = parseRoadmap(
+    "# Roadmap\n\n## Now\n\n### 4. Item\n\n## Next\n\n## Later\n",
+  );
+  expect(roadmapAnchor(groups, "4")).toBe("rm-item-4");
+  expect(roadmapAnchor(groups, "Now")).toBe("rm-now");
+  expect(roadmapAnchor(groups, "Next")).toBe("rm-next");
+  expect(roadmapAnchor(groups, "Later")).toBe("rm-later");
+  expect(roadmapAnchor(groups, "Someday")).toBeUndefined();
+});
+
 test("a changelog subsection with no body keeps its whole title", () => {
   const c = parseChangelog(
     "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n### Added",
@@ -422,6 +435,18 @@ describe("FEATURES.md", () => {
     }
   });
 
+  test("every feature has its own plate, and every plate is drawn", () => {
+    const ids = f.features.map((x) => headingId(x.title));
+    expect(Object.keys(FEATURE_PLATES).sort()).toEqual([...ids].sort());
+    const named = Object.values(FEATURE_PLATES);
+    expect(new Set(named).size).toBe(named.length);
+    for (const name of Object.keys(PLATES))
+      expect(
+        existsSync(join(root, `website/public/plates/${name}.webp`)),
+        name,
+      ).toBe(true);
+  });
+
   test("every skill the plugin ships is named by some feature", () => {
     const named = new Set(f.features.flatMap((x) => x.skills));
     for (const s of skills) expect(named.has(s), s).toBe(true);
@@ -449,7 +474,20 @@ Prose about the thing, long enough to count.
       modules: ["M1", "M12"],
       roadmapItems: ["4", "14", "15", "9"],
       roadmapGroups: ["Later"],
+      notBuiltEntries: [
+        { text: "this", items: ["4"], groups: [] },
+        { text: "that", items: ["14", "15"], groups: [] },
+        { text: "more", items: ["9"], groups: [] },
+        { text: "the rest", items: [], groups: ["Later"] },
+      ],
     });
+    expect(
+      parseFeatures(
+        "# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **Not built yet:** the `x` skill (item 4), which does y (Later)\n",
+      ).features[0]?.notBuiltEntries,
+    ).toEqual([
+      { text: "the `x` skill, which does y", items: ["4"], groups: ["Later"] },
+    ]);
     expect(() =>
       parseFeatures(
         "# T\n\n## A\n\nProse.\n\n- **Runs:** x\n- **Practice:** M1\n",
