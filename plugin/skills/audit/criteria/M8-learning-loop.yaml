@@ -73,7 +73,7 @@ criteria:
   - id: audit-catalog-maintained
     level: standard
     requires: convention
-    since: next
+    since: 0.41.0
     statement: >-
       Every drift-prone area that no gate fully covers is a row in an audit
       catalog with an owner, a cadence, a last-audited date and its open work,
