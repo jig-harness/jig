@@ -98,7 +98,10 @@ nothing the site states is typed twice.
   [bleed](../GLOSSARY.md) hero: larger, behind the
   intro, its frame reaching past the window's right edge and feathered on
   its left, right and lower edges so the drawing eases into the page from
-  beyond it (the factory overview uses it).
+  beyond it (the factory overview and What you get use it). A plate that
+  fills more of its own frame sets a smaller `--bleed-w` (its width) and
+  `--bleed-shift` (the share of it past the window's edge) on the row, so
+  its drawing still ends inside the window.
   Each closed set (levels, rungs, actors, scaffolding jobs) has one mapping
   site-wide and is never told apart by color alone.
 - **Marks**: the frame mark (`public/brand/jig-frame-*.svg`, inlined in the

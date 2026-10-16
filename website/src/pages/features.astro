@@ -49,13 +49,13 @@ const list = await Promise.all(
 
 <Base title="What you get" description="What a team can run, install or copy from Jig today, each with the practice it carries out and what is not built yet.">
   <section class="page wrap">
-    <div class="intro-row">
+    <div class="intro-row bleed" style="--bleed-w: min(50vw, 820px); --bleed-shift: 0">
       <div class="intro">
         <span class="eyebrow">What you get · FEATURES.md</span>
         <h1 class="display">What a team gets from Jig, and what runs it.</h1>
         <div class="prose" set:html={introHtml} />
       </div>
-      <span class="intro-plate"><Plate name="toolwall" /></span>
+      <span class="intro-plate"><Plate name="toolwall" tone={0.66} /></span>
     </div>
     <nav class="glance" aria-labelledby="glance-head">
       <h2 class="glance-head" id="glance-head">At a glance <span class="muted">· {list.length} things you get</span></h2>

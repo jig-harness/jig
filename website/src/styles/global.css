@@ -626,14 +626,19 @@ a.out::after {
 
 /* A bleed: the plate leaves the column, larger and behind the intro, its
    frame reaching past the window's right edge and feathered on its left,
-   right and lower edges so the drawing eases into the page from beyond it. Add `bleed` to an `.intro-row`; below 1000px it
-   is an ordinary intro and the plate drops out. */
+   right and lower edges so the drawing eases into the page from beyond it.
+   Add `bleed` to an `.intro-row`. `--bleed-w` is the plate's width and
+   `--bleed-shift` the share of it past the window's edge; a plate that fills
+   more of its own frame sets both smaller on the row. Below 1000px it is an ordinary
+   intro and the plate drops out. */
 @media (width > 1000px) {
   .page:has(.intro-row.bleed) {
     overflow-x: clip;
   }
 
   .intro-row.bleed {
+    --bleed-w: min(58vw, 940px);
+    --bleed-shift: 0.08;
     position: relative;
     min-height: clamp(380px, 34vw, 520px);
   }
@@ -645,10 +650,9 @@ a.out::after {
   }
 
   .intro-row.bleed .intro-plate {
-    --bleed-w: min(58vw, 940px);
     position: absolute;
     top: 50%;
-    right: calc(-1 * var(--gutter) - 0.08 * var(--bleed-w));
+    right: calc(-1 * var(--gutter) - var(--bleed-shift) * var(--bleed-w));
     width: var(--bleed-w);
     translate: 0 -50%;
     pointer-events: none;
