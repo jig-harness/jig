@@ -356,6 +356,27 @@ the repository's own visibility.
   ([M3](modules/M3-change-area-catalog/README.md)), cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle.
+- **Bun's linter and formatter.** A linter reports code that breaks a rule;
+  a formatter rewrites code into one consistent layout. Jig uses Biome, a
+  single tool that does both, for its TypeScript and JSON. Bun is adding its own:
+  `bun lint`, which accepts the rules of ESLint and oxlint (two widely used
+  JavaScript and TypeScript linters) including rules that use type
+  information, and `bun fmt`, which formats as Prettier (a widely used
+  formatter) does. They could replace Biome: one development dependency
+  fewer, and rules that read the types in place of Biome's experimental
+  ones. Evaluate them once they ship in a
+  stable Bun release: port the rules in
+  [tools/quality/grit/](tools/quality/grit/) to ESLint rules with their
+  fixtures; give the ratchet (`tools/quality/ratchet.jsonc`) a counter for
+  `bun lint`'s report in place of its `biome-json` one, with fixtures showing
+  it counts the same warnings Biome did, and teach it to read the `[lint]`
+  section of `bunfig.toml` and count `eslint-disable` comments;
+  map `biome.json`'s rule settings; keep Biome, or another linter that reads
+  JSON, for the JSON files if `bun lint` still covers only JavaScript and
+  TypeScript; decide whether Markdown and YAML are
+  formatted, then run both linters side by side for one release before
+  Biome goes. M1's and M14's `mappings.md` gain `bun lint` as a TypeScript
+  option in the same pull request.
 - **Shared test helper.** A shell-command reachability model for testing
   workflow files, once it is separated from the workflow conventions it is
   written against.
