@@ -22,8 +22,15 @@ const el = (
 
 const text = (value: string): HNode => ({ type: "text", value });
 
-/** The language a `<code>` names in its class (`language-yaml`), or "text". */
-function languageOf(code: HNode | undefined): string {
+/**
+ * The language a fenced block names: Shiki records it on the `<pre>`
+ * (`data-language`), the plain renderer in the `<code>` class
+ * (`language-yaml`). A block with none, or one Shiki calls "plaintext", is
+ * "text".
+ */
+function languageOf(pre: HNode, code: HNode | undefined): string {
+  const named = pre.properties?.dataLanguage;
+  if (typeof named === "string" && named !== "plaintext") return named;
   const classes = code?.properties?.className;
   const list = Array.isArray(classes) ? classes.map(String) : [];
   const lang = list.find((c) => c.startsWith("language-"));
@@ -34,7 +41,7 @@ function codeFigure(pre: HNode): HNode {
   const code = pre.children?.find((c) => c.tagName === "code");
   return el("figure", { className: ["code"] }, [
     el("figcaption", {}, [
-      el("span", {}, [text(languageOf(code))]),
+      el("span", {}, [text(languageOf(pre, code))]),
       el("button", { type: "button", className: ["copy"], dataCopy: "" }, [
         text("Copy"),
       ]),

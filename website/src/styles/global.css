@@ -45,6 +45,25 @@
   --shadow: light-dark(rgba(37, 30, 24, 0.12), rgba(0, 0, 0, 0.45));
 }
 
+/* Syntax highlighting: Shiki's css-variables theme reads these. Each is a
+   palette token or a hue that holds 4.5:1 against --sunk in both themes. */
+:root {
+  --astro-code-foreground: var(--ink);
+  --astro-code-background: var(--sunk);
+  --astro-code-token-comment: var(--muted);
+  --astro-code-token-punctuation: var(--muted);
+  --astro-code-token-keyword: light-dark(#a3234c, #f2a0b3);
+  --astro-code-token-string: var(--accent);
+  --astro-code-token-string-expression: var(--accent);
+  --astro-code-token-constant: light-dark(#0b5394, #8cc4ff);
+  --astro-code-token-function: light-dark(#6a3a9e, #cdb4f5);
+  --astro-code-token-parameter: var(--ink);
+  --astro-code-token-link: var(--focus);
+  --astro-code-token-inserted: var(--accent);
+  --astro-code-token-deleted: light-dark(#a8201a, #ff9e94);
+  --astro-code-token-changed: var(--hl-line);
+}
+
 [data-theme="light"] {
   color-scheme: light;
 }
