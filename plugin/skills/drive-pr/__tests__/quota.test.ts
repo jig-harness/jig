@@ -260,19 +260,83 @@ describe("wall-clock reset parsing", () => {
     expect(parseResetClause(text, now)?.at.toISOString()).toBe(expected);
   });
 
-  it.each([
-    // EST5EDT is a real, DST-observing IANA backward-compat zone name — a
-    // digit-blind class truncates it to `EST`, a DIFFERENT valid zone fixed
-    // at UTC-5 with no DST, resolving an August reset an hour off from the
-    // UTC-4 (EDT) it should have used.
-    ["resets 11:40pm (EST5EDT)", "2026-08-21T03:40:00.000Z"],
-    // Etc/GMT+5 (note the inverted POSIX sign: this is UTC-5, no DST) — a
-    // digit-blind class truncates it to the invalid `Etc/GMT+`, which used
-    // to fall through to QUOTA_PARKED instead of resolving and sleeping.
-    ["resets 11:40pm (Etc/GMT+5)", "2026-08-21T04:40:00.000Z"],
-  ])("resolves a zone identifier containing digits %p", (text, expected) => {
-    expect(parseResetClause(text, now)?.at.toISOString()).toBe(expected);
+  it("resolves a zone identifier containing digits", () => {
+    // The POSIX sign is inverted: Etc/GMT+5 is UTC-5 without daylight time.
+    expect(
+      parseResetClause("resets 11:40pm (Etc/GMT+5)", now)?.at.toISOString(),
+    ).toBe("2026-08-21T04:40:00.000Z");
   });
+
+  it.each(["accept", "reject"])(
+    "uses the runtime's %s decision for a legacy zone in a session-limit record",
+    (support) => {
+      writeClaude("legacy-zone.jsonl", [
+        claudeWall({
+          cwd: CWD,
+          timestamp: "2026-08-20T22:00:00.000Z",
+          text: "You've hit your session limit · resets 11:40pm (EST5EDT)",
+          sessionId: "legacy-zone-session",
+        }),
+      ]);
+      // Legacy aliases vary with the runtime's zone database. Control only
+      // EST5EDT in a subprocess so both decisions are exercised on every host
+      // without replacing Intl in the test runner or changing production policy.
+      const child = Bun.spawnSync({
+        cmd: [
+          process.execPath,
+          "--eval",
+          `
+          const original = Intl.DateTimeFormat;
+          Intl.DateTimeFormat = new Proxy(original, {
+            construct(target, [locales, options]) {
+              if (options?.timeZone === "EST5EDT") {
+                if (${JSON.stringify(support)} === "reject") {
+                  throw new RangeError("Unsupported legacy zone");
+                }
+                options = { ...options, timeZone: "America/New_York" };
+              }
+              return new target(locales, options);
+            },
+          });
+          const { parseResetClause } = await import(${JSON.stringify(new URL("../scripts/lib/quota/wallclock.ts", import.meta.url).href)});
+          const { claudeAdapter } = await import(${JSON.stringify(new URL("../scripts/lib/quota/claude.ts", import.meta.url).href)});
+          const { planFor } = await import(${JSON.stringify(new URL("../scripts/lib/quota/index.ts", import.meta.url).href)});
+          const now = new Date("2026-08-20T22:00:00Z");
+          const parsed = parseResetClause("resets 11:40pm (EST5EDT)", now);
+          const block = claudeAdapter.detect({
+            cwd: ${JSON.stringify(CWD)},
+            since: new Date("2026-08-20T21:00:00Z"),
+            now,
+            correlation: { vendor: "claude", sessionId: "legacy-zone-session" },
+          });
+          console.log(JSON.stringify({
+            parsed,
+            window: block?.window,
+            resetAt: block?.resetAt,
+            action: block === null ? null : planFor(block, now).action,
+          }));
+          `,
+        ],
+        env: {
+          ...process.env,
+          DRIVE_PR_QUOTA_MAX_SLEEP_SEC: "21600",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      expect(child.exitCode).toBe(0);
+      expect(child.stderr.toString()).toBe("");
+      const resetAt = support === "accept" ? "2026-08-21T03:40:00.000Z" : null;
+      expect(JSON.parse(child.stdout.toString())).toEqual({
+        parsed: resetAt === null ? null : { at: resetAt, zone: "EST5EDT" },
+        window: "short",
+        resetAt,
+        // Unresolved resets take drive.ts's stop/QUOTA_PARKED branch.
+        action: support === "accept" ? "sleep" : "stop",
+      });
+    },
+  );
 
   it.each([
     "no reset clause at all",

@@ -245,17 +245,10 @@ export function parseResetClause(
   text: string,
   now: Date,
 ): { at: Date; zone: string } | null {
-  // The zone's `/`-joined tail is OPTIONAL (`*`, not `+`): `UTC` and `GMT` are
-  // valid, single-component `Intl.DateTimeFormat` zones with no slash at all,
-  // and requiring one meant a genuinely resolvable zone still parsed as "no
-  // reset clause found," falling through to QUOTA_PARKED instead of the
-  // sleep-and-resume it should have gotten. Each segment also needs DIGITS, not
-  // just letters: a letters-only class truncates a real zone that happens to
-  // contain one — `EST5EDT` (a genuine, DST-observing IANA backward-compat
-  // name) matched only as far as `EST` and resolved against the WRONG,
-  // fixed-offset zone of that same name, an hour off during daylight time;
-  // `Etc/GMT+5` truncated to the invalid `Etc/GMT+` and fell through to
-  // QUOTA_PARKED instead of sleeping through a perfectly resolvable wall.
+  // Slash-separated segments are optional for zones such as UTC and GMT.
+  // Preserve digits in zone names such as EST5EDT and Etc/GMT+5; resolve the
+  // complete name through Intl rather than interpreting a truncated prefix.
+  // Runtime zone support varies, so a name Intl rejects remains unresolved.
   const m = RESET_CLAUSE_RE.exec(text);
   if (m === null) return null;
   const rawHour = Number.parseInt(m[1] as string, 10);
