@@ -12,11 +12,11 @@
  * transcript tree, and pointing the suite at the developer's own would make it
  * pass or fail on what they happened to run this week. Each adapter takes a
  * directory override for exactly this reason, and the wordings and record
- * shapes below are transcribed verbatim from measured samples on the machine
- * an earlier change was filed from — 371 Claude `rate_limit` records and 1342 Codex
- * rollouts. Where the corpus had no sample (a Claude WEEKLY wall; any Codex
- * wall at all, since none was ever reached), the test says so and pins the
- * fail-closed behaviour instead of inventing the vendor's wording.
+ * shapes below are transcribed verbatim from measured samples on one developer
+ * machine — 371 Claude `rate_limit` records and 1342 Codex rollouts. Where the
+ * corpus had no sample (a Claude WEEKLY wall; any Codex wall at all, since none
+ * was ever reached), the test says so and pins the fail-closed behaviour
+ * instead of inventing the vendor's wording.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
@@ -700,10 +700,10 @@ describe("claude adapter", () => {
   });
 
   it("does NOT classify a phrase with a qualifier AFTER the reset clause as the known SHORT wording", () => {
-    // An earlier fix anchored the phrase through "resets" but not past the
-    // reset clause itself, so trailing text after it — "resets 6:40pm
-    // (Europe/Amsterdam) FOR THE WEEK" — still matched and yielded a sleepable
-    // reset for wording that qualifies the wall as weekly. The whole block must
+    // Anchoring the phrase through "resets" but not past the reset clause
+    // itself would let trailing text after it — "resets 6:40pm
+    // (Europe/Amsterdam) FOR THE WEEK" — match and yield a sleepable reset
+    // for wording that qualifies the wall as weekly. The whole block must
     // be EXACTLY the phrase plus the reset clause, nothing more.
     writeClaude("s.jsonl", [
       claudeWall({
@@ -2899,15 +2899,15 @@ describe("binding evidence to the spawned pass", () => {
       writeCodex("rollout-old.jsonl", CWD, []);
       // The fixtures must be genuinely DORMANT, not merely named so. Written
       // milliseconds before the snapshot, their mtime is ~now, and a recency
-      // floor anywhere at or below `now` is then invisible to this test —
-      // which made it pass or fail by sub-millisecond accident against the
-      // one mutation it exists to catch (`candidateFiles(0)` →
+      // floor anywhere at or below `now` is then invisible to this test — which
+      // would make it pass or fail by sub-millisecond accident against the one
+      // mutation it exists to catch (`candidateFiles(0)` →
       // `candidateFiles(Date.now())`, measured at 0/1/0 failures over three
       // runs). Backdating makes the floor the sole decider, so the same
-      // mutation reddens every time. That mutation is not academic: it is
-      // an earlier change reopened — a chat transcript last written shortly before
-      // the spawn drops out of the snapshot, the human sends one more
-      // message during the pass, and its wall is then attributed to us.
+      // mutation reddens every time. That mutation is not academic: with it, a
+      // chat transcript last written shortly before the spawn drops out of the
+      // snapshot, the human sends one more message during the pass, and its
+      // wall is then attributed to us.
       const dormant = new Date("2020-01-01T00:00:00.000Z");
       const claudeOld = join(
         root,

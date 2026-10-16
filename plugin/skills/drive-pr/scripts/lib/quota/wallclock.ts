@@ -121,13 +121,13 @@ export function nextWallClock(
   // compares against this FLOORED value, never against `now` directly: a
   // candidate is always constructed at second 0 of its target minute, so an
   // instant-precision comparison rejects one seconds into the SAME minute as
-  // already past — an earlier fix covered this for the OUTER "at or after"
-  // decision below, but missed the IDENTICAL comparison inside `resolve()`
-  // itself, which decides whether to seek a fall-back-transition's LATER
-  // occurrence. Left at full precision there, a genuinely valid FIRST
-  // occurrence a few seconds into the current minute (during a fall-back's
-  // doubled hour) is wrongly treated as passed and swapped for the second,
-  // later occurrence instead — sleeping roughly an extra hour.
+  // already past. That holds for the OUTER "at or after" decision below and
+  // for the IDENTICAL comparison inside `resolve()` itself, which decides
+  // whether to seek a fall-back-transition's LATER occurrence. Left at full
+  // precision there, a genuinely valid FIRST occurrence a few seconds into the
+  // current minute (during a fall-back's doubled hour) is wrongly treated as
+  // passed and swapped for the second, later occurrence instead — sleeping
+  // roughly an extra hour.
   const nowFlooredToMinute = Math.floor(now.getTime() / 60_000) * 60_000;
 
   // Resolve a candidate date (zone-local Y/M/D + the target time) to an

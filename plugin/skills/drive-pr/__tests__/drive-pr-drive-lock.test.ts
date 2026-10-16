@@ -1139,15 +1139,12 @@ describe("drive.ts loop control", () => {
       // FILE CONTENT the pass re-reads on every fresh spawn. A login swap
       // mid-drive (an account-switching wrapper, or a manual /login) must not
       // leave the claim reporting the OLD account for the rest of the drive's
-      // life — but an earlier revision fixed THAT by rewriting the claim
-      // unconditionally on every heartbeat tick, including while a pass was
-      // already running.
-      // The already-running child inherited the OLD identity at its own
-      // spawn and keeps billing to it regardless of what the file says now,
-      // so that rewrite displayed the NEXT pass's account while the CURRENT
-      // one was still active — wrong for that pass's entire remaining life
-      //. The claim must hold the
-      // identity the running pass actually has.
+      // life — but neither may the claim be rewritten on a heartbeat tick
+      // while a pass is running. The already-running child inherited the OLD
+      // identity at its own spawn and keeps billing to it regardless of what
+      // the file says now, so such a rewrite would display the NEXT pass's
+      // account while the CURRENT one is still active. The claim must hold
+      // the identity the running pass actually has.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
@@ -1381,10 +1378,10 @@ describe("drive.ts loop control", () => {
 
     it("refreshes a FILE-BACKED account identity synchronously the moment a pass exits, not only on the next heartbeat tick", async () => {
       // Clearing `activePass` reopens the exact window `refreshAccountIdentity`'s
-      // own gate exists for, but an earlier revision only refreshed on the
-      // heartbeat's OWN timer — so a credential file that changed mid-pass
-      // stayed stale until the next tick fired, and the loop could spawn the
-      // very next pass against it first if it moved fast enough. The
+      // own gate exists for. Refreshing only on the heartbeat's OWN timer
+      // would leave a credential file that changed mid-pass stale until the
+      // next tick fired, and the loop could spawn the very next pass against
+      // it first if it moved fast enough. The
       // heartbeat interval below is deliberately far longer than this test's
       // own lifetime, so a refreshed claim here can only be the pass-exit
       // refresh, never the timer.
@@ -1501,27 +1498,25 @@ describe("drive.ts loop control", () => {
     });
 
     it("refreshes a FILE-BACKED account identity after a CI-repair pass too, not only after an ordinary one", async () => {
-      // `runRepairPass` used to touch only the locks once its own spawned
-      // pass exited, never `refreshAccountIdentity` — the exact post-pass
-      // window the sibling test above closes for the ORDINARY pass path. The
+      // `runRepairPass` must call `refreshAccountIdentity` once its own
+      // spawned pass exits, not only touch the locks — the same post-pass
+      // window the sibling test above covers for the ORDINARY pass path. The
       // CI-repair budget (2 here) lets the loop re-gate and dispatch a SECOND
       // repair pass well inside one heartbeat interval, so a login swap
       // during the first repair pass could bill the second one to the stale
       // account. The heartbeat interval below is far longer than this test
-      // ever runs, so a refreshed claim here can only be this fix's own
-      // post-repair-pass call.
+      // ever runs, so a refreshed claim here can only be the post-repair-pass
+      // call.
       //
       // Synchronized on the SECOND pass's own start marker rather than on
       // polling the claim file for the swapped value after the FIRST pass
-      // exits: that race is exactly what an earlier revision of this test
-      // hit on a remote gates host — `runRepairPass` returning
-      // is not the same instant as the driver's own subsequent lock release
-      // on exit, and polling after the fact can lose that race under load
-      // without the fix being wrong. `runRepairPass` calls
-      // `refreshAccountIdentity` and returns SYNCHRONOUSLY before the caller
-      // ever re-gates and dispatches a second pass, so the second pass's own
-      // marker appearing is proof the refresh already landed — no polling
-      // race against process teardown required.
+      // exits: `runRepairPass` returning is not the same instant as the
+      // driver's own subsequent lock release on exit, and polling after the
+      // fact can lose that race under load without the code being wrong.
+      // `runRepairPass` calls `refreshAccountIdentity` and returns
+      // SYNCHRONOUSLY before the caller ever re-gates and dispatches a second
+      // pass, so the second pass's own marker appearing is proof the refresh
+      // already landed — no polling race against process teardown required.
       const { dir, stateDir } = writeFixture({
         threads: [],
         head: scratchClean.head,

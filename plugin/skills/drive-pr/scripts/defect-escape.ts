@@ -2,11 +2,11 @@
 /**
  * defect-escape.ts — did anything we DECLINED to fix come back?
  *
- * an earlier change proposes cutting review recall: a materiality bar that declines more
- * findings, a wind-down that stops re-admitting polish, round-indexed cutoffs.
- * Every one of those trades recall for rounds, and the trade is only safe if
- * declined findings mostly do NOT come back as defects. Nobody has measured
- * that, so this script produces the sample it would be measured over.
+ * Converging in fewer rounds means cutting review recall: a materiality bar
+ * that declines more findings, a wind-down that stops re-admitting polish,
+ * round-indexed cutoffs. Every one of those trades recall for rounds, and the
+ * trade is only safe if declined findings mostly do NOT come back as defects.
+ * This script produces the sample that rate is measured over.
  *
  * The population is `wont-fix` and `deferred` — the outcomes that assert
  * "this finding is REAL and we shipped anyway". `rejected` is deliberately
@@ -657,7 +657,7 @@ const revisionRenameLogCache = new Map<
 >();
 
 interface RevisionRenameCommit {
-  /** The commit's own oid (`%H`) — the ancestry anchor for an earlier change's `since`-equivalent check. */
+  /** The commit's own oid (`%H`) — the ancestry anchor that stands in for the committer-date `since` check. */
   oid: string;
   records: RawRenameRecord[];
 }
@@ -796,7 +796,7 @@ const mergeCommitMergedAtBudgetTrippedAt = new Map<string, number>();
  * order a hop: `merged_at` is set SERVER-SIDE at the moment
  * GitHub performs the merge, unlike a commit's own committer date, which a
  * contributor's raw branch commit fully controls via `GIT_COMMITTER_DATE` —
- * the exact vulnerability an earlier change removed from the ancestry-preferred path,
+ * the exact vulnerability the ancestry-preferred path exists to avoid,
  * so trusting it here would reopen that vulnerability under a different name.
  *
  * Filtered by `merge_commit_sha === sha` exactly, never merely "this PR's
@@ -827,8 +827,7 @@ const mergeCommitMergedAtBudgetTrippedAt = new Map<string, number>();
  * last case is the COMMON answer, not a failure: most commits `revisionMatch`
  * walks are ordinary in-branch commits a PR author made directly, never
  * anyone's merge commit at all — only a hop inherited from develop's own
- * history predating a candidate's fork can ever resolve here (an earlier change's own
- * worked counterexample).
+ * history predating a candidate's fork can ever resolve here.
  *
  * Cached per `(cwd, baseRefName, sha)`, same FIFO-eviction shape as every
  * other best-effort lookup in this module: `revisionMatch` can revisit the
@@ -1182,9 +1181,8 @@ export function renameCandidateKey(c: RenameCandidate): string {
  *
  * ── Revision-based match, preferred when available ─────────────
  *
- * `since`/`until`/`tip` above are a committer-date heuristic — a reviewer's
- * point against it, restated here because it is exactly what motivated this
- * section: committer date is author-controlled metadata, not branch/review
+ * `since`/`until`/`tip` above are a committer-date heuristic, and
+ * committer date is author-controlled metadata, not branch/review
  * chronology, so a commit pushed after a thread was raised can be backdated
  * INTO its window, and a commit already on the reviewed head can carry a
  * future date and be wrongly excluded FROM it. `ThreadSample.reviewedHeadOid`
@@ -1326,7 +1324,7 @@ export async function renameEquivalents(
  * `baseRefName` — checked via `mergeCommitMergedAt`, never via this hop's
  * own committer date — that PR's `merged_at` is a SERVER-SET timestamp no
  * contributor could have backdated, unlike the raw branch commit dates
- * an earlier change removed trust from. If that `merged_at` predates
+ * this function never trusts. If that `merged_at` predates
  * `declineCreatedAt`, the rename was already live on the decline's own base
  * branch before the decline's thread was even raised — the same "already
  * superseded" conclusion the ancestor-true branch reaches, just reached via
@@ -1355,10 +1353,10 @@ export async function renameEquivalents(
  * header, and the SAME FILE / TOUCHED signals `defect-escape.ts` reports
  * without counting): every `renameEquivalents` match feeds a REPORT a human
  * adjudicates, never an automated verdict, so an occasional false RE-FOUND
- * costs one human double-check — the safer failure mode for the * recall trade this script measures, exactly the direction an earlier change itself
- * exists to protect. A postdating (or equal, or unparsable) `merged_at`
- * falls through to the same WIDENS default: postdating is CONSISTENT with a
- * genuine recurrence, not proof of one, so it earns the same
+ * costs one human double-check — the safer failure mode for the recall
+ * trade this script measures. A postdating (or equal, or unparsable)
+ * `merged_at` falls through to the same WIDENS default: postdating is
+ * CONSISTENT with a genuine recurrence, not proof of one, so it earns the same
  * human-adjudicated report as the no-tiebreaker-available case, never an
  * automated include. An empty `declineCreatedAt` reaches the identical
  * WIDENS default through `epochMsOf('')`'s own `null` — no separate branch
@@ -1520,7 +1518,7 @@ export async function mergedPrs(
   }
   return parsed.map((raw, i) => {
     const p = (raw ?? {}) as Record<string, unknown>;
-    // `typeof` first: `Number("4068")` is a valid integer, and this validator
+    // `typeof` first: `Number("123")` is a valid integer, and this validator
     // exists precisely to tell a schema-invalid payload from an unreadable PR.
     // Matches `count()`'s contract, which type-checks before coercing.
     const number = typeof p.number === "number" ? p.number : Number.NaN;

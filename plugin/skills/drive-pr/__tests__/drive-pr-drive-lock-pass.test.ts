@@ -740,7 +740,6 @@ describe("drive.ts loop control", () => {
      * wants to observe the driver's OWN write (`recordQuotaPark`) landing
      * under ordinary circumstances, not under the artificial, sub-100ms-
      * heartbeat interrupt race that sibling function exists to exercise.
-     * an earlier change M7.
      */
     async function attemptQuotaWallSleepStart(): Promise<{
       passRan: boolean;
@@ -1241,15 +1240,16 @@ describe("drive.ts loop control", () => {
     }, 30000);
 
     it("aborts a quota-wall sleep when refreshAccountIdentity notices a COEXISTING claim, not just the removal touchLock already catches", async () => {
-      // an earlier change (the sibling test above) covers `touchLock`'s own takeover
-      // signal aborting a quota-wall sleep — but that signal fires only when
+      // "interrupts a quota-wall sleep when the lock is recovered mid-sleep"
+      // covers `touchLock`'s own takeover signal aborting a quota-wall
+      // sleep — but that signal fires only when
       // OUR claim is REMOVED (`utimesSync` on our exact filename throws
       // ENOENT). A resurrection that leaves a SECOND, coexisting claim
       // alongside ours (see "heals a resurrected claim at the pass-exit
       // rewrite" above) never removes our file at all, so `touchLock` never
       // notices it — only `refreshAccountIdentity`'s own post-rewrite
-      // `claimWasTakenOver` check does, and until this fix it set
-      // `compromised` without also aborting the sleep. Plant the coexisting
+      // `claimWasTakenOver` check does, and it must abort the sleep as well
+      // as set `compromised`. Plant the coexisting
       // claim directly (deterministic, no timing race) during a quota-wall
       // sleep, trigger a rewrite via a file-backed identity change, and
       // confirm the sleep ends almost immediately rather than running its
@@ -1258,15 +1258,15 @@ describe("drive.ts loop control", () => {
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
       const { worktree } = lockDirs(dir, stateDir);
-      // Same reasoning as the sibling an earlier change test just above: no `cwd`
+      // Same reasoning as `attemptQuotaWallSleepInterrupt`: no `cwd`
       // override, since `WORKTREE_LOCK`/`lockDirs()` addresses the lock
       // name derived from this process's own ambient cwd.
       const claudeProjectsDir = join(dir, "claude-projects");
       const passDonePath = join(dir, "quota-pass-done");
       // A standalone helper FILE, not an inline stub body — same
-      // multi-layer-quoting reasoning as an earlier change's own helper: the
-      // transcript record embeds a real apostrophe and a middle-dot
-      // separator.
+      // multi-layer-quoting reasoning as `attemptQuotaWallSleepInterrupt`'s
+      // own helper: the transcript record embeds a real apostrophe and a
+      // middle-dot separator.
       const helperPath = join(dir, "write-quota-transcript.mjs");
       writeFileSync(
         helperPath,
@@ -1313,8 +1313,9 @@ describe("drive.ts loop control", () => {
         ].join("\n"),
       );
 
-      // A `claude`-named stub is required here (unlike an earlier change's plain
-      // `bun helperPath` pass command): vendor resolution keys off argv[0]
+      // A `claude`-named stub is required here (unlike
+      // `attemptQuotaWallSleepInterrupt`'s plain `bun helperPath` pass
+      // command): vendor resolution keys off argv[0]
       // literally naming `claude`/`codex`, and this test needs the
       // FILE-BACKED identity path genuinely active so a change to it makes
       // `refreshAccountIdentity` attempt a real rewrite.
@@ -1326,7 +1327,8 @@ describe("drive.ts loop control", () => {
         // `candidateFiles` (`lib/quota/claude.ts`) scans `root/<subdir>/*.jsonl`
         // — a `.jsonl` sitting directly in the root itself is never found —
         // so the transcript is written one level under `claudeProjectsDir`,
-        // matching the sibling an earlier change test's own `join(claudeProjectsDir, 'proj')`.
+        // matching `attemptQuotaWallSleepInterrupt`'s own
+        // `join(claudeProjectsDir, 'proj')`.
         // `"$@"` forwarded so the helper sees the `--session-id <uuid>`
         // `prepareQuotaSpawn` injects into this pass's own argv —
         // without it the transcript record carries no `sessionId` at all and
@@ -1351,8 +1353,9 @@ describe("drive.ts loop control", () => {
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
-          // Same reasoning as an earlier change: round 1 hits the wall, round 2 is
-          // the further round the drive sleeps in order to reach.
+          // Same reasoning as `attemptQuotaWallSleepInterrupt`: round 1 hits
+          // the wall, round 2 is the further round the drive sleeps in order
+          // to reach.
           "--max-rounds",
           "2",
           "--",

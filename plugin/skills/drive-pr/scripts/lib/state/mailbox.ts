@@ -516,8 +516,8 @@ async function appendLine(path: string, line: string): Promise<void> {
       // identical problem one level up: its own entry lives in ITS
       // parent.
       //
-      // An earlier fix walked exactly as far as THIS call's own `mkdirSync(...,
-      // {recursive:true})` reported creating — which is racy: concurrent
+      // Walking exactly as far as THIS call's own `mkdirSync(...,
+      // {recursive:true})` reported creating would be racy: concurrent
       // first-senders on a fresh worktree can interleave so that whichever one
       // actually created `.context` is not the one whose `existing.kind`
       // observes `absent` (and so never reaches this branch at all), while the
@@ -1055,13 +1055,12 @@ export function holdAbortUnmarkedSentinel(nonce: string): string {
  * its own read-decide-write span, and released again before returning.
  *
  * The lock is held for the READ only, never across the push. Holding it across
- * `git push` (as an earlier fix did) blocked every `mailbox.ts send` for as
- * long as the pre-push hook ran — a `hold-push` sent during those minutes could
- * not land at all, which is the opposite of what a hold is for. Coordination
- * with an in-flight push is done at the other end instead:
- * `push-hold-recheck.ts` re-reads this as the LAST pre-push hook step, so a
- * hold that landed at any point during validation aborts the push before git
- * transfers anything.
+ * `git push` would block every `mailbox.ts send` for as long as the pre-push
+ * hook runs — a `hold-push` sent during those minutes could not land at all,
+ * which is the opposite of what a hold is for. Coordination with an in-flight
+ * push is done at the other end instead: `push-hold-recheck.ts` re-reads this
+ * as the LAST pre-push hook step, so a hold that landed at any point during
+ * validation aborts the push before git transfers anything.
  *
  * Reading under the lock still matters: `appendLine` writes a directive as
  * one delimited append under it, so a read here observes either the whole

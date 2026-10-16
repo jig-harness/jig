@@ -424,10 +424,10 @@ the repository's own visibility.
 - **Standalone reference gates.** The gates in M0–M2 and M6–M9 import the
   repository's `lib/`, so a reader cannot copy one alone. Either make them
   self-contained or ship `lib/` as a documented, versioned dependency.
-- **De-scarring the plugin's code comments.** About 300 comments in 59 files
-  still say "an earlier change" where they should state the rule directly,
-  and some tests still use bare `TASK` placeholders where an issue key was
-  removed; rewrite them as their files are next touched, or in one sweep.
+- **History in the plugin's code comments.** Many comments in `drive-pr`
+  and `resolve-review-comments` still tell how the code got its shape ("this
+  fix", "an earlier version", "the old code") instead of stating the rule;
+  rewrite them as their files are next touched, or in one sweep.
 
 ## Standing: backflow
 

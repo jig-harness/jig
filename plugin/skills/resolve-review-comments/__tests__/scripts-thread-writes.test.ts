@@ -231,9 +231,9 @@ describe.skipIf(process.platform === "win32")(
 
     it("delivers the body VERBATIM — shell metacharacters, backticks, trailing blank line", () => {
       const fix = writeFixture({});
-      // Every character class the TASK corruption ate: expansion syntax,
-      // backticks, quotes — plus a deliberate trailing blank line, which the
-      // bash port needed a sentinel dance to keep alive through $(cat).
+      // Every character class a shell would expand or strip: expansion
+      // syntax, backticks, quotes — plus a deliberate trailing blank line,
+      // which command substitution (`$(cat)`) would drop.
       const body =
         "**accepted** — handled `$(rm -rf /)` and $VAR and `backticks` in abc1234.\n\n";
       const r = runScript("reply-to-thread.ts", ["PRRT_x"], fix, {

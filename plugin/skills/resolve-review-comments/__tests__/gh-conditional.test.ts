@@ -1,5 +1,5 @@
 /**
- * `lib/gh-conditional.ts` (TASK) — conditional REST reads and the
+ * `lib/gh-conditional.ts` — conditional REST reads and the
  * cross-process `gh repo view` cache.
  *
  * Shell-backed HTTP fixture groups run on macOS/Linux; pure cache tests and

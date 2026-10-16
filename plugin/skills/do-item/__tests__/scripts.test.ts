@@ -358,9 +358,8 @@ describe("the CLI wrappers", () => {
       "--catalog requires a value",
     ],
     // argparse's rule: any `-`-prefixed token EXCEPT a bare `-` is an option.
-    // Testing for `--` alone left single-dash tokens as ordinary values, so
-    // `-v` became the catalog path (an earlier fix covered this one token
-    // class narrower).
+    // Testing for `--` alone would leave single-dash tokens as ordinary
+    // values, so `-v` would become the catalog path.
     [
       "a single-dash token where a value belongs",
       "determine_agent.ts",

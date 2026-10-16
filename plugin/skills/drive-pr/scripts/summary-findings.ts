@@ -632,8 +632,8 @@ const SEVERITY_FIELD =
  * class that makes it true, not merely the same intent stated in prose.
  *
  * The bold-token matcher is anchored the same way, on the same line 0-of-header
- * position — not merely "somewhere in the (narrower) header blob", which every
- * earlier fix narrowed without ever anchoring the token search itself. A
+ * position — not merely "somewhere in the (narrower) header blob": narrowing
+ * the blob does not anchor the token search itself. A
  * severity-less finding whose own TITLE quotes a canonical word in bold (e.g.
  * `Handle the **blocker** token safely`) has no letters before that token, so
  * requiring the run of characters before `**` to contain no letters — only
@@ -872,8 +872,8 @@ export function severityOf(text: string, authorLogin?: string | null): string {
  * Field 0 must end in a real severity token (bold word; the badge form never
  * co-occurs with a category tag in the observed emissions, so it is not
  * matched here) before the one field right after it is trusted as the
- * category — never a later one: an earlier change's own contract renders the tag
- * "next to severity", and every observed emission (including the nested-`·`
+ * category — never a later one: the tag's own contract renders it "next to
+ * severity", and every observed emission (including the nested-`·`
  * `compliance (correctness · beyond-pr)` nesting above) puts it there, so a
  * match is only ever legitimate at that position. Scanning every later field
  * instead let a prose field between severity and the real tag — or a
@@ -925,8 +925,8 @@ const CATEGORY_FIELD =
 
 /**
  * `🏷️ category: data-integrity` → `data-integrity`; no token at all — the
- * backward-compatible shape an earlier change emits for an uncategorized finding, and
- * every finding from before an earlier change shipped — → `unknown`. Never a parse
+ * backward-compatible shape the reviewer emits for an uncategorized finding,
+ * and every finding that predates the category tag — → `unknown`. Never a parse
  * error: an absent category changes nothing downstream (`review-triage.yaml`'s
  * `categories` clause can only ever ADMIT a finding, never decline one on the
  * strength of `unknown`).
@@ -1314,8 +1314,8 @@ export interface AddressedOptions {
  * negative — always `<= WINDDOWN_EXEMPTION_ROUNDS` — so the marker stays
  * exempt until `currentRound` catches up past `round + WINDDOWN_EXEMPTION_ROUNDS`,
  * and a long enough digit run parses past `Number.MAX_SAFE_INTEGER`, making
- * that gap effectively permanent — restoring the unbounded-suppression failure
- * an earlier change exists to close.
+ * that gap effectively permanent — restoring the unbounded suppression the
+ * round budget exists to prevent.
  */
 function exemptFromExpiry(
   fingerprint: string,
@@ -1412,17 +1412,17 @@ function exemptFromExpiry(
  * full expiry — the reviewer DOES re-verify those, so there re-emission still
  * falsifies.
  *
- * That exemption is BOUNDED, and the bound is the whole of an earlier change. Unbounded,
- * it was unfalsifiable in the other direction too: a later round that REVERTS
- * or regresses the fix reproduces the finding under the same fingerprint and
- * the same `winddown-deferred` reason — indistinguishable from a routine
- * carry-forward — and the marker suppressed it forever, so `drive-status.ts`
- * could reach CONVERGED over a live finding. The distinction is erased at the
- * SOURCE: the reviewer's carry-forward does not record whether an entry was
- * re-detected on this head or merely forwarded, and the reviewer is a
- * self-hosted app, not this repository, so nothing here can recover what was
- * never emitted. What IS available is elapsed rounds. The marker carries the
- * round it was posted in (`<fingerprint>@<sha>#<round>`), and the exemption
+ * That exemption is BOUNDED, and the bound is essential. Unbounded, it would be
+ * unfalsifiable in the other direction too: a later round that REVERTS or
+ * regresses the fix reproduces the finding under the same fingerprint and the
+ * same `winddown-deferred` reason — indistinguishable from a routine
+ * carry-forward — and the marker would suppress it forever, so
+ * `drive-status.ts` could reach CONVERGED over a live finding. The distinction
+ * is erased at the SOURCE: the reviewer's carry-forward does not record whether
+ * an entry was re-detected on this head or merely forwarded, and the reviewer
+ * is a self-hosted app, not this repository, so nothing here can recover what
+ * was never emitted. What IS available is elapsed rounds. The marker carries
+ * the round it was posted in (`<fingerprint>@<sha>#<round>`), and the exemption
  * holds for `WINDDOWN_EXEMPTION_ROUNDS` further rounds; past that the finding is
  * re-asked once, and a still-valid fix re-answers under a fresh round. A marker
  * with no round, or a sticky with no round to measure it against, gets NO
@@ -1487,9 +1487,9 @@ export function collectAddressed(
         continue;
       }
       // A marker survives under the clauses below, and they are cumulative
-      // rather than alternatives to each other — an earlier change (the position rule)
-      // and an earlier change (the winddown round budget) answer overlapping but
-      // different questions, and neither subsumes the other:
+      // rather than alternatives to each other — the position rule and the
+      // winddown round budget answer overlapping but different questions, and
+      // neither subsumes the other:
       //
       //   behind          the review predates the fix, so it cannot have judged
       //                   it. Every finding, always.
@@ -1545,7 +1545,7 @@ export function collectAddressed(
  * marker. It records WHEN the answer was posted, not what the answer claims,
  * so comparing it would make a reclaiming pass whose sticky has since advanced
  * a round miss its own predecessor's marker at the same SHA and post a
- * duplicate — the same bug again, reached through the field an earlier change added.
+ * duplicate — the same bug again, reached through the round field.
  *
  * A `winddown-deferred` fingerprint is the one exception, because it is the
  * one case where a LATER round legitimately re-answers at the exact SAME SHA:

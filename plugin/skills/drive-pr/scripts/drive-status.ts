@@ -250,9 +250,7 @@ import {
 import { reviewerApp } from "./lib/overlay.ts";
 // The code itself, not hand-written `11`/`13` literals repeated here: this
 // script's exit means what `drive-state.ts`'s means, and two independent
-// numbers are exactly how that stops being true (an earlier change extends this
-// binding to SESSION_LEASE_HELD_EXIT — DRIVE_HELD_ELSEWHERE_EXIT already had
-// it).
+// numbers are exactly how that stops being true.
 import {
   DRIVE_HELD_ELSEWHERE_EXIT,
   SESSION_LEASE_HELD_EXIT,
@@ -649,8 +647,8 @@ async function main(): Promise<number> {
   }
 
   /**
-   * `structuralEscalationDue` plus, since an earlier change, the invariant
-   * text the last acknowledgment recorded — both read from the SAME durable
+   * `structuralEscalationDue` plus the invariant text the last
+   * acknowledgment recorded — both read from the SAME durable
    * state, through the SAME `drive-state.ts get` call, on exactly the terms
    * `reflectDue` above is read on: bounded by `$DRIVE_PR_HELPER_TIMEOUT`,
    * best-effort, degrading to `{ due: false, invariant: null }` on any
@@ -1562,7 +1560,7 @@ async function main(): Promise<number> {
     // A verdict that ENDS THE DRIVE may not be reported while reconciliation
     // is outstanding: after one of these no later pass is promised, so a
     // thread the sweep failed to resolve stays open with nothing left to retry
-    // it — the indefinite leak an earlier change closed, rebuilt. Degrading to the
+    // it, indefinitely. Degrading to the
     // retry class re-attempts the sweep on the next iteration, and bounded
     // exhaustion reports INDETERMINATE, which `drive.ts` propagates as a
     // stop-and-look rather than looping on.
@@ -1642,8 +1640,7 @@ async function main(): Promise<number> {
     // the cross-invocation case needs the fix to live where the leak actually
     // is (a retryable `release-held`, or a dedicated pass over `held` entries
     // whose thread has since resolved) rather than in this gate, which can only
-    // ever refuse to CERTIFY, never resolve, anything on this side — tracked
-    // separately as an earlier change rather than folded into this fix.
+    // ever refuse to CERTIFY, never resolve, anything on this side.
     //
     //   5  PR_NOT_OPEN — nothing to reconcile on a finished PR.
     //   1  INDETERMINATE — already this branch's own output.
@@ -1814,8 +1811,8 @@ async function main(): Promise<number> {
         await recordRoundPaths();
         // `--bump-attempt`: record this PASS before `emit` computes
         // `reflectDue`, so the field it reports is never one pass stale. This
-        // is the fold an earlier change exists for — see the flag's own doc comment
-        // above for the failure it closes.
+        // is what the flag exists for — see its own doc comment above for the
+        // failure it closes.
         //
         // Skipped when `$DRIVE_PR_TARGET` is set: that env var is only ever
         // present when `drive.ts` spawned this process as one round's pass, and

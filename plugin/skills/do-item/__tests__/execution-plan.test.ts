@@ -51,7 +51,7 @@ describe("shared execution-plan-v1 pickup", () => {
         ...input(fixture(producer)),
         live: { ...live, "ENG-1": { state: "completed", blockedBy: [] } },
       });
-      // an earlier change need not finish before an earlier change starts: bands are not barriers.
+      // ENG-2 need not finish before ENG-3 starts: bands are not barriers.
       expect(next.eligible).toEqual(["ENG-2", "ENG-3"]);
       expect(
         selectExecutionIssue({ ...input(fixture(producer)), live: {} })
@@ -168,9 +168,9 @@ describe("shared execution-plan-v1 pickup", () => {
       ).toContain("ENG-3");
     }
   });
-  // The two guards below are exercised in isolation: with an earlier change in both
-  // an earlier change's live blockedBy and its incoming done edge, either guard alone
-  // excludes an earlier change and masks a regression in the other.
+  // The two guards below are exercised in isolation: with ENG-1 in both
+  // ENG-3's live blockedBy and its incoming done edge, either guard alone
+  // excludes ENG-3 and masks a regression in the other.
   it("never treats a canceled predecessor as delivered on a live blocker alone", () => {
     const noEdge = md({ ...plan, edges: [] });
     const withBlocker = (state: string) => ({

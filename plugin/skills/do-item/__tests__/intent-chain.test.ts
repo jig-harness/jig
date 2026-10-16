@@ -308,13 +308,13 @@ describe("extraction", () => {
 
 describe("refocusArm", () => {
   it("buckets by issue-number parity, odd on", () => {
-    expect(refocusArm("ENG-8529", undefined)).toBe("on");
-    expect(refocusArm("ENG-8530", undefined)).toBe("off");
+    expect(refocusArm("ENG-401", undefined)).toBe("on");
+    expect(refocusArm("ENG-402", undefined)).toBe("off");
   });
   it("honours JIG_REFOCUS in both directions", () => {
-    expect(refocusArm("ENG-8530", "1")).toBe("on");
-    expect(refocusArm("ENG-8529", "off")).toBe("off");
-    expect(refocusArm("ENG-8530", "garbage")).toBe("off");
+    expect(refocusArm("ENG-402", "1")).toBe("on");
+    expect(refocusArm("ENG-401", "off")).toBe("off");
+    expect(refocusArm("ENG-402", "garbage")).toBe("off");
   });
 });
 
@@ -833,7 +833,7 @@ describe("main", () => {
       writeFileSync(
         inPath,
         JSON.stringify({
-          issue: { identifier: "ENG-8530", description: issueMd({}) },
+          issue: { identifier: "ENG-402", description: issueMd({}) },
         }),
       );
       const logs: string[] = [];
@@ -849,7 +849,7 @@ describe("main", () => {
       expect(summary.sessionPath).toBeNull();
       expect(summary.arm).toBe("off");
       expect(readFileSync(outPath, "utf8")).toContain(
-        "## Issue scope (ENG-8530)",
+        "## Issue scope (ENG-402)",
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -1181,23 +1181,23 @@ describe("main", () => {
     try {
       const writer = runWriter(repo, {
         mode: "batch",
-        issue: { identifier: "ENG-8554", description: issueMd({}) },
-        subIssue: { identifier: "ENG-8600", description: issueMd({}) },
+        issue: { identifier: "ENG-411", description: issueMd({}) },
+        subIssue: { identifier: "ENG-420", description: issueMd({}) },
         items: [
-          { identifier: "ENG-8554", title: "anchor" },
-          { identifier: "ENG-8558", title: "highest priority" },
+          { identifier: "ENG-411", title: "anchor" },
+          { identifier: "ENG-412", title: "highest priority" },
         ],
       });
       expect(writer.exitCode).toBe(0);
       const chainDir = join(realpathSync(repo), ".context", "intent-chain");
-      const anchorText = readFileSync(join(chainDir, "ENG-8554.md"), "utf8");
-      for (const alias of ["ENG-8558", "ENG-8600"]) {
+      const anchorText = readFileSync(join(chainDir, "ENG-411.md"), "utf8");
+      for (const alias of ["ENG-412", "ENG-420"]) {
         expect(readFileSync(join(chainDir, `${alias}.md`), "utf8")).toBe(
           anchorText,
         );
       }
       // The pointer still names the anchor, and no alias claims it.
-      expect(readFileSync(join(chainDir, ".current"), "utf8")).toBe("ENG-8554");
+      expect(readFileSync(join(chainDir, ".current"), "utf8")).toBe("ENG-411");
       expect(JSON.parse(writer.stdout.toString()).pointerErrors).toEqual([]);
     } finally {
       rmSync(repo, { recursive: true, force: true });
@@ -1208,21 +1208,21 @@ describe("main", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-nobatch-"));
     try {
       const writer = runWriter(repo, {
-        issue: { identifier: "ENG-8600", description: issueMd({}) },
-        items: [{ identifier: "ENG-8601", title: "not a batch" }],
+        issue: { identifier: "ENG-420", description: issueMd({}) },
+        items: [{ identifier: "ENG-421", title: "not a batch" }],
       });
       expect(writer.exitCode).toBe(0);
       const chainDir = join(realpathSync(repo), ".context", "intent-chain");
-      expect(existsSync(join(chainDir, "ENG-8600.md"))).toBe(true);
-      expect(existsSync(join(chainDir, "ENG-8601.md"))).toBe(false);
+      expect(existsSync(join(chainDir, "ENG-420.md"))).toBe(true);
+      expect(existsSync(join(chainDir, "ENG-421.md"))).toBe(false);
       // An explicit `mode: 'issue'` is the same case, not just an absent mode.
       const explicit = runWriter(repo, {
         mode: "issue",
-        issue: { identifier: "ENG-8602", description: issueMd({}) },
-        items: [{ identifier: "ENG-8603", title: "not a batch either" }],
+        issue: { identifier: "ENG-422", description: issueMd({}) },
+        items: [{ identifier: "ENG-423", title: "not a batch either" }],
       });
       expect(explicit.exitCode).toBe(0);
-      expect(existsSync(join(chainDir, "ENG-8603.md"))).toBe(false);
+      expect(existsSync(join(chainDir, "ENG-423.md"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

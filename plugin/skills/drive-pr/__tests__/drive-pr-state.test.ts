@@ -136,7 +136,7 @@ describe("drive-state.ts durability", () => {
     //
     // Not a convenience. `gitCleanEnv` copies the ambient environment, which
     // under a Claude Code harness carries `$CLAUDE_PID` — so these probes
-    // inherited a session identity locally and none in CI, and after an earlier change's
+    // would inherit a session identity locally and none in CI, and under the
     // PR-wide admission gate that difference decides whether a second worktree
     // is admitted at all. A probe whose subject changes with the harness that
     // runs it is a probe that proves whatever the machine felt like proving.
@@ -3431,10 +3431,10 @@ describe("drive-state.ts durability", () => {
         "--comment-url",
         "https://example.invalid/synthetic-comment-9",
       ]);
-      // AFTER the hold, which is the order SKILL.md § 6 prescribes and, since
-      // an earlier change, the order the mechanism requires: `stamp-held` stamps the
-      // batch as it stands, so a hold made later is not vouched for by a push
-      // that predates the promise it represents.
+      // AFTER the hold, which is the order SKILL.md § 6 prescribes and the
+      // order the mechanism requires: `stamp-held` stamps the batch as it
+      // stands, so a hold made later is not vouched for by a push that
+      // predates the promise it represents.
       await state(d, [
         "stamp-held",
         "999",
@@ -3907,14 +3907,15 @@ describe("drive-state.ts durability", () => {
   });
 
   describe("per-hold push provenance across drivers", () => {
-    // an earlier change tied a held thread's resolve to `.verifiedSha` — but that is ONE
+    // A held thread's resolve cannot rest on `.verifiedSha`: that is ONE
     // PR-global field in a state file every driver of the PR shares (store.ts
-    // puts it in the clone-wide git dir precisely so they do). So whichever
-    // driver pushed last moved it, and it then vouched for every held item on
-    // the PR, including ones whose promised fix that push never contained.
+    // keys the state directory per clone precisely so they do). So whichever
+    // driver pushed last would move it, and it would then vouch for every held
+    // item on the PR, including ones whose promised fix that push never
+    // contained. Each hold carries its own push provenance instead.
     //
     // These probes run TWO REAL WORKTREES of one clone — the Conductor
-    // topology the bug lives in, and the only way to exercise the actor
+    // topology the hazard lives in, and the only way to exercise the actor
     // derivation rather than a stand-in for it (it is deliberately not
     // overridable; see lib/state/actor.ts).
     //
@@ -4136,9 +4137,9 @@ describe("drive-state.ts durability", () => {
     it("two actors' holds coexist by TAKEOVER, not by concurrency", async () => {
       // The reachability argument for the tier-3 probes above, run for real.
       //
-      // After an earlier change two worktrees cannot drive one PR at the same time — so
-      // if that were the only way two actors' holds could land in one state
-      // file, per-hold provenance would be guarding an impossible state and
+      // Two worktrees cannot drive one PR at the same time — so if that were
+      // the only way two actors' holds could land in one state file,
+      // per-hold provenance would be guarding an impossible state and
       // could be deleted. It is not. A hold deliberately OUTLIVES its driver
       // (SKILL.md § 6), so the state arrives sequentially: A holds and its
       // session dies, B is admitted precisely because A's lease is no longer
@@ -5166,16 +5167,16 @@ describe("drive-state.ts durability", () => {
     });
 
     describe("OS pid reuse defeats (pid, host) alone", () => {
-      // `isMine` used to be the WHOLE story for `claimLease`'s renewal-vs-
-      // takeover decision: match on (pid, host) and preserve the generation.
-      // `$DRIVE_PR_SESSION_STARTED` closed that for `isMine` itself (the
-      // "session-started token" suite above) — but
-      // `claimLease` also asks `leaseAlive`, and once the OS has handed a dead
-      // predecessor's exact pid to THIS session, `leaseAlive`'s pid half is
-      // asking whether the CALLER is running, which is tautologically true.
-      // Before an earlier change that kept the claim refused (not merged, but not
-      // admitted either) for a full staleness window instead of minting the
-      // new generation the collision requires.
+      // `isMine` alone cannot decide `claimLease`'s renewal-vs-takeover:
+      // matching on (pid, host) and preserving the generation is defeated by
+      // pid reuse. `$DRIVE_PR_SESSION_STARTED` covers that for `isMine` itself
+      // (the "session-started token" suite above) — but `claimLease` also asks
+      // `leaseAlive`, and once the OS has handed a dead predecessor's exact pid
+      // to THIS session, `leaseAlive`'s pid half is asking whether the CALLER
+      // is running, which is tautologically true. Trusting that answer keeps
+      // the claim refused (not merged, but not admitted either) for a full
+      // staleness window instead of minting the new generation the collision
+      // requires.
       //
       // These probes fake OS pid reuse the same way the fence's own token
       // tests do: seed a lease under THIS TEST'S OWN pid (always alive, so
@@ -5824,7 +5825,7 @@ describe("drive-state.ts durability", () => {
       // it lets this tree rebuild state, see the finding as unaddressed, and
       // dispatch the same non-idempotent answer again.
       //
-      // Still exit 9 after an earlier change's PR-wide admission gate, and WHY is worth
+      // Still exit 9 under the PR-wide admission gate, and WHY is worth
       // stating: this tree took its lease at the `bump-round` below, before the
       // foreign one existed, so `reset`'s claim is a fresh renewal and takes the
       // lock-free fast path — the gate does not re-litigate an admission that
@@ -6126,14 +6127,13 @@ describe("drive-state.ts durability", () => {
         await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(driver.pid),
         });
-        // an earlier change's tree lease removed: an unidentified caller now refuses
-        // MUCH earlier, at `claimLease` time (exit 11), whenever a live tree
-        // lease exists at all — see `assertNoForeignSessionInTree`, which
-        // subsumes this exact scenario going forward. Dropping it isolates
-        // the mechanism THIS test actually pins: `clearAllLeases`'s own
-        // `isOwn` protection, which remains the last line for a per-PR lease
-        // with no accompanying tree lease — a legacy driver from before
-        // an earlier change, or one whose tree lease independently expired.
+        // The tree lease is removed: while it lives, an unidentified caller
+        // refuses MUCH earlier, at `claimLease` time (exit 11) — see
+        // `checkNoForeignSessionInTree`, which covers this exact scenario.
+        // Dropping it isolates the mechanism THIS test actually pins:
+        // `clearAllLeases`'s own `isOwn` protection, which remains the last
+        // line for a per-PR lease with no accompanying tree lease — a driver
+        // whose tree lease independently expired.
         rmSync(treeLeasePathFor(d, ACTOR), { force: true });
         const claim = claimPathFor(d, "999", "FP");
         writeFileSync(claim, newClaimToken());
@@ -6291,15 +6291,12 @@ describe("drive-state.ts durability", () => {
     });
 
     it("REFUSES a second WORKTREE driving one PR, with a distinct exit 13", async () => {
-      // The reversal an earlier change exists for. This block used to assert the
-      // opposite — "two worktrees are two leases and neither refuses the
-      // other" — on the reasoning that the per-tree scoping serves the
-      // Conductor topology an earlier change's per-hold provenance was built for. Both
-      // halves of that reasoning are still true and neither was a reason to let
-      // both trees TRIAGE: nothing stopped two worktrees enumerating the same
-      // unresolved threads and each replying with its own outcome, so every
-      // thread both reached carried two outcome replies — the identical damage
-      // measured within one tree (seventeen doubled `**accepted**` replies),
+      // Per-tree lease scoping serves the Conductor topology per-hold
+      // provenance is built for, but it is no reason to let two trees TRIAGE
+      // one PR: two worktrees enumerating the same unresolved threads would
+      // each reply with its own outcome, so every thread both reached would
+      // carry two outcome replies — the same damage as a double dispatch
+      // within one tree (seventeen doubled `**accepted**` replies, measured),
       // reached across trees instead.
       //
       // Two REAL worktrees, because the actor is derived and deliberately not
@@ -6394,9 +6391,9 @@ describe("drive-state.ts durability", () => {
         expect(fromB.exitCode).toBe(13);
         expect(fromB.stderr).toContain("ANOTHER working tree");
 
-        // A REFUSED tree installs nothing — which after an earlier change is a claim
-        // about the refusal, not about tier 3: a sessionless caller that is
-        // ADMITTED does now leave a record (see the two-sessionless probe
+        // A REFUSED tree installs nothing — which is a claim about the
+        // refusal, not about tier 3: a sessionless caller that is ADMITTED
+        // does leave a record (see the two-sessionless probe
         // below). Refusing first and writing second is what keeps that true;
         // the reverse order would leave a refused tree holding a live record
         // its own next command would fast-path off. Asserted through the read
@@ -6494,7 +6491,7 @@ describe("drive-state.ts durability", () => {
       //
       // Both worktrees land on the SAME state dir because they share one
       // clone (`twoDrivers` leaves $DRIVE_PR_STATE_DIR unset so they resolve
-      // it themselves) — an earlier change's default, `~/.local/state/jig/drive-pr/
+      // it themselves) — the default, `~/.local/state/jig/drive-pr/
       // <cloneKey>/`, keyed off `--git-common-dir` rather than the common
       // dir itself.
       const commonDir = resolve(
@@ -6567,12 +6564,12 @@ describe("drive-state.ts durability", () => {
     });
 
     it("an IDENTIFIED session upgrades its own tree’s tier-3 record instead of refusing itself over it", async () => {
-      // Intra-tree behaviour must not change: before an earlier change a sessionless
-      // caller left nothing, so a Claude Code session starting in the same tree
-      // met an empty slot. It now meets a record — and if that record refused
-      // it, the cost of closing a cross-tree hole would be a NEW intra-tree
-      // refusal, on a path a human clears only with `clear-lease` or by waiting
-      // out a window measured in hours.
+      // A sessionless caller leaves a tree-held record, so a Claude Code
+      // session starting in the same tree meets that record rather than an
+      // empty slot — and if that record refused it, the cost of closing a
+      // cross-tree hole would be a NEW intra-tree refusal, on a path a human
+      // clears only with `clear-lease` or by waiting out a window measured in
+      // hours.
       //
       // So the record is upgraded in place: same tree, better identity. What
       // other trees see afterwards is a SESSION lease, which is strictly more
@@ -6670,14 +6667,14 @@ describe("drive-state.ts durability", () => {
       // section is exactly the state the fence exists to catch, and writing it
       // in that window is deterministic while a real race is not.
       //
-      // The path probed here is the ONE tier-3 case that still claims nothing
-      // after an earlier change: this tree already holds a live SESSION lease, so it is
-      // represented in the PR-wide gate already and the sessionless caller
+      // The path probed here is the ONE tier-3 case that claims nothing: this
+      // tree already holds a live SESSION lease, so it is represented in the
+      // PR-wide gate already and the sessionless caller
       // deliberately leaves it alone (overwriting it would be a takeover it
       // cannot justify — see `clearAllLeases`). That is exactly
       // the case with no lease of its own to fence on, so
       // `assertNoForeignDriveNow` remains its fence and this probe remains its
-      // regression test. The tier-3 path that DOES claim now is fenced by
+      // regression test. The tier-3 path that DOES claim is fenced by
       // `assertLeaseUnchanged` like every other claim, and has its own probe
       // below.
       const d = stateDirFor("lease-sessionless-fence");
@@ -6761,9 +6758,9 @@ describe("drive-state.ts durability", () => {
     });
 
     it("fences the CLAIMING tier-3 path on its own record, like every other claim", async () => {
-      // The other half of the sessionless fence after an earlier change. A tier-3
-      // caller that found nothing in its tree writes a `worktree` record and is
-      // therefore admitted on a lease like anybody else — so its fence is
+      // The other half of the sessionless fence. A tier-3 caller that found
+      // nothing in its tree writes a `worktree` record and is therefore
+      // admitted on a lease like anybody else — so its fence is
       // `assertLeaseUnchanged`, and what it has to catch is that record being
       // revoked between admission and the mutation it was admitted for.
       //
@@ -6959,11 +6956,11 @@ describe("drive-state.ts durability", () => {
         // the window rather than waited out, which is the only way to probe a
         // six-hour default.
         //
-        // Both trees land on the same state dir because they share one clone
-        // — these probes deliberately leave $DRIVE_PR_STATE_DIR unset so
-        // that both resolve it themselves. an earlier change's default,
-        // `~/.local/state/jig/drive-pr/<cloneKey>/`, keyed off `--git-common-dir`
-        // rather than the common dir itself.
+        // Both trees land on the same state dir because they share one clone —
+        // these probes deliberately leave $DRIVE_PR_STATE_DIR unset so that
+        // both resolve it themselves. The default,
+        // `~/.local/state/jig/drive-pr/<cloneKey>/`, is keyed off
+        // `--git-common-dir` rather than the common dir itself.
         const commonDir = resolve(
           a,
           execFileSync("git", ["rev-parse", "--git-common-dir"], {
@@ -7302,17 +7299,16 @@ describe("drive-state.ts durability", () => {
     });
 
     it("reset REFUSES across trees while a foreign lease is live, then succeeds once it is gone", async () => {
-      // This was a PRESERVE-and-continue test. Preserving the foreign lease is
-      // still necessary but is not sufficient: the state file and the CLAIM
-      // files are shared by every tree driving the PR, so continuing let this
-      // tree delete a live session's in-flight claim and re-dispatch a
-      // non-idempotent answer it had already claimed. `reset` then
-      // refused outright, deleting nothing.
+      // Preserving the foreign lease is necessary but not sufficient: the
+      // state file and the CLAIM files are shared by every tree driving the
+      // PR, so continuing would let this tree delete a live session's
+      // in-flight claim and re-dispatch a non-idempotent answer it had already
+      // claimed. `reset` refuses outright, deleting nothing.
       //
-      // an earlier change moved WHERE that refusal comes from, not whether it happens.
-      // `reset` is a leased command, and this tree holds no lease yet, so its
-      // claim is a fresh admission and meets the PR-wide gate first — exit 13,
-      // naming the same holder, before `reset`'s own exit-9 branch is reached.
+      // The refusal comes from the PR-wide gate: `reset` is a leased command,
+      // and this tree holds no lease yet, so its claim is a fresh admission
+      // and meets the gate first — exit 13, naming the same holder, before
+      // `reset`'s own exit-9 branch is reached.
       //
       // `reset` is deliberately NOT exempted from that gate, and the reason is
       // the fast path: a command exempted here would still take a lease on its
@@ -7367,10 +7363,10 @@ describe("drive-state.ts durability", () => {
       // The cross-tree counterpart of the same-tree probe in "the session
       // lease over one working tree" above: tree A's session dies and the OS
       // hands its EXACT pid to a brand-new session in tree B. `isMine` proves
-      // B is not A (the `sessionStarted` tokens differ) — but before
-      // an earlier change, `assertNoForeignDrive` asked `leaseAlive` whether A's
-      // recorded pid was still answering, and once that pid is B's OWN, the
-      // answer is trivially "yes": B was refused exit 13 for a full staleness
+      // B is not A (the `sessionStarted` tokens differ) — so
+      // `assertNoForeignDrive` must not trust `leaseAlive`'s "yes" for A's
+      // recycled pid: once that pid is B's OWN, `leaseAlive` answers "yes"
+      // trivially, and B would be refused exit 13 for a full staleness
       // window over a rival that cannot exist (two processes cannot share one
       // pid on one host).
       const { a, b, env } = twoDrivers("pid-reuse-pr-wide-gate");
@@ -7394,12 +7390,12 @@ describe("drive-state.ts durability", () => {
     });
 
     it("reset admits and SWEEPS a foreign lease that merely shares this session’s recycled pid, instead of refusing or preserving it as live", () => {
-      // End-to-end through BOTH fixed call sites: `reset` is a leased command,
+      // End-to-end through BOTH call sites: `reset` is a leased command,
       // so tree B's claim meets the PR-wide gate first (as above), and only
       // then reaches `clearAllLeases`'s own `leaseAlive` check on tree A's
-      // now-doubly-stale record. Before an earlier change either one alone was enough
-      // to leave tree A's lease standing — refused at admission (exit 13), or
-      // admitted and then reported as a live foreign lease to preserve.
+      // now-doubly-stale record. Either one alone trusting the recycled pid
+      // would leave tree A's lease standing — refused at admission (exit 13),
+      // or admitted and then reported as a live foreign lease to preserve.
       const { a, b, env } = twoDrivers("pid-reuse-reset-sweeps-recycled");
       const ea = {
         ...env,
@@ -7446,13 +7442,13 @@ describe("drive-state.ts durability", () => {
   });
 
   describe("the tree-wide session lease across PRs", () => {
-    // an earlier change's lease is scoped to (working tree, PR): two interactive
+    // The per-PR lease is scoped to (working tree, PR): two interactive
     // sessions in ONE tree driving TWO DIFFERENT PRs resolve two different
-    // `leasePathFor` files, so neither refuses the other and both are
-    // admitted into the SAME checkout — which they can then edit, commit, and
-    // push over one another. `drive.ts` already closes the analogous
-    // unattended-path gap with a worktree-wide single-instance lock; this is
-    // the interactive counterpart.
+    // `leasePathFor` files, so on their own neither refuses the other and both
+    // would be admitted into the SAME checkout — free to edit, commit, and
+    // push over one another. `drive.ts` closes the analogous unattended-path
+    // gap with a worktree-wide single-instance lock; the tree-wide session
+    // lease is the interactive counterpart.
 
     it("refuses a second live session in the same tree driving a DIFFERENT PR", async () => {
       const d = stateDirFor("lease-tree-cross-pr");
@@ -7467,8 +7463,8 @@ describe("drive-state.ts durability", () => {
         ).toBe(0);
 
         // Session B — a DIFFERENT PR, so its per-PR lease file never collides
-        // with A's, but it shares the SAME working tree, which is exactly why
-        // an earlier change exists.
+        // with A's, but it shares the SAME working tree, which is exactly what
+        // the tree-wide lease refuses.
         const second = await state(d, ["bump-round", "888", "--head", "bbb"], {
           DRIVE_PR_SESSION: String(process.pid),
         });
@@ -7528,12 +7524,11 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("two DIFFERENT worktrees stay fully independent — an earlier change does not widen an earlier change", async () => {
-      // Two DIFFERENT PRs so an earlier change's PR-wide gate has nothing to say —
-      // this probes only whether the tree lease (keyed by actor) leaks across
-      // actors, which it must not: two Conductor worktrees are two different
-      // trees BY DESIGN, and remain so after this module gains a second lease
-      // file.
+    it("two DIFFERENT worktrees stay fully independent — the tree lease does not span worktrees", async () => {
+      // Two DIFFERENT PRs so the PR-wide gate has nothing to say — this probes
+      // only whether the tree lease (keyed by actor) leaks across actors,
+      // which it must not: two Conductor worktrees are two different trees BY
+      // DESIGN, whatever lease files this module keeps.
       const { a, b, env } = twoDrivers("lease-tree-cross-worktree");
       const sessionA = liveSession();
       const sessionB = liveSession();
@@ -7552,18 +7547,13 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("two SESSIONLESS worktrees driving the SAME PR now EXCLUDE each other", async () => {
-      // Superseded by an earlier change: this test used to assert the OPPOSITE — that
-      // an earlier change must not narrow the topology an earlier change's per-hold provenance
-      // was built for, i.e. that two sessionless worktrees on the SAME PR
-      // stayed both admitted, because tier 3 never wrote a per-PR lease at
-      // all. It now does (`holder: 'worktree'`, keyed by actor rather than
-      // pid), specifically to close this exact gap — two sessionless
-      // resolvers on one PR could otherwise both post `**accepted**` to the
-      // same thread. The SECOND worktree here now hits an earlier change's own
-      // PR-wide gate (exit 13, `assertNoForeignDrive`) via the presence
-      // lease the first one wrote, the identical refusal an IDENTIFIED
-      // session gets in `REFUSES a second WORKTREE driving one PR`.
+    it("two SESSIONLESS worktrees driving the SAME PR EXCLUDE each other", async () => {
+      // Tier 3 writes a per-PR lease (`holder: 'worktree'`, keyed by actor
+      // rather than pid), because two sessionless resolvers on one PR could
+      // otherwise both post `**accepted**` to the same thread. The SECOND
+      // worktree here hits the PR-wide gate (exit 13, `assertNoForeignDrive`)
+      // via the presence lease the first one wrote, the identical refusal an
+      // IDENTIFIED session gets in `REFUSES a second WORKTREE driving one PR`.
       const { a, b, env } = twoDrivers("lease-tree-same-pr-both-admitted");
       expect(
         drive(a, env, ["bump-round", "999", "--head", "aaa"]).exitCode,
@@ -7574,13 +7564,12 @@ describe("drive-state.ts durability", () => {
     });
 
     describe("the sessionless tier claims the tree lease too", () => {
-      it("two sessionless resolvers in ONE tree driving DIFFERENT PRs now refuse each other", async () => {
-        // The gap an earlier change closes: before this, ladder tier 3 only CHECKED the
-        // tree lease and never claimed one, so two sessionless resolvers on
-        // different PRs from the SAME tree both passed admission — free to
-        // edit, commit, and push over one another in the same checkout, the
-        // exact cross-shipping hazard an earlier change exists to close for identified
-        // sessions.
+      it("two sessionless resolvers in ONE tree driving DIFFERENT PRs refuse each other", async () => {
+        // Ladder tier 3 CLAIMS the tree lease, not only checks it. A tier that
+        // only checked would let two sessionless resolvers on different PRs
+        // from the SAME tree both pass admission — free to edit, commit, and
+        // push over one another in the same checkout, the exact
+        // cross-shipping hazard the tree lease closes for identified sessions.
         const d = stateDirFor("lease-tree-cross-pr-sessionless");
         const sessionless = { DRIVE_PR_SESSION: "", CLAUDE_PID: "" };
         expect(
@@ -7797,8 +7786,8 @@ describe("drive-state.ts durability", () => {
         // `claimSessionlessTreeLease` writes BEFORE `claimPrLease`'s own
         // checks run — the tier-3 mirror of the identified path's own
         // "rolls back a freshly-created tree lease…" probe above. A failure
-        // there (a PR-wide an earlier change refusal from ANOTHER tree, in this
-        // probe) must not leave the tree claim it just minted behind,
+        // there (a PR-wide refusal from ANOTHER tree, in this probe) must not
+        // leave the tree claim it just minted behind,
         // wedging this tree for any OTHER pr this actor might claim next.
         const { a, b, env } = twoDrivers("lease-tree-rollback-sessionless");
         const sessionless = { ...env, DRIVE_PR_SESSION: "", CLAUDE_PID: "" };
@@ -7810,7 +7799,7 @@ describe("drive-state.ts durability", () => {
         ).toBe(0);
 
         // Tree B: `claimSessionlessTreeLease` succeeds — tree B has never
-        // held any tree-wide claim — but `claimPrLease` then hits an earlier change's
+        // held any tree-wide claim — but `claimPrLease` then hits the
         // cross-tree gate on PR 999 (tree A already holds it) and refuses.
         expect(
           drive(b, sessionless, ["bump-round", "999", "--head", "bbb"])
@@ -8117,8 +8106,8 @@ describe("drive-state.ts durability", () => {
       it("an identified session claiming the SAME pr upgrades a live sessionless tree claim smoothly, no refusal", async () => {
         // The deliberate, intentional counterpart of the probe above — a
         // matching pr is a legitimate resolver-lifetime handoff, mirroring
-        // an earlier change's own per-PR ruling that an identified session may take
-        // over its own tree's presence record freely.
+        // the per-PR rule that an identified session may take over its own
+        // tree's presence record freely.
         const d = stateDirFor("lease-tree-treeismine-same-pr-upgrade");
         const sessionless = { DRIVE_PR_SESSION: "", CLAUDE_PID: "" };
         expect(
@@ -8478,8 +8467,8 @@ describe("drive-state.ts durability", () => {
 
     it("rolls back a freshly-created tree lease when the per-PR claim fails afterward", async () => {
       // `claimTreeLease` writes BEFORE `claimPrLease`'s own checks run — so a
-      // failure there (a PR-wide an earlier change refusal from ANOTHER tree, in this
-      // probe) must not leave the tree lease it just minted behind, wedging
+      // failure there (a PR-wide refusal from ANOTHER tree, in this probe)
+      // must not leave the tree lease it just minted behind, wedging
       // this tree for any OTHER identified session on a PR that was never
       // actually admitted.
       const { a, b, env } = twoDrivers("lease-tree-rollback");
@@ -8497,8 +8486,8 @@ describe("drive-state.ts durability", () => {
         ).toBe(0);
 
         // Tree B, session B: `claimTreeLease` succeeds — tree B has never
-        // held any lease — but `claimPrLease` then hits an earlier change's cross-tree
-        // gate on PR 999 (tree A already holds it) and refuses.
+        // held any lease — but `claimPrLease` then hits the cross-tree gate on
+        // PR 999 (tree A already holds it) and refuses.
         expect(
           drive(b, eb, ["bump-round", "999", "--head", "bbb"]).exitCode,
         ).toBe(13);
@@ -8549,7 +8538,7 @@ describe("drive-state.ts durability", () => {
 
         // Tree A, sessionShared AGAIN, a DIFFERENT PR: `claimTreeLease`
         // succeeds (a renewal — same session), but `claimPrLease` then hits
-        // an earlier change's cross-tree gate (tree B already holds 777) and fails.
+        // the cross-tree gate (tree B already holds 777) and fails.
         // Its rollback must not destroy the tree lease that still
         // legitimately admits this session for PR 999.
         expect(
@@ -8826,17 +8815,15 @@ describe("drive-state.ts durability", () => {
       // `legacyDir` entirely when it holds no real footprint (every acquire/
       // release leaves a permanent quarantine tombstone in whatever
       // directory it targets, which `legacyFootprint()` then reads back as
-      // "unmigrated state", manufacturing the very refusal an earlier change exists
-      // to prevent).
+      // "unmigrated state", manufacturing a spurious migration refusal).
       //
       // `legacyDir` carries a PRE-EXISTING clone identity (so `newDir`'s path
       // is knowable via `peekDefaultStateDirFor` without this call minting
       // one) but is otherwise completely empty — no drive-pr footprint of
       // any kind — and `newDir` does not exist yet either. The stale `ctx`
       // handed to the fence still names `legacyDir` (as if resolved before
-      // this state existed), mirroring the exact snapshot-then-check gap the
-      // TOCTOU fix closed for enumeration; this test is the same gap
-      // for the LOCK.
+      // this state existed), mirroring the exact snapshot-then-check gap
+      // enumeration guards against; this test is the same gap for the LOCK.
       //
       // Run as a SUBPROCESS, not in-process like the sibling tests above:
       // `peekDefaultStateDirFor`/`defaultStateDirFor` resolve `newDir` under
@@ -9063,7 +9050,7 @@ describe("drive-state.ts durability", () => {
       // unit-level test above already covers on its own.
       const { a, b, env } = twoDrivers("remote-mutation-lock-pr-wide");
       // Both worktrees land on the SAME state dir because they share one
-      // clone (mirrors the stale-lease probe above) — an earlier change's default,
+      // clone (mirrors the stale-lease probe above) — the default,
       // `~/.local/state/jig/drive-pr/<cloneKey>/`, keyed off `--git-common-dir`
       // rather than the common dir itself.
       const commonDirRemoteLock = resolve(
@@ -9226,12 +9213,12 @@ describe("drive-state.ts durability", () => {
       // raise it). `$DRIVE_PR_LOCK_TIMEOUT` pinned to 1s here is a realistic
       // OPERATOR configuration, not a bypass attempt — proving that when a
       // hold genuinely outlasts it, B is refused with the purpose-built
-      // exit 11 this fix adds, not `acquire`'s own generic exit 1
+      // exit 11, not `acquire`'s own generic exit 1
       // "could not acquire … or the lock is wedged" message, which would
       // misreport an entirely ordinary long-running push as a stuck lock.
       const { a, b, env } = twoDrivers("remote-mutation-lock-exceeds-wait");
       // See the previous test's comment: both worktrees share one clone's
-      // an earlier change default, not `--git-common-dir` itself.
+      // default state dir, keyed off `--git-common-dir`, not that dir itself.
       const commonDirExceedsWait = resolve(
         a,
         execFileSync("git", ["rev-parse", "--git-common-dir"], {
@@ -9800,10 +9787,10 @@ describe("drive-state.ts durability", () => {
       expect(out).toContain("Do NOT re-reply");
       // A successor session copy-pasting the literal rendered command must
       // get ONE runnable invocation, not `drive-state.ts` alone on one line
-      // and `claim-held ...` as a bogus separate command on the next — the
-      // regression this asserts against. Each command has to sit
-      // fully inside its own line, script name and subcommand together —
-      // including `--pushed-sha`, which the claim has required since an earlier change.
+      // and `claim-held ...` as a bogus separate command on the next. Each
+      // command has to sit fully inside its own line, script name and
+      // subcommand together — including `--pushed-sha`, which the claim
+      // requires.
       expect(out).toContain(
         '`drive-state.ts claim-held 999 --key K --kind finding --pushed-sha "$(git rev-parse HEAD)"`\nfirst.',
       );
@@ -9813,13 +9800,13 @@ describe("drive-state.ts durability", () => {
     });
 
     it("regenerates itself on `hold`, `park` and `release-held` — no explicit `handoff` call needed", async () => {
-      // The block claims to be "written at the moment of each event". Before
-      // this, that was only true for `handoff`-triggered fields (round, phase,
-      // verifiedSha) — `hold` and `park` only touched the JSON, so a mid-round
-      // hold was invisible in the .md until the NEXT explicit `handoff` call
-      // (step 7, or `drive.ts` at the start of the following round). A
-      // successor reading only the file — the case `--handoff-at never`
-      // exists for — could miss a hold made just before a compaction.
+      // The block claims to be "written at the moment of each event", so it
+      // must hold for `hold` and `park` too, not only for `handoff`-triggered
+      // fields (round, phase, verifiedSha). Otherwise a mid-round hold stays
+      // invisible in the .md until the NEXT explicit `handoff` call (step 7,
+      // or `drive.ts` at the start of the following round), and a successor
+      // reading only the file — the case `--handoff-at never` exists for —
+      // could miss a hold made just before a compaction.
       const d = stateDirFor("handoff-live");
       const hd = join(d, "handoff");
       const env = { DRIVE_PR_HANDOFF_DIR: hd };

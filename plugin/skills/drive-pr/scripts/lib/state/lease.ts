@@ -184,7 +184,7 @@
  * GitHub. `reply-to-thread.ts` and `answer-summary-finding.ts` meet the lease
  * only AFTERWARDS, when they record the outcome via `drive-state.ts`, by which
  * time the duplicate `**accepted**` reply is on the thread and unwithdrawable —
- * precisely the corruption an earlier change exists to prevent, reached through the one
+ * precisely the corruption the lease exists to prevent, reached through the one
  * operation the state fence does not sit in front of.
  *
  * `assertRemoteMutationAllowed` below is that fence, and it is deliberately a
@@ -682,10 +682,9 @@ export function leasePathFor(
  * on — deliberately OUTSIDE the `pr-drive-lease-` namespace
  * `LEASE_PREFIX` owns, so neither `filterLeaseFilesFor` nor
  * `filterLeaseFilesForActor` — both of which gate on that exact prefix, for
- * an earlier change's PR-wide admission and an earlier change's external-mutation fence — can
- * ever mistake a tree lease for a per-PR one, now or after either filter is
- * later widened. Those two mechanisms are untouched by this module: they keep
- * reading exactly the per-PR lease files they always have.
+ * the PR-wide admission and the external-mutation fence — can ever mistake a
+ * tree lease for a per-PR one, even if either filter is widened. Those two
+ * mechanisms read only the per-PR lease files.
  */
 const TREE_LEASE_PREFIX = "drive-tree-lease-";
 
@@ -1103,11 +1102,9 @@ interface DirIdentity {
  * link observes the link's own inode, which a target rename-and-recreate
  * leaves completely untouched: the baseline and the closing check would both
  * match while the enumeration ran against the replacement, and the fence
- * would authorize the POST with the live lease still in the moved target
- * (this helper once reintroduced the `lstat` an earlier fix had removed for
- * exactly this reason).
+ * would authorize the POST with the live lease still in the moved target.
  *
- * A dangling link now yields `null` here rather than a link-inode identity,
+ * A dangling link yields `null` here rather than a link-inode identity,
  * which every caller already treats as "identity could not be established"
  * and fails closed on — the same answer `readdirSync` gives that path anyway.
  */
@@ -1685,10 +1682,9 @@ function isMine(l: Lease, s: Session, actor: string): boolean {
  * module exists to prevent: an unwithdrawable duplicate `**accepted**` reply
  * once two sessions both believe themselves sole driver.
  *
- * RESIDUALS, stated explicitly rather than left implicit — an earlier change's own
- * acceptance criteria ask for exactly this:
+ * RESIDUALS, stated explicitly rather than left implicit:
  *
- *   - R1 (KNOWN, pre-existing): two WELL-FORMED tokens whose relative order a
+ *   - R1 (KNOWN): two WELL-FORMED tokens whose relative order a
  *     backward system-clock step (e.g. an NTP correction) reverses are
  *     indistinguishable from a genuine reversal. There is no portable,
  *     `node:`-only, cross-process MONOTONIC session order to compare instead
@@ -1698,24 +1694,22 @@ function isMine(l: Lease, s: Session, actor: string): boolean {
  *     harden one decision while leaving a clock-rollback-sized hole open in
  *     every sibling one. Revisit both together if a portable monotonic
  *     primitive becomes available.
- *   - R2 (KNOWN, pre-existing, now the CENTRAL one once R4 below closes):
+ *   - R2 (KNOWN, the CENTRAL one given R4 below):
  *     a harness that exports a `(pid, sessionStarted)` pair it did not mint
  *     TOGETHER — claiming a pid it does not actually own, paired with a
  *     newer-than-reality token — is OUTSIDE this predicate's threat model,
  *     the same class as a caller exporting an arbitrary live foreign pid,
  *     which `resolveSession`'s tier-1 contract explicitly delegates to the
- *     caller's own honesty. No revision of this predicate has ever defended
- *     against a caller lying about its own identity; it defends against
- *     confusing an inherited claim for a fresh one, which is different.
- *   - R3 (KNOWN, pre-existing): both sides tokenless — `isMine` itself
+ *     caller's own honesty. This predicate does not defend against a caller
+ *     lying about its own identity; it defends against confusing an
+ *     inherited claim for a fresh one, which is different.
+ *   - R3 (KNOWN): both sides tokenless — `isMine` itself
  *     returns `true` for this case, so `isRecycledPid` is never reached; see
  *     `isMine`'s own KNOWN RESIDUAL for why recycling is indistinguishable
  *     from a renewal there and why that is accepted.
- *   - R4 (this round, closes an earlier change's own open question): EITHER side
- *     tokenless gets NO fast path at all and relies entirely on the
- *     `leaseAlive` staleness window — this is the "Tier 2's residual… whether
- *     a shorter default staleness window is the right partial mitigation"
- *     question an earlier change's issue asked to have answered explicitly. It is not:
+ *   - R4: EITHER side tokenless gets NO fast path at all and relies entirely
+ *     on the `leaseAlive` staleness window. A shorter default staleness
+ *     window is not the right partial mitigation for that tier-2 residual:
  *     `LEASE_STALE_MIN_DEFAULT`'s own reasoning is that renewal is
  *     work-driven with no natural floor to tighten against, and the cost
  *     asymmetry above (one named recovery command vs. an unrepairable
@@ -1917,15 +1911,13 @@ function renewAfterMs(): number {
 /**
  * What `claimLease` grants: the per-PR lease (`Lease`)
  * and the tree-wide lease (`TreeLease`) together — every session that claims
- * one now claims the other in the SAME admission, identified or not.
+ * one claims the other in the SAME admission, identified or not.
  *
- * Ladder tier 3 (no session identity) used to be the exception — it claimed
- * only a durable PER-PR presence record (`holder: 'worktree'`) and
- * left the tree-wide axis a stated residual, `{ lease: Lease; treeLease:
- * null }`. an earlier change closes that: tier 3 now claims a `holder: 'worktree'`
- * TREE lease too (`claimSessionlessTreeLease`), so that variant is gone —
- * every admission is now either BOTH non-null or BOTH null, and the two
- * fields never need checking independently.
+ * Ladder tier 3 (no session identity) is no exception: alongside its durable
+ * PER-PR presence record (`holder: 'worktree'`) it claims a `holder:
+ * 'worktree'` TREE lease too (`claimSessionlessTreeLease`), so every
+ * admission is either BOTH non-null or BOTH null, and the two fields never
+ * need checking independently.
  *
  * The one remaining `{ lease: null; treeLease: null }` case is narrower than
  * "sessionless": it is tier 3 finding this tree's OWN per-PR lease already
@@ -1948,7 +1940,7 @@ export type LeaseAdmission =
  * session, so tier 3 claims nothing of its own here either — see
  * `claimLease`'s own tier-3 branch — and the only question left to ask is
  * whether the tree lease shows someone else already driving here. Every
- * OTHER tier-3 admission now claims a tree lease of its own
+ * OTHER tier-3 admission claims a tree lease of its own
  * (`claimSessionlessTreeLease`) and is fenced by
  * `assertTreeLeaseUnchanged` instead, the same fence an identified session
  * gets.
@@ -2030,15 +2022,13 @@ function checkNoForeignSessionInTree(path: string): void {
  * Reached only when `claimLease` deferred (this tree's own per-PR lease
  * already belongs to a live identified session, so tier 3 claimed no tree
  * lease of its own either — see `claimLease`'s own tier-3 branch). Every
- * OTHER tier-3 admission now claims a `TreeLease` of its own
+ * OTHER tier-3 admission claims a `TreeLease` of its own
  * (`claimSessionlessTreeLease`) and is fenced by
  * `acquireIdentifiedTreeGuardNow` below instead, the same fence an
- * identified session gets — that function's name predates an earlier change and is
- * no longer literal (it fences ANY admitted `TreeLease`, not only one an
- * identified session wrote), kept as-is to avoid a rename rippling through
- * every comment that already names it.
+ * identified session gets — that function's name is not literal (it fences
+ * ANY admitted `TreeLease`, not only one an identified session wrote).
  *
- * That "through the mutation" part is the whole fix. A plain re-check under
+ * That "through the mutation" part is the whole point. A plain re-check under
  * a lock that releases immediately after answering still leaves a gap: this
  * command holds only ITS OWN pr's state mutex, while `claimTreeLease`'s own
  * takeover/creation for a DIFFERENT pr takes THAT pr's mutex — never this
@@ -2094,23 +2084,22 @@ export async function acquireSessionlessTreeGuardNow(
  * acquires `treeLeaseLock`, runs `assertTreeLeaseUnchanged` UNDER it, then
  * returns the lock STILL HELD for the caller to hand to
  * `store.setExtraLock` — the identical "through the mutation, not just the
- * check" fix the sessionless branch got, which this branch never received.
+ * check" guarantee the sessionless branch has.
  *
- * Originally reached only for an IDENTIFIED session — hence the name — and
- * now, since an earlier change, for tier 3's own `holder: 'worktree'` claim too
- * (`claimSessionlessTreeLease`): either way, admission left this call site
- * an actual `TreeLease` to compare against, so it re-checks via
- * `assertTreeLeaseUnchanged` rather than asking `checkNoForeignSessionInTree`'s
- * coarser "is anyone here at all" question — but a point-in-time re-check
- * with the lock released right after still leaves the identical gap open: a
- * DIFFERENT pr's claim (`claimTreeLease` or `claimSessionlessTreeLease`)
- * takes only THAT pr's state mutex before reaching for `treeLeaseLock`, so
- * it can land between "the fence found no takeover" and "the mutation
- * actually ran" exactly as it could before that fix closed this for the
- * deferred sessionless caller. Holding the lock across that whole window
- * closes it here too, by the same reasoning — for either ladder tier.
+ * Reached for an IDENTIFIED session — hence the name — and for tier 3's own
+ * `holder: 'worktree'` claim too (`claimSessionlessTreeLease`): either way,
+ * admission left this call site an actual `TreeLease` to compare against, so it
+ * re-checks via `assertTreeLeaseUnchanged` rather than asking
+ * `checkNoForeignSessionInTree`'s coarser "is anyone here at all" question —
+ * but a point-in-time re-check with the lock released right after still leaves
+ * the identical gap open: a DIFFERENT pr's claim (`claimTreeLease` or
+ * `claimSessionlessTreeLease`) takes only THAT pr's state mutex before reaching
+ * for `treeLeaseLock`, so it can land between "the fence found no takeover" and
+ * "the mutation actually ran", the same gap the deferred sessionless caller
+ * faces. Holding the lock across that whole window closes it here too, by the
+ * same reasoning — for either ladder tier.
  *
- * Lock order is unchanged: state-mutex(thisPr) → `treeLeaseLock` — this
+ * Lock order is the same: state-mutex(thisPr) → `treeLeaseLock` — this
  * command already holds its own pr's state mutex by the time `runFence`
  * runs, and only reaches for `treeLeaseLock` after that, so it can never
  * deadlock against a `claimTreeLease` call that takes the SAME two locks in
@@ -2231,37 +2220,31 @@ interface TreeLeaseClaim {
  * is ONE PER TREE, covering every pr the tree might drive, and `isMine`'s
  * `holder === 'worktree'` branch does not even consult its `Session`
  * argument — so every caller in this tree, whichever pr it names, would
- * read a live `holder: 'worktree'` TREE record as its own. Before an earlier change
- * this was silently correct by construction, because nothing but an
- * IDENTIFIED session's own `claimTreeLease` ever wrote one here (always
- * `holder: 'session'`) — `isMine`'s session branch (pid/host/token) was the
- * only branch this file could ever actually reach. an earlier change makes tier 3
- * write `holder: 'worktree'` records to this SAME file, and `claimTreeLease`
- * — and the irreversible-post fence, `assertTreeMutationAllowed` — meeting
- * one now needs a different test: an identified session claiming PR 888
- * would otherwise silently take over, with no refusal and no takeover
- * diagnostic, a LIVE sessionless resolver's tree-wide claim on PR 999 in
- * the same tree — the exact cross-shipping hazard this whole mechanism
- * exists to close, reopened by treating the new record shape as
- * automatically "mine".
+ * read a live `holder: 'worktree'` TREE record as its own. Tier 3 writes
+ * `holder: 'worktree'` records to this SAME file, so `claimTreeLease` — and
+ * the irreversible-post fence, `assertTreeMutationAllowed` — meeting one
+ * needs a different test: an identified session claiming PR 888 would
+ * otherwise silently take over, with no refusal and no takeover diagnostic,
+ * a LIVE sessionless resolver's tree-wide claim on PR 999 in the same tree —
+ * the exact cross-shipping hazard this whole mechanism exists to close,
+ * reopened by treating that record shape as automatically "mine".
  *
- * The fix mirrors `claimSessionlessTreeLease`'s own `samePr` reasoning: a
+ * The rule mirrors `claimSessionlessTreeLease`'s own `samePr` reasoning: a
  * `holder: 'worktree'` record names a SPECIFIC pr, so ownership of it turns
  * on THAT pr matching the caller's, not on sharing a tree. A match is a
- * deliberate, intentional smooth handoff — the tree-wide mirror of
- * an earlier change's own per-PR ruling that "an identified session may take over
- * its own tree's presence record freely, because that record was never a
- * claim about sessions" — so an identified session finishing what a
- * sessionless resolver started on the SAME pr upgrades it without a
- * refusal or a takeover diagnostic, exactly as before this fix. A mismatch
+ * deliberate, intentional smooth handoff — the tree-wide mirror of the
+ * per-PR rule that "an identified session may take over its own tree's
+ * presence record freely, because that record is not a claim about
+ * sessions" — so an identified session finishing what a sessionless
+ * resolver started on the SAME pr upgrades it without a refusal or a
+ * takeover diagnostic. A mismatch
  * — or no pr to compare at all (`pr === null`, `assertTreeMutationAllowed`'s
  * standalone `assert-post-allowed.ts` caller with no PR in play) — is never
  * "mine", and falls through to the ordinary live-refuse / stale-takeover
  * path, symmetric with how `claimSessionlessTreeLease` already treats a
  * foreign SESSION-held record.
  *
- * `held.holder === 'session'` is unaffected: ownership there is exactly
- * `isMine`, unchanged.
+ * For `held.holder === 'session'`, ownership is exactly `isMine`.
  */
 function treeIsMine(
   held: TreeLease,
@@ -2292,11 +2275,10 @@ async function claimTreeLease(
   //
   // `seen.pr === canonicalPr` is REQUIRED here, not just `isMine` — this
   // session's OWN previous claim may have been for a DIFFERENT pr (one
-  // session juggling several PRs from one tree, an earlier change's own acceptance
-  // criterion), and the fast path returns `seen` UNCHANGED with no write, so
-  // skipping this check would report the PREVIOUS pr in every diagnostic and
-  // refusal until the lease next goes through the locked path for some other
-  // reason.
+  // session juggling several PRs from one tree), and the fast path returns
+  // `seen` UNCHANGED with no write, so skipping this check would report the
+  // PREVIOUS pr in every diagnostic and refusal until the lease next goes
+  // through the locked path for some other reason.
   //
   // `seen.holder === 'session'` is ALSO required, and is not implied by
   // `treeIsMine` — that predicate answers "mine" for a `holder: 'worktree'`
@@ -2306,8 +2288,7 @@ async function claimTreeLease(
   // `pid: 0` forever — this session's own admission would then compare
   // (0, host, generation) against itself in every later fence, and the
   // record would never actually reflect that an identified session is now
-  // driving (the SAME-pr upgrade test failed exactly this way before this
-  // guard existed). An upgrade always takes the locked path
+  // driving. An upgrade always takes the locked path
   // below, which writes the converted record — see `mine`'s own comment.
   const seen = readTreeLease(path);
   if (
@@ -2565,13 +2546,11 @@ async function rollbackTreeLease(
 
 /**
  * Ladder tier 3's own claim of the TREE-WIDE lease — the
- * `holder: 'worktree'` presence-record pattern an earlier change built for the per-PR
- * axis, extended to the axis an earlier change left open for the sessionless tier: a
- * durable record at the SAME path an identified session's `claimTreeLease`
- * writes to (`treeLeasePathFor`), so a second sessionless resolver in this
- * tree — even one driving a DIFFERENT pr — now finds something to read,
- * closing the gap `claimLease`'s own tier-3 comment used to leave as a
- * stated residual.
+ * `holder: 'worktree'` presence-record pattern of the per-PR axis, extended
+ * to the tree-wide axis for the sessionless tier: a durable record at the
+ * SAME path an identified session's `claimTreeLease` writes to
+ * (`treeLeasePathFor`), so a second sessionless resolver in this tree — even
+ * one driving a DIFFERENT pr — finds something to read.
  *
  * `isMine` cannot decide ownership here, and that is why this is a separate
  * function rather than a `claimTreeLease` branch: `isMine`'s `holder ===
@@ -2580,8 +2559,9 @@ async function rollbackTreeLease(
  * own name, so actor equality is the only question left — but this file is
  * ONE PER TREE, covering every pr the tree might drive, so actor equality
  * alone would treat every sessionless caller in this tree as the SAME owner,
- * whichever pr it names. That is precisely the gap this issue closes, so
- * ownership here turns on `pr` too: a live record for THIS pr is a renewal,
+ * whichever pr it names. Two sessionless callers driving different PRs
+ * from one tree is precisely what this lease must refuse, so ownership here
+ * turns on `pr` too: a live record for THIS pr is a renewal,
  * a live record for ANY OTHER pr — or a live SESSION-held record, whichever
  * pr it names — is foreign.
  *
@@ -2808,8 +2788,8 @@ export async function claimLease(
   const worktree = await worktreeRoot();
   if (session.source === "none") {
     // Ladder tier 3 — no session identity, so no SESSION lease can be taken.
-    // That is an earlier change's answer and it stands: a lease that records a pid, and
-    // is written under no identity, excludes nobody.
+    // A lease that records a pid, and is written under no identity, excludes
+    // nobody.
     //
     // It does not follow that nothing can be recorded. What this tree can
     // always prove is that it is THIS TREE, which is precisely the question the
@@ -3787,12 +3767,10 @@ export async function resolveFenceContext(label: string): Promise<
     // unmigrated legacy content, correct for a STATE WRITER (a fresh drive
     // must never silently start over an unmigrated clone's parked decisions)
     // but wrong for this lightweight, read-only fence, whose caller may have
-    // nothing to do with drive-pr's own durable state at all. A first cut
-    // that called it directly refused every standalone post on any clone
-    // that had not yet run the one-time migration — which, before a human
-    // runs it, is every clone in the fleet, an earlier change's own PR included
-    // (measured against this repository's own real `.git`: a live worktree
-    // with genuine pre-migration drive-pr history refused outright).
+    // nothing to do with drive-pr's own durable state at all. Calling it
+    // directly would refuse every standalone post on any clone that has not
+    // yet run the one-time migration — which, before a human runs it, is
+    // every clone in the fleet.
     //
     // Reasoned instead from what a REAL drive can and cannot do: `drive.ts`
     // calls `resolveStateDir()` at startup, so an unmigrated clone SHOULD
@@ -3938,8 +3916,8 @@ function resolveLegacyFallbackDir(legacyDir: string): string {
  * Refuses on a lease that is neither ours nor abandoned, and on a lease file it
  * cannot read at all. The cases that proceed are each deliberate:
  *
- *   - NO LEASE FILE. Not a refusal, by design (an earlier change's own statement of
- *     desired behaviour): `/resolve-review-comments` is usable standalone, and
+ *   - NO LEASE FILE. Not a refusal, by design: `/resolve-review-comments`
+ *     is usable standalone, and
  *     a pass that has not yet run a mutating `drive-state.ts` command
  *     legitimately holds no lease — the first reply of a round, answering a
  *     `rejected` finding, happens before anything is held.
@@ -4303,9 +4281,8 @@ export async function assertRemoteMutationAllowed(
     // successor's live lease: `leaseFilesForActor` is blind to every OTHER
     // tree's leases by construction, so a detached pass there finds only its
     // own (dead) driver's lease — not-alive, not-mine, refuses nothing — and
-    // posts alongside the session actually driving the PR right now
-    //. `leaseFilesFor` is the
-    // PR-wide mirror of `leaseFilesForActor` an earlier change already built for
+    // posts alongside the session actually driving the PR right now.
+    // `leaseFilesFor` is the PR-wide mirror of `leaseFilesForActor` built for
     // `assertNoForeignDrive`'s claim-time version of this same question — reused
     // here, not reimplemented, but still read through `readLeaseForFence`
     // rather than `liveLeasesFor`'s `readLease`: that reader collapses absent
@@ -4492,15 +4469,14 @@ export async function assertRemoteMutationAllowed(
  * session still perform an irreversible external mutation on this tree's
  * behalf?
  *
- * `assertRemoteMutationAllowed` guards only the PER-PR lease, and every
- * caller of it predates an earlier change. `guarded-push.ts` — the one script that
- * performs the single most irreversible external mutation in this whole
- * skill, `git push` — called into NEITHER fence at all until now: an
- * orphaned pass (its own session dead, the tree already taken over by a
- * replacement session working a different PR) could push straight through,
- * cross-shipping uncommitted work between two PRs in the same checkout —
- * exactly the hazard the tree lease exists to close, reached through the one
- * script that had never been wired to any lease fence.
+ * `assertRemoteMutationAllowed` guards only the PER-PR lease.
+ * `guarded-push.ts` — the one script that performs the single most
+ * irreversible external mutation in this whole skill, `git push` — needs
+ * this fence too: without it an orphaned pass (its own session dead, the
+ * tree already taken over by a replacement session working a different PR)
+ * could push straight through, cross-shipping uncommitted work between two
+ * PRs in the same checkout — exactly the hazard the tree lease exists to
+ * close.
  *
  * Takes the SAME resolved `ctx` `assertRemoteMutationAllowed` does — callers
  * should invoke both from one `resolveFenceContext` call, not resolve twice
@@ -4566,9 +4542,7 @@ export async function assertTreeMutationAllowed(
   // (the same time-of-check-to-time-of-use root cause, a different consumer of
   // the same fence context). The loop below closes the SAME gap
   // `assertRemoteMutationAllowed`'s own loop does — the choice can still move
-  // again while `lock.acquire()` itself waits, which is exactly the residual
-  // an earlier revision of this comment accepted rather than closed. Mirrored
-  // here now rather than left asymmetric with the sibling fence.
+  // again while `lock.acquire()` itself waits.
   let stateDir = ctx.fromOverride
     ? ctx.stateDir
     : resolveLegacyFallbackDir(ctx.legacyStateDirForFallback);
@@ -4639,8 +4613,7 @@ export async function assertTreeMutationAllowed(
         "",
         "Refusing to post. A live sessionless resolver elsewhere in this tree is",
         "actively working, so proceeding here doubles every irreversible action",
-        "from this point on — not repairable once it lands (",
-        "an earlier change).",
+        "from this point on — not repairable once it lands.",
         "",
         leaseLivenessHint(held),
         `If it is gone, or you are taking over deliberately:  drive-state.ts clear-lease <pr>`,
@@ -4731,15 +4704,16 @@ export async function clearLease(
  * so the record stops excluding anybody the instant that process dies, whether
  * the session ended cleanly or crashed. A `holder: 'worktree'` record has no pid
  * to test (the ladder's tier-3 entry in this module's header says why one must
- * not be invented), so `lastSeen` freshness is its ONLY liveness signal — and
- * nothing marked a CLEAN COMPLETION. A sessionless resolver that finished its
- * work perfectly left a record that went on refusing every other working tree
- * with exit 13 for up to `DRIVE_PR_LEASE_STALE_MIN` (default 360m).
+ * not be invented), so `lastSeen` freshness is its ONLY liveness signal, and
+ * it does not mark a CLEAN COMPLETION. Without a release, a sessionless
+ * resolver that finished its work perfectly leaves a record that goes on
+ * refusing every other working tree with exit 13 for up to
+ * `DRIVE_PR_LEASE_STALE_MIN` (default 360m).
  *
- * That cost was accepted knowingly when an earlier change shipped — two
- * sessionless resolvers both driving and both posting duplicate outcome replies
- * is strictly worse and unrepairable once posted — but it is a cost of having no
- * pid to test, not a cost of having no *completion signal*. `converge.ts` (in
+ * That staleness wait is accepted knowingly — two sessionless resolvers both
+ * driving and both posting duplicate outcome replies is strictly worse and
+ * unrepairable once posted — but it is a cost of having no pid to test, not a
+ * cost of having no *completion signal*. `converge.ts` (in
  * `/resolve-review-comments`) is exactly that signal: it is the loop that spawns
  * every sessionless pass and the one process that knows, definitively, when it
  * will spawn no further one. It reaches this through the standalone
@@ -4801,15 +4775,15 @@ export async function clearLease(
  * ── The residual, stated ───────────────────────────────────────────────────
  *
  * TWO SESSIONLESS RESOLVERS IN ONE TREE, ON THE SAME PR, are indistinguishable
- * to every identity this runtime exposes — the identity floor tier 3 has carried
- * since an earlier change — so one finishing releases a record the other is also relying
- * on. It is bounded on both sides and does not reopen the hole: that
- * record never excluded a caller in its OWN tree in the first place (every
- * invocation there resolves the same actor), and the sibling's very next
- * mutating `drive-state.ts` command re-claims it via `claimSessionlessTreeLease`
- * / `claimLease`. The exposure is therefore another TREE being admitted during
+ * to every identity this runtime exposes — the identity floor tier 3 carries —
+ * so one finishing releases a record the other is also relying on. It is
+ * bounded on both sides and does not reopen the hole: that record never
+ * excluded a caller in its OWN tree in the first place (every invocation there
+ * resolves the same actor), and the sibling's very next mutating
+ * `drive-state.ts` command re-claims it via `claimSessionlessTreeLease` /
+ * `claimLease`. The exposure is therefore another TREE being admitted during
  * the gap between this release and that next mutation — narrower than the
- * pre-existing case of two sessionless resolvers in one tree racing each other's
+ * standing case of two sessionless resolvers in one tree racing each other's
  * replies, which nothing here makes better or worse.
  *
  * Returns what it removed — both halves, independently, for the same reason

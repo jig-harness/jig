@@ -37,24 +37,27 @@ if (import.meta.main)
     );
     // Smoke-test the bundled origin-reference gate. With an explicit pattern
     // file that has no allow patterns, a clean fixture passes. With its
-    // default companion file, copied above, it reads the real patterns: on
-    // that fixture their allow patterns exempt nothing, so it must report
-    // exactly that (exit 1), never fail to find the file (exit 2).
-    const bundled = (args: string[]) =>
+    // default companion file, copied above, it reads the real patterns and
+    // fills their placeholders from a fixture's neutral configuration: there
+    // it reports findings, among them allow patterns that exempt nothing
+    // (exit 1), and never fails to find the file (exit 2).
+    const bundled = (fixture: string, args: string[] = []) =>
       Bun.spawnSync([
         process.execPath,
         "dist/scripts/check-no-tracker-refs.js",
-        "scripts/tests/fixtures/pass",
+        `scripts/tests/fixtures/${fixture}`,
         ...args,
       ]);
-    const clean = bundled(["scripts/tests/fixtures/tracker-key-patterns.txt"]);
+    const clean = bundled("pass", [
+      "scripts/tests/fixtures/tracker-key-patterns.txt",
+    ]);
     if (clean.exitCode !== 0) {
       console.error(
         `bundled check-no-tracker-refs failed a clean fixture (exit ${clean.exitCode})\n${clean.stderr.toString()}`,
       );
       return 1;
     }
-    const companion = bundled([]);
+    const companion = bundled("pass-tracker-placeholders");
     if (
       companion.exitCode !== 1 ||
       !companion.stderr.toString().includes("[origin-reference-allowlist]")

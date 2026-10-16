@@ -1,18 +1,16 @@
 /**
- * an earlier change's "a comment landing after a held reply is compatible with that
- * reply only when it is a reviewer bot's own automated confirmation" test,
- * extracted so `resolve-held-thread.ts` and `finish-round.ts`'s pre-push
- * untriaged-thread guard apply the IDENTICAL predicate. Before this
- * extraction each file carried its own copy of the
- * identity+shape check; `finish-round.ts`'s `checkUntriagedThreads` ran
- * BEFORE the push, judged strictly against the literal latest comment, and
- * so refused the round on the very confirmation `resolve-held-thread.ts`'s
- * own exception exists to tolerate — the exception was unreachable in the
- * documented finish-round path whenever CodeRabbit's confirmation landed
- * before the push rather than during the post-push AWAITING_REVIEWER wait.
- * A single predicate closes that gap
- * by construction — a future change to what counts as a trusted
- * confirmation cannot land in one caller and not the other.
+ * The "a comment landing after a held reply is compatible with that reply
+ * only when it is a reviewer bot's own automated confirmation" test, shared so
+ * `resolve-held-thread.ts` and `finish-round.ts`'s pre-push untriaged-thread
+ * guard apply the IDENTICAL predicate. `finish-round.ts`'s
+ * `checkUntriagedThreads` runs BEFORE the push; judging strictly against the
+ * literal latest comment there would refuse the round on the very
+ * confirmation `resolve-held-thread.ts`'s own exception exists to tolerate,
+ * making that exception unreachable in the documented finish-round path
+ * whenever CodeRabbit's confirmation lands before the push rather than during
+ * the post-push AWAITING_REVIEWER wait. A single predicate rules that out by
+ * construction — a change to what counts as a trusted confirmation cannot land
+ * in one caller and not the other.
  */
 
 /**

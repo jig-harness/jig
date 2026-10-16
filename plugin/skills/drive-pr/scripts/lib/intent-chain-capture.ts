@@ -62,10 +62,10 @@ export type CaptureResult =
   | { kind: "skipped"; reason: string };
 
 // A trailer line is the keyword followed by nothing but identifiers and their
-// separators — "Fixes the flake an earlier change introduced." is prose, not a claim.
+// separators — "Fixes the flake ENG-123 introduced." is prose, not a claim.
 const ID = "[A-Za-z][A-Za-z0-9]*-\\d+";
 // Horizontal whitespace only, and a real separator between identifiers: `\\s`
-// spans newlines and an optional separator lets `an earlier changean earlier change` or a line break
+// spans newlines and an optional separator lets `ENG-1ENG-2` or a line break
 // glue two identifiers into one "trailer".
 const SEP = "(?:[ \\t]*[,&][ \\t]*|[ \\t]+and[ \\t]+)";
 const TRAILER_RE = new RegExp(

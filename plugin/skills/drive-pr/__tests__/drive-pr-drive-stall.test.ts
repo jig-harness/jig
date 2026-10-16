@@ -282,8 +282,8 @@ describe("drive.ts loop control", () => {
       ["--max-rounds", "10", "--", ...PASS_NOOP],
     );
     expect(r.exitCode).toBe(14);
-    // Names what did NOT happen — the distinguishing evidence an earlier change found
-    // present in the log but never surfaced as an error.
+    // Names what did NOT happen — the distinguishing evidence a log holds
+    // but no error would surface.
     expect(r.stderr).toContain("changed NOTHING");
     expect(r.stderr).toContain("unresolved thread");
     expect(r.stderr).toContain("for a competing drive");

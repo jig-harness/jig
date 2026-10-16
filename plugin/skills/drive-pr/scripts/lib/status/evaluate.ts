@@ -33,11 +33,10 @@
  * minutes of 30s polls to `--timeout` on a PR whose work state was already
  * clean.
  *
- * It sits BEHIND head sync — the one place this departs from an earlier change's
- * sketched order — because mergeability is a property OF a head, and judging
- * it against a head the local tree has not caught up to is mode 3 wearing a
- * different hat. A driver that pushes the base merge and re-polls within
- * GitHub's ~40s replication window would otherwise read the PRE-push
+ * It sits BEHIND head sync because mergeability is a property OF a head, and
+ * judging it against a head the local tree has not caught up to is mode 3
+ * wearing a different hat. A driver that pushes the base merge and re-polls
+ * within GitHub's ~40s replication window would otherwise read the PRE-push
  * CONFLICTING verdict, pass head sync on a coincidence of timing, and report a
  * terminal state for a conflict it had just fixed. Deferring costs at most one
  * HEAD_LAG poll (a conflict does not resolve on its own, so nothing is lost by
@@ -960,20 +959,18 @@ async function evaluateFresh(
   //
   // CONFLICTING does NOT return here. It sets a flag and skips the REVIEWER
   // gate — which is the check a conflict starves, and returning
-  // AWAITING_REVIEWER from it is the 30-minute wait an earlier change exists to end —
-  // but still enumerates the work below, and only reports PR_CONFLICTING when
+  // AWAITING_REVIEWER from it is a 30-minute wait that ends in nothing — but
+  // still enumerates the work below, and only reports PR_CONFLICTING when
   // that enumeration is empty.
   //
-  // The first cut short-circuited here on the premise that "a conflicting
-  // head has no findings, because GitHub runs no pull_request CI on it".
-  // Review falsified the premise
-  // and the sources confirm it: the live reviewer is not a `pull_request`
-  // workflow at all: the publishing arm was a poller whose eligibility
-  // predicate is "base branch, same-repo head, head SHA not yet reviewed",
-  // plus drafts where the deployment reviews them (see the module header),
-  // and mergeability appears nowhere in it. A poller is not stopped
-  // by a conflict, so real findings CAN sit on a conflicting head, and
-  // short-circuiting discarded them unread.
+  // It does not short-circuit on the premise that "a conflicting head has no
+  // findings, because GitHub runs no pull_request CI on it": the live reviewer
+  // is not a `pull_request` workflow at all. Its publishing arm is a poller
+  // whose eligibility predicate is "base branch, same-repo head, head SHA not
+  // yet reviewed", plus drafts where the deployment reviews them (see the
+  // module header), and mergeability appears nowhere in it. A poller is not
+  // stopped by a conflict, so real findings CAN sit on a conflicting head, and
+  // short-circuiting would discard them unread.
   let conflicting = false;
   if (report.mergeable === "CONFLICTING") {
     conflicting = true;
@@ -1025,9 +1022,9 @@ async function evaluateFresh(
 
   // A conflicting head SKIPS every reviewer gate below. Each of them returns
   // AWAITING_REVIEWER (exit 4, "becomes something else with time"), and on a
-  // conflicting PR that is the state an earlier change measured polling to
-  // `--timeout`. The work enumeration further down still runs, so findings
-  // the poller DID post are picked up rather than discarded.
+  // conflicting PR that state polls until `--timeout`. The work enumeration
+  // further down still runs, so findings the poller DID post are picked up
+  // rather than discarded.
   if (!conflicting && reviewer === null) {
     // THIS is modes 2 and 4. Other checks being settled — including a
     // rate-limited CodeRabbit reporting `success` for a review it never ran —
@@ -1566,12 +1563,12 @@ async function evaluateFresh(
   const liveSummary = report.summaryUnaddressed - summaryParked;
 
   if (liveThreads <= 0 && liveSummary <= 0) {
-    // A conflict with NOTHING left to work is the unconvergeable state
-    // an earlier change exists to report: no round can be reviewed, and no amount of
-    // waiting changes that. Checked before HITL_PARKED because a merge is a
-    // concrete command and a parked item is a question — an operator handed
-    // both should be told the mechanical one, and the parked items are named
-    // in the reason so nothing is hidden by the precedence.
+    // A conflict with NOTHING left to work is unconvergeable: no round can be
+    // reviewed, and no amount of waiting changes that. Checked before
+    // HITL_PARKED because a merge is a concrete command and a parked item is a
+    // question — an operator handed both should be told the mechanical one, and
+    // the parked items are named in the reason so nothing is hidden by the
+    // precedence.
     if (conflicting) {
       const rc = await stillOnHead();
       if (rc !== 0) return rc;

@@ -1,7 +1,7 @@
 /**
- * structural-escalation.test.ts — an earlier change's `structuralEscalationDue`: the
- * durable per-round finding-path record, the recurrence predicate derived from
- * it, and the `drive-state.ts` commands that write and discharge it.
+ * structural-escalation.test.ts — `structuralEscalationDue`: the durable
+ * per-round finding-path record, the recurrence predicate derived from it,
+ * and the `drive-state.ts` commands that write and discharge it.
  *
  * Two layers, deliberately:
  *
@@ -374,11 +374,11 @@ describe("isUsableState — the new fields are required, not tolerated", () => {
     expect(isUsableState(freshState(999), 999)).toBe(true);
   });
 
-  // Pre-GA BWC is explicitly deferred (CLAUDE.md): a state file written before
-  // an earlier change is REFUSED, so recovering one is a deliberate `drive-state.ts
+  // Pre-GA BWC is explicitly deferred (CLAUDE.md): a state file without these
+  // fields is REFUSED, so recovering one is a deliberate `drive-state.ts
   // reset` rather than a silent migration to a zeroed baseline that reads as
   // "never acknowledged".
-  it("refuses a older state file (no roundPaths / lastEscalatedRound)", () => {
+  it("refuses an older state file (no roundPaths / lastEscalatedRound)", () => {
     const legacy = freshState(999) as Record<string, unknown>;
     delete legacy.roundPaths;
     delete legacy.lastEscalatedRound;
@@ -522,7 +522,7 @@ describe("isUsableState — the new fields are required, not tolerated", () => {
   // `lastEscalatedInvariant` follows the same REQUIRED-not-tolerated
   // stance as `lastEscalatedRound` above — a state file written before it
   // existed is refused rather than defaulted to `''`.
-  it("refuses a older state file (no lastEscalatedInvariant)", () => {
+  it("refuses an older state file (no lastEscalatedInvariant)", () => {
     const legacy = freshState(999) as Record<string, unknown>;
     delete legacy.lastEscalatedInvariant;
     expect(isUsableState(legacy, 999)).toBe(false);
@@ -700,10 +700,9 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // an earlier change: validated and persisted on the RAW
-  // value, never a trimmed copy — surrounding spaces survive verbatim
-  // rather than being silently stripped before the echo-back contract sees
-  // them.
+  // Validated and persisted on the RAW value, never a trimmed copy —
+  // surrounding spaces survive verbatim rather than being silently stripped
+  // before the echo-back contract sees them.
   it("set-escalated persists an --invariant with surrounding spaces verbatim, untrimmed", async () => {
     await withStateDir(async (dir) => {
       await state(dir, ["bump-round", "999", "--head", SHA_A]);
@@ -724,10 +723,9 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // an earlier change: a value that is ONLY newline-padded
-  // ("\nclaim\n") must be refused outright, the same as an interior newline
-  // — trimming first would have accepted it by stripping the very
-  // characters the newline check exists to catch.
+  // A value that is ONLY newline-padded ("\nclaim\n") must be refused
+  // outright, the same as an interior newline — trimming first would accept
+  // it by stripping the very characters the newline check exists to catch.
   it("set-escalated refuses an --invariant with only leading/trailing newlines, rather than trimming them away", async () => {
     await withStateDir(async (dir) => {
       await state(dir, ["bump-round", "999", "--head", SHA_A]);
@@ -749,11 +747,11 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // an earlier change: without this guard, acknowledging
-  // before any round exists sets `lastEscalatedRound` to the exact sentinel
-  // (0) `freshState` starts from — indistinguishable from "never escalated"
-  // — while still persisting `--invariant` text nobody can attribute to a
-  // real recurrence. Mirrors `record-paths`'s own pre-existing guard.
+  // Without this guard, acknowledging before any round exists sets
+  // `lastEscalatedRound` to the exact sentinel (0) `freshState` starts from —
+  // indistinguishable from "never escalated" — while still persisting
+  // `--invariant` text nobody can attribute to a real recurrence. Mirrors
+  // `record-paths`'s own guard.
   it("set-escalated refuses to acknowledge before any round has been counted", async () => {
     await withStateDir(async (dir) => {
       const r = await state(dir, [
@@ -770,11 +768,11 @@ describe("drive-state.ts — record-paths / escalation-due / set-escalated", () 
     });
   });
 
-  // an earlier change: a counted round is not, by itself,
-  // evidence of a real recurrence. Without this check, acknowledging a round
-  // that never armed persists `lastEscalatedInvariant` under a
-  // `lastEscalatedRound` that a LATER, genuine arming then echoes back as
-  // though it were THAT arming's own acknowledgment.
+  // A counted round is not, by itself, evidence of a real recurrence. Without
+  // this check, acknowledging a round that never armed persists
+  // `lastEscalatedInvariant` under a `lastEscalatedRound` that a LATER,
+  // genuine arming then echoes back as though it were THAT arming's own
+  // acknowledgment.
   it("set-escalated refuses to acknowledge a counted round with no armed escalation", async () => {
     await withStateDir(async (dir) => {
       await state(dir, ["bump-round", "999", "--head", SHA_A]);

@@ -1,18 +1,20 @@
 /**
- * lock.test.ts — the path-keyed TOCTOU an earlier change fixed in `lib/state/lock.ts`.
+ * lock.test.ts — the path-keyed TOCTOU (time-of-check to time-of-use) race
+ * `lib/state/lock.ts` closes.
  *
- * `store.ts`'s per-PR mutex used a destination keyed to the ACTING process's
- * own identity on both halves of its stale-lock protocol: `acquire`'s
- * stale-break renamed to `<lock>.stale.<pid>`, and `release` checked the owner
- * marker's existence and THEN renamed to `<lock>.released.<pid>`. Both are the
- * exact class already fixed in `drive.ts` — a pid-keyed (or check-then-act,
- * private-destination) scheme fences nothing, because the SOURCE every
+ * A per-PR mutex for `store.ts` must not key its destination to the ACTING
+ * process's own identity on either half of its stale-lock protocol: an
+ * `acquire` stale-break renaming to `<lock>.stale.<pid>`, or a `release`
+ * checking the owner marker's existence and THEN renaming to
+ * `<lock>.released.<pid>`. The same holds for `drive.ts`'s lock — a
+ * pid-keyed (or check-then-act, private-destination) scheme fences nothing,
+ * because the SOURCE every
  * contender renames is the same live directory: whichever rename runs second
  * (or whichever restore runs last) moves whatever is CURRENTLY there, not the
  * generation it originally observed.
  *
- * Each test below plants the exact directory state a race would have left
- * behind and asserts the fixed code refuses to clobber it, mirroring the
+ * Each test below plants the exact directory state a race would leave
+ * behind and asserts the code refuses to clobber it, mirroring the
  * `describe('single-instance lock')` tests for `drive.ts`.
  */
 
@@ -890,8 +892,8 @@ describe("sweepLockQuarantine", () => {
     // `compactQuarantineEntry` claims each entry via `renameSync(path,
     // staging)` before deleting anything — proves the private staging
     // directory itself never survives as orphaned debris, which would
-    // otherwise just relocate the exact unbounded-growth problem an earlier change
-    // exists to fix rather than solve it.
+    // otherwise just relocate the unbounded quarantine growth the sweep
+    // exists to bound rather than bound it.
     const lockDoomed = `${lock}.stale.owner.${"a".repeat(24)}`;
     mkdirSync(lockDoomed, { recursive: true });
     writeFileSync(join(lockDoomed, "tombstone"), "broken by pid 1\n");

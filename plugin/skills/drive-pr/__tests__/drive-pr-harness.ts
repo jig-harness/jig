@@ -530,11 +530,9 @@ export let tmpRoot: string;
 export let binDir: string;
 /**
  * A per-suite scratch `$HOME`, so a probe that resolves `resolveStateDir`'s
- * an earlier change default (no `$DRIVE_PR_STATE_DIR` override — deliberately, to test
- * the default itself) writes under `<suiteHome>/.local/state/jig/`, never the real
- * `~/.local/state/jig` on whatever machine runs this suite. Before an earlier change the
- * unoverridden default was `--git-common-dir`, entirely inside the scratch
- * repo `tmpRoot` already isolates and cleans up — `$HOME` was irrelevant.
+ * default (no `$DRIVE_PR_STATE_DIR` override — deliberately, to test the
+ * default itself) writes under `<suiteHome>/.local/state/jig/`, never the real
+ * `~/.local/state/jig` on whatever machine runs this suite.
  * `gitCleanEnv` sets this for every subprocess the suite spawns; a test
  * that wants the real value (none currently do) overrides it explicitly in
  * its own `env`, which still wins over `gitCleanEnv`'s spread.

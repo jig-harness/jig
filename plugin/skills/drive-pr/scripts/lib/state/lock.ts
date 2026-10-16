@@ -433,12 +433,12 @@ export function createLock(
     }
     if (actuallyStale) {
       // Permanent, like `lock`'s own tombstones — NOT "single-use and
-      // therefore safe to delete", which is what this used to assume: the
+      // therefore safe to delete": the
       // ORIGINAL holder can be merely SUSPENDED, not dead, and resume to
       // call `releaseRecoveringGate` with this SAME holder name later.
-      // Deleting this path reopened it for that late call to rename a
+      // Deleting this path would reopen it for that late call to rename a
       // THEN-live, unrelated gate onto — the post-rename identity check
-      // there usually (not always, an earlier change's residual) catches it, but
+      // there usually (not always: an accepted residual) catches it, but
       // the PRIMARY fence — a later rename onto a still-occupied
       // destination failing outright, before it can move anything — is
       // what actually closes it, exactly the way it already does for
@@ -723,11 +723,10 @@ export function createLock(
     // acquiring it below and releasing it in `finally`) that outlasts
     // `RECOVERING_STALE_MS` lets a contender's `recoveringIsLive()` read
     // our hold as abandoned, break it, and race ahead with its own
-    // quarantine dance before this process ever wakes — the original
-    // an earlier change gap, reopened one level up. Closing THAT would need
+    // quarantine dance before this process ever wakes — the same
+    // stale-takeover gap, one level up. Closing THAT would need
     // `.recovering`'s own removal to go through the same atomic-claim-plus-
-    // identity protocol canonical `lock` itself already does — out of
-    // scope here, per this issue's own "Out of scope" note. Until then,
+    // identity protocol canonical `lock` itself already does. As it stands,
     // this narrows the window from "any suspension past the LOCK's own
     // staleness window" (whatever `DRIVE_PR_LOCK_STALE_MIN` is, default 10
     // minutes) down to "a suspension past `RECOVERING_STALE_MS`" (5
@@ -740,9 +739,9 @@ export function createLock(
     // every other `releaseRecoveringGate` caller already does (see
     // `tombstone`'s own doc comment) — one per heartbeat tick for the life
     // of a held lock, not just once per acquire/release cycle. Bounding
-    // this family's growth in general is an earlier change's job, not this
-    // function's; it is not swept here for the identical reason no other
-    // caller sweeps its own.
+    // this family's growth in general is not this function's job; it is
+    // not swept here for the identical reason no other caller sweeps its
+    // own.
     if (!lockHeld || owner === "") return;
     const gateHolder = acquireRecoveringGate();
     if (gateHolder === null) {
@@ -1023,8 +1022,8 @@ export function createLock(
               if (generation === null) {
                 // Either already gone, or a malformed non-directory node
                 // sitting at this exact path — deliberately left ALONE, not
-                // cleaned up: an earlier attempt to `rmSync` it here introduced
-                // a WORSE failure mode than the one it fixed. The read
+                // cleaned up: an `rmSync` here would trade this failure mode
+                // for a WORSE one. The read
                 // (`generationOf`) and any act on `lock` (rename OR delete) are
                 // two separate syscalls, and nothing — including holding
                 // `.recovering`, since a fresh acquirer does not consult it
@@ -1034,13 +1033,12 @@ export function createLock(
                 // is worse than this branch's own failure mode (an unreachable
                 // entry that just makes every acquire attempt eventually time
                 // out, requiring manual cleanup but corrupting nothing).
-                // Tracked for the real fix in an earlier change — it needs the
-                // same atomic claim+identity redesign as everything else in
-                // that issue, not a narrower patch here.
+                // A real fix needs an atomic claim+identity redesign, not a
+                // narrower patch here.
                 //
-                // Still back off, though — leaving this branch a bare
-                // no-op meant every outer-loop iteration immediately
-                // re-acquired and re-released `.recovering`, minting a
+                // Still back off, though — as a bare no-op this branch
+                // makes every outer-loop iteration immediately
+                // re-acquire and re-release `.recovering`, minting a
                 // fresh permanent tombstone EVERY time with no delay at
                 // all: measured at 5,472 tombstones in one second before
                 // the default 30s timeout even elapsed.
@@ -1215,9 +1213,9 @@ export function createLock(
  * (a non-empty destination, rename fails outright, nothing moves) to the
  * SECONDARY one (a post-rename identity check plus a bare restore) this
  * same file's own comments already rate as incomplete elsewhere
- * (`createLock`'s doc comment; `recoveringIsLive`'s "usually — not always,
- * an earlier change's residual"). Accepted as a residual for the SAME reason those
- * are: the window here is two back-to-back synchronous syscalls with no
+ * (`createLock`'s doc comment; `recoveringIsLive`'s "usually (not always:
+ * an accepted residual)" catch). Accepted as a residual for the SAME reason
+ * those are: the window here is two back-to-back synchronous syscalls with no
  * `await` between them, the identical bounded-by-construction argument
  * `RECOVERING_STALE_MS` relies on elsewhere in this file, not an argument
  * that nothing can go wrong.

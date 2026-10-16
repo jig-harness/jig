@@ -15,6 +15,17 @@
 // reason, or one that exempts no reference the earlier allow patterns left
 // unexempted, is itself a finding, so the allowed places cannot outlive what
 // they allow.
+//
+// A pattern line, rejection or allow, may name a value of the scanned
+// repository's configuration, `<root>/.config/jig.yaml`, by placeholder:
+// `{{team}}` is `issue_tracker.team` and `{{owner}}` is the owner part of
+// `review.repo_slug` (`owner/name`). Each is replaced by its value with the
+// regular-expression characters escaped, so a pattern file can forbid an
+// organization's name and tracker keys without spelling them out. The
+// configuration is read only when a pattern line uses a placeholder. A
+// placeholder whose value cannot be read (no configuration, YAML that does
+// not parse, a field missing, empty or not text, a slug with no owner), or an
+// unknown `{{name}}`, makes the gate exit 2.
 import { readFileSync, realpathSync, lstatSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { cli, ere } from "../lib/cli.ts";
@@ -27,6 +38,7 @@ import {
   repoPath,
   reportFindings,
 } from "../lib/findings.ts";
+import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 
 const RULE = "no-origin-references";
 const ALLOW_RULE = "origin-reference-allowlist";
@@ -46,14 +58,116 @@ interface Reference {
 const compile = (line: string) =>
   line.startsWith("(?i)") ? ere(line.slice(4), "i") : ere(line);
 
-/** The rejection patterns and the allow patterns of a pattern file. */
-function readPatterns(path: string): { regexes: RegExp[]; allows: Allow[] } {
-  const entries = reasonedEntries(readFileSync(path, "utf8"));
-  const regexes = entries
-    .filter((e) => !e.text.startsWith("!"))
-    .map((e) => compile(e.text));
+/** A placeholder that cannot be filled: the gate cannot check (exit 2). */
+class Unresolved extends Error {}
+
+/** The configuration file a pattern file's placeholders are read from. */
+const CONFIG = ".config/jig.yaml";
+
+/** The value at `keys` in parsed YAML, or undefined where a key is missing. */
+function field(doc: unknown, keys: string[]): unknown {
+  let value = doc;
+  for (const key of keys) {
+    if (typeof value !== "object" || value === null || Array.isArray(value))
+      return undefined;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return value;
+}
+
+/**
+ * Each placeholder: the field it reads, how its value is taken from the
+ * field's text, and the form that text must have when it is not used whole.
+ */
+const PLACEHOLDERS: Record<
+  string,
+  { field: string; value: (text: string) => string | undefined; form?: string }
+> = {
+  team: { field: "issue_tracker.team", value: (text) => text },
+  owner: {
+    field: "review.repo_slug",
+    value: (text) => /^([^/\s]+)\/[^/\s]+$/.exec(text)?.[1],
+    form: "owner/name",
+  },
+};
+
+/**
+ * A function that fills the placeholders of one pattern line. The
+ * configuration under `root` is read on the first line that needs it.
+ */
+function placeholderFiller(root: string, patterns: string) {
+  const config = join(root, CONFIG);
+  let doc: unknown;
+  let loaded = false;
+  const load = (): unknown => {
+    if (loaded) return doc;
+    let raw: string;
+    try {
+      raw = readFileSync(config, "utf8");
+    } catch (error) {
+      throw new Unresolved(
+        `${patterns} uses placeholders, which are read from ${config}: cannot read it (${(error as NodeJS.ErrnoException).code ?? String(error)})`,
+      );
+    }
+    try {
+      doc = loadYaml(raw);
+    } catch (error) {
+      throw new Unresolved(
+        `${patterns} uses placeholders, which are read from ${config}: it does not parse as YAML (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`,
+      );
+    }
+    loaded = true;
+    return doc;
+  };
+  return (text: string, line: number): string =>
+    text.replace(/\{\{([^{}]*)\}\}/g, (_whole, name: string) => {
+      const place = `${patterns}:${line}`;
+      const placeholder = Object.hasOwn(PLACEHOLDERS, name)
+        ? PLACEHOLDERS[name]
+        : undefined;
+      if (!placeholder)
+        throw new Unresolved(
+          `${place}: unknown placeholder {{${name}}}; the known ones are ${Object.keys(
+            PLACEHOLDERS,
+          )
+            .map((known) => `{{${known}}}`)
+            .join(", ")}`,
+        );
+      const raw = field(load(), placeholder.field.split("."));
+      const text = typeof raw === "string" ? raw.trim() : "";
+      const value = text ? placeholder.value(text) : undefined;
+      if (!value)
+        throw new Unresolved(
+          `${place}: {{${name}}} needs ${placeholder.field} in ${config}${
+            text
+              ? ` in the form ${placeholder.form}, not ${JSON.stringify(raw)}`
+              : " as non-empty text"
+          }`,
+        );
+      return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    });
+}
+
+/**
+ * The rejection patterns and the allow patterns of a pattern file, with its
+ * placeholders filled from the configuration under `root`. Throws when a
+ * pattern does not compile or a placeholder cannot be filled.
+ */
+export function readPatterns(
+  path: string,
+  root: string,
+): { regexes: RegExp[]; allows: Allow[] } {
+  const fill = placeholderFiller(root, path);
+  // A line's kind is read before its placeholders are filled, so a filled
+  // value can never turn a rejection pattern into an allow pattern.
+  const entries = reasonedEntries(readFileSync(path, "utf8")).map((e) => ({
+    ...e,
+    allow: e.text.startsWith("!"),
+    text: fill(e.text, e.line),
+  }));
+  const regexes = entries.filter((e) => !e.allow).map((e) => compile(e.text));
   const allows = entries
-    .filter((e) => e.text.startsWith("!"))
+    .filter((e) => e.allow)
     .map((e) => {
       const regex = compile(e.text.slice(1));
       return { ...e, regex: new RegExp(regex.source, `${regex.flags}g`) };
@@ -133,7 +247,14 @@ export function checkTracker(
   patterns = join(import.meta.dir, "tracker-key-patterns.txt"),
 ): number {
   const patternPath = realpathSync(patterns);
-  const { regexes, allows } = readPatterns(patternPath);
+  let read: { regexes: RegExp[]; allows: Allow[] };
+  try {
+    read = readPatterns(patternPath, root);
+  } catch (error) {
+    if (error instanceof Unresolved) return couldNotCheck(RULE, error.message);
+    throw error;
+  }
+  const { regexes, allows } = read;
   if (!regexes.length) throw new Error(`no patterns in ${patterns}`);
   const used = new Set<number>();
   const globalRegexes = regexes.map(

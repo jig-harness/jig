@@ -1,6 +1,6 @@
 /**
- * store.test.ts — `resolveStateDir`'s an earlier change default: a path outside the
- * repository tree, keyed per clone, gated by the legacy-migration guard.
+ * store.test.ts — `resolveStateDir`'s default: a path outside the repository
+ * tree, keyed per clone, gated by the legacy-migration guard.
  *
  * Verified through a real subprocess and a real git repository, the same way
  * `actor.test.ts` verifies `worktreeRoot` — the function under test IS the

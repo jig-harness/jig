@@ -86,11 +86,10 @@ export function parseArgs(
 
   // argparse's own rule: a token starting with `-` is an option, EXCEPT a bare
   // `-`, which is a positional — determine_agent.ts's stdin sentinel. Testing
-  // for `--` alone left single-dash tokens as ordinary values, so
-  // `- --catalog -v` took `-v` as the catalog path, silently failed to load it
-  // and let a catalog-only label fall through to the default agent, where
-  // argparse rejects the unknown option (an earlier fix closed the same hole
-  // one token class narrower).
+  // for `--` alone would leave single-dash tokens as ordinary values, so
+  // `- --catalog -v` would take `-v` as the catalog path, silently fail to
+  // load it and let a catalog-only label fall through to the default agent,
+  // where argparse rejects the unknown option.
   const isOption = (t: string) => t.startsWith("-") && t !== "-";
 
   for (let i = 0; i < argv.length; i++) {

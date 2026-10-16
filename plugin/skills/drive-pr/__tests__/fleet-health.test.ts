@@ -220,26 +220,26 @@ describe("issue references and follow-up origins", () => {
   it("reads a trailer inside a table cell, which is where batched PRs put them", () => {
     expect(
       parseIssueRefs(
-        "| Closes ENG-7905 | `86e129d` | x |\n| Closes ENG-7914 | y |",
+        "| Closes ENG-313 | `86e129d` | x |\n| Closes ENG-315 | y |",
       ),
-    ).toEqual(["ENG-7905", "ENG-7914"]);
+    ).toEqual(["ENG-313", "ENG-315"]);
   });
 
   it("reads References and comma-joined lists, and ignores a bare mention", () => {
     expect(
       parseIssueRefs(
-        "References: ENG-7488 (fractal SDLC)\nCloses ENG-1, ENG-2 and ENG-3",
+        "References: ENG-304 (fractal SDLC)\nCloses ENG-1, ENG-2 and ENG-3",
       ),
-    ).toEqual(["ENG-7488", "ENG-1", "ENG-2", "ENG-3"]);
+    ).toEqual(["ENG-304", "ENG-1", "ENG-2", "ENG-3"]);
     expect(
-      parseIssueRefs("Scoped against: ENG-6726 (review-loop economy)"),
+      parseIssueRefs("Scoped against: ENG-303 (review-loop economy)"),
     ).toEqual([]);
   });
 
   it("reads whitespace-separated ids after one keyword, the repository trailer form", () => {
-    expect(parseIssueRefs("References: ENG-5291 ENG-4734")).toEqual([
-      "ENG-5291",
-      "ENG-4734",
+    expect(parseIssueRefs("References: ENG-302 ENG-301")).toEqual([
+      "ENG-302",
+      "ENG-301",
     ]);
     expect(parseIssueRefs("Closes ENG-1\nENG-2, ENG-3 & ENG-4")).toEqual([
       "ENG-1",
@@ -259,22 +259,22 @@ describe("issue references and follow-up origins", () => {
 
   it("takes the origin PR from a batch title, then from the description", () => {
     expect(
-      originPrOf({ title: "PR #4985 docs review follow-ups", description: "" }),
-    ).toBe(4985);
+      originPrOf({ title: "PR #818 docs review follow-ups", description: "" }),
+    ).toBe(818);
     expect(
       originPrOf({
         title: "runExecutesCommand: negation on an enclosing pipeline",
         description:
-          "Review deferral from PR example-org/example-repo#4666 round 21, originating issue ENG-7866.",
+          "Review deferral from PR example-org/example-repo#814 round 21, originating issue ENG-312.",
       }),
-    ).toBe(4666);
+    ).toBe(814);
     expect(
       originPrOf({
         title: "x",
         description:
-          "see https://github.com/example-org/example-repo/pull/4645 round 9",
+          "see https://github.com/example-org/example-repo/pull/813 round 9",
       }),
-    ).toBe(4645);
+    ).toBe(813);
     expect(
       originPrOf({ title: "x", description: "no pull request named" }),
     ).toBeNull();
@@ -482,8 +482,8 @@ describe("ceremony ratio", () => {
 });
 
 describe("follow-up depth — a recorded five-PR chain", () => {
-  // #4627 closes an ordinary issue; #4641 closes follow-ups raised on #4627;
-  // #4645 on #4641; #4666 on #4645; #4738 on #4666. Depth of #4738 is 4
+  // #811 closes an ordinary issue; #812 closes follow-ups raised on #811;
+  // #813 on #812; #814 on #813; #816 on #814. Depth of #816 is 4
   // (four links).
   const followup = (id: string, origin: number) =>
     issue(id, {
@@ -491,38 +491,34 @@ describe("follow-up depth — a recorded five-PR chain", () => {
       description: `Review deferral from PR example-org/example-repo#${origin} round 9.`,
     });
   const byPr = new Map<number, IssueFact[]>([
-    [4738, [followup("ENG-7905", 4666), followup("ENG-7914", 4666)]],
+    [816, [followup("ENG-313", 814), followup("ENG-315", 814)]],
     [
-      4666,
-      [
-        issue("ENG-7850"),
-        followup("ENG-7861", 4645),
-        followup("ENG-7866", 4645),
-      ],
+      814,
+      [issue("ENG-310"), followup("ENG-311", 813), followup("ENG-312", 813)],
     ],
-    [4645, [issue("ENG-7845"), followup("ENG-7846", 4641)]],
-    [4641, [issue("ENG-7840"), followup("ENG-7841", 4627)]],
-    [4627, [issue("ENG-7830")]],
+    [813, [issue("ENG-308"), followup("ENG-309", 812)]],
+    [812, [issue("ENG-306"), followup("ENG-307", 811)]],
+    [811, [issue("ENG-305")]],
   ]);
   const deps = depsOf(byPr);
 
-  it("walks #4738 ← #4666 ← #4645 ← #4641 ← #4627 to depth 4 and raises at the configured threshold", async () => {
-    const d = await followupDepth(4738, deps, 6);
+  it("walks #816 ← #814 ← #813 ← #812 ← #811 to depth 4 and raises at the configured threshold", async () => {
+    const d = await followupDepth(816, deps, 6);
     expect(d.depth).toBe(4);
-    expect(d.chain).toEqual([4738, 4666, 4645, 4641, 4627]);
+    expect(d.chain).toEqual([816, 814, 813, 812, 811]);
     expect(d.truncated).toBe(false);
     expect(CFG.signals.followupDepth.suspectAt).toBeLessThanOrEqual(d.depth);
   });
 
   it("gives a PR that closes no follow-up depth 0", async () => {
-    expect((await followupDepth(4627, deps, 6)).depth).toBe(0);
+    expect((await followupDepth(811, deps, 6)).depth).toBe(0);
   });
 
   it("follows the deepest lineage when follow-ups point at different origins", async () => {
     const m = new Map(byPr);
-    m.set(4738, [followup("ENG-1", 4645), followup("ENG-2", 4666)]);
-    const d = await followupDepth(4738, depsOf(m), 6);
-    expect(d.chain).toEqual([4738, 4666, 4645, 4641, 4627]);
+    m.set(816, [followup("ENG-1", 813), followup("ENG-2", 814)]);
+    const d = await followupDepth(816, depsOf(m), 6);
+    expect(d.chain).toEqual([816, 814, 813, 812, 811]);
   });
 
   it("stops at a cycle and at maxWalk, and says so", async () => {
@@ -531,7 +527,7 @@ describe("follow-up depth — a recorded five-PR chain", () => {
       [102, [followup("B", 101)]],
     ]);
     expect((await followupDepth(101, depsOf(loop), 6)).depth).toBe(1);
-    const short = await followupDepth(4738, deps, 1);
+    const short = await followupDepth(816, deps, 1);
     expect(short.truncated).toBe(true);
     expect(short.depth).toBe(1);
   });
@@ -827,7 +823,7 @@ describe("signal lifecycle", () => {
   });
 
   it("presents per epic: quiet where already diagnosed, presentable where not", () => {
-    const depthPr = pr(4738, { issueRefs: ["ENG-1"] });
+    const depthPr = pr(816, { issueRefs: ["ENG-1"] });
     const report = buildReport({
       ...units({
         prs: [depthPr],
@@ -846,10 +842,10 @@ describe("signal lifecycle", () => {
       nowMs: NOW,
       depthByPr: new Map([
         [
-          4738,
+          816,
           {
             depth: 2,
-            chain: [4738, 4666, 4645],
+            chain: [816, 814, 813],
             truncated: false,
             originless: false,
           },
@@ -879,7 +875,7 @@ describe("a multi-epic signal never reads quiet while one of its epics is live",
   it("takes the most active lifecycle across its epics, so the drive brief and active list keep it", () => {
     const report = buildReport({
       ...units({
-        prs: [pr(4738, { issueRefs: ["ENG-1", "ENG-2"] })],
+        prs: [pr(816, { issueRefs: ["ENG-1", "ENG-2"] })],
         issues: new Map([
           [
             "ENG-1",
@@ -894,10 +890,10 @@ describe("a multi-epic signal never reads quiet while one of its epics is live",
       nowMs: NOW,
       depthByPr: new Map([
         [
-          4738,
+          816,
           {
             depth: 2,
-            chain: [4738, 4666, 4645],
+            chain: [816, 814, 813],
             truncated: false,
             originless: false,
           },
@@ -1195,11 +1191,11 @@ describe("runFleetHealth", () => {
     );
   });
 
-  it("reads the #4738 chain end to end from listings and the tracker", async () => {
+  it("reads the #816 chain end to end from listings and the tracker", async () => {
     const body: Record<number, string> = {
-      4738: "| Closes ENG-7905 | x |",
-      4666: "Closes ENG-7861\nCloses ENG-7850",
-      4645: "References: ENG-7845",
+      816: "| Closes ENG-313 | x |",
+      814: "Closes ENG-311\nCloses ENG-310",
+      813: "References: ENG-308",
     };
     const fu = (id: string, origin: number) =>
       issue(id, {
@@ -1207,20 +1203,20 @@ describe("runFleetHealth", () => {
         description: `from PR example-org/example-repo#${origin}`,
       });
     const known = new Map<string, IssueFact>([
-      ["ENG-7905", fu("ENG-7905", 4666)],
-      ["ENG-7861", fu("ENG-7861", 4645)],
-      ["ENG-7850", issue("ENG-7850")],
-      ["ENG-7845", issue("ENG-7845")],
+      ["ENG-313", fu("ENG-313", 814)],
+      ["ENG-311", fu("ENG-311", 813)],
+      ["ENG-310", issue("ENG-310")],
+      ["ENG-308", issue("ENG-308")],
     ]);
     const r = await runFleetHealth(
       OPTS,
       deps({
         listCandidates: async () => ({
           prs: [
-            listing(4738, {
+            listing(816, {
               state: "CLOSED",
               mergedAt: null,
-              body: body[4738] as string,
+              body: body[816] as string,
             }),
           ],
           capped: false,
@@ -1239,7 +1235,7 @@ describe("runFleetHealth", () => {
     const depth = r.report.signals.find((s) => s.kind === "followup-depth");
     expect(depth?.severity).toBe("elevated");
     expect(depth?.value).toBe(2);
-    expect(depth?.evidence[0]).toMatch(/#4738 ← #4666 ← #4645/);
+    expect(depth?.evidence[0]).toMatch(/#816 ← #814 ← #813/);
   });
 });
 
@@ -1247,19 +1243,17 @@ describe("runFleetHealth", () => {
 
 describe("attribution to an epic named directly", () => {
   it("counts a trailer that names the epic itself toward that epic", () => {
-    const epic = issue("ENG-7488", { labels: ["epic"], ancestors: [] });
-    expect(epicOf(epic)).toBe("ENG-7488");
+    const epic = issue("ENG-304", { labels: ["epic"], ancestors: [] });
+    expect(epicOf(epic)).toBe("ENG-304");
     const plan = pr(5032, {
-      issueRefs: ["ENG-7488"],
+      issueRefs: ["ENG-304"],
       rounds: Array.from({ length: 12 }, () => IN),
     });
-    expect(epicsOfPr(plan, new Map([["ENG-7488", epic]]))).toEqual([
-      "ENG-7488",
-    ]);
+    expect(epicsOfPr(plan, new Map([["ENG-304", epic]]))).toEqual(["ENG-304"]);
     const u = computeEpicUnits(
-      units({ prs: [plan], issues: new Map([["ENG-7488", epic]]) }),
+      units({ prs: [plan], issues: new Map([["ENG-304", epic]]) }),
     );
-    expect(u.get("ENG-7488")?.ceremony.roundsBeyondFree[0]?.rounds).toBe(
+    expect(u.get("ENG-304")?.ceremony.roundsBeyondFree[0]?.rounds).toBe(
       12 - CFG.ceremony.freeRounds,
     );
   });
@@ -1663,27 +1657,27 @@ describe("the no-re-comment guarantee, end to end", () => {
       });
     const known = new Map<string, IssueFact>([
       [
-        "ENG-7905",
+        "ENG-313",
         {
-          ...fu("ENG-7905", 4666),
-          ancestors: [{ id: "ENG-7488", labels: ["epic"] }],
+          ...fu("ENG-313", 814),
+          ancestors: [{ id: "ENG-304", labels: ["epic"] }],
         },
       ],
-      ["ENG-7861", fu("ENG-7861", 4645)],
+      ["ENG-311", fu("ENG-311", 813)],
     ]);
     const body: Record<number, string> = {
-      4738: "Closes ENG-7905",
-      4666: "Closes ENG-7861",
-      4645: "References: ENG-1",
+      816: "Closes ENG-313",
+      814: "Closes ENG-311",
+      813: "References: ENG-1",
     };
     const mk = (comments: CommentFact[]) =>
       deps({
         listCandidates: async () => ({
           prs: [
-            listing(4738, {
+            listing(816, {
               state: "CLOSED",
               mergedAt: null,
-              body: body[4738] as string,
+              body: body[816] as string,
             }),
           ],
           capped: false,
@@ -1732,41 +1726,37 @@ describe("the no-re-comment guarantee, end to end", () => {
   });
 
   it("marks an epic unknown, and gaps the report, when its comments cannot be read", async () => {
-    const fu = issue("ENG-7905", {
+    const fu = issue("ENG-313", {
       labels: ["follow-up"],
-      description: "from PR example-org/example-repo#4666",
-      ancestors: [{ id: "ENG-7488", labels: ["epic"] }],
+      description: "from PR example-org/example-repo#814",
+      ancestors: [{ id: "ENG-304", labels: ["epic"] }],
     });
-    const other = issue("ENG-7861", {
+    const other = issue("ENG-311", {
       labels: ["follow-up"],
-      description: "from PR example-org/example-repo#4645",
+      description: "from PR example-org/example-repo#813",
     });
     const r = await runFleetHealth(
       OPTS,
       deps({
         listCandidates: async () => ({
           prs: [
-            listing(4738, {
+            listing(816, {
               state: "CLOSED",
               mergedAt: null,
-              body: "Closes ENG-7905",
+              body: "Closes ENG-313",
             }),
           ],
           capped: false,
         }),
         reviewedHeads: async () => 1,
         prBody: async (n) =>
-          n === 4666
-            ? "Closes ENG-7861"
-            : n === 4645
-              ? "References: ENG-1"
-              : null,
+          n === 814 ? "Closes ENG-311" : n === 813 ? "References: ENG-1" : null,
         tracker: STUB_TRACKER,
         trackerError: null,
         fetchIssues: async (ids) => {
           const m = new Map<string, IssueFact>();
-          if (ids.includes("ENG-7905")) m.set("ENG-7905", fu);
-          if (ids.includes("ENG-7861")) m.set("ENG-7861", other);
+          if (ids.includes("ENG-313")) m.set("ENG-313", fu);
+          if (ids.includes("ENG-311")) m.set("ENG-311", other);
           return m;
         },
         fetchEpicComments: async () => {
@@ -1774,9 +1764,9 @@ describe("the no-re-comment guarantee, end to end", () => {
         },
       }),
     );
-    expect(r.unknownEpics.has("ENG-7488")).toBe(true);
+    expect(r.unknownEpics.has("ENG-304")).toBe(true);
     expect(r.report.gaps.join("\n")).toMatch(
-      /comments on ENG-7488 could not be read/,
+      /comments on ENG-304 could not be read/,
     );
     expect(
       r.report.signals.find((s) => s.kind === "followup-depth")?.lifecycle
@@ -1785,20 +1775,20 @@ describe("the no-re-comment guarantee, end to end", () => {
   });
 
   it("reports a truncated follow-up walk as a gap instead of a quiet depth 0", async () => {
-    const fu = issue("ENG-7905", {
+    const fu = issue("ENG-313", {
       labels: ["follow-up"],
-      description: "from PR example-org/example-repo#4666",
-      ancestors: [{ id: "ENG-7488", labels: ["epic"] }],
+      description: "from PR example-org/example-repo#814",
+      ancestors: [{ id: "ENG-304", labels: ["epic"] }],
     });
     const r = await runFleetHealth(
       OPTS,
       deps({
         listCandidates: async () => ({
           prs: [
-            listing(4738, {
+            listing(816, {
               state: "CLOSED",
               mergedAt: null,
-              body: "Closes ENG-7905",
+              body: "Closes ENG-313",
             }),
           ],
           capped: false,
@@ -1809,7 +1799,7 @@ describe("the no-re-comment guarantee, end to end", () => {
         trackerError: null,
         fetchIssues: async (ids) =>
           new Map(
-            ids.flatMap((id) => (id === "ENG-7905" ? [[id, fu] as const] : [])),
+            ids.flatMap((id) => (id === "ENG-313" ? [[id, fu] as const] : [])),
           ),
       }),
     );
@@ -1819,15 +1809,15 @@ describe("the no-re-comment guarantee, end to end", () => {
   });
 
   it("requests an issue ID Linear cannot resolve once, however many walks meet it", async () => {
-    const fu1 = issue("ENG-7905", {
+    const fu1 = issue("ENG-313", {
       labels: ["follow-up"],
-      description: "from PR example-org/example-repo#4666",
-      ancestors: [{ id: "ENG-7488", labels: ["epic"] }],
+      description: "from PR example-org/example-repo#814",
+      ancestors: [{ id: "ENG-304", labels: ["epic"] }],
     });
-    const fu2 = issue("ENG-7906", {
+    const fu2 = issue("ENG-314", {
       labels: ["follow-up"],
-      description: "from PR example-org/example-repo#4667",
-      ancestors: [{ id: "ENG-7488", labels: ["epic"] }],
+      description: "from PR example-org/example-repo#815",
+      ancestors: [{ id: "ENG-304", labels: ["epic"] }],
     });
     const requested: string[] = [];
     await runFleetHealth(
@@ -1835,15 +1825,15 @@ describe("the no-re-comment guarantee, end to end", () => {
       deps({
         listCandidates: async () => ({
           prs: [
-            listing(4738, {
+            listing(816, {
               state: "CLOSED",
               mergedAt: null,
-              body: "Closes ENG-7905",
+              body: "Closes ENG-313",
             }),
-            listing(4739, {
+            listing(817, {
               state: "CLOSED",
               mergedAt: null,
-              body: "Closes ENG-7906",
+              body: "Closes ENG-314",
             }),
           ],
           capped: false,
@@ -1851,14 +1841,14 @@ describe("the no-re-comment guarantee, end to end", () => {
         reviewedHeads: async () => 1,
         // Two different origin PRs whose bodies name the same dead issue.
         prBody: async (n) =>
-          n === 4666 || n === 4667 ? "Closes ENG-9999" : null,
+          n === 814 || n === 815 ? "Closes ENG-9999" : null,
         tracker: STUB_TRACKER,
         trackerError: null,
         fetchIssues: async (ids) => {
           requested.push(...ids);
           const m = new Map<string, IssueFact>();
-          if (ids.includes("ENG-7905")) m.set("ENG-7905", fu1);
-          if (ids.includes("ENG-7906")) m.set("ENG-7906", fu2);
+          if (ids.includes("ENG-313")) m.set("ENG-313", fu1);
+          if (ids.includes("ENG-314")) m.set("ENG-314", fu2);
           return m;
         },
       }),
@@ -1937,41 +1927,37 @@ describe("review-round fixes: windows in the past, unparsed answers, epics as ce
   });
 
   it("marks an epic that carries an unparsed diagnosis unknown, with a caveat and no gap", async () => {
-    const fu = issue("ENG-7905", {
+    const fu = issue("ENG-313", {
       labels: ["follow-up"],
-      description: "from PR example-org/example-repo#4666",
-      ancestors: [{ id: "ENG-7488", labels: ["epic"] }],
+      description: "from PR example-org/example-repo#814",
+      ancestors: [{ id: "ENG-304", labels: ["epic"] }],
     });
-    const other = issue("ENG-7861", {
+    const other = issue("ENG-311", {
       labels: ["follow-up"],
-      description: "from PR example-org/example-repo#4645",
+      description: "from PR example-org/example-repo#813",
     });
     const r = await runFleetHealth(
       OPTS,
       deps({
         listCandidates: async () => ({
           prs: [
-            listing(4738, {
+            listing(816, {
               state: "CLOSED",
               mergedAt: null,
-              body: "Closes ENG-7905",
+              body: "Closes ENG-313",
             }),
           ],
           capped: false,
         }),
         reviewedHeads: async () => 1,
         prBody: async (n) =>
-          n === 4666
-            ? "Closes ENG-7861"
-            : n === 4645
-              ? "References: ENG-1"
-              : null,
+          n === 814 ? "Closes ENG-311" : n === 813 ? "References: ENG-1" : null,
         tracker: STUB_TRACKER,
         trackerError: null,
         fetchIssues: async (ids) => {
           const m = new Map<string, IssueFact>();
-          if (ids.includes("ENG-7905")) m.set("ENG-7905", fu);
-          if (ids.includes("ENG-7861")) m.set("ENG-7861", other);
+          if (ids.includes("ENG-313")) m.set("ENG-313", fu);
+          if (ids.includes("ENG-311")) m.set("ENG-311", other);
           return m;
         },
         fetchEpicComments: async () => ({
@@ -1988,7 +1974,7 @@ describe("review-round fixes: windows in the past, unparsed answers, epics as ce
     );
     expect(r.report.gaps.join("\n")).not.toMatch(/diagnosis/);
     expect(r.report.caveats.join("\n")).toMatch(
-      /begins "diagnosis" but does not parse.*ENG-7488/,
+      /begins "diagnosis" but does not parse.*ENG-304/,
     );
     expect(
       r.report.signals.find((s) => s.kind === "followup-depth")?.lifecycle
@@ -2041,12 +2027,12 @@ describe("review-round fixes: windows in the past, unparsed answers, epics as ce
   });
 
   it("does not charge an epic a ceremony unit for being a delivery-system epic itself", () => {
-    const epic = issue("ENG-8527", {
+    const epic = issue("ENG-316", {
       labels: ["epic", "delivery-system"],
       ancestors: [],
     });
     const u = computeEpicUnits(units({ sdlcIssues: [epic] }));
-    expect(u.get("ENG-8527")?.ceremony.sdlcIssuesOpened ?? []).toEqual([]);
+    expect(u.get("ENG-316")?.ceremony.sdlcIssuesOpened ?? []).toEqual([]);
   });
 
   it("flags a circular follow-up chain instead of quietly reporting a shorter one", async () => {
@@ -2133,9 +2119,9 @@ describe("run-level completeness", () => {
   });
 
   it("still walks a PR whose follow-up issue the initial batch did not resolve", async () => {
-    const fu = issue("ENG-7905", {
+    const fu = issue("ENG-313", {
       labels: ["follow-up"],
-      description: "from PR example-org/example-repo#4666 round 9",
+      description: "from PR example-org/example-repo#814 round 9",
     });
     const bodies: number[] = [];
     let calls = 0;
@@ -2145,7 +2131,7 @@ describe("run-level completeness", () => {
         tracker,
         trackerError: null,
         listCandidates: async () => ({
-          prs: [listing(4738, { body: "Closes ENG-7905" })],
+          prs: [listing(816, { body: "Closes ENG-313" })],
           capped: false,
         }),
         reviewedHeads: async () => 0,
@@ -2153,16 +2139,16 @@ describe("run-level completeness", () => {
         fetchIssues: async (ids) =>
           calls++ === 0
             ? new Map()
-            : new Map(ids.includes("ENG-7905") ? [["ENG-7905", fu]] : []),
+            : new Map(ids.includes("ENG-313") ? [["ENG-313", fu]] : []),
         prBody: async (n) => {
           bodies.push(n);
           return "";
         },
       }),
     );
-    expect(bodies).toContain(4666);
+    expect(bodies).toContain(814);
     // recovered by the walk, so the final report must not call it unresolved
-    expect(r.report.gaps.join("\n")).not.toMatch(/ENG-7905/);
+    expect(r.report.gaps.join("\n")).not.toMatch(/ENG-313/);
   });
 
   it("starts nothing after the collector deadline and reports why", async () => {

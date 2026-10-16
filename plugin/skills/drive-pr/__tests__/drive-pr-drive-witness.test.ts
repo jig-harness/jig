@@ -22,13 +22,12 @@ useDrivePrSuite();
 
 describe("drive.ts loop control", () => {
   it("gives up with exit 4 when a fresh required-check witness can never arrive", async () => {
-    // The residual half of an earlier change's shape, and the one no fall-through can
-    // decide: every required check's fresh run completed `skipped`. That is
-    // PASSING to the aggregate verdict (`PASSING_CONCLUSIONS` includes
-    // `skipped` — a skipped job is not a failure) and NO WITNESS to
-    // `completedRequiredCi`, which wants a success. Nothing red, nothing
-    // pending, and nothing that will ever become a witness — so the wait
-    // cannot resolve by waiting, however long.
+    // The unwitnessed shape no fall-through can decide: every required check's
+    // fresh run completed `skipped`. That is PASSING to the aggregate verdict
+    // (`PASSING_CONCLUSIONS` includes `skipped` — a skipped job is not a
+    // failure) and NO WITNESS to `completedRequiredCi`, which wants a success.
+    // Nothing red, nothing pending, and nothing that will ever become a witness
+    // — so the wait cannot resolve by waiting, however long.
     //
     // The bound is set to 1 poll so the test observes the give-up rather than
     // the 30-minute default.
@@ -107,14 +106,12 @@ describe("drive.ts loop control", () => {
   });
 
   it("bounds a required check stuck queued/in-progress forever, not just skipped", async () => {
-    // A THIRD shape reaching the same unwitnessed state as the two an earlier change
-    // tests above, and the one the early `pending:` short-circuit used to
-    // intercept before it ever reached the witness-wait accounting: a
+    // Another shape reaching the same unwitnessed state as the test above: a
     // required check that never leaves queued/in-progress. `ciVerdictOf()`
-    // reports this as `pending: tests` (never `failing:`), so the OLD code
-    // took the unconditional `await sleep(10); continue;` branch at the very
-    // top of this decision chain — regardless of `finalCi.code` — and looped
-    // there forever, never once touching `witnessWaits`. Fixed, a `pending:`
+    // reports this as `pending: tests` (never `failing:`), and an
+    // unconditional `await sleep(10); continue;` on every `pending:` verdict
+    // at the top of the decision chain — regardless of `finalCi.code` — would
+    // loop there forever, never once touching `witnessWaits`. A `pending:`
     // verdict under `finalCi.code === 4` (final-ready could not confirm
     // freshness — true here, since 'tests' has no completed run at all) falls
     // through to the SAME bounded wait a `skipped` required check hits.

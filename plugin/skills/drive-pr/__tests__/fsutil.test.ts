@@ -141,8 +141,8 @@ describe("atomicWrite", () => {
 
     // POSIX also specifies EINVAL for "fsync not possible on this fd", which
     // some filesystems return for a directory descriptor instead of
-    // ENOTSUP/EOPNOTSUPP — an earlier fix only allow-listed the latter two and
-    // reported a valid write as failed on exactly this code. Targets
+    // ENOTSUP/EOPNOTSUPP, so allow-listing only those two would report a
+    // valid write as failed on exactly this code. Targets
     // `fsyncSync` by fd, not `openSync` by path — see the ENOTSUP test's
     // comment for why.
     let dirFd = -1;

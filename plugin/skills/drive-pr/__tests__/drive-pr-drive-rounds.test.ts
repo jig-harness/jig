@@ -665,8 +665,8 @@ describe("drive.ts loop control", () => {
     // whether or not drive.ts exports anything. So the override is blanked and
     // the driver has to resolve the directory itself, from a repository of
     // this probe's own — asserting the pass received exactly that repo's
-    // an earlier change default (`~/.local/state/jig/drive-pr/<cloneKey>`, keyed off this
-    // repo's own `--git-common-dir`, never that directory itself newer)
+    // default (`~/.local/state/jig/drive-pr/<cloneKey>`, keyed off this
+    // repo's own `--git-common-dir`, never that directory itself)
     // pins BOTH halves ("something was exported" and "it is the right
     // directory"). Exporting an unrelated path would send the fence hunting
     // leases in the wrong place, which is worse than not exporting.
@@ -724,7 +724,7 @@ describe("drive.ts loop control", () => {
     // symlink and both `mkdtempSync` (this test's `suiteHome`) and the
     // driver's own resolution cross it — the two spellings name one
     // directory, and comparing them literally fails on the platform this
-    // suite runs on. Both sides are already absolute (an earlier change's default is
+    // suite runs on. Both sides are already absolute (the default is
     // never printed relative to a cwd the way `--git-common-dir` could be),
     // so no `resolve(repo.dir, …)` is needed before `realpathSync`.
     expect(realpathSync(exported)).toBe(realpathSync(expected));

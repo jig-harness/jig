@@ -199,7 +199,7 @@ case "$1 $2" in
     [ -f "$FIX/checks-exit" ] && exit "$(cat "$FIX/checks-exit")"
     exit 0 ;;
   "api -i")
-    # TASK: the conditional REST reads lib/gh-conditional.ts makes. Serves
+    # The conditional REST reads lib/gh-conditional.ts makes. Serves
     # the SAME fixtures the GraphQL-backed 'pr view' / 'pr checks' branches do,
     # reshaped as GitHub's REST documents, with the ETag behaviour of the real
     # API: a request whose If-None-Match equals the current ETag gets 304 and
@@ -242,7 +242,7 @@ case "$1 $2" in
     echo "acme widgets" ;;
   "api --paginate")
     # /drive-pr's summary-findings.ts, which await-round.ts spawns before
-    # reporting convergence (TASK), reads the PR's issue comments (absent
+    # reporting convergence, reads the PR's issue comments (absent
     # fixture: none, so no reviewer summary and nothing outstanding) and, once
     # a summary exists, its inline review comments (always none here).
     case "$*" in
@@ -270,7 +270,7 @@ case "$1 $2" in
         n=0
         while [ -e "$FIX/graphql-input-$((n + 1)).json" ]; do n=$((n + 1)); done
         # A mutation that is IN FLIGHT rather than instantaneous, so a probe can
-        # cancel one mid-post (TASK). The body is drained first so the
+        # cancel one mid-post. The body is drained first so the
         # caller's write never blocks, and the file — the thing "the mutation
         # landed" is read off — is written only on the far side of the delay.
         if [ -f "$FIX/graphql-slow" ]; then
@@ -286,7 +286,7 @@ case "$1 $2" in
         echo resolution >> "$FIX/thread-events.log"
         # resolve-thread.ts / unresolve-thread.ts pass the mutation through
         # -f query=... rather than --input -, so they need their own slow
-        # branch (TASK) — same shape as the one above, minus a body to
+        # branch — same shape as the one above, minus a body to
         # drain since the id travels as a separate -f argument. A DISTINCT
         # marker prefix (graphql-mutation-, not graphql-input-): the latter is
         # what postedBodies() (reply-to-thread.ts's describe block) JSON.parses
@@ -303,7 +303,7 @@ case "$1 $2" in
       *)
         # Deletes a path mid-run, during the thread listing — the window
         # after a copied install's scripts have loaded and before
-        # await-round.ts probes for its /drive-pr sibling (TASK).
+        # await-round.ts probes for its /drive-pr sibling.
         if [ -f "$FIX/rm-on-threads" ]; then rm -rf "$(cat "$FIX/rm-on-threads")"; fi
         echo enumeration >> "$FIX/thread-events.log"
         cat "$FIX/threads.json" ;;

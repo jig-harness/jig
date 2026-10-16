@@ -1,5 +1,5 @@
 /**
- * severity-mapping.test.ts — the ONE severity mapping (TASK-7492).
+ * severity-mapping.test.ts — the ONE severity mapping.
  *
  * Severity vocabularies coexist in this repo (reviewer
  * `low|medium|high|blocker`, /epic-acceptance-review's `Minor|Major|Blocker`,
@@ -41,7 +41,7 @@ async function shippedMapping(): Promise<SeverityMapping> {
   const mapping = loaded.config?.severityMapping ?? null;
   if (mapping === null) {
     throw new Error(
-      ".config/review-triage.yaml carries no `severity_mapping` block — the published mapping is the only thing binding the reviewer, acceptance and Linear-priority vocabularies together (TASK-7492)",
+      ".config/review-triage.yaml carries no `severity_mapping` block — the published mapping is the only thing binding the reviewer, acceptance and Linear-priority vocabularies together",
     );
   }
   return mapping;
@@ -139,12 +139,12 @@ describe("severity_mapping validation", () => {
     expect(run).toThrow(/linear_priority must be an integer 1-4/);
   });
 
-  it('refuses a RANKED severity mapped to priority 0 — "No priority" is not a rank (round 29)', async () => {
+  it('refuses a RANKED severity mapped to priority 0 — "No priority" is not a rank', async () => {
     // Token-aware validation, not a single shared 0-4 range: `0` ("No
-    // priority") is legal only for `unknown`. TASK-7491 exists precisely
-    // because an unprioritized ranked follow-up is the measured failure
-    // this mapping is supposed to prevent, so a ranked severity mapped to
-    // 0 must be refused, not silently accepted as in-range.
+    // priority") is legal only for `unknown`. An unprioritized ranked
+    // follow-up is the failure this mapping exists to prevent, so a ranked
+    // severity mapped to 0 must be refused, not silently accepted as
+    // in-range.
     const run = await mutated((doc) => {
       (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
         linear_priority: 0,
@@ -154,7 +154,7 @@ describe("severity_mapping validation", () => {
     expect(run).toThrow(/linear_priority must be an integer 1-4/);
   });
 
-  it("refuses `unknown` mapped to a nonzero priority — the absence of a severity is never an urgency (round 29)", async () => {
+  it("refuses `unknown` mapped to a nonzero priority — the absence of a severity is never an urgency", async () => {
     // The opposite direction of the probe above: `unknown` must be
     // EXACTLY 0, not merely "0 or more" — letting it take priority 1
     // would invent an urgency for a finding nothing ranked at all.
@@ -235,13 +235,13 @@ describe("severity_mapping validation", () => {
     expect(run).toThrow(/acceptance must be a string/);
   });
 
-  it("refuses a config that leaves an acceptance tier with no reviewer token behind it (round 25)", async () => {
+  it("refuses a config that leaves an acceptance tier with no reviewer token behind it", async () => {
     // Row coverage is checked severity-token -> row, one-directional. Two
     // severities can both map to the same acceptance tier (non-strict
     // monotonicity permits it) while leaving a STRONGER tier uncarried —
     // `acceptancePriority()` then returns null for it, and
     // /epic-acceptance-review Phase 5b files that gap with no priority at
-    // all, the exact failure TASK-7491 exists to prevent.
+    // all, the exact failure the mapping exists to prevent.
     const run = await mutated((doc) => {
       const mapping = doc.severity_mapping as Record<
         string,

@@ -1,14 +1,11 @@
 /**
- * self-inflicted.test.ts — an earlier change's `SELF-INFLICTED` labelling: the decision
+ * self-inflicted.test.ts — the `SELF-INFLICTED` labelling: the decision
  * (`labelRecord`) against an injected blame seam, and the git-backed resolver
  * (`gitDeps`) plus the CLI against a real throwaway repository.
  *
  * Both halves are here deliberately, and the second is the load-bearing one:
  * a suite that only injects a hand-written predicate never exercises the
- * git-backed resolver at all — the gap an earlier change named on
- * `defect-escape.ts`'s rename following ("the claimed rename-following
- * coverage only injects a hand-written predicate and never exercises the new
- * Git-backed resolver").
+ * git-backed resolver at all.
  *
  * What every `null` assertion here is pinning: `null` means NOT MEASURED, and
  * `false` is the positive claim "I checked, and this is not your own doing".

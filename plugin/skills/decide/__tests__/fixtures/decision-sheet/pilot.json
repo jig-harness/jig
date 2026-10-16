@@ -35,7 +35,7 @@
   "hiddenBranches": [
     {
       "title": "The parser fix has already landed",
-      "text": "ENG-210 says that our feed parser \"is being corrected\". That fix (ENG-198, PR #5156) merged on 2026-10-01, a few hours after this issue. Before the fix, some mismatches came from errors in our own parser. After the fix, a remaining mismatch is more likely to come from the supplier's data. Nobody counted the remaining mismatches.",
+      "text": "ENG-210 says that our feed parser \"is being corrected\". That fix (ENG-198, PR #999) merged on 2026-10-01, a few hours after this issue. Before the fix, some mismatches came from errors in our own parser. After the fix, a remaining mismatch is more likely to come from the supplier's data. Nobody counted the remaining mismatches.",
       "action": "Count the mismatches in the pilot supplier's feed before you decide."
     },
     {

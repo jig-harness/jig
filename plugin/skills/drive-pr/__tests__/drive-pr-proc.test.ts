@@ -520,7 +520,7 @@ describe("run distinguishes a failed spawn from a child that exits 127", () => {
   // the first probe and FAILS the second.
 
   it("reports spawnFailed when the binary does not exist", async () => {
-    const r = await run([join(tmpRoot, "no-such-binary-doc6893"), "arg"]);
+    const r = await run([join(tmpRoot, "no-such-binary"), "arg"]);
     expect({ code: r.code, spawnFailed: r.spawnFailed }).toEqual({
       code: 127,
       spawnFailed: true,

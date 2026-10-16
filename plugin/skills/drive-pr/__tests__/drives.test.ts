@@ -4,7 +4,7 @@
  * listing / `--here` banner / `--stop`.
  *
  * The format tests write claim files as LITERAL bytes rather than through
- * `formatClaim`, deliberately: the wire format is the contract a older
+ * `formatClaim`, deliberately: the wire format is the contract an older
  * driver's claims already sit on disk in, and a round-trip through the
  * serializer would keep passing if both sides drifted together.
  *
@@ -137,7 +137,7 @@ describe("lib/claim.ts — the claim wire format", () => {
     expect(record).toEqual({ pid: 123, host: "somehost", diag: DIAG });
   });
 
-  it("reads a older claim (pid/host only) with null diagnostics", () => {
+  it("reads an older claim (pid/host only) with null diagnostics", () => {
     expect(parseClaimText("123 somehost\n")).toEqual({
       pid: 123,
       host: "somehost",
@@ -182,7 +182,7 @@ describe("lib/claim.ts — the claim wire format", () => {
     }
   });
 
-  it("a older diag (account key entirely absent) degrades ONLY the account field, not the whole diag — an in-flight driver must stay --stop-able through the upgrade", () => {
+  it("an older diag (account key entirely absent) degrades ONLY the account field, not the whole diag — an in-flight driver must stay --stop-able through the upgrade", () => {
     // Every field this shape ever had is well-formed; `account`
     // is simply a key that did not exist yet. Unlike a MALFORMED account
     // value (the previous test), this is a legitimate transitional shape —
@@ -1013,7 +1013,7 @@ describe("drives.ts --stop", () => {
   it("refuses a live claim with no diagnostics line — nothing binds the pid to the claim", async () => {
     // Fail-closed-conjunction fixture: the child's argv passes DRIVER_CMD,
     // the host is local, the pid is alive and the claim is fresh — the
-    // ABSENT diagnostics line is the sole decider. A older claim
+    // ABSENT diagnostics line is the sole decider. An older claim
     // has no acquisition timestamp, so the pid cannot be bound to it and
     // must not be signaled.
     const stateDir = freshStateDir();
@@ -1163,7 +1163,7 @@ describe("drives.ts --stop", () => {
   });
 
   it("falls back to the legacy directory when resolveStateDir() refuses on the very lock --stop needs to reach", async () => {
-    // The deadlock this closes: a older driver's own single-instance
+    // The deadlock this closes: an older driver's own single-instance
     // lock, still sitting in the legacy `--git-common-dir`, is EXACTLY the
     // unmigrated footprint `ensureMigratedFromLegacy` refuses on — so
     // `resolveStateDir()` (which `--stop` called first, before this fix)
@@ -1359,17 +1359,15 @@ describe("drives.ts --json carries the doctor verdict", () => {
   });
 });
 
-// an earlier change M7. `process.pid` (the test runner's own) is safe
-// to use as the fabricated driver pid here — unlike the earlier hazard this
-// skill's own history records for that shortcut (a `ps` this file spawns
-// would otherwise show up as a live, non-excluded descendant of itself), the
-// M3(b) pruning fix means `findPassChild` never descends into an excluded
-// helper's children at all: `drives.ts` itself (the subprocess `runDrives`
-// spawns) is a DIRECT child of `process.pid` and matches `OWN_HELPER_SCRIPT`,
-// so it is excluded and PRUNED before its own `ps` grandchild is ever
-// reached. The walk therefore correctly reports `false` unless something
-// else already parented directly under this test process happens to be
-// alive at the same instant.
+// `process.pid` (the test runner's own) is safe to use as the fabricated driver
+// pid here. A `ps` this file spawns could otherwise show up as a live,
+// non-excluded descendant of itself, but `findPassChild` prunes excluded
+// helpers and never descends into their children at all: `drives.ts` itself
+// (the subprocess `runDrives` spawns) is a DIRECT child of `process.pid` and
+// matches `OWN_HELPER_SCRIPT`, so it is excluded and PRUNED before its own `ps`
+// grandchild is ever reached. The walk therefore correctly reports `false`
+// unless something else already parented directly under this test process
+// happens to be alive at the same instant.
 describe('an empty-string diag.worktree is treated as null, never as "this process\'s own cwd"', () => {
   it('a dead driver whose claim recorded worktree: "" reports the SAME "no worktree to inspect" answer as a missing worktree, not a real (and wrong) inspection', async () => {
     // `drive.ts` writes `worktree: ''` when `git rev-parse --show-toplevel`
@@ -1494,9 +1492,9 @@ describe("--doctor / --json WEDGED end-to-end", () => {
   });
 
   it("the PLAIN human listing (no --doctor) prints the stalled line on a WEDGED live row", async () => {
-    // an earlier change M7 — `printHuman`'s own `⚠ stalled:` line was
-    // untested; both this and the --json case above must read off the SAME
-    // `.doctor` field `attachDoctorVerdicts` populates unconditionally.
+    // `printHuman`'s own `⚠ stalled:` line: both this and the --json case
+    // above must read off the SAME `.doctor` field `attachDoctorVerdicts`
+    // populates unconditionally.
     const stateDir = freshStateDir();
     const claim = formatClaim(process.pid, hostname(), { ...DIAG, pr: "7011" });
     plantLock(stateDir, "pr-drive-7011.lock", { "claim.aaaa": claim });

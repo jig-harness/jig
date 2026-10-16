@@ -1,6 +1,6 @@
 /**
- * escape-baseline.test.ts — the defect-escape anchor an earlier change pairs with
- * every loop-economy speed report.
+ * escape-baseline.test.ts — the defect-escape anchor paired with every
+ * loop-economy speed report.
  *
  * Two things are worth pinning here. First, the PARSE rule: the doc appends a
  * new measurement window below the prior one rather than overwriting it, so

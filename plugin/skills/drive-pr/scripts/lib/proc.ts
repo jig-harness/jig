@@ -916,13 +916,12 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
           // correct for the INTERNAL deadline escalation just below, where
           // awaiting confirmation would reintroduce the unbounded wait that
           // escalation exists to bound, but wrong here: treating the leader's
-          // own exit as tree-wide evidence let a surviving descendant, or a
-          // `taskkill` that silently failed, still report `true` — the exact
-          // false-witness an earlier fix introduced while fixing the opposite
-          // problem (never releasing the locks at all). `stop()` has no such
-          // time-boundedness constraint — every caller already awaits it end to
-          // end — so it can and must await ITS OWN `taskkill` invocation and
-          // treat only that exit code as the completion signal.
+          // own exit as tree-wide evidence would let a surviving descendant, or
+          // a `taskkill` that silently failed, still report `true` — a false
+          // witness, the mirror of never releasing the locks at all. `stop()`
+          // has no such time-boundedness constraint — every caller already
+          // awaits it end to end — so it can and must await ITS OWN `taskkill`
+          // invocation and treat only that exit code as the completion signal.
           if (pgid === undefined) {
             await exited;
             return false;

@@ -458,11 +458,10 @@ async function main(): Promise<number> {
   // reclaimed, a later reclaimer's `--marker-sha` is the NEW head, the check
   // looks for a marker there, and misses the one sitting at the OLD head.
   //
-  // an earlier change changed what happens NEXT, and this comment is the honest version
-  // of it: that reclaimer used to go on and post a second, duplicate answer.
-  // It no longer gets that far — `claim-held --kind finding --pushed-sha` now
-  // refuses, because the held record's `verifiedSha` is still the OLD head. So
-  // the duplicate comment is gone and a STUCK held entry takes its place: no
+  // That reclaimer never gets as far as posting a second, duplicate answer:
+  // `claim-held --kind finding --pushed-sha` refuses, because the held
+  // record's `verifiedSha` is still the OLD head. So instead of a duplicate
+  // comment the cost is a STUCK held entry: no
   // `--pushed-sha` will ever match it again, and nothing re-enumerates it
   // either, since `summary-findings.ts`'s `unaddressed` list already excludes
   // an answered finding. That refusal names both recoveries (release the stale

@@ -7,17 +7,15 @@
  * live, never what taking or retiring one means.
  *
  * A claim is `claim.<nonce>` inside the lock directory. Line 1 is
- * `<pid> <hostname>` — the liveness identity, exactly what it always held, and
- * everything the protocol ever reads. Line 2, when present, is one JSON object
- * of OPERATOR DIAGNOSTICS: which PR the owner is driving, from which worktree,
- * since when, and where its durable log is. Diagnostics are advisory by
- * design: a claim with no second line (or an unparsable one) is a valid claim
- * whose owner has nothing to show — never a protocol error — so refusals and
- * listings degrade to pid/host, and nothing that decides liveness or recovery
- * reads line 2. Before an earlier change the record was pid/host only, which is why an
- * exit-11 refusal could name its holder but not what that holder was doing;
- * the do-item arming step documented that as an ambiguity a human had to
- * resolve by hand.
+ * `<pid> <hostname>` — the liveness identity, and everything the protocol ever
+ * reads. Line 2, when present, is one JSON object of OPERATOR DIAGNOSTICS:
+ * which PR the owner is driving, from which worktree, since when, and where its
+ * durable log is. Diagnostics are advisory by design: a claim with no second
+ * line (or an unparsable one) is a valid claim whose owner has nothing to show
+ * — never a protocol error — so refusals and listings degrade to pid/host, and
+ * nothing that decides liveness or recovery reads line 2. Line 2 exists so an
+ * exit-11 refusal can name not only its holder but what that holder is doing;
+ * with pid/host alone that is an ambiguity a human has to resolve by hand.
  */
 
 import { hostname } from "node:os";
@@ -69,7 +67,7 @@ export function formatClaim(
 }
 
 /**
- * A claim written before an earlier change has no `account` key at all — a
+ * A claim written before account stamping has no `account` key at all — a
  * legitimate TRANSITIONAL shape (an already-running driver upgraded out
  * from under, mid-drive), not corruption. Unlike a genuinely malformed
  * `account` value (`parseAccount` below, which still degrades the WHOLE
@@ -77,18 +75,17 @@ export function formatClaim(
  * already applies to every other field), an absent key degrades only THIS
  * one field: `pr`/`worktree`/`log`/`started` stay readable.
  *
- * That distinction is load-bearing, not cosmetic. Degrading the whole diag
- * for a merely-absent `account` (an earlier revision of this file did)
- * broke two live consumers of a pre-upgrade claim mid-drive: `drives.ts
- * --stop` refuses on `diag === null` ("claim predates an earlier change"), and
- * `ownParentDriver` (`drives.ts`) requires `diag !== null` to recognise a
- * pass as its own parent driver — a `null` diag there reproduces the
- * an earlier change stand-down bug (the pass reads its own driver as a
- * rival and burns the whole round budget refusing). Both only need
- * `pr`/`worktree`/`log`/`started`, none of which a missing `account` key
- * should have cost them.
+ * That distinction is load-bearing, not cosmetic. Degrading the whole diag for
+ * a merely-absent `account` would break two live consumers of a pre-upgrade
+ * claim mid-drive: `drives.ts --stop` refuses on `diag === null` ("claim
+ * predates diagnostics"), and `ownParentDriver` (`drives.ts`) requires
+ * `diag !== null` to recognise a pass as its own parent driver — a `null` diag
+ * there reproduces the stand-down bug (the pass reads its own driver as a rival
+ * and burns the whole round budget refusing). Both only need
+ * `pr`/`worktree`/`log`/`started`, none of which a missing `account` key should
+ * cost them.
  */
-const PRE_DOC_7878_ACCOUNT: AccountIdentity = {
+const PRE_STAMPING_ACCOUNT: AccountIdentity = {
   account: null,
   vendor: null,
   provenance: "claim predates account stamping",
@@ -100,7 +97,7 @@ const PRE_DOC_7878_ACCOUNT: AccountIdentity = {
  * own discipline: a malformed field fails the WHOLE diag rather than
  * degrading this one field silently — a torn write or a future,
  * incompatible format is a protocol error, not a legitimate absence. See
- * `PRE_DOC_7878_ACCOUNT` above for the (different) absent-key case.
+ * `PRE_STAMPING_ACCOUNT` above for the (different) absent-key case.
  *
  * Beyond each field's own primitive type, `./identity.ts`'s two constructors
  * (`resolved`/`unresolved`) guarantee a RELATIONAL contract this must also
@@ -162,7 +159,7 @@ function parseDiag(rest: string): ClaimDiag | null {
   if (typeof log !== "string") return null;
   if (typeof started !== "string") return null;
   const account =
-    "account" in o ? parseAccount(o.account) : PRE_DOC_7878_ACCOUNT;
+    "account" in o ? parseAccount(o.account) : PRE_STAMPING_ACCOUNT;
   if (account === null) return null;
   return { pr, worktree, log, started, account };
 }

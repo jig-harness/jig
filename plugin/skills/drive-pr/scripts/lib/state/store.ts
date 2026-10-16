@@ -38,10 +38,9 @@ import { type DriveState, freshState, isUsableState } from "./schema.ts";
  * restarts a bound that is supposed to be durable. This repository is driven
  * from Conductor worktrees as the normal case, so that is the common path, not
  * the exotic one. `--git-common-dir` is the clone-wide directory in both
- * layouts (it prints `.git` in an ordinary clone) — this is `cloneKey`'s input
- * and, before an earlier change, was the state
- * directory itself. It can print a RELATIVE path, so it is resolved against
- * the cwd before use.
+ * layouts (it prints `.git` in an ordinary clone) — this is `cloneKey`'s
+ * input, and the legacy state directory. It can print a RELATIVE path, so
+ * it is resolved against the cwd before use.
  *
  * The default: `~/.local/state/jig/drive-pr/<cloneKey>/`, never inside the
  * repository tree. `.git/` grows one PERMANENT quarantine entry per
@@ -286,8 +285,8 @@ export interface StateStore {
   runFence(): Promise<void>;
   /**
    * Register a lock the fence has ALREADY ACQUIRED, to be held through the
-   * mutation `fn` runs and released immediately after — an earlier change's
-   * sessionless tree-lease guard (`acquireSessionlessTreeGuardNow`).
+   * mutation `fn` runs and released immediately after — the sessionless
+   * tree-lease guard (`acquireSessionlessTreeGuardNow`).
    *
    * `runFence`'s own signature (` => void | Promise<void>`) has no way to
    * express "hold this open past my own return", and that gap is exactly the
@@ -558,8 +557,8 @@ export async function openStore(pr: string): Promise<StateStore> {
       try {
         return await fn();
       } finally {
-        // Whatever the fence registered via `setExtraLock` (an earlier change's
-        // sessionless tree guard) is held THROUGH `fn()` and released here,
+        // Whatever the fence registered via `setExtraLock` (the sessionless
+        // tree guard) is held THROUGH `fn()` and released here,
         // immediately after — never earlier, or the window it exists to
         // close reopens between the check and the mutation it guards.
         releaseExtraLock();

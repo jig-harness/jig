@@ -1250,10 +1250,9 @@ export function inheritedContextLabels(labels: string[]): string[] {
  * what it already has, plus what this run can add.
  *
  * Empty means the mandatory Context group stays empty, which BOTH paths refuse
- * on. The predicate is the prefix filter, deliberately: an earlier revision
- * asked whether there were any labels to apply at all, which `--labels
- * manual-ops` satisfies while supplying no context label whatsoever (a
- * regression from an earlier fix).
+ * on. The predicate is the prefix filter, deliberately: asking whether
+ * there are any labels to apply at all is satisfied by `--labels manual-ops`,
+ * which supplies no context label whatsoever.
  */
 export function contextAfterReconcile(
   present: string[],
@@ -1874,7 +1873,7 @@ export function parseArgs(argv: string[]): Args | string {
   }
   const originating = originatingRaw === "none" ? "" : originatingRaw;
   if (originating !== "" && !/^[A-Z]+-[0-9]+$/.test(originating)) {
-    return `--originating must look like TASK-1234 or be 'none', got '${originatingRaw}'`;
+    return `--originating must look like ENG-1234 or be 'none', got '${originatingRaw}'`;
   }
   if (
     originating === "" &&
@@ -3128,8 +3127,8 @@ export async function runDeferBatch(
     //
     // The predicate is the PREFIX filter, not "are there any labels to apply":
     // `--labels manual-ops` supplies a label without supplying a CONTEXT one,
-    // so counting the extras satisfied this guard while leaving the group
-    // empty (a regression from an earlier fix).
+    // so counting the extras would satisfy this guard while leaving the group
+    // empty.
     const context = contextAfterReconcile([], inherited, args.extraLabels);
     if (context.length === 0) {
       fail(

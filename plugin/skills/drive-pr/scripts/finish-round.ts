@@ -3,9 +3,9 @@
  * Finish one drive-pr round: take a validated commit that exists locally all
  * the way to "the held batch is drained, or every refusal is named".
  *
- * SKILL.md § 6 used to spell this out as separate commands in one exact order,
- * with a per-kind branch inside the last one. Every step of it is load-bearing
- * and none of it is discoverable from the scripts themselves:
+ * A round's finish is separate commands in one exact order, with a per-kind
+ * branch inside the last one. Every step of it is load-bearing and none of it
+ * is discoverable from the scripts themselves:
  *
  *   ci-hold.ts ensure                   own the CI hold label (when the repository
  *                                       has one) before an intermediate push
@@ -17,15 +17,15 @@
  *   per item, one at a time             thread → resolve-held-thread.ts
  *                                       finding → claim → answer → release
  *
- * an earlier change were each an agent getting that ordering
- * wrong by hand. Prose cannot be the mechanism for an ordering whose failures
- * are silent — so this script is, and § 6 names it instead.
+ * An agent following that ordering by hand can get it wrong, and prose cannot
+ * be the mechanism for an ordering whose failures are silent — so this script
+ * is, and SKILL.md § 6 names it instead.
  *
  * WHAT THIS DOES NOT DO is change any of the semantics it sequences. Every
  * check that decides whether a held item may be dispatched still lives in
  * `drive-state.ts claim-held`, `resolve-held-thread.ts` and
  * `answer-summary-finding.ts`, and is reached here through exactly the calls
- * SKILL.md documented — no predicate is re-implemented, re-derived or
+ * SKILL.md documents — no predicate is re-implemented, re-derived or
  * pre-filtered on this side, with ONE narrow exception: `answerFindingItem`
  * below refuses a held finding with a blank `reason` before ever calling
  * `claim-held`, to avoid a claim/unclaim pair over a record that was never
@@ -115,8 +115,8 @@
  *      present
  *   5  the PR is no longer open — nothing was pushed (guarded-push.ts's own 5,
  *      same code and meaning; drive-status.ts uses it identically). Also
- *      returned by the untriaged-thread check itself (an earlier change
- *      finding) when it finds offending threads but the PR has since closed
+ *      returned by the untriaged-thread check itself when it finds
+ *      offending threads but the PR has since closed
  *      or merged — a closed PR has nothing left to triage-and-retry against,
  *      so it is reported the same way guarded-push.ts would have reported it
  *      a few lines later
@@ -618,8 +618,8 @@ function hasStaleQualifyingReply(t: UntriagedThreadLine): boolean {
  * this guard does not fire for either.
  *
  * WHAT THIS DOES NOT DO: it cannot retroactively fix an already-pushed round
- * (see an earlier change's own incident log for what that recovery costs — a
- * retroactive `triage-thread.ts` run against a head that has already moved on);
+ * (recovering one costs a retroactive `triage-thread.ts` run against a head
+ * that has already moved on);
  * it only stops THIS round's push when it can PROVE, from data it can read,
  * that this round's own file changes left a live, untriaged, unparked thread
  * behind. And it fails CLOSED whenever it cannot read its own inputs — an
@@ -924,8 +924,8 @@ async function checkUntriagedThreads(
   // `resolve-thread.ts`. The one way a merit reply (or an unmarked moot)
   // legitimately stays unresolved forever is the LEAVE_OPEN marker —
   // `triage-thread.ts --leave-open` works identically across every non-hold
-  // outcome (its own header), so this check does too, rather than
-  // special-casing `moot` the way an earlier revision did.
+  // outcome (its own header), so this check does too rather than
+  // special-casing `moot`.
   function isThreadTriaged(t: UntriagedThreadLine): boolean {
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);

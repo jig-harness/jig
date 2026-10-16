@@ -1,6 +1,6 @@
 /**
- * reap-state.test.ts — an earlier change's sweep of drive-pr's artifacts in the
- * clone-wide git common dir.
+ * reap-state.test.ts — the sweep of drive-pr's artifacts in its per-clone
+ * state directory (by default `~/.local/state/jig/drive-pr/<cloneKey>/`).
  *
  * What these tests are FOR is worth stating explicitly, because the script's
  * failure modes are asymmetric.
@@ -804,9 +804,8 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
     // `sweepLockQuarantine`'s recovery CREATES one — a tombstoned DIRECTORY,
     // restoring a fence rather than compacting anything — and that path was
     // never in `family.names` (it did not exist when `classify()` ran).
-    // Checking only the vanished staging name (an earlier fix) reported success
-    // for a generation that is still, in fact, an uncompacted multi-inode
-    // directory.
+    // Checking only the vanished staging name would report success for a
+    // generation that is still, in fact, an uncompacted multi-inode directory.
     const d = freshStateDir();
     const staging = `.compacting.drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa.${"0".repeat(24)}`;
     plantQuarantine(d, staging); // orphaned staging leftover; canonical NOT pre-existing
@@ -1143,8 +1142,8 @@ describe("compaction — what happens to everything that is NOT retired", () => 
     expect(r.anchorsCompacted).toBe(1);
     // The FENCE is what must survive: same generation-keyed path, still
     // present, so a later rename onto it still fails — only now it is one
-    // inode instead of three. Deleting it instead is the TOCTOU an earlier change
-    // explicitly rules out.
+    // inode instead of three. Deleting it instead would let that later rename
+    // succeed onto the freed path — a TOCTOU race.
     for (const p of [q, qr]) {
       expect(existsSync(p)).toBe(true);
       expect(statSync(p).isDirectory()).toBe(false);
@@ -1154,9 +1153,9 @@ describe("compaction — what happens to everything that is NOT retired", () => 
   it("skips an anchor whose quarantine is ALREADY compacted", async () => {
     // Unconditional compaction is O(anchors × entries), because
     // `sweepLockQuarantine` re-enumerates the state dir per call — 9.8s for 40
-    // anchors over 20k entries, ~12 minutes at the 508/113k scale an earlier change
-    // measured. And it would not decay on its own: compaction shrinks inodes,
-    // not the entry count that drives the enumeration. So the steady state has
+    // anchors over 20k entries, ~12 minutes at a measured 508/113k scale. And
+    // it would not decay on its own: compaction shrinks inodes, not the entry
+    // count that drives the enumeration. So the steady state has
     // to be "no work found, nothing called".
     const d = freshStateDir();
     writeFileSync(join(d, "drive-pr-4172.json"), "{}");
@@ -1305,7 +1304,7 @@ describe("computeAlreadyRelocated", () => {
   it("is false when the override is NESTED beneath the legacy dir, not just equal to it", () => {
     // /repo/.git/drive-pr-state is neither equal to legacyDir nor to
     // computedDefault, but it is still physically inside `.git` — the exact
-    // IDE/backup/git-metadata blast radius an earlier change exists to escape.
+    // IDE/backup/git-metadata blast radius relocation exists to escape.
     expect(
       computeAlreadyRelocated(
         `${legacyDir}/drive-pr-state`,
@@ -1324,7 +1323,7 @@ describe("computeAlreadyRelocated", () => {
   });
 
   it("is false when the override is nested beneath the DEFAULT dir, not just the legacy one", () => {
-    // A subdirectory of the ordinary an earlier change default still sits under the
+    // A subdirectory of the ordinary default state dir still sits under the
     // tree an IDE or backup tool watching ~/.local/state/jig already pays the
     // recursive-enumeration cost for — not a genuine relocation either.
     expect(
@@ -1410,15 +1409,15 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
   });
 
   // An operator who already exported $DRIVE_PR_STATE_DIR (the
-  // documented relocation procedure) and still hits the threshold was told
-  // to "relocate further with $DRIVE_PR_STATE_DIR" — advice they had already
-  // followed. The remedy must change once relocation is already in effect.
+  // documented relocation procedure) and still hits the threshold must not be
+  // told to "relocate further with $DRIVE_PR_STATE_DIR" — advice they have
+  // already followed. The remedy changes once relocation is already in effect.
   it("does not recommend relocation the operator already performed", () => {
     const w = entryCountWarningFor(382_524, true) ?? "";
     expect(w).toContain("382524");
     expect(w).toContain("already");
     // Must NOT repeat the "relocate further with $DRIVE_PR_STATE_DIR"
-    // instruction — that is the impossible remedy an earlier change is about.
+    // instruction — for this operator that remedy is impossible.
     expect(w).not.toContain("Relocate further");
     // Still explains the actual constraint: the entry count, not the
     // location, is what every consumer pays for.

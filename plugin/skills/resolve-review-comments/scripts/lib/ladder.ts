@@ -1224,13 +1224,12 @@ export function defaultConfigPath(): string {
  *
  * Its bias is NOT self-limiting, and the direction is the opposite of the
  * reassuring one, so it is stated rather than assumed. A copied marker
- * inflates the escape rate's DENOMINATOR, making escapes look rarer — and
- * `review-loop-baseline.md` § What this licenses reads a low escape rate as
- * evidence *for* declining more ("evidence for the ladder's direction"), while
- * `review-triage.yaml` § `calibration` treats an escape as the signal that a
- * band is too strict. Pollution therefore biases toward TIGHTENING the
- * ladder — declining more work — which is exactly the direction that needs
- * evidence rather than an assumption.
+ * inflates the escape rate's DENOMINATOR, making escapes look rarer — and a
+ * low escape rate in a consumer's review-loop baseline reads as evidence
+ * *for* declining more, while `triage-rubric.md` § Calibrating the ladder
+ * treats an escape as the signal that a band is too strict. Pollution
+ * therefore biases toward TIGHTENING the ladder — declining more work — which
+ * is exactly the direction that needs evidence rather than an assumption.
  *
  * So what settles this is a measurement, not an argument about direction.
  *

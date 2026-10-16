@@ -546,22 +546,21 @@ async function main(): Promise<number> {
   // comment history, and `resolve-thread.ts`'s mutation is unconditional.
   // Re-fetch the thread's live comments — the same single-thread-by-node-id
   // GraphQL query `triage-thread.ts`'s own `fetchThread` uses, kept inline here
-  // rather than extracted into a shared module for this round's minimal-diff
-  // constraint — and refuse to resolve when the truncation flag is set (the
-  // visible tail is not confirmed to be the real latest, same posture as
-  // `finish-round.ts`'s `currentReplyOutcome`) or anything but a trusted
-  // reviewer bot's own confirmation has landed after the reply this hold
-  // promised.
+  // rather than extracted into a shared module — and refuse to resolve when the
+  // truncation flag is set (the visible tail is not confirmed to be the real
+  // latest, same posture as `finish-round.ts`'s `currentReplyOutcome`) or
+  // anything but a trusted reviewer bot's own confirmation has landed after the
+  // reply this hold promised.
   //
   // Deliberately BEFORE the head recheck below, not after: this query can
-  // itself consume up to the full helper timeout, and an earlier revision ran
-  // the head recheck FIRST — so a push landing during THIS call's own latency
-  // would sail past an already-stale "head confirmed current" result, widening
-  // exactly the TOCTOU window the head recheck exists to narrow. Running the
-  // slower, less time-sensitive check first and the head recheck LAST —
-  // immediately before the mutation — keeps the head recheck's own guarantee as
-  // tight as it can be: only the mutation call's own latency stands between it
-  // and the irreversible act.
+  // itself consume up to the full helper timeout, so running the head recheck
+  // FIRST would let a push landing during THIS call's own latency sail past an
+  // already-stale "head confirmed current" result, widening exactly the TOCTOU
+  // window the head recheck exists to narrow. Running the slower, less
+  // time-sensitive check first and the head recheck LAST — immediately before
+  // the mutation — keeps the head recheck's own guarantee as tight as it can
+  // be: only the mutation call's own latency stands between it and the
+  // irreversible act.
   // Best-effort cleanup, not a correctness gate: between `claim-held` removing
   // this key and the thread reading resolved, a CONCURRENT driver's own pass
   // can legitimately re-enumerate this still-open GitHub thread, see no held

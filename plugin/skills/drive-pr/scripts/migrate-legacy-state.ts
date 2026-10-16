@@ -34,9 +34,9 @@
  *   3. It is FINITE, not growing, the moment nothing writes to the legacy
  *      location anymore — which migrating the durable content and marking
  *      this clone migrated is what accomplishes. The debris left behind is a
- *      one-time remainder, not the unbounded-growth problem an earlier change exists
- *      to fix; a human can `rm -rf` it manually once confident, and this
- *      script names exactly what it left so they can.
+ *      one-time remainder, not unbounded growth; a human can `rm -rf` it
+ *      manually once confident, and this script names exactly what it left
+ *      so they can.
  *
  * ## Why the plain siblings are copied, never deleted
  *
@@ -114,7 +114,7 @@
  *     deliberately: this script runs AT MOST once per clone (gated by the
  *     `.migrated-from-legacy` marker), so the count it can ever add is
  *     bounded by this one run's own family count, nothing like the
- *     unbounded, months-of-driver-traffic growth an earlier change measured.
+ *     unbounded growth months of driver traffic leave behind.
  *   - A bare, no-`--apply` DRY RUN keeps the cheap `existsSync` snapshot
  *     instead of taking a real lock: it changes nothing on disk either way,
  *     so there is no copy-delete window for a lock to protect, and taking
@@ -331,7 +331,7 @@ const ANCHOR_LOCK_MAX_WAIT_SEC = 3;
  * plus a second check the top-of-run scan never made at all.
  *
  * The top-of-run scan and each anchor's own `createLock` together still
- * leave a gap: a older driver that starts AFTER the initial scan (so
+ * leave a gap: an older driver that starts AFTER the initial scan (so
  * `foreign` there was empty) is not stopped by it, and per-anchor locking
  * only protects THAT anchor's own copy-then-delete — not the run's whole
  * duration. A driver that has taken its single-instance lock but has not

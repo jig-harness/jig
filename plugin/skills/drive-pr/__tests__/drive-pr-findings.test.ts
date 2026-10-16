@@ -1797,13 +1797,12 @@ describe("resolve-held-thread.ts", () => {
    * earlier steps of the SAME pass (§ 1's `bump-round`, § 3's `hold`, § 6's
    * `set-verified`), not another driver's work.
    *
-   * So it runs in the working tree the probe then resolves from. It used to
-   * inherit the suite's own cwd — the real repository — while `resolveHeld`
-   * ran in a scratch repo, which made the seed and the action two different
-   * ACTORS. That was invisible until an earlier change gated admission PR-wide, and
-   * then the seed's live lease refused the action with exit 13. The gate is
-   * right and the fixture was wrong: one tree drives one PR, and a probe that
-   * straddles two was modelling a state production cannot reach.
+   * So it runs in the working tree the probe then resolves from. Inheriting
+   * the suite's own cwd — the real repository — while `resolveHeld` runs in a
+   * scratch repo would make the seed and the action two different ACTORS, and
+   * PR-wide admission would refuse the action with exit 13 under the seed's
+   * live lease. The gate is right: one tree drives one PR, and a probe that
+   * straddles two models a state production cannot reach.
    *
    * `gitCleanEnv`, and a handoff dir under the per-test state dir, for the two
    * reasons `resolveHeld` already documents: a git hook exports `GIT_DIR`, and
@@ -1823,7 +1822,7 @@ describe("resolve-held-thread.ts", () => {
      * admitted and works the batch), and a takeover means the predecessor is
      * precisely NOT still holding the PR.
      *
-     * Since an earlier change tier 3 leaves a `worktree`-held lease like any other
+     * Tier 3 leaves a `worktree`-held lease like any other
      * holder, so that "stops" has to be PERFORMED — `seedDone` below is where
      * — rather than being implied by the absence of an artefact. A pid-less
      * holder has no process whose exit could stand for it.
@@ -3106,7 +3105,7 @@ describe("finish-round.ts", () => {
     );
     // `refs/remotes/origin/develop`, pointing at `makeScratchRepo`'s FIRST
     // commit (HEAD~1) — every real worktree has this fetched, and the
-    // an earlier change untriaged-thread guard's `roundBase` falls back to
+    // untriaged-thread guard's `roundBase` falls back to
     // `git merge-base origin/develop HEAD` whenever no verified SHA is
     // recorded, which is the common case for these probes (none of them call
     // `set-verified` before reaching the guard unless a test explicitly
@@ -3786,7 +3785,7 @@ describe("finish-round.ts", () => {
   it("reports a per-item refusal and still drains the rest of the batch", async () => {
     const r = await finishRound({
       // `PRRT_stale` needs no live thread entry: `claim-held` refuses it on
-      // the round mismatch BEFORE resolve-held-thread.ts's own an earlier change
+      // the round mismatch BEFORE resolve-held-thread.ts's own
       // staleness recheck ever runs. `PRRT_current` DOES reach that recheck.
       fixture: {
         threads: [
@@ -3872,7 +3871,7 @@ describe("finish-round.ts", () => {
     const r = await finishRound({
       // Only PRRT_vanisher needs a live thread entry: PRRT_victim is released
       // (vanish-key-on-resolve below) before its own dispatch would reach
-      // resolve-held-thread.ts's an earlier change staleness recheck at all.
+      // resolve-held-thread.ts's staleness recheck at all.
       fixture: {
         threads: [
           { id: "PRRT_live", path: "a.ts", bot: true },
@@ -4342,14 +4341,12 @@ describe("finish-round.ts", () => {
       expect(String(r.report.reason)).toContain("reply-to-thread.ts");
     });
 
-    // This guard used to judge a hold's currency against the thread's LITERAL
-    // latest comment only, so a CodeRabbit confirmation landing BEFORE the push
-    // — the common case, since it reacts within seconds of the reply, well
-    // inside a round's own triage-to-push window — refused the round on the
-    // very comment resolve-held-thread.ts's an earlier change exception exists
-    // to tolerate. That post-push exception was therefore unreachable in the
-    // documented finish-round path whenever the race resolved before the push.
-    // `isThreadHoldCurrent` now shares the identical predicate
+    // A CodeRabbit confirmation usually lands BEFORE the push — it reacts
+    // within seconds of the reply, well inside a round's own triage-to-push
+    // window. Judging a hold's currency against the thread's LITERAL latest
+    // comment only would refuse the round on the very comment
+    // resolve-held-thread.ts's post-push bot-confirmation exception exists to
+    // tolerate, so `isThreadHoldCurrent` shares that identical predicate
     // (`./lib/bot-confirmation.ts`) pre-push.
     describe("bot confirmation race, pre-push", () => {
       const CONFIRMATION_MARKER =
@@ -4699,12 +4696,12 @@ describe("finish-round.ts", () => {
       expect(reason).toContain("no hold was recorded");
     });
 
-    // The offending check used to scan backward and accept the FIRST trusted
-    // qualifying reply it found, so an earlier round's accepted reply kept
-    // exempting the thread even after a fresh, unaddressed comment landed on it
-    // afterward — the short-circuiting `&&` in the offending filter meant
-    // `isThreadHoldCurrent` (which DOES check staleness) was never even reached
-    // for this thread.
+    // A qualifying reply exempts a thread only while it is still current: an
+    // earlier round's accepted reply must not keep exempting the thread once a
+    // fresh, unaddressed comment lands on it afterward, so the offending filter
+    // has to reach `isThreadHoldCurrent` (which DOES check staleness) rather
+    // than short-circuit on the FIRST trusted qualifying reply a backward scan
+    // finds.
     it("STILL refuses when a qualifying reply exists but is NOT the latest comment — fresh feedback landed after it", async () => {
       const r = await finishRound({
         fixture: {
@@ -4768,7 +4765,7 @@ describe("finish-round.ts", () => {
           // `writeFixture` always serves `hasNextPage: false` for a fixture
           // thread's comments — no `Fixture['threads']` field exposes
           // `commentsTruncated`, so the GraphQL page shape is fabricated
-          // directly, exactly as an earlier change's own spec sanctions for this case.
+          // directly.
           const threadsPath = join(fixtureDir, "threads.json");
           const parsed = JSON.parse(readFileSync(threadsPath, "utf8"));
           parsed.data.repository.pullRequest.reviewThreads.nodes[0].comments.pageInfo.hasNextPage = true;

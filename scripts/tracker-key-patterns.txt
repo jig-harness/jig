@@ -3,10 +3,18 @@
 # regular expression per line; `(?i)` makes a line case-insensitive. See
 # check-no-tracker-refs.ts.
 #
-# This file is the one place those patterns are spelled out, which is why the
-# gate does not scan it.
-\bDOC-[0-9]+\b
-(?i)docomply
+# Those values come from the scanned repository's `.config/jig.yaml`, so this
+# file spells out neither: `{{team}}` stands for `issue_tracker.team` and
+# `{{owner}}` for the owner part of `review.repo_slug`. Changing either field
+# changes what the gate forbids, so a test pins both by digest. The gate does
+# not scan the pattern file it reads, and a test checks that this one
+# contains nothing its own patterns reject.
+\b{{team}}-[0-9]+\b
+# The same key folded into a name: `<team>1234-main`, `PRE_<TEAM>_1234_ACCOUNT`,
+# `feature/<team>-42-fix`. A separator makes any number a key; without one,
+# three digits are needed, so a word such as `<team>12` stays allowed.
+(?i)(?<![a-z0-9]){{team}}([-_][0-9]+|[0-9]{3,})(?![0-9])
+(?i){{owner}}
 #
 # Allowed: the text an allow pattern (`!`) matches, tested against
 # `<relative path>:<line>`. Only the matched text is exempt, so a pattern
@@ -18,11 +26,11 @@
 # `.git`) with no further name character after it, so a sibling such as
 # `jig-other` or `jig..private` stays rejected while a sentence
 # may still end on the address.
-!(?<![-+.\w])https://github\.com/docomply/jig(\.git)?(?![-\w])(?!\.[-.\w])
+!(?<![-+.\w])https://github\.com/{{owner}}/jig(\.git)?(?![-\w])(?!\.[-.\w])
 # The publisher fields of the plugin and marketplace manifests.
-!^(plugin/\.(claude|codex)-plugin/plugin|\.claude-plugin/marketplace)\.json:\s*"(author|owner|developerName)":\s*(\{\s*"name":\s*)?"Docomply"
+!(?i)^(plugin/\.(claude|codex)-plugin/plugin|\.claude-plugin/marketplace)\.json:\s*"(author|owner|developerName)":\s*(\{\s*"name":\s*)?"{{owner}}"
 # The licensor named in the copyright lines of the licence files.
-!^((plugin/)?NOTICE|LICENSE-MIT-0):Copyright 2026 Docomply$
+!(?i)^((plugin/)?NOTICE|LICENSE-MIT-0):Copyright 2026 {{owner}}$
 # This repository's own values as a consumer of its skills: real account,
 # team and repository names, which is what configuration is for.
 !^\.config/jig\.yaml:.*

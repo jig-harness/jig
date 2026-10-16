@@ -79,19 +79,17 @@
  * The per-block deltas that carried it: `--handoff-at` 51.5s → 29.0s, and the
  * stall family 73s → 19s.
  *
- * NOT YET AT THE TARGET, and worth saying so rather than leaving the next
- * reader to re-derive it. an earlier change wanted this comfortably under half the
- * lefthook budget. What remains is not convertible on the same argument: the
+ * NOT YET AT THE TARGET of comfortably under half the lefthook budget, and
+ * worth saying so rather than leaving the next reader to re-derive it. What
+ * remains is not convertible on the same argument: the
  * bulk of `drive.ts loop control` asserts round-loop ORCHESTRATION — when the
  * draft→Ready transition fires relative to the pass, that it fires once, lock
  * recovery mid-pass — where the drive genuinely IS the thing under test, and
  * `announce-merge-ready.ts`'s block is check-then-act ORDERING for the same
- * reason. Converting those would hollow the suite, which is the one thing this
- * pass was not allowed to do. The largest remaining lever is production, not
- * test: an earlier change, where two scripts spawn a 72KB bun process per call to read
- * a constant that is already exported.
+ * reason. Converting those would hollow the suite, which is the one thing a
+ * conversion must not do.
  *
- * ── an earlier change's effect, measured (production, not test) ──────────────────────
+ * ── Importing a constant instead of spawning for it, measured ────────────
  *
  * `announce-merge-ready.ts` and `reconcile-replied-threads.ts` no longer spawn
  * `summary-findings.ts --trusted-associations`; both now `import
@@ -99,7 +97,7 @@
  *
  * A clean whole-file before/after pair was NOT obtainable this pass: this
  * machine was carrying far more concurrent Conductor worktrees than the
- * an earlier change measurement above did, and two whole-file attempts came back at
+ * measurement above did, and two whole-file attempts came back at
  * 2019.8s (21 fail, 14 errors) and 1480.0s (8 fail, 7 errors) — every failure
  * a bare 30000ms timeout on `drive.ts loop control`, nothing this pass
  * touched. That is noise from unrelated worktrees, not signal, so it is
@@ -121,8 +119,8 @@
  * percentage there because its test file is smaller than announce-merge-
  * ready.ts's, so the same removed spawns per test carry proportionally more
  * weight in its own total. Direction and rough magnitude agree with the
- * issue's own estimate (~90s of the suite's ~677s, from 2 spawns × ~77
- * `run` calls/round).
+ * estimate (~90s of the suite's ~677s, from 2 spawns × ~77 `run`
+ * calls/round).
  */
 
 import { describe, expect, it } from "bun:test";
@@ -535,8 +533,8 @@ describe("summary-findings parsing", () => {
   });
 
   it("falls back to unknown when the reviewer emits no category token — the backward-compatible, older shape", () => {
-    // an earlier change emits NO token at all for an uncategorized finding — never
-    // `category: unknown` — so a older comment and an uncategorized
+    // The reviewer emits NO token at all for an uncategorized finding — never
+    // `category: unknown` — so an older comment and an uncategorized
     // one are indistinguishable here, both reading `unknown`.
     expect(categoryOf("🟡 **medium** · confidence: high")).toBe("unknown");
     expect(categoryOf("no category here")).toBe("unknown");
@@ -643,7 +641,7 @@ describe("summary-findings parsing", () => {
   it("restricts the category match to the field right after severity, not any later field", () => {
     // A genuine severity field followed by an unrelated field, followed by a
     // quoted-looking category tag two fields later — nothing here is a real
-    // category, since an earlier change always renders the tag immediately after
+    // category, since the reviewer always renders the tag immediately after
     // severity. Scanning every later field for a match (rather than only the
     // one right after severity) let this fabricate `security`.
     expect(
@@ -1119,7 +1117,7 @@ describe("summary-findings parsing", () => {
   it.each([
     ["durable", "abc123", { fingerprint: "abc123", sha: "", round: null }],
     [
-      "fix-dependent, pre-ENG-6673 and roundless",
+      "fix-dependent and roundless",
       "abc123@deadbee",
       { fingerprint: "abc123", sha: "deadbee", round: null },
     ],
@@ -1339,7 +1337,7 @@ describe("summary-findings parsing", () => {
     // Left unchecked, a marker naming a round the reviewer hasn't reached yet
     // stays exempt until `currentRound` catches up past `round +
     // WINDDOWN_EXEMPTION_ROUNDS` — permanent in practice for a large enough
-    // round, restoring the unbounded-suppression failure an earlier change closed.
+    // round — unbounded suppression.
     const sources = [
       {
         body: "**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@aaaa111#999999 -->",
@@ -1467,12 +1465,11 @@ describe("summary-findings parsing", () => {
   });
 
   it("expires a fix marker at position PAST, backlog-sourced or not", () => {
-    // an earlier change, the case the permanent `winddown-deferred` exemption it
-    // replaces could not handle: a later round REVERTS or regresses the fix and
-    // reproduces the finding under the same fingerprint, so it must come back.
-    // The grace is exactly one head wide — any later push moves the reviewed
-    // SHA off the marked one — which is what makes it safe where a permanent
-    // exemption was not.
+    // The case a permanent exemption could not handle: a later round REVERTS
+    // or regresses the fix and reproduces the finding under the same
+    // fingerprint, so it must come back. The grace is exactly one head wide —
+    // any later push moves the reviewed SHA off the marked one — which is what
+    // makes it safe where a permanent exemption would not be.
     const found = collectAddressed(
       [
         {
@@ -1490,8 +1487,8 @@ describe("summary-findings parsing", () => {
   });
 
   it("honours a fix marker at position BEHIND, backlog-sourced or not", () => {
-    // Untouched by an earlier change: a review that predates the commit cannot have
-    // judged it, so where the finding came from does not matter yet.
+    // A review that predates the commit cannot have judged it, so where the
+    // finding came from does not matter yet.
     const found = collectAddressed(
       [
         {
@@ -1696,18 +1693,18 @@ describe("summary-findings parsing", () => {
   });
 
   it("refuses the winddown exemption for a marker SHA git cannot resolve", () => {
-    // The exemption ignores POSITION by design — that is the whole of an earlier change
-    // — but `reviewerPosition` used to fold "the marker names no commit this
-    // repository has" into `past` alongside it, so a hand-written marker rode
-    // the exemption for its entire round budget. `unknown` separates the two,
-    // and only the position half is ignored.
+    // The exemption ignores POSITION by design, but "the marker names no
+    // commit this repository has" is not a position: folded into `past`, a
+    // hand-written marker would ride the exemption for its entire round
+    // budget. `unknown` separates the two, and only the position half is
+    // ignored.
     //
     // The marker carries a `#round` INSIDE the budget, and that is what makes
     // the probe bind: `exemptFromExpiry` fails closed on a roundless marker all
     // by itself, so an undated one passes this test whether the `unknown` gate
-    // exists or not — it did, until the gate was mutated out and the probe
-    // stayed green. The markers below differ ONLY in position, so the gate is
-    // the sole thing separating their outcomes.
+    // exists or not, and mutating the gate out would leave it green. The
+    // markers below differ ONLY in position, so the gate is the sole thing
+    // separating their outcomes.
     const sources = (sha: string) => [
       {
         body: `**accepted** — fixed.\n<!-- drive-pr-addressed: wd1@${sha}#7 -->`,
@@ -1941,7 +1938,7 @@ describe("summary-findings parsing", () => {
       // fingerprint and the same SHA, but its sticky may have advanced a round
       // since — comparing the round would miss the existing marker and post a
       // duplicate, which is the whole bug this function exists to close,
-      // reached through the field an earlier change added.
+      // reached through the round field.
       const sources = [
         {
           body: "**accepted** — fixed.\n<!-- drive-pr-addressed: fp1@sha1#7 -->",

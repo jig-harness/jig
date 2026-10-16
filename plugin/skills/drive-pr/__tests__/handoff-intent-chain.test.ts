@@ -86,7 +86,7 @@ const writeChainFor = (identifier: string, arm: string, body: string) => {
   );
 };
 
-/** The common case: write an earlier change's content and point `.current` at it, the
+/** The common case: write ENG-1's content and point `.current` at it, the
  * way intent-chain.ts does in one pickup. */
 const writeChain = (arm: string, body: string) => {
   writeChainFor("ENG-1", arm, body);
@@ -203,7 +203,7 @@ describe("handoff intent-chain section", () => {
     expect(text).toContain("Item two scope.");
     expect(text).not.toContain("Item one scope.");
     // Moving the pointer to a DIFFERENT item never rewrites the other item's
-    // own content file — the exact exposure an earlier change fixes.
+    // own content file, so one item's chain is never exposed to another.
     expect(readFileSync(join(chainDir(), "ENG-1.md"), "utf8")).toContain(
       "Item one scope.",
     );
@@ -467,8 +467,8 @@ describe("handoff intent-chain section", () => {
     // The branch resolves cleanly to a real identifier, but that identifier's
     // content file is gone (pruned) or was never written. `.current` can then
     // only name a DIFFERENT item's chain, and putting that in front of this
-    // PR's triage is the substitution an earlier change exists to prevent — so the
-    // section reports a missing snapshot instead.
+    // PR's triage is a substitution that must not happen — so the section
+    // reports a missing snapshot instead.
     // A branch that names NO item is the `.current` case, covered below.
     const repo = mkdtempSync(join(tmpdir(), "handoff-branch-closed-"));
     try {
@@ -503,7 +503,7 @@ describe("handoff intent-chain section", () => {
       mkdirSync(join(repo, ".context", INTENT_CHAIN_SUBDIR), {
         recursive: true,
       });
-      // No an earlier change.md exists — only an earlier change.md, named by `.current`.
+      // No ENG-9.md exists — only ENG-1.md, named by `.current`.
       writeFileSync(
         join(repo, ".context", INTENT_CHAIN_SUBDIR, "ENG-1.md"),
         "<!-- refocus-arm: on -->\n# Intent chain\n\nAnother item's chain.\n",
@@ -601,9 +601,9 @@ describe("handoff intent-chain section", () => {
   // fails the handoff closed. The writer side of the grammar is pinned in
   // do-item's own test.
   it("resolves an <TEAM>-<n> item from a branch name, case-insensitively, delimiter required", () => {
-    expect(identifierFromBranchName("feature/ENG-8554-slug")).toBe("ENG-8554");
+    expect(identifierFromBranchName("feature/ENG-411-slug")).toBe("ENG-411");
     expect(identifierFromBranchName("feature/eng-12-slug")).toBe("ENG-12");
-    expect(identifierFromBranchName("feature/ENG-8554")).toBe("ENG-8554");
+    expect(identifierFromBranchName("feature/ENG-411")).toBe("ENG-411");
     expect(identifierFromBranchName("feature/ENG-9\n")).toBe("ENG-9");
   });
 

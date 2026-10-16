@@ -139,8 +139,9 @@ function thread(over: Partial<ThreadSample> = {}): ThreadSample {
     category: "unknown",
     // A READABLE severity by default, so a probe that cares about the
     // unknown-severity rate has to say so — a fixture defaulting to `unknown`
-    // would make every unrelated test contribute to the very metric an earlier change
-    // added, and a 100% share would then be the baseline rather than the alarm.
+    // would make every unrelated test contribute to the unknown-severity
+    // metric itself, and a 100% share would then be the baseline rather than
+    // the alarm.
     severity: "medium",
     reviewedHeadOid: null,
     ...over,
@@ -250,8 +251,8 @@ describe("qualifyingOutcome — the harvest side of reply-to-thread.ts", () => {
 
 describe("computeLoopMetrics — growth attribution", () => {
   it("splits at the first BOT-reviewed head, not at the first commit", () => {
-    // The case an earlier change exists for: three commits pushed, the reviewer arrives
-    // at the third, and only what follows is post-review. A
+    // The case growth attribution exists for: three commits pushed, the
+    // reviewer arrives at the third, and only what follows is post-review. A
     // first-commit-versus-final measure would report 900/1000 = 90%.
     const m = computeLoopMetrics(
       sample({
@@ -1069,7 +1070,7 @@ describe("loop-metrics.ts CLI output — paired with the defect-escape anchor", 
   });
 
   it("degrades to the unmeasured marker without ever throwing or going silent", () => {
-    // The best-effort contract an earlier change requires: a failing escape read must
+    // The best-effort contract: a failing escape read must
     // degrade to the marker, never to an absent line and never to an
     // exception that could make a converged drive exit nonzero.
     const block = renderReport(
@@ -1518,7 +1519,7 @@ describe("count — a malformed number is an error, not a zero", () => {
     // `0 < 2`, so a commit of unknown shape counted as AUTHORED churn — the
     // +52,015-line mistake `sizeOf` exists to avoid.
     for (const bad of [undefined, null, "abc", {}, Number.NaN, 1.5, -1, ""]) {
-      expect(() => count(bad, "commit.parents.totalCount", 4068)).toThrow();
+      expect(() => count(bad, "commit.parents.totalCount", 777)).toThrow();
     }
   });
 
@@ -1526,8 +1527,8 @@ describe("count — a malformed number is an error, not a zero", () => {
     // `Number(null)` and `Number('')` are both 0 — an integer, and non-negative.
     // A validator that coerced before type-checking would have passed exactly
     // the shapes a missing GraphQL field arrives as, which is the defect intact.
-    expect(() => count(null, "additions", 4068)).toThrow();
-    expect(() => count("", "additions", 4068)).toThrow();
+    expect(() => count(null, "additions", 777)).toThrow();
+    expect(() => count("", "additions", 777)).toThrow();
   });
 
   it("names the field and the PR so the error is actionable", () => {
@@ -1537,12 +1538,12 @@ describe("count — a malformed number is an error, not a zero", () => {
       said.push(a.join(" "));
     };
     try {
-      expect(() => count(undefined, "commit.additions", 4068)).toThrow();
+      expect(() => count(undefined, "commit.additions", 777)).toThrow();
     } finally {
       console.error = original;
     }
     expect(said.join("\n")).toContain("commit.additions");
-    expect(said.join("\n")).toContain("4068");
+    expect(said.join("\n")).toContain("777");
   });
 });
 
@@ -1615,10 +1616,10 @@ describe("threadFrom — withholding the outcome of an unreadable thread", () =>
     expect(t.category).toBe("unknown");
   });
 
-  // an earlier change, end to end from the raw comment body: a reviewer switching its
-  // severity glyph is a one-line change on their side, and the whole point is
-  // that it must surface as a measured `unknown` rate rather than as the
-  // silence of "no findings declined".
+  // The unknown-severity rate, end to end from the raw comment body: a
+  // reviewer switching its severity glyph is a one-line change on their side,
+  // and the whole point is that it must surface as a measured `unknown` rate
+  // rather than as the silence of "no findings declined".
   it("samples severity off the RAISING comment, and a switched glyph reads unknown", () => {
     const recognized = threadFrom(
       node,
@@ -1627,9 +1628,9 @@ describe("threadFrom — withholding the outcome of an unreadable thread", () =>
     );
     expect(recognized.severity).toBe("medium");
 
-    // 🔺 (U+1F53A) is NOT in the matcher, deliberately — an earlier change narrowed it
-    // to the coloured circles rather than admitting every emoji, and widening
-    // it back is the more dangerous failure (a severity-less title read as a
+    // 🔺 (U+1F53A) is NOT in the matcher, deliberately — it admits only the
+    // coloured circles rather than every emoji, and widening it is the more
+    // dangerous failure (a severity-less title read as a
     // real severity ARMS a ladder that should have stayed inert). What must
     // change is the SIGNAL, not the matcher.
     const switched = threadFrom(
@@ -1810,10 +1811,10 @@ describe("loop-metrics.ts CLI", () => {
   });
 
   it("refuses a second PR argument instead of silently taking the last", () => {
-    // `loop-metrics.ts 4052 4053` used to measure 4053 and say nothing — a
-    // mistyped invocation reporting a real, confident answer about the wrong
-    // pull request.
-    const p = Bun.spawnSync([process.execPath, SCRIPT, "4052", "4053"], {
+    // Taking the last silently would make `loop-metrics.ts 101 102` measure
+    // 102 and say nothing — a mistyped invocation reporting a real, confident
+    // answer about the wrong pull request.
+    const p = Bun.spawnSync([process.execPath, SCRIPT, "101", "102"], {
       stdout: "pipe",
       stderr: "pipe",
     });

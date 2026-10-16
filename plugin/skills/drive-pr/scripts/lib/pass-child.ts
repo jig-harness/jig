@@ -1,6 +1,6 @@
 /**
  * Is a driver's pass currently RUNNING, as opposed to merely holding a lock
- * that still refreshes? an earlier change §1d.
+ * that still refreshes?
  *
  * WHY THIS EXISTS. `--doctor`'s WEDGED verdict (`lib/doctor.ts`) needs a
  * second signal alongside stale `lastProgressAt`: a legitimate long round can
@@ -202,11 +202,10 @@ function isOwnHelperInvocation(args: string): boolean {
   // state.ts` must not pass merely because its remainder starts with `/`.
   //
   // Deliberately NOT "does a `.` followed by word characters appear before
-  // the match" — an earlier revision of this guard used that test and a
-  // later round found it fires on an ordinary checkout directory whose own
-  // name embeds a period (`/tmp/My.Worktree Repo/.claude/...`), rejecting
-  // a genuine own-helper invocation the same way the bug this guard fixes
-  // rejected the flag-bearing one. A `-`/`--` token is a POSIX argv
+  // the match": that test fires on an ordinary checkout directory whose own
+  // name embeds a period (`/tmp/My.Worktree Repo/.claude/...`), rejecting a
+  // genuine own-helper invocation, a misclassification as harmful as the
+  // flag-bearing one this guard catches. A `-`/`--` token is a POSIX argv
   // convention no ordinary absolute path segment produces at a word
   // boundary, so it does not share that false-positive class; an
   // adversarial directory literally named `-foo` right after a space is
@@ -219,12 +218,11 @@ function isOwnHelperInvocation(args: string): boolean {
   // RELATIVE positional path does too: `node
   // /repo/pass.ts repo/.claude/skills/drive-pr/scripts/drive-state.ts` has
   // `before` = `node` and `after` = `/repo/pass.ts repo` at the FIRST
-  // boundary — `after` starts with `/` and contains no flag, and the
-  // relative continuation (`repo/.claude/...`) satisfied the earlier fix's
-  // own `after.startsWith('/')` restart test only for an ABSOLUTE second
-  // argument, not this relative one.
+  // boundary — `after` starts with `/` and contains no flag, and an
+  // `after.startsWith('/')` restart test catches only an ABSOLUTE second
+  // argument, not this relative continuation (`repo/.claude/...`).
   //
-  // The general fact underlying all three shapes found so far (flagged,
+  // The general fact underlying all three shapes (flagged,
   // absolute-positional and relative-positional):
   // `before` (here, `/repo/pass.ts`) already ends in `.ts` — the exact
   // extension {@link OWN_HELPER_SCRIPT} itself requires — which means
@@ -237,11 +235,10 @@ function isOwnHelperInvocation(args: string): boolean {
   // `isFlagged`'s own `-foo`-directory residual).
   //
   // Deliberately NOT "does a `.` followed by word characters appear before
-  // the match" — an earlier revision of this guard used that test and a
-  // later round found it fires on an ordinary checkout directory whose own
-  // name embeds a period (`/tmp/My.Worktree Repo/.claude/...`), rejecting
-  // a genuine own-helper invocation the same way the bug this guard fixes
-  // rejected the flag-bearing one. Restricting the extension check to
+  // the match": that test fires on an ordinary checkout directory whose own
+  // name embeds a period (`/tmp/My.Worktree Repo/.claude/...`), rejecting a
+  // genuine own-helper invocation, a misclassification as harmful as the
+  // flag-bearing one this guard catches. Restricting the extension check to
   // exactly `.ts` (not any `\.\w+$`) avoids reintroducing that same
   // collision: `My.Worktree` does not end in `.ts`, so it is not mistaken
   // for a complete script path the way `pass.ts` is.

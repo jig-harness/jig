@@ -779,11 +779,10 @@ async function main(): Promise<number> {
     // locked section instead of trusted.
     if (admission.lease !== null && admission.treeLease !== null) {
       // `admission.lease`/`admission.treeLease` are narrowed together HERE —
-      // every admission that claims one now claims the other in the same
-      // call, identified or not (an earlier change closed the tier-3 exception that
-      // used to leave `treeLease` null here — `LeaseAdmission`'s own doc
-      // comment). The `{ lease: null, treeLease: null }` alternative, the
-      // narrower defer-to-a-live-session case, is the `else` branch below.
+      // every admission that claims one also claims the other in the same
+      // call, identified or not, ladder tier 3 included (`LeaseAdmission`'s
+      // own doc comment). The `{ lease: null, treeLease: null }` alternative,
+      // the narrower defer-to-a-live-session case, is the `else` branch below.
       const { lease: admitted, treeLease: admittedTree } = admission;
       // A plain re-check here still leaves the identical gap already closed for
       // the deferred branch below: a DIFFERENT pr's `claimTreeLease` takes only
@@ -859,13 +858,13 @@ async function main(): Promise<number> {
    * push provenance matches `--pushed-sha`, and print the token that
    * `release-held`/`unclaim-held` will demand back.
    *
-   * The provenance half is an earlier change, and a finding needed it MORE than a
-   * thread did, not less: `answer-summary-finding.ts` checks only that
-   * `--pushed-sha` is the PR's live head and this worktree's clean HEAD, which
-   * a concurrent driver's unrelated push satisfies perfectly — so before this,
-   * the finding path had no round check and no provenance check at all. It is
-   * enforced here rather than there because this is where the state, and the
-   * lock over it, already are.
+   * A finding needs the provenance half MORE than a thread does, not less:
+   * `answer-summary-finding.ts` checks only that `--pushed-sha` is the PR's
+   * live head and this worktree's clean HEAD, which a concurrent driver's
+   * unrelated push satisfies perfectly — without this, the finding path would
+   * have no round check and no provenance check at all. It is enforced here
+   * rather than there because this is where the state, and the lock over it,
+   * already are.
    */
   async function claimFinding(): Promise<number> {
     // Validated BEFORE the mutex is taken: a usage error must not leave a claim
@@ -1003,9 +1002,9 @@ async function main(): Promise<number> {
       // head moves, no `--pushed-sha` will ever match it again — and unlike a
       // thread, nothing re-enumerates it (`summary-findings.ts`'s `unaddressed`
       // list already excludes an answered finding), so no § 3 pass will re-hold
-      // it either. Before an earlier change the reclaimer simply claimed and posted a
-      // SECOND answer; the check that stops that duplicate is the same one that
-      // strands the entry, so this refusal owes the reader the way out.
+      // it either. Without this check the reclaimer would simply claim and post
+      // a SECOND answer; the check that stops that duplicate is the same one
+      // that strands the entry, so this refusal owes the reader the way out.
       if (item.verifiedSha !== a.pushedSha) {
         releaseOwn();
         fail(
@@ -1497,11 +1496,11 @@ async function main(): Promise<number> {
         );
       }
       const me = await resolveActor();
-      // A push landed — one of an earlier change's four named progress events, stamped
-      // unconditionally on this call rather than conditioned on the `.map()`
-      // below actually changing anything: SKILL.md orders this call strictly
-      // AFTER a real push (§ 3 → § 6), so the push already happened whether
-      // or not THIS actor currently holds anything to stamp a SHA onto.
+      // A push landed — one of the named progress events (`PROGRESS_PHASES`),
+      // stamped unconditionally on this call rather than conditioned on the
+      // `.map()` below actually changing anything: SKILL.md orders this call
+      // strictly AFTER a real push (§ 3 → § 6), so the push already happened
+      // whether or not THIS actor currently holds anything to stamp a SHA onto.
       await store.update((s) => ({
         ...withProgress(s, "push-landed", new Date()),
         held: s.held.map((h) => {
@@ -2353,8 +2352,8 @@ async function main(): Promise<number> {
         );
         return 0;
       }
-      // A `finding`'s claim file lives OUTSIDE `.held` (an earlier change's separate
-      // filesystem mutex), so re-holding the state record alone leaves a prior
+      // A `finding`'s claim file lives OUTSIDE `.held` (a separate filesystem
+      // mutex), so re-holding the state record alone leaves a prior
       // dispatch's claim file standing. `stamp-held` refuses to stamp a held
       // item while its claim file exists (see that case's own comment) — so an
       // un-cleared stale one would make the fresh record permanently
@@ -2366,7 +2365,7 @@ async function main(): Promise<number> {
       // genuinely mid-dispatch on this key right now, and clearing its claim
       // file out from under it would let that driver's eventual
       // `release-held --token T` fail and risk a second dispatch, exactly the
-      // race an earlier change exists to prevent. Refuse instead, so the operator
+      // race the claim file exists to prevent. Refuse instead, so the operator
       // waits for the claim to be released or to age out.
       //
       // The staleness check/break and the held-record replacement below both
@@ -2693,17 +2692,16 @@ async function main(): Promise<number> {
     // restores, an intervening `bump-round` (a concurrent driver's counting
     // gate) may already have moved `.rounds` forward. Stamping "now" would
     // silently launder that: the restored item would compare equal to a round
-    // it was never actually re-confirmed against, defeating the very check
-    // an earlier change exists to enforce. Restoring the ORIGINAL round instead means
-    // a later claim attempt sees the same mismatch a stale hold would —
-    // refuses, and routes back through SKILL.md § 3's reconciliation exactly
-    // as intended.
+    // it was never actually re-confirmed against, defeating `claim-held`'s
+    // round check. Restoring the ORIGINAL round instead means a later claim
+    // attempt sees the same mismatch a stale hold would — refuses, and routes
+    // back through SKILL.md § 3's reconciliation exactly as intended.
     //
-    // No swallowed failure anywhere in this command, unlike the caller's OLD
-    // restore path: a lock timeout or a write failure here propagates as a
-    // normal nonzero exit, so a caller that swallowed it would be caught
-    // reporting "restored" for an item that silently stayed lost. The caller
-    // MUST treat a nonzero exit here as fatal, not best-effort.
+    // No failure is swallowed anywhere in this command: a lock timeout or a
+    // write failure here propagates as a normal nonzero exit, so a caller that
+    // swallowed it would be caught reporting "restored" for an item that
+    // silently stayed lost. The caller MUST treat a nonzero exit here as
+    // fatal, not best-effort.
     case "restore-held": {
       if (a.key === "") fail(2, "restore-held requires --key");
       // The same newline ban `hold` and `park` carry. This is a WRITER into
@@ -2766,8 +2764,9 @@ async function main(): Promise<number> {
       // Taken as arguments rather than re-derived here: the actor especially.
       // Re-deriving would stamp the RESTORING tree, which is the same tree in
       // every path that exists today — and would silently launder ownership on
-      // the first path where it is not, handing one driver's hold to another
-      // exactly the way an earlier change's cross-resolve did.
+      // the first path where it is not, handing one driver's hold to another:
+      // a cross-resolve, one driver resolving a thread another driver
+      // promised to fix.
       if (a.actor === "") {
         fail(
           2,
@@ -2786,15 +2785,15 @@ async function main(): Promise<number> {
         );
       }
       // The exact shape `claim-held` prints, not merely "no newline". Both
-      // fields are rendered into the handoff's held table INSIDE backtick
-      // code spans (`handoff.ts`), so a hand-composed value carrying a
-      // backtick or `|` breaks the row's markdown just as surely as a
-      // newline would, and one naming a different worktree would silently
-      // hand that worktree's hold to whoever restores it — the exact
-      // cross-resolve an earlier change closed. Every caller of `restore-held` reads
-      // these back verbatim from `claim-held`'s own stdout (the comment on
-      // provenance above), so a value that fails this grammar is always a
-      // hand-composed call, never the documented path.
+      // fields are rendered into the handoff's held table INSIDE backtick code
+      // spans (`handoff.ts`), so a hand-composed value carrying a backtick or
+      // `|` breaks the row's markdown just as surely as a newline would, and
+      // one naming a different worktree would silently hand that worktree's
+      // hold to whoever restores it — the exact cross-resolve this check exists
+      // to prevent. Every caller of `restore-held` reads these back verbatim
+      // from `claim-held`'s own stdout (the comment on provenance above), so a
+      // value that fails this grammar is always a hand-composed call, never the
+      // documented path.
       if (!isActorId(a.actor)) {
         fail(
           2,
@@ -3077,11 +3076,11 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    // an earlier change §1b. The minimal verb whose whole job is the progress stamp —
-    // added so `drive.ts` can mark "a pass was spawned" without inventing a
-    // state mutation it does not otherwise need. See `withProgress`'s own
-    // header (`lib/state/schema.ts`) for why this goes through a NAMED verb
-    // rather than an inline `store.update()`.
+    // The minimal verb whose whole job is the progress stamp, so `drive.ts` can
+    // mark "a pass was spawned" without inventing a state mutation it does not
+    // otherwise need. See `withProgress`'s own header (`lib/state/schema.ts`)
+    // for why this goes through a NAMED verb rather than an inline
+    // `store.update()`.
     case "progress": {
       if (a.phaseArg === "") fail(2, "progress requires --phase NAME");
       // Validated against the CLOSED set every other named event is stamped
@@ -3117,18 +3116,17 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    // an earlier change §1c. Called by `drive.ts` on BOTH quota paths — see its own
-    // `recordQuotaPark`'s header for why: the EXITING path is the more
-    // urgent of the two (the process is about to return, and `release()`'s
-    // `rmdir` on its way out leaves no lock behind — nothing else would
-    // distinguish a deliberate park from a driver that simply died), and the
-    // SLEEPING path holds its locks live for up to six hours with no pass
-    // running and nothing to stamp, which would otherwise read as a textbook
-    // `WEDGED` (an earlier change M4/the sleeping-drive test in
-    // `doctor.test.ts`). Deliberately does NOT go through `withProgress` —
-    // parking is progress's opposite, and `quotaPark`'s own comment on
-    // `DriveState` explains why the next genuine progress event (not this
-    // call) is what clears it.
+    // Called by `drive.ts` on BOTH quota paths — see its own
+    // `recordQuotaPark`'s header for why: the EXITING path is the more urgent
+    // of the two (the process is about to return, and `release()`'s `rmdir` on
+    // its way out leaves no lock behind — nothing else would distinguish a
+    // deliberate park from a driver that simply died), and the SLEEPING path
+    // holds its locks live for up to six hours with no pass running and nothing
+    // to stamp, which would otherwise read as a textbook `WEDGED` (the
+    // sleeping-drive test in `doctor.test.ts`). Deliberately does NOT go
+    // through `withProgress` — parking is progress's opposite, and
+    // `quotaPark`'s own comment on `DriveState` explains why the next genuine
+    // progress event (not this call) is what clears it.
     case "quota-park": {
       if (a.vendor === "") fail(2, "quota-park requires --vendor V");
       if (/[\n\r]/.test(a.vendor)) {

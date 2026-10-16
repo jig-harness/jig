@@ -115,8 +115,7 @@ async function drivePrRounds(pr: string): Promise<[number, string]> {
   // it as digits — and a 400-digit answer parses to Infinity, which `Math.max`
   // propagates and the script prints literally, arming a `round >= 4` consumer
   // off corrupt state. Tightening one source and leaving its sibling on
-  // `isDigits` was an earlier fix applied to the instance instead of the
-  // class.
+  // `isDigits` would fix the instance instead of the class.
   const out = r.stdout.trim();
   if (!isRoundOrdinal(out)) {
     if (out === "0") return [0, ""];

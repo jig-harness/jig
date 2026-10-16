@@ -2,11 +2,12 @@
  * Turn one `PrSample` into the loop-economy numbers a drive reports, and render
  * them.
  *
- * Every recall-reducing dial in an earlier change is currently tuned blind: an 87.7%
- * accepted share reads as "the materiality bar is not biting", and the same
- * number is equally consistent with "the reviewers were precise and the fixes
- * were needed". Neither reading can be preferred without a per-PR baseline, and
- * a baseline nobody can produce without manual archaeology is not one.
+ * Without these numbers every recall-reducing dial in review triage is tuned
+ * blind: an 87.7% accepted share reads as "the materiality bar is not biting",
+ * and the same number is equally consistent with "the reviewers were precise
+ * and the fixes were needed". Neither reading can be preferred without a per-PR
+ * baseline, and a baseline nobody can produce without manual archaeology is not
+ * one.
  *
  * Pure over the sample, and separated from `loop-metrics.ts`'s CLI on purpose —
  * the attribution rule below is the one part of this worth pinning in a test,
@@ -39,24 +40,24 @@
  * signal that separates "a round asked for this" from "this happened later".
  *
  * So the quantity is named and rendered as POST-REVIEW churn, not as
- * review-induced work. The distinction is not pedantry: an earlier change exists to stop
- * an earlier change's dials being tuned blind, and a causal label on a correlational
- * measure would replace one blind tuning with a confidently-wrong one —
- * the same error the first-commit baseline was rejected for, moved to a later
- * cutoff. It is also the standard this
- * skill already holds `defect-escape.ts` to: the mechanical half is computed,
- * the causal verdict stays a human's.
+ * review-induced work. The distinction is not pedantry: these numbers exist to
+ * stop the triage dials being tuned blind, and a causal label on a
+ * correlational measure would replace one blind tuning with a confidently-wrong
+ * one — the same error the first-commit baseline was rejected for, moved to a
+ * later cutoff. It is also the standard this skill already holds
+ * `defect-escape.ts` to: the mechanical half is computed, the causal verdict
+ * stays a human's.
  *
  * Attributing to actual round transitions — matching commits to the findings
- * they answered — is the measurement that WOULD support the causal reading.
- * an earlier change built the OTHER two mechanisms this sample was missing (merge
+ * they answered — is the measurement that WOULD support the causal reading. The
+ * sample does have the two other mechanisms a sound measure needs (merge
  * ancestry, so a sibling-branch merge's imports are not counted as this
  * branch's churn; rename-following, so `defect-escape.ts` does not lose a
- * recurrence to a renamed file) and deliberately did NOT build this one:
- * round/finding provenance needs commits matched to the findings they
- * answered, which is a different, considerably larger measurement — nothing
- * here derives it retroactively, unlike the other two. The non-licence above
- * stays the honest answer until it exists, and no `an earlier change` dial may treat
+ * recurrence to a renamed file), but deliberately not this one: round/finding
+ * provenance needs commits matched to the findings they answered, which is a
+ * different, considerably larger measurement — nothing here derives it
+ * retroactively, unlike the other two. The non-licence above stays the honest
+ * answer until it exists, and no triage dial may treat
  * `postReviewShare` as a cost-of-review figure in the meantime.
  */
 
@@ -135,8 +136,8 @@ export interface LoopMetrics {
   outcomes: Record<Outcome, number>;
   /**
    * The same outcome mix, cut by the raising comment's `🏷️ category:` tag
-   * (`ThreadSample.category`) — `unknown` for every thread predating an earlier change
-   * emission or carrying no readable tag. Keyed dynamically rather
+   * (`ThreadSample.category`) — `unknown` for every thread predating the tag
+   * or carrying no readable tag. Keyed dynamically rather
    * than over a fixed enum: the category vocabulary lives in
    * `.config/review-triage.yaml` and may gain entries, so a hardcoded key set
    * here would silently omit a newly-added category's bucket instead of
@@ -668,8 +669,8 @@ export function renderLoopMetrics(m: LoopMetrics): string {
 
   // `unknown` last, everything else alphabetical — the read-order the sticky
   // comment itself is heading toward: named categories are the signal, and
-  // `unknown` (every finding predating an earlier change, or one whose reviewer never
-  // tagged it) is the residual bucket, not the lead line.
+  // `unknown` (every finding predating the category tag, or one whose reviewer
+  // never tagged it) is the residual bucket, not the lead line.
   const categories = Object.entries(m.outcomesByCategory).sort(([a], [b]) => {
     if (a === "unknown") return 1;
     if (b === "unknown") return -1;

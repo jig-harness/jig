@@ -44,18 +44,15 @@ let PLAN: string; // built in beforeAll, after repoBase is known — see plan()
 // A git hook (this suite runs under the `drive-pr-selftest` pre-commit hook)
 // EXPORTS GIT_DIR/GIT_WORK_TREE/etc pointing at the REAL repository, and those
 // override `cwd` — a throwaway `git init` here would re-initialise the CALLER'S
-// worktree instead of the tmpdir, corrupting it (measured: this exact class hit
-// an earlier change via a different suite; see feedback_git_hook_env_leak_corrupts_-
-// conductor_worktrees). Scrub every git-repo-location env var before every
-// call, not just once — the point is that no invocation of `git` in this
-// describe block ever inherits ambient repo location, regardless of caller.
+// worktree instead of the tmpdir, corrupting it. Scrub every git-repo-location
+// env var before every call, not just once — the point is that no invocation
+// of `git` in this describe block ever inherits ambient repo location,
+// regardless of caller.
 //
-// Prefix-scrubbed rather than enumerated: a
-// hand-maintained list of location vars is one counterexample behind
-// permanently — this one carried four of the seven and the reviewer had to
-// name the missing three. `GIT_` covers every location var git has now or
-// adds later, it is what drive-pr.test.ts, drives.test.ts and
-// resolve-review-comments/__tests__/scripts.test.ts already do, and nothing
+// Prefix-scrubbed rather than enumerated: a hand-maintained list of location
+// vars is one counterexample behind permanently. `GIT_` covers every location
+// var git has now or adds later, it is what drive-pr.test.ts, drives.test.ts
+// and resolve-review-comments/__tests__/scripts.test.ts already do, and nothing
 // here needs a GIT_* var preserved (a suite that must SET GIT_AUTHOR_DATE,
 // like defect-escape.test.ts, keeps a narrower list for exactly that reason).
 function scrubbedGitEnv(): Record<string, string> {

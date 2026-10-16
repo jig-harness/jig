@@ -2,12 +2,13 @@
  * Who "this driver" is, for the state file's purposes.
  *
  * `drive-state.ts` is shared by every driver working one PR: the store lives in
- * the clone-wide git dir (`store.ts`'s `--git-common-dir`) precisely so two
- * Conductor worktrees driving the same PR see one round budget, one parked set
- * and one held batch. That sharing is what makes a PR-global `verifiedSha`
+ * one directory per clone (by default `store.ts`'s
+ * `~/.local/state/jig/drive-pr/<cloneKey>/`) precisely so two Conductor
+ * worktrees driving the same PR see one round budget, one parked set and one
+ * held batch. That sharing is what makes a PR-global `verifiedSha`
  * unsafe as push provenance — driver B's `stamp-held` moves a pointer driver
  * A's held thread then reads as vouching for A's own unpushed fix.
- * Distinguishing the two needs an identity the state model did not have.
+ * Distinguishing the two needs an identity of its own.
  *
  * The identity is the WORKING TREE. `drive.ts` holds a single-instance lock
  * keyed by the same tree (`store.ts`'s `worktreeLockName`, which shares this

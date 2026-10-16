@@ -61,12 +61,7 @@
  *
  * The two `state`-category entries `drive-status.ts` sets OUTSIDE
  * `evaluate` — `SESSION_LEASE_HELD` and `DRIVE_HELD_BY_OTHER_WORKTREE` —
- * are bound too, closing the gap an earlier change explicitly carved out
- * ("A future issue can extend the code-binding to `drive-status.ts`'s
- * non-`evaluate` sites and to `DRIVE_HELD_ELSEWHERE_EXIT`'s own
- * declaration the same way an earlier change does for `drive.ts`'s driver-only
- * exits" — the second time this exact residual was carved out and pushed to
- * "a future issue" without one being filed; an earlier change is that issue). Neither
+ * are bound too, the same way `drive.ts`'s driver-only exits are. Neither
  * is a member of `EvaluateStateName` — that union's whole point is "what
  * `evaluate.ts` itself may emit", and `evaluate`
  * never sets either of these. `outOfBandExitCode` below is their own

@@ -14,8 +14,8 @@
  * `process.chdir` or an ambient repo location. A git HOOK's exported
  * `GIT_DIR`/`GIT_WORK_TREE` overrides `cwd`-less invocations and would
  * otherwise point a throwaway `git init` at the CALLER's real worktree
- * instead of the fixture (measured, an earlier change class — see
- * `verification-fit.test.ts`'s own header), so every git call here also
+ * instead of the fixture (measured — see `verification-fit.test.ts`'s own
+ * header), so every git call here also
  * scrubs those variables the same way that suite does.
  */
 
@@ -538,11 +538,11 @@ describe("renameEquivalents — revision-based match preferred over committer da
   });
 
   it("is immune to a backdated committer date that would fool the date-based fallback", async () => {
-    // The exact class an earlier change exists for: the rename commit's OWN committer
-    // date is set to predate the decline's thread entirely, which a
-    // date-filtered `since` bound would read as "before the decline even
-    // existed" and wrongly exclude — even though the rename is a genuine,
-    // direct CHILD of the decline's own reviewed head in the commit graph.
+    // Ancestry, not dates, decides here: the rename commit's OWN committer date
+    // is set to predate the decline's thread entirely, which a date-filtered
+    // `since` bound would read as "before the decline even existed" and wrongly
+    // exclude — even though the rename is a genuine, direct CHILD of the
+    // decline's own reviewed head in the commit graph.
     Bun.write(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-06-01T00:00:00", "add a.ts — decline anchors here");
@@ -631,12 +631,11 @@ describe("renameEquivalents — revision-based match preferred over committer da
   });
 
   it("falls back to the date-based path when the candidate OID is present but unreachable locally", async () => {
-    // The class an earlier change found: a merged PR's branch is
-    // deleted on GitHub, and the raw pre-squash-merge commit `originalCommit`
-    // named is typically unreachable from this clone within days — even
-    // though GraphQL still serves its oid. Presence of an OID string is not
-    // evidence the revision walk can run; the pair must fall back to
-    // `dateMatch`, not silently drop.
+    // A merged PR's branch is deleted on GitHub, and the raw pre-squash-merge
+    // commit `originalCommit` named is typically unreachable from this clone
+    // within days — even though GraphQL still serves its oid. Presence of an
+    // OID string is not evidence the revision walk can run; the pair must fall
+    // back to `dateMatch`, not silently drop.
     Bun.write(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
@@ -828,8 +827,8 @@ describe("renameEquivalents — ancestry direction under squash-merge topology",
 // alone cannot order the two branches — genuinely diverged, neither an
 // ancestor of the other. These tests reuse it verbatim but add a `gh` PATH
 // stub answering the "is this rename commit itself an already-merged PR's
-// merge commit" lookup an earlier change added, to exercise the squash-merge
-// tiebreaker that now runs before falling back to WIDENS in that exact case.
+// merge commit" lookup, to exercise the squash-merge tiebreaker that runs
+// before falling back to WIDENS in that exact case.
 // Stubbed via a PATH shim (the `resolvePr` convention in
 // self-inflicted.test.ts), never `mock.module` — `gh` is a real subprocess
 // this code spawns, and a PATH shim is what lets the SAME production
@@ -935,7 +934,7 @@ fi
     const { declineHeadOid, candidateHeadOid } = buildDivergedRenameFixture();
     // The stubbed merge commit's real `merged_at` predates the decline
     // thread's own `createdAt` below — decisive exclude via wall-clock
-    // order, the tiebreaker an earlier change adds. `base.ref` matches this block's
+    // order, the squash-merge tiebreaker. `base.ref` matches this block's
     // own `baseRefName` so `mergeCommitMergedAt` accepts the entry.
     stubGh(`#!/bin/sh
 if [ "$1" = "api" ] && [ "$2" = "repos/{owner}/{repo}/commits/${candidateHeadOid}/pulls" ]; then
@@ -1732,16 +1731,15 @@ describe("render — --ladder-only states the scope of its own verdict", () => {
   it("names the bias direction as TIGHTENING, which is the counter-intuitive one", () => {
     // The direction is the opposite of the reassuring reading, and getting it
     // backwards is how a reader dismisses a polluted series. A copied marker
-    // inflates the escape rate's DENOMINATOR, so escapes look rarer — and
-    // `review-loop-baseline.md` § What this licenses reads a LOW escape rate
-    // as evidence FOR declining more ("evidence for an earlier change's direction"),
-    // while `review-triage.yaml` § calibration treats an escape as the signal
-    // that a band is too strict. Pollution therefore licenses declining MORE.
+    // inflates the escape rate's DENOMINATOR, so escapes look rarer — and a
+    // LOW escape rate in a consumer's review-loop baseline reads as evidence
+    // FOR declining more, while `triage-rubric.md` § Calibrating the ladder
+    // treats an escape as the signal that a band is too strict. Pollution
+    // therefore licenses declining MORE.
     //
-    // This probe exists because the first version of this output asserted the
-    // exact inverse ("loosens the ladder, never tightens it") — a claim false
-    // of the mechanism beside it, printed to the operator. Pinning the
-    // direction is what stops that regressing.
+    // Pinning the direction stops the output from asserting the exact inverse
+    // ("loosens the ladder, never tightens it") — a claim false of the
+    // mechanism beside it, printed to the operator.
     const out = scoped();
     expect(out).toContain("licenses declining MORE, not less");
     expect(out).not.toContain("loosens the ladder");
@@ -1787,17 +1785,16 @@ describe("render — --ladder-only states the scope of its own verdict", () => {
   });
 
   // The reported ratio is only worth printing if `MACRO_PROSE` actually
-  // separates the two populations, so it is pinned from both sides: the
-  // decoy the issue named must not count, and the config's CURRENT rendered
-  // templates must. The second half is what catches a reword of the clause
-  // itself — that would silently drive the reported count toward zero and
-  // read as pollution where there is none.
+  // separates the two populations, so it is pinned from both sides: the decoy
+  // must not count, and the config's CURRENT rendered templates must. The
+  // second half is what catches a reword of the clause itself — that would
+  // silently drive the reported count toward zero and read as pollution where
+  // there is none.
   describe("MACRO_PROSE separates macro output from a copied marker line", () => {
     const MARKER = "\n\n<!-- review-triage ladder -->";
 
     it("does not count a hand-written decline that copied only the marker", () => {
-      // Verbatim from an earlier change's problem statement — the decoy that motivates
-      // the whole scope decision.
+      // The decoy that motivates the whole scope decision.
       expect(
         MACRO_PROSE.test(`**wont-fix** — ordinary rubric decline.${MARKER}`),
       ).toBe(false);

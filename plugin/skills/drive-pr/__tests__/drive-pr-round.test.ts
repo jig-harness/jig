@@ -114,8 +114,7 @@ describe("announce-merge-ready.ts", () => {
       dryRun?: boolean;
       /** Spawn a wrapper that deletes this association from the LIVE
        * `TRUSTED_ASSOCIATIONS` object before dynamically importing
-       * announce-merge-ready.ts itself — an earlier change's live-dependency
-       * test, below. */
+       * announce-merge-ready.ts itself — the live-dependency test, below. */
       deleteAssociationBeforeLoad?: string;
     } = {},
   ) {

@@ -150,19 +150,18 @@ function candidateFiles(sinceMs: number): CandidateScan {
         try {
           if (statSync(path).mtimeMs >= sinceMs) out.push(path);
         } catch (err) {
-          // A confirmed disappearance (ENOENT: rotated or removed mid-scan)
-          // is not evidence and not truncation — the file genuinely does not
-          // exist right now. Any OTHER stat failure (EACCES, a stalled or
-          // degraded mount, ...) is NOT confirmed absence: if it is
-          // transient and clears before detect()'s own separate walk moments
-          // later, that walk would find the file, it would be missing from
-          // `preexistingSessions` purely because THIS walk's stat failed,
-          // and detect() would misattribute a pre-existing transcript to
-          // this pass — reopening an earlier change through a different door than the
-          // one MAX_CANDIDATE_FILES_SCANNED/maxCandidateScanMs() already
-          // close. Mark the walk truncated so the caller degrades exactly as
-          // it does for those circuit breakers, rather than trusting this
-          // file's absence.
+          // A confirmed disappearance (ENOENT: rotated or removed mid-scan) is
+          // not evidence and not truncation — the file genuinely does not exist
+          // right now. Any OTHER stat failure (EACCES, a stalled or degraded
+          // mount, ...) is NOT confirmed absence: if it is transient and clears
+          // before detect()'s own separate walk moments later, that walk would
+          // find the file, it would be missing from `preexistingSessions`
+          // purely because THIS walk's stat failed, and detect() would
+          // misattribute a pre-existing transcript to this pass — the same
+          // misattribution MAX_CANDIDATE_FILES_SCANNED and maxCandidateScanMs()
+          // already close, through a different door. Mark the walk truncated so
+          // the caller degrades exactly as it does for those circuit breakers,
+          // rather than trusting this file's absence.
           if (!isConfirmedAbsence(err)) {
             truncated = true;
           }
@@ -553,8 +552,8 @@ export const claudeAdapter: QuotaAdapter = {
     // way to tell "genuinely this pass's session" from "a pre-existing one the
     // snapshot missed" is the exact session-id match below — and that check
     // only exists when `ourSessionId !== null`. Without it, treating absence
-    // as newness would re-open exactly the misattribution an earlier change closed,
-    // now reachable BELOW `MAX_CANDIDATE_FILES_SCANNED` via the wall-clock cap.
+    // as newness would misattribute a pre-existing transcript to this pass,
+    // reachable BELOW `MAX_CANDIDATE_FILES_SCANNED` via the wall-clock cap.
     // Counted, not silently skipped, for the
     // same "never fail quiet" reason `rejectedBySession` is.
     const snapshotUnreliable =

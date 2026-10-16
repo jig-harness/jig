@@ -1,5 +1,5 @@
 /**
- * `--doctor`'s classifier — an earlier change §2. Pure: no filesystem, no subprocess,
+ * `--doctor`'s classifier. Pure: no filesystem, no subprocess,
  * no clock read of its own. `drives.ts` does every read (the state file, the
  * `ps` probe via `hasPassChild`, the per-worktree `git` calls) and hands the
  * results here as a plain record; this file only DECIDES.
@@ -181,7 +181,6 @@ export interface DoctorInput {
    * Can `--stop` (and therefore this host's `ps`/`kill`) act on this lock's
    * owner at all — is the recorded claim host either unset (legacy debris,
    * conventionally "this host") or equal to THIS host's own hostname?
-   * an earlier change M2.
    *
    * Gates two things a foreign host makes meaningless: `passChild`, which
    * `drives.ts` must compute as `null` (never walk a REMOTE pid against the
@@ -216,16 +215,14 @@ export interface DoctorRow {
  * This predicate governs whether branch 2 is reached at all — it does NOT
  * govern whether the probe it gates actually ran. `drives.ts` also skips the
  * probe (leaving `leftovers: null`) whenever `worktreePath` is `null` — an
- * `empty` lock has no claim to read a worktree from, and a older
+ * `empty` lock has no claim to read a worktree from, and an older
  * diag-less claim never recorded one — and BOTH of those reach branch 2 too,
  * since `noLiveDriver('empty')` is `true` regardless of whether a worktree
  * was ever known. So a `null` `leftovers` inside branch 2 is ambiguous
  * between "the probe was attempted and failed" and "there was never a
  * worktree to probe" — `classifyDrive` distinguishes the two in its own
  * `reason` text by reading `worktreePath` directly, precisely because this
- * predicate alone cannot (an earlier change minor finding — an earlier
- * revision of this comment claimed reaching branch 2 implied the probe had
- * run, which is the false claim that finding was about).
+ * predicate alone cannot. Reaching branch 2 does not imply the probe ran.
  */
 export function noLiveDriver(lockState: DoctorInput["lockState"]): boolean {
   return lockState === "stale" || lockState === "empty";
@@ -326,11 +323,10 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // quota park or a parked item this classifier already knows for certain
   // from the state file directly. Returning it immediately would let it
   // preempt branches 3 and 5 below, which is exactly backwards: a
-  // state-file-only row (no lock at all, hence `worktreePath === null` —
-  // an earlier change's own C1) that recorded a real quota park was reaching this
-  // early return and reporting UNKNOWN, never QUOTA_PARKED, because THIS
-  // branch's inconclusive answer was allowed to outrank a fact the state
-  // file settles outright (found reviewing this round's own C1 test — see
+  // state-file-only row (no lock at all, hence `worktreePath === null`)
+  // that recorded a real quota park would reach this early return and
+  // report UNKNOWN, never QUOTA_PARKED, letting THIS branch's inconclusive
+  // answer outrank a fact the state file settles outright (see
   // `doctor.test.ts`'s "an uninspectable worktree does not preempt a KNOWN
   // quota park"). So it is DEFERRED to the trailing fallback (7) instead,
   // and used there ONLY if nothing more specific claimed the row first.
@@ -342,8 +338,8 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
       // older diag-less one); anything else with `leftovers: null`
       // means a real worktree path was probed and the probe itself failed.
       // These are different facts, and the wording must not claim an
-      // inspection happened when none did (an earlier change minor
-      // finding — `noLiveDriver`'s own doc comment has the full case).
+      // inspection happened when none did (`noLiveDriver`'s own doc comment
+      // has the full case).
       uninspectableLeftoversReason =
         input.worktreePath === null
           ? "no live driver, and this lock records no worktree to inspect for leftovers"
@@ -457,7 +453,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // than a blanket "recent activity" — a live pass with hours-stale progress
   // reaching this branch is a real, intended case (a long round with one
   // early stamp), and a reason that implied recent activity there would be
-  // false (an earlier change M3(a)): a pass running honestly reports
+  // false: a pass running honestly reports
   // running, whatever `progressAgeMs` says.
   if (input.lockState === "live" && input.progressAgeMs !== null) {
     const stale = input.progressAgeMs > input.stallThresholdMs;
@@ -498,7 +494,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
     verdict: "UNKNOWN",
     reason:
       input.lockState === "live" && input.progressAgeMs === null
-        ? "a live driver has never recorded a progress stamp (armed before an earlier change, or died before its first one)"
+        ? "a live driver has never recorded a progress stamp (armed by a driver that predates progress stamps, or died before its first one)"
         : "insufficient evidence to classify this drive",
     recovery: null,
   };

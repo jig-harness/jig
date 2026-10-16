@@ -446,24 +446,21 @@ query($id:ID!){
 /**
  * Post-resolve cleanup: release a STALE `accepted`/`moot` hold for
  * `threadId`, mirroring `reconcile-replied-threads.ts`'s own logic exactly
- * — see that script's header for the
- * full history of why this is scoped to a hold whose `commentUrl` is one of
+ * — see that script's header for why this is scoped to a hold whose
+ * `commentUrl` is one of
  * `seenUrls` (a hold this pass's OWN read of the thread accounted for)
  * rather than deleted unconditionally by key.
  *
  * Never fails the THREAD's own disposition: it resolved successfully regardless
  * of whether this cleanup runs. But a failure here is not swallowed either —
  * returns `false`, reported loudly on stderr, and the CALLER propagates that
- * into a nonzero process exit (an earlier revision returned `void`
- * unconditionally, so a transient `held`-read or `release-held` failure
- * reported success even though a stale hold was left stranded — and nothing
- * else would ever revisit a RESOLVED thread to retry it, since
- * `list-unresolved-threads.ts` stops enumerating it the moment it resolves. A
- * nonzero exit is the one signal a caller — an agent processing a batch, or a
- * future automated sweep — cannot silently miss the way an easily-lost stderr
- * line can be). `true` covers BOTH "nothing to clean up" and "cleaned up
- * successfully" — only a genuine failure to read or write state returns
- * `false`.
+ * into a nonzero process exit: nothing else ever revisits a RESOLVED thread
+ * to retry a stranded stale hold, since `list-unresolved-threads.ts` stops
+ * enumerating it the moment it resolves. A nonzero exit is the one signal a
+ * caller — an agent processing a batch, or a future automated sweep — cannot
+ * silently miss the way an easily-lost stderr line can be. `true` covers BOTH
+ * "nothing to clean up" and "cleaned up successfully" — only a genuine failure
+ * to read or write state returns `false`.
  */
 async function releaseStaleHold(
   pr: string,
@@ -758,7 +755,7 @@ async function main(): Promise<number> {
     // GitHub's own UI lets anyone resolve a thread directly, with no
     // relationship to whether a promised accepted/moot fix ever passed gates
     // or got pushed. Blindly releasing a stale hold on any isResolved sighting
-    // (an earlier revision of this branch did) could delete the ONLY durable
+    // could delete the ONLY durable
     // record of a genuinely unverified obligation — the drive would then
     // believe it converged over a fix that was never confirmed.
     //
@@ -954,14 +951,13 @@ async function main(): Promise<number> {
     // `reconcile-replied-threads.ts`'s standalone sweep trusts the marker as
     // proof of a merit left-open reply independent of what outcome word
     // accompanies it. A held moot whose caller-supplied body happened to end in
-    // the marker was therefore misread by that sweep as deliberately left open,
+    // the marker would be misread by that sweep as deliberately left open,
     // releasing its own not-yet-verified hold before the promised push ever
-    // landed (an earlier revision of this guard excluded hold outcomes on the
-    // reasoning that THIS script never consults the marker for them, which is
-    // true but not the whole system). The one exemption stays exactly what it
-    // was: a caller who explicitly passed `--leave-open` on a genuinely
-    // non-hold outcome already gets the marker appended below anyway, so
-    // refusing their own pre-supplied copy of it would serve no one.
+    // landed — THIS script never consults the marker for hold outcomes, but
+    // that is not the whole system. The one exemption: a caller who explicitly
+    // passed `--leave-open` on a genuinely non-hold outcome already gets the
+    // marker appended below anyway, so refusing their own pre-supplied copy of
+    // it would serve no one.
     const sanctionedSelfMarked =
       leaveOpen && !isHoldOutcome(intendedOutcome, treatMootAsHold);
     if (hasLeaveOpenMarker(body) && !sanctionedSelfMarked) {

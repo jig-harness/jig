@@ -113,12 +113,13 @@ export interface HeldItem {
    * WHICH driver created this hold — `lib/state/actor.ts`'s worktree-derived
    * id, recorded by every writer (`hold`, `restore-held`) for both kinds.
    *
-   * The state file is shared by every driver working one PR (`store.ts` puts it
-   * in the clone-wide git dir on purpose), so without this the batch is one
-   * anonymous list and nothing can tell driver A's holds from driver B's. That
-   * is the whole of an earlier change: `stamp-held` vouches for "a push landed", and
-   * with no actor on the record it vouched for EVERY held item, including ones
-   * whose promised fix that push never contained.
+   * The state file is shared by every driver working one PR (`store.ts` keys
+   * it per clone, by default under `~/.local/state/jig/drive-pr/<cloneKey>/`,
+   * on purpose), so without this the batch is one anonymous list and nothing
+   * can tell driver A's holds from driver B's.
+   * `stamp-held` vouches for "a push landed", and with no actor on the record
+   * it would vouch for EVERY held item, including ones whose promised fix that
+   * push never contained.
    */
   actor: string;
   /**
@@ -786,8 +787,8 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     // Required on BOTH kinds, and for the same reason `commentUrl` is required
     // on a thread: a record that cannot be attributed to a driver is one
     // `stamp-held` has no basis to vouch for or to skip, so it would have to
-    // fall back to vouching for everything — the PR-global behaviour an earlier change
-    // exists to end. Both writers stamp it, so reading one back without it
+    // fall back to vouching for everything — the PR-global behaviour `actor`
+    // exists to prevent. Both writers stamp it, so reading one back without it
     // means a hand-edited file, and the validator restates the writer's
     // invariant rather than tolerating a record no consumer can use.
     //
@@ -839,13 +840,13 @@ export function freshState(pr: number): DriveState {
 }
 
 /**
- * Stamp a GENUINE progress event — an earlier change's load-bearing design decision.
+ * Stamp a GENUINE progress event — a load-bearing design decision.
  *
  * This is the ONLY function that may set `lastProgressAt`, and every writer
  * that records progress goes through it rather than folding the stamp into
  * its own `store.update` inline. That is deliberate, not stylistic: a
  * PROGRESS field with no gate on who may move it degrades to exactly the
- * heartbeat an earlier change exists to distinguish itself from — `store.update`
+ * heartbeat `lastProgressAt` exists to be distinguished from — `store.update`
  * runs on `bump-attempt`'s own `--no-count` re-read and on every future
  * migration, none of which is evidence the drive moved forward. Routing every
  * writer through one named function makes "which events count as progress" a

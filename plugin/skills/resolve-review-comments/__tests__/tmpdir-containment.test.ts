@@ -1,7 +1,7 @@
 /**
- * TASK — containment probe for this directory's own `bunfig.toml`.
+ * Containment probe for this directory's own `bunfig.toml`.
  *
- * See .claude/skills/drive-pr/__tests__/tmpdir-containment.test.ts for the
+ * See plugin/skills/drive-pr/__tests__/tmpdir-containment.test.ts for the
  * full reasoning — same gap (Bun resolves `bunfig.toml` from cwd only, with
  * no directory walk-up), same fix (this directory's own `bunfig.toml`), same
  * probe. This is the `rrc-scripts-*` leak's route.

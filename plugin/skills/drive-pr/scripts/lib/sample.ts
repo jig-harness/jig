@@ -2,8 +2,9 @@
  * Read one PR's review loop off GitHub: its commits, its reviews, and every
  * review thread with the outcome its replies settled on.
  *
- * This is the measurement substrate for an earlier change. Both consumers need the same
- * four things and neither can get them from durable drive state:
+ * This is the measurement substrate for the review loop's metrics. Both
+ * consumers need the same four things and neither can get them from durable
+ * drive state:
  *
  *   - `loop-metrics.ts` reports one PR's economy in the drive's own terminal
  *     summary, and the drive state it could read instead is per-CLONE — it dies
@@ -153,8 +154,8 @@ export interface ThreadSample {
    * The reviewer's own `🏷️ category:` tag on the RAISING comment (`categoryOf`
    * applied to the first comment's body — the finding as it was originally
    * posted, never a later reply), or `unknown` when the tag is absent — either
-   * because the reviewer never emitted one (every finding before an earlier change
-   * shipped), because the thread has no readable first comment, or
+   * because the reviewer never emitted one, because the thread has no
+   * readable first comment, or
    * because the raising comment was edited after a caller-supplied `asOf` and
    * its body as of that cutoff is unrecoverable from GitHub's always-current
    * payload — the same withholding

@@ -1338,8 +1338,8 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
   // this SOURCE text for the constants' own `driverOnlyExitCode(...)`
   // bindings, a source fixture with only a return statement would report all
   // of them as "no declaration found" and never reach the checks below it.
-  // The import line is likewise load-bearing since an earlier change:
-  // `findConstantProvenanceMismatches` now verifies `driverOnlyExitCode`
+  // The import line is likewise load-bearing:
+  // `findConstantProvenanceMismatches` verifies `driverOnlyExitCode`
   // resolves to THIS import, not merely to a same-named identifier.
   const healthySource = [
     "import { driverOnlyExitCode } from './lib/status/terminal-states.ts';",
@@ -5383,11 +5383,11 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
     "",
   ].join("\n");
 
-  // Unlike the block's own `healthyDriveStatusSource` (which uses a
-  // bare `emit(...)` and needs no `outOfBand()` call at all — it exercises
-  // only the bare-literal scan), this fixture uses the REAL an earlier change dispatch
-  // shape both real call sites use, since that is exactly what this check's
-  // mutation targets.
+  // Unlike the block's own `healthyDriveStatusSource` (which uses a bare
+  // `emit(...)` and needs no `outOfBand()` call at all — it exercises only the
+  // bare-literal scan), this fixture uses the REAL `outOfBand()` dispatch shape
+  // both real call sites use, since that is exactly what this check's mutation
+  // targets.
   const healthyDriveStatusSource = [
     "import { DRIVE_HELD_ELSEWHERE_EXIT, SESSION_LEASE_HELD_EXIT } from './lib/state/lease.ts';",
     "import { outOfBand } from './lib/status/terminal-states.ts';",

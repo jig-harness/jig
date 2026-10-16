@@ -1,6 +1,6 @@
 /**
  * current-round.test.ts — the round-ordinal read behind the triage rubric's
- * round-4 cutoff (TASK).
+ * round-4 cutoff.
  *
  * Unit half: the counter-file parse. Probe half: the entry script against a
  * throwaway git repo, with GIT_DIR/GIT_WORK_TREE scrubbed from the child env —
@@ -75,8 +75,8 @@ describe("current-round.ts probes", () => {
     // claim that one resolver is juggling several PRs at once. Left to
     // inherit ambient `$CLAUDE_PID`, that reads as an IDENTIFIED session
     // locally (a Claude Code harness always sets it) and as ladder tier 3 —
-    // sessionless — on a clean CI/gates shell that does not. Tier 3 now
-    // claims a tree-wide presence record keyed by pr (TASK), so the
+    // sessionless — on a clean CI/gates shell that does not. Tier 3
+    // claims a tree-wide presence record keyed by pr, so the
     // SAME shared `repo` reads as "already busy with a different pr" the
     // moment a second PR's bump-round runs — refusing this file's own
     // legitimate multi-PR fixture reuse for a reason that has nothing to do

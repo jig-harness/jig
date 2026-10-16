@@ -638,7 +638,7 @@ export function run(argv: string[], opts: RunOptions = {}): Promise<RunResult> {
  * budget smaller than `GH_CALL_TIMEOUT` can pass it, and the effective deadline
  * is whichever is smaller. Omitting it keeps the env default exactly as before.
  * Mirrors `drive-pr`'s `ghCall`, and exists here because the parity copy of
- * `lib/gh-conditional.ts` passes its caller's budget through it (TASK).
+ * `lib/gh-conditional.ts` passes its caller's budget through it.
  */
 export function ghCall(
   args: string[],

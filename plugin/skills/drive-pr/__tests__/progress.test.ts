@@ -1,5 +1,5 @@
 /**
- * progress.test.ts — an earlier change §1: `DriveState.lastProgressAt`/`quotaPark`,
+ * progress.test.ts — `DriveState.lastProgressAt`/`quotaPark`,
  * `withProgress`, and the `drive-state.ts` verbs that stamp (or deliberately
  * do NOT stamp) them.
  *

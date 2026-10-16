@@ -8,7 +8,7 @@
  * pane, and the refusal a second start meets ("another driver already holds
  * the … lock") names a process the operator has no window into. This command
  * is that window. Scope is ONE clone's state universe — the same
- * `resolveStateDir` every driver shares (the clone-wide git common dir), so
+ * `resolveStateDir` every driver shares (keyed per clone), so
  * every Conductor worktree of a clone sees the same fleet; a different clone
  * has a fleet of its own.
  *
@@ -388,7 +388,7 @@ const STATE_FILE = /^drive-pr-(\d+)\.json$/;
 
 /**
  * `--doctor`-ONLY extension of the sweep population beyond `listRows`'s lock
- * census — an earlier change C1.
+ * census.
  *
  * `drive.ts` `rmdir`s its lock slot on EVERY normal process exit
  * (`release`, run from `releaseAll` on `process.on('exit')`) — including
@@ -542,7 +542,7 @@ const STOP_WORKS_HERE =
     }
   });
 
-// ── an earlier change: gathering DoctorInput ─────────────────────────────────────────
+// ── Gathering DoctorInput ────────────────────────────────────────────────────
 //
 // This is the I/O half of `--doctor` — `lib/doctor.ts`'s `classifyDrive` is
 // pure and does none of it. Every read below degrades to the `null`/`false`
@@ -928,7 +928,7 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
 }
 
 /**
- * `--doctor`'s human rendering — an earlier change §2b. One line per PR-kind row (the
+ * `--doctor`'s human rendering. One line per PR-kind row (the
  * classifier has nothing to say about a `worktree`-kind lock — see
  * `LockRow.doctor`'s own comment), naming the verdict, the reason
  * `classifyDrive` gave for it, and a recovery command where one exists.
@@ -936,11 +936,9 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
  * Every drive in the state universe is swept — `rows`, by the time it
  * reaches this function, is `main`'s MERGE of `listRows`' lock census and
  * `listStateOnlyRows`' extra rows for a `drive-pr-<PR>.json` with no
- * surviving lock directory (an earlier change C1 — an earlier revision
- * of this comment claimed `rows` "already comes from `listRows`", which
- * stopped being true the moment that merge was added: a drive that parked
- * and then exited normally has no lock left at all, and it is exactly that
- * row this merge exists to still report). An unreadable LOCK is still a
+ * surviving lock directory (a drive that parked and then exited normally
+ * has no lock left at all, and it is exactly that row this merge exists to
+ * still report). An unreadable LOCK is still a
  * `contested`/`unreadable` `LockRow` here exactly as it is in the plain
  * listing, never silently dropped before it reaches this function.
  */
@@ -1375,6 +1373,5 @@ async function main(): Promise<number> {
 // (`round-plan.ts`, `self-inflicted.ts`, `migrate-state-dir.ts`, …) so a pure
 // helper like `gatherWorktreeLeftovers` can be imported directly by a test
 // without ALSO running this file's own CLI against whatever `process.argv`
-// the importing process happens to carry (an earlier change M7 — this
-// module was the one CLI entrypoint in the skill missing the guard).
+// the importing process happens to carry.
 if (import.meta.main) runMain("drives.ts", main);

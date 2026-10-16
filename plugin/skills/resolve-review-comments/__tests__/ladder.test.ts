@@ -1,5 +1,5 @@
 /**
- * ladder.test.ts — the escalating decline ladder (TASK-7494).
+ * ladder.test.ts — the escalating decline ladder.
  *
  * What this covers:
  *

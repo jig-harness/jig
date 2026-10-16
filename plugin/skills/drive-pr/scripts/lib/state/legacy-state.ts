@@ -49,7 +49,7 @@ export const MIGRATED_MARKER_FILENAME = ".migrated-from-legacy";
 /**
  * Written once this clone's migration is confirmed — either a human ran the
  * migration script, or the legacy location never held a drive-pr footprint at
- * all (a clone that never drove a PR before an earlier change shipped, or one already
+ * all (a clone that never drove a PR while state lived there, or one already
  * on `$DRIVE_PR_STATE_DIR` throughout). Its presence is the ONLY thing that
  * skips the legacy scan on later calls — see the module doc comment.
  */
@@ -189,7 +189,7 @@ export function ensureMigratedFromLegacy(
     // Re-check immediately before publishing, narrowing the window between the
     // scan above and this write to microseconds — the same pattern
     // migrate-legacy-state.ts's publishMigratedMarker() already uses for its
-    // own final re-scan. A older process that begins its first legacy write in
+    // own final re-scan. An older process that begins its first legacy write in
     // that gap would otherwise still get the marker published over it: every
     // later resolveStateDir() call trusts the marker without re-scanning, so
     // the old process's state is abandoned permanently, with nothing to notice.

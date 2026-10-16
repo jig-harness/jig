@@ -73,21 +73,18 @@ interface OwnedPattern {
 }
 
 /**
- * The regexes — and, as of an earlier change, the family tag itself — come
- * from `state-file-patterns.ts` — the module `reap-state.ts` originally
- * extracted them into precisely so a lock/lease prefix renamed in
- * `lock.ts`/`lease.ts` cannot silently blind one consumer while the other
- * stays current. This module re-declared its own copy instead of reusing
- * that one, which was exactly the "second, independently maintained copy"
- * drift `state-file-patterns.ts`'s own doc comment warns about.
+ * The regexes and the family tag itself come from `state-file-patterns.ts`,
+ * the one module this, `legacy-state.ts` and `migrate-legacy-state.ts` read
+ * (`reap-state.ts` reaches it through this module), so a lock/lease prefix
+ * renamed in `lock.ts`/`lease.ts` cannot silently blind one consumer while
+ * the others stay current. A second, independently maintained copy here is
+ * exactly the drift `state-file-patterns.ts`'s own doc comment warns about.
  *
- * An earlier revision here paired the imported pattern array to a SEPARATE,
- * independently-ordered `family` array by position, guarded only by a length
- * check — which cannot catch a same-length reorder upstream silently
- * reassigning every family to the wrong pattern. `family` now lives on the
- * pattern object itself in `state-file-patterns.ts`, so this is a plain
- * per-element rename (`key` → `ownerKind`) with nothing left to fall out of
- * sync.
+ * `family` lives on the pattern object itself rather than in a separate array
+ * paired by position: a length check cannot catch a same-length reorder
+ * upstream silently reassigning every family to the wrong pattern. So this is
+ * a plain per-element rename (`key` → `ownerKind`) with nothing left to fall
+ * out of sync.
  */
 function toOwnedPatterns(
   patterns: readonly {

@@ -116,10 +116,9 @@ describe("drive.ts loop control", () => {
     // code 3 is explicitly exempted (see its own `convergedUnswept` guard,
     // a narrower and different condition) — so a `--dry-run` probe's
     // `--no-count --once` flags never stood between this branch and a real
-    // CONVERGED verdict the way they did for case 9's. an earlier change found this
-    // preview had never actually been pinned by a test, unlike its sibling
-    // (the CONFLICTING dry-run test above) — this closes that gap rather
-    // than fixing a reachability bug, because there wasn't one here.
+    // CONVERGED verdict the way they did for case 9's. This pins the preview
+    // the way its sibling (the CONFLICTING dry-run test above) is pinned;
+    // there is no reachability bug here, only coverage.
     const r = await runDrive(
       {
         threads: [],
@@ -275,18 +274,16 @@ describe("drive.ts loop control", () => {
   });
 
   it("does not retry forever when a post-unlabel cascade leaves required jobs skipped and something else red", async () => {
-    // The exact shape an earlier change named: `detect-changes` fails after the
-    // unlabel, cascading the required `code-quality-and-build`/`tests` into
-    // `skipped`. `completedRequiredCi` correctly refuses a skipped run as a
-    // witness, so `final-ready` returns 4 — and the OLD code took that as
-    // "still pending" and slept, forever, because the branch that would have
-    // decided it correctly sat BEHIND the shortcut, reading a pre-unlabel
-    // `status.ci` snapshot its own neighbouring comment already declared
-    // unusable.
+    // The shape: `detect-changes` fails after the unlabel, cascading the
+    // required `code-quality-and-build`/`tests` into `skipped`.
+    // `completedRequiredCi` correctly refuses a skipped run as a witness, so
+    // `final-ready` returns 4. Taking that 4 as "still pending" sleeps
+    // forever; the driver must instead decide on a fresh aggregate, not on a
+    // pre-unlabel `status.ci` snapshot.
     //
     // `skipped` is deliberately PASSING to the aggregate verdict, so the red
     // here has to come from the job that actually failed — which is precisely
-    // why deciding on the fresh aggregate, rather than on exit 4, is the fix.
+    // why the decision rests on the fresh aggregate rather than on exit 4.
     const cascade: CheckRunFixture[] = [
       {
         name: "detect-changes",

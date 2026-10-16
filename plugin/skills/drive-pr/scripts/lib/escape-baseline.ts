@@ -171,8 +171,8 @@ function inlineCodeSpans(line: string): Array<readonly [number, number]> {
  * code span — Markdown renders `` `<!--` `` (or `` ``<!--`` ``, or any
  * matching-backtick-length delimiter) as code, not as the start of a real
  * comment, so treating it as one blanks everything after it (with no closing
- * `-->` in sight) through EOF, suppressing every later real heading/rate line
- * (an earlier fix covered only the single-backtick case). Only applies to
+ * `-->` in sight) through EOF, suppressing every later real heading/rate line.
+ * Every delimiter length counts, not only the single backtick. Only applies to
  * finding a comment's START: once `inComment` is already true, nothing about
  * Markdown inline syntax has any meaning inside a real HTML comment, so the
  * search for its closing `-->` is never shielded this way.
@@ -450,7 +450,7 @@ export function readRecordedEscapeBaseline(
 }
 
 /**
- * The anchor line an earlier change requires next to every convergence-speed report —
+ * The anchor line required next to every convergence-speed report —
  * the recorded figure with its window, or an explicit "unmeasured" marker.
  * Never silently absent: every caller of this function prints its result
  * unconditionally rather than gating on whether `baseline` is `null`.

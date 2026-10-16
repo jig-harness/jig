@@ -353,8 +353,7 @@ const MAX_CANDIDATE_SCAN_MS_DEFAULT = 5_000;
  * worker thread it can then kill on a timeout — a materially larger change
  * than this circuit breaker, in the same spirit as `prepareSpawn`'s own
  * `CODEX_HOME`-isolation deferral: deferred until a real hang is measured
- * rather than merely possible. Tracked as an earlier change rather than merely noted
- * here.
+ * rather than merely possible.
  *
  * Overridable via `DRIVE_PR_QUOTA_MAX_SCAN_MS` so a test can pin the
  * deadline to a value it controls, rather than asserting behaviour that

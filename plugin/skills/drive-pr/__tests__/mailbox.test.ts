@@ -995,11 +995,11 @@ describe("repairInbox", () => {
   it("succeeds on a mailbox directory that does not exist yet, and never creates it — repair as the very first mailbox command on a fresh worktree", async () => {
     // Every other test's `dir` is pre-created by `beforeEach`'s `mkdtempSync`,
     // which never exercises this: `createLock`'s own `mkdirSync(lock)` is not
-    // recursive, so an earlier fix had repair create the mailbox directory
-    // itself before locking — which then broke `--dry-run`'s own "reports
-    // without writing" contract by mutating a fresh worktree unconditionally.
-    // The fix instead short-circuits on an absent directory before touching the
-    // filesystem at all, for both dry-run and a real repair.
+    // recursive. Having repair create the mailbox directory itself before
+    // locking would break `--dry-run`'s own "reports without writing" contract
+    // by mutating a fresh worktree unconditionally, so repair short-circuits on
+    // an absent directory before touching the filesystem at all, for both
+    // dry-run and a real repair.
     const freshDir = join(dir, "never-created-yet");
     expect(existsSync(freshDir)).toBe(false);
 

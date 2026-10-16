@@ -327,10 +327,10 @@ describe("classifyDrive — precedence order", () => {
   });
 
   it("an uninspectable worktree with NO worktree path at all is worded as a skip, not a failed inspection", () => {
-    // an earlier change minor finding: `leftovers === null` is
-    // ambiguous between "the probe ran and failed" and "there was never a
-    // worktree to probe" — `worktreePath === null` distinguishes them, and
-    // the wording must not claim an inspection was attempted when none was.
+    // `leftovers === null` is ambiguous between "the probe ran and failed" and
+    // "there was never a worktree to probe" — `worktreePath === null`
+    // distinguishes them, and the wording must not claim an inspection was
+    // attempted when none was.
     const skipped = classifyDrive(
       baseInput({ lockState: "empty", leftovers: null, worktreePath: null }),
       NOW,
@@ -351,13 +351,12 @@ describe("classifyDrive — precedence order", () => {
     expect(failed.reason).toContain("could not be inspected");
   });
 
-  it("an uninspectable worktree does NOT preempt a KNOWN quota park — QUOTA_PARKED still wins (found while adding the C1 state-only-row test)", () => {
-    // A state-only row (no lock at all — an earlier change C1) always has
-    // `worktreePath: null`, so `leftovers` is always `null` too. Branch 2's
-    // "could not inspect" answer must be a WEAKER fact than a park this
-    // classifier already knows for certain from the state file, not one
-    // that pre-empts it — an earlier revision of `classifyDrive` returned
-    // UNKNOWN immediately here, before `quotaPark` was ever checked.
+  it("an uninspectable worktree does NOT preempt a KNOWN quota park — QUOTA_PARKED still wins", () => {
+    // A state-only row (no lock at all) always has `worktreePath: null`, so
+    // `leftovers` is always `null` too. Branch 2's "could not inspect" answer
+    // must be a WEAKER fact than a park this classifier already knows for
+    // certain from the state file, not one that pre-empts it, so
+    // `classifyDrive` must check `quotaPark` before returning UNKNOWN here.
     const row = classifyDrive(
       baseInput({
         lockState: "empty",
@@ -439,7 +438,7 @@ describe("classifyDrive — precedence order", () => {
     expect(row.recovery).toBeNull();
   });
 
-  it('HEALTHY names both facts honestly — a live pass with hours-stale progress is not "recent activity" (an earlier change M3(a))', () => {
+  it('HEALTHY names both facts honestly — a live pass with hours-stale progress is not "recent activity"', () => {
     const row = classifyDrive(
       baseInput({
         progressAgeMs: 9 * 60 * 60_000, // 9 hours
@@ -464,10 +463,9 @@ describe("classifyDrive — precedence order", () => {
   });
 
   it("describeQuotaPark's 'already past' branch — a resetAt in the past reads as not-yet-re-armed, not merely 'resets <date>'", () => {
-    // an earlier change minor finding: this branch is the entire
-    // justification for `classifyDrive` taking a `now` parameter, and was
-    // untested — every other quota-park fixture used a future or null
-    // `resetAt`.
+    // This branch is the entire justification for `classifyDrive` taking a
+    // `now` parameter, and every other quota-park fixture uses a future or
+    // null `resetAt`.
     const row = classifyDrive(
       baseInput({
         lockState: "stale",

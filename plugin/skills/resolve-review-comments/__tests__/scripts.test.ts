@@ -73,7 +73,7 @@ describe("reply-to-thread.ts outcome grammar", () => {
       "**rejected** — the table is not soft-deletable (ADR-0053).",
     ],
     ["the hyphenated token", "**wont-fix** — declined per the triage rubric."],
-    ["a deferred outcome", "**deferred** — filed TASK."],
+    ["a deferred outcome", "**deferred** — filed ENG-123."],
     ["a moot outcome", "**moot** — the branch was deleted in abc1234."],
     ["a tab boundary", "**accepted**\tfixed in abc1234."],
     ["multiple spaces", "**accepted**   fixed."],
@@ -99,13 +99,13 @@ describe("reply-to-thread.ts outcome grammar", () => {
     ["a bare token", "**accepted**"],
     // No token boundary: a parser reads the token as `accepted**oops`.
     ["a missing boundary", "**accepted**oops"],
-    // An em dash alone is a separator, not a reason (TASK).
+    // An em dash alone is a separator, not a reason.
     ["a separator-only reason", "**accepted** — "],
     ["an em-dash-only reason", "**accepted** —"],
     // U+2003 EM SPACE: the boundary is ASCII space/tab exactly — the bash
     // original's `[[:space:]]` matched this under a UTF-8 locale and not
-    // under C, so the SAME body passed on one host and failed on another
-    //. The port keeps the strict reading.
+    // under C, so the SAME body passed on one host and failed on another.
+    // The port keeps the strict reading.
     ["a Unicode-space boundary", "**accepted** fixed."],
     ["an uppercase token", "**Accepted** — fixed."],
     ["a synonym", "**fixed** — done."],
@@ -472,10 +472,10 @@ describe.skipIf(process.platform === "win32")(
       expect(r.stderr).toContain("converged: 0 unresolved thread(s)");
     });
 
-    // TASK: zero threads is not zero findings. await-round.ts asks
+    // Zero threads is not zero findings. await-round.ts asks
     // /drive-pr's own summary-findings.ts (an optional sibling) before it
     // reports convergence, and exits 8 on anything unaddressed.
-    describe("summary-only findings (TASK)", () => {
+    describe("summary-only findings", () => {
       function convergedFixture(): Fixture {
         return writeFixture({
           threads: [thread("PRRT_a", { resolved: true })],
@@ -1178,7 +1178,7 @@ describe.skipIf(process.platform === "win32")(
   },
 );
 
-// ── run(): a failed SPAWN is not an exit code (TASK) ────────────────────
+// ── run(): a failed SPAWN is not an exit code ───────────────────────────
 
 describe("run() distinguishes a failed spawn from a child that exits 127", () => {
   // `run()` never rejects — a spawn error resolves as 127 with the error text
@@ -1193,7 +1193,7 @@ describe("run() distinguishes a failed spawn from a child that exits 127", () =>
   // probe and FAILS the second, so it cannot stand in for the field.
 
   it("reports spawnFailed when the binary does not exist", async () => {
-    const r = await run([join(tmpRoot, "no-such-binary-doc6893"), "arg"]);
+    const r = await run([join(tmpRoot, "no-such-binary"), "arg"]);
     expect({ code: r.code, spawnFailed: r.spawnFailed }).toEqual({
       code: 127,
       spawnFailed: true,
@@ -1217,7 +1217,7 @@ describe("run() distinguishes a failed spawn from a child that exits 127", () =>
   });
 });
 
-// ── converge.ts: the sessionless-lease release on loop exit (TASK) ──────
+// ── converge.ts: the sessionless-lease release on loop exit ─────────────
 
 // ── list-unresolved-threads.ts: the enumeration chokepoint ──────────────────
 
@@ -1565,7 +1565,7 @@ describe.skipIf(process.platform === "win32")(
   },
 );
 
-// ── The drive lease fences the POST, not only the state write (TASK) ────
+// ── The drive lease fences the POST, not only the state write ───────────
 
 describe("no script mutates anything at import time", () => {
   // `unresolve-thread.ts` ran its GraphQL mutation at module scope, so merely
@@ -1622,7 +1622,7 @@ describe("no script mutates anything at import time", () => {
   }
 });
 
-// ── await-round.ts: polling cost (TASK) ─────────────────────────────────
+// ── await-round.ts: polling cost ────────────────────────────────────────
 //
 // Every `gh pr view` / `gh pr checks` is a GraphQL call against a per-token
 // hourly bucket. These probes read what the loop actually asked of `gh` — the
@@ -1632,7 +1632,7 @@ describe("no script mutates anything at import time", () => {
 // the fixtures under it.
 
 describe.skipIf(process.platform === "win32")(
-  "await-round.ts polling cost (TASK)",
+  "await-round.ts polling cost",
   () => {
     const lines = (fix: Fixture, name: string): number => {
       try {
@@ -2162,7 +2162,7 @@ it.skipIf(process.platform === "win32")(
   30_000,
 );
 
-describe("skillsParentIsIntact — the other half of an ENOENT (TASK)", () => {
+describe("skillsParentIsIntact — the other half of an ENOENT", () => {
   // An ENOENT on `<skills>/drive-pr` says the path does not resolve; it does
   // NOT say which component failed. The root alone being absent is the
   // standalone install; an ANCESTOR removed or renamed under an

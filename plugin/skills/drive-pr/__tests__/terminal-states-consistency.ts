@@ -76,36 +76,27 @@
  *   not prose about it. See their own doc comments for the distinct
  *   regressions each one closes.
  *
- *   The residual an earlier change explicitly carved out ("A future issue
- *   can extend the code-binding to `drive-status.ts`'s non-`evaluate` sites
- *   and to `DRIVE_HELD_ELSEWHERE_EXIT`'s own declaration the same way
- *   an earlier change does for `drive.ts`'s driver-only exits" — `terminal-states.ts`'s
- *   own former header, carved out a SECOND time by an earlier change before that, and
- *   this is the first issue that actually closes it rather than deferring it
- *   a third time). `lib/state/lease.ts` now exports `SESSION_LEASE_HELD_EXIT`
+ *   The same binding covers `drive-status.ts`'s non-`evaluate` sites.
+ *   `lib/state/lease.ts` exports `SESSION_LEASE_HELD_EXIT`
  *   and `DRIVE_HELD_ELSEWHERE_EXIT`, both derived via `terminal-states.ts`'s
  *   `outOfBandExitCode('<NAME>')` — the `driverOnlyExitCode` sibling for the
  *   two `state`-category entries `drive-status.ts` sets OUTSIDE `evaluate`
  *   — and `drive-status.ts` imports both rather than hand-writing `11`/`13`
- *   at its `case 0` sites (plus its own PR-wide admission preflight, a THIRD
- *   bare-literal-13 site an earlier change's own header never named because it
- *   predates that admission check). The same three functions used for
+ *   at its `case 0` sites and at its own PR-wide admission preflight. The
+ *   same three functions used for
  *   `drive.ts` above are reused here, generalized to accept a helper-function
  *   name, its expected import specifier, and the exit-code set to scan for —
  *   see `OUT_OF_BAND_EXIT_NAMES` and its own call sites in `runCheck`
  *   below. Deliberately NOT extended to `lib/state/lease.ts`'s OWN internal
  *   per-tree `fail(11, ...)` refusal sites (`assertNoForeignDrive` and
- *   siblings) — a materially larger and differently-shaped residual (a
- *   `fail` call argument, not a `return` statement, at every one of those
- *   sites) than this issue's own scope, tracked as its own follow-up rather
- *   than silently folded in here.
+ *   siblings): those are a `fail` call argument, not a `return` statement,
+ *   at every one of those sites, a differently-shaped check these scans do
+ *   not cover.
  *
- *   The residual an earlier change explicitly flagged as worth a follow-up
- *   rather than widening that PR: an earlier change
- *   closed the pairing-drift bug where `report.state` and the emitted/
- *   returned exit code for an out-of-band state could independently disagree
- *   by routing both through ONE `outOfBand(report, name, reason)` lookup, so
- *   the two can no longer be written to disagree with EACH OTHER. It says
+ *   `drive-status.ts` routes `report.state` and the emitted/returned exit
+ *   code for an out-of-band state through ONE
+ *   `outOfBand(report, name, reason)` lookup, so
+ *   the two cannot be written to disagree with EACH OTHER. That says
  *   nothing about whether `name` is the RIGHT one for the branch calling
  *   it — `outOfBand(report, 'SESSION_LEASE_HELD', ...)` compiles and keeps
  *   `report.state`/the exit code internally coherent even inside an
@@ -120,8 +111,7 @@
  *   `resolvesToCodePropertyAccess` (the `.code` side) and the same
  *   import-resolution discipline `isExitCodeHelperCall` already applies to
  *   `driverOnlyExitCode`/`outOfBandExitCode` (symbol-resolved, never
- *   name-text matched) — a contained addition scoped to `outOfBand` call
- *   sites, not a rewrite.
+ *   name-text matched).
  *
  * Exit codes:
  *   0 — every documented (exit, state) pair in the prose corpus matches a
@@ -742,26 +732,23 @@ export function findMissingRequired(
  *      see `createSingleFileProgram`), not a regex over the source text — it
  *      looks for a `return`
  *      statement whose entire expression is one of the driver-only exit codes
- *      in `BARE_LITERAL_EXIT_CODES`, anywhere in the file. `PASS_DEADLINE_EXIT`
- *      (15) and `QUOTA_PARKED_EXIT`(16) already had named constants before
- *      an earlier change (they predate this issue), but the invariant this check
- *      states — every driver-only exit reads its value from `TERMINAL_STATES`
- *      via the named constant, never a bare literal — covers them exactly as
- *      much as the ones an earlier change introduced; excluding them left the same
- *      class of bypass open for `PASS_DEADLINE_EXIT` and `QUOTA_PARKED_EXIT`
- *      too. Scope note: this is
+ *      in `BARE_LITERAL_EXIT_CODES`, anywhere in the file. The invariant this
+ *      check states — every driver-only exit reads its value from
+ *      `TERMINAL_STATES` via the named constant, never a bare literal —
+ *      covers `PASS_DEADLINE_EXIT` (15) and `QUOTA_PARKED_EXIT` (16) exactly
+ *      as much as the others. Scope note: this is
  *      deliberately NOT bounded
  *      to `main`/`runRepairPass` by function name — a name-bounded scan would
  *      silently stop catching a future edit that renames or extracts either
  *      function, which is a real risk in the repo's highest-churn subsystem
  *      (`references/consistency.md`). "Bare" covers a direct
  *      literal, a transparent wrapper around it — parens, `as`, `satisfies`,
- *      non-null `!`, unary `+` (`unwrapLiteral`; an earlier change
- *      widened this past parens/unary-plus once `return 6 as number;` was
- *      found to bypass it) — and a same-scope local identifier whose OWN
- *      declaration resolves to one of those forms (`resolveIdentifierLiteral`,
- *      below, resolved via the real TypeScript binder rather than a
- *      document-order name walk — see that function's own header). Verified
+ *      non-null `!`, unary `+` (`unwrapLiteral`; without the type-level
+ *      wrappers `return 6 as number;` would bypass it) — and a same-scope
+ *      local identifier whose OWN declaration resolves to one of those forms
+ *      (`resolveIdentifierLiteral`, below, resolved via the real TypeScript
+ *      binder rather than a document-order name walk — see that function's
+ *      own header). Verified
  *      against the real file (2026-09): zero OTHER bare occurrences
  *      of any tracked exit code exist anywhere in `drive.ts` today, so an
  *      unscoped scan has no known false positive to state a residual for —
@@ -1214,10 +1201,10 @@ function findTopLevelExportedDeclaration(
 
 /**
  * Does `init` call the REAL helper function (`driverOnlyExitCode` for
- * `drive.ts`, `outOfBandExitCode` for `lease.ts` — an earlier change generalized this
- * from a `drive.ts`-only check to accept which helper/specifier count as
- * "the real one") — the one imported from the exact canonical module
- * specifier — with `stateName` as its sole string-literal argument?
+ * `drive.ts`, `outOfBandExitCode` for `lease.ts` — the caller names which
+ * helper/specifier count as "the real one") — the one imported from the exact
+ * canonical module specifier — with `stateName` as its sole string-literal
+ * argument?
  * Symbol-resolved via `checker`, not name text: an identifier spelled like
  * the helper that resolves to an import from some OTHER module (a decoy
  * shadowing the real helper) does not match (matching on
@@ -1261,7 +1248,7 @@ function isExitCodeHelperCall(
 }
 
 /**
- * an earlier change: `findExitConstantMismatches`
+ * `findExitConstantMismatches`
  * above proves each driver-only exit constant presently holds the VALUE
  * `TERMINAL_STATES` says it should. It cannot, by construction, prove the
  * constant is bound to that value BY the `driverOnlyExitCode(...)` read
@@ -1269,7 +1256,7 @@ function isExitCodeHelperCall(
  * `export const MAX_ROUNDS_EXIT = 6;` and `export const MAX_ROUNDS_EXIT =
  * driverOnlyExitCode('MAX_ROUNDS')` are indistinguishable at the runtime
  * VALUE layer as long as both currently equal 6, so a revert to the bare
- * literal (the exact regression an earlier change exists to prevent) silently passes
+ * literal (the exact regression this check exists to prevent) silently passes
  * `findExitConstantMismatches` as long as `TERMINAL_STATES` hasn't also
  * drifted. This is a REAL AST scan of the DECLARATION itself, not the
  * runtime value: for each
@@ -1399,10 +1386,7 @@ export function buildReservedExitCodes(
   return new Set([...currentValues, ...retiredValues]);
 }
 
-/** Every driver-only exit code, not only the ones that were bare literals in
- * `drive.ts` before an earlier change. `PASS_DEADLINE`/`QUOTA_PARKED` already had
- * named constants before that issue, so a bare literal for either was never
- * *that specific* regression — but the invariant this scan enforces ("a
+/** Every driver-only exit code. The invariant this scan enforces ("a
  * driver-only exit is always returned via its named constant") applies to
  * every one of them identically, and a future bare `return` of any of these
  * values bypasses its named constant exactly as silently as a bare `6`
@@ -1958,12 +1942,12 @@ function resolvesToCodePropertyAccess(
 /**
  * A REAL AST scan (parsed, not pattern-matched) for the shapes
  * that bypass a named exit constant with a bare numeric literal in
- * `exitCodes` (`BARE_LITERAL_EXIT_CODES` by default, for `drive.ts`; an earlier change
+ * `exitCodes` (`BARE_LITERAL_EXIT_CODES` by default, for `drive.ts`; `runCheck`
  * passes `OUT_OF_BAND_BARE_LITERAL_EXIT_CODES` for `drive-status.ts`
  * instead) — see this section's own header for why this is deliberately NOT
  * scoped to a named function, and the residual that leaves:
  *
- *   - `return <expr>;` (`kind: 'return'`) — the original an earlier change shape.
+ *   - `return <expr>;` (`kind: 'return'`).
  *   - `<expr> === <expr>` / `!==` / `==` / `!=` where one side is a `.code`
  *     property access (`kind: 'comparison'`) — `drive-status.ts`'s own
  *     out-of-band dispatch reads `bump.code === SESSION_LEASE_HELD_EXIT`
@@ -2048,8 +2032,8 @@ export async function findBareLiteralExits(
 }
 
 /**
- * The residual an earlier change flagged rather than fixed (see this
- * file's own header for the full description): `outOfBand` guarantees
+ * The gap `outOfBand` alone leaves (see this file's own header for the
+ * full description): `outOfBand` guarantees
  * `report.state` and the returned exit code cannot disagree with EACH OTHER
  * for whatever name is passed, but nothing stops a call site from passing
  * the WRONG sibling name for the branch it is actually in. The functions
@@ -4368,8 +4352,8 @@ export async function runCheck(): Promise<number> {
     return 1;
   }
 
-  // ── drive-status.ts's own outOfBand NAME pairing check — the
-  // residual an earlier change flagged rather than fixed: a call site can still name
+  // ── drive-status.ts's own outOfBand NAME pairing check — the gap
+  // `outOfBand` alone leaves: a call site can still name
   // the WRONG sibling state for the comparison branch it is actually inside.
   // See scanOutOfBandNamePairings's own header. ────────────────────────────
   const outOfBandScan = await scanOutOfBandNamePairings(

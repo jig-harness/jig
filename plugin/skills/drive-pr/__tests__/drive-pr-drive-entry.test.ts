@@ -313,7 +313,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).not.toContain("RAN_THE_PASS");
   });
 
-  it("a older claim (pid/host only) still refuses, degraded to its owner", async () => {
+  it("an older claim (pid/host only) still refuses, degraded to its owner", async () => {
     const { dir, stateDir } = writeFixture({ threads: [] });
     const lockDir = join(stateDir, await scratchLockName());
     mkdirSync(lockDir, { recursive: true });
@@ -333,16 +333,15 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).not.toContain("working PR #");
   });
 
-  it("a older claim (diagnostics with no account key) still shows PR/worktree/log — only the account degrades, not the whole diagnostics line", async () => {
-    // Same shape an earlier change always wrote, before an earlier change added `account` to
-    // it. Unlike a claim with no diagnostics at all (the pid/host-only case
-    // above), this is NOT flattened to "nothing to show": `lib/claim.ts`'s
-    // `parseDiag` degrades only the missing `account` key, precisely
-    // because an already-running, pre-upgrade driver's claim must stay
-    // readable for `drives.ts --stop` and for its own pass's `ownParentDriver`
-    // self-check (nulling the WHOLE diag here would make `--stop` refuse a
-    // live in-flight driver and reproduce the stand-down bug for its own
-    // pass).
+  it("an older claim (diagnostics with no account key) still shows PR/worktree/log — only the account degrades, not the whole diagnostics line", async () => {
+    // The claim diagnostics shape without the `account` key. Unlike a claim
+    // with no diagnostics at all (the pid/host-only case above), this is NOT
+    // flattened to "nothing to show": `lib/claim.ts`'s `parseDiag` degrades
+    // only the missing `account` key, precisely because an already-running,
+    // pre-upgrade driver's claim must stay readable for `drives.ts --stop` and
+    // for its own pass's `ownParentDriver` self-check (nulling the WHOLE diag
+    // here would make `--stop` refuse a live in-flight driver and reproduce the
+    // stand-down bug for its own pass).
     const { dir, stateDir } = writeFixture({ threads: [] });
     const lockDir = join(stateDir, await scratchLockName());
     mkdirSync(lockDir, { recursive: true });
@@ -564,15 +563,15 @@ describe("drive.ts loop control", () => {
     // An implementation that defaults an unreadable base
     // name to `develop` (`${base:-develop}`) gives a concrete, WRONG command
     // for any release-branch or stacked PR. It also makes a second, ungated
-    // `gh pr view` call to fetch it, which this fix removes entirely by reading
-    // the base name out of the status JSON drive-status.ts already produced.
+    // `gh pr view` call to fetch it, which reading the base name out of the
+    // status JSON drive-status.ts already produced avoids entirely.
     //
-    // an earlier change gave this test a second job, which is why it runs with the
+    // This test has a second job, which is why it runs with the
     // conflict-repair budget at its DEFAULT rather than disabled: an
     // unreadable base name must not spend a repair round either. Dispatching
     // a pass with an empty base makes the same `develop` guess one level
     // further away, where the operator cannot see it being made — so
-    // `RAN_THE_PASS` below now also pins that the repair was declined.
+    // `RAN_THE_PASS` below also pins that the repair was declined.
     const r = await runDrive(
       {
         threads: [],
@@ -594,7 +593,7 @@ describe("drive.ts loop control", () => {
   // and --dry-run must not write a pin at all.
   it("runs the intent-chain capture at arm, and a refused capture (exit 3) does not change the drive outcome", async () => {
     // The scratch repo is not on the fixture PR's head branch
-    // (`feature/an earlier change-probe`), so the capture's own verification refuses.
+    // (`feature/ENG-9999-probe`), so the capture's own verification refuses.
     const { dir, stateDir } = writeFixture({
       threads: [],
       reviewedSha: scratchClean.head,

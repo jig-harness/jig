@@ -303,13 +303,11 @@ async function severityWarnings(pr: string): Promise<string> {
  * What the driven worktree still holds, for a NON-converged stop.
  *
  * The converged path already certifies a clean tree and refuses to exit 0 over
- * leftovers, so it needs no such report. The stall stop is the mirror case and
- * had none: a pass that made real, correct edits and then stood down without
- * committing exits the loop with its work product sitting in the worktree,
- * described nowhere in the stop report (FB-153, an earlier change — two passes did
- * exactly this, and the edits survived only because the operator happened to
- * run `git status` before their next command; a `git checkout`, a re-arm, or a
- * branch switch would have destroyed them).
+ * leftovers, so it needs no such report. The stall stop is the mirror case: a
+ * pass that made real, correct edits and then stood down without committing
+ * exits the loop with its work product sitting in the worktree, and without
+ * this report nothing tells the operator so; a `git checkout`, a re-arm, or a
+ * branch switch would then destroy those edits.
  *
  * Reports rather than decides: the exit code is the caller's, unchanged.
  * Never silence — a tree that cannot be READ is reported as unreadable,
@@ -484,8 +482,8 @@ async function certifyFinalWorktree(
  * every work count drive-status.ts reported. Two consecutive gates reading the
  * SAME fingerprint means the pass that ran between them produced nothing this
  * loop can observe — no push, no reply, no resolution, no addressed finding —
- * which is the stall signature an earlier change measured: a pass that exits 0
- * after standing down (there: against its own parent driver) looks exactly
+ * which is the stall signature: a pass that exits 0 after standing down (for
+ * example, against its own parent driver) looks exactly
  * like a productive round to every other counter this loop keeps.
  *
  * Null means "cannot attest sameness", never "same": an unreadable head or a
@@ -583,15 +581,14 @@ export function roundFingerprint(
  * the tiers reachable.
  *
  * EXPORTED, and that is the load-bearing part rather than an incidental
- * refactor. The alias table is a pure total function of one string, and its
- * probe used to spawn a whole `drive.ts` per value — locks, gates, a stubbed
- * forge, a pass — to read the resolved value back out of the child's
- * environment. That probe measured 35.9s for five handoff values (an earlier change
- * <!-- measured -->), and every second of it paid for machinery the assertion
- * does not name. The table is now asserted here, in-process; ONE spawn probe
- * remains alongside it to witness that this value actually reaches the pass as
- * $DRIVE_PR_HANDOFF_AT, which is the only part of that drive the old probe was
- * uniquely able to see. See the suite's § Spawn-boundary integration floor.
+ * refactor. The alias table is a pure total function of one string, so its
+ * tests assert it in-process: spawning a whole `drive.ts` per value — locks,
+ * gates, a stubbed forge, a pass — to read the resolved value back out of the
+ * child's environment costs about 35.9s for five handoff values
+ * <!-- measured -->, all of it paid for machinery the assertion does not
+ * name. ONE spawn probe stays alongside to witness that this value actually
+ * reaches the pass as $DRIVE_PR_HANDOFF_AT, the one thing only a spawned
+ * drive can show. See the suite's § Spawn-boundary integration floor.
  */
 export function resolveHandoffAt(raw: string): string {
   if (raw === "careful") return "50";
@@ -1544,22 +1541,21 @@ function refreshAccountIdentity(
   for (const lock of locks) {
     if (lock.diag === undefined || lock.nonce === undefined) continue;
     // Checked PER LOCK, not once up front against a single shared `current`:
-    // an earlier revision compared `fresh` against only the FIRST lock with a
-    // diag and, on a match, returned before ever looking at the others. A
-    // transient failure rewriting one lock (caught below, `lock.diag` left
-    // unchanged) while a DIFFERENT lock's rewrite succeeded then went
-    // permanently unretried — the next tick's shared check saw the first
-    // lock already agreeing with `fresh` and skipped the loop entirely,
+    // a shared check against only the FIRST lock with a diag would, on a
+    // match, skip the others. A transient failure rewriting one lock (caught
+    // below, `lock.diag` left unchanged) while a DIFFERENT lock's rewrite
+    // succeeded would then go permanently unretried — the next tick sees the
+    // first lock already agreeing with `fresh` and skips the loop entirely,
     // stranding the failed lock on the stale account until some LATER
-    // identity change happened to give it another chance. Each lock now
+    // identity change happens to give it another chance. Each lock instead
     // retries independently until ITS OWN diag agrees with `fresh`.
     if (!accountChanged(fresh, lock.diag.account)) continue;
     const updated: ClaimDiag = { ...lock.diag, account: fresh };
     const dest = join(lock.dir, claimName(lock.nonce));
-    // Deliberately OUTSIDE the `claim.` namespace `CLAIM_PREFIX` names —
-    // `${dest}.rewrite-${pid}` (an earlier revision) still STARTS WITH
-    // `claim.`, so between this write and the rename below the directory
-    // briefly held two entries `inspect()`'s `claimNames` scan both counts
+    // Deliberately OUTSIDE the `claim.` namespace `CLAIM_PREFIX` names — a
+    // name like `${dest}.rewrite-${pid}` still STARTS WITH `claim.`, so
+    // between this write and the rename below the directory would briefly
+    // hold two entries `inspect()`'s `claimNames` scan both counts
     // as generations. That reads as debris to every concurrent reader:
     // `drives.ts --json` reports `contested` instead of `live`, and a
     // concurrent `acquire()` sees more-than-one claim and refuses outright.
@@ -1596,15 +1592,14 @@ function refreshAccountIdentity(
       // differently-named claim — after which THIS rename recreates `dest`
       // regardless, republishing our now-obsolete generation ALONGSIDE the
       // successor's, both reading as valid. `touchLock`'s own next tick is NOT
-      // the backstop an earlier comment here claimed: it addresses `dest` by
-      // the same fixed name, so a resurrected file there makes its
-      // `utimesSync` succeed and permanently masks the takeover instead of
-      // catching it. Detect it here instead, the only place that still knows a
-      // rewrite just happened: a directory holding more than one claim is
-      // exactly what `acquire` already treats as unreachable-by-construction,
-      // so treat it as this generation's own takeover signal and repair it
-      // immediately rather than leaving a ghost for the next reader to trip
-      // on.
+      // a backstop for this: it addresses `dest` by the same fixed name, so a
+      // resurrected file there makes its `utimesSync` succeed and permanently
+      // masks the takeover instead of catching it. Detect it here instead, the
+      // only place that still knows a rewrite just happened: a directory
+      // holding more than one claim is exactly what `acquire` already treats
+      // as unreachable-by-construction, so treat it as this generation's own
+      // takeover signal and repair it immediately rather than leaving a ghost
+      // for the next reader to trip on.
       const afterRewrite = inspect(lock.dir);
       if (afterRewrite.unreadable) {
         // The rename just above succeeded, so this generation's claim is on
@@ -1624,8 +1619,7 @@ function refreshAccountIdentity(
           try {
             rmSync(dest, { force: true });
           } catch {
-            // NOT harmless if this fails — an earlier revision's comment here
-            // claimed it was, and that claim was wrong. `inspect()` reads
+            // NOT harmless if this fails. `inspect()` reads
             // `claim: null` for a directory holding more than one `claim.*`
             // entry, and `acquire()` refuses outright rather than guess which
             // one is real — so a resurrected entry that survives this removal
@@ -2247,7 +2241,7 @@ async function runRepairPass(
 }
 
 /**
- * Record the quota wall this drive is parking on — an earlier change §1c.
+ * Record the quota wall this drive is parking on.
  *
  * Called on BOTH quota paths, which is the whole point: the `stop` path
  * exits and lets the claim age toward `stale`, while the `sleep` path holds
@@ -3656,19 +3650,19 @@ async function main(): Promise<number> {
         // positively confirm freshness", which includes this case, so a
         // required check named in the verdict under that code is not yet
         // trustworthy either way — fall through to the SAME bounded
-        // witness-wait an earlier change added below rather than repairing a
+        // witness-wait below rather than repairing a
         // possibly-imaginary failure or stopping the drive over one. A
         // NON-required check in the same verdict (a `detect-changes` failure
-        // cascading its dependents into `skipped`, an earlier change's own
-        // target case) carries no such ambiguity — final-ready says nothing
+        // cascading its dependents into `skipped`, the typical
+        // case) carries no such ambiguity — final-ready says nothing
         // about it either way — so it is trusted immediately, unchanged.
         //
         // "The verdict is stale" therefore has to mean EVERY failing name is
-        // a required one — `.every()`, not `.some()`. The old `.some`
-        // treated a MIXED verdict (a stale required check alongside a
+        // a required one — `.every()`, not `.some()`. A `.some` would
+        // treat a MIXED verdict (a stale required check alongside a
         // genuinely fresh non-required one, e.g. `failing: Schema gate,
         // detect-changes`) as wholly unreliable the moment any required name
-        // appeared in it, deferring the actionable non-required failure to
+        // appears in it, deferring the actionable non-required failure to
         // the witness wait right along with the ambiguous one — exactly the
         // case the comment above says must be trusted immediately. `length >
         // 0` guards the vacuous-truth trap: `.every()` on an empty array is
@@ -3868,10 +3862,10 @@ async function main(): Promise<number> {
         // a skipped job is not a failure) and NOT a witness to
         // `completedRequiredCi`, which wants a success. Nothing later turns a
         // skipped run into a successful one, so the two disagree forever and
-        // the loop sleeps forever. an earlier change named that shape — a
-        // `detect-changes` failure cascading its dependents into `skipped` —
-        // and its RED half is fixed above by the fall-through; this is the
-        // residual half, where nothing NON-required is red and there is
+        // the loop sleeps forever. The typical shape is a `detect-changes`
+        // failure cascading its dependents into `skipped`; its RED half is
+        // handled above by the fall-through, and this is the other
+        // half, where nothing NON-required is red and there is
         // still no witness (a required check's OWN staleness is the other
         // way this can arrive here, per `staleRequiredFailure` above).
         //
@@ -4795,14 +4789,14 @@ async function main(): Promise<number> {
     }
     const disposition = passExitDisposition(passRes.code);
     // A directive sent WHILE this pass ran must still be honored before a
-    // non-success terminal result for it is reported — PR_NOT_OPEN
-    // previously returned with no checkpoint at all. NOT extended to the
+    // non-success terminal result for it is reported, PR_NOT_OPEN included.
+    // NOT extended to the
     // SUCCESS path below (no `disposition.kind === 'ok'` branch exists here
     // — the function falls through to mark-ready and the held-batch drain
-    // instead): an earlier revision of this fix checked before `disposition`
-    // was even computed, unconditionally, and broke the documented "a
-    // running pass is allowed to complete, including its post-round Ready
-    // transition, before the next checkpoint" guarantee — caught in testing.
+    // instead): checking unconditionally, before `disposition` is computed,
+    // would break the documented "a running pass is allowed to complete,
+    // including its post-round Ready transition, before the next
+    // checkpoint" guarantee.
     // A round that succeeded reaches mark-ready regardless of a directive
     // that arrived while it ran; it already re-checks the mailbox at the top
     // of the next iteration in the ordinary course of looping.

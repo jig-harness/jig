@@ -50,10 +50,10 @@ export type ArtifactFamily =
  * guard ignores `key` entirely and only cares whether `re` matched at all.
  *
  * `family` travels on the SAME object as `re`/`key`, not in a second,
- * independently-ordered array: an earlier revision of `artifacts.ts` paired a
- * parallel family-tag array to this one purely by array index, guarded only by
- * a length check — which cannot catch a same-length reorder here silently
- * reassigning every family to the wrong pattern. Attaching `family` directly
+ * independently-ordered array: a parallel family-tag array paired to this one
+ * purely by array index, guarded only by a length check, cannot catch a
+ * same-length reorder here silently reassigning every family to the wrong
+ * pattern. Attaching `family` directly
  * makes that reordering safe by construction: there is nothing left to fall out
  * of sync with.
  */

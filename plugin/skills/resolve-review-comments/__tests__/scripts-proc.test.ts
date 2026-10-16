@@ -34,7 +34,7 @@ import {
 
 useStubForge();
 
-// ── Cancellation forwarding (TASK) ──────────────────────────────────────
+// ── Cancellation forwarding ─────────────────────────────────────────────
 
 /**
  * A deadlined child is DETACHED into its own process group so the deadline can
@@ -53,7 +53,7 @@ useStubForge();
  * grandchild did NOT go on to do.
  */
 describe.skipIf(process.platform === "win32")(
-  "cancellation reaches a deadlined child (TASK)",
+  "cancellation reaches a deadlined child",
   () => {
     const PROC = join(SCRIPTS, "lib", "proc.ts");
 
@@ -163,12 +163,11 @@ describe.skipIf(process.platform === "win32")(
     });
 
     it("keeps forwarding a second signal when the caller handler does not exit", async () => {
-      // Regression for the bug this TASK hardening fixed: `forward` used to
-      // remove itself unconditionally after the FIRST occurrence of a signal,
-      // regardless of whether other listeners were still present. A caller that
-      // handles or debounces a signal without exiting — modelled here by an own
-      // handler that never calls `process.exit()` — silently regained the
-      // original unforwarded-cancellation bug for every signal after the first.
+      // `forward` stays installed while other listeners remain. Removing
+      // itself unconditionally after the FIRST occurrence of a signal would
+      // leave a caller that handles or debounces a signal without exiting —
+      // modelled here by an own handler that never calls `process.exit()` —
+      // with unforwarded cancellation for every signal after the first.
       // Two deadlined children run in sequence so the SECOND SIGTERM has a live
       // tracked group to prove was (or was not) forwarded.
       const dir = mkdtempSync(join(tmpdir(), "rrc-cancel-repeat-"));
@@ -275,20 +274,20 @@ describe.skipIf(process.platform === "win32")(
   },
 );
 
-// ── Cancellation forwarding — the gh.ts sibling path (TASK) ─────────────
+// ── Cancellation forwarding — the gh.ts sibling path ────────────────────
 
 /**
- * `ghOrExit()` used to spawn `gh` with `spawnSync`: the child was not
- * detached, and the parent could not run a JS signal handler while blocked in
+ * `ghOrExit()` must not spawn `gh` with `spawnSync`: the child would not be
+ * detached, and the parent cannot run a JS signal handler while blocked in
  * the syscall, so a SIGTERM delivered to `resolve-thread.ts` /
  * `unresolve-thread.ts` directly (not through drive-pr's `run()`, which
- * detaches and forwards — see the TASK block above) killed the parent at
- * kernel level and left the `gh` mutation running to completion. Same shape
- * as the TASK probe: start a deadlined mutation, wait for it to be
+ * detaches and forwards — see the block above) would kill the parent at
+ * kernel level and leave the `gh` mutation running to completion. Same shape
+ * as the probe above: start a deadlined mutation, wait for it to be
  * IN FLIGHT, TERM the script, and assert the mutation never landed.
  */
 describe.skipIf(process.platform === "win32")(
-  "cancellation reaches gh.ts mutations directly (TASK)",
+  "cancellation reaches gh.ts mutations directly",
   () => {
     async function probeMutationCancelled(
       script: "resolve-thread.ts" | "unresolve-thread.ts",
@@ -356,7 +355,7 @@ describe.skipIf(process.platform === "win32")(
  * Counting discarded chunks sidesteps both.
  */
 describe.skipIf(process.platform === "win32")(
-  "run()'s output cap kills a runaway child (TASK)",
+  "run()'s output cap kills a runaway child",
   () => {
     const MAX_BUFFER_BYTES_TEST = 8192;
     // A sanity ceiling only — not the primary proof (see `discardedChunks`

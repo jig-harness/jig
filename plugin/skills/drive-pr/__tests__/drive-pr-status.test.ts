@@ -2470,8 +2470,8 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
   /**
    * A "main" repo plus a LINKED worktree off it — the real relationship a
    * Conductor checkout has to its origin repo (`git worktree add`), not two
-   * independent `git init`s. an earlier change's bug needs this exact shape: the
-   * linked worktree's gitdir lives under the main repo's
+   * independent `git init`s. The env-leak mismeasurement needs this exact
+   * shape: the linked worktree's gitdir lives under the main repo's
    * `.git/worktrees/<name>`, and a git-hook env leak (`GIT_DIR`+
    * `GIT_WORK_TREE`, lefthook exports both) points at a tree of that shape —
    * a normal, non-bare worktree that `--is-inside-git-dir` answers `false`
@@ -2532,7 +2532,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
 
   it("acceptance: a leaked GIT_DIR/GIT_WORK_TREE pointed at the MAIN worktree never reports its SHA as trustworthy — the sanitized read recovers the LINKED worktree's own HEAD instead", async () => {
     const { mainDir, mainHead, linkedDir, linkedHead } =
-      makeMainPlusLinkedWorktree("doc6876-main");
+      makeMainPlusLinkedWorktree("wt-main");
     expect(linkedHead).not.toBe(mainHead);
     // The driver names the LINKED worktree as the tree to drive; the leak used
     // to make every git call in this process answer for the MAIN worktree
@@ -2555,19 +2555,11 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
 
   it("acceptance: a leaked GIT_DIR/GIT_WORK_TREE pointed at a SIBLING linked worktree never reports its SHA as trustworthy — the sanitized read recovers the driven worktree's own HEAD instead", async () => {
     const { mainDir, linkedDir, linkedHead } =
-      makeMainPlusLinkedWorktree("doc6876-sib-a");
-    const siblingDir = join(tmpRoot, "doc6876-sib-b");
+      makeMainPlusLinkedWorktree("wt-sib-a");
+    const siblingDir = join(tmpRoot, "wt-sib-b");
     const env = gitCleanEnv();
     Bun.spawnSync(
-      [
-        "git",
-        "worktree",
-        "add",
-        "-q",
-        "-b",
-        "doc6876-sib-b-branch",
-        siblingDir,
-      ],
+      ["git", "worktree", "add", "-q", "-b", "wt-sib-b-branch", siblingDir],
       { cwd: mainDir, env, stdout: "pipe", stderr: "pipe" },
     );
     writeFileSync(join(siblingDir, "sibling.txt"), "sibling\n");
@@ -2626,7 +2618,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     // own env closes it: HEAD is read via ordinary cwd-based discovery from
     // `linkedDir` instead.
     const { mainDir, mainHead, linkedDir, linkedHead } =
-      makeMainPlusLinkedWorktree("doc6876-gitdir-only");
+      makeMainPlusLinkedWorktree("wt-gitdir-only");
     expect(linkedHead).not.toBe(mainHead);
     const r = await measureFrom(linkedDir, {
       DRIVE_PR_WORKTREE: linkedDir,
@@ -2754,8 +2746,8 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
 
   it("mode 2c: a reviewer check-run still in progress, with no sticky posted at all, is not settled", async () => {
     // `reviewedSha: null` is load-bearing here — the default fixture posts a
-    // matching sticky, which is exactly the stranded-check-run shape an earlier change
-    // now trusts (see the tests below). This probe models the genuinely
+    // matching sticky, which is exactly the stranded-check-run shape the gate
+    // trusts (see the tests below). This probe models the genuinely
     // still-running case: in_progress AND no marker evidence of any kind.
     const r = await probe({
       threads: [],
@@ -2769,8 +2761,8 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
    * Seed the drive-state store's `.rounds` counter directly, ahead of a
    * probe — the "last counted round" the stranded-check-run bypass (below)
    * compares the sticky's `ai-review-round` against. `probe` has no
-   * fixture knob for it because nothing before an earlier change ever needed to
-   * control it; every other test either accepts the fresh-state default (0)
+   * fixture knob for it because only these tests need to control it; every
+   * other test either accepts the fresh-state default (0)
    * or bumps it indirectly through a real round.
    */
   function seedRounds(stateDir: string, rounds: number) {
@@ -3160,24 +3152,23 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     });
 
     it("the default floor covers reconciliation THRESHOLD + one full pass INTERVAL + publication", async () => {
-      // an earlier change and 4. The floor's job is to let the reviewer
-      // service's own outbox reconciliation repair a crashed-mid-publish head
-      // before the drive trusts a sticky with zero threads behind it — so it
-      // has to cover the worst case of that repair, not its best.
+      // The floor's job is to let the reviewer service's own outbox
+      // reconciliation repair a crashed-mid-publish head before the drive
+      // trusts a sticky with zero threads behind it — so it has to cover the
+      // worst case of that repair, not its best.
       //
-      // A 600s default sat under the reactivation threshold outright. The
-      // follow-on fix was still short: 2100s cleared the 30-minute
-      // threshold but encoded ONLY that, dropping the 15-minute pass cadence
-      // (the threshold is evaluated when a pass runs, so worst-case detection
-      // is threshold + interval) and the re-run's own publication time (a
-      // reactivated row has not rewritten its sticky or posted its threads
-      // until it publishes). The same false convergence stayed reachable, just
-      // later.
+      // Clearing the 30-minute threshold alone is not enough: the floor must
+      // also cover the 15-minute pass cadence (the threshold is evaluated when
+      // a pass runs, so worst-case detection is threshold + interval) and the
+      // re-run's own publication time (a reactivated row has not rewritten its
+      // sticky or posted its threads until it publishes). Without them the
+      // same false convergence stays reachable, just later.
       //
       // Asserted as the RELATIONSHIP between the service's documented timings,
       // never as a number: an equality against 3600 would restate the sum a
       // reader has to trust, and an inequality against the threshold alone is
-      // exactly the too-weak assertion that let 2100s pass. Retuning any
+      // exactly the too-weak assertion a threshold-only floor would pass.
+      // Retuning any
       // component stays free; dropping a term from the sum fails here.
       expect(STALLED_MIN_AGE_SEC).toBeGreaterThanOrEqual(
         RECONCILIATION_REACTIVATION_SEC +
@@ -3904,12 +3895,11 @@ describe("drive-status.ts HITL parking", () => {
   });
 });
 
-// The reconciliation sweep used to be a sentence in SKILL.md — "run it
-// independently of the gate's answer" — which is a duty nothing bounds except
-// an agent remembering it. Every stuck verdict below ends the round without a
-// pass running, so a reconciliation reachable only from inside a pass could
-// never fire in exactly the situation it exists for. an earlier change moves it into
-// the gate itself, ahead of the evaluation.
+// The reconciliation sweep runs inside the gate itself, ahead of the
+// evaluation, rather than as an instruction an agent must remember. Every
+// stuck verdict below ends the round without a pass running, so a
+// reconciliation reachable only from inside a pass could never fire in
+// exactly the situation it exists for.
 describe("drive-status.ts reconciles replied threads on every pass", () => {
   /** A thread whose last trusted comment already answered it, unresolved. */
   function repliedThread(id: string, token: string): FixtureThread {
@@ -4043,14 +4033,11 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // work. If the sweep still resolved the thread here, it cannot be running
     // anywhere inside the evaluation.
     //
-    // This probe used to use a DRAFT PR for the same purpose, on the grounds
-    // that PR_IS_DRAFT was terminal and returned early. an earlier change
-    // changed that — drafts are now driven and marked Ready after the first
-    // round — so a draft falls through to ordinary evaluation and the fixture
-    // stopped witnessing anything the AWAITING_REVIEWER probe above does not.
-    // Retargeted rather than deleted, because "ahead of the earliest return"
-    // is the property worth pinning, not the particular state that was
-    // earliest when it was written.
+    // A DRAFT PR would not serve: drafts are driven and marked Ready after
+    // the first round, so a draft falls through to ordinary evaluation and
+    // witnesses nothing the AWAITING_REVIEWER probe above does not. "Ahead of
+    // the earliest return" is the property worth pinning, whichever state is
+    // earliest.
     const { dir, stateDir } = writeFixture({
       threads: [repliedThread("PRRT_earliest", "**wont-fix**")],
       checkRuns: [DORMANT_ARM],
@@ -4064,7 +4051,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
   });
 
   it("re-holds an **accepted** reply unconfirmed — the gate never resolves a fix-dependent one", async () => {
-    // The semantics an earlier change shipped are unchanged by being wired in: an
+    // The sweep's semantics are the same inside the gate: an
     // `accepted`/`moot` reply promises a FIX, and only resolve-held-thread.ts
     // may resolve one, after verifying the push that carries it. The sweep has
     // no way to confirm that, so it re-holds at a round `claim-held` can never
@@ -4706,8 +4693,8 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // of the verdicts that do not re-arm — SKILL.md § Guardrails: "never
     // re-arm on HITL_PARKED" — so a pass that skipped the sweep on a
     // transient blip and then returned it would strand the reply forever,
-    // rebuilding the exact an earlier change leak the sweep closes, with nothing left
-    // to retry it.
+    // rebuilding the exact leak the sweep closes, with nothing left to retry
+    // it.
     //
     // The fixture is the discriminating one: ONLY the probe fails, so the
     // evaluation below it succeeds and WOULD reach 8. Reading 1 instead is

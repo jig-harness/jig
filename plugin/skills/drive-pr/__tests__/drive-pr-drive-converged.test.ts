@@ -302,15 +302,15 @@ describe("drive.ts loop control", () => {
   });
 
   it("a dirty worktree ALSO leaves a converged draft unmarked — the transition sits behind the gate", async () => {
-    // The composition of two independently-correct changes (an earlier change's clean
-    // worktree gate and the draft→Ready transition), and the ordering between
-    // them is a real decision rather than an artefact of whichever merged
-    // second. `gh pr ready` fires `ready_for_review`, which spends the external
-    // reviewer's one-pass-per-push budget on whatever head is current at that
-    // instant. Over a dirty worktree that head is precisely the one about to
-    // change once the operator commits the leftovers — so marking first would
-    // spend the pass on a head nobody intends to keep, which is the exact waste
-    // the transition exists to avoid.
+    // The composition of two independently-correct mechanisms (the
+    // clean-worktree gate and the draft→Ready transition), and the ordering
+    // between them is a real decision, not an accident. `gh pr ready` fires
+    // `ready_for_review`, which spends the external reviewer's
+    // one-pass-per-push budget on whatever head is current at that instant.
+    // Over a dirty worktree that head is precisely the one about to change once
+    // the operator commits the leftovers — so marking first would spend the
+    // pass on a head nobody intends to keep, which is the exact waste the
+    // transition exists to avoid.
     //
     // Same fixture as the dirty-tree test above, only a DRAFT. Exit 12 stands,
     // and the PR is still a draft afterwards for the operator's retry to mark.
@@ -523,13 +523,13 @@ describe("drive.ts loop control", () => {
   // SHA-verified convergence.
   //
   // Asserted against the exported mapping rather than by spawning a `drive.ts`
-  // per code. That is not only cheaper (three drives, ~10.8s of a 733s suite —
-  // an earlier change <!-- measured -->); it is what makes the claim's own word ONLY
-  // checkable. A probe paying a full drive per code could afford three of them,
-  // so "every other code" rested on a sample chosen for its price. Here the
-  // whole 0-255 process-exit-status domain is free to run, so a one-line
-  // production mutation special-casing an untested code (e.g. 7, which no
-  // sample covered) cannot leave this test green.
+  // per code. That is not only cheaper (three drives, ~10.8s of a 733s suite
+  // <!-- measured -->); it is what makes the claim's own word ONLY checkable. A
+  // probe paying a full drive per code could afford three of them, so "every
+  // other code" rested on a sample chosen for its price. Here the whole 0-255
+  // process-exit-status domain is free to run, so a one-line production
+  // mutation special-casing an untested code (e.g. 7, which no sample covered)
+  // cannot leave this test green.
   it("flattens every OTHER pass failure to 1, including drive-status codes", () => {
     for (let c = 0; c <= 255; c++) {
       const expected: ReturnType<typeof passExitDisposition> =

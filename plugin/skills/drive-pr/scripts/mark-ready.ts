@@ -46,8 +46,10 @@
  *      the lease rather than releasing it — an unconfirmed remote effect must
  *      not become immediately retryable, since retrying could duplicate
  *      `ready_for_review` or reverse a human's later re-draft. See the
- *      "AMBIGUOUS, NOT DID NOT APPLY" comment at that branch, and an earlier change for
- *      the residual gap once that lease itself goes stale.
+ *      "AMBIGUOUS, NOT DID NOT APPLY" comment at that branch. The protection
+ *      lasts only as long as the lease: once it goes stale, a successor that
+ *      reads an open draft takes the lease and fires `gh pr ready` again, so
+ *      a human's re-draft after a request that did land can still be undone.
  *   5  the PR is not open — nothing to mark, and the caller's loop is over
  *   2  usage error
  *
@@ -654,11 +656,10 @@ async function main(): Promise<number> {
     // a human can convert the PR back to draft in the window before this read
     // completes; the resulting OPEN-draft snapshot is then indistinguishable
     // from "the request never landed at all" using the live flag alone.
-    // Releasing the lease on either reading (as an earlier version did for the
-    // readable-draft case) makes an unconfirmed remote effect immediately
-    // retryable — which either duplicates `ready_for_review` on a lost-response
-    // success, or reverses a human's deliberate re-draft on a request that DID
-    // apply and was then reversed.
+    // Releasing the lease on either reading would make an unconfirmed remote
+    // effect immediately retryable — which either duplicates
+    // `ready_for_review` on a lost-response success, or reverses a human's
+    // deliberate re-draft on a request that DID apply and was then reversed.
     //
     // So the lease is left exactly as it is in both cases: still held, by
     // this process, until something can actually confirm what happened. A

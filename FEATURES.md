@@ -151,8 +151,8 @@ never an edit to the changelog or the version. After the merge, a release
 step writes the notes into the changelog, moves the version to the largest
 bump asked for, tags the release and deletes the notes. Two pull requests
 never edit the same lines, so merging one does not put the others in
-conflict. The release step and its branch check ship as a reference
-([change-notes](modules/M12-parallel-agent-ergonomics/reference/change-notes/README.md)),
+conflict. The release step and its branch check ship in the plugin
+([change-note release scripts](plugin/skills/changelog/scripts/README.md)),
 and Jig's own releases are made this way.
 
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)

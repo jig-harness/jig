@@ -7,12 +7,15 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { remediation } from "./check-branch-protection.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { checkWorkflowConventions } from "./check-workflow-conventions.ts";
+import { readPatterns } from "./check-no-tracker-refs.ts";
+import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 import {
   LEAKY_GIT_ENV,
   spawnSync,
@@ -41,6 +44,15 @@ const fixtures = join(import.meta.dir, "tests/fixtures");
 // The fixtures use neutral patterns; the real ones are tested at run time
 // below, so no fixture has to spell out what the gate forbids.
 const trackerPatterns = join(fixtures, "tracker-key-patterns.txt");
+// Jig's own configuration, which fills the real patterns' placeholders: the
+// tracker team whose keys they reject and the owner whose name they reject.
+const jigConfig = readFileSync(join(root, ".config/jig.yaml"), "utf8");
+const { issue_tracker, review } = loadYaml(jigConfig) as {
+  issue_tracker: { team: string };
+  review: { repo_slug: string };
+};
+const team = issue_tracker.team;
+const owner = review.repo_slug.split("/")[0] ?? "";
 const temporary: string[] = [];
 function temp(): string {
   const path = mkdtempSync(join(tmpdir(), "jig-gates-"));
@@ -119,7 +131,7 @@ const cases: [string, string, string[], number][] = [
     1,
   ]),
   ["check-no-tracker-refs", "fail-tracker-badregex", [".", "patterns.txt"], 2],
-  ["check-no-tracker-refs", "pass", ["./does-not-exist"], 2],
+  ["check-no-tracker-refs", "pass", ["./does-not-exist", trackerPatterns], 2],
   [
     "check-no-tracker-refs",
     "fail-tracker-multipattern",
@@ -127,6 +139,38 @@ const cases: [string, string, string[], number][] = [
     2,
   ],
 ];
+// Pattern files that name configured values by placeholder. The Bash baseline
+// (scripts/migration-parity.md) has no placeholders, so these cases run only
+// the Bun gate.
+const placeholderCases: [string, string, string[], number][] = [
+  [
+    "check-no-tracker-refs",
+    "pass-tracker-placeholders",
+    [".", "patterns.txt"],
+    0,
+  ],
+  [
+    "check-no-tracker-refs",
+    "fail-tracker-placeholders",
+    [".", "patterns.txt"],
+    1,
+  ],
+  ...[
+    "fail-tracker-placeholder-no-config",
+    "fail-tracker-placeholder-bad-yaml",
+    "fail-tracker-placeholder-no-field",
+    "fail-tracker-placeholder-no-owner",
+    "fail-tracker-placeholder-unknown",
+  ].map((name): [string, string, string[], number] => [
+    "check-no-tracker-refs",
+    name,
+    [".", "patterns.txt"],
+    2,
+  ]),
+];
+for (const [gate, fixture, args, status] of placeholderCases)
+  test(`${gate}: ${fixture} exits ${status}`, () =>
+    expectSpawnExit(run(gate, args, join(fixtures, fixture)), status));
 for (const [gate, fixture, args, status] of cases)
   test(`${gate}: ${fixture} exits ${status}`, () => {
     expectSpawnExit(run(gate, args, join(fixtures, fixture)), status);
@@ -724,11 +768,10 @@ test.skipIf(!unixPermissions)(
       chmodSync(patterns, 0o644);
     }
     expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+    mkdirSync(join(dir, ".config"));
+    writeFileSync(join(dir, ".config/jig.yaml"), jigConfig);
     mkdirSync(join(dir, "locked"));
-    writeFileSync(
-      join(dir, "locked/notes.md"),
-      "See " + "DOC" + "-1 for why.\n",
-    );
+    writeFileSync(join(dir, "locked/notes.md"), `See ${team}-1 for why.\n`);
     expectSpawnExit(safeSpawn(["git", "-C", dir, "add", "locked/notes.md"]), 0);
     chmodSync(join(dir, "locked"), 0);
     try {
@@ -742,7 +785,8 @@ test.skipIf(!unixPermissions)(
 test("the real patterns reject the original tracker keys and organization name, outside the allowed places", () => {
   const dir = temp();
   expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
-  const name = ["Doc", "omply"].join("");
+  // Capitalised, as a publisher field or a copyright line writes it.
+  const name = `${owner.charAt(0).toUpperCase()}${owner.slice(1)}`;
   const write = (path: string, content: string) => {
     mkdirSync(join(dir, path, ".."), { recursive: true });
     writeFileSync(join(dir, path), content);
@@ -762,11 +806,23 @@ test("the real patterns reject the original tracker keys and organization name, 
     "plugin/.claude-plugin/plugin.json",
     `{\n  "author": { "name": "${name}" }\n}\n`,
   );
-  write(".config/jig.yaml", `team: ${name}\n`);
+  write(".config/jig.yaml", jigConfig);
   write("NOTICE", `Copyright 2026 ${name}\n`);
+  // A word that only starts or ends like the team key is not a key.
+  const lower = team.toLowerCase();
+  write("words.md", `${lower}s2024, ${lower}12, x${lower}1234, ${team}-ish\n`);
   expectSpawnExit(check(), 0);
   for (const content of [
-    `See ${["DOC", "1234"].join("-")}.\n`,
+    `See ${team}-1234.\n`,
+    // The key folded into a name.
+    `git switch -c user/${lower}-1234-title\n`,
+    `makeWorktree("${lower}1234-main");\n`,
+    `const PRE_${team}_1234_ACCOUNT = 1;\n`,
+    `join(tmpRoot, "no-such-binary-${lower}1234");\n`,
+    // A short key is still a key once a separator sets it apart.
+    `git switch -c feature/${lower}-42-fix\n`,
+    `const PRE_${team}_42_ACCOUNT = 1;\n`,
+    `makeWorktree("${lower}_7");\n`,
     `Built at ${name}.\n`,
     `export const STATE = "~/.${name.toLowerCase()}/state";\n`,
     `See https://github.com/${name.toLowerCase()}/other-repo.\n`,
@@ -786,12 +842,96 @@ test("the real patterns reject the original tracker keys and organization name, 
   }
   write("notes.md", "Nothing to see.\n");
   for (const content of [
-    `{\n  "author": { "name": "${name}" }, "see": "${["DOC", "1"].join("-")}"\n}\n`,
+    `{\n  "author": { "name": "${name}" }, "see": "${team}-1"\n}\n`,
     `{\n  "homepage": "${name}"\n}\n`,
   ]) {
     write("plugin/.claude-plugin/plugin.json", content);
     expectSpawnExit(check(), 1);
   }
+});
+
+test("placeholders are filled from the configuration, and an unfilled one names its field and file", () => {
+  const caught = run(
+    "check-no-tracker-refs",
+    [".", "patterns.txt"],
+    join(fixtures, "fail-tracker-placeholders"),
+  );
+  expectSpawnExit(caught, 1);
+  expect(caught.stderr.toString()).toContain("`ENG-42`");
+  for (const [fixture, needles] of [
+    ["fail-tracker-placeholder-no-config", [".config/jig.yaml", "ENOENT"]],
+    ["fail-tracker-placeholder-bad-yaml", [".config/jig.yaml", "YAML"]],
+    [
+      "fail-tracker-placeholder-no-field",
+      ["patterns.txt:2", "issue_tracker.team", ".config/jig.yaml"],
+    ],
+    [
+      "fail-tracker-placeholder-no-owner",
+      ["patterns.txt:2", "review.repo_slug", "owner/name", ".config/jig.yaml"],
+    ],
+    ["fail-tracker-placeholder-unknown", ["patterns.txt:2", "{{project}}"]],
+  ] as const) {
+    const result = run(
+      "check-no-tracker-refs",
+      [".", "patterns.txt"],
+      join(fixtures, fixture),
+    );
+    expectSpawnExit(result, 2);
+    const stderr = result.stderr.toString();
+    expect(stderr).toContain("could not check");
+    for (const needle of needles) expect(stderr).toContain(needle);
+  }
+});
+
+test("the configuration that fills the real patterns still names the original team and owner", () => {
+  // The real patterns reject whatever `.config/jig.yaml` names, and that file
+  // is exempt from the gate. A changed team or owner would silently stop the
+  // gate rejecting the original ones, so both are pinned here by digest,
+  // which checks them without spelling them out.
+  const digest = (value: string) =>
+    createHash("sha256").update(value).digest("hex");
+  expect(digest(team)).toBe(
+    "c9ff9d7d29e892ae070c1d1c994458bff733dfad5f006865c3c7065193f789db",
+  );
+  expect(digest(owner)).toBe(
+    "9d902a0870c74c3e5f74ee1dd1db76e7b1705e069c8a8bc40f52839384eae84f",
+  );
+});
+
+test("a filled value is matched literally, not as a regular expression", () => {
+  const dir = temp();
+  expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
+  const write = (path: string, content: string) => {
+    mkdirSync(join(dir, path, ".."), { recursive: true });
+    writeFileSync(join(dir, path), content);
+    expectSpawnExit(safeSpawn(["git", "-C", dir, "add", path]), 0);
+  };
+  write(".config/jig.yaml", "issue_tracker:\n  team: A.B\n");
+  write("patterns.txt", "\\b{{team}}-[0-9]+\\b\n");
+  const check = () =>
+    run("check-no-tracker-refs", [dir, join(dir, "patterns.txt")]);
+  write("notes.md", "See AxB-12.\n");
+  expectSpawnExit(check(), 0);
+  write("notes.md", "See A.B-12.\n");
+  expectSpawnExit(check(), 1);
+});
+
+test("the real pattern file, which the gate skips, holds nothing its own patterns reject", () => {
+  const { regexes } = readPatterns(
+    join(import.meta.dir, "tracker-key-patterns.txt"),
+    root,
+  );
+  const leaks = readFileSync(
+    join(import.meta.dir, "tracker-key-patterns.txt"),
+    "utf8",
+  )
+    .split("\n")
+    .flatMap((line, index) =>
+      regexes.some((regex) => regex.test(line))
+        ? [`${index + 1}: ${line}`]
+        : [],
+    );
+  expect(leaks).toEqual([]);
 });
 
 test("POSIX regex classes retain tracker pattern matching", async () => {

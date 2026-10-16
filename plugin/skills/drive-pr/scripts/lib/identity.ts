@@ -164,9 +164,9 @@ function tokenFingerprint(token: string): string {
  * which is the whole point: the operator must be able to tell which drivers are
  * about to stop) and folds `oauthAccount`'s read into `provenance` as a
  * labelled, explicitly-hedged hint rather than the reported identity. Reporting
- * `oauthAccount` itself as the token's account (an earlier revision of this
- * function did) would silently misattribute billing the moment the two diverge
- * — the exact failure this module exists to make visible, not reproduce.
+ * `oauthAccount` itself as the token's account would silently misattribute
+ * billing the moment the two diverge — the exact failure this module exists to
+ * make visible, not reproduce.
  */
 function resolveClaudeIdentity(): AccountIdentity {
   const token = process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "";

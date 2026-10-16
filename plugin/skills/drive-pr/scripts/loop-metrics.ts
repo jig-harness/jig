@@ -8,17 +8,16 @@
  * PR's final summary carries the numbers without manual archaeology.
  *
  * That last quantity is temporal, not causal — it is every commit after the
- * first reviewed head, whatever prompted it, and this header said "because a
- * round demanded it" for three rounds after `metrics.ts` and the baseline had
- * both retired that claim. See
+ * first reviewed head, whatever prompted it, not code a round demanded. See
  * `lib/metrics.ts` § "What the split does NOT establish", which owns the rule;
  * a second statement of it here is a second copy to drift.
  *
- * Why it exists: an earlier change proposes cutting low-value review rounds, and every
- * dial in it is currently tuned blind. An 87.7% accepted share reads as "the
- * materiality bar is not biting" and reads equally well as "the reviewers were
- * precise and the fixes were needed". No dial should move before this baseline
- * exists — and a baseline only exists if producing it is cheaper than not.
+ * Why it exists: cutting low-value review rounds means turning dials, and
+ * without a baseline every dial is tuned blind. An 87.7% accepted share reads
+ * as "the materiality bar is not biting" and reads equally well as "the
+ * reviewers were precise and the fixes were needed". No dial should move before
+ * this baseline exists — and a baseline only exists if producing it is cheaper
+ * than not.
  *
  * Every print of these speed/volume numbers also carries the quality
  * counterweight: the recorded, human-adjudicated defect-escape figure (or an

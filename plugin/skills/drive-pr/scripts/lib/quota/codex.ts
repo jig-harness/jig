@@ -243,7 +243,7 @@ function mostRestrictiveExhausted(
  * size the rollout's BODY can reach. Kept as its own read, separate from the
  * bounded TAIL read the main loop uses: once a rollout exceeds that tail
  * bound, the tail no longer contains byte offset 0 at all, so deriving the
- * head line from it (as an earlier revision did) would read some unrelated
+ * head line from it would read some unrelated
  * mid-file line instead and silently reject every large rollout as
  * belonging to no worktree.
  */

@@ -72,14 +72,14 @@ beforeAll(() => {
 
   // The scripts under test resolve their actor identity from the git
   // worktree they are spawned in (lib/state/actor.ts, `git rev-parse
-  // --show-toplevel`). Spawning them in this test process's own cwd made
+  // --show-toplevel`). Spawning them in this test process's own cwd would make
   // that an ambient dependency on the ENCLOSING checkout being a git
   // worktree — false on the remote gates host and on a Blacksmith Testbox,
   // where the synced checkout has no `.git` at all. A bare
   // `git init` scratch dir is all identity resolution needs (no history is
   // read); the git-repo-location env vars are scrubbed so a hook-inherited
-  // GIT_DIR cannot repoint the init at a real repo (the an earlier change
-  // hook-env-leak class). `scrubbedGitEnv()` is used at EVERY spawn below,
+  // GIT_DIR cannot repoint the init at a real repo (the hook-env-leak
+  // class). `scrubbedGitEnv()` is used at EVERY spawn below,
   // not just this one — see its own comment.
   scratchWorktree = join(tmpRoot, "worktree");
   mkdirSync(scratchWorktree, { recursive: true });

@@ -274,7 +274,8 @@ function runTriage(
 
 /** Post a reply directly, bypassing triage-thread.ts entirely — models a
  * pass that posted the reply and then died before ever reaching the hold
- * call, the literal crash class an earlier change exists to survive.
+ * call, the literal crash class triage-thread.ts's reconciliation rule exists
+ * to survive.
  *
  * `allowLeaveOpenMarker` mirrors setting `DRIVE_PR_INTERNAL_LEAVE_OPEN_MARKER`
  * the way `triage-thread.ts` itself would — for a fixture whose whole POINT

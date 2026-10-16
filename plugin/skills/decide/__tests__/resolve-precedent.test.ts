@@ -165,10 +165,10 @@ describe("tokenize", () => {
     // These are the highest-precision terms in this corpus; splitting
     // `adr-0039` into `adr` + `0039` would destroy the one term that matches
     // exactly one document.
-    const { terms } = tokenize("does ADR-0039 or UUID7 cover ENG-7488");
+    const { terms } = tokenize("does ADR-0039 or UUID7 cover ENG-1234");
     expect(terms).toContain("adr-0039");
     expect(terms).toContain("uuid7");
-    expect(terms).toContain("eng-7488");
+    expect(terms).toContain("eng-1234");
   });
 
   it("deduplicates repeated terms", () => {

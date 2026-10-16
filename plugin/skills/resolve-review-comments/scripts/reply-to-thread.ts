@@ -485,7 +485,7 @@ async function assertPostAllowed(): Promise<void> {
       1,
       "reply-to-thread: the drive-lease fence timed out, so whether another session has taken this tree's drive lease is unknown.",
       "Refusing to post rather than assume: a reply cannot be withdrawn once it",
-      "is on the thread (TASK).",
+      "is on the thread.",
     );
   }
   // The fence's own exit code, propagated rather than remapped, so `11` still
@@ -500,7 +500,7 @@ async function main(): Promise<number> {
     fail(2, "usage: reply-to-thread.ts <thread-node-id> <<'EOF' ... EOF");
   }
 
-  // Reject a stale two-argument call (the pre-TASK body-as-argument form)
+  // Reject a two-argument call (the body passed as an argument, not on stdin)
   // BEFORE reading stdin. Checked by ARITY, not by whether argv[1] is
   // non-empty: a caller passing an explicit empty string as the second
   // argument (e.g. an unset $REPLY) must fail the same way. Silently accepting

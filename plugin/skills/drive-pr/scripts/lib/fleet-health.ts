@@ -122,7 +122,7 @@ function trailerPattern(teamKey: string | null): RegExp {
  * Issue keys named by Closes/References trailers anywhere in `text` (of
  * `teamKey`, or of any team when it is `null`). Anywhere,
  * not line-start: the batch PRs this sensor most needs to read put the trailer
- * in a table cell (`| Closes an earlier change | …`), and a start-anchored pattern would
+ * in a table cell (`| Closes ENG-123 | …`), and a start-anchored pattern would
  * attribute them to no epic at all.
  */
 export function parseIssueRefs(
@@ -162,10 +162,10 @@ export function originPrOf(issue: {
 
 /**
  * The epic an issue counts toward: itself when it IS an epic, else its nearest
- * epic ancestor. A trailer that names the epic directly ("References: an earlier change")
+ * epic ancestor. A trailer that names the epic directly ("References: ENG-100")
  * is attribution intent — an epic never produces a PR itself, so a PR that names
- * one is work toward it — and dropping it charged that PR's review rounds to no
- * epic at all.
+ * one is work toward it — and dropping it would charge that PR's review rounds
+ * to no epic at all.
  */
 export function epicOf(
   issue: Pick<IssueFact, "id" | "labels" | "ancestors">,

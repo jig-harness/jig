@@ -14,7 +14,8 @@
  *    arithmetic and the partial-result exit path are exercised for real;
  *  - the retroactive self-inflicted labeller against a real throwaway
  *    repository — a suite that only injected a predicate would never exercise
- *    the git-backed path (the gap an earlier change named for `defect-escape.ts`).
+ *    the git-backed path (the same gap `defect-escape.test.ts` closes for
+ *    `defect-escape.ts`).
  *
  * No network: everything above the labeller is pure over fixtures.
  */

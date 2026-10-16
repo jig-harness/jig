@@ -1,5 +1,5 @@
 /**
- * defer-batch.test.ts — the pure surface of scripts/defer-batch.ts (TASK-6733),
+ * defer-batch.test.ts — the pure surface of scripts/defer-batch.ts,
  * plus fail-closed CLI probes.
  *
  * The unit half exercises the helpers the network layer is driven by: the
@@ -103,33 +103,29 @@ function required<T>(value: T | undefined): T {
 
 describe("batchTitle / isBatchTitle", () => {
   it("renders the protocol title with the Type as the lookup key", () => {
-    expect(batchTitle("4068", "chore")).toBe(
-      "PR #4068 chore review follow-ups",
-    );
+    expect(batchTitle("123", "chore")).toBe("PR #123 chore review follow-ups");
   });
 
   it("matches its own rendering", () => {
-    expect(isBatchTitle(batchTitle("4068", "chore"), "4068", "chore")).toBe(
-      true,
-    );
+    expect(isBatchTitle(batchTitle("123", "chore"), "123", "chore")).toBe(true);
   });
 
   it("matches case-insensitively and across padding", () => {
     expect(
-      isBatchTitle("  PR #4068 Chore review follow-ups ", "4068", "chore"),
+      isBatchTitle("  PR #123 Chore review follow-ups ", "123", "chore"),
     ).toBe(true);
   });
 
   it("does not match a different Type under the same PR", () => {
-    expect(
-      isBatchTitle("PR #4068 bug review follow-ups", "4068", "chore"),
-    ).toBe(false);
+    expect(isBatchTitle("PR #123 bug review follow-ups", "123", "chore")).toBe(
+      false,
+    );
   });
 
   it("does not match a PR number that merely prefixes this one", () => {
-    expect(
-      isBatchTitle("PR #406 chore review follow-ups", "4068", "chore"),
-    ).toBe(false);
+    expect(isBatchTitle("PR #12 chore review follow-ups", "123", "chore")).toBe(
+      false,
+    );
   });
 });
 
@@ -137,7 +133,7 @@ describe("batchTitle / isBatchTitle", () => {
 
 describe("renderEntry", () => {
   const base = {
-    sourceUrl: "https://github.com/example/project/pull/4068#discussion_r1",
+    sourceUrl: "https://github.com/example/project/pull/123#discussion_r1",
     finding: "line one\nline two",
     reason: "needs the connector refactor first",
     severity: "high",
@@ -188,7 +184,7 @@ describe("renderEntry", () => {
 
   it("renders a summary finding under its stable key with the comment backlink", () => {
     const sourceUrl =
-      "https://github.com/example/project/pull/4068#issuecomment-5649338286";
+      "https://github.com/example/project/pull/123#issuecomment-5649338286";
     const entryKey = summaryEntryKey(sourceUrl, "3b78f436d805f279");
     const s = renderEntry({ ...base, sourceUrl, entryKey });
     expect(s.startsWith(entryHeading(entryKey))).toBe(true);
@@ -197,7 +193,7 @@ describe("renderEntry", () => {
 });
 
 describe("appendEntry", () => {
-  const url = "https://github.com/example/project/pull/4068#discussion_r9";
+  const url = "https://github.com/example/project/pull/123#discussion_r9";
   const entry = renderEntry({
     sourceUrl: url,
     finding: "f",
@@ -227,7 +223,7 @@ describe("appendEntry", () => {
     // `...#discussion_r1` is a substring of `...#discussion_r10`, so a
     // substring key reports r1 already recorded once r10 has been appended —
     // and its finding is then resolved with nothing tracking it.
-    const short = "https://github.com/example/project/pull/4068#discussion_r1";
+    const short = "https://github.com/example/project/pull/123#discussion_r1";
     const long = `${short}0`;
     const withLong = appendEntry(
       "## Entries",
@@ -246,7 +242,7 @@ describe("appendEntry", () => {
 
   it("does NOT treat a URL quoted inside another finding as present", () => {
     const quoting = renderEntry({
-      sourceUrl: "https://github.com/example/project/pull/4068#discussion_r7",
+      sourceUrl: "https://github.com/example/project/pull/123#discussion_r7",
       finding: `see the earlier thread at ${url} for context`,
       reason: "r",
       severity: "unknown",
@@ -264,10 +260,10 @@ describe("appendEntry", () => {
   });
 
   it("survives Linear rewriting the bare URL into a markdown link", () => {
-    // MEASURED on TASK-6789, this PR's own first real batch: Linear stores
-    // `### <url>` back as `### [<url>](<<url>>)`. The exact line-equality key
-    // never matched after that round trip, so every append failed its own
-    // verification and the retry loop re-appended — three copies of one entry.
+    // Measured on a real batch: Linear stores `### <url>` back as
+    // `### [<url>](<<url>>)`. An exact line-equality key never matches after
+    // that round trip, so every append would fail its own verification and
+    // the retry loop would re-append — three copies of one entry.
     const linkified = `### [${url}](<${url}>)`;
     expect(headingEntryKey(linkified)).toBe(url);
     expect(hasEntry(linkified, url)).toBe(true);
@@ -279,7 +275,7 @@ describe("appendEntry", () => {
   it("still refuses a prefix match through the link form", () => {
     // The property the line-equality key was chosen for must survive the fix:
     // `..._r1` inside `..._r10` is still not a match.
-    const short = "https://github.com/example/project/pull/4068#discussion_r1";
+    const short = "https://github.com/example/project/pull/123#discussion_r1";
     expect(hasEntry(`### [${short}0](<${short}0>)`, short)).toBe(false);
   });
 
@@ -367,8 +363,8 @@ describe("appendEntry", () => {
 
 describe("threadUrlPattern", () => {
   it("anchors both ends so a longer URL cannot ride a prefix match", () => {
-    const re = threadUrlPattern(DEFAULT_REPO_SLUG, "4068");
-    const base = `https://github.com/${DEFAULT_REPO_SLUG}/pull/4068#discussion_r1`;
+    const re = threadUrlPattern(DEFAULT_REPO_SLUG, "123");
+    const base = `https://github.com/${DEFAULT_REPO_SLUG}/pull/123#discussion_r1`;
     expect(re.test(base)).toBe(true);
     expect(re.test(`${base}?x=1`)).toBe(false);
     expect(re.test(` ${base}`)).toBe(false);
@@ -388,18 +384,18 @@ describe("threadUrlPattern", () => {
 
 describe("summary finding identity", () => {
   const commentUrl =
-    "https://github.com/example/project/pull/4068#issuecomment-5649338286";
+    "https://github.com/example/project/pull/123#issuecomment-5649338286";
 
   it("accepts only a conversation comment on this repository and PR", () => {
-    const re = commentUrlPattern(DEFAULT_REPO_SLUG, "4068");
+    const re = commentUrlPattern(DEFAULT_REPO_SLUG, "123");
     expect(re.test(commentUrl)).toBe(true);
     expect(
       re.test(
-        "https://github.com/example/project/pull/4069#issuecomment-5649338286",
+        "https://github.com/example/project/pull/124#issuecomment-5649338286",
       ),
     ).toBe(false);
     expect(
-      re.test("https://github.com/example/project/pull/4068#discussion_r1"),
+      re.test("https://github.com/example/project/pull/123#discussion_r1"),
     ).toBe(false);
   });
 
@@ -449,7 +445,7 @@ describe("isBatchableSize", () => {
   });
 });
 
-// ── Severity → Linear priority (TASK-7491) ───────────────────────────────────
+// ── Severity → Linear priority ───────────────────────────────────────────────
 
 describe("SEVERITY_TO_PRIORITY / PRIORITY_TO_SEVERITY", () => {
   it("matches the issue spec and labels.yaml priority.levels.*.linear_value", () => {
@@ -582,7 +578,7 @@ describe("priorityAfterSeverity — escalate-never-downgrade", () => {
 });
 
 describe("appendEntry onto an EMPTY description", () => {
-  const url = "https://github.com/example/project/pull/4068#discussion_r5";
+  const url = "https://github.com/example/project/pull/123#discussion_r5";
   const entry = renderEntry({
     sourceUrl: url,
     finding: "f",
@@ -597,34 +593,34 @@ describe("appendEntry onto an EMPTY description", () => {
     // no provenance at all. Seeding `initialDescription` first is what the
     // caller does about it.
     const bare = appendEntry("", entry, url).description;
-    expect(bare).not.toContain("PR #4068");
-    expect(bare).not.toContain("TASK-6727");
+    expect(bare).not.toContain("PR #123");
+    expect(bare).not.toContain("ENG-101");
 
     const seeded = appendEntry(
-      initialDescription("4068", "TASK-6727"),
+      initialDescription("123", "ENG-101"),
       entry,
       url,
     ).description;
-    expect(seeded).toContain("PR #4068");
-    expect(seeded).toContain("TASK-6727");
+    expect(seeded).toContain("PR #123");
+    expect(seeded).toContain("ENG-101");
     expect(seeded).toContain(entryHeading(url));
   });
 });
 
 describe("initialDescription — the no-parent rationale", () => {
   it("records the reason and names the epic that was rejected", () => {
-    const s = initialDescription("4068", "TASK-6727", {
+    const s = initialDescription("123", "ENG-101", {
       reason: "tooling defect under a compliance epic",
-      rejectedEpic: "TASK-6000",
+      rejectedEpic: "ENG-100",
     });
     expect(s).toContain("**No epic parent**");
     expect(s).toContain("tooling defect under a compliance epic");
-    expect(s).toContain("TASK-6000");
+    expect(s).toContain("ENG-100");
     expect(s).toContain("## Entries");
   });
 
   it("says so plainly when there was no epic to reject", () => {
-    const s = initialDescription("4068", "TASK-6727", {
+    const s = initialDescription("123", "ENG-101", {
       reason: "originating issue is itself an epic",
       rejectedEpic: "",
     });
@@ -632,7 +628,7 @@ describe("initialDescription — the no-parent rationale", () => {
   });
 
   it("omits the block entirely when the follow-up is parented", () => {
-    expect(initialDescription("4068", "TASK-6727")).not.toContain(
+    expect(initialDescription("123", "ENG-101")).not.toContain(
       "**No epic parent**",
     );
   });
@@ -668,7 +664,7 @@ describe("noParentRationaleForRepair", () => {
     // same breath. The rendered description must state neither "no epic to
     // inherit" nor name any epic.
     const fallback = noParentRationaleForRepair(false);
-    const rendered = initialDescription("4068", "TASK-1234", fallback);
+    const rendered = initialDescription("123", "ENG-1234", fallback);
     expect(rendered).toContain("**No epic parent**");
     expect(rendered).not.toContain("no epic to inherit");
     expect(rendered).not.toContain("rejected as unrelated");
@@ -691,21 +687,21 @@ describe("descriptionForRepair", () => {
   // not just the helper it delegates to.
 
   it("returns the live description unchanged when it is non-empty", () => {
-    const live = initialDescription("4068", "TASK-6727");
-    expect(descriptionForRepair(live, "4068", "TASK-6727", true)).toBe(live);
+    const live = initialDescription("123", "ENG-101");
+    expect(descriptionForRepair(live, "123", "ENG-101", true)).toBe(live);
   });
 
   it("rebuilds a wiped description WITHOUT a no-parent block when the batch actually has a parent", () => {
-    const rebuilt = descriptionForRepair("", "4068", "TASK-6727", true);
+    const rebuilt = descriptionForRepair("", "123", "ENG-101", true);
     expect(rebuilt).not.toContain("**No epic parent**");
-    expect(rebuilt).toContain("PR #4068");
+    expect(rebuilt).toContain("PR #123");
   });
 
   it("rebuilds a wiped description with the lost-reason fallback when the batch genuinely has no parent — never this run's own rationale", () => {
     const rebuilt = descriptionForRepair(
       "   ", // whitespace-only counts as wiped
-      "4068",
-      "TASK-6727",
+      "123",
+      "ENG-101",
       false,
     );
     expect(rebuilt).toContain("**No epic parent**");
@@ -716,14 +712,14 @@ describe("descriptionForRepair", () => {
 
 describe("initialDescription", () => {
   it("carries the PR and the originating issue", () => {
-    const s = initialDescription("4068", "TASK-6727");
-    expect(s).toContain("PR #4068");
-    expect(s).toContain("TASK-6727");
+    const s = initialDescription("123", "ENG-101");
+    expect(s).toContain("PR #123");
+    expect(s).toContain("ENG-101");
     expect(s).toContain("## Entries");
   });
 
   it("states the no-ticket case instead of a blank", () => {
-    expect(initialDescription("4068", "")).toContain("no originating issue");
+    expect(initialDescription("123", "")).toContain("no originating issue");
   });
 });
 
@@ -733,7 +729,7 @@ describe("pickBatch", () => {
   it("picks the OLDEST issue whichever order candidates arrive in", () => {
     const older = {
       id: "a",
-      identifier: "TASK-1",
+      identifier: "ENG-1",
       title: "t",
       url: "u",
       description: "",
@@ -742,11 +738,11 @@ describe("pickBatch", () => {
     const newer = {
       ...older,
       id: "b",
-      identifier: "TASK-2",
+      identifier: "ENG-2",
       createdAt: "2026-08-10T00:00:00.000Z",
     };
-    expect(pickBatch([newer, older]).identifier).toBe("TASK-1");
-    expect(pickBatch([older, newer]).identifier).toBe("TASK-1");
+    expect(pickBatch([newer, older]).identifier).toBe("ENG-1");
+    expect(pickBatch([older, newer]).identifier).toBe("ENG-1");
   });
 });
 
@@ -1513,8 +1509,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   // never-aborted signal for every test that is not itself exercising the
   // deadline — see the dedicated `RUN_DEADLINE_MS` describe block below.
   const neverAbort = () => new AbortController().signal;
-  const threadUrl =
-    "https://github.com/example/project/pull/4068#discussion_r1";
+  const threadUrl = "https://github.com/example/project/pull/123#discussion_r1";
   const entry = renderEntry({
     sourceUrl: threadUrl,
     finding: "f",
@@ -1528,7 +1523,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     threadUrl,
   ).description;
   const baseArgs: Args = {
-    pr: "4068",
+    pr: "123",
     type: "chore",
     sourceUrl: threadUrl,
     entryKey: threadUrl,
@@ -1541,7 +1536,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // Dedicated severity/priority behavior has its own describe block.
     severity: "unknown",
     category: "unknown",
-    originating: "TASK-1234",
+    originating: "ENG-1234",
     team: "",
     fix: "",
     size: "small",
@@ -1582,15 +1577,13 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
    * never engage regardless of the seed).
    *
    * `priming`, when given, is what the ONE pre-attempt-1 priming read
-   * (TASK-7529) sees instead of `seedLabels`/`''` — modelling a concurrent
+   * sees instead of `seedLabels`/`''` — modelling a concurrent
    * writer's change landing strictly AFTER that read (never before it: this
    * fake cannot express a race priming itself is meant to close, only one
-   * that survives it). Every caller that predates priming, and every
-   * existing assertion of theirs, keeps seeing the exact call sequence it
-   * always did: the distinction between the labelled `'priming'` and
-   * `'verify'` entries in `calls` only matters to a test that reads `calls`
-   * at all, and defaulting `priming` to `seedLabels`/`''` makes priming a
-   * complete no-op wherever a caller does not ask for anything else.
+   * that survives it). For a caller that does not pass `priming`, the
+   * priming read returns `seedLabels`/`''` and so leaves state unchanged,
+   * but it is still a recorded read: `calls` logs it as `'priming'`,
+   * separately from `'verify'`, and a test that counts `calls` sees it.
    */
   function makeFakeServer(
     seedLabels: typeof fullLabels,
@@ -1608,7 +1601,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       if (query.includes("issueAddLabel")) {
         calls.push("addLabel");
         // A mutation, exactly like `issueUpdate` below — the pre-attempt-1
-        // priming read (TASK-7529) only ever precedes this run's FIRST
+        // priming read only ever precedes this run's FIRST
         // mutation of any kind, and a label-only repair (no description or
         // priority change) can reach `issueAddLabel` without ever calling
         // `issueUpdate` at all.
@@ -1650,7 +1643,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
         };
       }
       // The very first non-mutation read, when it happens before this run's
-      // own first write, IS `appendWithRetry`'s TASK-7529 priming — labelled
+      // own first write, IS `appendWithRetry`'s priming read — labelled
       // distinctly from an ordinary `verify` so a test can assert it
       // actually ran, and so `priming.*` (when given) can model a
       // concurrent writer's change landing strictly AFTER this read.
@@ -1709,7 +1702,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // from — matching what `runDeferBatch`'s own initial read saw (mirrored
     // here by `seedAddLabels`/`seedMissingLabels` both being `[]`). The
     // erasure happens strictly AFTER that read, simulated below as landing
-    // together with this run's own first write — TASK-7529's priming closes
+    // together with this run's own first write — the priming read closes
     // the window before it, not the one after.
     const server = makeFakeServer(withoutAgentMeta, undefined, {
       labels: fullLabels,
@@ -1718,7 +1711,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     const clock = recordingSleeper();
     const result = await appendWithRetry(
       server.linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true, // needsInitialWrite — this run appended the entry
@@ -1739,7 +1732,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     expect(server.labelNames().sort()).toEqual(
       fullLabels.map((l) => l.name).sort(),
     );
-    // `priming` (TASK-7529) first — sees the correct label set, so it adds
+    // `priming` first — sees the correct label set, so it adds
     // nothing to `addLabels` itself — THEN exactly one repair round-trip:
     // write (misses the erasure, which lands with it), verify (detects it),
     // fetchLabels (resolves the repair id), addLabel (restores it), verify
@@ -1764,7 +1757,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   });
 
   it("does not need a retry when nothing was erased", async () => {
-    // `priming` (TASK-7529) sees the same bare `'## Entries'` baseline
+    // `priming` sees the same bare `'## Entries'` baseline
     // `seedDescription` was built from, so its own rebuild lands on exactly
     // that value — nothing for the loop to repair either before or after
     // its one write.
@@ -1774,7 +1767,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     const clock = recordingSleeper();
     const result = await appendWithRetry(
       server.linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true,
@@ -1791,7 +1784,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       true, // needsInitialDescriptionWrite — mirrors needsInitialWrite above; this test predates the distinction and does not exercise it
     );
     expect(result.confirmed).toBe(true);
-    // `priming` (TASK-7529) first, then the one write + verify.
+    // `priming` first, then the one write + verify.
     expect(server.calls).toEqual(["priming", "write", "verify"]);
     // The happy path must not pay the retry pause at all.
     expect(clock.slept).toEqual([]);
@@ -1854,7 +1847,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
 
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true,
@@ -1885,8 +1878,8 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // (the fake concurrent writer never stops). The loop must give up
     // loudly rather than report success.
     //
-    // `agent:meta` is ALREADY missing at the pre-attempt-1 priming read too
-    // (TASK-7529) — this fixture's erasure was never "concurrent" in the
+    // `agent:meta` is ALREADY missing at the pre-attempt-1 priming read
+    // too — this fixture's erasure was never "concurrent" in the
     // sense of landing in a specific gap, it is simply permanent — so
     // `attempt` (this test's own count of REAL retry-loop iterations) must
     // only advance once this run has made its own first write; the priming
@@ -1938,7 +1931,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     const clock = recordingSleeper();
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true,
@@ -1970,9 +1963,9 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // this dead path would replace the useful "concurrent writer keeps
     // overwriting" result with an unrelated fetch error. One fetchLabels per
     // attempt that gets to retry (2, for APPEND_ATTEMPTS=3), never a 3rd for
-    // the exhausted attempt — PLUS one more from the pre-attempt-1 priming read
-    // (TASK-7529), which shares this same repair-set computation against the
-    // label state it sees.
+    // the exhausted attempt — PLUS one more from the pre-attempt-1 priming
+    // read, which shares this same repair-set computation against the label
+    // state it sees.
     expect(calls.filter((c) => c === "fetchLabels").length).toBe(
       APPEND_ATTEMPTS,
     );
@@ -2039,7 +2032,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
 
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true,
@@ -2071,7 +2064,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // `noParentArgs.noParentReason`.
     const rationale: NoParentRationale = {
       reason: "compliance-owned finding, different domain than the batch",
-      rejectedEpic: "TASK-1111",
+      rejectedEpic: "ENG-1111",
     };
     const noParentArgs: Args = {
       ...baseArgs,
@@ -2115,7 +2108,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
 
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true,
@@ -2135,7 +2128,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     expect(result.confirmed).toBe(true);
     expect(serverDescription).toContain("**No epic parent**");
     expect(serverDescription).not.toContain(rationale.reason);
-    expect(serverDescription).not.toContain("TASK-1111");
+    expect(serverDescription).not.toContain("ENG-1111");
     expect(serverDescription).toContain(
       "the original reason was lost when its description was cleared",
     );
@@ -2153,7 +2146,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // must instead read `issue.parent` and skip the no-parent block entirely.
     const rationale: NoParentRationale = {
       reason: "compliance-owned finding, different domain than the batch",
-      rejectedEpic: "TASK-1111",
+      rejectedEpic: "ENG-1111",
     };
     const noParentArgs: Args = {
       ...baseArgs,
@@ -2196,7 +2189,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
 
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true,
@@ -2216,7 +2209,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     expect(result.confirmed).toBe(true);
     expect(serverDescription).not.toContain("No epic parent");
     expect(serverDescription).not.toContain(rationale.reason);
-    expect(serverDescription).not.toContain("TASK-1111");
+    expect(serverDescription).not.toContain("ENG-1111");
   });
 
   it("treats a response with NO `parent` field the same as an explicit null (genuinely no parent)", async () => {
@@ -2228,7 +2221,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // deliberately omits `parent` from its verify response.
     const rationale: NoParentRationale = {
       reason: "compliance-owned finding, different domain than the batch",
-      rejectedEpic: "TASK-1111",
+      rejectedEpic: "ENG-1111",
     };
     const noParentArgs: Args = {
       ...baseArgs,
@@ -2269,7 +2262,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
 
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true,
@@ -2334,7 +2327,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     try {
       const promise = appendWithRetry(
         linear,
-        { id: "issue-1", identifier: "TASK-9999" },
+        { id: "issue-1", identifier: "ENG-9999" },
         seedDescription,
         false, // seedWasRepaired -- these tests seed from a non-empty description
         true,
@@ -2356,10 +2349,9 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     } finally {
       errSpy.mockRestore();
     }
-    // Aborts BEFORE attempting any repair — no fetchLabels call, and (TASK-
-    // 7529: this mock's owner swap is visible from the very first read, so
-    // the pre-attempt-1 priming read now catches it before ANY write, not
-    // only the ORIGINAL initial write this test used to reach) no write at
+    // Aborts BEFORE attempting any repair — no fetchLabels call, and (this
+    // mock's owner swap is visible from the very first read, so the
+    // pre-attempt-1 priming read catches it before ANY write) no write at
     // all, never a second one re-adding the erased label.
     expect(calls).not.toContain("fetchLabels");
     expect(calls.filter((c) => c === "write").length).toBe(0);
@@ -2426,7 +2418,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     try {
       const promise = appendWithRetry(
         linear,
-        { id: "issue-1", identifier: "TASK-9999" },
+        { id: "issue-1", identifier: "ENG-9999" },
         seedDescription,
         false, // seedWasRepaired -- these tests seed from a non-empty description
         true,
@@ -2509,7 +2501,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
 
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       true,
@@ -2532,7 +2524,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     expect(names).not.toContain("small");
   });
 
-  // ── Priority escalation against the real retry loop (TASK-7491) ───────────
+  // ── Priority escalation against the real retry loop ───────────────────────
 
   it("escalates an existing batch at None(0) to the new finding’s derived priority", async () => {
     const server = makeFakeServer(
@@ -2542,7 +2534,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     const highArgs: Args = { ...baseArgs, severity: "high" };
     const result = await appendWithRetry(
       server.linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired -- these tests seed from a non-empty description
       // needsInitialWrite: mirrors runDeferBatch's own third disjunct —
@@ -2626,7 +2618,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     const lowArgs: Args = { ...baseArgs, severity: "low" };
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false,
       true, // needsInitialWrite — this run appended the entry
@@ -2727,7 +2719,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     const clock = recordingSleeper();
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false,
       !priorityReflectsSeverity(
@@ -2794,7 +2786,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     const highArgs: Args = { ...baseArgs, severity: "high" };
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired
       // needsInitialWrite — the batch's only outstanding reason to write is
@@ -2839,7 +2831,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // never resend its own stale snapshot, which would silently erase the
     // concurrent entry.
     const otherThreadUrl =
-      "https://github.com/example/project/pull/4068#discussion_r2";
+      "https://github.com/example/project/pull/123#discussion_r2";
     const otherEntry = renderEntry({
       sourceUrl: otherThreadUrl,
       finding: "a different finding",
@@ -2889,7 +2881,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
 
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription, // this run's OWN (stale) belief — lacks the concurrent entry
       false, // seedWasRepaired
       true, // needsInitialWrite — a label is missing
@@ -2980,7 +2972,7 @@ describe("placementMatchesFreshParent", () => {
     // misread this as the scaffold claiming no parent and fire a false
     // placement mismatch against a batch that IS parented.
     const description =
-      "Batch of review deferrals from PR #4068; originating issue TASK-1.\n\n## Entries\n\n### Some entry\n\nFinding: `description.includes('**No epic parent**')` is too broad.";
+      "Batch of review deferrals from PR #123; originating issue ENG-1.\n\n## Entries\n\n### Some entry\n\nFinding: `description.includes('**No epic parent**')` is too broad.";
     expect(placementMatchesFreshParent(description, true)).toBe(true);
   });
 
@@ -2995,8 +2987,7 @@ describe("placementMatchesFreshParent", () => {
 });
 
 describe("appendWithRetry — the stale-parent placement race, against a mock LinearClient", () => {
-  const threadUrl =
-    "https://github.com/example/project/pull/4068#discussion_r1";
+  const threadUrl = "https://github.com/example/project/pull/123#discussion_r1";
   const entry = renderEntry({
     sourceUrl: threadUrl,
     finding: "f",
@@ -3008,7 +2999,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
   // builds when the batch's `parent` looked null at the STALE read this
   // run's seed was built from (`main()`'s initial candidate lookup).
   const rebuiltNoParentDescription = appendEntry(
-    initialDescription("4068", "TASK-1234", {
+    initialDescription("123", "ENG-1234", {
       reason:
         "the batch was filed with no epic parent; the original reason was lost when its description was cleared and this repair could not recover it",
       rejectedEpic: null,
@@ -3017,7 +3008,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     threadUrl,
   ).description;
   const baseArgs: Args = {
-    pr: "4068",
+    pr: "123",
     type: "chore",
     sourceUrl: threadUrl,
     entryKey: threadUrl,
@@ -3030,7 +3021,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     // Dedicated severity/priority behavior has its own describe block.
     severity: "unknown",
     category: "unknown",
-    originating: "TASK-1234",
+    originating: "ENG-1234",
     team: "",
     fix: "",
     size: "small",
@@ -3054,12 +3045,12 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
   it("aborts rather than confirming when a concurrent reparent contradicts the rebuilt scaffold's placement claim", async () => {
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     try {
-      // TASK-7529: `appendWithRetry`'s own pre-attempt-1 priming does a
-      // FRESH full read — including `parent` — before ever writing, which
-      // closes the window this test used to model (a reparent between the
-      // CALLER's stale initial read and attempt 1's write): priming would
-      // see the reparent too and rebuild a scaffold that already agrees
-      // with it, leaving nothing for the mid-loop check to catch. The race
+      // `appendWithRetry`'s own pre-attempt-1 priming does a FRESH full
+      // read — including `parent` — before ever writing, which closes the
+      // window between the CALLER's stale initial read and attempt 1's
+      // write: priming would see a reparent there too and rebuild a
+      // scaffold that already agrees with it, leaving nothing for the
+      // mid-loop check to catch. The race
       // this test proves must still be caught has to land AFTER priming's
       // own read — modelled here as landing together with attempt 1's
       // write, exactly like the mid-loop-rebuild tests elsewhere in this
@@ -3100,7 +3091,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       };
       const promise = appendWithRetry(
         linear,
-        { id: "issue-1", identifier: "TASK-9999" },
+        { id: "issue-1", identifier: "ENG-9999" },
         rebuiltNoParentDescription,
         true, // seedWasRepaired — this run's seed WAS a wipe-rebuild
         true, // needsInitialWrite
@@ -3130,7 +3121,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     // thread) after this run's own rebuild — exactly the entry the old
     // "blank the whole description" instruction would have destroyed.
     const concurrentEntry = renderEntry({
-      sourceUrl: "https://github.com/example/project/pull/4068#discussion_r2",
+      sourceUrl: "https://github.com/example/project/pull/123#discussion_r2",
       finding: "a different, concurrently-filed finding",
       reason: "r2",
       severity: "unknown",
@@ -3139,12 +3130,12 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     const liveDescriptionWithConcurrentEntry = appendEntry(
       rebuiltNoParentDescription,
       concurrentEntry,
-      "https://github.com/example/project/pull/4068#discussion_r2",
+      "https://github.com/example/project/pull/123#discussion_r2",
     ).description;
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     try {
       // See the previous test's own comment: the pre-attempt-1 priming read
-      // (TASK-7529) must see the UNRACED state — still WIPED and
+      // must see the UNRACED state — still WIPED and
       // parentless, exactly what `seedWasRepaired: true` below claims —
       // so its rebuild agrees with this run's seed; the reparent AND the
       // concurrent entry both land strictly after it.
@@ -3173,7 +3164,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       };
       const promise = appendWithRetry(
         linear,
-        { id: "issue-1", identifier: "TASK-9999" },
+        { id: "issue-1", identifier: "ENG-9999" },
         rebuiltNoParentDescription,
         true,
         true,
@@ -3208,13 +3199,13 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     // third argument produce), but a concurrent writer has since
     // unparented the issue.
     const rebuiltHasParentDescription = appendEntry(
-      initialDescription("4068", "TASK-1234"),
+      initialDescription("123", "ENG-1234"),
       entry,
       threadUrl,
     ).description;
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
     try {
-      // Same TASK-7529 narrowing as the two tests above: the pre-attempt-1
+      // Same narrowing as the two tests above: the pre-attempt-1
       // priming read must see the UNRACED state — still WIPED, and still
       // parented (matching this run's own seed claim) — so its rebuild
       // lands on exactly `rebuiltHasParentDescription` too, and the
@@ -3244,7 +3235,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       };
       const promise = appendWithRetry(
         linear,
-        { id: "issue-1", identifier: "TASK-9999" },
+        { id: "issue-1", identifier: "ENG-9999" },
         rebuiltHasParentDescription,
         true,
         true,
@@ -3284,7 +3275,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     };
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       rebuiltNoParentDescription,
       true,
       true,
@@ -3322,7 +3313,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     };
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       rebuiltNoParentDescription,
       false, // seedWasRepaired — this run's own seed did NOT rebuild it
       true,
@@ -3383,7 +3374,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     };
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       rebuiltNoParentDescription,
       true, // seedWasRepaired — this run's OWN seed also came from a rebuild
       true,
@@ -3467,7 +3458,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     try {
       const promise = appendWithRetry(
         linear,
-        { id: "issue-1", identifier: "TASK-9999" },
+        { id: "issue-1", identifier: "ENG-9999" },
         ordinaryDescription,
         false, // seedWasRepaired — this run's OWN seed was ordinary
         true,
@@ -3492,30 +3483,28 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     expect(verifyCount).toBe(2);
   });
 
-  it("does NOT clobber a DIFFERENT concurrent writer's entry that landed between the caller's initial read and attempt 1 — the TASK-7529 regression", async () => {
-    // The bug this fix closes, proven directly rather than through the
+  it("does NOT clobber a DIFFERENT concurrent writer's entry that landed between the caller's initial read and attempt 1", async () => {
+    // The priming read's purpose, proven directly rather than through the
     // placement side-effect the tests above use: `seedDescription` here is
     // built the same way `runDeferBatch`'s own initial read/rebuild would
     // — from a batch that, AT THAT READ, carried only whatever was live
-    // then — and contains ONLY this run's own entry. Before this fix,
-    // attempt 1 sent this stale, caller-computed value completely
-    // unconditionally. A DIFFERENT `defer-batch` invocation — a different
-    // finding, a different `threadUrl` — can read, append ITS OWN entry,
-    // and write in the exact gap between that caller read and this run's
-    // attempt-1 write; since attempt 1 used to send the whole stale
-    // `seedDescription` (which never contained the concurrent entry), its
-    // write ERASED it. The mid-loop verify only ever checked
-    // `hasEntry(liveDescription, args.threadUrl)` for THIS run's OWN
-    // thread — nothing there would ever notice a DIFFERENT entry went
-    // missing, so the clobber passed silently and `result.confirmed` came
-    // back `true` anyway.
+    // then — and contains ONLY this run's own entry. A DIFFERENT
+    // `defer-batch` invocation — a different finding, a different
+    // `threadUrl` — can read, append ITS OWN entry, and write in the exact
+    // gap between that caller read and this run's attempt-1 write. Sending
+    // the whole stale `seedDescription` (which never contained the
+    // concurrent entry) unconditionally would ERASE it, and the mid-loop
+    // verify checks only `hasEntry(liveDescription, args.threadUrl)` for
+    // THIS run's OWN thread — nothing there would notice a DIFFERENT entry
+    // went missing, so the clobber would pass silently with
+    // `result.confirmed` `true`.
     const staleSeedDescription = appendEntry(
       "## Entries",
       entry,
       threadUrl,
     ).description;
     const concurrentThreadUrl =
-      "https://github.com/example/project/pull/4068#discussion_r99";
+      "https://github.com/example/project/pull/123#discussion_r99";
     const concurrentEntry = renderEntry({
       sourceUrl: concurrentThreadUrl,
       finding: "a different, concurrently-filed finding",
@@ -3523,8 +3512,8 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       severity: "unknown",
       category: "unknown",
     });
-    // The LIVE state by the time THIS run's own priming read (TASK-7529)
-    // fires: the concurrent writer's own append already landed, but this
+    // The LIVE state by the time THIS run's own priming read fires: the
+    // concurrent writer's own append already landed, but this
     // run's OWN entry — from `staleSeedDescription`, computed before any
     // of that happened — is NOT there yet.
     let serverDescription = appendEntry(
@@ -3553,7 +3542,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     };
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       staleSeedDescription,
       false, // seedWasRepaired — an ordinary append, not a wipe-rebuild
       true, // needsInitialWrite
@@ -3581,8 +3570,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
 // ── The run-wide deadline (RUN_DEADLINE_MS) ─────────────────────────────────
 
 describe("appendWithRetry — the run-wide deadline", () => {
-  const threadUrl =
-    "https://github.com/example/project/pull/4068#discussion_r1";
+  const threadUrl = "https://github.com/example/project/pull/123#discussion_r1";
   const entry = renderEntry({
     sourceUrl: threadUrl,
     finding: "f",
@@ -3596,7 +3584,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
     threadUrl,
   ).description;
   const baseArgs: Args = {
-    pr: "4068",
+    pr: "123",
     type: "chore",
     sourceUrl: threadUrl,
     entryKey: threadUrl,
@@ -3609,7 +3597,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
     // Dedicated severity/priority behavior has its own describe block.
     severity: "unknown",
     category: "unknown",
-    originating: "TASK-1234",
+    originating: "ENG-1234",
     team: "",
     fix: "",
     size: "small",
@@ -3632,7 +3620,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
     controller.abort();
     const promise = appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false,
       true,
@@ -3694,7 +3682,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
     };
     const promise = appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false,
       true,
@@ -3734,9 +3722,9 @@ describe("appendWithRetry — the run-wide deadline", () => {
     let verifyCount = 0;
     const linear: LinearClient = async (query, vars) => {
       if (query.includes("issueAddLabel")) {
-        // Reachable now too, alongside `issueLabels` below — the
-        // pre-attempt-1 priming read (TASK-7529) finds an empty live label
-        // set and repairs it, exactly like the mid-loop retry already did.
+        // Reachable, alongside `issueLabels` below — the pre-attempt-1
+        // priming read finds an empty live label set and repairs it,
+        // exactly like the mid-loop retry does.
         // A no-op response, since this test is about the deadline, not the
         // label contract — and NOT counted in `verifyCount`: that count is
         // specifically the number of `issue { ... }` reads (priming +
@@ -3747,10 +3735,10 @@ describe("appendWithRetry — the run-wide deadline", () => {
         return { issueUpdate: { success: true } };
       }
       if (query.includes("issueLabels")) {
-        // Reachable now via the pre-attempt-1 priming (TASK-7529), which
-        // reads/repairs labels through the same fresh-read path the
-        // mid-loop retry always used — this fixture predates that and
-        // otherwise falls through to the generic branch below, whose shape
+        // Reachable via the pre-attempt-1 priming, which reads/repairs
+        // labels through the same fresh-read path the mid-loop retry uses —
+        // without this branch the read falls through to the generic branch
+        // below, whose shape
         // `fetchLabels` cannot parse. `baseArgs.type`/`size`/`repoLabel`'s
         // OWN names get their real group so `assertGroupMembership` (which
         // checks the OTHER direction too — nothing else may sit in one of
@@ -3785,7 +3773,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
     };
     const promise = appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false,
       true,
@@ -3803,8 +3791,8 @@ describe("appendWithRetry — the run-wide deadline", () => {
     );
     await expect(promise).rejects.toBeInstanceOf(ExitError);
     // Aborted during attempt 1's pause, before ever reaching attempt 2's
-    // verify — 2, not 1, because the pre-attempt-1 priming read (TASK-7529)
-    // is itself one more `issue { ... }` read counted here, ahead of
+    // verify — 2, not 1, because the pre-attempt-1 priming read is itself
+    // one more `issue { ... }` read counted here, ahead of
     // attempt 1's own verify.
     expect(verifyCount).toBe(2);
   });
@@ -3869,7 +3857,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
     };
     const result = await appendWithRetry(
       linear,
-      { id: "issue-1", identifier: "TASK-9999" },
+      { id: "issue-1", identifier: "ENG-9999" },
       seedDescription,
       false, // seedWasRepaired — an ordinary append, not a wipe-rebuild
       true,
@@ -3902,7 +3890,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   // `runDeferBatch` is the extraction that makes this call site testable
   // directly, mirroring `appendWithRetry`'s own seam — these tests exercise it,
   // not just the pure `descriptionForRepair` helper in isolation.
-  const pr = "4068";
+  const pr = "123";
   const type = "chore";
   const threadUrl = `https://github.com/example/project/pull/${pr}#discussion_r1`;
   const baseArgs: Args = {
@@ -3914,7 +3902,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     severity: "unknown",
     category: "unknown",
     originating: "",
-    team: "TASK",
+    team: "ENG",
     fix: "",
     size: "small",
     repoLabel: "project",
@@ -3930,9 +3918,9 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   function makeWipedTarget(parent: { id: string } | null) {
     return {
       id: "issue-1",
-      identifier: "TASK-9999",
+      identifier: "ENG-9999",
       title: batchTitle(pr, type),
-      url: "https://linear.app/project/issue/TASK-9999",
+      url: "https://linear.app/project/issue/ENG-9999",
       description: "",
       createdAt: "2020-01-01T00:00:00.000Z",
       parent,
@@ -3956,7 +3944,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     let writtenDescription = "";
     const linear: LinearClient = async (query, vars) => {
       if (query.includes("teams(filter")) {
-        return { teams: { nodes: [{ id: "team-1", key: "TASK" }] } };
+        return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
       }
       if (query.includes("issues(first: 50")) {
         return {
@@ -4007,7 +3995,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     let writtenPriority: number | undefined;
     const linear: LinearClient = async (query, vars) => {
       if (query.includes("teams(filter")) {
-        return { teams: { nodes: [{ id: "team-1", key: "TASK" }] } };
+        return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
       }
       if (query.includes("issues(first: 50")) {
         return {
@@ -4055,7 +4043,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     let writtenDescription = "";
     const linear: LinearClient = async (query, vars) => {
       if (query.includes("teams(filter")) {
-        return { teams: { nodes: [{ id: "team-1", key: "TASK" }] } };
+        return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
       }
       if (query.includes("issues(first: 50")) {
         return {
@@ -4100,12 +4088,12 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     // this as a placement mismatch and reject.
     const target = makeWipedTarget(null);
     let writtenDescription = "";
-    // `appendWithRetry`'s own pre-attempt-1 priming (TASK-7529) does a FRESH
-    // full read — including `parent` — before ever writing, which closes
-    // the exact window this test used to simulate (a reparent between
-    // `runDeferBatch`'s OWN initial `FIND_BATCHES` read and attempt 1's
-    // write): priming now sees the reparent too, and rebuilds a scaffold
-    // that already matches it, so nothing is left to catch. The race this
+    // `appendWithRetry`'s own pre-attempt-1 priming does a FRESH full
+    // read — including `parent` — before ever writing, which closes the
+    // window between `runDeferBatch`'s OWN initial `FIND_BATCHES` read and
+    // attempt 1's write: priming sees a reparent there too, and rebuilds a
+    // scaffold that already matches it, so nothing is left to catch. The
+    // race this
     // test proves must still be caught has to land AFTER that priming
     // read — between it and attempt 1's write, or (as modelled here)
     // between attempt 1's write and its own verify — mirroring how the
@@ -4116,7 +4104,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     let queryCount = 0;
     const linear: LinearClient = async (query, vars) => {
       if (query.includes("teams(filter")) {
-        return { teams: { nodes: [{ id: "team-1", key: "TASK" }] } };
+        return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
       }
       if (query.includes("issues(first: 50")) {
         return {
@@ -4183,7 +4171,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     const linear: LinearClient = async (query, _vars, signal) => {
       seenSignals.push(signal);
       if (query.includes("teams(filter")) {
-        return { teams: { nodes: [{ id: "team-1", key: "TASK" }] } };
+        return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
       }
       if (query.includes("issues(first: 50")) {
         // Abort AFTER this call is recorded — proves propagation reaches
@@ -4255,7 +4243,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
       calls.push(query);
       if (query.includes("teams(filter")) {
         controller.abort();
-        return { teams: { nodes: [{ id: "team-1", key: "TASK" }] } };
+        return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
       }
       throw new Error(
         "must not be called — the signal aborted right after the team lookup",
@@ -4328,10 +4316,10 @@ describe("hasRelationTo", () => {
 
 describe("parseArgs", () => {
   const full = [
-    "4068",
+    "123",
     "chore",
     "--thread-url",
-    "https://github.com/example/project/pull/4068#discussion_r1",
+    "https://github.com/example/project/pull/123#discussion_r1",
     "--reason",
     "out of scope here",
     "--severity",
@@ -4339,7 +4327,7 @@ describe("parseArgs", () => {
     "--category",
     "unknown",
     "--originating",
-    "TASK-6727",
+    "ENG-101",
   ];
   // `full` up through `--category unknown`, excluding `--originating` — the
   // positional/thread-url/reason/severity/category prefix the
@@ -4353,9 +4341,9 @@ describe("parseArgs", () => {
     const a = parseArgs(full);
     expect(typeof a).not.toBe("string");
     if (typeof a === "string") return;
-    expect(a.pr).toBe("4068");
+    expect(a.pr).toBe("123");
     expect(a.type).toBe("chore");
-    expect(a.originating).toBe("TASK-6727");
+    expect(a.originating).toBe("ENG-101");
     expect(a.size).toBe("small");
     expect(a.repoLabel).toBe("project");
     expect(a.severity).toBe("unknown");
@@ -4366,9 +4354,9 @@ describe("parseArgs", () => {
 
   it("parses a summary-only finding from its comment URL and fingerprint", () => {
     const commentUrl =
-      "https://github.com/example/project/pull/4068#issuecomment-5649338286";
+      "https://github.com/example/project/pull/123#issuecomment-5649338286";
     const a = parseArgs([
-      "4068",
+      "123",
       "chore",
       "--comment-url",
       commentUrl,
@@ -4385,7 +4373,7 @@ describe("parseArgs", () => {
 
   it("requires exactly one source and a valid fingerprint only for comments", () => {
     const commentUrl =
-      "https://github.com/example/project/pull/4068#issuecomment-5649338286";
+      "https://github.com/example/project/pull/123#issuecomment-5649338286";
     expect(
       parseArgs([
         ...full,
@@ -4408,7 +4396,7 @@ describe("parseArgs", () => {
       "has space",
     ]) {
       const args = [
-        "4068",
+        "123",
         "chore",
         "--comment-url",
         commentUrl,
@@ -4420,10 +4408,10 @@ describe("parseArgs", () => {
     }
     expect(
       parseArgs([
-        "4068",
+        "123",
         "chore",
         "--comment-url",
-        "https://github.com/example/project/pull/4069#issuecomment-1",
+        "https://github.com/example/project/pull/124#issuecomment-1",
         "--fingerprint",
         "3b78f436d805f279",
         ...full.slice(4),
@@ -4437,14 +4425,14 @@ describe("parseArgs", () => {
 
   it("refuses a non-numeric PR, a non-label type, and a bare thread-url", () => {
     expect(typeof parseArgs(["abc", "chore"])).toBe("string");
-    expect(typeof parseArgs(["4068", "Chore!"])).toBe("string");
+    expect(typeof parseArgs(["123", "Chore!"])).toBe("string");
     const noUrl = parseArgs([
-      "4068",
+      "123",
       "chore",
       "--reason",
       "r",
       "--originating",
-      "TASK-1",
+      "ENG-1",
     ]);
     expect(typeof noUrl).toBe("string");
   });
@@ -4460,7 +4448,7 @@ describe("parseArgs", () => {
       "--originating",
       "none",
       "--team",
-      "TASK",
+      "ENG",
     ]);
     expect(typeof noneWithTeam).not.toBe("string");
     if (typeof noneWithTeam === "string") return;
@@ -4468,20 +4456,20 @@ describe("parseArgs", () => {
   });
 
   it("requires --severity, and accepts every declared token while refusing one outside it", () => {
-    // The measured bug (TASK-7491) is severity being silently dropped, so
+    // The failure to prevent is severity being silently dropped, so
     // this flag is REQUIRED like --reason/--originating — an omitted flag is
     // a usage error, never a silent fallback to `unknown`.
     const withoutSeverity = [
-      "4068",
+      "123",
       "chore",
       "--thread-url",
-      "https://github.com/example/project/pull/4068#discussion_r1",
+      "https://github.com/example/project/pull/123#discussion_r1",
       "--reason",
       "out of scope here",
       "--category",
       "unknown",
       "--originating",
-      "TASK-6727",
+      "ENG-101",
     ];
     const missing = parseArgs(withoutSeverity);
     expect(missing).toContain("--severity is required");
@@ -4498,21 +4486,20 @@ describe("parseArgs", () => {
   });
 
   it("requires --category, like --severity, accepts every declared token, and refuses one outside it", () => {
-    // Mirrors --severity's own requiredness (TASK-7527): an omitted flag is
+    // Mirrors --severity's own requiredness: an omitted flag is
     // indistinguishable from an explicit `unknown` and could silently discard
-    // a real parsed value — the same class of bug TASK-7491 measured for
-    // severity, closed here for category too.
+    // a real parsed value — the same class of failure as for severity.
     const withoutCategory = [
-      "4068",
+      "123",
       "chore",
       "--thread-url",
-      "https://github.com/example/project/pull/4068#discussion_r1",
+      "https://github.com/example/project/pull/123#discussion_r1",
       "--reason",
       "out of scope here",
       "--severity",
       "unknown",
       "--originating",
-      "TASK-6727",
+      "ENG-101",
     ];
     const missing = parseArgs(withoutCategory);
     expect(missing).toContain("--category is required");
@@ -4528,7 +4515,7 @@ describe("parseArgs", () => {
 
   it("accepts every declared Type and refuses one outside the taxonomy", () => {
     for (const type of BATCH_TYPES) {
-      const a = parseArgs(["4068", type, ...full.slice(2)]);
+      const a = parseArgs(["123", type, ...full.slice(2)]);
       if (typeof a === "string") throw new Error(a);
       expect(a.type).toBe(type);
     }
@@ -4537,7 +4524,7 @@ describe("parseArgs", () => {
     // having adopted it, the second is a flag label with no group at all.
     // A shape-only check (`/^[a-z][a-z-]*$/`) accepts both.
     for (const type of ["improvement", "pr-followup", "manual-ops", "Bug"]) {
-      expect(typeof parseArgs(["4068", type, ...full.slice(2)])).toBe("string");
+      expect(typeof parseArgs(["123", type, ...full.slice(2)])).toBe("string");
     }
   });
 
@@ -4572,30 +4559,30 @@ describe("parseArgs", () => {
     // The URL is the audit backlink AND the idempotency key, so anything else
     // files the entry under a key no later run for the real thread matches.
     const withUrl = (u: string) =>
-      parseArgs(["4068", "chore", "--thread-url", u, ...full.slice(4)]);
+      parseArgs(["123", "chore", "--thread-url", u, ...full.slice(4)]);
     for (const bad of [
       "https://example.com/x",
-      "https://github.com/example/project/pull/4069#discussion_r1",
-      "https://github.com/other/repo/pull/4068#discussion_r1",
-      "https://github.com/example/project/pull/4068",
-      "https://github.com/example/project/pull/4068#issuecomment-1",
-      "http://github.com/example/project/pull/4068#discussion_r1",
+      "https://github.com/example/project/pull/124#discussion_r1",
+      "https://github.com/other/repo/pull/123#discussion_r1",
+      "https://github.com/example/project/pull/123",
+      "https://github.com/example/project/pull/123#issuecomment-1",
+      "http://github.com/example/project/pull/123#discussion_r1",
     ]) {
       expect(typeof withUrl(bad)).toBe("string");
     }
     expect(
       typeof withUrl(
-        "https://github.com/example/project/pull/4068#discussion_r1",
+        "https://github.com/example/project/pull/123#discussion_r1",
       ),
     ).not.toBe("string");
   });
 
   it("lets --repo-slug move the expected host path for a fork", () => {
     const a = parseArgs([
-      "4068",
+      "123",
       "chore",
       "--thread-url",
-      "https://github.com/acme/fork/pull/4068#discussion_r1",
+      "https://github.com/acme/fork/pull/123#discussion_r1",
       ...full.slice(4),
       "--repo-slug",
       "acme/fork",
@@ -4608,7 +4595,7 @@ describe("parseArgs", () => {
     // A newline in a RAW-Markdown field forges the `### <url>` heading the
     // idempotent append trusts, so a later real deferral for that thread
     // reports alreadyPresent and resolves with no entry behind it.
-    const forged = `text\n${entryHeading("https://github.com/example/project/pull/4068#discussion_r99")}`;
+    const forged = `text\n${entryHeading("https://github.com/example/project/pull/123#discussion_r99")}`;
     expect(
       parseArgs([...full.slice(0, 5), forged, ...full.slice(6)]),
     ).toContain("single line");
@@ -4623,14 +4610,14 @@ describe("parseArgs", () => {
     // `--reason --dry-run` set reason='--dry-run', left dryRun false, and
     // proceeded to real Linear mutations under a command written as a preview.
     const swallowed = parseArgs([
-      "4068",
+      "123",
       "chore",
       "--thread-url",
-      "https://github.com/example/project/pull/4068#discussion_r1",
+      "https://github.com/example/project/pull/123#discussion_r1",
       "--reason",
       "--dry-run",
       "--originating",
-      "TASK-6727",
+      "ENG-101",
     ]);
     expect(swallowed).toContain("missing value for --reason");
     expect(parseArgs([...full, "--fix"])).toContain("missing value for --fix");
@@ -4703,10 +4690,10 @@ describe("parseArgs", () => {
 
 describe("defer-batch.ts CLI refusals", () => {
   const fullArgs = [
-    "4068",
+    "123",
     "chore",
     "--thread-url",
-    "https://github.com/example/project/pull/4068#discussion_r1",
+    "https://github.com/example/project/pull/123#discussion_r1",
     "--reason",
     "out of scope here",
     "--severity",
@@ -4714,7 +4701,7 @@ describe("defer-batch.ts CLI refusals", () => {
     "--category",
     "unknown",
     "--originating",
-    "TASK-6727",
+    "ENG-101",
   ];
 
   it("exits 2 with usage when called bare", () => {

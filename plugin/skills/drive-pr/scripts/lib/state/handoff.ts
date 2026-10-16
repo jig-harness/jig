@@ -222,9 +222,9 @@ async function identifierFromBranch(dir: string): Promise<string | null> {
 }
 
 /** A snapshot is a regular file the writer created. `existsSync`/`readFileSync`
- * follow a symlink, so a link named `an earlier change.md` would put an arbitrary readable
- * file's content in front of a triage round; `lstat` does not follow it, so a
- * link is refused as if the snapshot were absent. */
+ * follow a symlink, so a link named `ENG-123.md` would put an arbitrary
+ * readable file's content in front of a triage round; `lstat` does not follow
+ * it, so a link is refused as if the snapshot were absent. */
 function regularFileOrNull(file: string): string | null {
   try {
     return lstatSync(file).isFile() ? file : null;
@@ -508,9 +508,8 @@ export async function renderHandoff(
       // Deliberately ONE long line rather than wrapped to the width of the
       // prose around it: a successor copy-pasting this must get one runnable
       // invocation, and a backtick span broken across a newline pastes as two
-      // broken commands (the round-3 regression). `--pushed-sha` is required
-      // since an earlier change — the claim now checks this hold's OWN push provenance,
-      // not just the mutex.
+      // broken commands. `--pushed-sha` is required: the claim checks this
+      // hold's OWN push provenance, not just the mutex.
       `A \`kind: finding\`: \`drive-state.ts claim-held ${pr} --key K --kind finding --pushed-sha "$(git rev-parse HEAD)"\``,
       "first. Exit 0 means dispatch; every non-zero exit forbids it, but NOT the same",
       "way for every code: 1 USUALLY means a concurrent driver already holds this",

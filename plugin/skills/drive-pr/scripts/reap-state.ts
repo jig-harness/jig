@@ -14,24 +14,24 @@
  * rename, `${lock}.recovering.stale.<generation>` from
  * `releaseRecoveringGate`'s. Both are happy-path output, not error recovery: a
  * single acquire/release cycle mints both, and every read-modify-write of
- * every PR's state goes through one. Measured on the machine this issue was
- * filed from: 112,281 quarantine directories in nine days (~337k inodes),
- * accelerating to ~35k/day, against a state dir that `lease.ts`, `claims.ts`
- * and `drives.ts` each `readdirSync` several times per drive round — 130-520ms
+ * every PR's state goes through one. Measured on one busy machine: 112,281
+ * quarantine directories in nine days (~337k inodes), accelerating to
+ * ~35k/day, against a state dir that `lease.ts`, `claims.ts` and `drives.ts`
+ * each `readdirSync` several times per drive round — 130-520ms
  * per enumeration by the end.
  *
- * an earlier change already shipped the safe half of the answer: `sweepLockQuarantine`
- * COMPACTS a quarantine directory to a single empty file at the same path,
- * preserving the fence (a `rename(2)` onto a non-directory fails) while
- * collapsing it to a single inode. What it never got was a caller — its
- * production call site was `drive-state.ts`'s `reset`, which nobody runs
- * on the normal path, so every one of those 112k entries was still an
- * uncompacted directory. This script is that caller.
+ * `lib/state/lock.ts` already has the safe half of the answer:
+ * `sweepLockQuarantine` COMPACTS a quarantine directory to a single empty file
+ * at the same path, preserving the fence (a `rename(2)` onto a non-directory
+ * fails) while collapsing it to a single inode. Its only other call site is
+ * `drive-state.ts`'s `reset`, which nobody runs on the normal path, so without
+ * a routine caller every quarantine entry stays an uncompacted directory. This
+ * script is that caller.
  *
- * ## Why this is not the TTL sweep an earlier change forbids
+ * ## Why this is not a TTL sweep
  *
- * an earlier change is explicit: *"Do not implement a naive TTL/age-based cleanup for
- * this"* — wall-clock age alone cannot prove no in-flight observer still holds
+ * A naive TTL (age-based) cleanup is ruled out for this: wall-clock age alone
+ * cannot prove no in-flight observer still holds
  * a reference to a given lock generation, and a sweep built on it trades a
  * storage leak for the reintroduced TOCTOU that the whole quarantine scheme
  * exists to close. The distinct operations below, and only one of them
@@ -44,13 +44,13 @@
  *     The fence survives; only the inodes go.
  *
  *   RETIRE — deletes a whole per-PR or per-worktree family outright, and is
- *     gated on the LIFECYCLE predicate an earlier change itself prescribes: *"Once a
- *     PR's own state is being retired … it is safe to delete all of that PR's
- *     quarantine directories at once, in bulk — because no future observer can
- *     ever reference that PR's lock generations again."* The age gate below is
+ *     gated on the LIFECYCLE predicate: once a PR's own state is being
+ *     retired, it is safe to delete all of that PR's quarantine directories at
+ *     once, in bulk, because no future observer can ever reference that PR's
+ *     lock generations again. The age gate below is
  *     an ADDITIONAL conservative guard stacked on top of that predicate, never
  *     a substitute for it. Drop the lifecycle checks and keep only the age and
- *     this becomes exactly the sweep an earlier change rules out.
+ *     this becomes exactly the TTL sweep ruled out above.
  *
  * Every gate fails CLOSED. A `gh` call that errors, a lease file that cannot be
  * parsed, a `stat` that throws — each leaves the family untouched and reported,
@@ -59,9 +59,8 @@
  * late is one more weekly run.
  *
  * RETIRE takes the whole family, including `drive-pr-<pr>.json` itself, not
- * just the quarantine around it. an earlier change phrased its direction as a sweep
- * piggybacking on whatever already retires a PR's state; nothing did, so this
- * is what retires it. The thing that makes that safe is the same thing that
+ * just the quarantine around it: nothing else retires a PR's state, so this
+ * script does. The thing that makes that safe is the same thing that
  * makes deleting the quarantine safe, and it is worth naming because the state
  * file is where a PARKED HUMAN DECISION lives — losing one is the failure this
  * whole subsystem is built around. A MERGED PR cannot be driven forward again
@@ -79,7 +78,7 @@
  *
  * `pr-drive-<pr>.lock` and `pr-drive-worktree-<key>.lock` are `drive.ts`'s own
  * single-instance locks, and they are NOT `createLock` anchors — they use the
- * source-named claim protocol an earlier change moved to precisely so that nothing
+ * source-named claim protocol, chosen precisely so that nothing
  * accumulates and nothing needs sweeping (the claim's filename IS the identity,
  * so retiring it removes an entry by name). Compacting them would be
  * meaningless and deleting them is their own protocol's business, so they are
@@ -120,12 +119,11 @@
  * per day. This is deliberately NOT a mechanism that removes anything on its
  * own; it exists so a regression in the generation rate this script cannot
  * itself bound (RETIRE's PR-merged + idle-7-days gate leaves an actively-
- * driven PR's own quarantine growing without limit — an earlier change's accepted,
- * deliberate tradeoff, see above) surfaces as a number in every run's report
+ * driven PR's own quarantine growing without limit — an accepted, deliberate
+ * tradeoff, see above) surfaces as a number in every run's report
  * instead of requiring a human to diff two `entries` fields by hand days
- * apart. A real fix for the underlying growth needs the kind of core-
- * mechanism redesign an earlier change already tracks as deferred work; this is
- * observability, not a mitigation.
+ * apart. A real fix for the underlying growth needs a redesign of the lock
+ * quarantine itself; this is observability, not a mitigation.
  *
  * Usage:
  *   bun <skill-dir>/scripts/reap-state.ts            # dry run (default)
@@ -212,15 +210,15 @@ const MAX_MIN_AGE_DAYS = 365;
  * which a `drive-tree-lease-wt-*` family whose worktree still exists never
  * satisfies. So on a clone with many long-lived worktrees this number grows
  * without bound even when this reaper runs correctly every week, and no
- * amount of sweeping is the answer — only an earlier change's relocation out of
- * `--git-common-dir` (the default since then) contains the blast radius, by
+ * amount of sweeping is the answer — only the state directory's location
+ * outside `--git-common-dir` (the default) contains the blast radius, by
  * moving the growth out of the directory every git-aware tool on the machine
  * walks. It does not stop the growth itself: a clone already on that default
  * hitting this threshold has the same unbounded count, just in a location
  * fewer tools watch.
  *
  * Set below the range where that has actually hurt rather than at it:
- * an earlier change measured 130-520ms per enumeration at 112k entries, and one clone
+ * measured at 130-520ms per enumeration at 112k entries, and one clone
  * reached 382,524 entries, where a single `readdir` cost ~10s and held an IDE
  * permanently in "File System Synchronization". Warning at 50k puts the line
  * comfortably before the first of those, so the weekly log says so while the
@@ -245,7 +243,7 @@ const ENTRY_COUNT_WARN_THRESHOLD = 50_000;
  *
  * `alreadyRelocated` is whether the resolved `stateDir` is
  * demonstrably neither the legacy `--git-common-dir` location nor the
- * ordinary an earlier change default — never derived from `$DRIVE_PR_STATE_DIR`'s
+ * ordinary per-user default — never derived from `$DRIVE_PR_STATE_DIR`'s
  * mere presence, which `drive.ts` sets unconditionally even when it resolved
  * to the plain default (see the call site). Without this, this warning told
  * an operator who had already relocated to relocate again — an impossible
@@ -263,7 +261,7 @@ const ENTRY_COUNT_WARN_THRESHOLD = 50_000;
  * Whether `stateDir` is a genuine `$DRIVE_PR_STATE_DIR` relocation — never
  * derived from the env var's mere presence. Two ways that presence lies:
  * `drive.ts` unconditionally re-exports its OWN resolved `stateDir` under this
- * name, including when `resolveStateDir` picked the ordinary an earlier change
+ * name, including when `resolveStateDir` picked the ordinary per-user
  * default — so every drive-spawned child sees the variable "set" whether or not
  * an operator ever configured a real override. And a genuinely-set override can
  * still point AT the legacy `--git-common-dir` location `store.ts` already
@@ -354,7 +352,7 @@ export function resolveRealPathBestEffort(p: string): string {
  * Each path is resolved to its filesystem identity (`realpathSync`, best
  * effort) before the lexical comparison in `computeAlreadyRelocated`: a
  * `$DRIVE_PR_STATE_DIR` override that is an absolute SYMLINK pointing back at
- * the legacy `--git-common-dir` or the ordinary an earlier change default is still
+ * the legacy `--git-common-dir` or the ordinary per-user default is still
  * the SAME physical directory, and a bare string comparison would read it as
  * a genuine relocation, suppressing the remedy for an operator who never
  * actually escaped either location. The
@@ -448,7 +446,7 @@ export function entryCountWarningFor(
  * How many PRs' GitHub state to resolve at once.
  *
  * One `gh pr view` per PR rather than a single `gh pr list`: the population is
- * every PR this clone has ever driven (191 when an earlier change was measured), which
+ * every PR this clone has ever driven (191 on one measured clone), which
  * spans far more than any one `--limit` page and includes numbers that may no
  * longer exist at all. Bounded concurrency keeps a weekly run to seconds
  * without opening 191 sockets at once.
@@ -647,11 +645,11 @@ function isSweepable(name: string): boolean {
  * `sweepLockQuarantine` re-enumerates the whole state dir on every call, so
  * calling it once per anchor unconditionally is O(anchors × entries): measured
  * at 9.8s for 40 anchors over 20k entries, which extrapolates to ~12 minutes
- * for the 508 anchors over 113k entries an earlier change was filed against — every
- * week, since compaction shrinks inodes but not the ENTRY count that drives
- * the enumeration. Skipping anchors whose quarantine is already compacted
- * turns the steady state into one `readdir` plus one `stat` per quarantine
- * entry, and the first run is the only one that pays the full price.
+ * for 508 anchors over 113k entries — every week, since compaction shrinks
+ * inodes but not the ENTRY count that drives the enumeration. Skipping
+ * anchors whose quarantine is already compacted turns the steady state into
+ * one `readdir` plus one `stat` per quarantine entry, and the first run is the
+ * only one that pays the full price.
  *
  * A `stat` that throws counts AS work: it means this cannot prove there is
  * nothing to do, and the honest response is to let the audited sweep look for
@@ -1531,9 +1529,9 @@ async function main(): Promise<number> {
     const report = {
       stateDir,
       entries: reportedEntries,
-      // an earlier change acceptance criterion 3 — a regression in the generation rate
-      // must surface as a NUMBER in this report, not require a human to diff
-      // two runs' `entries` fields by hand days apart. `null` on the first run
+      // A regression in the generation rate must surface as a NUMBER in this
+      // report, not require a human to diff two runs' `entries` fields by
+      // hand days apart. `null` on the first run
       // ever (no prior snapshot) or when this run's clock did not advance past
       // the prior snapshot's timestamp. Computed as CURRENT pre-cleanup vs the
       // PRIOR run's post-cleanup count (persisted at the end of `main`, below)
