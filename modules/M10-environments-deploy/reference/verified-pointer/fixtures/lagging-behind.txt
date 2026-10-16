@@ -1,0 +1,5 @@
+# Threshold mode. Verification wedged: the pointer is far behind the tip in
+# code-bearing commits, though none has waited long. Either value over its
+# bound lags. Must fail (exit 1).
+BEHIND 50
+AGE_SECONDS 100

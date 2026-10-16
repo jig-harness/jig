@@ -1,0 +1,9 @@
+worktree /work/shop
+HEAD 1111111111111111111111111111111111111111
+branch refs/heads/main
+
+worktree /work/shop-refunds
+HEAD 2222222222222222222222222222222222222222
+branch refs/heads/feature/refunds
+locked
+

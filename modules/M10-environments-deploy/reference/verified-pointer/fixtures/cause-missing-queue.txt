@@ -1,0 +1,4 @@
+# Cause mode without the queue observation. A collector that forgot the queue
+# cannot rule out a stall, so the check cannot decide: exit 2.
+ANCESTOR yes
+CODE_AHEAD no

@@ -1,0 +1,9 @@
+# Cause mode. Code is ahead, the tip is well past the grace window and has no
+# conclusive run: the push never became a run, or its run ended without a
+# verdict. The one cause the watchdog heals, by dispatching verification at
+# the tip: pointer=dropped-trigger, exit 1.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 2400
+VERIFICATION none
+QUEUE_WAIT_SECONDS 0

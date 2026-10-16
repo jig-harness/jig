@@ -1,0 +1,4 @@
+# Cause mode. Two independent failures at once: a stalled queue and a
+# diverged pointer. Both are reported, neither hides the other. Exit 1.
+ANCESTOR no
+QUEUE_WAIT_SECONDS 9000

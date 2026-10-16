@@ -1,0 +1,8 @@
+# Cause mode. The tip's newest run was cancelled or timed out before the
+# gates decided, and the tip is past the grace window. No verdict is no
+# verdict: the same dropped-trigger heal as no run at all, exit 1.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 5400
+VERIFICATION aborted
+QUEUE_WAIT_SECONDS 0

@@ -112,11 +112,89 @@ criteria:
     requires: mechanical
     statement: >-
       A scheduled watchdog fails when the `verified` pointer lags the
-      default-branch tip beyond a threshold, so a stalled verifier pages someone
-      instead of silently shipping stale code.
+      default-branch tip beyond a threshold, counting only code-bearing
+      changes, so a stalled verifier pages someone instead of silently
+      shipping stale code.
     observe:
-      - "a scheduled job computes the pointer's commit/age lag and fails past a threshold"
-      - "its failure is wired to a page and/or an automatic heal (re-run of verification)"
+      - "a scheduled job computes the pointer's lag (in commits or in time) and fails past a threshold, or decides by cause (watchdog-decides-by-cause)"
+      - "the lag counts only commits that change a path verification builds or tests (a path filter on the range, or the cause mode's code-ahead check); a documentation-only tip does not fail it"
+      - "its failure is wired to a page and/or an automatic heal (a dispatch of verification)"
+
+  - id: created-resources-have-reapers
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      Every resource the delivery system creates (a preview deployment, an
+      ephemeral environment, a test tenant, a per-worktree data namespace)
+      has a scheduled reaper keyed to the resource's owner that reads an
+      expiry written at creation; a destructive reaper reports by default,
+      acts only on an explicit opt-in, and refuses production (expected-absent
+      for a library-shaped repo that creates no environments, tenants or
+      namespaces).
+    observe:
+      - "each create step (a preview deploy, an environment spawner, a tenant factory, a namespace create) writes an owner and an expiry at creation (an annotation, a comment, a registry row), or the host keeps the resource by age"
+      - "a scheduled workflow or job per resource kind removes what has expired, lost its creator or exceeds a keep-newest count, and fails on a listing error rather than reading it as nothing to do"
+      - "the reaper's default is a report (--dry-run); it acts only when a repository variable or a dispatch input opts in, and refuses the production environment or namespace before anything is rendered"
+      - "one owner's reaper touches only that owner's resources; a resource without an owner or expiry is reported, never reaped"
+
+  - id: promotion-gap-from-ancestry
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      Which changes have reached which environment is computed from
+      version-control ancestry between the environments' pointers, on a
+      schedule and whenever a pointer moves, and published as a report and a
+      metric; no tracker field tracks it by hand (expected-absent for a
+      library-shaped repo with a single release line and no environments).
+    observe:
+      - "a scheduled job, also triggered by a push to each pointer branch, lists the work items the commits in <lower pointer>..<higher pointer> name in their subjects and trailers, per environment pair"
+      - "it refuses to report when the lower pointer is not an ancestor of the higher one, and fails on an unresolvable ref or a failed git call rather than reporting an empty gap"
+      - "its output reaches where the team reads (a run summary, an artifact, a pinned document) and its count is a metric in the metrics registry"
+      - "no tracker status or field records which environment a work item has reached"
+
+  - id: environment-currency-checked
+    level: strict
+    requires: mechanical
+    since: next
+    statement: >-
+      A scheduled check that runs against an environment that is deliberately
+      behind first confirms the environment runs a version the check applies
+      to: the floor is derived from history, the deployed version is read
+      from the environment's pin, ancestry decides, and a non-current
+      environment's cell is removed from the matrix rather than skipped
+      (expected-absent where no scheduled check runs against an environment
+      that is deliberately behind).
+    observe:
+      - "a currency job derives the floor as the newest commit touching the check's dependency paths (git log -1 -- <paths>), never from a hand-kept minimum version"
+      - "it reads the deployed version from the environment's pin (a manifests commit, an identity endpoint) and tests ancestry (git merge-base --is-ancestor <floor> <deployed>)"
+      - "it emits the list of current environments, and the check's matrix is built from that output, so a stale environment has no cell; the cell is not merely skipped by a condition"
+      - "an unreadable pin, a dependency path that no longer exists or a failed git lookup counts the environment as stale; the check's other cells still run when the currency job itself fails"
+
+  - id: watchdog-decides-by-cause
+    level: strict
+    requires: mechanical
+    since: next
+    statement: >-
+      The watchdog decides why the `verified` pointer lags and acts by cause:
+      it heals only a dropped trigger, by dispatching verification at the
+      tip, and only up to a budget of dispatches at the same tip; it fails
+      when the heals at a tip keep ending without a verdict, when
+      verification succeeded but the pointer did not move, when the pointer
+      diverged from the integration branch, and when a verification run has
+      waited for a runner past a bound, which it cancels; and verification covers the whole range from the pointer to
+      the tip, so a superseded or cancelled run is covered by its successor
+      (expected-absent for a library-shaped repo with no verified pointer).
+    observe:
+      - "the watchdog's lag counts only changes to paths verification builds or tests; a documentation-only tip does not fail it"
+      - "it reads the tip's verification runs and tells running (fine), failed (fine, no heal), succeeded with the pointer unmoved (fail, never re-run) and no conclusive run past a grace window (heal: a dispatch of verification at the tip) apart; a run that was cancelled or timed out counts as no verdict"
+      - "it counts its own dispatches at the current tip that ended without a verdict and, past a budget, fails instead of dispatching again"
+      - "it fails on a pointer that is not an ancestor of the integration branch, naming a back-merge as the recovery; nothing force-resets the pointer"
+      - "it reads the verification runs' jobs and cancels, then fails on, a run whose job has waited for a runner past a bound; a job waiting for an environment approval does not count"
+      - "every read fails closed: a failed or malformed listing is not read as no runs, and an ancestry check that errors is not read as not an ancestor"
+      - "the watchdog runs on a runner pool other than the one verification runs on, or from outside the provider"
+      - "the verification workflow's change detection diffs the whole verified..tip range, never the tip against its parent; its concurrency keeps one pending run per integration branch without cancelling a running one, gives a dispatch from another ref its own slot, and accepts a manual dispatch"
 
   - id: verify-and-promote-gates-self-tested-in-ci
     level: strict

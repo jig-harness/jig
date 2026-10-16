@@ -1,0 +1,9 @@
+# Cause mode. A verification job has waited for a runner far past the bound
+# (MAX_QUEUE_WAIT_SECONDS=2700): its timeout has not started, and the run
+# holds the slot every newer run waits behind. queue=stalled, exit 1, even
+# though the pointer itself reads as verifying.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 41400
+VERIFICATION running
+QUEUE_WAIT_SECONDS 41400

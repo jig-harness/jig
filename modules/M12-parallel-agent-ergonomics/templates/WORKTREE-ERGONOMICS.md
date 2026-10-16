@@ -105,6 +105,29 @@ the tools that do the same per ecosystem (Changesets, towncrier, scriv,
 changie) are in the module's
 **[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.
 
+### 7. Per-worktree data namespaces
+
+Worktrees that share one database server each get their own namespace (a
+schema, a database, a key prefix) derived from the worktree's branch, the
+way its port is: the same worktree always gets the same name and no two share
+one.
+
+```sh
+NS=$(bun reference/worktree-namespace/namespace-for-worktree.ts "$(git branch --show-current)")
+```
+
+The namespace is created **with its owner and an expiry** (a comment on the
+schema, a row in a registry table), and each owner's reaper drops what has
+expired or whose worktree is gone, **after reporting and never the production
+namespace**: production has no prefix and needs an explicit flag to be
+targeted at all. The drop decides each name again under a per-name lock the
+create also takes, because a worktree can come back on the same branch, and
+so to the same name, between the report and the drop. A namespace created without an owner or expiry is reported,
+not reaped. The decision script and the per-database commands:
+**[reference/worktree-namespace](https://github.com/docomply/jig/tree/main/modules/M12-parallel-agent-ergonomics/reference/worktree-namespace)**
+and the module's
+**[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.
+
 ## Adopt it
 
 1. Vendor `reference/port-allocator/` and `reference/resource-lock/` (or copy the
@@ -117,3 +140,6 @@ changie) are in the module's
 4. Add the footgun table above to your contributing docs, trimmed to your stack.
 5. If every pull request edits a changelog or a version, move to change notes
    (rule 6) and convert the open pull requests' entries once.
+6. If worktrees share a database, derive each one's namespace (rule 7) in the
+   migration command, write owner and expiry on create, and give every owner
+   the reap command.

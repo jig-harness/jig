@@ -1,0 +1,9 @@
+# Cause mode. A dropped trigger the watchdog has already healed twice, each
+# dispatched run ending without a verdict, under the default budget of three:
+# still pointer=dropped-trigger, heal again, exit 1.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 9000
+VERIFICATION aborted
+QUEUE_WAIT_SECONDS 0
+HEAL_ATTEMPTS 2

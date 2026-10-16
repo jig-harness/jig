@@ -1,0 +1,8 @@
+worktree /work/shop
+HEAD 1111111111111111111111111111111111111111
+branch refs/heads/main
+
+worktree /work/shop-rebase
+HEAD 3333333333333333333333333333333333333333
+detached
+

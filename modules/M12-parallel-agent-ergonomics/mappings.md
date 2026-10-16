@@ -21,6 +21,8 @@ repository as the working directory.
 | `reference/resource-lock/with-resource-lock.ts` | around heavy local gate commands (build, test, e2e) | lock via `LOCK_NAME`/`--lock`; bypass via `CI`/`RESOURCE_LOCK_BYPASS` |
 | [`changelog/scripts/release.ts`](../../plugin/skills/changelog/scripts/release.ts) | on the integration branch after every merge, one run at a time | notes directory, changelog and version files via flags |
 | [`changelog/scripts/check.ts`](../../plugin/skills/changelog/scripts/check.ts) | in the branch gates | the same, plus `--base` and `--release-path` |
+| `reference/worktree-namespace/namespace-for-worktree.ts` | the migration or dev command, and the create hook | the worktree's branch (arg or `WORKTREE_ID`), `--prefix`, `--max-length` |
+| `reference/worktree-namespace/find-stale-namespaces.ts` | the owner's reap command, before any drop | the inventory via `--inventory`, `git worktree list --porcelain` via `--live`, `--owner`, `--production` (required) |
 
 ## Worktree managers / agent runners — where the hooks wire
 
@@ -89,6 +91,31 @@ The mutex is the **same mechanism** [M1](../M1-gates-enforcement-ladder/) points
 to for heavy pre-push gates; a repo that adopts both wraps its heavy gate once
 and gets the cross-worktree serialization locally and the isolation-based bypass
 in CI for free.
+
+## Per-worktree data namespaces
+
+The name comes from
+[`reference/worktree-namespace/`](reference/worktree-namespace/); the create
+writes the owner and the expiry beside it; the reaper reads them back into
+the decision script's inventory and drops what it lists, after the report.
+The drop decides each name again under a per-name lock the create also
+holds, from a fresh census, because a worktree can come back on the same
+branch between the report and the drop
+([the reference's drop step](reference/worktree-namespace/README.md#from-decision-to-drop)).
+The same shape on every database: only the commands differ.
+
+| Database | Create, with owner and expiry | Inventory for the reaper | Drop |
+|----------|-------------------------------|--------------------------|------|
+| PostgreSQL | `CREATE SCHEMA "$NS"; COMMENT ON SCHEMA "$NS" IS '{"owner":"$USER","expires_at":"<ISO 8601>"}'`; the migration runner sets `search_path` to the namespace, and production (the `public` schema, no prefix) needs an explicit opt-in flag | `SELECT jsonb_agg(jsonb_build_object('name', n.nspname) \|\| coalesce(obj_description(n.oid, 'pg_namespace')::jsonb, '{}'::jsonb)) FROM pg_namespace n` | `DROP SCHEMA "$NS" CASCADE` |
+| MySQL / MariaDB | `CREATE DATABASE $NS`; owner and expiry in a `worktree_namespaces` table, since a database carries no comment | `SELECT name, owner, expires_at FROM worktree_namespaces` joined with `SHOW DATABASES` | `DROP DATABASE $NS` |
+| MongoDB | a database per worktree, owner and expiry as a document in a `namespaces` collection of an admin database | that collection, joined with `listDatabases` | `db.dropDatabase()` on the namespace |
+| A branching database host (Neon, PlanetScale) | a branch per worktree, named by the script, with the host's expiry or a tag for owner and expiry | the host's branch list | the host's delete-branch call |
+| SQLite | a file per worktree under a gitignored directory, owner and expiry in a sidecar `.json` | the directory listing | delete the file and its sidecar |
+| Redis / Valkey | a key prefix per worktree rather than a database; owner and expiry in a hash under the prefix | `SCAN` by the prefix, reading the hash | `UNLINK` the keys under the prefix |
+
+A production target is refused in the migration runner (the empty prefix
+needs an explicit flag), in the reaper (`--production <name>` is never a
+candidate), and wherever the drop runs, so no single mistake reaches it.
 
 ## Change notes — per ecosystem
 

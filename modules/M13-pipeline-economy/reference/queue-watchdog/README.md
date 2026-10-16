@@ -111,7 +111,10 @@ its watchdog cancel a stalled run of a serialized workflow, which frees the
 slot. That is safe when each run re-checks everything since the last success:
 a cancelled run never advances anything, and its successor checks the whole
 range again. Whether to cancel, page someone, or only report is a decision
-for each repository.
+for each repository. Post-merge verification is the case where the answer is
+settled: [M10's watchdog](../../../M10-environments-deploy/reference/verified-pointer/)
+cancels the stalled run and fails, because the verification queue keeps one
+pending run per branch and every run covers the whole unverified range.
 
 Jobs bound for a self-hosted runner pool with no matching runner stall the
 same way, and this check catches them too.

@@ -316,8 +316,6 @@ Practices a working repository validated, for modules that exist today:
   - a check that each generator reaches every input;
   - which numbers in prose may stay.
 - **M10 and M11**:
-  - the verified-pointer watchdog decides by cause and catches stalls in the
-    runner queue;
   - a ledger of out-of-tree work that blocks promotion;
   - a registry of external preconditions;
   - a heartbeat in which a stopped schedule reads as red;

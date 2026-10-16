@@ -1,0 +1,8 @@
+# Cause mode. The tip has no run yet, but it is younger than the grace window
+# (GRACE_SECONDS=1200): the provider may still be turning the push into a
+# run. pointer=within-grace, exit 0.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 300
+VERIFICATION none
+QUEUE_WAIT_SECONDS 0

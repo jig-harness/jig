@@ -1,0 +1,8 @@
+# Cause mode, exactly at the grace window and the queue bound
+# (GRACE_SECONDS=1200, MAX_QUEUE_WAIT_SECONDS=2700). At the bound is still
+# within it; only strictly over counts. Must pass (exit 0).
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 1200
+VERIFICATION none
+QUEUE_WAIT_SECONDS 2700

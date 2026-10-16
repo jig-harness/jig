@@ -1,4 +1,5 @@
-# Exactly at both default thresholds (MAX_BEHIND=20, MAX_AGE_SECONDS=86400).
-# At-threshold is fresh; only strictly-greater stalls. Must PASS.
+# Threshold mode, exactly at both default bounds (MAX_BEHIND=20,
+# MAX_AGE_SECONDS=86400). At the bound is fresh; only strictly over lags.
+# Must pass (exit 0).
 BEHIND 20
 AGE_SECONDS 86400

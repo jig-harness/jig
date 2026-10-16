@@ -1,0 +1,6 @@
+# Keys of both modes in one observation. Which decision was meant is unclear,
+# so the check refuses rather than picking one: exit 2.
+ANCESTOR yes
+CODE_AHEAD no
+QUEUE_WAIT_SECONDS 0
+BEHIND 3

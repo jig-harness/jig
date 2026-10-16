@@ -1,0 +1,9 @@
+# Cause mode. Verification succeeded for the tip and the pointer still did not
+# move: the step that advances it was skipped or is broken. Running
+# verification again reproduces the skip, so this is never healed; a person
+# looks. pointer=ran-but-stale, exit 1.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 3600
+VERIFICATION succeeded
+QUEUE_WAIT_SECONDS 0

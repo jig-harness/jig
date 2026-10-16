@@ -1,2 +1,2 @@
-# A non-numeric observation. Must error (exit 2), not silently pass.
+# A non-numeric observation. Must error (exit 2), never pass.
 BEHIND lots

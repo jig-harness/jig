@@ -74,7 +74,7 @@ const criteriaFiles = readdirSync(join(root, CRITERIA)).filter((f) =>
   /^M\d+-.*\.yaml$/.test(f),
 );
 
-test("every criteria file parses as the audit reads it, and M7 has the most", () => {
+test("every criteria file parses as the audit reads it", () => {
   const counts = new Map(
     criteriaFiles.map((f) => {
       const text = read(`${CRITERIA}/${f}`);
@@ -94,7 +94,7 @@ test("every criteria file parses as the audit reads it, and M7 has the most", ()
     }),
   );
   expect(counts.size).toBe(15);
-  expect(Math.max(...counts.values())).toBe(counts.get("M7") ?? -1);
+  for (const [module, n] of counts) expect(n, module).toBeGreaterThan(0);
 });
 
 // The audit's own loader is the oracle: each malformed case is one it

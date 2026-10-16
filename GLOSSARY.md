@@ -204,7 +204,10 @@ make, use the entry's term instead.
   code-bearing by default, so a newly added area fails toward the heavy gate
   instead of silently skipping it the way an allow-list would. This
   deny-list is deliberately generous and must not double as the reachability
-  target of *area-class-resolved* — see **Code-bearing anchor**, below.
+  target of *area-class-resolved* — see **Code-bearing anchor**, below. Of a
+  commit or a range: one that changes a path verification builds or tests;
+  the *verified pointer* watchdog's lag counts only these
+  ([M10](modules/M10-environments-deploy/README.md#the-watchdog-decides-by-cause)).
 - **Code-bearing anchor** — a *change-area catalog* area explicitly
   designated as one that directly ships — a deployed service *or* a
   published package, not deployment-only (a library-shaped area can anchor
@@ -272,7 +275,9 @@ make, use the entry's term instead.
   run would have.
 - **Queue stall** — a CI job waiting for a machine to run on, for longer than
   any job should. Job timeouts do not count that wait, so only a separate
-  watchdog notices it.
+  watchdog notices it; when the job belongs to serialized post-merge
+  verification, the watchdog also cancels the run, since it holds the slot
+  every newer run waits behind.
 
 ## Process
 
@@ -470,6 +475,12 @@ make, use the entry's term instead.
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
   workspace is what a *workspace provider* opens around a worktree.
+- **Worktree namespace** — the data namespace (a database schema, a
+  database, a key prefix) a *worktree* derives from its own identity, so
+  worktrees sharing one database server never share tables. Created with an
+  owner and an expiry, reaped by that owner once the worktree is gone or the
+  expiry has passed, and never the production namespace, which carries no
+  prefix.
 - **Worktree scratch** — working files an agent keeps in a gitignored
   directory of its *worktree*. They outlive one session but only a session in
   that same worktree sees them, so nothing another worktree, or a person not
@@ -483,8 +494,24 @@ make, use the entry's term instead.
   with a shared task runner and shared quality gates.
 - **Verified pointer** — a branch or tag that a delivery pipeline advances only
   when post-merge verification passes, so "merged" and "verified" stay distinct
-  facts. Deploys ship the verified pointer, not the latest commit; a *freshness*
-  watchdog pages when the pointer falls too far behind the default branch.
+  facts. Deploys ship the verified pointer, not the latest commit; a watchdog
+  decides why the pointer lags the default branch, heals a *dropped trigger*
+  within a budget of attempts, and pages on the faults a person must repair
+  (heals that keep ending without a verdict, a pointer that did not move after
+  a passing verification, a stalled runner queue, divergence, an observation
+  it cannot read); a running verification, failed gates and a
+  documentation-only lag need nothing.
+- **Dropped trigger** — a push the CI provider never turned into a run, or a
+  run that ended without a verdict (cancelled, timed out, never started), so
+  the gates never decided and nothing failed. The one cause of a lagging
+  *verified pointer* a watchdog heals on its own, by dispatching verification
+  at the tip once a grace window has passed, until a budget of such
+  dispatches at the same tip is spent.
+- **Back-merge** — the recovery for a *verified pointer* that diverged from
+  its branch: a merge commit on the integration branch whose tree is the
+  branch's own and whose second parent is the pointer's tip. It restores the
+  ancestry a fast-forward needs without merging any of the diverged content;
+  forcing the pointer back is never the recovery.
 - **Digest (content digest)** — a hash of an artifact's exact bytes, such as
   the `sha256:…` that names a container image (`image@sha256:…`). Unlike a
   tag, which can be moved to other bytes, a digest always names the same
@@ -515,6 +542,24 @@ make, use the entry's term instead.
 - **Test-data factory** — a generator of realistic, tenant-isolated, resettable
   seed data, so tests and preview environments run against representative data
   rather than hand-made fixtures or a copy of production.
+- **Reaper (symmetric teardown)** — the scheduled job that removes what the
+  delivery system created once it has expired or lost its creator: a
+  preview deployment, an *ephemeral environment*, a test tenant, a
+  *worktree namespace*. Teardown is symmetric with creation: whatever
+  creates a resource writes its owner and its expiry at creation, and the
+  reaper keyed to that owner reads them back. A destructive reaper reports
+  by default, acts only on an explicit opt-in, and refuses production.
+- **Promotion gap** — the work items that have reached one environment but
+  not the next, computed from version-control ancestry as the commits
+  between the two environments' pointers (`production..verified`), never
+  kept by hand in tracker fields. Its count per environment pair is a
+  process metric.
+- **Environment currency** — whether an environment that is deliberately
+  behind runs a version a given check applies to. The floor is derived from
+  history (the newest commit touching a path the check depends on), the
+  deployed version is read from the environment's pin, and ancestry decides;
+  a non-current environment's cell is removed from the check's matrix, not
+  skipped, so it reports neither a false red nor a false green.
 - **Test tier** — a class of test suite with its own trigger and time
   budget: **unit** tests (one piece of code, no real services) on every
   push, **integration** tests (code against real services such as a

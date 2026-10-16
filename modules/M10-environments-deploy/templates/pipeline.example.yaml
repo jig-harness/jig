@@ -34,6 +34,13 @@ verify_default_branch:
   on:
     push:
       branches: [<default-branch>]
+    dispatch: true               # the watchdog's heal, and a person, can start it
+  # One run at a time per branch; a superseded pending run is dropped safely
+  # because every run checks the WHOLE verified..HEAD range, never the tip alone.
+  concurrency:
+    one_at_a_time: true
+    keyed_by: branch             # a dispatch from another ref gets its own slot
+  changed_paths: git diff --name-only verified HEAD
   # Everything the pointer must wait for, and nothing else: this runs on every push.
   runs:
     - integration-tests-against-real-services
@@ -48,28 +55,25 @@ verify_default_branch:
       to: ${commit_sha}
 
 # ---------------------------------------------------------------------------
-# STAGE 2b — Freshness watchdog (self-healing). Scheduled, not per-PR. Fails when
-# the verified pointer lags too far behind the tip (verification has stalled),
-# so a freeze pages someone instead of silently shipping stale code.
-# See Jig's modules/M10-environments-deploy/reference/verified-pointer/.
+# STAGE 2b — The watchdog. Scheduled, not per-PR, on a runner pool other than
+# stage 2's. Decides WHY the verified pointer lags: nothing to verify, verifying,
+# blocked by failed gates, within the grace window, a dropped trigger (healed by
+# dispatching stage 2 at the tip, the one cause it heals, until a budget of heals
+# at that tip has ended without a verdict), ran but stale, or diverged; and whether a stage-2 run is stalled waiting for a runner (cancelled,
+# and failed). See Jig's modules/M10-environments-deploy/reference/verified-pointer/.
 # ---------------------------------------------------------------------------
-verified_freshness_watchdog:
+verified_watchdog:
   on:
     schedule: "*/15 * * * *"     # every 15 minutes
   runs:
-    - name: check verified pointer is fresh
-      env:
-        MAX_BEHIND: "20"
-        MAX_AGE_SECONDS: "86400"
-      run: |
-        BEHIND=$(git rev-list --count verified..origin/<default-branch>)
-        OLDEST=$(git log --reverse --format=%ct verified..origin/<default-branch> | head -n 1)
-        NOW=$(date +%s); AGE_SECONDS=$(( NOW - ${OLDEST:-$NOW} ))
-        BEHIND="$BEHIND" AGE_SECONDS="$AGE_SECONDS" \
-          bun ./modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.ts
-  on_failure:
-    - page-on-call
-    - heal: rerun-verification-from-tip   # self-heal: re-kick stage 2
+    - name: observe the pointer, the tip and the queue
+      outputs: observation.txt   # ANCESTOR, CODE_AHEAD, UNVERIFIED_AGE_SECONDS, VERIFICATION, QUEUE_WAIT_SECONDS, HEAL_ATTEMPTS
+    - name: decide by cause
+      run: bun ./modules/M10-environments-deploy/reference/verified-pointer/check-verified-fresh.ts --max-heal-attempts 3 --output verdict observation.txt
+  on_verdict:
+    queue=stalled: cancel-the-run-holding-the-slot   # no gate bypassed: the next run covers the whole gap
+    pointer=dropped-trigger: dispatch-verify_default_branch-at-tip
+    anything-else-that-failed: page-on-call           # ran-but-stale, diverged, heal-exhausted, a stall, a check that could not decide
 
 # ---------------------------------------------------------------------------
 # Scheduled and on-demand suites. Slow suites no merge and no pointer move

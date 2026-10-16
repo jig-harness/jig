@@ -1,0 +1,8 @@
+# Cause mode. Verification ran for the tip and failed, so the gates held the
+# pointer back, which is what they are for: pointer=blocked, exit 0 (no heal:
+# running it again changes nothing until someone fixes the tip).
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 7200
+VERIFICATION failed
+QUEUE_WAIT_SECONDS 0

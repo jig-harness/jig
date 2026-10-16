@@ -1,5 +1,5 @@
-# A stalled observation (99 commits behind) followed by a fresh one for the same
-# key — e.g. a producer that accidentally concatenated two snapshots. Last-wins
-# would report fresh (exit 0) and mask the stall; the gate must fail closed (2).
+# A lagging observation (99 commits behind) followed by a fresh one for the
+# same key, as when a collector concatenates two snapshots. Last-wins would
+# report fresh and hide the lag; the check must fail closed (exit 2).
 BEHIND 99
 BEHIND 0

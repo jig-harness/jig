@@ -1,0 +1,6 @@
+# Cause mode. What is ahead of the pointer changes no path verification
+# builds or tests (a documentation-only tip), and no job waits for a runner.
+# The pointer is legitimately where it is: pointer=no-code-ahead, exit 0.
+ANCESTOR yes
+CODE_AHEAD no
+QUEUE_WAIT_SECONDS 0

@@ -1,4 +1,5 @@
-# Verified pointer keeping up: a few commits behind, none waiting long. Must PASS.
+# Threshold mode. The pointer keeps up: a few code-bearing commits behind,
+# none waiting long. Must pass (exit 0).
 # <KEY> <value>   (KEY is BEHIND or AGE_SECONDS)
 BEHIND 3
 AGE_SECONDS 3600

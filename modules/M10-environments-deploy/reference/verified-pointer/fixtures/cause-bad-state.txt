@@ -1,0 +1,8 @@
+# Cause mode with a VERIFICATION value the check does not know (a provider's
+# new status, or a collector bug). It must error (exit 2), never read as
+# "not running, not failed" and pass or heal.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 2400
+VERIFICATION bogus
+QUEUE_WAIT_SECONDS 0

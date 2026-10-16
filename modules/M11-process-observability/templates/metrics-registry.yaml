@@ -48,6 +48,16 @@ metrics:
     source: event:gate_result.duration_ms
     owner: <build-team>
 
+  # --- delivery (M10) ---
+  - id: promotion-gap-items
+    description: work items whose commits the earlier environment's pointer
+      holds and the later one's lacks, per environment pair
+      (production..verified, what waits to be promoted to production),
+      counted from git ancestry by M10's promotion-gap report rather than
+      kept by hand in tracker fields
+    source: query:promotion_gap_items
+    owner: <delivery-lead>
+
   # --- flow (cycle time) ---
   - id: open-to-ready-cycle-time
     description: median elapsed_ms for cycle_time events at stage=open-to-ready

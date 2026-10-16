@@ -25,7 +25,9 @@ condition** and engineers the collisions away up front.
 > **CI bypass**, since a CI runner is already isolated); branches are
 > **reused before created**; the shared-state footguns (`git stash` across
 > worktrees, a root install with the wrong package manager, global git config)
-> are **banned with a stated rationale**; worktree **teardown nudges
+> are **banned with a stated rationale**; each worktree's data lives in a
+> **namespace derived from its identity**, created with an owner and an
+> expiry and **reaped by that owner**; worktree **teardown nudges
 > reflection** so a session's lessons reach the learning loop; and **no pull
 > request edits a file every pull request edits**: a change's changelog entry
 > and version bump are a **change note** of its own, which a release step
@@ -99,6 +101,22 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) file; the tools
    that do the same per ecosystem are in [mappings.md](mappings.md).
 
+7. **Per-worktree data namespaces** — several worktrees share one database
+   server, so each derives its own namespace (a schema, a database, a key
+   prefix) from its identity, the way it derives its port: the same worktree
+   always gets the same name, and no two share one. The namespace is created
+   with its owner and an expiry, and a report-first reaper, run by that
+   owner, drops what has expired or whose worktree is gone, never the
+   production namespace and never a namespace created without those keys
+   (the missing key is the finding). The drop decides each name again under
+   a lock the create also takes, since a worktree can come back on the same
+   branch, and so to the same name, after the report.
+   [`reference/worktree-namespace/`](reference/worktree-namespace/) derives
+   the name and decides the plan; the per-database create and drop commands
+   are in [mappings.md](mappings.md#per-worktree-data-namespaces). This is
+   [M10's symmetric teardown](../M10-environments-deploy/README.md#environment-hygiene)
+   applied on the developer's machine.
+
 The whole copyable model — all its rules in one place, ready to drop into a docs
 tree — is [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md).
 The branch-discipline block is written to be **imported into an agent instruction
@@ -115,7 +133,10 @@ governs how those files layer), so every agent inherits the rules.
 - **Standard** — deterministic per-worktree port allocation is **scripted**
   (mechanical, not eyeballed); the cross-worktree heavy-run mutex is **scripted
   with a CI bypass**; and worktree create/remove hooks are wired so the port slot
-  is allocated on create and reflection is nudged on remove; and a release
+  is allocated on create and reflection is nudged on remove; where worktrees
+  share a database, each worktree's **namespace is derived from its
+  identity** and created with an owner and an expiry, and a report-first
+  reaper drops the stale ones; and a release
   step **assembles the change notes after the merge**, one run at a time,
   while a check fails a malformed note or a direct edit to what that step
   writes.
@@ -139,7 +160,12 @@ governs how those files layer), so every agent inherits the rules.
    your agent instruction file so the reuse rule and bans travel with every
    agent.
 5. Add the two self-tests to CI so the utilities can't rot silently.
-6. Where the repository keeps a changelog or a version that every pull request
+6. Where worktrees share a database, derive each worktree's namespace with
+   [`reference/worktree-namespace/`](reference/worktree-namespace/) in the
+   migration or dev command, write the owner and expiry when it is created,
+   and give each owner the reaper's decision as a command that reports before
+   it drops (commands per database in [mappings.md](mappings.md#per-worktree-data-namespaces)).
+7. Where the repository keeps a changelog or a version that every pull request
    touches, move it to change notes: pick the tool for your ecosystem from
    [mappings.md](mappings.md) or use the plugin’s
    [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md), run the release step
@@ -158,10 +184,15 @@ governs how those files layer), so every agent inherits the rules.
 | [`reference/port-allocator/`](reference/port-allocator/) | The deterministic per-worktree port allocator |
 | [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree mutex for heavy runs, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
 | [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md) | The release step that writes change notes into a Keep a Changelog file and moves the version, and the branch check that holds pull requests to it |
-| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools |
+| [`reference/worktree-namespace/`](reference/worktree-namespace/) | The per-worktree data namespace: the name derived from a worktree's identity, and the reaper's decision (which of one owner's namespaces are expired or orphaned, which were created unlabelled, with production refused) |
+| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools, per-database namespace commands |
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
-Each reference utility is a standalone Bun script with a self-test.
+Each reference utility is a Bun script with a self-test. The port allocator
+and the resource lock stand alone; the namespace scripts import helpers from
+the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
+`lib/` at the same place relative to them
+([their README](reference/worktree-namespace/README.md)).
 
 ### Left out by design
 
@@ -185,3 +216,8 @@ Each reference utility is a standalone Bun script with a self-test.
   it is not shipped, to keep the allocator stateless and dependency-free.
 - **A runnable workspace lifecycle**, and cross-worktree locks as shared
   tooling, are later work in the [roadmap](../../ROADMAP.md).
+- **Garbage collection of a developer machine.** A sweep of what every
+  worktree's sessions left behind (leftover processes, scratch directories,
+  caches and containers keyed to worktrees that no longer exist), run by the
+  owner with the same report-first rule as the namespace reaper, is designed
+  and not yet validated in a working repository.

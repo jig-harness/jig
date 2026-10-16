@@ -1,3 +1,3 @@
-# BEHIND is a 20-digit value beyond the signed-64-bit range. It must be rejected
-# as malformed (exit 2), not silently treated as fresh because `-gt` misbehaves.
+# BEHIND is a 20-digit value beyond the signed 64-bit range. It must be
+# rejected as malformed (exit 2), not read as fresh by arithmetic that wraps.
 BEHIND 99999999999999999999

@@ -1,0 +1,4 @@
+# Cause mode with an ANCESTOR value that is neither yes nor no. Must error
+# (exit 2): a collector whose ancestry check failed must not pass as "yes".
+ANCESTOR maybe
+QUEUE_WAIT_SECONDS 0

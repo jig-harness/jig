@@ -1,0 +1,7 @@
+# Cause mode. Code is ahead and its verification is queued or in progress,
+# with every job picked up promptly: pointer=verifying, exit 0.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 600
+VERIFICATION running
+QUEUE_WAIT_SECONDS 30

@@ -1,0 +1,14 @@
+1111111111111111111111111111111111111111 feat(orders): refunds (SHOP-12)
+Refs: SHOP-13
+Co-authored-by: Someone <someone@example.com>
+
+2222222222222222222222222222222222222222 docs: fix a typo in the guide
+
+3333333333333333333333333333333333333333 fix(orders): rounding
+Closes: shop-14, SHOP-15
+
+4444444444444444444444444444444444444444 feat(orders): refund receipts
+Refs: SHOP-12
+
+5555555555555555555555555555555555555555 chore: bump a dependency (SHOP-7)
+

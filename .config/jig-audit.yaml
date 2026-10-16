@@ -583,6 +583,22 @@ criteria:
     # prior: expected-absent: No verified pointer and no scheduled workflow (gates.yml has only pull_request and push triggers)
     score: expected-absent
     evidence: "No verified pointer; gates.yml triggers are pull_request and push to main only"
+  M10/created-resources-have-reapers:   # standard, requires mechanical
+    # Every resource the delivery system creates (a preview deployment, an ephemeral environment, a test tenant, a per-worktree data namespace) has a scheduled reaper keyed to the resource's owner that reads an expiry written at creation; a destructive reaper reports by default, acts only on an explicit opt-in, and refuses production (expected-absent for a library-shaped repo that creates no environments, tenants or namespaces).
+    score: expected-absent
+    evidence: "No environments, tenants or per-worktree database namespaces are created; the only created resources are test scratch directories, which lib/test-tmpdir.ts scopes per process and removes on exit (the jig-test-tmp. prefix is the sweep key); no reaper workflow existed, and modules/M12-parallel-agent-ergonomics/reference/worktree-namespace/ did not exist"
+  M10/promotion-gap-from-ancestry:   # standard, requires mechanical
+    # Which changes have reached which environment is computed from version-control ancestry between the environments' pointers, on a schedule and whenever a pointer moves, and published as a report and a metric; no tracker field tracks it by hand (expected-absent for a library-shaped repo with a single release line and no environments).
+    score: expected-absent
+    evidence: "A single release line (main, released by scripts/release.ts after each merge) and no environments, so there is no pair of environment pointers to diff; modules/M10-environments-deploy/reference/promotion-gap/ did not exist"
+  M10/environment-currency-checked:   # strict, requires mechanical
+    # A scheduled check that runs against an environment that is deliberately behind first confirms the environment runs a version the check applies to: the floor is derived from history, the deployed version is read from the environment's pin, ancestry decides, and a non-current environment's cell is removed from the matrix rather than skipped (expected-absent where no scheduled check runs against an environment that is deliberately behind).
+    score: expected-absent
+    evidence: "No scheduled check and no deployed environment: .github/workflows/gates.yml is the only workflow at the audited commit, triggered by pull_request and push to main, and no scheduled workflow existed"
+  M10/watchdog-decides-by-cause:   # strict, requires mechanical
+    # The watchdog decides why the `verified` pointer lags and acts by cause: it heals only a dropped trigger, by dispatching verification at the tip, and only up to a budget of dispatches at the same tip; it fails when the heals at a tip keep ending without a verdict, when verification succeeded but the pointer did not move, when the pointer diverged from the integration branch, and when a verification run has waited for a runner past a bound, which it cancels; and verification covers the whole range from the pointer to the tip, so a superseded or cancelled run is covered by its successor (expected-absent for a library-shaped repo with no verified pointer).
+    score: expected-absent
+    evidence: "No verified pointer and no post-merge verification workflow to watch; gates.yml triggers are pull_request and push to main only, and the module's own check existed only as the threshold form under modules/M10-environments-deploy/reference/verified-pointer/"
   M10/verify-and-promote-gates-self-tested-in-ci:   # strict, requires mechanical
     # The verified-pointer freshness gate and the promote-safety lint both run in CI, each with a self-test, so a broken deploy gate fails loudly.
     # prior: expected-absent: No verify or promote stages; check-verified-fresh/check-promote-safety exist only as examples under modules/M10-environments-deploy/reference/
@@ -676,6 +692,10 @@ criteria:
     # prior: absent: No worktree create/remove hooks tracked: git ls-files has no workspace-tool config, .claude/settings, lefthook/husky/.githooks (only modules/M1-gates-enforcement-ladder/templates/lefthook.yml, a template)
     score: absent
     evidence: "No tracked worktree create/remove hooks: no workspace-tool config, .claude/settings or hook manager; tools/launcher opens workspaces but allocates and nudges nothing"
+  M12/worktree-namespaces-keyed-and-reaped:   # standard, requires mechanical
+    # Where worktrees share a database server, each worktree's data namespace is derived from its identity by a script, created with an owner and an expiry, and reaped by its owner through a command that reports before it drops and refuses the production namespace (expected-absent for a repository with no database or no parallel worktrees).
+    score: expected-absent
+    evidence: "No database: tests build scratch repositories and directories under lib/test-tmpdir.ts, nothing shares a database server across worktrees; modules/M12-parallel-agent-ergonomics/reference/worktree-namespace/ did not exist"
   M12/change-records-assembled-after-merge:   # standard, requires mechanical
     # A release step assembles the per-change notes into the changelog and sets the version after the merge, one run at a time, and a check fails a change whose note it cannot read or that edits what the step writes.
     score: absent

@@ -1,4 +1,0 @@
-# Verification wedged: the pointer is far behind the tip though no unverified
-# commit has waited long. EITHER signal over threshold stalls. Must FAIL (page/heal).
-BEHIND 50
-AGE_SECONDS 100

@@ -1,0 +1,5 @@
+# Cause mode with code ahead but no run state and no age. The pointer verdict
+# needs both; the check must not guess: exit 2.
+ANCESTOR yes
+CODE_AHEAD yes
+QUEUE_WAIT_SECONDS 0

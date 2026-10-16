@@ -1,0 +1,9 @@
+# Cause mode with a HEAL_ATTEMPTS value that is not a non-negative integer.
+# Must error (exit 2): a collector that could not count the heals must not
+# pass as "no heals yet" and dispatch forever.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 2400
+VERIFICATION none
+QUEUE_WAIT_SECONDS 0
+HEAL_ATTEMPTS some

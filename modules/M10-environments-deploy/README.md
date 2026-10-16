@@ -18,15 +18,22 @@ preview environments and a seeded, isolated, resettable test-data factory.
 > The delivery pipeline keeps **"merged" and "verified" as separate facts**: PR
 > gates run on every pull request and inform a human merge; **post-merge
 > verification** runs on the integrated default branch and advances an explicit
-> **`verified` pointer** (a branch or tag) only on success; a **freshness
-> watchdog** fails loudly when that pointer lags, so a stalled verifier pages
-> someone instead of silently shipping stale code; **deploys ship only what
+> **`verified` pointer** (a branch or tag) only on success; a **watchdog**
+> decides *why* that pointer lags, heals a dropped trigger within a budget of
+> attempts and fails on the faults a person must repair, so a stalled
+> verifier pages someone instead of silently shipping stale code; **deploys ship only what
 > `verified` points at**, never a mutable branch or `:latest`; and **promotion
 > to production is a manual, gated human action** that cannot auto-fire. A
 > promotion **ships the exact commit and artifact its gates approved**,
 > [built once](../../GLOSSARY.md) and passed from job to job, and is complete only when the live
 > environment reports that identity. Preview environments are disposable and
-> cheap; test data is seeded, tenant-isolated, and resettable.
+> cheap; test data is seeded, tenant-isolated, and resettable. **Every
+> resource the pipeline creates has a reaper** keyed to its owner, with its
+> expiry set when it is created; **which changes have reached which
+> environment is read from version-control ancestry**, never kept by hand;
+> and a check against an environment that is deliberately behind **confirms
+> the environment's currency first**, dropping its cell rather than reporting
+> a false red or a false green.
 
 Everything below is that one tool-independent statement made mechanical;
 concrete per-provider wiring lives in [mappings.md](mappings.md).
@@ -45,12 +52,16 @@ concrete per-provider wiring lives in [mappings.md](mappings.md).
    Post-merge verification is the *only* thing that advances it, and deploys read
    it. It turns "is this good enough to ship?" from a vibe into a commit anyone
    can query.
-3. **The freshness watchdog** — a scheduled check on how far the pointer lags the
-   default-branch tip (in commits and in time). If verification wedges, the
-   pointer freezes silently; the watchdog makes that silence loud (page + heal).
-   It is a [freshness gate](../../GLOSSARY.md) on a *pointer* rather than a file —
-   the same move [M2](../M2-generated-artifact-freshness/) makes for generated
-   files — and it ships as [`reference/verified-pointer/`](reference/verified-pointer/).
+3. **The watchdog** — a scheduled check that asks why the pointer lags the
+   default-branch tip and answers by cause: nothing to verify, verifying,
+   blocked by failed gates, a dropped trigger it heals, heals that keep
+   ending without a verdict, a pointer that did not move after a success, a
+   diverged pointer, a run stalled waiting for a runner. If verification wedges, the pointer freezes silently; the watchdog
+   makes that silence loud and heals the one cause a machine can. It is a
+   [freshness gate](../../GLOSSARY.md) on a *pointer* rather than a file, the
+   same move [M2](../M2-generated-artifact-freshness/) makes for generated
+   files, with [the decision a pointer needs](#the-watchdog-decides-by-cause),
+   and it ships as [`reference/verified-pointer/`](reference/verified-pointer/).
 4. **Deploy verified artifacts only** — deploy jobs are driven by the pointer
    moving and check out *what it points at*, never a raw branch or a moving tag.
    A deploy that reads `main` instead of `verified` bypasses the whole chain.
@@ -76,6 +87,90 @@ concrete per-provider wiring lives in [mappings.md](mappings.md).
    also says which test tiers run per change and which on a schedule.
 8. **Promotion execution** — the promotion itself ships what its gates
    approved, and proves it did: see [Promotion execution](#promotion-execution).
+9. **Environment hygiene** — every resource the pipeline creates (a preview
+   deployment, an ephemeral environment, a test tenant, a per-worktree data
+   namespace) has an owner-keyed [reaper](../../GLOSSARY.md) that reads an
+   expiry set at creation; the [promotion gap](../../GLOSSARY.md) between
+   two environments is computed from git ancestry by
+   [`reference/promotion-gap/`](reference/promotion-gap/); and a check
+   against a deliberately-behind environment confirms its
+   [currency](../../GLOSSARY.md) first: see
+   [Environment hygiene](#environment-hygiene).
+
+## The watchdog decides by cause
+
+A pointer that lags is a symptom with several causes, and each wants a
+different response. A threshold on the lag ("more than 20 commits, or older
+than a day") can only page, and it pages for the wrong things: a tip that
+changes only documentation, a verification that correctly failed. People
+learn to ignore the page, and the one time it matters, nobody looks. So the
+watchdog decides by cause, under these rules.
+
+- **Lag counts only [code-bearing](../../GLOSSARY.md) changes.** The pointer
+  lags when the range from it to the tip changes a path verification builds
+  or tests. A tip that
+  changes only documentation legitimately leaves the pointer behind: nothing
+  about it needs verifying.
+- **Decide by cause, and heal exactly one.** For a tip with code ahead, the
+  state of its verification decides. A run queued or in progress is latency:
+  fine. A run that failed is the gates holding the pointer back: fine, and no
+  heal, since running them again changes nothing until the tip changes. A run
+  that succeeded while the pointer stayed is a skipped or broken advance
+  step: it fails for a person to look at and is never re-run, because
+  re-running reproduces the skip. No conclusive run past a grace window is a
+  [dropped trigger](../../GLOSSARY.md): the push never became a run, or the
+  run ended without a verdict (cancelled, timed out, never started). The
+  watchdog heals it by dispatching verification at the tip. That is the only
+  cause it heals, and only within a budget of attempts: when the runs it
+  dispatched at the same tip keep ending without a verdict, another dispatch
+  would only repeat them on every scheduled observation, so past the budget
+  it stops healing and fails for a person. Every other failure is a fact for
+  a person.
+- **A queue stall is a failure.** A job's timeout counts no time spent
+  waiting for a runner, so a run no runner picks up holds its serialized slot
+  indefinitely, and every newer run waits behind it while everything reads
+  as latency. The watchdog bounds that wait, cancels the run that holds the
+  slot and fails loudly: the cancel frees the slot, and the missing runner is
+  a capacity fault only a person can repair. The cancel bypasses no
+  gate, because the next run covers the whole range (below). This is
+  [M13's bound](../M13-pipeline-economy/README.md#4-bound) applied to
+  post-merge verification; M13's
+  [queue-stall check](../M13-pipeline-economy/reference/queue-watchdog/)
+  measures the same wait over every workflow, and its
+  [supersede rule](../M13-pipeline-economy/README.md#3-supersede) says when a
+  cancelled run is covered.
+- **Divergence is a failure.** The pointer only ever fast-forwards, so a
+  pointer that is not an ancestor of the integration branch can never advance
+  again: something wrote a commit to it that the branch lacks. The watchdog
+  fails and names the recovery: contain first (until shown otherwise, a
+  divergence is a leaked writer credential or a broken workflow), then a
+  [back-merge](../../GLOSSARY.md), a commit on the integration branch with
+  the branch's own tree and the pointer's tip as its second parent, which
+  restores ancestry without merging the diverged content. Never force the
+  pointer back: its protection exists to forbid that write, and a pointer
+  that jumps backwards makes the deploy that follows it ship something older
+  than what runs.
+- **Verification covers the whole gap.** Every verification run diffs the
+  whole range from the pointer to the tip, never the tip against its parent.
+  Only then is it safe for the verification queue to keep one pending run
+  per branch and drop the runs it supersedes, for the watchdog to cancel a
+  stalled run, and for a heal dispatched at the tip to cover a dropped push
+  behind a documentation-only commit. A tip-only diff loses a superseded
+  push's changes without a trace: a push that renames a database column
+  queues behind the run in progress, a typo fix lands on top of it and takes
+  its place in the queue, and the surviving run, diffed against its parent,
+  sees the typo and never the rename. A dispatch from another branch covers
+  nothing of the integration branch's queue, so it gets a slot of its own.
+
+[`reference/verified-pointer/`](reference/verified-pointer/) makes the rules
+mechanical: it takes the observation (ancestry, code ahead, the tip's
+verification state and age, the longest runner wait, the heals already
+dispatched at the tip) and gives two verdicts
+the workflow branches on, `queue=` and `pointer=`. The recipes that collect
+the observation per provider are in
+[mappings.md](mappings.md#the-verified-pointer-watchdog). A watchdog
+scheduled onto the runner pool it watches stalls with it: give it another
+pool.
 
 ## Promotion execution
 
@@ -187,6 +282,101 @@ in, because it describes the code, not the environment.
   to the one writer identity, and require no pull request on it; where a
   pull-request rule must stay, give the writer an explicit bypass.
 
+## Environment hygiene
+
+The environment kit creates things: a preview deployment per pull request,
+an ephemeral environment per verification run, a tenant per test run, a
+database namespace per worktree, a process a test started. Each is cheap to
+create and, left alone, stays forever. The failures are slow and then sudden:
+a host that stops publishing once a project holds too many stale
+deployments turns a missing reaper into a deploy outage; a shared database
+fills with the schemas of branches deleted months ago; a scheduled check
+pages every night about an environment that is behind on purpose. The
+rules below keep the kit honest.
+
+### Every created resource has a reaper
+
+- **Teardown is symmetric with creation.** Whatever creates a resource
+  writes, at creation, who owns it and when it expires (a label on the
+  namespace, a comment on the schema, a row in a registry), and a reaper
+  keyed to that owner runs on a schedule and removes what has expired or lost
+  its creator. The reaper is decided when the create step is written, not
+  when the platform fills up. Preview deployments are kept by count per
+  project (the newest N, the rest deleted oldest first); ephemeral
+  environments by the expiry their spawner wrote; per-worktree namespaces by
+  owner and expiry
+  ([M12's reference](../M12-parallel-agent-ergonomics/reference/worktree-namespace/)
+  decides which to drop); processes and scratch directories a test started
+  by the test runner's own scope, which removes them when the process ends.
+- **Report first, act on opt-in, refuse production.** A destructive reaper's
+  default is a report of what it would remove. It acts only when a
+  repository variable or a dispatch input says so, never because it merged:
+  a destructive scheduled job that goes live on merge removes something the
+  day its first bug ships. It refuses the production environment or
+  namespace outright, at every layer it has (the operator's command, the
+  rendered job, the target the job reads from its own environment), so no
+  combination of inputs reaches production. A reaper that cannot read what
+  it would reap (a failed listing, a denied credential) fails rather than
+  reading the failure as nothing to do.
+- **One owner's reaper touches only that owner's resources.** Two owners'
+  reapers then never race, and a resource created without an owner or an
+  expiry is reported as unlabelled, never reaped: the missing key is the
+  finding.
+
+### The promotion gap comes from ancestry
+
+Which changes have reached which environment is the range between the
+environments' pointers: the commits in `production..verified` are what
+waits for the next promotion, and the work items they name in their
+subjects and trailers are the [promotion gap](../../GLOSSARY.md).
+[`reference/promotion-gap/`](reference/promotion-gap/) reads it. It is
+never kept by hand in tracker fields ("deployed to staging"): a field holds
+only while every promotion remembers to move every item, and a pointer that
+moved by itself (a deploy, a back-merge) moves no field. The report runs on
+a schedule and on every push to a pointer branch, publishes where the team
+reads (the run's summary, an artifact, a pinned document), and its count per
+environment pair is a metric in
+[M11](../M11-process-observability/README.md)'s registry. When the later
+environment's pointer (production) is not an ancestor of the earlier one's
+(verified) the gap is not a range, and the
+report refuses to decide: the
+[divergence rule](#the-watchdog-decides-by-cause) applies.
+
+### A check confirms the environment's currency first
+
+An environment that is deliberately behind (a demo promoted by hand, a
+staging that waits for a window) runs an older version than the integration
+branch. A scheduled check that calls into it (a janitor, a smoke test, a
+contract test) depends on routes, schemas and behaviour that landed at
+particular commits; run against an older build it reports red for staleness
+that is no defect, and after enough red nobody reads it. So a currency step
+decides, once, before the check's cells are built, whether the environment
+runs a version the check applies to:
+
+- **The floor is derived, never declared.** The oldest version the check
+  applies to is the newest commit touching any path the check depends on,
+  read from history. A minimum version kept by hand stops moving the day
+  someone changes a dependency without updating it, and from then on it
+  reports current for an environment that is not.
+- **Ancestry decides.** The deployed version is read from the environment's
+  own pin (the commit its manifest names, the identity its build reports),
+  and the environment is current when the floor is an ancestor of it.
+- **A non-current cell is removed, not skipped.** The currency step emits
+  the list of environments to check, and the matrix is built from it; a
+  skipped cell still reports a status, and a status that is neither red nor
+  green is read as green. No cell means no status, which is the honest
+  answer.
+- **It fails closed, without taking the rest down.** An unreadable pin, a
+  dependency path that no longer exists, a git lookup that fails: each
+  counts the environment as stale and drops its cell. The check's other
+  cells still run when the currency step itself fails for reasons of its
+  own (a checkout that timed out), so an infrastructure failure of one
+  environment's step does not silence another's.
+
+[mappings.md](mappings.md#environment-hygiene) wires each per provider:
+the reaper's opt-in and its keep-newest sweep, the gap report's triggers, and
+the currency step's matrix.
+
 ## Maturity levels
 
 - **Lite** — the environments and the deploy path are **written down** (a deploy
@@ -196,16 +386,24 @@ in, because it describes the code, not the environment.
 - **Standard** — CI **separates PR gates from post-merge verification**; a
   `verified` pointer advances only on passing verification (mechanically, in CI);
   production deploys ship only verified artifacts, with the gated commit passed
-  from job to job; artifacts are built once and promoted by digest; and the
-  freshness watchdog runs on a schedule.
-- **Strict** — the verified-pointer freshness gate and the promote-safety lint
-  both run in [CI](../../GLOSSARY.md) with their self-tests; promotion to
+  from job to job; artifacts are built once and promoted by digest; the
+  watchdog runs on a schedule, counting only code-bearing lag; every
+  resource the pipeline creates has a scheduled, owner-keyed reaper that
+  reports by default; and the promotion gap is computed from ancestry on a
+  schedule.
+- **Strict** — the verified-pointer watchdog and the promote-safety lint
+  both run in [CI](../../GLOSSARY.md) with their self-tests; the watchdog
+  decides by cause, heals only a dropped trigger and within a budget of
+  attempts, bounds the runner queue and
+  fails on divergence, and verification covers the whole unverified range;
+  promotion to
   production is manual and gated by an **environment protection rule** so it
   cannot auto-fire (mechanical), runs from the trusted ref, one at a time
   without dropping a request; a deploy completes only on the live identity
-  check; release state is kept off the source line; and ephemeral preview
+  check; release state is kept off the source line; ephemeral preview
   environments plus a resettable, seeded, tenant-isolated test-data factory
-  exist.
+  exist; and a check against a deliberately-behind environment confirms its
+  currency first and drops the cell otherwise.
 
 Deploy-shaped criteria are **expected-absent for a library-shaped repo**: a
 published package has no environments, no `verified`-to-production path, and no
@@ -223,9 +421,15 @@ deploy) without the Standard/Strict deploy machinery counting against it; the
 2. Introduce the **`verified` pointer**: add a post-merge verification workflow
    that advances a `verified` branch/tag only on success, and point your deploy
    jobs at it instead of at a branch.
-3. Add the freshness watchdog ([`reference/verified-pointer/`](reference/verified-pointer/))
-   as a scheduled job; wire its failure to your pager and, ideally, to an
-   automatic re-run of verification.
+3. Make verification diff the whole `verified..tip` range and accept a
+   manual dispatch, then add the watchdog
+   ([`reference/verified-pointer/`](reference/verified-pointer/)) as a
+   scheduled job on another runner pool: it dispatches verification on a
+   dropped trigger within its heal budget, cancels a run stalled in the
+   runner queue, and fails on the faults a person must repair (an exhausted
+   heal budget, a pointer that did not move after a success, a stalled queue,
+   divergence, an observation it cannot read); wire the failure to your
+   pager.
 4. Gate production behind a manual trigger + environment protection rule, and add
    the [`reference/promote-safety/`](reference/promote-safety/) lint over your
    deploy workflows so the gating can't regress.
@@ -237,6 +441,12 @@ deploy) without the Standard/Strict deploy machinery counting against it; the
    to its own ref (recipes in [mappings.md](mappings.md#promotion-execution)).
 6. Stand up disposable preview environments per PR and a seeded, tenant-isolated,
    resettable test-data factory (platform options in [mappings.md](mappings.md)).
+7. Keep the kit clean ([Environment hygiene](#environment-hygiene)): give
+   every create step its owner-keyed, report-first reaper; run
+   [`reference/promotion-gap/`](reference/promotion-gap/) on a schedule and
+   on every pointer move, and register its count as a metric; and put a
+   currency step in front of any check that runs against an environment
+   that is deliberately behind.
 
 ## Status
 
@@ -255,12 +465,16 @@ it recognises when the repository names no document of its own
 |-------|------------|
 | [`templates/CI-ARCHITECTURE.md`](templates/CI-ARCHITECTURE.md) | The copyable four-stage contract (PR gates, post-merge verification, deploy, promotion), with the preview-environment and test-data-factory contracts |
 | [`templates/pipeline.example.yaml`](templates/pipeline.example.yaml) | A provider-neutral spine of the four stages |
-| [`reference/verified-pointer/`](reference/verified-pointer/) | The freshness watchdog: fails when the `verified` pointer lags the default branch |
+| [`reference/verified-pointer/`](reference/verified-pointer/) | The watchdog: decides why the `verified` pointer lags (nothing to verify, verifying, blocked, within grace, a dropped trigger to heal, heals exhausted, ran but stale, diverged) and whether a verification run is stalled waiting for a runner; or, from two numbers, whether the pointer lags at all |
 | [`reference/promote-safety/`](reference/promote-safety/) | The lint that fails a production deploy that can fire on its own, ships a mutable ref, or looks its commit up again by name |
-| [`mappings.md`](mappings.md) | CI providers, preview-environment platforms, promotion gates, and the promotion-execution recipes (digest pinning, runtime configuration, GitOps tools, serialization, rollout and identity checks) |
+| [`reference/promotion-gap/`](reference/promotion-gap/) | The promotion gap report: the work items the commits between two environment pointers name, from git ancestry, with a bound and a JSON form for the metric |
+| [`mappings.md`](mappings.md) | CI providers, preview-environment platforms, promotion gates, the promotion-execution recipes (digest pinning, runtime configuration, GitOps tools, serialization, rollout and identity checks), and the environment-hygiene wiring (reapers per resource, the gap report's triggers, the currency matrix) |
 | [maturity criteria](../../plugin/skills/audit/criteria/M10-environments-deploy.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
-Each reference gate is a standalone Bun script with a self-test and fixtures.
+Each reference gate is a Bun script with a self-test and fixtures; the
+watchdog and the promotion-gap report import the repository's `lib/`
+helpers, so each runs from a pinned Jig checkout or with `lib/` vendored
+beside it.
 
 ### Left out by design
 
@@ -277,6 +491,12 @@ Each reference gate is a standalone Bun script with a self-test and fixtures.
   [M13 pipeline economy](../M13-pipeline-economy/README.md#6-place)'s
   placement table, which this module's verified pointer feeds: a suite runs
   after merge when the pointer waits for it.
+- **A reaper per platform, and a currency script.** A reaper's drop is a
+  call into one host's or database's API, and a currency step's dependency
+  paths are one check's own, so the module states the rules, gives the
+  decisions that are portable (which namespaces to drop, which items wait)
+  and catalogues the per-platform forms in
+  [mappings.md](mappings.md#environment-hygiene).
 - **A rollout-assertion script.** The post-deploy identity check depends on
   the platform (a Kubernetes cluster, a serverless host, a static-file host),
   so the module states its conditions and their order, and
@@ -285,6 +505,11 @@ Each reference gate is a standalone Bun script with a self-test and fixtures.
 
 ### Future
 
+- **A recovery script for a diverged pointer.** The watchdog names the
+  back-merge; a script that plans it (which commits diverged, whether any
+  reached production), opens it as a pull request once the operator confirms
+  containment, and merges it only as a merge commit pinned to that head, is
+  validated in a working repository and not yet brought here.
 - **A held promotion lock.** The lock step described above waits until its
   run is the earliest active promotion, refuses re-runs and re-checks before
   the migration, so it depends on run ids rising with each new promotion. A

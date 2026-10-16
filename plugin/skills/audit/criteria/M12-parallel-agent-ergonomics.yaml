@@ -73,6 +73,21 @@ criteria:
       - "a create hook allocates/prints the worktree's port slot"
       - "a remove hook prints a reflection nudge (non-blocking)"
 
+  - id: worktree-namespaces-keyed-and-reaped
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      Where worktrees share a database server, each worktree's data namespace
+      is derived from its identity by a script, created with an owner and an
+      expiry, and reaped by its owner through a command that reports before
+      it drops and refuses the production namespace (expected-absent for a
+      repository with no database or no parallel worktrees).
+    observe:
+      - "the migration or dev command derives the namespace (a schema, a database, a key prefix) from the branch or worktree name; the same identity always maps to the same name"
+      - "production is the namespace with no prefix and needs an explicit flag to be targeted; the derivation never yields it"
+      - "creation writes the owner and an expiry (a schema comment, a registry row); a reap command lists each namespace with its reason (expired, orphaned, unlabelled) and drops only after the report, only the owner's, never an unlabelled one"
+
   - id: change-records-assembled-after-merge
     level: standard
     requires: mechanical

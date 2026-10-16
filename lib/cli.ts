@@ -1,3 +1,22 @@
+import { type ParseArgsConfig, parseArgs } from "node:util";
+
+/**
+ * `node:util`'s `parseArgs`, strict, with the usage line appended to its
+ * error: an unknown option, a value missing after a flag or a stray
+ * positional is then a usage error the `cli` boundary reports as exit 2.
+ */
+export function strictOptions<T extends ParseArgsConfig>(
+  config: T,
+  usage: string,
+) {
+  try {
+    return parseArgs({ ...config, strict: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${message}\n${usage}`);
+  }
+}
+
 /** Command-line error boundary: invalid inputs must never look like a pass. */
 export function cli(run: () => number | Promise<number>): void {
   Promise.resolve()

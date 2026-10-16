@@ -152,7 +152,10 @@ Cancel a run only when another run covers it.
   queues behind it, for hours, while nothing fails. A scheduled watchdog
   fails when a job has been queued longer than a set bound:
   [`reference/queue-watchdog/`](reference/queue-watchdog/) with the workflow
-  [`templates/queue-watchdog.yml`](templates/queue-watchdog.yml).
+  [`templates/queue-watchdog.yml`](templates/queue-watchdog.yml). For
+  serialized post-merge verification, [M10's watchdog](../M10-environments-deploy/README.md#the-watchdog-decides-by-cause)
+  applies the same bound and cancels the stalled run, which is safe because
+  every verification run covers the whole unverified range.
 
 ### 5. Order and parallelize
 

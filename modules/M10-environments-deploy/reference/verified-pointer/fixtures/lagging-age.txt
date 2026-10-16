@@ -1,0 +1,4 @@
+# Threshold mode. Only a couple of code-bearing commits behind, but the oldest
+# has waited for days: verification is frozen. Must fail (exit 1).
+BEHIND 2
+AGE_SECONDS 200000

@@ -1,0 +1,6 @@
+# Cause mode. The pointer is not an ancestor of the tip: it names a commit the
+# integration branch lacks, so no fast-forward can ever advance it. The
+# finding names the recovery (a back-merge). pointer=diverged, exit 1. The
+# other pointer keys are not needed once the lineage is broken.
+ANCESTOR no
+QUEUE_WAIT_SECONDS 0

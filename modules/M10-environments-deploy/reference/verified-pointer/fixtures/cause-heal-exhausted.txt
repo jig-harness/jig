@@ -1,0 +1,10 @@
+# Cause mode. A dropped trigger whose three heals at this tip all ended
+# without a verdict, at the default budget of three. Dispatching again would
+# only repeat them on every observation: pointer=heal-exhausted, page a
+# person, exit 1.
+ANCESTOR yes
+CODE_AHEAD yes
+UNVERIFIED_AGE_SECONDS 12600
+VERIFICATION aborted
+QUEUE_WAIT_SECONDS 0
+HEAL_ATTEMPTS 3

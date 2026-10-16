@@ -64,19 +64,65 @@ The pointer is the whole trick. It is a durable, inspectable record of "the
 newest commit we actually trust." Anyone — a human, a deploy job, a dashboard —
 can ask "what's verified right now?" and get a commit, not a vibe.
 
-#### The freshness watchdog (self-healing)
+#### Verification covers the whole gap
+
+Every verification run diffs the whole range from the `verified` pointer to
+the commit it runs on, never that commit against its parent. That is what
+makes the rest safe: the verification queue keeps one pending run per branch
+and drops the runs it supersedes, because the surviving run checks everything
+the dropped ones would have; the watchdog below can cancel a stalled run and
+dispatch a fresh one at the tip; and a push the CI provider dropped behind a
+documentation-only commit is still verified by the next run. A tip-only diff
+loses a superseded push's changes without a trace: a push that renames a
+database column queues behind the run in progress, a typo fix lands on top
+of it and takes its place in the queue, and the surviving run, diffed
+against its parent, sees the typo and never the rename. A run from another
+branch covers nothing of this queue, so it gets a slot of its own
+([M13 § Supersede](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md#3-supersede)).
+The workflow also accepts a manual dispatch, so the watchdog and a person can
+start verification again.
+
+#### The watchdog decides by cause
 
 A pointer that only ever moves forward on success has a failure mode: if
-verification *wedges* (a flaky suite, a dead runner, a stuck queue), the pointer
-silently freezes while the branch races ahead. Nothing failed, so nobody is
-paged — but "deploy verified" now means "deploy last week's code."
+verification *wedges* (a flaky suite, a dead runner, a stuck queue, a push
+the provider never turned into a run), the pointer silently freezes while the
+branch races ahead. Nothing failed, so nobody is paged — but "deploy verified"
+now means "deploy last week's code."
 
-The fix is a **watchdog**: a scheduled check on how far the pointer lags the
-default-branch tip (in commits and in time). When the lag crosses a threshold it
-fails loudly — page on-call, and ideally trigger an automatic **heal** run
-(re-kick verification from the current tip). This is a freshness gate on a
-*pointer* instead of a file (see [M2](https://github.com/docomply/jig/tree/main/modules/M2-generated-artifact-freshness));
-the runnable version is the [`verified-pointer`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/verified-pointer).
+The fix is a scheduled **watchdog** that asks why the pointer lags and
+answers by cause. Lag counts only code-bearing changes: a tip that changes
+only documentation legitimately leaves the pointer behind. For a tip with
+code ahead:
+
+| The tip's verification | Verdict | What happens |
+|------------------------|---------|--------------|
+| queued or in progress | fine | nothing: latency |
+| failed | fine | nothing: the gates held the pointer back, and running them again changes nothing until the tip changes |
+| succeeded, and the pointer did not move | fail | a person looks at the advance step; never re-run, which reproduces the skip |
+| no conclusive run (none, cancelled, timed out) within the grace window | fine | nothing yet |
+| no conclusive run past the grace window | **heal** | the watchdog dispatches verification at the tip, the one cause it heals |
+
+Other conditions fail whatever the tip's state. A **queue stall**: a job's
+timeout counts no time spent waiting for a runner, so a run no runner picks
+up holds the verification slot indefinitely while every newer run waits
+behind it; the watchdog bounds that wait, cancels the run that holds the
+slot (no gate is bypassed, the next run covers the whole gap) and fails,
+because the cancel frees the slot and the missing runner is a capacity fault
+only a person can repair
+([M13 § Bound](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md#4-bound)).
+A **diverged pointer**: one that is not an ancestor of the branch can never
+fast-forward again, so the watchdog fails and names the recovery, a
+back-merge (a commit on the branch with the branch's own tree and the
+pointer's tip as its second parent); the pointer is never forced back.
+
+The watchdog runs on a runner pool other than the one it watches. It is a
+freshness gate on a *pointer* instead of a file (see
+[M2](https://github.com/docomply/jig/tree/main/modules/M2-generated-artifact-freshness));
+the runnable decision is the
+[`verified-pointer`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/verified-pointer)
+check, and the collectors per provider are in the
+[M10 mappings](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/mappings.md#the-verified-pointer-watchdog).
 
 ### Stage 3 — deploy verified artifacts only
 
@@ -190,12 +236,50 @@ contract:
 | Multi-tenant-isolated | parallel runs and preview environments never share or clobber data |
 | Resettable | a run can return to the known state cheaply, so tests are repeatable and independent |
 
+### Every created resource has a reaper
+
+Whatever creates one of the above (a preview deployment, an environment, a
+tenant, a per-worktree database namespace) writes, at creation, **who owns it
+and when it expires**, and a **reaper keyed to that owner** runs on a schedule
+and removes what has expired or lost its creator. The reaper is decided when
+the create step is written, not when the host stops publishing because a
+project holds too many stale deployments. A destructive reaper **reports by
+default**, acts only when a repository variable or a dispatch input opts in
+(never because it merged), and **refuses production outright** at every layer
+it has. One owner's reaper touches only that owner's resources; a resource
+with no owner or expiry is reported, never reaped.
+
+### The promotion gap comes from git ancestry
+
+Which changes have reached which environment is **the range between the
+environments' pointers** (`production..verified` is what waits for the next
+promotion), and the work items those commits name in their subjects and
+trailers are the promotion gap. It is **never kept by hand in tracker fields**,
+which drift the moment a promotion is forgotten. The report runs daily and on
+every push to a pointer branch, and its count per environment pair is a
+process metric
+(**[reference/promotion-gap](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/promotion-gap)**).
+
+### A check confirms an environment's currency first
+
+A scheduled check that runs against an environment that is **deliberately
+behind** first confirms the environment runs a version the check applies to:
+the floor is **derived from history** (the newest commit touching any path the
+check depends on), the deployed version is read from the environment's own
+pin, and ancestry decides. An environment that is not current has its cell
+**removed from the matrix, not skipped**: no cell means no status, neither a
+false red nor a false green. An unreadable pin or floor counts as stale.
+
 ## The contract, in one breath
 
-PR gates inform the human merge; post-merge verification advances an explicit
-`verified` pointer and a watchdog keeps that pointer honest; suites neither
+PR gates inform the human merge; post-merge verification covers the whole
+unverified range and advances an explicit `verified` pointer, and a watchdog
+keeps that pointer honest by cause, healing only a dropped trigger; suites neither
 waits for run on a schedule, not per change; deploys ship only
-what `verified` points at, built once and addressed by digest; production is
+what `verified` points at, built once and addressed by digest; every
+resource the kit creates has an owner-keyed, report-first reaper, the
+promotion gap is read from git ancestry, and a check confirms an
+environment's currency before judging it; production is
 reached only by a gated, manual promotion that cannot auto-fire, passes the
 gated commit from job to job, and runs one at a time; and no deploy is done
 until the live environment reports the identity that was shipped. Preview environments are disposable, and test
