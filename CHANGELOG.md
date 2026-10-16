@@ -135,6 +135,12 @@ changes are marked **Breaking** and say what a consumer changes.
   the home page's lede shows the jig itself; a faint scaffolding lattice
   lies behind sunk bands. [design/website.md](design/website.md) keeps the
   prompts and the conversion, so a plate can be drawn again.
+- A "What you get" page on the site (`/features/`), rendered from the new
+  [FEATURES.md](FEATURES.md): what a team can run, install or copy from
+  Jig today, one section per feature with the skills that run it, the
+  modules that state the practice and what is still open on the roadmap. The
+  page is in the navigation, the footer, the home page's evaluator path and
+  the search index.
 
 ### Changed
 
@@ -187,6 +193,9 @@ changes are marked **Breaking** and say what a consumer changes.
   modules in id order, as the home page does, instead of the default
   adoption order with a rank beside each id; the adoption guide and each
   module's page keep the order.
+- The principles page shows each principle's statement and the first
+  paragraph of its why, with a link to where it is visible on the site,
+  instead of the title and one-liner alone.
 
 ### Fixed
 
