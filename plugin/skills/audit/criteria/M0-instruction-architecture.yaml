@@ -130,7 +130,7 @@ criteria:
       - "a roster of model assignments, where one is committed, is generated from the metadata and a CI check fails when it drifts; no per-agent assignment is kept by hand in prose"
       - "every Judgment-tier assignment records its A/B baseline and its admission next to it"
       - "a repository whose agents and skills pin no model, in metadata or at invocation, meets it"
-    since: next
+    since: 0.40.0
 
   - id: instruction-freshness-checked
     level: strict
