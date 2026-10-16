@@ -206,6 +206,12 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.35.1] - 2026-10-16
+
+### Changed
+
+- Ship the change-note release and branch-check scripts inside the plugin, so they run from its installed cache with the same behavior.
+
 ## [0.35.0] - 2026-10-16
 
 Merges that wait for one release run now ship together, change notes are
@@ -1773,7 +1779,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.35.1...HEAD
+[0.35.1]: https://github.com/docomply/jig/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/docomply/jig/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/docomply/jig/compare/v0.33.1...v0.34.0
 [0.33.1]: https://github.com/docomply/jig/compare/v0.33.0...v0.33.1
