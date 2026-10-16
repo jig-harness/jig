@@ -76,7 +76,7 @@ criteria:
   - id: worktree-namespaces-keyed-and-reaped
     level: standard
     requires: mechanical
-    since: next
+    since: 0.37.0
     statement: >-
       Where worktrees share a database server, each worktree's data namespace
       is derived from its identity by a script, created with an owner and an

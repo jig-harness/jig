@@ -123,7 +123,7 @@ criteria:
   - id: created-resources-have-reapers
     level: standard
     requires: mechanical
-    since: next
+    since: 0.37.0
     statement: >-
       Every resource the delivery system creates (a preview deployment, an
       ephemeral environment, a test tenant, a per-worktree data namespace)
@@ -141,7 +141,7 @@ criteria:
   - id: promotion-gap-from-ancestry
     level: standard
     requires: mechanical
-    since: next
+    since: 0.37.0
     statement: >-
       Which changes have reached which environment is computed from
       version-control ancestry between the environments' pointers, on a
@@ -157,7 +157,7 @@ criteria:
   - id: environment-currency-checked
     level: strict
     requires: mechanical
-    since: next
+    since: 0.37.0
     statement: >-
       A scheduled check that runs against an environment that is deliberately
       behind first confirms the environment runs a version the check applies
@@ -175,7 +175,7 @@ criteria:
   - id: watchdog-decides-by-cause
     level: strict
     requires: mechanical
-    since: next
+    since: 0.37.0
     statement: >-
       The watchdog decides why the `verified` pointer lags and acts by cause:
       it heals only a dropped trigger, by dispatching verification at the
