@@ -51,7 +51,7 @@ criteria:
   - id: scheduled-jobs-staleness-watched
     level: standard
     requires: mechanical
-    since: next
+    since: 0.45.0
     statement: >-
       Every scheduled job is declared in a cadence registry with the interval
       it must produce a result at, a check fails a scheduled workflow missing
@@ -98,7 +98,7 @@ criteria:
   - id: heartbeat-reports-to-external-monitor
     level: strict
     requires: mechanical
-    since: next
+    since: 0.45.0
     statement: >-
       The heartbeat watcher reports to a monitor outside the system it watches
       on both outcomes, a success when no job is red or stale and a failure
