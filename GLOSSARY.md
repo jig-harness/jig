@@ -546,6 +546,16 @@ make, use the entry's term instead.
   parallel pull requests never conflict over either. Also called a changeset
   or a news fragment by the tools that use them
   ([changes/](changes/README.md), [M12](modules/M12-parallel-agent-ergonomics/README.md)).
+- **Version source** — where a repository keeps its released version, for
+  the `changelog` skill: in files (JSON, TOML, YAML or a plain `VERSION`
+  file, each at a key) or only in its git tags. The release step moves it, and
+  checks that every file agrees first
+  ([skill](plugin/skills/changelog/README.md)).
+- **Version placeholder** — text a file holds until a release knows its
+  version, such as `since: next` in a field that records the version that
+  added it. The release step replaces it with the version it makes, in the
+  files the configuration names, since a branch cannot know that version
+  before it merges.
 - **HITL (human-in-the-loop)** — a decision class that must be made by a
   human, never autonomously by an agent (merges, releases, destructive
   operations, scope expansions). Kept in an explicit registry.

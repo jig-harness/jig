@@ -36,6 +36,7 @@ import { registerSignalHandler } from "./cleanup.ts";
 import { type SpawnOptions, spawn } from "node:child_process";
 import { traceEnv, traceGhRunner, traceRunner } from "./trace.ts";
 import { fail } from "./cli.ts";
+import { errnoCode } from "./errors.ts";
 
 /**
  * Validate a timeout environment variable the way `gh-deadline.sh` did: unset
@@ -128,6 +129,11 @@ export interface RunResult {
    * error stream) and `stderr: "ignore"` (it went nowhere).
    */
   stderrTail: string;
+  /**
+   * `true` when `reapGroup` was asked for and the child exited leaving
+   * members of its process group alive; they were killed.
+   */
+  groupSurvived?: boolean;
 }
 
 /** How much of a failed child's error output `RunResult.stderrTail` keeps. */
@@ -231,6 +237,14 @@ export interface RunOptions {
   /** Overrides `MAX_BUFFER_BYTES` — a test knob, not a per-caller tuning lever. */
   maxBufferBytes?: number;
   /**
+   * When the child exits, kill whatever is still alive in its process group
+   * and report it as `groupSurvived`: for a command whose work must be over
+   * when it returns, so a background job it left cannot write afterwards.
+   * POSIX only, and only with `timeoutSec` (which gives the child its own
+   * group); a descendant that left the group (`setsid`) is not reached.
+   */
+  reapGroup?: boolean;
+  /**
    * Test-only: fires once per stdout/stderr chunk with whether it was
    * captured or discarded past the buffer cap. Lets a test assert directly
    * that later chunks are excluded, rather than inferring it from a captured
@@ -270,6 +284,18 @@ const cancellation = globalRegistry[registryKey] ?? {
 };
 globalRegistry[registryKey] = cancellation;
 const cancellableGroups = cancellation.groups;
+
+/** Whether any process is left in the group `pgid` leads. */
+function groupAlive(pgid: number | undefined): boolean {
+  if (pgid === undefined) return false;
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: a member exists that this process may not signal.
+    return errnoCode(error) === "EPERM";
+  }
+}
 
 /** Share cancellation ownership with consumer runners; release on settlement. */
 export function registerCancellationGroup(pgid: number): () => void {
@@ -483,6 +509,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     let timedOut = false;
     let bufferExceeded = false;
     let spawnFailed = false;
+    let groupSurvived = false;
     // Tracked incrementally rather than re-derived from `Buffer.byteLength(out)
     // + Buffer.byteLength(err)` on every chunk: the latter rescans the WHOLE
     // accumulated string per 'data' event, so capture cost grows with the
@@ -558,6 +585,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
         bufferExceeded,
         spawnFailed,
         stderrTail: code === 0 ? "" : lastBytes(errTail || (extraErr ?? "")),
+        ...(opts.reapGroup ? { groupSurvived } : {}),
       });
     };
 
@@ -657,6 +685,17 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       spawnFailed = true;
       settle(127, e.message);
     });
+    // The reap runs on 'exit', not 'close': 'close' also waits for the output
+    // pipes, which a background descendant inherited and holds open, so on
+    // 'close' that descendant has already done its work (and usually gone).
+    // Killing the group here closes those pipes, and 'close' then settles.
+    child.on("exit", () => {
+      if (timedOut || bufferExceeded) return;
+      if (opts.reapGroup && detached && groupAlive(child.pid)) {
+        groupSurvived = true;
+        signalTree("SIGKILL");
+      }
+    });
     child.on("close", (code) => {
       // A timed-out (or buffer-killed) child that exits on SIGTERM cancels its
       // own escalation: `settle` clears `escalateTimer`, so if 'close' fires
@@ -665,6 +704,10 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       //. So the kill moves here, where it
       // cannot be raced.
       if (timedOut || bufferExceeded) signalTree("SIGKILL");
+      else if (opts.reapGroup && detached && groupAlive(child.pid)) {
+        groupSurvived = true;
+        signalTree("SIGKILL");
+      }
       settle(timedOut ? 124 : bufferExceeded ? 1 : (code ?? 1));
     });
 

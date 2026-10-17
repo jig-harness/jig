@@ -9,11 +9,16 @@
  * flags a configured program that is present but not tracked.
  */
 import { isMapping } from "../../../../shared/config-layers.ts";
+import {
+  manifestVersion,
+  pluginVersion,
+} from "../../../../shared/plugin-version.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export { trackedFiles } from "../../../adr/scripts/locate.ts";
+export { pluginVersion };
 
 export interface RunResult {
   code: number;
@@ -97,26 +102,6 @@ export function matchGlob(glob: string, path: string): boolean {
 /** This skill's own directory, wherever the plugin was installed. */
 export function skillDir(): string {
   return dirname(dirname(import.meta.dir));
-}
-
-/** The version a plugin's manifest under `root` names, or `null` when neither manifest is there. */
-function manifestVersion(root: string): string | null {
-  for (const manifest of [".claude-plugin", ".codex-plugin"]) {
-    const path = join(root, manifest, "plugin.json");
-    if (!existsSync(path)) continue;
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    const version = isMapping(parsed) ? parsed.version : undefined;
-    if (typeof version === "string") return version;
-  }
-  return null;
-}
-
-/**
- * The plugin version this skill belongs to, from its manifest, or `null`
- * when neither manifest is beside it.
- */
-export function pluginVersion(): string | null {
-  return manifestVersion(join(skillDir(), "..", ".."));
 }
 
 /** Whether `dir` holds an installed plugin of `version`: a manifest that names it. */

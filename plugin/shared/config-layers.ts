@@ -50,6 +50,21 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "review.repo_slug",
   "review.repo_label",
   "ci.required_checks",
+  // The changelog skill reads its section from the repository's file alone,
+  // so no field of it is one a user file may set.
+  "changelog.file",
+  "changelog.format",
+  "changelog.notes_dir",
+  "changelog.version",
+  "changelog.release_paths",
+  "changelog.note_paths",
+  "changelog.placeholders",
+  "changelog.after_version",
+  "changelog.unreleased",
+  "changelog.authors",
+  "changelog.tag_prefix",
+  "changelog.release.push",
+  "changelog.release.branch",
 ];
 
 export type LayerName = "user" | "repository" | "environment";

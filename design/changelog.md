@@ -32,12 +32,19 @@ This is the design of [ROADMAP.md](../ROADMAP.md) item 4. Built so far:
   [ADR-0002](../docs/adr/ADR-0002-the-plugin-is-its-directory.md) and
   ADR-0004 amended for it (build step 3);
 - M12's audit criteria `change-records-one-file-per-change` and
-  `change-records-assembled-after-merge`.
+  `change-records-assembled-after-merge`;
+- the skill and its configuration (build step 2): the `changelog:` section,
+  read from the repository's own `.config/jig.yaml` alone, listed in the
+  audit's schema and in CONFIGURATION.md; the branch check holding a branch to
+  the section its base holds; the note checker's structural check; Common
+  Changelog beside Keep a Changelog; version files in JSON, TOML or YAML, a
+  plain `VERSION` file, or tags; placeholders and `after_version`; `check.ts`,
+  `release.ts` and `status.ts`, each printing the plugin version it ran as;
+  `SKILL.md` and `README.md`; and Jig's own values moved into its
+  `.config/jig.yaml`.
 
-What is missing is everything that makes it usable by another repository:
-the skill, its configuration, formats other than Keep a Changelog, version
-sources other than JSON files, a way for CI to run it, a guided setup, and
-the agent skills taking part. The questions that needed a person's decision
+What is missing: converting a branch, the agent skills taking part, a way for
+CI to run it and a guided setup. The questions that needed a person's decision
 are settled ([§ Decisions this design needs](#decisions-this-design-needs)).
 
 ## How it works
@@ -593,7 +600,7 @@ Each step is one pull request with its change note and, where it changes
    `plugin/shared/`, and the scripts' boundary onto `runMain()`; Jig's scripts and M12's
    links point at the new place. No `SKILL.md` yet, so no session pays for a
    skill that cannot run.
-2. **Configuration and formats.** The `changelog:` section from the
+2. **Configuration and formats** (built). The `changelog:` section from the
    repository layer, in `config-schema.yaml` and CONFIGURATION.md, and the
    branch check reading it from its base; the note
    checker's structural check; versions from files of every kind above and
@@ -611,9 +618,13 @@ Each step is one pull request with its change note and, where it changes
    the `tag` job, the release-pull-request rule of the branch check,
    `release-access.ts` (and Jig's branch-protection check reading rulesets
    through it), `/jig:changelog setup`. Jig's own workflow moves onto the
-   action, the `tag` job and the two release jobs. `after_version` comes in
-   this step and no earlier, in the same pull request as that split, so no
-   repository command ever runs in a job that can read the key.
+   action, the `tag` job and the two release jobs. `after_version` runs in
+   the job that holds no key only: the release step already refuses to run it
+   inside a CI job (any of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`,
+   `CIRCLECI`, `TF_BUILD` or `JENKINS_URL` set) unless the job sets
+   `JIG_AFTER_VERSION_IN_CI=1`, and this
+   step's split is what makes setting it safe, so no repository command ever
+   runs in a job that can read the key.
 6. **The module.** M16 for releases and versions, with its invariant,
    levels, criteria (expected-absent for a repository that publishes no
    versioned artifact), the release-tag rule and mappings,

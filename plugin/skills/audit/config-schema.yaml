@@ -41,6 +41,8 @@ version: 1
 # it would silently keep the default it was written to change. Unknown keys
 # elsewhere are ignored, so other tooling can share the file.
 strict:
+  - changelog
+  - changelog.release
   - pull_requests
   - issue_tracker.states
   - issue_tracker.labels
@@ -420,3 +422,87 @@ fields:
     values: [quick, comprehensive]
     read_by: [reflect]
     since: 0.28.0
+
+  changelog.file:
+    type: path
+    exists: required
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.format:
+    type: enum
+    values: [keep-a-changelog, common-changelog]
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.notes_dir:
+    type: path
+    default: changes
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.version:
+    type: map
+    keys: [files, tags]
+    values_type: any
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.release_paths:
+    type: list
+    items: string
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.note_paths:
+    type: list
+    items: string
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.placeholders:
+    type: list
+    items:
+      fields:
+        files: { type: list, items: string }
+        from: string
+        to: string
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.after_version:
+    type: command
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.unreleased:
+    type: enum
+    values: [write, wait]
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.authors:
+    type: boolean
+    default: true
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.tag_prefix:
+    type: string
+    default: v
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.release.push:
+    type: enum
+    values: [direct, pull-request]
+    default: direct
+    read_by: [changelog]
+    repository_only: true
+    since: next
+  changelog.release.branch:
+    type: string
+    default: changelog-release
+    read_by: [changelog]
+    repository_only: true
+    since: next

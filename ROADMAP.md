@@ -89,20 +89,10 @@ first; no `Unreleased`).
   link references, and release coverage. Each rule, its conditions and its
   exemptions are taken from the format's own specification, cited where the
   check enforces them, not restated here. Jig's own
-  `scripts/check-changelog.ts` is the starting point, not the finished check:
-  it reads Jig's two plugin manifests, checks that their versions agree and
-  that the current one has a heading, and holds branches to M12's change
-  notes. The skill's check
-  detects the format, validates the rules above, and takes the current version
-  from the repository rather than from fixed paths; Jig's `bun run
-  gates` keeps calling it.
-- **Release**: for Keep a Changelog, the plugin's [change-note release scripts](plugin/skills/changelog/scripts/README.md)
-  already write each pull request's note into the version's section or
-  Unreleased and move the version and the comparison links, and they run
-  from the plugin cache. The skill takes the notes directory, the changelog, the
-  version files (`package.json`, `pyproject.toml` and others, not only JSON),
-  the released paths and the version placeholders from configuration, and
-  adds the Common Changelog form.
+  `scripts/check-changelog.ts` checks, from the version files its
+  configuration names, that they agree and that the current version has a
+  heading, and holds branches to the change notes; no check yet validates a
+  whole changelog against its format. `bun run gates` calls it.
 - **How the release reaches the integration branch**, chosen per
   repository: a direct push by a GitHub App the branch's ruleset lets past
   its rules (Jig's own setup, ADR-0004), or a release pull request a person

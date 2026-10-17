@@ -23,6 +23,7 @@ Contents: [the file](#the-file) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
 [`fleet_health`](#fleet_health) ·
+[`reflection`](#reflection) · [`changelog`](#changelog) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
 [complete example](#complete-example)
@@ -114,10 +115,13 @@ Command-line flags, where a script has them, override all three.
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
   `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
-  `review.repo_label` and `ci.required_checks` describe one repository. Set
-  in the user file they would apply to every repository on the machine, so
-  the user file refuses them with an error naming the field. An environment
-  variable may still override them for one run.
+  `review.repo_label`, `ci.required_checks` and every `changelog` field
+  describe one repository. Set in the user file they would apply to every
+  repository on the machine, so the user file refuses them with an error naming
+  the field. An environment variable may still override them for one run,
+  except the `changelog` fields, which the `changelog` skill reads from the
+  repository's own file alone and refuses from any other layer
+  ([`changelog`](#changelog)).
 - **Adoption is the repository's file.** A user file alone does not make a
   repository look adopted: `resolve-review-comments` and the tracker scripts
   still refuse to run without `.config/jig.yaml`. The skills that run on
@@ -451,6 +455,51 @@ labelled `<prefix><class>` and carries an owner marker, a
 `Jig owner: <owner>` line with the owner percent-encoded, in its
 description, which the lookup requires) and `issue_tracker.file_command`.
 
+## `changelog`
+
+Change notes and the changelog ([changelog](skills/changelog/README.md)). The
+skill is on in a repository whose **own** `.config/jig.yaml` sets
+`changelog.file`; without it every command says `not configured` and writes
+nothing, and no skill asks for a note. Every field is repository-only, and the
+skill reads the whole section from the repository's file alone: a value from the
+user file or from a `JIG__CHANGELOG__*` variable is refused, never merged, so
+neither can turn the skill on, or change what it enforces, in a repository that
+did not adopt it. The branch check reads the section from the branch it compares
+with (`git show <base>:.config/jig.yaml`), not from the branch's own tree, and
+checks a branch that edits it against the section it proposes as well.
+
+```yaml
+changelog:
+  file: CHANGELOG.md
+  release_paths: [src/]
+  version:
+    files:
+      - { path: package.json, key: version }
+```
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `changelog.file` | path of a file, relative to the root | **Required**: absent, the skill is off | changelog | The changelog. Setting it turns the skill on. It must exist; the root itself, a folder path (`docs/`) and a path with a `..` segment are refused |
+| `changelog.format` | `keep-a-changelog`, `common-changelog` | Detected from the file: an `## [Unreleased]` heading or a link to keepachangelog.com is Keep a Changelog, a link to common-changelog.org is Common Changelog; anything else, an empty file included, is refused with a request to set the field | changelog | The changelog's format: which change types a note lists, whether it has an Unreleased section, how an entry ends |
+| `changelog.notes_dir` | folder, relative to the root | `changes` | changelog | The folder of change notes: the Markdown files directly in it, other than its `README.md`. The root itself (`.`, `./`) is refused |
+| `changelog.version` | `{ files: [{ path, key }] }` or `{ tags: true }` | Derived: `package.json` `version`, `pyproject.toml` `project.version` (else `tool.poetry.version`) and `Cargo.toml` `package.version`, each only where it sits at the root and holds a written version; none left is an error asking for the field | changelog | Where the released version lives. `files`: JSON, TOML or YAML files each with the dotted `key` that holds the version (a plain `VERSION` file takes no key); all must agree. `tags`: the version is the changelog's newest release heading, before the first release the highest `<tag_prefix>x.y.z` tag, else `0.0.0` |
+| `changelog.release_paths` | list of paths | `[]` | changelog | A change under one of these ships only in a release: its branch must carry a note that asks for one. A path ending in `/` is a folder; one without is that file or folder and what is under it, never another name that starts the same (`plugin` holds `plugin/x`, not `plugin-docs/x`). A file moved out of a path counts as a change to it |
+| `changelog.note_paths` | list of paths | `[]` | changelog | A change under one of these must carry a note, with or without a release. Matched as `release_paths` are |
+| `changelog.placeholders` | list of `{ files, from, to }` | `[]` | changelog | Text a file holds until the release knows its version: the release replaces `from` (one line) with `to`, with `{version}` filled in, in the files the `files` globs match. A glob that could match a file under `.github/workflows/` is refused |
+| `changelog.after_version` | shell command | No command | changelog | Run from the root after the release step changes the version and before it deletes the notes, for files that repeat the version (a lock file: `npm install --package-lock-only`, `cargo update --workspace`, `uv lock`); its changes go into the release commit. Inside a CI job (any of `CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TF_BUILD` or `JENKINS_URL` set to something but `false` or `0`) it runs only when the job sets `JIG_AFTER_VERSION_IN_CI=1`, since it is the repository's own command; that check is the whole guard: the skill ships no workflow yet that runs the release in a job without the key |
+| `changelog.unreleased` | `write`, `wait` | `write`; `wait` with `release.push: pull-request` | changelog | Keep a Changelog only: whether a note without `release` is written under Unreleased after its own merge (`write`) or waits for the next release (`wait`), which saves a commit and a CI run per merge. `release.push: pull-request` refuses `write` |
+| `changelog.authors` | `true`, `false` | `true` | changelog | Common Changelog only: `false` leaves the authors out of each entry |
+| `changelog.tag_prefix` | text | `v` | changelog | What a version's tag puts before it |
+| `changelog.release.push` | `direct`, `pull-request` | `direct` | changelog | How the release reaches the integration branch. Validated (`pull-request` refuses `unreleased: write`); the commands write files only and never push, so nothing else reads it yet |
+| `changelog.release.branch` | branch name | `changelog-release` | changelog | `pull-request` mode: the branch the release pull request comes from |
+
+The integration branch is not a field of this section: it is
+`repository.base_branch`, else the hosting service's default branch (in a CI
+job from the event that started it; elsewhere from `origin/HEAD`, then
+`gh repo view`). The branch check's comparison base is never
+`repository.base_branch`; see
+[the skill's scripts reference](skills/changelog/scripts/README.md#the-branch-check).
+
 ## Procedure skills
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
@@ -492,6 +541,8 @@ These are set per machine or per run, not committed:
 | `JIG_CONSUMER_ROOT` | The repository root, instead of the nearest folder holding `.git` |
 | `JIG_HOME` | The folder holding the user layer's `jig.yaml`, instead of `~/.jig` |
 | `JIG_USER_LAYER` | `off` leaves the user layer out (see [configuration layers](#configuration-layers)) |
+| `JIG_AFTER_VERSION_IN_CI` | `1` lets `changelog.after_version` run inside a CI job (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TF_BUILD` or `JENKINS_URL` set); set it only in a job that holds no secret |
+| `JIG_AFTER_VERSION_TIMEOUT_SEC` | Seconds `changelog.after_version` may run before it is stopped and the release fails; 1800 by default |
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
@@ -642,4 +693,24 @@ reflection:
   escalate_after: 3
   timeout_sec: 120
   mode: quick
+changelog:
+  file: CHANGELOG.md                     # setting it turns the changelog skill on
+  format: keep-a-changelog               # default: detected from the file
+  notes_dir: changes
+  version:                               # default: derived from package.json, pyproject.toml, Cargo.toml
+    files:
+      - { path: package.json, key: version }
+  release_paths: [src/]                  # a change here needs a note that asks for a release
+  note_paths: [docs/]                    # a change here needs a note
+  placeholders:
+    - files: ["docs/*.md"]
+      from: "since: next"
+      to: "since: {version}"
+  after_version: npm install --package-lock-only
+  unreleased: write                      # Keep a Changelog only: write | wait
+  authors: true                          # Common Changelog only
+  tag_prefix: v
+  release:
+    push: direct                         # direct | pull-request
+    branch: changelog-release
 ```

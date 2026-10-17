@@ -47,3 +47,23 @@ drive:
   # drive-pr marks them Ready after the first round
   # (CONTRIBUTING.md § Pull-request lifecycle).
   reviews_drafts: true
+changelog:
+  # Jig keeps its changelog from change notes (changes/README.md): a pull
+  # request adds a note, and the release step writes it after the merge.
+  file: CHANGELOG.md
+  format: keep-a-changelog
+  # The plugin is the released artifact: both manifests carry its version.
+  version:
+    files:
+      - { path: plugin/.claude-plugin/plugin.json, key: version }
+      - { path: plugin/.codex-plugin/plugin.json, key: version }
+  # A change under plugin/ ships only in a release.
+  release_paths: [plugin/]
+  # A criterion or configuration field records the version that added it; its
+  # branch writes `since: next` and the release names the version.
+  placeholders:
+    - files:
+        - plugin/skills/audit/criteria/*.yaml
+        - plugin/skills/audit/config-schema.yaml
+      from: "since: next"
+      to: "since: {version}"

@@ -102,9 +102,10 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    and deletes the notes; a branch check fails a note the step could not read
    and a direct edit to what the step writes. Pull requests then touch
    disjoint files, and no two claim the same version. The plugin ships the
-   [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md) (`release.ts`,
-   `check.ts` + self-test) for a
-   [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) file; the tools
+   [`changelog` skill](../../plugin/skills/changelog/README.md) (`release.ts`,
+   `check.ts`, `status.ts` + self-tests) for a
+   [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) or
+   [Common Changelog](https://common-changelog.org/) file; the tools
    that do the same per ecosystem are in [mappings.md](mappings.md).
 7. **Per-worktree data namespaces** — several worktrees share one database
    server, so each derives its own namespace (a schema, a database, a key
@@ -203,7 +204,7 @@ governs how those files layer), so every agent inherits the rules.
 7. Where the repository keeps a changelog or a version that every pull request
    touches, move it to change notes: pick the tool for your ecosystem from
    [mappings.md](mappings.md) or use the plugin’s
-   [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md), run the release step
+   [`changelog` skill](../../plugin/skills/changelog/README.md), run the release step
    on the integration branch after each merge, and the branch check on every
    pull request. Convert open pull requests' changelog edits into notes once.
 7. Give each gate command a quiet form: a reporter flag from
@@ -223,7 +224,7 @@ governs how those files layer), so every agent inherits the rules.
 | [`templates/worktree-hooks.md`](templates/worktree-hooks.md) | Create-hook (allocate and print the port slot) and remove-hook (nudge reflection) skeletons |
 | [`reference/port-allocator/`](reference/port-allocator/) | The deterministic per-worktree port allocator |
 | [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree mutex for heavy runs, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
-| [`changelog` scripts](../../plugin/skills/changelog/scripts/README.md) | The release step that writes change notes into a Keep a Changelog file and moves the version, and the branch check that holds pull requests to it |
+| [`changelog` skill](../../plugin/skills/changelog/README.md) | The release step that writes change notes into a Keep a Changelog or Common Changelog file and moves the version, the branch check that holds pull requests to it, and the status report |
 | [`reference/worktree-namespace/`](reference/worktree-namespace/) | The per-worktree data namespace: the name derived from a worktree's identity, and the reaper's decision (which of one owner's namespaces are expired or orphaned, which were created unlabelled, with production refused) |
 | [`reference/quiet-run/`](reference/quiet-run/) | The quiet-run wrapper: a verdict line and the tail on green, everything on red, the command's own exit status; with its self-test |
 | [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools, per-database namespace commands, test-runner quiet flags and the command-rewriting hook per agent runtime |

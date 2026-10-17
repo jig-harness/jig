@@ -151,14 +151,17 @@ never an edit to the changelog or the version. After the merge, a release
 step writes the notes into the changelog, moves the version to the largest
 bump asked for, tags the release and deletes the notes. Two pull requests
 never edit the same lines, so merging one does not put the others in
-conflict. The release step and its branch check ship in the plugin
-([change-note release scripts](plugin/skills/changelog/scripts/README.md)),
-and Jig's own releases are made this way.
+conflict. The `changelog` skill turns this on in a repository whose own
+configuration names its changelog file, in Keep a Changelog or Common
+Changelog format, with the version read from a file or from tags; its
+commands check a branch, show the next release and run the release step.
+Jig's own releases are made this way.
 
+- **Skills:** [`changelog`](plugin/skills/changelog/README.md)
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **Not built yet:** the `changelog` skill (item 4), which drafts entries
-  from the merged history, checks the file against its format's own rules,
-  and runs the release step from configuration in any repository
+- **Not built yet:** the rest of the `changelog` skill (item 4): drafting each
+  pull request's note, a check of the whole file against its format's own
+  rules, and the way a release reaches the integration branch
 
 ## Workspaces for many agents on one machine
 

@@ -1,6 +1,6 @@
-// Scope: Jig's release step, through M12's change-notes mechanism
-// (plugin/skills/changelog/scripts) with Jig's
-// values from check-changelog.ts. After a merge to main it writes the change
+// Scope: Jig's release step, through the `changelog` skill's release script
+// (plugin/skills/changelog/scripts) with Jig's values from the `changelog:`
+// section of .config/jig.yaml. After a merge to main it writes the change
 // notes under changes/ into CHANGELOG.md, moves both plugin manifests to the
 // next version when a note asks for a release, and deletes the notes.
 // .github/workflows/release.yml runs it on every push to main and commits,
@@ -11,8 +11,7 @@
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { cli } from "../lib/cli.ts";
-import { runRelease } from "../plugin/skills/changelog/scripts/release.ts";
-import { CHANGE_NOTES } from "./check-changelog.ts";
+import { runReleaseCommand } from "../plugin/skills/changelog/scripts/release.ts";
 
 if (import.meta.main)
   cli(() => {
@@ -23,13 +22,10 @@ if (import.meta.main)
         date: { type: "string" },
       },
     });
-    return runRelease(
-      {
-        root: join(import.meta.dir, ".."),
-        ...CHANGE_NOTES,
-        date: values.date,
-        dryRun: values["dry-run"],
-      },
-      values.json,
-    );
+    return runReleaseCommand({
+      root: join(import.meta.dir, ".."),
+      date: values.date,
+      dryRun: values["dry-run"],
+      json: values.json,
+    });
   });

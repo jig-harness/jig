@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reviewConfig } from "../consumer.ts";
@@ -76,4 +76,16 @@ test("required check names come from consumer policy", () => {
   withOverlay({ review: { required_checks: ["custom-check"] } }, () => {
     expect(reviewConfig().required_checks).toEqual(["custom-check"]);
   });
+});
+
+test("a skill reads the configuration layers through layeredConfig, never the loader itself", () => {
+  const plugin = join(import.meta.dir, "..", "..");
+  const allowed = new Set(["shared/config-layers.ts", "shared/consumer.ts"]);
+  const callers = [...new Bun.Glob("**/*.ts").scanSync(plugin)].filter(
+    (file) =>
+      !file.includes("__tests__/") &&
+      !allowed.has(file) &&
+      readFileSync(join(plugin, file), "utf8").includes("loadLayeredConfig"),
+  );
+  expect(callers).toEqual([]);
 });

@@ -337,6 +337,85 @@ other_tool:
     );
   });
 
+  test("the changelog skill's own validation refuses what it would refuse", () => {
+    const refused = (changelog: string, files: Record<string, string> = {}) =>
+      ids(
+        fit({
+          ".config/jig.yaml": `changelog:\n  file: CHANGELOG.md\n${changelog}`,
+          "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n",
+          ...files,
+        }).report,
+      ).includes("rejected:changelog");
+    expect(refused("  version: { tags: false }\n")).toBe(true);
+    expect(refused("  version: { files: [] }\n")).toBe(true);
+    expect(
+      refused("  unreleased: write\n  release: { push: pull-request }\n"),
+    ).toBe(true);
+    expect(refused("  version: { tags: true }\n")).toBe(false);
+  });
+
+  test("the changelog section is resolved against the repository, as the skill's commands resolve it", () => {
+    const refused = (changelog: string, files: Record<string, string>) =>
+      ids(
+        fit({
+          ".config/jig.yaml": `changelog:\n  file: CHANGELOG.md\n${changelog}`,
+          ...files,
+        }).report,
+      ).includes("rejected:changelog");
+    const changelog = { "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n" };
+    const files = (...paths: string[]) =>
+      `  version:\n    files:\n${paths.map((p) => `      - { path: ${p}, key: version }\n`).join("")}`;
+    // The changelog itself, and a format it says.
+    expect(refused("  version: { tags: true }\n", {})).toBe(true);
+    expect(
+      refused("  version: { tags: true }\n", { "CHANGELOG.md": "# Notes\n" }),
+    ).toBe(true);
+    // A version file that is missing, lacks the key, or disagrees.
+    expect(refused(files("missing.json"), changelog)).toBe(true);
+    expect(
+      refused(files("a.json"), { ...changelog, "a.json": '{"name":"a"}\n' }),
+    ).toBe(true);
+    expect(
+      refused(files("a.json", "b.json"), {
+        ...changelog,
+        "a.json": '{"version":"1.0.0"}\n',
+        "b.json": '{"version":"1.1.0"}\n',
+      }),
+    ).toBe(true);
+    // A version the release cannot move: not major.minor.patch, written
+    // twice, or in a form it does not edit in place.
+    expect(
+      refused(files("a.json"), {
+        ...changelog,
+        "a.json": '{"version":"banana"}\n',
+      }),
+    ).toBe(true);
+    expect(
+      refused(files("a.json"), {
+        ...changelog,
+        "a.json": '{"version":"1.0.0","version":"1.0.0"}\n',
+      }),
+    ).toBe(true);
+    expect(
+      refused(
+        "  version:\n    files:\n      - { path: a.toml, key: package.version }\n",
+        { ...changelog, "a.toml": 'package = { version = "1.0.0" }\n' },
+      ),
+    ).toBe(true);
+    // No version source set, and no manifest to derive one from.
+    expect(refused("", changelog)).toBe(true);
+    expect(
+      refused(files("a.json", "b.json"), {
+        ...changelog,
+        "a.json": '{"version":"1.0.0"}\n',
+        "b.json": '{"version":"1.0.0"}\n',
+      }),
+    ).toBe(false);
+    expect(
+      refused("", { ...changelog, "package.json": '{"version":"1.0.0"}\n' }),
+    ).toBe(false);
+  });
+
   test("rules across fields, and paths and commands that do not exist", () => {
     const { report } = fit({
       ".config/jig.yaml": `gates:

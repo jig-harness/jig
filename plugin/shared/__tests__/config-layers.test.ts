@@ -115,6 +115,8 @@ for (const field of [
   "repository:\n  base_branch: develop",
   "issue_tracker:\n  team: ENG",
   "ci:\n  required_checks: [build]",
+  "changelog:\n  file: CHANGELOG.md",
+  "changelog:\n  release:\n    push: direct",
 ])
   test(`the user layer refuses a repository's own field: ${field.split(":")[0]}`, () => {
     user(`${field}\n`);

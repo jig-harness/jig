@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { systemClock } from "../clock.ts";
 import { ChildFailure, run, STDERR_TAIL_BYTES } from "../proc.ts";
 
@@ -94,4 +97,43 @@ describe("run's stderr tail", () => {
     expect(failure.message).not.toContain("repeat");
     expect(failure.stderrTail.trimEnd()).toEndWith(LAST);
   });
+});
+
+describe("run's reapGroup", () => {
+  test.skipIf(process.platform === "win32")(
+    "stops a background job that holds the captured output open",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "jig-reap-"));
+      try {
+        const late = join(dir, "late.txt");
+        const r = await run(["sh", "-c", `(sleep 1; touch '${late}') &`], {
+          timeoutSec: 10,
+          reapGroup: true,
+        });
+        expect(r.code).toBe(0);
+        expect(r.groupSurvived).toBe(true);
+        // The job would have written a second after the command returned.
+        const deadline = Date.now() + 3_000;
+        while (Date.now() < deadline) {
+          expect(existsSync(late)).toBe(false);
+          await Bun.sleep(200);
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    20_000,
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "reports nothing when the command leaves nothing behind",
+    async () => {
+      const r = await run(["sh", "-c", "true"], {
+        timeoutSec: 10,
+        reapGroup: true,
+      });
+      expect(r.code).toBe(0);
+      expect(r.groupSurvived).toBe(false);
+    },
+  );
 });

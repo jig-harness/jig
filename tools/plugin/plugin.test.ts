@@ -68,9 +68,10 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-test("change-note commands run from the plugin cache with unchanged exits", () => {
+test("change-note commands run from the plugin cache and read the repository's configuration", () => {
   const consumer = join(scratch, "changelog-consumer");
   mkdirSync(join(consumer, "changes"), { recursive: true });
+  mkdirSync(join(consumer, ".config"), { recursive: true });
   writeFileSync(join(consumer, "package.json"), '{"version":"1.0.0"}\n');
   writeFileSync(
     join(consumer, "CHANGELOG.md"),
@@ -81,39 +82,46 @@ test("change-note commands run from the plugin cache with unchanged exits", () =
     "---\nrelease: patch\n---\n\n### Fixed\n\n- Repair the example.\n",
   );
   const commands = join(scratch, "cache", "skills", "changelog", "scripts");
-  const args = [
-    "--notes",
-    "changes",
-    "--changelog",
-    "CHANGELOG.md",
-    "--version-file",
-    "package.json",
-  ];
   const run = (command: string, flags: string[]) =>
     spawnSync(process.execPath, [join(commands, command), ...flags], {
       cwd: consumer,
       env,
     });
-  const check = run("check.ts", args);
-  expectSpawnExit({ ...check, exitCode: check.status }, 0);
-  expect(check.stdout).toContain("every note reads");
-  const release = run("release.ts", [...args, "--dry-run", "--json"]);
+  // Without the field in the repository's own file nothing is asked of it.
+  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+    const off = run(command, []);
+    expectSpawnExit({ ...off, exitCode: off.status }, 0);
+    expect(off.stdout).toContain("not configured");
+  }
+  writeFileSync(
+    join(consumer, ".config", "jig.yaml"),
+    "changelog:\n  file: CHANGELOG.md\n",
+  );
+  const check = run("check.ts", ["--base", "HEAD"]);
+  // The consumer is not a git repository, so there is nothing to compare with.
+  expectSpawnExit({ ...check, exitCode: check.status }, 1);
+  expect(check.stderr).toContain("cannot be compared with HEAD");
+  const release = run("release.ts", ["--dry-run", "--json"]);
   expectSpawnExit({ ...release, exitCode: release.status }, 0);
   expect(JSON.parse(release.stdout).version).toBe("1.0.1");
   expect(readFileSync(join(consumer, "package.json"), "utf8")).toContain(
     "1.0.0",
   );
   expect(existsSync(join(consumer, "changes", "entry.md"))).toBe(true);
-  for (const command of ["check.ts", "release.ts"]) {
-    const usage = run(command, []);
-    expectSpawnExit({ ...usage, exitCode: usage.status }, 2);
-    expect(usage.stderr).toContain("usage:");
-    const unreadable = run(command, [...args, "--notes", "package.json"]);
-    expectSpawnExit({ ...unreadable, exitCode: unreadable.status }, 2);
-    expect(unreadable.stderr).toContain("ENOTDIR");
+  const status = run("status.ts", ["--json"]);
+  expectSpawnExit({ ...status, exitCode: status.status }, 0);
+  expect(JSON.parse(status.stdout).next).toBe("1.0.1");
+  for (const command of ["check.ts", "release.ts", "status.ts"]) {
     const unknown = run(command, ["--unknown"]);
     expectSpawnExit({ ...unknown, exitCode: unknown.status }, 2);
   }
+  writeFileSync(
+    join(consumer, ".config", "jig.yaml"),
+    "changelog:\n  file: MISSING.md\n",
+  );
+  const unreadable = run("release.ts", []);
+  expectSpawnExit({ ...unreadable, exitCode: unreadable.status }, 2);
+  expect(unreadable.stderr).toContain("MISSING.md does not exist");
 });
 
 test("both harness manifests describe the same plugin", () => {
@@ -299,17 +307,6 @@ test("every shipped skill is named after its directory and avoids repository pat
   }).filter((entry) => entry.isDirectory());
   expect(skills.length).toBeGreaterThan(0);
   for (const entry of skills) {
-    if (entry.name === "changelog") {
-      expect(
-        existsSync(join(root, "plugin", "skills", entry.name, "SKILL.md")),
-      ).toBe(false);
-      expect(
-        existsSync(
-          join(root, "plugin", "skills", entry.name, "scripts", "release.ts"),
-        ),
-      ).toBe(true);
-      continue;
-    }
     const text = readFileSync(
       join(root, "plugin", "skills", entry.name, "SKILL.md"),
       "utf8",

@@ -247,7 +247,7 @@ test("the skills are in families, in the order they are used, each saying how it
       "Learn from the work",
       ["reflect", "review-reflections", "promote-memory", "descar"],
     ],
-    ["Inspect and analyse", ["audit", "programmatic-execution"]],
+    ["Inspect and analyse", ["audit", "changelog", "programmatic-execution"]],
   ]);
 });
 

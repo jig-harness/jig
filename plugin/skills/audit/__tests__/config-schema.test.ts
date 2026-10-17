@@ -35,6 +35,12 @@ import {
   parseReflection,
   STORE_KINDS,
 } from "../../reflect/scripts/lib/settings.ts";
+import {
+  DEFAULTS as CHANGELOG_DEFAULTS,
+  FIELDS as CHANGELOG_FIELDS,
+  parseChangelogSection,
+} from "../../changelog/scripts/config.ts";
+import { FORMAT_IDS } from "../../changelog/scripts/formats.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -131,6 +137,7 @@ describe("CONFIGURATION.md", () => {
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
+    expect(parseChangelogSection(example.changelog)).not.toBeNull();
     const set = (path: string) =>
       path
         .split(".")
@@ -157,6 +164,21 @@ describe("the reading skills", () => {
     expect(field("issue_tracker.adapter")?.values).toEqual(knownAdapters());
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
+    expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+  });
+
+  test("read the changelog section's fields, all of them repository-only", () => {
+    expect(under("changelog").sort()).toEqual([...CHANGELOG_FIELDS].sort());
+    for (const f of schema.fields.filter((f) =>
+      f.path.startsWith("changelog."),
+    )) {
+      expect([f.path, f.repository_only]).toEqual([f.path, true]);
+      // `next` until the release stamps the version it ships in.
+      expect([f.path, f.since]).toEqual([
+        f.path,
+        expect.stringMatching(/^(next|\d+\.\d+\.\d+)$/),
+      ]);
+    }
   });
 
   test("use the defaults the schema lists", () => {
@@ -174,6 +196,11 @@ describe("the reading skills", () => {
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "do_item.execution_plan_block": DEFAULT_BLOCK,
+      "changelog.notes_dir": CHANGELOG_DEFAULTS.notesDir,
+      "changelog.authors": CHANGELOG_DEFAULTS.authors,
+      "changelog.tag_prefix": CHANGELOG_DEFAULTS.tagPrefix,
+      "changelog.release.push": CHANGELOG_DEFAULTS.push,
+      "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
     });
   });
 

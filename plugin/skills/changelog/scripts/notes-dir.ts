@@ -3,18 +3,26 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { LEAKY_GIT_ENV, spawnSync } from "../../../shared/guarded-git-spawn.ts";
-import { isRecord } from "../../../shared/guards.ts";
 import { type ChangeNote, parseNote } from "./change-notes.ts";
+import type { Format } from "./formats.ts";
+import {
+  currentVersion,
+  type FileReader,
+  type VersionSource,
+} from "./versions.ts";
 
-/** Where a repository keeps its notes, its changelog and its version. */
+/** Where a repository keeps its notes, its changelog and its version, and the format they follow. */
 export interface NotesConfig {
   root: string;
   /** The notes directory, relative to the root. */
   notes: string;
   /** The changelog, relative to the root. */
   changelog: string;
-  /** JSON files whose top-level `version` is the released version; all agree. */
-  versionFiles: string[];
+  format: Format;
+  /** Where the released version lives. */
+  version: VersionSource;
+  /** What a version's tag puts before it. */
+  tagPrefix: string;
 }
 
 /**
@@ -57,6 +65,7 @@ export function readNotes(config: NotesConfig): {
     const parsed = parseNote(
       path,
       readFileSync(join(config.root, path), "utf8"),
+      config.format,
     );
     errors.push(...parsed.errors);
     if (parsed.note) notes.push(parsed.note);
@@ -83,7 +92,10 @@ export function readNotes(config: NotesConfig): {
  * which commit timestamps are not: two merges can share a second, and a
  * commit's date can be anything its author set.
  */
-function landings(root: string, paths: string[]): Map<string, string | null> {
+export function landings(
+  root: string,
+  paths: string[],
+): Map<string, string | null> {
   return new Map(
     paths.map((path) => [
       path,
@@ -110,31 +122,38 @@ export function mergeOrder(root: string): Map<string, number> {
   return new Map(commits.map((commit, i) => [commit, i]));
 }
 
-/** A JSON file's top-level `version`; null when it has none. */
-export function versionOf(json: string): string | null {
-  const parsed: unknown = JSON.parse(json);
-  return isRecord(parsed) && typeof parsed.version === "string"
-    ? parsed.version
-    : null;
+/** The files of the working tree, by path relative to the root. */
+export function workingTree(root: string): FileReader {
+  return (path) => {
+    const full = join(root, path);
+    return existsSync(full) ? readFileSync(full, "utf8") : null;
+  };
 }
 
-/** The version every version file carries; throws when they disagree. */
-export function currentVersion(config: NotesConfig): string {
-  const versions = config.versionFiles.map((path) =>
-    versionOf(readFileSync(join(config.root, path), "utf8")),
-  );
-  const [first] = versions;
-  if (!first || versions.some((v) => v !== first))
-    throw new Error(
-      `the version files disagree: ${config.versionFiles.map((p, i) => `${p}=${versions[i] ?? "(none)"}`).join(", ")}`,
-    );
-  return first;
+/** Every tag of the repository; none when git cannot list them. */
+export function tagsOf(root: string): string[] {
+  return (tryGit(root, ["tag", "--list"]) ?? "").split("\n").filter(Boolean);
 }
 
-function gitEnv(): Record<string, string | undefined> {
+/** The version released now, from the working tree. */
+export function currentVersionOf(config: NotesConfig): string {
+  const read = workingTree(config.root);
+  return currentVersion(config.version, {
+    read,
+    format: config.format,
+    tagPrefix: config.tagPrefix,
+    changelog: read(config.changelog) ?? "",
+    tags: () => tagsOf(config.root),
+  });
+}
+
+/** The environment a child process gets: this one's, without what a git hook exports. */
+export function gitEnv(
+  env: Record<string, string | undefined> = process.env,
+): Record<string, string | undefined> {
   return {
     ...Object.fromEntries(
-      Object.entries(process.env).filter(
+      Object.entries(env).filter(
         ([key]) =>
           !(LEAKY_GIT_ENV as readonly string[]).includes(key.toUpperCase()),
       ),

@@ -53,11 +53,12 @@ runs, what it hands over to.
 | [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/jig:promote-memory` | Sends an architectural lesson to [adr](skills/adr/SKILL.md); a page it promotes gets a [descar](skills/descar/SKILL.md) pass before it becomes a permanent, approved document |
 | [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/jig:descar` | The pass a page [promote-memory](skills/promote-memory/SKILL.md) promoted gets before it becomes a permanent, approved document; runs on any docs page before it is promoted |
 
-**Inspect and analyse.** Tools that inspect the repository: `audit` records its findings; `programmatic-execution` runs read-only analysis.
+**Inspect and analyse.** Tools that inspect the repository: `audit` records its findings; `changelog` keeps its changelog and version; `programmatic-execution` runs read-only analysis.
 
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
 | [audit](skills/audit/README.md) | Audits the repository against Jig's practice modules: checks its `.config/jig.yaml` against the repository, scores every module's maturity criteria with evidence, and records the result in the repository so the next audit reports what changed | `/jig:audit` | Opens the pull request for an applied recommendation under [do-item](skills/do-item/SKILL.md)'s pull-request policy and offers [drive-pr](skills/drive-pr/README.md) on it |
+| [changelog](skills/changelog/README.md) | Keeps a repository's changelog and version from change notes: each pull request adds a small note instead of editing the changelog, a release step writes the notes in after the merge, and the skill's commands check a branch and show the next release. On only where the repository's `.config/jig.yaml` sets `changelog.file` | `/jig:changelog` | Stands alone for now; its release step is what a merged [do-item](skills/do-item/SKILL.md) pull request waits on for its version |
 | [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/jig:programmatic-execution` | Supports every other skill; none depends on it |
 
 The plugin also ships agents (a [subagent](../GLOSSARY.md) is a separately prompted helper
@@ -368,8 +369,9 @@ lists them.
 ## The procedure skills
 
 Every skill except `do-item`, `drive-pr` and `resolve-review-comments`
-(the drive loop, above) and `reflect` and `review-reflections` (on only
-with a `reflection` section) needs no configuration: each one detects what
+(the drive loop, above), `reflect` and `review-reflections` (on only
+with a `reflection` section) and `changelog` (on only where
+`changelog.file` is set) needs no configuration: each one detects what
 it can from the repository (its base branch, package manager,
 decision-record folder, documentation root) and falls back to generic
 guidance where a repository has nothing to detect. They read

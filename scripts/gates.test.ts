@@ -1421,6 +1421,21 @@ test("the changelog must carry the current plugin version, and every change note
   manifest("claude", "1.2.0");
   manifest("codex", "1.2.0");
   writeFileSync(join(dir, "CHANGELOG.md"), "## [1.2.0] - 2026-01-02\n");
+  // Jig's values are the `changelog:` section of its own configuration.
+  mkdirSync(join(dir, ".config"));
+  writeFileSync(
+    join(dir, ".config", "jig.yaml"),
+    [
+      "changelog:",
+      "  file: CHANGELOG.md",
+      "  format: keep-a-changelog",
+      "  version:",
+      "    files:",
+      "      - { path: plugin/.claude-plugin/plugin.json, key: version }",
+      "      - { path: plugin/.codex-plugin/plugin.json, key: version }",
+      "",
+    ].join("\n"),
+  );
   // The branch rules need a base to compare with; one git cannot find fails.
   expect(checkChangelog(dir)).toBe(1);
   const git = (...args: string[]) =>

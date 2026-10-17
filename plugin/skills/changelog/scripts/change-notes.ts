@@ -1,29 +1,28 @@
 // Change notes: one small file per pull request in place of an edit to the
 // changelog every pull request would otherwise touch. This file holds the pure
-// part: reading a note, choosing the next version, and writing notes into a
-// Keep a Changelog file. release.ts applies it to a repository after a merge;
-// check.ts holds a branch to it before one.
+// part of reading a note: its front matter, its sections and the Markdown it
+// may hold, the bump it asks for and how its links move. apply.ts writes notes
+// into a changelog; release.ts applies that to a repository after a merge and
+// check.ts holds a branch to the rules before one.
+import { ChangelogError } from "./errors.ts";
 import { posix } from "node:path";
+import type { Format } from "./formats.ts";
+import { blocks, fenced } from "./markdown-blocks.ts";
 
 /** How far a note moves the version, as semantic versioning names it. */
 export type Bump = "patch" | "minor" | "major";
 const BUMPS: readonly Bump[] = ["patch", "minor", "major"];
 
-/** Keep a Changelog 1.1.0's change types, in the order a section lists them. */
-export const SECTIONS = [
-  "Added",
-  "Changed",
-  "Deprecated",
-  "Removed",
-  "Fixed",
-  "Security",
-] as const;
+/** The Bun that ships `Bun.markdown`, which Jig tests with. */
+export const MARKDOWN_BUN = "1.4.3";
 
 export interface ChangeNote {
   /** The note's file name, for messages. */
   file: string;
   /** The release the note asks for; null for a change that ships in none. */
   release: Bump | null;
+  /** The authors the note names; null when git's history says who wrote it. */
+  authors: string[] | null;
   /** Prose before the first section: the release's summary. */
   lead: string;
   /** Each change type with its entries, every entry a top-level list item. */
@@ -41,60 +40,6 @@ const LINK =
 
 /** A destination the release step leaves as it is: a URL, a root-relative path or an anchor. */
 const ABSOLUTE = /^([a-z][a-z0-9+.-]*:|\/|#)/i;
-
-interface Block {
-  title: string;
-  text: string;
-}
-
-/**
- * The lines of `text` with whether each sits inside a fenced code block, so a
- * heading shown as an example in the changelog is not read as structure. As
- * in CommonMark, a fence closes only on a line holding nothing but a run of
- * its own character at least as long as the one that opened it.
- */
-function fenced(text: string): { line: string; inFence: boolean }[] {
-  let fence: string | null = null;
-  const lines: { line: string; inFence: boolean }[] = [];
-  for (const line of text.split("\n")) {
-    if (fence === null) {
-      // A backtick fence's info string holds no backtick.
-      const opener = /^ {0,3}(`{3,}(?=[^`]*$)|~{3,})/.exec(line)?.[1];
-      if (opener) fence = opener;
-      lines.push({ line, inFence: opener !== undefined });
-      continue;
-    }
-    const closer = /^ {0,3}(`+|~+)\s*$/.exec(line)?.[1];
-    if (closer && closer[0] === fence[0] && closer.length >= fence.length)
-      fence = null;
-    lines.push({ line, inFence: true });
-  }
-  return lines;
-}
-
-/** An ATX heading's level and title, as Markdown renders it; null for any other line. */
-function heading(line: string): { level: number; title: string } | null {
-  const m = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/.exec(line);
-  return m?.[1] ? { level: m[1].length, title: (m[2] ?? "").trim() } : null;
-}
-
-/** Text before the first heading of `level`, then each heading with its text. */
-function blocks(text: string, level: number): { lead: string; parts: Block[] } {
-  const lead: string[] = [];
-  const parts: { title: string; lines: string[] }[] = [];
-  for (const { line, inFence } of fenced(text)) {
-    const h = inFence ? null : heading(line);
-    if (h?.level === level) parts.push({ title: h.title, lines: [] });
-    else (parts.at(-1)?.lines ?? lead).push(line);
-  }
-  return {
-    lead: lead.join("\n").trim(),
-    parts: parts.map((p) => ({
-      title: p.title,
-      text: p.lines.join("\n").trim(),
-    })),
-  };
-}
 
 /**
  * The top-level list items of a section, each with its continuation lines,
@@ -139,46 +84,89 @@ function bulletItems(text: string): number | null {
     : null;
 }
 
-/** The note's front matter: the release it asks for, and the body after it. */
+/** What a note's front matter sets. */
+interface Front {
+  body: string;
+  release: Bump | null;
+  authors: string[] | null;
+}
+
+/** The keys a note's front matter takes, for a message. */
+const keysOf = (format: Format): string =>
+  format.credits ? "`release` and `authors`" : "`release`";
+
+/** The key lines of a front matter block, comments and blank lines dropped. */
+function frontLines(block: string): string[] {
+  return block
+    .split("\n")
+    .map((raw) => raw.replace(/\s+#.*$/, "").trim())
+    .filter((line) => line && !line.startsWith("#"));
+}
+
+/** The values a front matter block sets, per key. */
+function frontValues(
+  file: string,
+  block: string,
+  format: Format,
+  errors: string[],
+): { releases: (Bump | null)[]; authors: string[][] } {
+  const releases: (Bump | null)[] = [];
+  const authors: string[][] = [];
+  for (const line of frontLines(block)) {
+    const [, key, value = ""] = /^([a-z]+):\s*(.*)$/.exec(line) ?? [];
+    if (key === "release") releases.push(releaseValue(file, value, errors));
+    else if (key === "authors" && format.credits)
+      authors.push(authorsValue(file, value, errors));
+    else
+      errors.push(
+        `${file}: front matter takes only ${keysOf(format)}, found \`${line}\``,
+      );
+  }
+  for (const [key, values] of [
+    ["release", releases],
+    ["authors", authors],
+  ] as const)
+    if (values.length > 1)
+      errors.push(`${file}: front matter sets \`${key}\` twice`);
+  return { releases, authors };
+}
+
+/**
+ * The note's front matter and the body after it. Its keys are `release`, and
+ * `authors` in a format whose release step credits them.
+ */
 function frontMatter(
   file: string,
   text: string,
+  format: Format,
   errors: string[],
-): { body: string; release: Bump | null } {
+): Front {
   const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
   if (!front) {
     if (text.startsWith("---\n"))
       errors.push(`${file}: front matter opened with --- is never closed`);
-    return { body: text, release: null };
+    return { body: text, release: null, authors: null };
   }
-  const values = (front[1] ?? "")
-    .split("\n")
-    .map((raw) => raw.replace(/\s+#.*$/, "").trim())
-    .filter((line) => line && !line.startsWith("#"))
-    .map((line) => releaseValue(file, line, errors))
-    .filter((value) => value !== undefined);
-  if (values.length > 1)
-    errors.push(`${file}: front matter sets \`release\` twice`);
-  return { body: text.slice(front[0].length), release: values[0] ?? null };
+  const { releases, authors } = frontValues(
+    file,
+    front[1] ?? "",
+    format,
+    errors,
+  );
+  return {
+    body: text.slice(front[0].length),
+    release: releases[0] ?? null,
+    authors: authors[0] ?? null,
+  };
 }
 
-/**
- * The bump a front-matter line sets; null for a value that is not one, and
- * undefined for a line that is not `release:` at all. Quotes must pair.
- */
+/** The bump a `release:` value sets; null for a value that is not one. Quotes must pair. */
 function releaseValue(
   file: string,
-  line: string,
+  raw: string | undefined,
   errors: string[],
-): Bump | null | undefined {
-  const raw = /^release:\s*(.*)$/.exec(line)?.[1];
-  if (raw === undefined) {
-    errors.push(
-      `${file}: front matter takes only \`release\`, found \`${line}\``,
-    );
-    return undefined;
-  }
-  const value = /^(["'])(.*)\1$/.exec(raw)?.[2] ?? raw;
+): Bump | null {
+  const value = /^(["'])(.*)\1$/.exec(raw ?? "")?.[2] ?? raw ?? "";
   if ((BUMPS as readonly string[]).includes(value)) return value as Bump;
   errors.push(
     `${file}: release is one of ${BUMPS.join(", ")}, not \`${value}\``,
@@ -186,14 +174,40 @@ function releaseValue(
   return null;
 }
 
+/**
+ * The names an `authors:` value lists: comma-separated, optionally in
+ * brackets, each optionally quoted. `[]` credits nobody. A name holds no
+ * bracket or parenthesis, which would end the credit the release step writes
+ * around it.
+ */
+function authorsValue(file: string, raw: string, errors: string[]): string[] {
+  const inner = /^\[(.*)\]$/.exec(raw.trim())?.[1] ?? raw;
+  const names = inner
+    .split(",")
+    .map((name) => /^(["'])(.*)\1$/.exec(name.trim())?.[2] ?? name.trim())
+    .filter(Boolean);
+  const bad = names.find((name) => /[()[\]\\`]/.test(name));
+  if (bad !== undefined)
+    errors.push(
+      `${file}: an author's name holds no bracket, parenthesis, backtick or backslash, found \`${bad}\``,
+    );
+  if (!names.length && inner.trim() !== "")
+    errors.push(`${file}: \`authors:\` lists no name`);
+  return names;
+}
+
+/** The finding for a `###` heading that names no change type of the format. */
+const notAType = (title: string, format: Format) =>
+  `\`### ${title}\` is not a change type (${format.sections.join(", ")})`;
+
 /** What is wrong with one `### <title>` section, if anything. */
 function sectionProblem(
   title: string,
   seen: Map<string, string[]>,
   found: { items: string[]; stray: boolean },
+  format: Format,
 ): string | null {
-  if (!(SECTIONS as readonly string[]).includes(title))
-    return `\`### ${title}\` is not a change type (${SECTIONS.join(", ")})`;
+  if (!format.sections.includes(title)) return notAType(title, format);
   if (seen.has(title)) return `\`### ${title}\` appears twice`;
   if (found.stray)
     return `\`### ${title}\` has text outside a list item: write each change as a "- " item`;
@@ -255,6 +269,20 @@ const REFUSED: Record<string, string> = {
 const RAW = "\u0001";
 
 /**
+ * Throws unless this Bun ships `Bun.markdown`: the structural check needs it,
+ * and a check that skipped for want of it would pass what it never read.
+ */
+export function requireMarkdown(): void {
+  if (typeof Bun.markdown?.render !== "function")
+    throw new MarkdownUnavailable(
+      `Bun.markdown is missing from this Bun (${Bun.version}): the change-note check needs Bun ${MARKDOWN_BUN}, the version Jig tests with (mise install)`,
+    );
+}
+
+/** The running Bun lacks the Markdown parser the note check reads with. */
+export class MarkdownUnavailable extends Error {}
+
+/**
  * What a note's Markdown holds that the release step could not place, found
  * by parsing it the way a renderer will, with Bun's Markdown parser, rather
  * than modelling Markdown's block and inline rules by hand. A note holds
@@ -262,7 +290,8 @@ const RAW = "\u0001";
  * emphasis: every other construct is refused, since each could change how
  * the changelog renders around the note.
  */
-function markdownProblems(markdown: string): string[] {
+function markdownProblems(markdown: string, format: Format): string[] {
+  requireMarkdown();
   if (markdown.includes(RAW) || markdown.includes(OPENS))
     return ["a note holds no control characters (U+0001, U+0002)"];
   const problems = new Set<string>();
@@ -283,8 +312,10 @@ function markdownProblems(markdown: string): string[] {
       const level = (meta as { level?: number } | undefined)?.level;
       if (kind === "heading" && level !== 3)
         problems.add(
-          "a note starts at ### (Added, Changed, …); the release step writes the version heading, and a line of only = or - underneath text makes it a heading",
+          `a note starts at ### (${format.sections.join(", ")}); the release step writes the version heading, and a line of only = or - underneath text makes it a heading`,
         );
+      else if (kind === "heading" && !format.sections.includes(children.trim()))
+        problems.add(notAType(children.trim(), format));
       if ((meta as { checked?: boolean } | undefined)?.checked !== undefined)
         problems.add("a note holds no task list");
       // Raw HTML inside a code span is shown, not rendered.
@@ -456,18 +487,46 @@ function written(lead: string, sections: Map<string, string[]>): string {
 }
 
 /**
- * Read one change note: optional front matter whose only key is
- * `release: patch|minor|major`, an optional lead, then `### <type>` sections
- * of list items. Returns the note, or what is wrong with it.
+ * The rules of a format that credits a change (Common Changelog): each entry
+ * is one line, since the release step ends it with the change's reference and
+ * authors, and the lead is the release's notice, one paragraph.
+ */
+function creditProblems(
+  file: string,
+  lead: string,
+  sections: Map<string, string[]>,
+): string[] {
+  const problems: string[] = [];
+  for (const [title, items] of sections)
+    for (const item of items)
+      if (item.includes("\n"))
+        problems.push(
+          `${file}: \`${item.split("\n")[0]?.slice(0, 50)}\` under \`### ${title}\` runs over more than one line; this format wants each entry on one line`,
+        );
+  if (/\n[ \t]*\n/.test(lead))
+    problems.push(
+      `${file}: the lead of a note is the release's notice, a single sentence in one paragraph`,
+    );
+  return problems;
+}
+
+/**
+ * Read one change note: optional front matter (`release: patch|minor|major`,
+ * and `authors:` where the format credits them), an optional lead, then
+ * `### <type>` sections of list items, the types the format lists. Returns
+ * the note, or what is wrong with it.
  */
 export function parseNote(
   file: string,
   text: string,
+  format: Format,
 ): { note: ChangeNote | null; errors: string[] } {
+  requireMarkdown();
   const errors: string[] = [];
-  const { body, release } = frontMatter(
+  const { body, release, authors } = frontMatter(
     file,
     text.replace(/\r\n/g, "\n"),
+    format,
     errors,
   );
   errors.push(...linkProblems(file, body));
@@ -475,13 +534,13 @@ export function parseNote(
   const sections = new Map<string, string[]>();
   for (const { title, text: sectionText } of parts) {
     const found = entries(sectionText);
-    const problem = sectionProblem(title, sections, found);
+    const problem = sectionProblem(title, sections, found, format);
     if (problem) errors.push(`${file}: ${problem}`);
     else sections.set(title, found.items);
   }
   if (!parts.length)
     errors.push(
-      `${file}: a note lists its changes under at least one ### section (${SECTIONS.join(", ")})`,
+      `${file}: a note lists its changes under at least one ### section (${format.sections.join(", ")})`,
     );
   if (lead && release === null)
     errors.push(
@@ -490,10 +549,11 @@ export function parseNote(
   // The body as written, and as the release step will put it in the
   // changelog: its sections and entries, split where the step splits them.
   const markdown = new Set([
-    ...markdownProblems(body),
-    ...markdownProblems(written(lead, sections)),
+    ...markdownProblems(body, format),
+    ...markdownProblems(written(lead, sections), format),
   ]);
   errors.push(...[...markdown].map((why) => `${file}: ${why}`));
+  if (format.credits) errors.push(...creditProblems(file, lead, sections));
   // Only a note otherwise sound is released, so only its links need placing.
   if (!errors.length)
     for (const text of [lead, ...[...sections.values()].flat()])
@@ -503,7 +563,7 @@ export function parseNote(
         );
   return errors.length
     ? { note: null, errors }
-    : { note: { file, release, lead, sections }, errors };
+    : { note: { file, release, authors, lead, sections }, errors };
 }
 
 /** The version after `current` for the largest of `bumps`; null when there are none. */
@@ -511,7 +571,7 @@ export function nextVersion(current: string, bumps: Bump[]): string | null {
   if (!bumps.length) return null;
   const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(current);
   if (!m)
-    throw new Error(
+    throw new ChangelogError(
       `cannot bump \`${current}\`: the release step moves only a plain major.minor.patch version`,
     );
   const [major, minor, patch] = [m[1], m[2], m[3]].map(Number) as [
@@ -545,7 +605,7 @@ export function rebaseLinks(
     posix.relative(toDir, posix.join(fromDir, to)) || ".";
   const rebase = (text: string) => {
     if (!rewritesExactly(text, target))
-      throw new Error(
+      throw new ChangelogError(
         `${note.file}: \`${text.trim().slice(0, 60)}\` — its links could not be rewritten the way a renderer reads them`,
       );
     return rewrite(text, target);
@@ -629,157 +689,4 @@ function codeSpans(text: string): string[] {
   }
   parts.push(text.slice(start));
   return parts;
-}
-
-/** Each note's entries merged into `into` by change type, keeping types in order. */
-function mergeSections(into: Block[], notes: ChangeNote[]): Block[] {
-  const out = into.map((b) => ({ ...b }));
-  for (const note of notes)
-    for (const [title, items] of note.sections) {
-      const existing = out.find((b) => b.title === title);
-      if (existing) {
-        existing.text = [existing.text, ...items].filter(Boolean).join("\n");
-        continue;
-      }
-      const rank = SECTIONS.indexOf(title as (typeof SECTIONS)[number]);
-      const after = out.findIndex(
-        (b) =>
-          SECTIONS.indexOf(b.title as (typeof SECTIONS)[number]) > rank &&
-          (SECTIONS as readonly string[]).includes(b.title),
-      );
-      const block = { title, text: items.join("\n") };
-      if (after === -1) out.push(block);
-      else out.splice(after, 0, block);
-    }
-  return out;
-}
-
-function render(heading: string, lead: string, parts: Block[]): string {
-  return [
-    heading,
-    ...(lead ? [lead] : []),
-    ...parts.map((p) => `### ${p.title}\n\n${p.text}`),
-  ].join("\n\n");
-}
-
-const LINK_REF = /^\[([^\]]+)\]: (\S+)\s*$/;
-
-export interface ApplyOptions {
-  /** The version the notes release; null when none asks for one. */
-  version: string | null;
-  /** The version being replaced, for the comparison link. */
-  previous: string;
-  /** The release date, year-month-day. */
-  date: string;
-  /** What a version's tag puts before it, such as `v`. */
-  tagPrefix: string;
-}
-
-/**
- * The changelog with every note written in: a note without a release joins
- * `## [Unreleased]`; notes with one become the new version's section, placed
- * below Unreleased, with their leads as its summary. When the file ends with
- * comparison links, Unreleased's moves on and the new version gets its own.
- */
-export function applyNotes(
-  changelog: string,
-  notes: ChangeNote[],
-  options: ApplyOptions,
-): string {
-  const lines = fenced(changelog);
-  const headings = lines.flatMap(({ line, inFence }, i) =>
-    !inFence && heading(line)?.level === 2 ? [i] : [],
-  );
-  const start = headings.find((i) =>
-    heading(lines[i]?.line ?? "")?.title.startsWith("[Unreleased]"),
-  );
-  if (start === undefined)
-    throw new Error("the changelog has no `## [Unreleased]` section");
-  const next = headings.find((i) => i > start);
-  let end = next ?? lines.length;
-  // Without a release section below it, the comparison links at the end of
-  // the file are not part of Unreleased.
-  if (next === undefined)
-    while (
-      end > start + 1 &&
-      /^(\[[^\]]+\]: \S+\s*|)$/.test(lines[end - 1]?.line ?? "")
-    )
-      end--;
-  const text = (from: number, to: number) =>
-    lines
-      .slice(from, to)
-      .map((l) => l.line)
-      .join("\n");
-  const head = text(0, start);
-  const unreleased = blocks(text(start + 1, end), 3);
-  let tail = text(end, lines.length);
-
-  const pending = notes.filter((n) => n.release === null);
-  const released = notes.filter((n) => n.release !== null);
-  const sections = [
-    render(
-      lines[start]?.line ?? "## [Unreleased]",
-      unreleased.lead,
-      mergeSections(unreleased.parts, pending),
-    ),
-  ];
-  if (released.length) {
-    if (!options.version)
-      throw new Error("notes ask for a release but no version was given");
-    sections.push(
-      render(
-        `## [${options.version}] - ${options.date}`,
-        released
-          .map((n) => n.lead)
-          .filter(Boolean)
-          .join("\n\n"),
-        mergeSections([], released),
-      ),
-    );
-    tail = moveLinks(tail, options);
-  }
-  const trimmedTail = tail.replace(/^\n+/, "");
-  return `${head.trimEnd()}\n\n${sections.join("\n\n")}\n${trimmedTail ? `\n${trimmedTail}` : ""}`.replace(
-    /\n*$/,
-    "\n",
-  );
-}
-
-/** Point Unreleased's comparison link past the new version and add the version's own. */
-function moveLinks(tail: string, options: ApplyOptions): string {
-  const lines = tail.split("\n");
-  const i = lines.findIndex((l) => /^\[Unreleased\]: /.test(l));
-  if (i === -1) return tail;
-  const url = LINK_REF.exec(lines[i] ?? "")?.[2] ?? "";
-  const base = /^(.*)\/compare\/[^/]+\.\.\.HEAD$/.exec(url)?.[1];
-  if (!base) return tail;
-  const tag = (v: string) => `${options.tagPrefix}${v}`;
-  const version = options.version ?? "";
-  lines.splice(
-    i,
-    1,
-    `[Unreleased]: ${base}/compare/${tag(version)}...HEAD`,
-    `[${version}]: ${base}/compare/${tag(options.previous)}...${tag(version)}`,
-  );
-  return lines.join("\n");
-}
-
-/** The changelog's `## [Unreleased]` section, heading and links aside, for comparing two revisions. */
-export function unreleasedSection(changelog: string): string | null {
-  const parts = blocks(changelog, 2).parts;
-  const section = parts.find((p) => p.title.startsWith("[Unreleased]"));
-  if (!section) return null;
-  return section.text
-    .split("\n")
-    .filter((l) => !LINK_REF.test(l))
-    .join("\n")
-    .trim();
-}
-
-/** The versions the changelog has a section for, in order, Unreleased aside. */
-export function releasedVersions(changelog: string): string[] {
-  return blocks(changelog, 2).parts.flatMap((p) => {
-    const m = /^\[([^\]]+)\]/.exec(p.title);
-    return m?.[1] && m[1] !== "Unreleased" ? [m[1]] : [];
-  });
 }

@@ -153,10 +153,14 @@ const loaded = new WeakMap<object, LayeredConfig>();
 
 /**
  * Every configuration layer of the repository at `root`, merged (see
- * `config-layers.ts`). The only place a skill reads the layers.
+ * `config-layers.ts`), with the variables `env` sets. The only place a skill
+ * reads the layers.
  */
-export function layeredConfig(root = consumerRoot()): LayeredConfig {
-  const config = loadLayeredConfig(root);
+export function layeredConfig(
+  root = consumerRoot(),
+  env: Record<string, string | undefined> = process.env,
+): LayeredConfig {
+  const config = loadLayeredConfig(root, env);
   loaded.set(config.values, config);
   return config;
 }
