@@ -42,6 +42,41 @@ const current = items.find((i) => i.current);
   // On a phone the index starts folded; on a wide screen it stays open.
   if (window.matchMedia("(max-width: 1079px)").matches)
     for (const d of document.querySelectorAll<HTMLDetailsElement>(".side details")) d.open = false;
+
+  // An index of in-page anchors marks the section being read: the last one
+  // whose top has risen into the upper third of the screen, or to where an
+  // anchor jump lands it (the root's scroll padding plus its own scroll
+  // margin) when that is lower, as in a short window; or the last of all once
+  // the page is scrolled to its foot.
+  for (const side of document.querySelectorAll<HTMLElement>(".side")) {
+    const links = [...side.querySelectorAll<HTMLAnchorElement>("a[href^='#']")];
+    const sections = links.map((a) => document.getElementById(decodeURIComponent(a.hash.slice(1))));
+    if (links.length === 0 || links.length !== side.querySelectorAll("a").length || sections.includes(null)) continue;
+    let marked: HTMLAnchorElement | undefined;
+    let queued = false;
+    const mark = () => {
+      queued = false;
+      const atFoot = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+      const third = window.innerHeight / 3;
+      const padding = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+      const line = (s: HTMLElement) => Math.max(third, padding + (parseFloat(getComputedStyle(s).scrollMarginTop) || 0) + 1);
+      let at = atFoot ? sections.length - 1 : -1;
+      if (!atFoot) sections.forEach((s, i) => s && s.getBoundingClientRect().top <= line(s) && (at = i));
+      const next = links[at];
+      if (next === marked) return;
+      marked?.removeAttribute("aria-current");
+      next?.setAttribute("aria-current", "location");
+      marked = next;
+    };
+    const queue = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(mark);
+    };
+    addEventListener("scroll", queue, { passive: true });
+    addEventListener("resize", queue);
+    mark();
+  }
 </script>
 
 <style>
@@ -89,6 +124,11 @@ const current = items.find((i) => i.current);
   a[aria-current="page"] {
     background: var(--accent-soft);
     font-weight: 600;
+  }
+  /* The section in view: quieter than the page you are on. */
+  a[aria-current="location"] {
+    background: var(--sunk);
+    box-shadow: inset 2px 0 0 var(--accent);
   }
   .mono a {
     font-family: var(--mono);
