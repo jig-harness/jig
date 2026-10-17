@@ -4,8 +4,8 @@ type: adr
 status: amended
 description: "Pull requests never edit CHANGELOG.md's open sections or the plugin version; a release step on main writes their change notes, moves the version and tags it"
 lifecycle: permanent
-version: "1.1"
-last_updated: 2026-10-16
+version: "1.2"
+last_updated: 2026-10-17
 owner: maintainers
 decision_date: 2026-10-15
 supersedes: ~
@@ -132,3 +132,11 @@ before it started, so it writes all waiting notes as one release: the largest
 bump any asks for, their notes in merge order, one commit and one tag. The
 reason and the alternatives are in
 [ADR-0002](ADR-0002-the-plugin-is-its-directory.md)'s second amendment.
+
+### 2026-10-17 — One version for each run; no per-merge mode (v1.2)
+
+The release step has no per-merge mode: when at least one waiting note asks
+for a release, a run writes the notes that do as one version, one commit and
+one tag, pushed together atomically; notes that ask for none go under
+Unreleased. [ADR-0002](ADR-0002-the-plugin-is-its-directory.md)'s third
+amendment gives the reason.

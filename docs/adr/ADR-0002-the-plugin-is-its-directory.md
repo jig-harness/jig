@@ -4,8 +4,8 @@ type: adr
 status: amended
 description: "Agent tools install only plugin/ from main; everything a skill needs lives there, and each change is a tagged version"
 lifecycle: permanent
-version: "1.2"
-last_updated: 2026-10-16
+version: "1.3"
+last_updated: 2026-10-17
 owner: maintainers
 decision_date: 2026-10-09
 supersedes: ~
@@ -102,3 +102,21 @@ which keeps one version per run and still sends a change to machines within
 one release run of its merge. Rejected: releasing each merge from its own tree
 (a tag off `main`, or a branch machines never install), and a release pull
 request a person merges (a second merge before every change, against ADR-0004).
+
+### 2026-10-17 — One version for each release run, by construction (v1.3)
+
+Settles the 2026-10-16 amendment as the rule for every release run, not a
+case it handles. A run releases the newest commit of `main` it checks out,
+and a version exists once the run's one atomic push puts its release commit
+and its tag on `main`. By then every waiting merge has landed, so the commit
+the version goes on top of holds all of their code. The earlier commits of
+`main` that hold only some of those merges stay in its history, but a version
+cannot be added to one of them: its release commit and tag have to land on
+`main`'s newest commit, not on an older one. A run that wrote one version for
+each waiting merge would push a chain of release commits, each numbered and
+described for one merge while sitting on a tree that holds the later ones
+too, and none of them would get a run of the gates of its own. A run therefore writes at most one version, and the release step has no
+per-merge mode. It writes one when at least one waiting note asks for a
+release, at the largest bump any asks for; notes that ask for none go under
+Unreleased without moving the version, and a run with no notes waiting
+writes nothing.

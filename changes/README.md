@@ -70,5 +70,6 @@ To see what the release step will write without writing it:
 bun scripts/release.ts --dry-run
 ```
 
-It writes every waiting note as one release, since the tree it releases
-already holds the code of every merge that landed before it ran.
+A run writes at most one version: the notes that ask for a release become
+one release, since the tree it releases already holds the code of every merge
+that landed before it ran, and notes that ask for none go under Unreleased.

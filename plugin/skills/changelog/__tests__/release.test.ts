@@ -162,6 +162,68 @@ describe("release", () => {
     expect((await release(options())).notes).toEqual([]);
   });
 
+  test("notes from several merges in one run make one version and one section", async () => {
+    const root = repository(files());
+    const options = () => resolvedFor(root, VERSION_FILES);
+    commit(
+      root,
+      { "changes/a.md": "---\nrelease: patch\n---\n### Fixed\n\n- a\n" },
+      "a",
+    );
+    commit(
+      root,
+      { "changes/b.md": "---\nrelease: major\n---\n### Removed\n\n- b\n" },
+      "b",
+    );
+    commit(
+      root,
+      { "changes/c.md": "---\nrelease: minor\n---\n### Added\n\n- c\n" },
+      "c",
+    );
+    const result = await release({ ...options(), date: "2026-02-03" });
+    // The largest bump any note asks for, applied once to the version before.
+    expect([result.previous, result.version]).toEqual(["1.2.0", "2.0.0"]);
+    expect(result.notes).toEqual([
+      "changes/a.md",
+      "changes/b.md",
+      "changes/c.md",
+    ]);
+    const changelog = text(root, "CHANGELOG.md");
+    const sections = changelog.match(/^## \[\d[^\]]*\]/gm) ?? [];
+    expect(sections[0]).toBe("## [2.0.0]");
+    expect(sections.length).toBe(
+      (KEEP_CHANGELOG.match(/^## \[\d[^\]]*\]/gm) ?? []).length + 1,
+    );
+    // Every entry sits in the new version's own section, under its type.
+    const start = changelog.indexOf("## [2.0.0]");
+    const end = changelog.indexOf("\n## [", start + 1);
+    expect(end).toBeGreaterThan(start);
+    expect(changelog.slice(start, end)).toBe(
+      [
+        "## [2.0.0] - 2026-02-03",
+        "",
+        "### Added",
+        "",
+        "- c",
+        "",
+        "### Removed",
+        "",
+        "- b",
+        "",
+        "### Fixed",
+        "",
+        "- a",
+        "",
+      ].join("\n"),
+    );
+    expect(text(root, "a/plugin.json")).toBe(MANIFEST("2.0.0"));
+    expect(text(root, "b/plugin.json")).toBe(MANIFEST("2.0.0"));
+    // The one version is what the release workflow tags: nothing is left to
+    // release a second one.
+    const again = await release({ ...options(), date: "2026-02-03" });
+    expect([again.version, again.notes]).toEqual([null, []]);
+  });
+
   test("a dry run writes nothing, and no notes is no change", async () => {
     const root = repository(files());
     const options = () => ({

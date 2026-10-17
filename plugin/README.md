@@ -590,7 +590,10 @@ and the practice is [M1's rung](../modules/M1-gates-enforcement-ladder/README.md
 ## Releases
 
 Every merged change to `plugin/` is released as a new version, tagged
-`v<version>` and described in [CHANGELOG.md](../CHANGELOG.md). Machines
+`v<version>` and described in [CHANGELOG.md](../CHANGELOG.md). A release run
+writes the waiting changes that ask for a release as one version, the largest
+bump any of them asks for, so merges that landed before the run share a
+version. Machines
 receive the release on their next update. Repositories need no change
 unless the changelog says so.
 
