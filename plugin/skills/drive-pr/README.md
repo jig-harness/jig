@@ -12,7 +12,7 @@ with its context and nobody notices.
 
 A few behaviours worth knowing before you arm one:
 
-- **Drafts.** It works [draft PRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md) from the start and marks them Ready for review after its first completed round (or the round, or the convergence, `pull_requests.mark_ready` names), so a paid external reviewer sees an already-cleaned head.
+- **Drafts.** It works [draft PRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md) from the start and marks them Ready for review after its first completed round (or the round, or the convergence, `pull_requests.mark_ready` names), so reviewers that skip drafts (often billed per review) see an already-cleaned head.
 - **CI.** Before reporting success it waits for the repository's [required checks](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in continuous integration (CI) to pass on the exact final commit. A repository whose CI is expensive can opt into a [CI hold](#ci-hold), which skips the heavy jobs between review rounds and runs them in full once at the end.
 - **Repairs.** When that final CI comes back red, or the PR conflicts with its base and no findings are left, it runs a bounded **repair round** (a CI repair, or a base merge with conflict resolution) and checks again, stopping only once that budget is spent.
 - **Stops.** It stops on a state it names precisely — convergence verified against the exact commit, a merged or closed PR, a conflict it could not resolve, findings that need a human decision ([HITL](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) — or on one of the operational stops in [the exit table](#the-exit-states--what-you-do-now).
@@ -65,7 +65,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `drive.max_rounds` | Whole number ≥ 1: how many rounds a drive runs before it stops unconverged (exit `6`). `--max-rounds N` overrides it for one run; a malformed value stops the drive with exit `1` unless the flag names the budget | `10` |
 | `drive.escape_baseline_doc` | Path, relative to the repository root, to the document recording the human-judged defect-escape baseline (`## Baseline window: <from> → <to>` headings, each followed by an `**Escape rate: <n> of <total> ...**` line). The loop-cost reports print its latest figure next to their speed numbers | `docs/review-loop-baseline.md`; a missing document reads as "unmeasured" |
 | `fleet_health.config` | Path, relative to the repository root or absolute, to the fleet-health settings file that `fleet-health.ts` and the per-round fleet-health warnings read ([format](../../CONFIGURATION.md#the-fleet-health-file)) | `.config/fleet-health.yaml` |
-| `fleet_health.snapshot_dir` | Where the gate reads the published `fleet-health.json` snapshot from (`~` is expanded). `DEV_DASHBOARD_DIR` overrides it | `~/.local/state/jig/dashboard` |
+| `fleet_health.snapshot_dir` | Where the gate reads a `fleet-health.json` snapshot from (`~` is expanded). Jig writes no such snapshot: an external collector publishes it, if the machine runs one, and without one the per-round fleet-health warnings are empty. `DEV_DASHBOARD_DIR` overrides it | `~/.local/state/jig/dashboard` |
 
 Every field of the file, for every skill, is in the plugin's
 [configuration reference](../../CONFIGURATION.md).
@@ -93,6 +93,11 @@ posting reviewer that provides all of these:
 - in that comment, the commit it reviewed, stamped with
   `review.reviewed_sha_marker`.
 
+Jig ships no reviewer that implements this protocol. The defaults in the
+table above are configuration: a repository changes them to match its own
+reviewer's check run, comment marker and commit stamp
+([fields](../../CONFIGURATION.md#review),
+[AI reviewers](../../EXTENDING.md#ai-reviewers)).
 A reviewer without that protocol, such as CodeRabbit on its own, never
 produces the evidence, and the drive waits in `AWAITING_REVIEWER` until
 `--timeout`. This requirement is not checked before a drive starts.
@@ -327,17 +332,18 @@ it (the *State reaping* entry) explains what it may and may not delete.
 legacy-location migration guard. The override does not move existing state:
 migrate it using the procedure below **before** exporting the new path, or the
 drive can start with an empty round and lease history. The same procedure moves
-state left in an older default location into the current one. Legitimate uses
-beyond the test harness: a machine that cannot afford the default location —
-an IDE or backup tool watching the whole home directory, say.
+state left in an older default location into the current one. A legitimate
+use: a machine that cannot afford the default location — an IDE or backup
+tool watching the whole home directory, say.
 
 **The invariant is that every participant in one clone resolves the same
 directory.** Two drivers that disagree do not share the lease mutex: each mints a
 fresh, empty state for a PR the other is already driving, which presents as a
 drive silently restarting at round 0 with `verifiedSha` cleared while the real
 record sits in the other directory. Changing it means changing it everywhere at
-once — a machine-wide export reaches `zsh -c` invocations, agent-tool hooks run
-in their own environment and need it in that tool's settings (Claude Code:
+once — a machine-wide export in the shell's startup file reaches the
+commands that shell starts, agent-tool hooks run in their own environment
+and need it in that tool's settings (Claude Code:
 `~/.claude/settings.json`'s `env`), and launchd/cron jobs read no shell startup
 file and need it written into their own configuration as an absolute path.
 

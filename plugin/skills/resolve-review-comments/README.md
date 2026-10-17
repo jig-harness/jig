@@ -61,7 +61,7 @@ A minimal configuration:
 gates:
   command: bun run gates
 review:
-  bots: ["coderabbitai[bot]"]
+  bots: ["example-review[bot]"]   # your review bot's GitHub login
   deferral_team: ENG
 ```
 
@@ -128,20 +128,7 @@ that sibling's summary parser, convergence covers inline review threads and
 reviewer checks; inspect reviewer summary comments before declaring the entire
 PR ready. No convergence exit marks a PR ready or merges it.
 
-## Tests
+## Platform support
 
-The complete standalone suite runs on macOS and Linux. Bash-backed network
-fixtures skip on Windows; pure mechanism tests still run there. The plugin test
-in [tools/plugin](../../../tools/plugin/plugin.test.ts) runs the scripts from a copy
-outside this repository, the way a plugin cache holds them, against a scratch
-consumer repository.
-
-Run the tests with:
-
-```sh
-bun test plugin/skills/resolve-review-comments/__tests__
-```
-
-The tests exercise pagination, reply validation, mutation failure handling,
-convergence exits, lease integration, bounded cache reuse, triage configuration,
-and deferral batching. Repository validation is `bun run gates`.
+The skill is tested end to end on macOS and Linux. On Windows its scripts'
+own logic is tested, but not their calls to GitHub.

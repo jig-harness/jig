@@ -586,8 +586,9 @@ make, use the entry's term instead.
   ([scar classes](plugin/skills/descar/references/scar-classes.md)).
 - **Design brief bundle** — the numbered set of Markdown files and images
   handed to an external design session as its only input.
-- **Claude Design** — the external design session a *design brief bundle* is
-  handed to. The design work happens there, not in the repository; Jig's
+- **Claude Design** — a hosted design tool, and the one external design
+  session a *design brief bundle* is prepared for so far. The design work
+  happens there, not in the repository; Jig's
   `design-brief-builder` skill prepares the inputs and audits them
   ([design-brief-builder](plugin/skills/design-brief-builder/SKILL.md)).
 - **Tweaks** — the list of states (at least three meaningful ones, such as
@@ -629,9 +630,10 @@ make, use the entry's term instead.
 - **Flag label** — an issue-tracker label that *drives process* rather than
   just categorizing (e.g., "has-migration" → a mandatory review gate fires).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
-  obligations: `has-migration` (a database migration), `api-change` (a
-  published contract), `dpa-relevant` (personal data) or `manual-ops` (a manual
-  operational step). A fired flag sends a call to a human instead of an agent
+  obligations, such as a database migration, a published contract, personal
+  data or a manual operational step. `decide` reads them under fixed names:
+  `has-migration`, `api-change`, `dpa-relevant` (personal data covered by a
+  data-processing agreement) and `manual-ops`. A fired flag sends a call to a human instead of an agent
   ([decide](plugin/skills/decide/SKILL.md)) and widens the review a change gets.
 - **Epic** — an issue whose sub-issues are worked one at a time, each as its
   own pull request, while the epic itself tracks the whole. Jig's
@@ -1137,8 +1139,8 @@ make, use the entry's term instead.
   only the permissions it is given and on only the repositories it is
   installed on. A workflow mints a token for it that lasts an hour, so no
   person's credential is stored.
-- **Deployment environment** — a named GitHub Actions setting that holds
-  secrets and limits which branches may use them. A key kept in an
+- **Deployment environment** — a named set of secrets in a CI system that
+  only some branches may use; GitHub Actions calls it an *environment*. A key kept in an
   environment restricted to `main` cannot be read by a workflow running on
   any other branch.
 - **Composite action** — a GitHub Actions action whose `action.yml` combines
@@ -1186,21 +1188,36 @@ make, use the entry's term instead.
   operations a skill is allowed to use (read an issue with its comments and
   children, move it to a workflow state, comment, the reads the delivery
   metrics need, and the open-issue reads a batch proposal ranks), and one
-  implementation of that set for a particular tracker
-  (Linear today). The skills call only the interface, so supporting a new
-  tracker means writing an adapter, not editing the skills.
+  implementation of that set for a particular tracker. The skills call the
+  interface, so supporting a new tracker means writing an adapter, not
+  editing the skills, except where a skill still calls Linear directly: the
+  review skill's deferral step (roadmap item 10), the operations the
+  interface does not have yet (creating or searching issues, adding labels,
+  attaching a file), and a few reads of Linear's own answers.
+  [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists
+  them under "What still assumes Linear". Linear's adapter is built;
+  adapters for Jira and for a plan file kept in the repository are planned
+  ([ROADMAP.md](ROADMAP.md) item 12).
 - **Launcher** — the program an issue tracker's "open in coding agent" button
   runs. Jig's assigns the issue to whoever opened it, saves the whole
   issue to a file the agent reads, chooses the repository from the issue's
-  label and opens a workspace for the agent in a *workspace provider* (with
-  Conductor, a routed issue's agent starts once you confirm the new
-  workspace).
+  label and opens a workspace for the agent through a *workspace provider*.
+- **Workspace runtime** — the app or terminal tool that creates an agent's
+  workspace, usually a git *worktree*, and runs the agent session in it.
+  Jig's practices name none; its tooling targets Herdr first and also
+  supports others, Conductor among them
+  ([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
+- **SSH (Secure Shell)** — the standard way to log in to another machine
+  and run commands there over an encrypted connection; a *workspace runtime*
+  can use it to run an agent's workspace on a remote host.
 - **Workspace provider** — the part of the *launcher* that opens the agent's
-  workspace in a particular app or host (Conductor today). Providers differ
-  only in that last step, so adding one does not change the rest of the
-  launcher.
-- **Deep link** — a web-style address (`conductor://…`) that opens a desktop
-  app at a given place, here with a prompt and a repository already filled in.
+  workspace in one *workspace runtime*. Providers differ only in that last
+  step, so adding one does not change the rest of the launcher; which exist
+  and which are planned is in the
+  [launcher's README](tools/launcher/README.md#providers).
+- **Deep link** — a web-style address (`<app>://…`) that opens a desktop
+  app at a given place; the launcher's Conductor provider uses one to open a
+  workspace with the prompt and the repository already filled in.
 - **Test shard** — one slice of a test suite's files, run as its own CI job
   so a long suite finishes in a fraction of the time on parallel machines.
 - **Validation plan** — the checks a change must pass, worked out from the files
@@ -1220,12 +1237,10 @@ make, use the entry's term instead.
   fixer reinstalls from it ([resolve-conflicts](plugin/skills/resolve-conflicts/SKILL.md)).
 - **WCAG (Web Content Accessibility Guidelines)** — the W3C's standard for
   making web pages usable by people with disabilities. Its levels A, AA and
-  AAA are increasingly strict; Jig's website holds every text color pair to
-  the AA contrast minimum in both themes ([design/website.md](design/website.md)).
+  AAA are increasingly strict.
 - **Bleed** — a picture that runs past the edge of the page or window
-  instead of stopping at its column, a term taken from print. On Jig's
-  website a bleed plate sits larger and behind a page's intro, its edges
-  fading into the page ([design/website.md](design/website.md)).
+  instead of stopping at its column, a term taken from print
+  ([design/website.md](design/website.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`
   writes it to a snapshot file and *Refocus* puts it back in front of an agent

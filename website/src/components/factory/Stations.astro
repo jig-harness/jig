@@ -45,7 +45,7 @@ const levelRows = await Promise.all(
         <span class="chips">{f.levels[0]?.modules.map((id) => <ModChip id={id} size="small" />)}</span>
       </div>
       <DesignRow />
-      <div class="handoff"><Arrow dir="down" class="handoff-arrow" /><span>hands on an epic of planned work items · each sub-issue enters the line below as one work item</span></div>
+      <div class="handoff"><Arrow dir="down" class="handoff-arrow" /><span>hands on an epic of planned work items · each work item enters the line below on its own</span></div>
       <div class="level-head" id="execution-level">
         <span><span class="label">B · Execution</span> <span class="muted">one work item · the work-item line</span></span>
         <span class="chips">{f.levels[1]?.modules.map((id) => <ModChip id={id} size="small" />)}</span>

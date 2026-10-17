@@ -19,6 +19,8 @@ session; this skill produces the *inputs* and runs the audit gate that decides
 whether they are ready to submit. It runs the first step of the
 design-prototype loop in Jig's feature-delivery pipeline module
 ([M6](https://github.com/docomply/jig/blob/main/modules/M6-feature-delivery-pipeline/README.md)).
+The bundle targets Claude Design, the one external design tool supported so
+far, and its upload limits shape the bundle.
 
 **Not this skill:** generating a prototype inside the repository, turning a
 finished design bundle into code, or tuning an already-built view to match a
@@ -69,7 +71,8 @@ If the flow touches both the interface and the backend, scope the brief to the
 
 ## The brief bundle
 
-Assemble at `/tmp/claude-design-trial-<flow-slug>/uploads/`. **Markdown and
+Assemble in a scratch folder outside the repository,
+`/tmp/design-brief-<flow-slug>/uploads/`. **Markdown and
 images only**: Claude Design's upload interface rejects
 `.yaml`/`.yml`/`.json`/spreadsheets.
 
@@ -157,7 +160,7 @@ ready, grep for the four prescription smells:
    tokens *bind*; primitive visuals stay *open*.
 
 ```bash
-grep -riE 'best for|strong default|i propose|use a |introduce a ' /tmp/claude-design-trial-<slug>/uploads/*.md
+grep -riE 'best for|strong default|i propose|use a |introduce a ' /tmp/design-brief-<slug>/uploads/*.md
 ```
 
 The binding-versus-open line, the five-step audit and a worked before/after

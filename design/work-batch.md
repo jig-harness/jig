@@ -230,7 +230,7 @@ issue.
 
 Adding these operations to the interface touches the open decision on
 whether an adapter may leave reporting operations out
-([ROADMAP.md § Open decisions](../ROADMAP.md#open-decisions)). They are not
+([plan § Open decisions](plan.md#open-decisions)). They are not
 reporting: a tracker that can list issues by label can answer them,
 and a plan file kept in the repository can too.
 

@@ -99,7 +99,7 @@ The parity report consumes tallies; producing them is a telemetry job.
 
 | Tool | Role |
 |------|------|
-| PostHog / analytics | per-review events (was a finding real? was it acted on?) aggregate into the `<reviewer> tp fp missed` rows |
+| An event or product-analytics store (PostHog, Amplitude, a warehouse table; [M11](../M11-process-observability/mappings.md) maps the options) | per-review events (was a finding real? was it acted on?) aggregate into the `<reviewer> tp fp missed` rows |
 | Weekly snapshot | a scheduled query emits `parity.tsv`; the parity gate turns it into keep/promote/kill + `missed_blockers` |
 
 Wire the actual metric events under [M11](../M11-process-observability/) (process

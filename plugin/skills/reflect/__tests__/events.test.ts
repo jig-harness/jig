@@ -327,6 +327,13 @@ describe("context", () => {
       entrypoint: "cli",
       wrapper: "conductor",
     });
+    expect(detectHarness({ HERDR_ENV: "1", CODEX_HOME: "/x" })).toEqual({
+      name: "codex",
+      version: null,
+      entrypoint: null,
+      wrapper: "herdr",
+    });
+    expect(detectHarness({ HERDR_ENV: "0" })).toBeNull();
     expect(detectHarness({ PATH: "/bin" })).toBeNull();
   });
 });

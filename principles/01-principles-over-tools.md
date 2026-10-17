@@ -21,9 +21,10 @@ Brownfield projects especially cannot swap their toolchain to adopt a practice
   observable facts (lockfile → package manager, workflow dir → CI provider)
   instead of demanding configuration. Configuration is only for overriding a
   wrong derivation.
-- Reference code in `reference/` is written against the most common stack
-  (Git and GitHub, as Bun/TypeScript commands that run on macOS, Linux and
-  Windows) but must isolate tool-specific surface behind small, swappable
+- Reference code in `reference/` is written against Git and GitHub, as
+  Bun/TypeScript commands that run on macOS, Linux and Windows (Jig's own
+  toolchain, [ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)),
+  but must isolate tool-specific surface behind small, swappable
   pieces — and say what to swap.
 - Runnable tooling (the [plugin](../plugin/README.md)'s skills) may bind to a
   named tool such as Linear or GitHub, provided the binding sits behind an

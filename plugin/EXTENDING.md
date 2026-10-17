@@ -1,7 +1,7 @@
 # Extending and adapting Jig
 
-A team that adopts Jig rarely uses exactly the tools Jig was first built
-around. Without a map of what can change, it finds out by trial: it sets a
+A team that adopts Jig rarely uses exactly the tools Jig's tooling is bound
+to today. Without a map of what can change, it finds out by trial: it sets a
 field that does not exist, writes a wrapper around a skill that already
 takes a command, or discovers halfway through a drive that its forge, its
 issue tracker or its operating system is not supported. This document is
@@ -67,7 +67,7 @@ hook or the interface instead.
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
 | Git remote | `origin` | — | Roadmap item 10 |
 | Agent tool | Claude Code, Codex | [Copying the skills](#agent-tools) for any other | — |
-| Workspace launcher | Linear and Conductor, on macOS | [A provider](#workspace-launcher) in Jig | Herdr provider: roadmap, later |
+| Workspace launcher | Linear and Conductor, on macOS | [A provider](#workspace-launcher) in Jig | Herdr provider, the primary target: roadmap item 19 |
 | Operating system | macOS and Linux; Windows for most skills | — | [`drive-pr`, `do-item` and the launcher](#operating-systems) |
 | The repository's language and stack | Any | Practice mappings; Bun runs Jig's tools only | — |
 
@@ -318,7 +318,9 @@ interfaces of its own, each with one implementation chosen in
 A new provider is a module in `tools/launcher/providers/` that validates its
 per-repository settings and opens the workspace, registered in `index.ts`
 there; a tracker is added the same way under `trackers/`. A Herdr provider
-is on the roadmap's later work.
+is next: Herdr is the workspace runtime Jig's tooling targets first
+([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md),
+[ROADMAP.md](../ROADMAP.md) item 19).
 
 ## Operating systems
 
@@ -373,6 +375,6 @@ request, under [CONTRIBUTING.md](../CONTRIBUTING.md) and
   service, so they run in CI without credentials.
 - **Runs from the plugin cache.** No package dependencies at run time: Bun's
   built-ins, or a vendored single-file build with its licence
-  ([add or change a skill](README.md#add-or-change-a-skill)).
+  ([adding a plugin skill](../CONTRIBUTING.md#adding-or-changing-a-plugin-skill)).
 - **Move, never copy.** An adapter a team already runs moves here with its
   tests, and the team deletes its own copy.

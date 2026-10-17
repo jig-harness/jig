@@ -102,8 +102,9 @@ rather than waiting:
 
 So a draft is driven exactly like a Ready PR, and **after the first completed
 round the drive marks it Ready itself** (`mark-ready.ts`, called by `drive.ts`;
-step 7 below for an interactive round). That ordering is the point: a paid
-external reviewer gets one pass per push, and it is spent on a head whose
+step 7 below for an interactive round). That ordering is the point: a
+reviewer that skips drafts (often billed per review) gets one pass per push,
+and it is spent on a head whose
 obvious findings from the draft-reviewing reviewer are already cleaned up
 rather than on the branch's first draft. When it marks Ready is the
 repository's `pull_requests.mark_ready`: after round N (default `1`),
@@ -116,7 +117,7 @@ The transition is **once per PR and durable** (`readyMarkedRound` in the drive
 state, written only once `gh pr ready` is confirmed; the in-flight claim is a
 separate filesystem lease that expires if its driver dies). `gh pr ready` fires
 `ready_for_review`, which is what summons those reviewers, so firing it twice
-re-triggers a paid review of a head that already had one — and a human who
+re-triggers a review (often a billed one) of a head that already had one — and a human who
 converts the PR *back* to draft has made a decision the drive does not undo on
 the next round. Why the record and the claim are kept apart, and what
 `claimed-by-other` does and does not prove:
@@ -125,9 +126,8 @@ the next round. Why the record and the claim are kept apart, and what
 Exit `10` is reserved and never returned.
 
 The structural stopper that remains is a ceiling: a reviewer can stop
-publishing after a fixed number of rounds on one PR (measured on one
-deployment: roughly thirteen or fourteen), and past that point `CONVERGED` is
-unreachable. Details and the measurements:
+publishing after a fixed number of rounds on one PR, and past that point
+`CONVERGED` is unreachable. Details:
 [terminal-states.md § When the reviewer will not answer](references/terminal-states.md).
 
 ## Terminal states
@@ -185,8 +185,8 @@ the repository marks Ready only at convergence (`converged`), or when it never
 does (`never`, or a drive started with `--keep-draft`, which skips
 `mark-ready.ts` however many rounds run). In the first two the transition is
 still owed; in the last the draft is the requested outcome.
-`gh pr ready` spends the external reviewer's
-one-pass-per-push budget on whatever head is current at that instant, and over a
+`gh pr ready` spends the one pass per push of the reviewers that skip drafts
+on whatever head is current at that instant, and over a
 dirty worktree that is precisely the head about to change once the leftovers are
 committed — so the drive earns the right to summon anyone only once it can
 certify there is nothing left on the floor. Clean up, re-run, and the retry
@@ -401,8 +401,8 @@ you look:
   every enumeration of it. `lock.ts` mints a permanent quarantine entry per lock
   generation on the *happy* path, so the state dir's entry count grows without
   bound even though `sweepLockQuarantine` compacts each one to a single inode
-  — 112k entries in nine days on one measured machine, in a directory the
-  lease and census reads enumerate several times per round. It compacts
+  — in a directory the lease and census reads enumerate several times per
+  round. It compacts
   (`sweepLockQuarantine`, no precondition) anything still in use, and deletes
   a family outright only on the *lifecycle* predicate: PR
   merged (or gone from GitHub — a genuinely nonexistent PR number, never a
@@ -416,9 +416,9 @@ you look:
   entry it has ever minted, and only *retire* removes any — so a
   `drive-tree-lease-wt-*` family whose worktree still exists never shrinks at
   all. On a clone with many long-lived worktrees the entry count grows without
-  bound even when this reaper runs correctly every week: one state dir reached
-  382,524 entries, where a single `readdir` cost about 10 seconds — and an IDE
-  or other tool watching that directory pays the same cost. Every gate
+  bound even when this reaper runs correctly every week, until a single
+  `readdir` of the directory takes seconds — and an IDE or other tool
+  watching that directory pays the same cost. Every gate
   fails closed, and the idle guard (`--min-age-days`, default 7) is an extra
   bound on top of the lifecycle predicate, never a substitute — a pure age
   sweep here is unsafe. Run it on a schedule (weekly is enough) from the
@@ -622,9 +622,10 @@ could forge or forget.
    `drives.ts --stop <PR>` (stop). Then end the turn. After handing over, do
    not touch the drive's state, threads, or worktree: the driver owns them.
 
-A harness with no documented headless pass command (anything but Claude Code)
-cannot arm: print the command and say why, as `/jig:do-item` does. Do not
-substitute a guessed one.
+Today the one documented pass command is Claude Code's `claude -p`. In
+another agent tool (Codex, for one), do not arm: print the command and say
+why, as `/jig:do-item` does, and do not substitute a guessed pass command. A
+person can put their own tool's command after the `--` and run it.
 
 ### Driver pass: you are headless and one-shot
 
@@ -787,9 +788,8 @@ The gate also files **this round's finding anchors** into the same durable
 state on exit `0`, and derives `structuralEscalationDue` from them.
 It arms when a finding lands on the same *file* in two **consecutive** rounds,
 and it is deliberately sharper than `reflectDue`'s round-depth trigger: it
-fires while there is one narrow fix to reconsider rather than three (one
-measured drive saw the depth trigger arrive at round 4 on a signal that was
-unambiguous at round 2). `work.unresolvedThreadPaths` in the same report is this round's
+fires while there is one narrow fix to reconsider rather than three.
+`work.unresolvedThreadPaths` in the same report is this round's
 own *input* to that check — the live, non-parked finding paths just filed
 (threads *and* summary-only findings both, despite the field's name) — not
 the recurrence result itself: with more than one file open it does not say
@@ -827,9 +827,7 @@ verdict that does not re-arm", which is wider:
 `PR_NOT_OPEN` ends without re-arming too, and it is not guarded — for the
 reason the next paragraph gives. `UNSUPPORTED_CLI`
 also ends without re-arming, and a sweep runs, and may well have succeeded,
-before that verdict is reached; the suite's `reconciles ahead of the EARLIEST
-return — UNSUPPORTED_CLI is decided before anything is enumerated` is a direct
-witness of it. That is exactly why it *is* guarded — a sweep having run is not
+before that verdict is reached. That is exactly why it *is* guarded — a sweep having run is not
 the same claim as it having *succeeded*, and only the guard tells them apart.
 `CONVERGED` also ends without re-arming
 and is not in this set, but for a narrower reason than "excluded" — see the
@@ -1038,8 +1036,7 @@ thread's own `severity` (`severityOf` against its first comment; `unknown` if
 neither the bold-token nor the badge shape matched) and `category`
 (`categoryOf` against the same comment; `unknown` when the reviewer emitted no
 `🏷️ category:` tag). By round 3, self-inflicted is the single most likely
-case (one measured drive saw the ratio worsen per round: 2/5 → 4/10 → ≥4/8),
-and it is what § 3's "check the fix's own blast radius" turns on — a question
+case, and it is what § 3's "check the fix's own blast radius" turns on — a question
 that, left to session memory, goes unasked.
 
 `--summary-report` is the same filter over the *other* enumeration:
@@ -1383,8 +1380,9 @@ they are a suspicion about this PR, not a finding, and they never change
 sensor raised for *this* PR (a review carousel: many bot-reviewed heads with a large
 share of the authored added lines (at least the configured `min_post_review_share`) landing after review began; or follow-up depth: this PR
 closes a follow-up raised on a PR that itself closed one). They are read from a
-`fleet-health.json` snapshot that a dashboard collector already published (in
-the repository's `fleet_health.snapshot_dir`, which `$DEV_DASHBOARD_DIR`
+`fleet-health.json` snapshot that an external collector already published,
+if the machine runs one (Jig ships none; the snapshot is read from the
+repository's `fleet_health.snapshot_dir`, which `$DEV_DASHBOARD_DIR`
 overrides), not sampled here, so `snapshotAgeSec` says how
 old they are, `stale: true` says the collector has since failed, the snapshot
 aged past its `ttlSec`, or its `generatedAt` is future-dated beyond clock-skew
@@ -1513,8 +1511,8 @@ until step 6, after the push, so at hold time the reasoning exists nowhere but
 your own context. `hold` needs it on stdin, not just `--outcome` — and that
 stdin is the **reason alone, with no leading outcome token**. Unlike a thread
 reply, whose whole text you write, the token here is composed from `--outcome`
-at answer time; one in the held reason too posts a doubled token that the
-reviewer-scoring harvester reads as malformed. `answer-summary-finding.ts`
+at answer time; one in the held reason too posts a doubled token, which a
+reviewer-scoring harvester, where the repository runs one, reads as malformed. `answer-summary-finding.ts`
 refuses such a body, but the fix belongs at the `hold` call:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
@@ -1558,8 +1556,8 @@ key, so there is no clearing "the backlog copy" alone.
 
 That `at` case is not an edge: step 6 orders push → `stamp-held` → status →
 answer, so every fix-dependent marker is posted at a head the reviewer has
-already reviewed, and expiring it there would leave it inert on arrival: one
-verified-fixed finding was measured re-answered up to six times, and a drive
+already reviewed, and expiring it there would leave it inert on arrival: a
+verified-fixed finding is re-answered round after round, and a drive
 can end `HITL_PARKED` instead of `CONVERGED` purely because of it. The grace
 is exactly one head wide: any later push moves the
 reviewed SHA off the marked one, so a reverted or regressed fix is re-asked.
@@ -1569,8 +1567,8 @@ bounded along a different axis, which is why the one-head rule above does not
 replace it: a backlog entry the reviewer carries with
 `reason: "winddown-deferred"` is forwarded unconditionally by its original
 round, never re-verified against the diff, so its re-emission falsifies nothing
-— a dated `accepted`/`moot` marker for one survives the expiry (measured: the
-expiry re-asked the same verified-fixed finding three rounds running). It
+— a dated `accepted`/`moot` marker for one survives the expiry (without
+that, the expiry re-asks the same verified-fixed finding every round). It
 survives it for `WINDDOWN_EXEMPTION_ROUNDS` further rounds, not
 forever: the same absent signal means a later round that *reverts* the fix
 re-emits the identical fingerprint under the identical reason, which an
@@ -1754,9 +1752,9 @@ each skill it names against the round's diff. Unless the repository enforces
 one with a hook, nothing but you runs it.
 
 `--delta` scopes the plan to what changed since the last **green-verified** SHA
-and is genuinely cheaper: in one measured case, a Markdown-only round
-resolved to a formatter and an index check with no test box, against a
-cumulative plan of the full gates **plus** a test box.
+and is genuinely cheaper: a Markdown-only round, for example, can resolve to
+a formatter and an index check with no test box, where the cumulative plan
+is the full gates **plus** a test box.
 It is not the default and is not a substitute. A round-N fix can interact with
 a file round 1 changed, and no plan derived from round N's own diff contains
 the check that catches it; the tree being pushed is the cumulative one. Use
@@ -1772,7 +1770,7 @@ reading it that way would silently drop the escalation path. Either way, warm
 it as a **single-use** box (the plan's `testbox.warmupCommand`, then its
 `command`) immediately after the last local build task. A box reused across
 rounds — or warmed before the latest local build — can sync stale or partial
-state; in practice that failed three times out of three.
+state.
 
 "When the emitted plan demands one" is the line printed under `Testbox:`, which
 is **not** always the cumulative plan's raw `testbox.required`. The checks
@@ -2078,7 +2076,7 @@ transition `drive.ts` makes at convergence, then stop. The reviewers it
 summons are the next gate's to wait for.
 
 The round is done: findings triaged, replies posted, fixes pushed, threads
-resolved. That is the moment the paid external reviewers are worth summoning —
+resolved. That is the moment the reviewers that skip drafts are worth summoning —
 see § Drafts are driven, above, for why this is here and not at the start.
 
 Run it every round. It is durably once-only, so every call after the first
@@ -2125,7 +2123,7 @@ measuring the delivery process itself, not the product.
 
 **Every recall-reducing dial in the triage rubric (the materiality bar, the
 decline ladder) is tuned blind until something measures it, and this is the
-instrument that does.** An 87.7% accepted share reads as "the materiality bar
+instrument that does.** An accepted share of, say, 88% reads as "the materiality bar
 is not biting"; the same number reads equally well as "the reviewers were
 precise and the fixes were needed". Neither reading may be preferred without a
 baseline.
@@ -2250,8 +2248,8 @@ ${CLAUDE_SKILL_DIR}/scripts/defect-escape.ts --since YYYY-MM-DD --until YYYY-MM-
 ```
 
 **Pass `--until` whenever you are reproducing a recorded window.** A one-sided
-`merged:>=` grows with the repository — a week's window that held 43 PRs
-returned 47 for the same open-ended query a day later — and past `--limit` it evicts the
+`merged:>=` grows with the repository — the same open-ended query for a past
+week returns more PRs a day later — and past `--limit` it evicts the
 original PRs from their own baseline, since `gh pr list` returns the newest
 matches.
 
@@ -2436,7 +2434,7 @@ There is no API for it, so this skill does not pace against it. It does
 **detect** the wall after the fact, because the wall announces itself with a
 reset time: a Claude Code pass's transcript records
 `{"error":"rate_limit","apiErrorStatus":429,…}` whose text reads
-`You've hit your session limit · resets 3:20am (Europe/Amsterdam)`, and Codex
+`You've hit your session limit · resets 3:20am (UTC)`, and Codex
 writes `used_percent`, `window_minutes` and an absolute `resets_at` epoch on
 every turn. `lib/quota/` reads it, one adapter per vendor, and the driver acts
 on the answer:
@@ -2467,7 +2465,7 @@ transcript is per-session, so recognising a wall is only half the answer — the
 other half is proving it belongs to the pass this driver just spawned.
 Matching the record's `cwd` narrows it to this worktree and no further, and a
 human's interactive Claude or Codex session sitting in that same worktree is
-the normal condition while a drive runs: the drive locks exclude other
+common while a drive runs: the drive locks exclude other
 *drivers*, not a chat. Left there, that session's
 weekly wall could park a pass that failed for its own reasons, its short wall
 could sleep the drive for hours, and — the Codex case — its later healthy
@@ -2503,8 +2501,9 @@ evidence immediately before the spawn:
   via a per-pass `CODEX_HOME` would work but relocates `auth.json` with it,
   and is deferred until the residual is measured as worth that risk.
 
-An adapter the correlation does not name is **not** suppressed — a Claude pass
-routinely spawns `codex exec` beneath it, so a Codex wall can be the genuine
+An adapter the correlation does not name is **not** suppressed — a pass may
+spawn another agent tool's command line (for example `codex exec`) beneath
+it, so a Codex wall can be the genuine
 cause of a Claude pass's failure. Amending the pass argv is also the one thing
 here that could break a pass that would otherwise have run, so an adapter only
 claims a command whose basename *is* its CLI (never a wrapper). Even a
@@ -2784,30 +2783,6 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   The guardrails below describe the mechanics it drives; they bind you directly
   only when you are settling one of its refusals by hand.
 - **Never re-arm on `HITL_PARKED`.** Hand back with the decisions framed.
-- **Never guard a once-per-pass step with a skip condition broader than the
-  predicate that actually makes the skip safe.** "Skip it now, the next pass
-  will run it" is true only when there *is* a next pass — and every verdict in
-  § Terminal states, `CONVERGED` included, ends the drive rather than
-  re-arming it. A skip gated merely on "this pass's own flags suppressed the
-  step" (a broad, unconditional skip) is therefore a permanent drop under a
-  non-re-arming verdict, not a deferral: an unreadable liveness probe that
-  skips the replied-thread sweep, followed by a non-re-arming verdict, lets
-  one transient `gh` failure recreate the unresolved-thread leak the sweep
-  exists to close. Where the step can be skipped
-  under a non-re-arming verdict and *no* narrower proof of safety exists,
-  degrade the *whole* pass to the retry class instead — `INDETERMINATE`,
-  exit `1` — so the caller runs it again.
-  `CONVERGED`'s own `--no-count` re-read (§ 1's `sweepRanAndFailed`
-  paragraph above) is the *worked example* of a skip this rule does permit,
-  not an exception to it: its safety comes from a predicate strictly
-  narrower than "the sweep didn't run" — `sweepRanAndFailed` distinguishes
-  a sweep that was never attempted (certifies fine) from one that was
-  attempted and failed (withholds `CONVERGED`). A skip is compliant with
-  this rule exactly when it is gated on a comparably narrow, provably-safe
-  predicate; a skip gated on the pass's own broad flags alone is not, and
-  must degrade to `INDETERMINATE` as above. And when a script's behaviour
-  changes, grep this file and `references/` for sentences asserting the old
-  behaviour in the same edit.
 - **Never resolve an `accepted` thread before its push lands, and never call
   `resolve-thread.ts` directly on a held item.** `resolve-held-thread.ts`
   verifies `--pushed-sha` against the PR's live head *and* this worktree's
@@ -2853,8 +2828,5 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   judgment.** Question it, on the record (`verification-fit.ts`, § 5) — then
   run it as emitted. The catalog relaxes by reviewed edit, not by per-round
   discretion.
-- **Never add an outbound call without a deadline.** Spawn it through
-  `lib/proc.ts` (`ghCall`, or `run` with a `timeoutSec`). An unbounded call is a silent stall, not an error, and nothing
-  upstream can end it.
 - **Never `APPROVE` or `REQUEST_CHANGES`, and never mark a PR Ready except through
   `mark-ready.ts` (§ 7).**

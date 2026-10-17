@@ -92,19 +92,19 @@ function skillNames(title: string, text: string): string[] {
   return [...new Set(names)];
 }
 
-const ITEMS = /^items? ((?:\d+(?:,? and |, ))*\d+)$/;
+const ITEMS = /^(?:roadmap )?items? ((?:\d+(?:,? and |, ))*\d+)$/;
 
 /**
  * The Not built yet field, entry by entry with the roadmap work each names.
  * The field is entries separated by semicolons; every entry names its work in
  * at least one parenthetical, every parenthetical is a reference (item
- * numbers or a group), and every parenthesis is matched, so no entry renders
+ * numbers, optionally prefixed "roadmap", or a group), and every parenthesis is matched, so no entry renders
  * without its roadmap link.
  */
 function notBuiltEntries(title: string, text: string): NotBuilt[] {
   const fail = (what: string) =>
     new Error(
-      `FEATURES.md: "${title}" Not built yet must name roadmap work as (item N), (items N and M) or (Group): ${what}`,
+      `FEATURES.md: "${title}" Not built yet must name roadmap work as (roadmap item N), (roadmap items N and M), (item N) or (Group): ${what}`,
     );
   const out: NotBuilt[] = [];
   for (const entry of text.split(";").map((e) => e.trim())) {

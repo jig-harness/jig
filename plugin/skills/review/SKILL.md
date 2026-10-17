@@ -464,8 +464,12 @@ example:
   surface may expose;
 - the published interface surface: an operation the change adds to the
   published contract names its external consumer in the pull request (not
-  "future customers"), every request input it declares carries a bound (a
-  length, pattern or format, a maximum, an item count, a type), and its
+  "future customers"), every request input it declares carries a type and
+  the upper bound its kind needs (a maximum length, a pattern or a format
+  on a string, a maximum on a number, a maximum item count on an array, a
+  closed shape on an object, as
+  [M15's *Bounded inputs*](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/README.md)
+  states it; a minimum alone bounds nothing), and its
   declared failure statuses cover what its handler and the error boundary
   can produce; an operation only the repository's own clients need carries
   the internal mark;
@@ -572,8 +576,10 @@ every finding, anchored or not. What happens next depends on context:
    remains in the pane's recent scrollback, and further pane output pushes it
    out. To recover it reliably, read the pane's scrollback with an explicit
    line bound large enough to cover the summary, while the pane is idle
-   (Herdr, for one: `herdr agent read <target> --source recent-unwrapped --lines <N>`;
-   its default `herdr pane read <pane> --source recent` window is short).
+   (for example, in Herdr:
+   `herdr agent read <target> --source recent-unwrapped --lines <N>`, since
+   its default `herdr pane read <pane> --source recent` window is short; in
+   tmux: `tmux capture-pane -p -S -<N>`).
 
 Never post these findings to GitHub by hand: this skill deliberately carries
 no recipe for posting a review through the API. If a finding from this run

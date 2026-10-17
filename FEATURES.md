@@ -52,8 +52,8 @@ merges. Outside a drive, `fix-ci` fixes a failed run from its log.
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M9](modules/M9-tasks-memory/)
 - **Not built yet:** a converged drive arming the merge it certified
-  (item 9); batching small items into one pull request (item 13); the
-  drive's CI-repair round running `fix-ci` (Later)
+  (roadmap item 9); batching small items into one pull request (roadmap
+  item 13); the drive's CI-repair round running `fix-ci` (Later)
 
 ## Review in tiers, with an arbiter for contested findings
 
@@ -125,7 +125,7 @@ against the repository's decisions.
   [`review`](plugin/skills/review/SKILL.md)
 - **Practice:** [M6](modules/M6-feature-delivery-pipeline/)
 - **Not built yet:** the greenfield kickoff as skills and an adversarial
-  reviewer (item 3); epic planning on the tracker (Later)
+  reviewer (roadmap item 3); epic planning on the tracker (Later)
 
 ## Gates that ship with their tests, each on a named rung
 
@@ -142,7 +142,7 @@ changes a merge decision, and the testing strategy sets tiers with budgets.
   [M2](modules/M2-generated-artifact-freshness/),
   [M13](modules/M13-pipeline-economy/),
   [M14](modules/M14-testing-strategy/)
-- **Not built yet:** the rest of M14 (item 15)
+- **Not built yet:** the rest of M14 (roadmap item 15)
 
 ## Change notes, and a changelog nobody fights over
 
@@ -159,9 +159,9 @@ Jig's own releases are made this way.
 
 - **Skills:** [`changelog`](plugin/skills/changelog/README.md)
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **Not built yet:** the rest of the `changelog` skill (item 4): drafting each
-  pull request's note, a check of the whole file against its format's own
-  rules, and the way a release reaches the integration branch
+- **Not built yet:** the rest of the `changelog` skill (roadmap item 4):
+  drafting each pull request's note, a check of the whole file against its
+  format's own rules, and the way a release reaches the integration branch
 
 ## Workspaces for many agents on one machine
 
@@ -172,11 +172,18 @@ reflection before a worktree is removed. The [launcher](GLOSSARY.md) wires
 an issue tracker's "open in coding agent" button to a workspace: it assigns
 the issue, writes the whole issue to a file the agent reads, picks the
 repository from the issue's label and opens the workspace through a
-[provider](GLOSSARY.md).
+[provider](GLOSSARY.md). Herdr is the [workspace runtime](GLOSSARY.md) the
+tooling targets first, on macOS, Linux and remote hosts. On a machine where
+the plugin is installed, it needs no setup per workspace in Herdr, Conductor
+or any tool that creates worktrees and starts sessions with your agent
+configuration; a remote host, a container or an isolated configuration
+directory needs its own install
+([where it works](plugin/README.md#where-it-works)).
 
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **Not built yet:** a second launcher provider, and a runnable form of the
-  workspace lifecycle (Later)
+- **Not built yet:** the launcher's Herdr provider and the skills checked
+  inside Herdr (roadmap item 19), and a runnable form of the workspace
+  lifecycle (Later)
 
 ## One configuration file, read in layers
 
@@ -193,8 +200,8 @@ organization plugs in its own commands, skills, reviewers and stores.
 
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M9](modules/M9-tasks-memory/)
-- **Not built yet:** Jira and plan-file tracker adapters (item 12); the
-  values the skills still assume (item 10)
+- **Not built yet:** Jira and plan-file tracker adapters (roadmap item 12); the
+  values the skills still assume (roadmap item 10)
 
 ## Documents that say what is true now
 

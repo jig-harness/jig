@@ -30,12 +30,15 @@ repository as the working directory.
 ## Worktree managers / agent runners — where the hooks wire
 
 The create hook allocates and prints the port slot; the remove hook nudges
-reflection. Only the wiring point differs per tool.
+reflection and parks the worktree's unsent reflection findings. Both act on
+the worktree they run in, so each runs inside its worktree. Only the wiring
+point differs per tool.
 
 | Manager | Create-hook point | Remove-hook point | Notes |
 |---------|-------------------|-------------------|-------|
-| plain `git worktree` | a wrapper script/alias around `git worktree add` | a wrapper around `git worktree remove` | git itself has no add/remove hook event; the wrapper is the seam |
-| worktree-based agent runner (e.g. a per-workspace runner such as Conductor) | the runner's post-create / workspace-setup hook | the runner's pre-remove / teardown hook | the runner already brackets a session — the natural home for both |
+| plain `git worktree` | a wrapper script/alias around `git worktree add` | a wrapper around `git worktree remove` that changes into the worktree being removed, runs the remove hook there, and removes the worktree only when it succeeds | git itself has no add/remove hook event; the wrapper is the seam |
+| Herdr | a plugin event hook on `worktree.created`, which changes into the created worktree's path (from the event's `HERDR_PLUGIN_EVENT_JSON` / `HERDR_PLUGIN_CONTEXT_JSON`) before it runs the create hook | a wrapper around `herdr worktree remove` that resolves the worktree's path, runs the remove hook inside it on the machine that holds it, and does not remove the worktree when parking its reflection findings fails | Herdr runs a plugin's commands in the plugin's own directory, so a create hook that reads its working directory would give every worktree the same identity and port slot; `worktree.removed` fires after the checkout is gone, so it can only notify, never park |
+| another [workspace runtime](../../GLOSSARY.md) (such as Conductor) | the runtime's post-create / workspace-setup hook | the runtime's pre-remove / teardown hook | the runtime already brackets a session — the natural home for both |
 | `direnv` / per-directory env | `.envrc` calls `allocate-port.ts` on entry and exports `PORT` | none (no teardown event) | derived ports mean no cleanup is needed |
 | tmux / shell session per worktree | shell rc sources a per-worktree env file | a shell `EXIT` trap prints the reflection nudge | lightweight; good when there is no formal manager |
 

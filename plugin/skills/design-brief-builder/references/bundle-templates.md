@@ -4,7 +4,7 @@ Copy-paste scaffolds for the `uploads/` bundle. Replace every `<…>` and `[…]
 placeholder. Keep everything Markdown: the upload interface rejects
 `.yaml`/`.yml`/`.json`/spreadsheets.
 
-Target directory: `/tmp/claude-design-trial-<flow-slug>/uploads/`.
+Target directory: `/tmp/design-brief-<flow-slug>/uploads/`.
 
 `<kit>`, `<design-language>` and `<prototypes>` below are the repository's
 design kit, design-language document and prototypes directory, as

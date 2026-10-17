@@ -214,7 +214,7 @@ function actorFromMatch(m: RegExpMatchArray): Actor {
     return {
       kind: "tool",
       name: "launcher",
-      note: "the tracker's “open in coding agent” button",
+      note: "Linear's “open in coding agent” button, its one tracker so far",
     };
   const name = m[1] ?? m[3] ?? "";
   const agent = m[2] === "agents" || name === "review-arbiter";

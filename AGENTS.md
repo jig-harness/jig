@@ -27,9 +27,9 @@ as configuration; product-bound code never comes here.
 
 Read in this order when starting a session here:
 
-1. [ROADMAP.md](ROADMAP.md) — what is open and in which order (the
-   continuation anchor), and [design/](design/README.md) for the items that
-   have a design. Finished work is in [CHANGELOG.md](CHANGELOG.md).
+1. [design/plan.md](design/plan.md) — what is open and in which order, in
+   the detail the work needs (the continuation anchor), and
+   [design/](design/README.md) for the items that have a design. Finished work is in [CHANGELOG.md](CHANGELOG.md).
 2. [CONTRIBUTING.md](CONTRIBUTING.md) before your first change: pull
    requests, the gates, hooks, derived files, keeping the auditor current.
 3. The instructions closest to what you change: [plugin/AGENTS.md](plugin/AGENTS.md)
@@ -51,6 +51,14 @@ Read in this order when starting a session here:
   over asking for configuration. Runnable tooling may be bound to a named
   tool (Linear, GitHub, Herdr) behind an interface a second implementation
   can be added to without touching callers.
+- **Write for the people who use Jig.** The documents the site renders
+  ([design/website.md § Page types](design/website.md#page-types)) are read
+  by teams evaluating or adopting Jig. They say what Jig supports, targets
+  and plans, and never present a tool its maintainers happen to work with
+  as Jig's default or as what it is built for: name a tool where Jig's
+  tooling is bound to it, as one implementation beside what else is
+  supported or planned. How Jig itself is developed belongs in
+  CONTRIBUTING.md, the `AGENTS.md` files, `design/` and code comments.
 - **Values vs mechanisms.** Material taken from a working repository is split:
   the repo-agnostic mechanism goes into `reference/` (or a skill), that
   repository's values become placeholders, configuration or neutral
@@ -70,9 +78,11 @@ Read in this order when starting a session here:
   number that tallies an adjacent list is dropped, or registered as a fact a
   check derives
   ([M2](modules/M2-generated-artifact-freshness/README.md#which-numbers-in-prose-may-stay)).
-- **Status pages say what is open, not what happened.** [ROADMAP.md](ROADMAP.md)
-  lists open work only; a finished item leaves it in the same pull request
-  that finishes it, and what changed goes into [CHANGELOG.md](CHANGELOG.md).
+- **Status pages say what is open, not what happened.** The plan and the
+  public [ROADMAP.md](ROADMAP.md), which says the plan's items for the site's
+  readers except those only Jig's maintainers need, list open work only; a
+  finished item leaves each page that lists it in the same pull request that
+  finishes it, and what changed goes into [CHANGELOG.md](CHANGELOG.md).
 - **Don't bring in the unproven; move, never copy.** Dark-by-default dials,
   unvalidated eval fixtures and aspirational hooks stay out until a working
   repository has validated them (note them as "future" in the module README).

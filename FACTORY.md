@@ -78,9 +78,11 @@ have little to work from.
     plan file kept in the repository are ROADMAP.md item 12; the review
     skill's deferral step still calls Linear directly, item 10), and the
     [workspace launcher](tools/launcher/README.md) opens workspaces through
-    providers in the same way: Conductor is its first provider, and a Herdr
-    provider, which starts the session on a remote host, is planned
-    (ROADMAP.md, Later);
+    providers in the same way: Herdr, the [workspace runtime](GLOSSARY.md)
+    Jig's tooling targets first
+    ([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)),
+    gets the next provider (ROADMAP.md item 19), beside the Conductor
+    provider already built;
   - the practices themselves name no tool, and each module maps them onto the
     common CI providers, hook managers, trackers and agent runtimes; the
     skills run in Claude Code and Codex, and some, such as `fix-ci` and
@@ -209,7 +211,7 @@ and Jig keeps them there:
 - the intent: what to build, and each design stage's acceptance;
 - the dilemmas `decide` escalates and the review findings a drive marks for a
   human decision;
-- the merge (until a repository delegates it, item 9);
+- the merge (until a repository delegates it, roadmap item 9);
 - promotion to production ([M10](modules/M10-environments-deploy/));
 - changes to the scaffolding agents propose from their own sessions (M8).
 
@@ -221,7 +223,7 @@ so any platform can supply it:
 
 - **Parallel workspaces**: many agents on one machine without colliding
   ([M12](modules/M12-parallel-agent-ergonomics/)). The plugin is installed once
-  per machine and needs no setup per workspace in Conductor, Herdr or any
+  per machine and needs no setup per workspace in Herdr, Conductor or any
   other tool that creates worktrees and starts sessions with the user's own
   agent configuration. A runner with its own configuration directory, a
   container, or a tool without plugin support needs the setup in

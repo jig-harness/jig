@@ -598,12 +598,22 @@ Prose about the thing, long enough to count.
       "999",
     ]);
     expect(notBuilt("more ( Later )")?.roadmapGroups).toEqual(["Later"]);
+    expect(
+      notBuilt("this (roadmap item 9); that (roadmap items 14 and 15)")
+        ?.notBuiltEntries,
+    ).toEqual([
+      { text: "this", items: ["9"], groups: [] },
+      { text: "that", items: ["14", "15"], groups: [] },
+    ]);
     for (const bad of [
       "missing work (item #999)",
       "missing work (Item 999)",
       "missing work (items 1 & 2)",
       "missing work (item 9; item 10)",
       "missing work (see item 9)",
+      "missing work (Roadmap item 9)",
+      "missing work (roadmap Later)",
+      "missing work (roadmap  item 9)",
       "missing work (later)",
       "missing work (Not Yet)",
       "missing work ()",

@@ -169,7 +169,7 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `review.bots` | list of logins | **Required by `resolve-review-comments`**. `drive-pr`: none | resolve-review-comments, drive-pr, review | Reviewer accounts (`coderabbitai[bot]`) whose threads the review skill works. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins |
+| `review.bots` | list of logins | **Required by `resolve-review-comments`**. `drive-pr`: none | resolve-review-comments, drive-pr, review | Reviewer accounts (for example `example-review[bot]`) whose threads the review skill works. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins |
 | `review.job_pattern` | regular expression, or `null` | Reviewer checks recognised by name | resolve-review-comments | Which check runs the review skill waits on. Setting it requires `review.required_checks`. `--job-pattern` overrides it |
 | `review.required_checks` | list of distinct check names | none | resolve-review-comments | Reviewer checks that must each complete before a round is judged. Required when `review.job_pattern` is set. Unrelated to `ci.required_checks` |
 | `review.deferral_team` | team key | **Required by `resolve-review-comments`** | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
@@ -571,9 +571,9 @@ differs from the defaults.
 
 ```yaml
 gates:
-  command: bun run gates                 # required by resolve-review-comments
+  command: make check                    # required by resolve-review-comments
 review:
-  bots: ["coderabbitai[bot]", "example-review[bot]"]   # required by resolve-review-comments
+  bots: ["example-review[bot]"]          # required by resolve-review-comments
   deferral_team: ENG                     # required by resolve-review-comments
   repo_label: web
   repo_slug: example/web

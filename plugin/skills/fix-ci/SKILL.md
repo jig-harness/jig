@@ -14,6 +14,8 @@ the service that runs the repository's checks on every push; this skill turns
 its red run into a green one without guessing. The checks it repairs are the
 repository's quality gates, the subject of Jig module
 [M1 (gates & enforcement ladder)](https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md).
+GitHub Actions is the one CI service it fetches logs from so far; with another
+CI service, save the failed run's log to a file and pass it with `--log`.
 
 Jig maintains this procedure and ships it in the `jig` plugin.
 Each repository supplies its own values in `.config/jig.yaml`
@@ -94,6 +96,14 @@ bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" --log ci.log   # a saved log, 
 | 5 | `test_failure` | `FAIL <file>.test.ts` (or `.spec.ts`), assertion paths |
 | 6 | `gate_failure` | Catch-all for other failed checks that print an error annotation (`::error`, `##[error]`, `❌`, `✗`, `error:`, `failed:`): grep gates, ratchets, self-tests |
 | 7 | `process_exit` | The runner's generic `##[error]Process completed with exit code <n>.`: a step exited nonzero, for any reason |
+
+The language-specific categories (`build_error`, `typescript`, `biome_lint`,
+`test_failure`) recognise a TypeScript stack: Node-style module resolution, the
+TypeScript compiler, Biome, and test files named `*.test.ts` or `*.spec.ts`;
+the two drift categories match their messages' wording in any stack. Errors
+from any other language or tool arrive as `gate_failure`
+when their line opens with an error annotation, and otherwise only as the
+step's `process_exit`; read the log for those.
 
 Output:
 

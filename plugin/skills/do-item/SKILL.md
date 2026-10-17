@@ -58,7 +58,7 @@ run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use (`linear` is the only adapter; credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client) | `linear` |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use (`linear` is the adapter built so far; Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/docomply/jig/blob/main/ROADMAP.md#12-more-tracker-adapters); credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client) | `linear` |
 | `issue_tracker.team` | The tracker team or project the repository files into, as the key its issue identifiers carry (`ENG` for `ENG-123`) | Required: the tracker scripts stop with a message naming this field |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
@@ -792,8 +792,9 @@ routing below remain **exact**.
       bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
       ```
 
-      The pass command (`claude -p "..."`) is Claude Code-specific; no other
-      harness has a documented equivalent. Do not guess one.
+      The pass command (`claude -p "..."`) is Claude Code's, and today it is
+      the one documented pass command. Do not guess one for another agent
+      tool.
 
       Include the drive's **observability handles** in the same comment. Take
       the candidate log path from `drive.ts: driver log → ...` in the arm
@@ -820,7 +821,8 @@ routing below remain **exact**.
       background execution; do not block the session on it) when **both**
       hold: no uncleared `hitl` checkpoint remains (the issue carries `hitl`
       **and** this run did not receive explicit clearance), **and** the harness
-      is Claude Code, the only one with a documented pass command. Spawning
+      is Claude Code, whose `claude -p` is today the one documented pass
+      command. Spawning
       is then mandatory: an emitted but unspawned command reintroduces the
       human-memory delay this step removes, and a `hitl` issue cleared this
       run is no reason to withhold it. Pass the Bash call's `timeout` of
@@ -835,7 +837,8 @@ routing below remain **exact**.
       `pull_requests.mark_ready` declares (after the first completed round
       by default), so
       one human decision is left: the merge. For an uncleared `hitl`
-      checkpoint, or a harness without a documented pass command, emit the
+      checkpoint, or another agent tool (Codex, for one), which has no
+      documented pass command today, emit the
       command only: starting review rounds would pre-empt the human
       judgment, and a guessed command is worse than one left for a human to
       run.
@@ -1008,9 +1011,10 @@ snapshot mapping are **exact**.
 
 4. **exact** — **Fetch the selected sub-issue in full, then rewrite the
    intent-chain snapshot** per Step 3.5's split. `nextSubIssue` (from
-   `sub_issue_analysis.next_issue`, or chosen in item 2) may carry only
-   key, title and state — a children listing does not include descriptions —
-   so building the snapshot from it would lose the sub-issue's scope. Fetch
+   `sub_issue_analysis.next_issue`, or chosen in the second step above) may
+   carry only key, title and state — a children listing does not include
+   descriptions — so building the snapshot from it would lose the
+   sub-issue's scope. Fetch
    it with get-issue first. Then: **if this issue carries `epic`**, pass the
    fetched sub-issue as `issue` and this issue as `epic` (the arm is
    bucketed by `issue`, and the epic's intent is read from `epic`);

@@ -100,12 +100,15 @@ repository keeps one.
 Ask the user, or infer from context, which memory file:
 
 ```text
-Source: ~/.claude/projects/<project-slug>/memory/<file>.md
+Source: ~/.claude/projects/<project-slug>/memory/<file>.md   (Claude Code)
 ```
 
-Read the file. Check its `type:` frontmatter: only `project` memories are
-promotable by default. `user` and `feedback` memories need the user's explicit
-override.
+Read the file. In Claude Code's memory, check its `type:` frontmatter: only
+`project` memories are promotable by default. `user` and `feedback` memories
+need the user's explicit override. A memory from another agent tool, which
+carries no such type, is judged by its content the same way: knowledge about
+the repository is promotable by default; the user's preferences or feedback
+on how the agent works need the user's explicit override.
 
 ### 1b. Check the memory still holds (blocking)
 

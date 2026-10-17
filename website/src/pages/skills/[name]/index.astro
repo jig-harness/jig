@@ -1,6 +1,7 @@
 ---
 import ModChip from "../../../components/ModChip.astro";
 import SideIndex from "../../../components/SideIndex.astro";
+import SkillCommand from "../../../components/SkillCommand.astro";
 import StatusMark from "../../../components/StatusMark.astro";
 import TermInfo from "../../../components/TermInfo.astro";
 import Base from "../../../layouts/Base.astro";
@@ -33,8 +34,7 @@ const purposeHtml = skill ? await mdInline(skill.purpose, "plugin/README.md") : 
 const relationsHtml = skill?.relations ? await mdInline(skill.relations, "plugin/README.md") : "";
 const mods = modulesRunBy(name);
 const stations = stationsRunBy(name);
-const command = skill?.command ?? (name === "review-arbiter" ? "jig:review-arbiter" : `/jig:${name}`);
-const prefix = command.slice(0, command.indexOf(":") + 1);
+const agent = skill?.agent ?? name === "review-arbiter";
 const hasContract = entry.id.endsWith("/README");
 ---
 
@@ -64,7 +64,7 @@ const hasContract = entry.id.endsWith("/README");
         )
       }
       <h1>{name}</h1>
-      <div class="cmd"><code><span class="accent">{prefix}</span>{name}</code><button type="button" class="copy" data-copy data-copy-text={command}>Copy</button></div>
+      <SkillCommand name={name} command={skill?.command} agent={agent} />
       {purposeHtml && <p class="purpose" set:html={purposeHtml} />}
       {
         relationsHtml && (

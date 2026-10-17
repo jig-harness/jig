@@ -173,6 +173,29 @@ drive-pr suite and the website's tests, which CI runs in their own jobs; run
 the test files for what you changed, and let CI run the rest. The website's
 tests need `bun install` inside `website/` first.
 
+### Where Jig's gates fall short
+
+Measured against [M1](modules/M1-gates-enforcement-ladder/README.md)'s rules
+for a gate, Jig's repository checks (`CHECKS` in [`scripts/gates.ts`](scripts/gates.ts))
+and its ratchet (in CI; locally see the table below) exit 2 when they could
+not check, state their scope on green
+runs; the change-area and review-risk checks fail on a repeated key in the
+YAML they read. The Markdown, glossary,
+origin-reference and workflow-convention checks also write findings in the
+shared format with GitHub annotations, and their exception lists
+(`scripts/glossary-allowlist.txt`, the allow patterns in
+`scripts/tracker-key-patterns.txt`, `.config/workflow-conventions-exceptions.txt`)
+need a reason per group and fail on an entry that suppresses nothing. Where a gate does not yet
+meet a rule:
+
+| Gate | Rule not yet met | Why |
+|------|------------------|-----|
+| `check-licences`, `check-changelog`, `check-audit-fit`, `change-areas --check`, `review-risk --check`, `check-workflow-safety` | Findings name no rule and are not annotated in CI | Their messages already name the file and the fix in prose; moving them to the shared format is open work |
+| `check-instruction-paths` | Findings name no rule or fix | It reports through M2's referenced-paths check, whose output format belongs to M2 |
+| `check-schedules-declared` | Findings name no rule and no file or line, and are not annotated in CI | It reports through M11's heartbeat check (`UNDECLARED <id> …`), whose output format belongs to M11 |
+| The ratchet (`bun run quality`) | A missing merge base passes locally, reported as skipped | So the pre-push hook works in a shallow clone; CI, the authority, exits 2 |
+| Unused code (`bun run deadcode`, fallow) | Entry points are declared by folder pattern in `.fallowrc.jsonc` (the scripts, tools, skill scripts and reference gates folders) rather than file by file | Those folders hold the scripts a hook, CI, a skill or a reader runs by path; listing each from its invocation is open work |
+
 ### The ratchet
 
 `bun run quality` (M1's [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md))
@@ -261,6 +284,66 @@ licence: sign off each commit (`git commit -s`), which adds a
 [Developer Certificate of Origin](https://developercertificate.org/), that
 you wrote the change or otherwise have the right to submit it.
 
+## Adding or changing a plugin skill
+
+A skill moves into `plugin/skills/` under the rules in [AGENTS.md](AGENTS.md)
+(move, never copy; the consumer's own values stay in the consumer). For it to
+work as part of the plugin:
+
+- **Location:** `plugin/skills/<name>/SKILL.md`, with `name: <name>` in its
+  frontmatter. Supporting files sit beside it (`scripts/`, `references/`).
+  Code more than one skill uses lives in `plugin/shared/` and is imported by
+  relative path ([plugin/AGENTS.md](plugin/AGENTS.md)).
+- **Paths:** reach your own files as `${CLAUDE_SKILL_DIR}/…` in `SKILL.md`, and
+  explain the placeholder once for other tools, as
+  [resolve-review-comments](plugin/skills/resolve-review-comments/SKILL.md#paths-and-working-directory)
+  does. Reference files are not substituted; write `<skill-dir>/…` there.
+  Never write a path into the consumer repository such as
+  `.claude/skills/<name>/…` for your own files.
+- **Working directory:** scripts run with the consumer repository as the
+  working directory and must not depend on being run from the skill directory.
+- **Consumer values:** read them at run time through
+  `plugin/shared/consumer.ts` (`readConfig`, or
+  `readOverlay` where the skill requires an adopted repository), which merges
+  every [configuration layer](plugin/CONFIGURATION.md#configuration-layers); never
+  parse `.config/jig.yaml` directly, or the user file and the environment are
+  silently skipped. A procedure whose agent reads a value itself tells it to
+  run `plugin/skills/resolve-review-comments/scripts/jig-config.ts <field>`,
+  reached from the skill by its sibling path, not to open the file. Fail with a clear message when a required value is
+  missing, and accept older files. Never bake a repository's values into
+  `SKILL.md`.
+- **Dependencies:** the plugin cache has no `node_modules`. Use Bun's
+  built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
+  with its licence and a test that keeps it identical to the pinned package
+  (as `plugin/shared/vendor/js-yaml.mjs` is).
+- **Description:** keep the frontmatter `description` (and an agent's) at 512
+  characters or fewer; 1,024 is the hard limit. Every repository that installs
+  the plugin pays for it in every session, so
+  [scripts/check-context-budget.ts](scripts/check-context-budget.ts) fails
+  `bun run gates` and CI past 512, and checks the plugin's whole skill listing
+  against its budget ([M0](modules/M0-instruction-architecture/reference/context-budget/README.md)).
+- **Harness frontmatter:** fields only one tool reads (Claude Code's
+  `allowed-tools`, `argument-hint`) are ignored by the other.
+- **Tests:** keep the skill's tests in `plugin/skills/<name>/__tests__/`; extend
+  `tools/plugin/plugin.test.ts` when the skill reads consumer files. A suite
+  that needs a POSIX system is listed in `POSIX_ONLY_SUITES` in
+  [scripts/gates.ts](scripts/gates.ts), with the reason, so Windows CI
+  leaves it out; a suite too long for the gate job goes in `SEPARATE_SUITES`
+  and gets its own sharded job in
+  [the gates workflow](.github/workflows/gates.yml) and
+  [the nightly workflow](.github/workflows/nightly.yml).
+- **Agents:** put them in `plugin/agents/<name>.md` with `name: <name>` in
+  the frontmatter. Claude Code loads that folder without a manifest entry;
+  do not add an `agents` key to the manifest, which would replace the
+  folder scan. Leave the model unpinned so the agent runs on the session's
+  model.
+
+[tools/plugin/plugin.test.ts](tools/plugin/plugin.test.ts) checks both
+manifests and marketplaces, copies the whole `plugin/` directory outside this
+repository the way a plugin cache holds it, checks that every import resolves
+inside that copy, and runs the scripts from it against a scratch consumer
+repository.
+
 ## Releasing the plugin
 
 This repository is the `jig` plugin: both agent tools install `plugin/` from
@@ -268,3 +351,36 @@ This repository is the `jig` plugin: both agent tools install `plugin/` from
 rules for changing anything under `plugin/` (running from a copy outside this
 repository, the version bump, the release tag) are in
 [plugin/AGENTS.md](plugin/AGENTS.md).
+
+A release goes like this:
+
+1. In the pull request that changes `plugin/`, add a
+   [change note](changes/README.md) under `changes/`: what changed, and
+   for a breaking change what a consumer must change first, with
+   `release: patch`, `minor` or `major` as
+   [semantic versioning](https://semver.org) names it. Before 1.0.0, a change
+   that needs consumers to edit their configuration or instructions asks for
+   `minor`; from 1.0.0, `major`. Leave the manifests' `version` and
+   CHANGELOG.md alone (`bun run gates` fails otherwise, and fails a change to
+   `plugin/` without a note that asks for a release). A `since:` the change
+   adds names `next`.
+2. Merge it with green gates.
+3. The release workflow (`.github/workflows/release.yml`) then runs
+   `scripts/release.ts` on main: it moves `version` in both manifests to the
+   next version, writes the note as that version's section of
+   [CHANGELOG.md](CHANGELOG.md), replaces `since: next`, deletes the note,
+   and pushes the commit with its tag `v<version>`.
+
+The workflow pushes as the `jig-release` GitHub App, the one actor `main`'s
+ruleset lets past its pull-request and check rules; its client ID
+(`RELEASE_APP_CLIENT_ID`) and private key (`RELEASE_APP_PRIVATE_KEY`) live in
+the `release` environment, which only `main` may use. When the workflow
+cannot push (the App was uninstalled, its key revoked, or the ruleset no
+longer names it), the notes wait on `main` and nothing is lost: restore it,
+then run the workflow by hand (`gh workflow run release.yml`, or Run
+workflow on its Actions page). It writes every waiting note as one release. A release cannot go through a pull request instead: the gates refuse a
+branch that moves the version or writes a release section, which only the
+release step may.
+
+Machines receive the release on their next update. Repositories need no change
+unless the changelog says so.

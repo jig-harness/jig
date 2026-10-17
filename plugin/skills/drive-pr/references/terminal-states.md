@@ -1493,7 +1493,8 @@ that asymmetry is worth spending on purpose:
 - **after the first completed round** (by default; `pull_requests.mark_ready`
   can name a later round, convergence, or never) it marks the PR Ready (`mark-ready.ts`),
   which fires `ready_for_review` and summons the reviewers that skip drafts;
-- so the paid external pass — one per push — lands on a head whose obvious
+- so the pass of each reviewer that skips drafts — one per push, often
+  billed — lands on a head whose obvious
   findings are already gone, instead of on the branch's first draft.
 
 Marking at the *start* would spend that pass on the untouched branch; marking at
@@ -1501,8 +1502,8 @@ Marking at the *start* would spend that pass on the untouched branch; marking at
 end of round 1 is the only point that is neither — with one deliberate
 exception: a PR that is already `CONVERGED` at the very first gate has no round
 to end. There, `drive.ts` marks it Ready and re-gates once anyway (SKILL.md
-§ Terminal states), on the judgment that a paid external pass on a genuinely
-converged head is worth more than never summoning it at all — accepting that
+§ Terminal states), on the judgment that one pass by those reviewers on a
+genuinely converged head is worth more than never summoning it at all — accepting that
 this specific path exits without driving whatever that pass then finds, unlike
 every other round.
 
@@ -1538,8 +1539,8 @@ lease expiring rather than waiting on that driver. And a **non-zero
 `gh pr ready`** is not proof the transition did not apply: a request that landed
 and lost its response exits non-zero with the PR already Ready, so `mark-ready.ts`
 re-reads before deciding, and records rather than retries when the PR is Ready.
-Firing the event twice is what re-triggers the paid review this ordering exists
-to spend deliberately.
+Firing the event twice is what re-triggers the review (often a billed one)
+this ordering exists to spend deliberately.
 
 One wait a draft can enter that a Ready PR cannot: if the posting reviewer does
 not review drafts, it will not publish and the drive polls `AWAITING_REVIEWER`

@@ -42,7 +42,7 @@ runs, what it hands over to.
 | [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/jig:explain` | Comes before [decide](skills/decide/SKILL.md) and shares its sheet kit; cites the records [adr](skills/adr/SKILL.md) keeps |
 | [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/jig:decide` | Called by [do-item](skills/do-item/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/README.md) when a call is architectural; routes an outcome that clears the bar to [adr](skills/adr/SKILL.md) |
 | [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/jig:adr` | Records what [decide](skills/decide/SKILL.md) rules; its rules are what [review](skills/review/SKILL.md) checks against |
-| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool, grounded in the repository's real schema and code | `/jig:design-brief-builder` | Stands alone: the design-prototype station, ahead of the delivery skills |
+| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool (Claude Design, so far), grounded in the repository's real schema and code | `/jig:design-brief-builder` | Stands alone: the design-prototype station, ahead of the delivery skills |
 
 **Learn from the work.** What a session learned about the scaffolding goes into a shared store; a person approves what changes; lasting lessons end up in the repository's own documents.
 
@@ -76,8 +76,8 @@ Contents: [requirements](#requirements) ·
 [Codex notes](#codex-notes) ·
 [update or remove](#update-pin-or-remove) ·
 [where it works](#where-it-works) · [troubleshooting](#troubleshooting) ·
-[how it works](#how-it-works) · [add a skill](#add-or-change-a-skill) ·
-[release](#release-a-new-version) ·
+[how it works](#how-it-works) ·
+[release](#releases) ·
 [moving from the `groundwork` plugin](#moving-from-the-groundwork-plugin) ·
 [moving off the per-worktree installer](#moving-off-the-per-worktree-installer)
 
@@ -188,9 +188,9 @@ committed: no copy of the skill, no install script, no generated files.
 
    ```yaml
    gates:
-     command: bun run gates          # the full local checks before a push
+     command: make check             # the full local checks before a push
    review:
-     bots: ["coderabbitai[bot]"]     # reviewer identities to expect
+     bots: ["example-review[bot]"]   # your AI reviewer's login
      deferral_team: ENG              # issue-tracker team for follow-ups
    ```
 
@@ -471,7 +471,7 @@ Paths inside the cache change with each release, so never store them.
   `claude plugin marketplace update jig && claude plugin update jig@jig --scope user`
   and `codex plugin marketplace upgrade jig && codex plugin add jig@jig`.
   A tool picks up a new release only when the plugin's `version` changes (see
-  [release](#release-a-new-version)). Claude Code can also update in the
+  [release](#releases)). Claude Code can also update in the
   background: `/plugin` → **Marketplaces** → `jig` →
   **Enable auto-update**.
 - **Pin** a machine to a release tag: add the marketplace at that tag,
@@ -484,7 +484,7 @@ Paths inside the cache change with each release, so never store them.
   machine only receives a change when `version` changes. Every merge that
   changes `plugin/` is therefore released as a new version, written by the
   release step on `main` from the pull request's change note (see
-  [release](#release-a-new-version)); otherwise two machines showing the same
+  [release](#releases)); otherwise two machines showing the same
   version can run different code.
 - **Remove**: `claude plugin uninstall jig@jig` and
   `codex plugin remove jig@jig` (add
@@ -500,7 +500,7 @@ runs as you:
 | Where | What to do |
 |-------|------------|
 | A terminal session in any clone or worktree | Nothing beyond the one-time install |
-| Conductor, herdr, or any tool that creates worktrees and starts sessions | Nothing: new workspaces are ordinary directories on a machine that has the plugin |
+| Herdr, Conductor, or any tool that creates worktrees and starts sessions | Nothing: new workspaces are ordinary directories on a machine that has the plugin |
 | `claude -p`, `codex exec`, scripts and loops | Nothing; plugins load in headless runs too |
 | A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace …`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` and `plugin/shared/` to `/etc/codex/shared/`: the scripts import the shared code from the folder beside the skills folder |
 | CI jobs that only run tests and gates | Nothing: they do not need the skills |
@@ -568,99 +568,13 @@ every tool creates directories differently; a skill installed once per machine
 is already visible everywhere. The trade-off is that versions are chosen per
 machine, so skills stay compatible with older configuration files wherever
 they can; a change that needs a configuration edit is a breaking release (see
-[release](#release-a-new-version)), and the skill's first step names the edit.
+[release](#releases)), and the skill's first step names the edit.
 
-[tools/plugin/plugin.test.ts](../tools/plugin/plugin.test.ts) checks both
-manifests and marketplaces, copies the whole `plugin/` directory outside this
-repository the way a plugin cache holds it, checks that every import resolves
-inside that copy, and runs the scripts from it against a scratch consumer
-repository.
+## Releases
 
-## Add or change a skill
-
-A skill moves here under the rules in [AGENTS.md](../AGENTS.md) (move, never
-copy; the consumer's own values stay in the consumer). For it to work as part
-of the plugin:
-
-- **Location:** `plugin/skills/<name>/SKILL.md`, with `name: <name>` in its
-  frontmatter. Supporting files sit beside it (`scripts/`, `references/`).
-  Code more than one skill uses lives in `plugin/shared/` and is imported by
-  relative path ([AGENTS.md](AGENTS.md)).
-- **Paths:** reach your own files as `${CLAUDE_SKILL_DIR}/…` in `SKILL.md`, and
-  explain the placeholder once for other tools, as
-  [resolve-review-comments](skills/resolve-review-comments/SKILL.md#paths-and-working-directory)
-  does. Reference files are not substituted; write `<skill-dir>/…` there.
-  Never write a path into the consumer repository such as
-  `.claude/skills/<name>/…` for your own files.
-- **Working directory:** scripts run with the consumer repository as the
-  working directory and must not depend on being run from the skill directory.
-- **Consumer values:** read them at run time through
-  `shared/consumer.ts` (`readConfig`, or
-  `readOverlay` where the skill requires an adopted repository), which merges
-  every [configuration layer](CONFIGURATION.md#configuration-layers); never
-  parse `.config/jig.yaml` directly, or the user file and the environment are
-  silently skipped. A procedure whose agent reads a value itself tells it to
-  run `../resolve-review-comments/scripts/jig-config.ts <field>` by sibling
-  path, not to open the file. Fail with a clear message when a required value is
-  missing, and accept older files. Never bake a repository's values into
-  `SKILL.md`.
-- **Dependencies:** the plugin cache has no `node_modules`. Use Bun's
-  built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
-  with its licence and a test that keeps it identical to the pinned package
-  (as `shared/vendor/js-yaml.mjs` is).
-- **Description:** keep the frontmatter `description` (and an agent's) at 512
-  characters or fewer; 1,024 is the hard limit. Every repository that installs
-  the plugin pays for it in every session, so
-  [scripts/check-context-budget.ts](../scripts/check-context-budget.ts) fails
-  `bun run gates` and CI past 512, and checks the plugin's whole skill listing
-  against its budget ([M0](../modules/M0-instruction-architecture/reference/context-budget/README.md)).
-- **Harness frontmatter:** fields only one tool reads (Claude Code's
-  `allowed-tools`, `argument-hint`) are ignored by the other.
-- **Tests:** keep the skill's tests in `plugin/skills/<name>/__tests__/`; extend
-  `tools/plugin/plugin.test.ts` when the skill reads consumer files. A suite
-  that needs a POSIX system is listed in `POSIX_ONLY_SUITES` in
-  [scripts/gates.ts](../scripts/gates.ts), with the reason, so Windows CI
-  leaves it out; a suite too long for the gate job goes in `SEPARATE_SUITES`
-  and gets its own sharded job in
-  [the gates workflow](../.github/workflows/gates.yml) and
-  [the nightly workflow](../.github/workflows/nightly.yml).
-- **Agents:** put them in `plugin/agents/<name>.md` with `name: <name>` in
-  the frontmatter. Claude Code loads that folder without a manifest entry;
-  do not add an `agents` key to the manifest, which would replace the
-  folder scan. Leave the model unpinned so the agent runs on the session's
-  model.
-
-## Release a new version
-
-1. In the pull request that changes `plugin/`, add a
-   [change note](../changes/README.md) under `changes/`: what changed, and
-   for a breaking change what a consumer must change first, with
-   `release: patch`, `minor` or `major` as
-   [semantic versioning](https://semver.org) names it. Before 1.0.0, a change
-   that needs consumers to edit their configuration or instructions asks for
-   `minor`; from 1.0.0, `major`. Leave the manifests' `version` and
-   CHANGELOG.md alone (`bun run gates` fails otherwise, and fails a change to
-   `plugin/` without a note that asks for a release). A `since:` the change
-   adds names `next`.
-2. Merge it with green gates.
-3. The release workflow (`.github/workflows/release.yml`) then runs
-   `scripts/release.ts` on main: it moves `version` in both manifests to the
-   next version, writes the note as that version's section of
-   [CHANGELOG.md](../CHANGELOG.md), replaces `since: next`, deletes the note,
-   and pushes the commit with its tag `v<version>`.
-
-The workflow pushes as the `jig-release` GitHub App, the one actor `main`'s
-ruleset lets past its pull-request and check rules; its client ID
-(`RELEASE_APP_CLIENT_ID`) and private key (`RELEASE_APP_PRIVATE_KEY`) live in
-the `release` environment, which only `main` may use. When the workflow
-cannot push (the App was uninstalled, its key revoked, or the ruleset no
-longer names it), the notes wait on `main` and nothing is lost: restore it,
-then run the workflow by hand (`gh workflow run release.yml`, or Run
-workflow on its Actions page). It writes every waiting note as one release. A release cannot go through a pull request instead: the gates refuse a
-branch that moves the version or writes a release section, which only the
-release step may.
-
-Machines receive the release on their next update. Repositories need no change
+Every merged change to `plugin/` is released as a new version, tagged
+`v<version>` and described in [CHANGELOG.md](../CHANGELOG.md). Machines
+receive the release on their next update. Repositories need no change
 unless the changelog says so.
 
 ## Moving from the `groundwork` plugin

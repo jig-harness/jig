@@ -1,405 +1,145 @@
 # Roadmap
 
-What Jig still has to build, in priority order. A session picking up
-Jig work starts here.
+What Jig plans to build, in priority order. Each item says what a team that
+uses Jig will get; how it is built, and the work only Jig's own maintainers
+need, is in [the plan](design/plan.md), under the same numbers.
 
-This page lists open work only. When an item is finished it leaves this page:
-what changed is recorded in [CHANGELOG.md](CHANGELOG.md), and how things work
-now is documented where they live (module READMEs, the
-[plugin](plugin/README.md), [CONFIGURATION.md](plugin/CONFIGURATION.md)).
-Background on how the module map came about is in
-[principles/](principles/README.md) and [modules/](modules/README.md).
+This page lists open work only. When an item is finished it leaves this page,
+and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## Now
 
-### 2. Skill assets live in the plugin
-
-The plugin installs only `plugin/`, so a skill cannot read anything under
-`modules/`. Templates and gates a skill uses move into the skill that uses
-them (moved, not copied), and the module links to them there: one source,
-nothing to keep in step, as the maturity criteria already do from the
-[audit skill](plugin/skills/audit/criteria/README.md). This unblocks items 3
-and 4, which need M6's templates and M4's gates. The module contract changes
-in the same pull request: [modules/AGENTS.md](modules/AGENTS.md) requires
-`templates/` and `reference/` in every module directory, so the contract
-changes with the move, and each module links to the assets it no longer
-holds. Moving the plugin to the repository root is not an option: the root
-`package.json` would make each tool install the development dependencies on
-every machine.
-
 ### 3. The kickoff family
 
-The greenfield kickoff becomes a living skill instead of a frozen seed, with
-the skills it calls, written by this repository's author and free of
-third-party lineage. Each moves from its source (the author's personal skill
-workspace, whose copies are deleted in the same rollout):
-
-- **`kickoff`**: the project bootstrap (requirements, architecture,
-  red team, synthesis, repository bootstrap, plan review, developer
-  documentation, scaffolding, agent hierarchy, implementation plans, tracker).
-  It replaces `seeds/project-kickoff/`, which is an older copy. M6's PRD and
-  architecture templates and the kickoff's own are merged into one of each.
-  The opinions M6 leaves out (personas, tiers, model routing) belong in the
-  skill, not the module.
-- **`red-team`**: adversarial review of a requirements or architecture
-  document by persona (critical chief technology officer, security auditor, performance engineer,
-  cost optimizer), in a fresh session; the runnable form of M6's per-stage
-  adversarial review.
-- **Plan review**, folded into `review`, which already accepts a plan
-  document: dependencies and critical path, completeness, simplification and
-  effort checks.
-- **`docs`**: the runnable form of M4: runs the repository's frontmatter,
-  index and scar checks, flags stale drafts, and plans missing documentation by
-  project type. The repository's M4 schema wins over the source skill's own
-  frontmatter rules.
-- **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
-  majors an update bot cannot do alone), opened through `do-item`'s
-  pull-request policy and driven by `drive-pr`; the runnable side of M1's
-  pin-and-update rule.
-- **`design-brief-builder`**: two copies have diverged; merge the source's
-  `failure-modes`, `bundle-contract` and `creative-latitude` references into
-  this one.
-
-[adoption/greenfield.md](adoption/greenfield.md) then points at
-`/jig:kickoff` instead of the seed.
+A `kickoff` skill that starts a new repository from nothing: requirements,
+architecture, an adversarial review of both, the repository and its
+[scaffolding](GLOSSARY.md), implementation plans and the first tracker
+issues. It replaces the fixed starter kit the
+[greenfield guide](adoption/greenfield.md) uses today. With it come
+`red-team`, which reviews a requirements or architecture document from
+several hostile points of view in a fresh session; plan review inside
+`review`; a `docs` skill that runs [M4](modules/M4-docs-governance/README.md)'s
+documentation checks; and `upgrade-deps`, which makes grouped dependency
+upgrades an update bot cannot make alone and drives them to merge.
 
 ### 4. `changelog` skill
 
-Design: [design/changelog.md](design/changelog.md).
-
-Keeps a repository's changelog as a practice, not an afterthought, for a
-repository that opts in: the skill, its gate and the change-note requests
-below act only where the repository's own `.config/jig.yaml` sets
-`changelog.file`, and a repository without it is never asked for a
-changelog. It works in either
-common format, detected from the file or set in configuration:
-[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) (an
-`Unreleased` section filled as changes merge; `Added`, `Changed`,
-`Deprecated`, `Removed`, `Fixed`, `Security`) or
-[Common Changelog](https://common-changelog.org/) (written at release time
-from the history; `Changed`, `Added`, `Removed`, `Fixed`; every entry
-imperative, one line, with references; breaking changes marked and listed
-first; no `Unreleased`).
-
-- **Draft** each pull request's change note when it opens, written for the
-  changelog's reader rather than the diff's reviewer, a breaking change
-  marked with what a consumer must do.
-- **Check**, against the rules of the detected format rather than a union of
-  both: structure, category names and order, dates written year-month-day,
-  link references, and release coverage. Each rule, its conditions and its
-  exemptions are taken from the format's own specification, cited where the
-  check enforces them, not restated here. Jig's own
-  `scripts/check-changelog.ts` checks, from the version files its
-  configuration names, that they agree and that the current version has a
-  heading, and holds branches to the change notes; no check yet validates a
-  whole changelog against its format. `bun run gates` calls it.
-- **How the release reaches the integration branch**, chosen per
-  repository: a direct push by a GitHub App the branch's ruleset lets past
-  its rules (Jig's own setup, ADR-0004), or a release pull request a person
-  merges, which needs no such exception. A GitHub Action and workflow
-  template, and a setup step that walks through the App, the ruleset and the
-  environment holding the key; other CI providers' templates when a
-  repository needs one.
-- `do-item` and `drive-pr` ask for a change note when a pull request changes
-  what users see, where the format keeps one per change.
-
-The practice itself (a changelog per released artifact, mechanically
-checked) gets a module of its own for releases and versions, M16, which
-applies to software that is downloaded, embedded or consumed, as M10 applies
-to a deployed service. M12 keeps the part about parallel work: one change
-note per pull request, written in after the merge.
+For a repository that keeps a changelog, the skill already runs the
+release step from configuration, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+or [Common Changelog](https://common-changelog.org/) format. Still to come:
+it drafts each pull request's change note for the changelog's reader,
+checks the whole file against the rules of its format, and sets up how a
+release reaches the integration branch. A new module, M16, states the
+practice for software that is released in versions, as
+[M10](modules/M10-environments-deploy/README.md) does for a deployed service.
 
 ### 5. A shared runtime kernel and diagnostics
 
-The plugin's scripts each solve the same problems by hand: decoding JSON
-from `gh` and configuration files, retrying, releasing locks on a signal,
-reading the clock. When one fails, the cause is often lost (an error turned
-into a default answer, a child's error output discarded), and nothing
-records how long anything took. The ratchet counts those patterns, and
-`plugin/shared/` holds the guards, error helpers, clock and
-logger that replace them; what is left moves the code onto them.
+The skills' scripts each solve the same problems by hand: retrying, clean-up
+on exit, decoding what `gh` returns, and errors that keep their cause. This
+item moves what is left onto one shared runtime.
 
-- **Burn-downs**, as code is touched: the 91 `exactOptionalPropertyTypes`
-  errors; drive-pr's own copies of `proc.ts`, `cli.ts` and
-  `gh-conditional.ts` beside the shared ones; the duplicated block in
-  `fleet-health.ts`; fallow's complexity hotspots.
+### 7. The Notion store, verified against Notion
 
-### 7. The Notion store, run against Notion
-
-The [Notion store](plugin/skills/reflect/README.md#notion-store) is built and
-passes the conformance suite against a local fake of the Notion API. What
-is left is the run against Notion itself, which needs an integration's
-token: set `NOTION_TOKEN` and `JIG_NOTION_LIVE_PARENT` (a scratch page shared
-with the integration) and run
-`bun test plugin/skills/reflect/__tests__/notion-live.test.ts`, then fix
-where the fake and Notion disagree, in both.
-
-Done when that test passes, and a repository reflects into a database `init`
-created using only `NOTION_TOKEN` and `reflection.notion.database`.
+The [Notion store](plugin/skills/reflect/README.md#notion-store) for
+reflections passes its tests against a stand-in for Notion's API. This item
+runs it against Notion itself and fixes what differs.
 
 ### 8. The audit experience: what is left
 
-The audit sheet, the decisions round trip, profiles as targets, the trend
-across past records and the starter configuration are in the
-[audit skill](plugin/skills/audit/README.md).
-What its [design](design/audit-experience.md) still holds:
+An audit at the end of a greenfield kickoff that checks the chosen
+[profile](profiles/README.md) first and leaves out the modules outside it;
+and the audit results a team marks as wrong reaching the
+[reflection store](plugin/skills/reflect/README.md), so the audit learns
+from them.
 
-- **Greenfield**: an audit run at the end of the kickoff's repository
-  bootstrap leads with the profile check and leaves out modules outside the
-  profile; the kickoff family (item 3) calls it.
-- **Calibration into the reflection store**: each *this is wrong* decision
-  becomes a finding about the `audit` skill in the
-  [reflection store](plugin/skills/reflect/README.md).
+### 19. Herdr as the primary workspace runtime
 
-Done when a kickoff run ends with the greenfield check and a *wrong*
-decision reaches the reflection store.
+[Herdr](https://herdr.dev) becomes the [workspace runtime](GLOSSARY.md)
+Jig's tooling is built and tested for first
+([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
+The [launcher](tools/launcher/README.md) opens a tracker issue as a Herdr
+worktree workspace with the agent started and given its prompt, on the
+machine or on a remote host;
+[M12](modules/M12-parallel-agent-ergonomics/README.md)'s worktree lifecycle
+runs in Herdr workspaces, keeping a worktree's unsent reflection findings
+before it is removed; and the drive, pickup and review skills are
+checked inside Herdr on macOS and Linux.
 
 ## Next
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
-Lets a converged drive arm the forge's auto-merge for the exact head it
-certified. It relaxes "a human merges", so the doctrine change is approved on
-its own. Work in progress is on branch `feature/auto-merge-on-converged`;
-before it opens as a pull request the design must guarantee that:
-
-- the delegation and the merge method are read only from sources the pull
-  request cannot change, fetched fresh at the moment of the decision, and the
-  integration branch is resolved independently of the pull request's own
-  `repository.base_branch`;
-- revoking the delegation, or any condition that refuses it, withdraws an
-  auto-merge an earlier run armed, whatever the policy then says;
-- `drive.ts` leaves the decision to the helper instead of gating on the pull
-  request's own copy of the policy;
-- an armed auto-merge is bound to the certified head and cannot arm before the
-  reviewers summoned by Ready have reported;
-- the doctrine (M7 invariant, the human-in-the-loop registry's Merge row, the
-  maturity criteria) changes in the same pull request, in the direction the
-  decision picks.
+An opt-in setting that lets a converged drive arm the forge's auto-merge for
+the exact commit it certified, for a repository that chooses to delegate the
+merge. The delegation is read only from places the pull request cannot
+change, and withdrawing it withdraws an auto-merge already armed. Jig itself
+keeps a person merging ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
 
 ### 10. Values the skills still assume
 
-Move into configuration when a consumer needs them:
-
-- the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
-  with fixed label groups, instead of going through the
-  [tracker interface](GLOSSARY.md);
-- the drive pushes to and fetches from a remote named `origin`;
-- summary-finding severity is parsed only for the reviewers whose comment
-  formats the drive already knows;
-- fields named after Linear: the review-triage file's
-  `severity_mapping.<severity>.linear_priority` and
-  `fractal-metrics.ts --skip-linear`, renamed with the old names still read.
-
-### 11. Jig's own Simplified Technical English linter
-
-`decide`'s `ste-lint` is a faithful TypeScript translation of a third-party
-Python linter, kept output-identical to it. Rewrite it as Jig's own
-implementation of the same writing rules, free to deviate where Jig's
-rules differ (for example by folding in the corrections its wrapper applies
-today), and keep crediting the original
-([Credits](plugin/RECOMMENDED-SKILLS.md#credits)). The parity record and the
-golden files from the Python linter then retire with the translation.
+A few values are still fixed in the skills rather than read from
+[configuration](plugin/CONFIGURATION.md): the review skill's follow-up step
+calls Linear directly with fixed label groups, the drive assumes a git
+remote named `origin`, and severities are read only from reviewers whose
+comment formats the drive knows. They move into configuration.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository. Both wait on the open decisions
-below. Before a second adapter works end to end, the
-[tracker interface](GLOSSARY.md) gains the operations skills now reach
-through the Linear MCP tools or the `linear` command: creating an issue,
-searching open issues, adding labels and attaching a file. The deferral step
-(item 10), `decide`, `explain` and `do-item`'s instructions then use them,
-and `do-item`'s parent-status reconciliation reads the interface's answers
-instead of Linear's. [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker)
-lists what still assumes Linear.
+Jira, and a plan file kept in the repository, beside Linear. The
+[tracker interface](GLOSSARY.md) first gains the operations the skills still
+reach Linear for directly: creating and searching issues, adding labels and
+attaching files.
 
 ### 13. Batching small issues into one pull request (`work-batch`)
 
 A `work-batch` skill that groups several small, independent issues from one
-area of the code into one pull request, with one commit for each, and drives
-it once: review cost is paid per pull request, so batching closes small
-issues faster than one pull request each. It moves from a working repository
-that uses it today, with that repository's labels turned into configuration;
-[design/work-batch.md](design/work-batch.md) has the procedure, the
-configuration and the build order. The tracker reads it needs, the
-tracker-neutral catalog key and the plugin's shared catalog reader are built.
-Done when:
-
-- `work-batch` is in the plugin with its tests, reading every label through
-  configuration, and the working repository's copy is deleted;
-- no setting can remove a solo-only flag that the hitl or manual-ops label
-  roles or the catalog's `tracker.flags` supply;
-- `do-item`'s batch check names `/jig:work-batch`;
-- the audit skill's schema and fit check cover the `work_batch` section.
+area of the code into one pull request, one commit each, and drives it once,
+so small fixes do not each pay for a full review.
 
 ### 15. M14 Testing strategy: the rest
 
-[M14](modules/M14-testing-strategy/README.md) states test tiers with budgets,
-honest doubles, the injected clock, polling, predicates proven where they
-execute, typed builders, tests with every change and coverage as a trend.
-Still open:
-
-- a check that a job which provisions a real dependency executed at least one
-  test, so a suite that skipped itself cannot report success;
-- exceptions that prune themselves: the tests-with-changes gate failing on an
-  exemption that matches no file, and a `fixed-delay:` token gate that fails
-  on a token with no delay beside it;
-- stale-test triage on a freshly fetched base, which `fix-ci` then follows;
-- tests that pin the dependency behaviour a workaround exists for, and a
-  scheduled run of the suite on the language runtime's next release.
-
-Done when the skip check is in M14's reference with its criterion, and the
-rest of the work listed above is in the module.
+[M14](modules/M14-testing-strategy/README.md) gains a check that a job which
+needed a real dependency ran at least one test, exception lists that prune
+themselves, stale-test triage on a fresh base, and tests that pin the
+dependency behaviour a workaround exists for.
 
 ### 17. Corrected designs for the existing modules
 
-Practices a working repository validated, for modules that exist today:
-
-- **M1**:
-  - supply chain beyond action pins (release cooldown, install-script
-    allowlist, layered secret scanning);
-  - agent-runtime hooks as a rung of the ladder.
-- **M10 and M11**:
-  - a ledger of out-of-tree work that blocks promotion;
-  - a registry of external preconditions;
-  - a heartbeat in which a stopped schedule reads as red;
-  - one self-closing issue per cause of a scheduled failure.
-- **M6 and M7**:
-  - an acceptance stage;
-  - plan claims checked against the code before building;
-  - the execution-plan format the pickup skill reads;
-  - a post-merge stage;
-  - a lifecycle map with a check that every named skill exists.
-- **M0, M4 and M5**:
-  - a reference generator for the model roster, when the working tool moves
-    here;
-  - instructions that keep working in every runtime;
-  - deferred promises in documents that point at live tracker items;
-  - files that change only with an approved decision record.
-
-Done when each module states the practice with its mappings and criteria, and
-a re-audit of Jig scores them.
-
-### 18. The jig-harness.dev website
-
-`website/` renders this repository's documents as a designed site (Astro, a
-static Cloudflare Worker), open only through a private link while Jig is a
-work in progress; [design/website.md](design/website.md) has how it
-works and what is left. Done when:
-
-- a gate checks the contrast of every text pair and every hover and focus
-  state, in both themes;
-- search works on a phone, and the plugin page shows one agent's steps at a
-  time.
-
-Opening the site to the public is a decision for a person, together with
-the repository's own visibility.
+Practices working repositories validated, added to the modules that exist:
+supply-chain checks beyond pinned actions (M1), watchdogs and heartbeats for what is deployed (M10,
+M11), acceptance and post-merge stages (M6, M7), a generator for the model
+roster and instructions that keep working in every agent tool (M0, M4, M5).
 
 ## Later
 
-- **Jira store for reflections.** One issue per finding, of a custom issue
-  type with fields for class, severity, target, harness, model and Jig
-  version; the event kept as an issue property. Its shape and open questions
-  are in [design/reflection.md](design/reflection.md#jira-store-future); build
-  it when a team that tracks its work in Jira needs it.
-- **More skills.** `scaffolding-update` (keeps agent instruction files in step
-  with decisions and audits them; M0), with its paths as configuration; and a
-  SOLID-principles review skill, once its generic procedure is separated from
-  the stack-specific checks it carries.
+- **Jira store for reflections.** Reflections kept as Jira issues, for a team
+  that tracks its work in Jira.
+- **More skills.** `scaffolding-update`, which keeps agent instruction files
+  in step with decisions and audits them
+  ([M0](modules/M0-instruction-architecture/README.md)), and a review skill
+  for SOLID design principles.
 - **Tracker planning.** Epic planning and prioritisation as skills on the
-  tracker interface, where the procedure is generic rather than one
-  organization's workflow.
-- **A forge interface.** GitHub is the only forge: the skills that work on
-  pull requests call `gh` directly. An interface on the tracker's model (pull
-  requests, review threads, checks and required checks, labels and comments),
-  with the GitHub implementation behind it, then GitLab as the second; build
-  it when a team on another forge needs it. What it covers is in
-  [plugin/EXTENDING.md](plugin/EXTENDING.md#forge-github).
-- **CI logs from other providers.** `fix-ci` finds and downloads a failed run
-  through GitHub Actions only (any CI's saved log already works with
-  `--log`); a provider interface for those two steps.
-- **Windows for `drive-pr` and `do-item`.** Finding and waiting on a pass's
-  processes without `ps` and POSIX signals, `do-item`'s pickup record without
-  owner-only file modes, and a Windows CI job for both suites.
-- **More launcher providers.** A Herdr provider for
-  [tools/launcher/](tools/launcher/README.md), once its generic workspace
-  commands are separated from the product-specific setup they come with.
+  tracker interface.
+- **A forge interface.** GitHub is the only forge the pull-request skills
+  work with; an interface with GitHub behind it, then GitLab as the second
+  ([what it covers](plugin/EXTENDING.md#forge-github)).
+- **CI logs from other providers.** `fix-ci` downloads a failed run from
+  GitHub Actions only (any CI's saved log already works with `--log`).
+- **Windows for `drive-pr` and `do-item`.**
+- **Drive loop follow-ups.** A drive's CI-repair round running `fix-ci`,
+  through a `fix-ci` mode that stops before pushing so the drive does the
+  push itself.
 - **Gates and workspace infrastructure.** The change-area resolver
-  ([M3](modules/M3-change-area-catalog/README.md)), cross-worktree locks and
-  test infrastructure, remote gates, and a runnable form of
-  [M12](modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle.
+  ([M3](modules/M3-change-area-catalog/README.md)), locks shared across
+  worktrees, remote gates, and a runnable form of
+  [M12](modules/M12-parallel-agent-ergonomics/README.md)'s workspace
+  lifecycle.
 - **Bun's linter and formatter.** A linter reports code that breaks a rule;
-  a formatter rewrites code into one consistent layout. Jig uses Biome, a
-  single tool that does both, for its TypeScript and JSON. Bun is adding its own:
-  `bun lint`, which accepts the rules of ESLint and oxlint (two widely used
-  JavaScript and TypeScript linters) including rules that use type
-  information, and `bun fmt`, which formats as Prettier (a widely used
-  formatter) does. They could replace Biome: one development dependency
-  fewer, and rules that read the types in place of Biome's experimental
-  ones. Evaluate them once they ship in a
-  stable Bun release: port the rules in
-  [tools/quality/grit/](tools/quality/grit/) to ESLint rules with their
-  fixtures; give the ratchet (`tools/quality/ratchet.jsonc`) a counter for
-  `bun lint`'s report in place of its `biome-json` one, with fixtures showing
-  it counts the same warnings Biome did, and teach it to read the `[lint]`
-  section of `bunfig.toml` and count `eslint-disable` comments;
-  map `biome.json`'s rule settings; keep Biome, or another linter that reads
-  JSON, for the JSON files if `bun lint` still covers only JavaScript and
-  TypeScript; decide whether Markdown and YAML are
-  formatted, then run both linters side by side for one release before
-  Biome goes. M1's and M14's `mappings.md` gain `bun lint` as a TypeScript
-  option in the same pull request.
-- **Shared test helper.** A shell-command reachability model for testing
-  workflow files, once it is separated from the workflow conventions it is
-  written against.
-- **Module gaps.** Items each module README lists as future: M4's tag-merge
-  normalizer and scheduled wiki lint, M3's catalog-to-regex reverse check
-  (needs the resolver), a semantic tier for ADR rules (M5 with M7/M8), M12's
-  probe-for-free port fallback.
-- **Module consistency.** M6's stage gates require `status: accepted`, which
-  M4's frontmatter schema does not define (it has `approved`), and M6's
-  templates lack M4's required fields: pick one vocabulary. M3's two reference READMEs are correct but long and
-  hedged; rewrite them to state the rules plainly.
-- **Drive loop follow-ups.**
-  - `drive-pr`'s CI-repair round should run `/jig:fix-ci`, but that
-    skill commits and pushes on its own, while a drive pass must push through
-    `finish-round.ts`; give `fix-ci` a mode that stops before pushing.
-  - The orphan warning in `scripts/lib/state/orphans.ts` can never fire under
-    the default state directory; remove it or make it look in the right
-    place.
-  - `references/post-fence.md` says its fence probe can go once every install
-    of `resolve-review-comments` also carries `drive-pr`. The plugin ships both
-    together; decide whether standalone copies still need the probe.
-  - The refocus behaviour is enabled on half of `do-item`'s items as a
-    comparison. Decide from its results whether it stays, becomes the
-    default, or goes.
-- **Standalone reference gates.** The gates in M0–M2 and M6–M9 import the
-  repository's `lib/`, so a reader cannot copy one alone. Either make them
-  self-contained or ship `lib/` as a documented, versioned dependency.
-- **History in the plugin's code comments.** Many comments in `drive-pr`
-  and `resolve-review-comments` still tell how the code got its shape ("this
-  fix", "an earlier version", "the old code") instead of stating the rule;
-  rewrite them as their files are next touched, or in one sweep.
-
-## Standing: backflow
-
-Jig keeps learning from the repositories that use it. When one of them
-finds a better gate, a corrected design or a new review lens, evaluate it for
-Jig and port the corrected design, not the first attempt
-([principle 5](principles/05-learning-loop.md)). A consumer's own values stay
-in that consumer's configuration.
-
-## Open decisions
-
-These need a human decision before the work that depends on them starts.
-
-- **Publishing.** Jig is private, under the Apache-2.0 licence with MIT-0
-  templates; whether and when to open the repository, whole or per module,
-  is still a human decision.
-- **Plan-file tracker format**: one file for the whole plan, or one per item.
-- **Optional tracker operations**: whether the tracker interface's reporting
-  operations may be optional for an adapter that cannot answer them.
-- **Resilience copies of critical rules**: whether a tool-specific instruction
-  file may keep a checked copy of a few named critical rules, so they still
-  bind when its import of the universal file is missing, or whether M0's
-  "duplicate nothing" criterion stands and only asks for the import.
+  a formatter rewrites code into one consistent layout. Bun is adding its
+  own, `bun lint` and `bun fmt`, which could replace Biome (one tool that
+  does both, which Jig uses for its TypeScript and JSON). Evaluate them once
+  they ship in a stable Bun release.
+- **Standalone reference gates.** Reference gates a repository can copy one
+  at a time.
+- **Module gaps.** The items each module README lists as future.

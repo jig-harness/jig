@@ -5,6 +5,7 @@ import Ladder from "../components/Ladder.astro";
 import LevelGlyph from "../components/LevelGlyph.astro";
 import ModuleMap from "../components/ModuleMap.astro";
 import Plate from "../components/Plate.astro";
+import SkillCommand from "../components/SkillCommand.astro";
 import Base from "../layouts/Base.astro";
 import { modules, principles, profiles, readme } from "../lib/data/index.ts";
 import { mdInline } from "../lib/markdown.ts";
@@ -77,7 +78,7 @@ const LIMITS = [
         <div class="path lit">
           <span class="eyebrow">Working on a repository</span>
           <p>Start with an audit. It scores your repository against every module and says what to do first.</p>
-          <div class="cmd"><code><span class="accent">/jig:</span>audit</code><button type="button" class="copy" data-copy data-copy-text="/jig:audit">Copy</button></div>
+          <SkillCommand name="audit" />
           <div class="path-links">
             <a href="/plugin/">Install the plugin →</a>
             <a href="/adopt/">The adoption guide →</a>
@@ -178,7 +179,7 @@ const LIMITS = [
         <h2 class="display small-h">What you get first: an audit sheet of where you stand.</h2>
       </div>
       <p>
-        <code>/jig:audit</code> scores your repository against every module's criteria and renders one self-contained HTML
+        The <code>jig:audit</code> skill scores your repository against every module's criteria and renders one self-contained HTML
         page. Nothing is applied: you mark each recommendation, copy your decisions, and hand them to an agent as one block
         of text. Below is a real one, from a run on an open-source library.
       </p>

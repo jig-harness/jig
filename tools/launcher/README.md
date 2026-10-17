@@ -142,7 +142,7 @@ A provider performs the last step and nothing else; see
 | Provider | How it opens the issue | Status |
 |----------|------------------------|--------|
 | `conductor` | A `conductor://` deep link. A routed issue uses `prompt=…&path=<repository root>`; an unrouted one uses `linear_id=<key>`, which makes Conductor guess the repository. The root comes from Conductor's own database, read-only. | shipped |
-| `herdr` | Starts a session on a remote host. | planned: needs its generic workspace commands split from the reference implementation's product-specific setup first |
+| `herdr` | Opens the repository as a worktree workspace with `herdr worktree create`, starts the agent in it with `herdr agent start` and hands it the prompt, on this machine or a remote host. | next: Herdr is the primary target ([ADR-0005](../../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md), [ROADMAP.md](../../ROADMAP.md) item 19) |
 
 Conductor reads `repos.<label>.conductor` as a repository name. Its database is
 Conductor's private storage, not a documented interface; when it cannot be read

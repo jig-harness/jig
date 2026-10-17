@@ -216,7 +216,8 @@ Skills — packaged, named procedures an agent can invoke (see the
 doesn't work — the runtime
 needs real files in its scan path. The portable mechanism:
 
-- Author skills once in a canonical directory (`.claude/skills/`).
+- Author skills once in one canonical directory (`.claude/skills/` by
+  default; the script's `CANONICAL_DIR` names another).
 - Maintain the other runtime's directory (`.agents/skills/`) as a
   **gitignored symlink farm** pointing back at the canonical one,
   regenerated on every dependency install and drift-checked from a

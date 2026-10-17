@@ -61,7 +61,7 @@ time. Every one is optional.
 |-------|--------------|-------------|
 | `adr.directory` | The directory holding the ADRs, named `ADR-NNNN-<slug>.md` (Jig module M5, ADR practice); shared with `/jig:adr` | Detected as `/jig:adr` does (`docs/adr`, `doc/adr`, `docs/decisions`, …), else `docs/adr` |
 | `decide.policy_files` | Instruction files whose `##` sections are standing policy | `[AGENTS.md]` |
-| `decide.rules_directory` | A directory of conditional rule files, one rule per `.md` file | `.claude/rules` |
+| `decide.rules_directory` | A directory of conditional rule files, one rule per `.md` file | `.claude/rules`, Claude Code's rules folder; a repository using another agent tool sets its own |
 | `decide.glossary_file` | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line of aliases | `CONTEXT.md` |
 | `decide.architect_agent` | The subagent that rules in phase 3; a name your agent tool does not know (for example a Claude Code agent under Codex) falls back to the default | A fresh general-purpose subagent, briefed with the [architect mandate](#the-architect-mandate) |
 | `decide.escalation_labels` | Labels added to an issue alongside `hitl` and its `hitl:<stakeholder>` facets when a call is escalated (for example the label that routes it to an architect) | None |

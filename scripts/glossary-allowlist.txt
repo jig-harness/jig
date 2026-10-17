@@ -6,11 +6,9 @@
 
 # file names
 AGENTS
-EXTENDING
 FEATURES
 CLAUDE
 GLOSSARY
-ROADMAP
 # the code marker, as in a TODO comment
 TODO
 # emphasis-caps words, not acronyms

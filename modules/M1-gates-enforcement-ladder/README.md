@@ -278,20 +278,5 @@ observable fact a criterion can name, and finding one is future work.
 
 ### Jig's own gates
 
-Jig's repository checks (`CHECKS` in [`scripts/gates.ts`](../../scripts/gates.ts))
-and its ratchet exit 2 when they could not check, state their scope on green
-runs; the change-area and review-risk checks fail on a repeated key in the
-YAML they read. The Markdown, glossary,
-origin-reference and workflow-convention checks also write findings in the
-shared format with GitHub annotations, and their exception lists
-(`scripts/glossary-allowlist.txt`, the allow patterns in
-`scripts/tracker-key-patterns.txt`, `.config/workflow-conventions-exceptions.txt`)
-need a reason per group and fail on an entry that suppresses nothing. Where a gate does not yet
-meet a rule:
-
-| Gate | Rule not yet met | Why |
-|------|------------------|-----|
-| `check-licences`, `check-changelog`, `check-audit-fit`, `change-areas --check`, `review-risk --check`, `check-workflow-safety` | Findings name no rule and are not annotated in CI | Their messages already name the file and the fix in prose; moving them to the shared format is open work |
-| `check-instruction-paths` | Findings name no rule or fix | It reports through M2's referenced-paths check, whose output format belongs to M2 |
-| The ratchet (`bun run quality`) | A missing merge base passes locally, reported as skipped | So the pre-push hook works in a shallow clone; CI, the authority, exits 2 |
-| Unused code (`bun run deadcode`, fallow) | Entry points are declared by folder pattern in `.fallowrc.jsonc` (the scripts, tools, skill scripts and reference gates folders) rather than file by file | Those folders hold the scripts a hook, CI, a skill or a reader runs by path; listing each from its invocation is open work |
+How Jig's own gate set meets these rules, and where it does not yet, is in
+[CONTRIBUTING.md § Where Jig's gates fall short](../../CONTRIBUTING.md#where-jigs-gates-fall-short).

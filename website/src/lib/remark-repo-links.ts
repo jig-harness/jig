@@ -166,7 +166,7 @@ function actorTips(repoRoot: string): ActorTips {
         : {
             name: s.name,
             kind: "skill",
-            head: `Skill · ${s.command}`,
+            head: `Skill · jig:${s.name}`,
             body: clip(plain(s.purpose), 220),
             more: "Open the skill →",
           };

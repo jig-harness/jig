@@ -79,7 +79,10 @@ For each group, read the files the findings name and propose one action:
 | **Escalate** | The class recurs and needs a structural fix (step 5) | The class and its shape |
 
 A finding about a Jig skill reviewed outside the Jig repository is not this
-repository's to change: leave it for a review run in Jig.
+repository's to change: leave it for a review run in Jig. When Jig's
+maintainers do not review the store this repository writes to, a review run
+in Jig never sees it: with the person's approval, report it to Jig's
+maintainers as an issue instead, with the finding's class and an example.
 
 ## 4. Approve
 

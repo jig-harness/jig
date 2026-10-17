@@ -135,8 +135,8 @@ Every event, finding and decision alike, carries the session that wrote it:
 "session":{
   "jig_version":"0.28.0",
   "skills":["drive-pr","resolve-review-comments"],
-  "harness":{"name":"claude-code","version":null,"entrypoint":"sdk-ts","wrapper":"conductor"},
-  "model":"claude-opus-5-5",
+  "harness":{"name":"claude-code","version":null,"entrypoint":"cli","wrapper":"herdr"},
+  "model":"<model id>",
   "mode":"quick",
   "stated":["model","skills"]
 }
@@ -145,8 +145,10 @@ Every event, finding and decision alike, carries the session that wrote it:
 - **`jig_version`** is read from the plugin's own manifest.
 - **`harness`** is read from the environment the harness sets: Claude Code
   sets `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT`, Codex sets variables named
-  `CODEX_…`, and a wrapper that runs the harness adds its own (Conductor's
-  `CONDUCTOR_…`). A harness that sets none is stated by the agent.
+  `CODEX_…`. A wrapper that runs the harness adds its own variables; the two
+  recognised so far are Herdr (`HERDR_ENV=1`) and Conductor (`CONDUCTOR_…`),
+  and under any other `wrapper` is `null`. A harness that sets none is
+  stated by the agent.
 - **`model`** is stated by the agent: no harness exposes it to a script.
 - **`skills`** are the skills the session used, as the agent knows them; a
   skill that writes to the journal itself adds its own name.
@@ -467,13 +469,8 @@ not create.
 - **Privacy.** The database holds the findings of every repository that
   writes to it, and everyone it is shared with sees all of them. A page
   moved to Notion's trash takes its events out of the store.
-- **Tested without Notion.** The tests run the conformance suite, and the
-  behaviour above, against a local fake of the API endpoints the store uses
-  (`JIG_NOTION_API_URL` points the store at it, and `JIG_NOTION_INTERVAL_MS`
-  sets the time between requests). A run against Notion itself is opt-in:
-  with `NOTION_TOKEN` and `JIG_NOTION_LIVE_PARENT` (a scratch page shared
-  with the integration) set, `__tests__/notion-live.test.ts` creates a
-  database there and runs the conformance suite against it.
+- **Conformance.** The Notion store passes the conformance suite and the
+  behaviour above.
 
 ## Command store
 

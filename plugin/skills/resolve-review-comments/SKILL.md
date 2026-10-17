@@ -77,16 +77,17 @@ The fiddly parts (paginated thread query, resolve mutation, in-thread reply) are
 wrapped in `scripts/` so each pass is a deterministic command rather than
 hand-written API calls.
 
-**`mcp__conductor__GetDiffComments` is not a substitute, in either case.** It
-is absent in an ordinary session — including terminal panes, headless
-`/drive-pr` runs, and any other non-Conductor harness — and present only in a
-session Conductor itself launched, where it lists comments on the workspace
-diff, including ones synced from GitHub, which makes it look like a cheaper
-enumeration path when it is available. It is not: it does not carry
-`isResolved`, cannot resolve a thread, and cannot post the outcome-prefixed
-in-thread reply this loop's contract requires. A loop built on it would
-silently under-enumerate, whether or not the tool happens to be present.
-Enumerate through the GraphQL scripts, always.
+**A diff-comment tool the workspace app provides is not a substitute, in
+either case.** Some apps that wrap an agent session in a workspace offer one
+(Conductor's `mcp__conductor__GetDiffComments`, for example): it is present
+only in a session that app launched — never in a plain terminal pane or a
+headless `/drive-pr` run — and lists comments on the workspace diff, including
+ones synced from GitHub, which makes it look like a cheaper enumeration path
+when it is available. It is not: such a tool does not carry `isResolved`,
+cannot resolve a thread, and cannot post the outcome-prefixed in-thread reply
+this loop's contract requires. A loop built on it would silently
+under-enumerate, whether or not the tool happens to be present. Enumerate
+through the GraphQL scripts, always.
 
 ## Workflow
 
@@ -182,15 +183,21 @@ paginated:
   left-side thread, an unreadable base, …). Feed this straight into step 3's
   `--self-inflicted` — pass `null` through as `unknown`, never as `false`.
   `selfInflictedCommit` names the blamed commit when `true`.
-- `severity` — the thread's own first comment run through `severityOf`
-  (bold `**token**`, or a `[P1]`-style badge for a reviewer that emits one
-  instead); `unknown` when neither shape matched. Unconditionally appended by
-  `self-inflicted.ts` on every record, self-inflicted or not — feed it
-  straight into step 3's `--severity`.
-- `category` — the same first comment run through `categoryOf` (the
-  reviewer's own `🏷️ category:` tag); `unknown` when it emitted
-  none. Unconditionally appended the same way as `severity` — feed it
-  straight into step 3's `--category` and **do not omit the flag**:
+- `severity` — the thread's own first comment run through `severityOf`. The
+  recognised formats are a bold `**blocker**`/`**high**`/`**medium**`/`**low**`
+  token opening the comment and a `[P0]`–`[P3]` image badge, read from any
+  reviewer, and CodeRabbit's `category | severity | effort` header, read only
+  on a comment CodeRabbit raised. A finding in any other shape reads
+  `unknown`, so a custom reviewer takes part in severity-based triage by
+  opening its findings with one of the first two.
+  Unconditionally appended by `self-inflicted.ts` on every record,
+  self-inflicted or not — feed it straight into step 3's `--severity`.
+- `category` — the same first comment run through `categoryOf`. The one
+  recognised format is a `🏷️ category: <token>` tag in the `·`-separated field
+  right after a bold severity token on the comment's first line; every other
+  finding, CodeRabbit's included, reads `unknown`. Unconditionally appended
+  the same way as `severity` — feed it straight into step 3's `--category`
+  and **do not omit the flag**:
   `triage-ladder.ts` refuses outright (`fail(2, …)`) when `--category` is
   omitted, rather than silently defaulting it to `unknown` — because a
   category can only ever admit a finding the ladder would otherwise decline,
@@ -304,9 +311,8 @@ and batch genuine policy or scope questions for the human at round end.
 > **Sweep the class, not the instance — and show the sweep.** A reviewer
 > reports the instance they happened to construct; its siblings are almost
 > always reachable by the same search, and each one left behind costs a full
-> round. Across the reviewed-PR record this is the dominant round driver, and
-> the recorded failures were not skipped sweeps — they were sweeps run on the
-> literal string while the misses were **structural**. Before replying
+> round. A sweep run on the literal string misses the siblings that are
+> **structural**. Before replying
 > `accepted`, name the class the finding belongs to and search along its
 > actual sibling axis:
 >
@@ -478,9 +484,9 @@ and batch genuine policy or scope questions for the human at round end.
 > **Two rounds on one root cause → stop patching variants.** If this round's
 > accepted fix targets the same root cause as the previous round's — another
 > untrusted-input vector, another nesting depth for a text scanner, another
-> heuristic for a provenance question — the per-variant path has empirically
-> not converged (recorded chains ran five-plus rounds before the structural
-> fix landed anyway). Propose the structural fix now — read-once capture at
+> heuristic for a provenance question — patching variants one by one does
+> not converge: each round finds the next variant, and the structural fix is
+> still needed at the end. Propose the structural fix now — read-once capture at
 > the boundary, a real parser, a schema-level provenance column — or defer it
 > with an issue per the [deferral protocol](references/deferral-protocol.md).
 > Do not post a third variant patch.
@@ -741,8 +747,8 @@ a pass until a round finds nothing left.
 **Do not build a bespoke poller, and do not blind-poll on a wall clock.** The
 convergence signal is a known-latency CI job that sits pending for minutes after
 every push. A fixed interval wakes straight into that gap and burns a whole
-turn discovering nothing — on one observed convergence roughly half of 27 passes
-were exactly this no-op.
+turn discovering nothing; on a slow reviewer, many of a convergence's passes
+can be exactly this no-op.
 
 `scripts/await-round.ts` owns the wait/stop decision and exits with the loop
 contract:
@@ -761,7 +767,8 @@ contract:
 Only `3` means converged. Every other non-zero is a reason to stop and look,
 not a variant of "done".
 
-The distinctions it encodes have each burned real convergences:
+Each distinction it encodes guards against a way a loop can stop wrongly or
+wait forever:
 
 - **Explicit reviewer selection requires declared coverage.** Configure
   `review.required_checks` in the consumer configuration with exact required check
@@ -855,8 +862,7 @@ lives in `$JIG_GH_CACHE_DIR` (default `~/.cache/jig/gh-cache`), one bounded,
 overwritten file per request; check-signal ETags are process-local and never
 written to disk. `JIG_GH_CACHE=off` disables the on-disk cache. Under `NODE_ENV=test` it is off unless a
 directory is given, so a suite that forgets to isolate itself runs uncached
-rather than reading another test's answer. The `drive-pr` skill carries its
-own copy of this cache code (`drive-pr/scripts/lib/gh-conditional.ts`).
+rather than reading another test's answer.
 
 Diagnosing a spent bucket: read the `X-RateLimit-*` **response headers** of a
 real call (`gh api -i graphql -f query='{viewer{login}}'`). Do not use

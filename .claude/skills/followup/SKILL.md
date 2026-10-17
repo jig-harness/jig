@@ -92,8 +92,8 @@ Without a tracker item, 1 and 3 are NOT OWED; 2 still applies.
 ### B. Tagging the release
 
 Every Jig release is tagged `v<version>` on the commit that shipped it
-([plugin/README.md § Release a new
-version](../../../plugin/README.md#release-a-new-version)). After the merge,
+([CONTRIBUTING.md § Releasing the
+plugin](../../../CONTRIBUTING.md#releasing-the-plugin)). After the merge,
 the release workflow (`.github/workflows/release.yml`) writes the change notes
 into CHANGELOG.md, moves the version on a commit of its own and tags it.
 First check that it ran for this merge, by the merge's own notes and its own
@@ -192,7 +192,8 @@ its build order no longer lists what the merge built.
 
 ### D. Status pages and the documents that cite them
 
-- **The roadmap**: an item the merge finished has left
+- **The roadmap**: an item the merge finished has left both
+  [design/plan.md](../../../design/plan.md) and the public
   [ROADMAP.md](../../../ROADMAP.md), and the change is in
   [CHANGELOG.md](../../../CHANGELOG.md). Then search the repository for the
   places that still cite it (`grep -rn "item <n>\b"`, FACTORY.md's "Not built

@@ -59,6 +59,13 @@ live in the worktree's git directory, which the removal deletes. The hook parks
 them where the next reflection in any worktree of the repository picks them up,
 and refuses the removal when it cannot.
 
+The hook acts on the worktree it runs in: it names the worktree after its
+working directory, and `journal.ts park` parks that worktree's journal. Run it
+inside the worktree being removed, on the machine that holds it. A removal
+wrapper resolves the target's path, changes into it, runs the hook, and
+removes the worktree only when the hook succeeds; run from anywhere else, the
+hook parks another worktree's journal and the target's findings are lost.
+
 ```sh
 #!/usr/bin/env bash
 # worktree-remove hook: nudge a reflection pass before the context is gone.
@@ -74,8 +81,10 @@ See the M8 learning loop for where that feedback goes.
 EOF
 
 # With Jig's reflect skill (JIG_REFLECT names its directory): keep the
-# journal's unsent findings for the next reflection. Does nothing when
-# reflection is off.
+# journal's unsent findings for the next reflection. Set JIG_REFLECT in every
+# repository that uses the skill, even with reflection switched off: park
+# still keeps findings noted while it was on. Leave it unset only where the
+# skill is not used, so there is no journal to lose.
 if [ -n "${JIG_REFLECT:-}" ]; then
   bun "$JIG_REFLECT/scripts/journal.ts" park || {
     echo "could not park this worktree's reflection findings; not removing it" >&2

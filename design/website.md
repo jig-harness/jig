@@ -10,7 +10,7 @@ reference pages for the maintainer (every module, skill, principle and
 term), all rendered from the repository's own documents so they cannot
 disagree with them.
 
-This is the design of [ROADMAP.md](../ROADMAP.md) item 18. The site is
+This is the design of [plan](plan.md) item 18. The site is
 built and deployed: `website/` renders every page type below in the final
 design, behind a private link. What is left is in
 [§ Build order](#build-order).
@@ -21,7 +21,9 @@ design, behind a private link. What is left is in
 
 `website/` is an Astro project of its own (its own `package.json` and
 lockfile). Every page is rendered at build time from the repository's files;
-nothing the site states is typed twice.
+nothing the site states is typed twice. Those documents are therefore the
+site's copy, and are written for its readers rather than for Jig's
+maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions-mandatory)).
 
 - **Parsers** in `website/src/lib/data/` read each kind of document into the
   parts its page lays out: a module README into its problem, invariant,

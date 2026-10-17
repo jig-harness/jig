@@ -5,6 +5,7 @@
 // rendered; scripts/adopt.ts shows the chosen one.
 import { plans } from "../lib/plan.ts";
 import LevelGlyph from "./LevelGlyph.astro";
+import SkillCommand from "./SkillCommand.astro";
 
 interface Props {
   /** Show step 1's command (the existing-repository guide). */
@@ -28,7 +29,7 @@ const all = plans();
     audit && (
       <div class="part">
         <span class="cap">Step 1 · in the repository</span>
-        <div class="cmd"><code><span class="accent">/jig:</span>audit</code><button type="button" class="copy" data-copy data-copy-text="/jig:audit">Copy</button></div>
+        <SkillCommand name="audit" />
       </div>
     )
   }

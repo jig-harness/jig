@@ -55,6 +55,7 @@ export class Machine {
       // The harness markers would make the measured session differ by machine.
       if (key === "CLAUDECODE" || key.startsWith("CLAUDE_CODE_")) continue;
       if (key.startsWith("CONDUCTOR_") || key.startsWith("CODEX_")) continue;
+      if (key.startsWith("HERDR_")) continue;
       env[key] = value;
     }
     this.env = {

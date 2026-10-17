@@ -62,7 +62,7 @@ failures.
    **cut the answer**.
 2. Grep for smells:
    ```bash
-   grep -riE 'best for|strong default|i propose|use a |introduce a ' /tmp/claude-design-trial-<slug>/uploads/*.md
+   grep -riE 'best for|strong default|i propose|use a |introduce a ' /tmp/design-brief-<slug>/uploads/*.md
    ```
 3. List every named composite primitive in `01-component-inventory.md`. For
    each: "Is this binding because it already exists (canonical bundle or

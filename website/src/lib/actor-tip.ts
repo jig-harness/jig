@@ -33,7 +33,7 @@ export function actorTip(a: Actor): ActorTip {
       return {
         href: `/skills/${a.name}/`,
         head: a.name,
-        kind: `Skill · /jig:${a.name}`,
+        kind: `Skill · jig:${a.name}`,
         body: skillSummary(a.name),
         more: "Open the skill →",
         said: "Run by a skill: ",

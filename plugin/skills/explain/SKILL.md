@@ -99,7 +99,8 @@ explainer's research.
    `bun "${CLAUDE_SKILL_DIR}/scripts/explainer-sheet/explainer-sheet.ts" validate <source.json>`.
 4. **Figures (optional).** A figure is a diagram drawn by
    [Archify](https://github.com/tt-a1i/archify), an open-source tool that
-   draws architecture diagrams from typed JSON sources. Check that the diagram
+   draws architecture diagrams from typed JSON sources; it is the one diagram
+   format supported so far. Check that the diagram
    matches the code before you use it: a wrong figure is worse than none.
    Build it with the repository's figure build
    (`explain.figure_build_command`, with the diagram's stem as the last

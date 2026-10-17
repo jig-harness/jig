@@ -83,8 +83,10 @@ gate](reference/required-phases/) before a transition to `done`.
 | Dart | tags for flags; an automation ties a tag to a required review | phases as subtasks; a rule gates the closing transition |
 
 Jig's [`do-item`](../../plugin/skills/do-item/SKILL.md) skill honours
-the `hitl` and `manual-ops` flags on the trackers its adapter reads (Linear
-today), with the label names taken from `issue_tracker.labels` in the
+the `hitl` and `manual-ops` flags through its
+[tracker adapter](../../GLOSSARY.md) (Linear's is built; Jira and a plan
+file kept in the repository are planned, [ROADMAP.md](../../ROADMAP.md)
+item 12), with the label names taken from `issue_tracker.labels` in the
 repository's [configuration](../../plugin/CONFIGURATION.md#issue_tracker).
 
 The tracker-agnostic contract the gate needs is small: a `status:` and the

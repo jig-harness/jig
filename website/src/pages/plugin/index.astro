@@ -1,6 +1,7 @@
 ---
 import AuditSpecimen from "../../components/AuditSpecimen.astro";
 import SideIndex from "../../components/SideIndex.astro";
+import SkillCommand from "../../components/SkillCommand.astro";
 import Base from "../../layouts/Base.astro";
 import { md, mdInline } from "../../lib/markdown.ts";
 import { REPO_URL } from "../../lib/routes.ts";
@@ -56,7 +57,7 @@ const introHtml = await md(intro.slice(0, 2).join("\n\n"), FROM);
       <section class="station" id="st-5">
         <h2><span class="num">5</span>Run your first audit</h2>
         <p>In the repository, start a session and run:</p>
-        <div class="cmd"><code><span class="accent">/jig:</span>audit</code><button type="button" class="copy" data-copy data-copy-text="/jig:audit">Copy</button></div>
+        <SkillCommand name="audit" />
         <p>On a first audit it asks which profile you aim for. What you will see is a sheet like this one, a real run on an open-source library:</p>
         <AuditSpecimen compact />
         <p class="muted small">Then follow <a href="/adopt/">the adoption guide</a>, in the order the sheet ranks.</p>

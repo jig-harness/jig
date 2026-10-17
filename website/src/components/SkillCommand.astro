@@ -1,0 +1,40 @@
+---
+// A plugin skill's command with its Copy button, and how the other agent
+// tool asks for it: Claude Code takes the slash command, Codex the skill's
+// name (plugin/README.md, "Use a skill"). An agent runs in Claude Code only.
+interface Props {
+  name: string;
+  /** `/jig:<name>`, or `jig:<name>` for an agent. */
+  command?: string;
+  agent?: boolean;
+}
+const { name, agent = false } = Astro.props;
+const command = Astro.props.command ?? (agent ? `jig:${name}` : `/jig:${name}`);
+const prefix = command.slice(0, command.indexOf(":") + 1);
+---
+
+<div class="skill-cmd">
+  <div class="cmd"><code><span class="accent">{prefix}</span>{name}</code><button type="button" class="copy" data-copy data-copy-text={command}>Copy</button></div>
+  {
+    agent ? (
+      <p>Claude Code only: Codex plugins carry no agents (<a href="/plugin/#codex-notes">Codex notes</a>).</p>
+    ) : (
+      <p>Typed in Claude Code. In Codex, ask for the <code>jig:{name}</code> skill by name.</p>
+    )
+  }
+</div>
+
+<style>
+  .skill-cmd {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+</style>

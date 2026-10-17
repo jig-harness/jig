@@ -1,32 +1,34 @@
 # Designs
 
-Designs of [roadmap](../ROADMAP.md) items too large to describe in the
-roadmap itself. A roadmap item says what will be built and when it is done;
-its design here says how it works, so the pull requests that build it share
-one plan.
+[The plan](plan.md) lists Jig's open work in priority order, and the
+public [roadmap](../ROADMAP.md) says the same items for teams that use Jig.
+This folder also holds the designs of items too large to describe in the
+plan itself. A plan item says what will be built and when it is done; its
+design here says how it works, so the pull requests that build it share one
+plan.
 
-A design describes work that is not built yet. When its roadmap item is
+A design describes work that is not built yet. When its plan item is
 finished, the design leaves this folder in the same pull request: what it
 describes moves to the skill or module that implements it (a skill's README,
 a module's README and `mappings.md`), and the parts that were not built go
-back to the roadmap or are dropped.
+back to the plan or are dropped.
 
 ## Stages
 
 Jig runs [M6](../modules/M6-feature-delivery-pipeline/README.md)'s feature
 pipeline in a smaller form. Each stage hands one artifact to the next, with
-one exception: research is done when a roadmap item or its design hangs on an
+one exception: research is done when a plan item or its design hangs on an
 open question, and what it finds goes back into that item or design.
 
 | M6 stage | Jig's artifact | Starts from |
 | --- | --- | --- |
-| Research spike | a research note in this folder, `<topic>-research.md`, when a roadmap item or its design hangs on an open question; it leaves when its item is finished | M6's [research-note template](../modules/M6-feature-delivery-pipeline/templates/research-note-template.md) |
-| [PRD](../GLOSSARY.md) (product requirements document) | the roadmap item: what will be built, for whom, and when it is done | the items in [ROADMAP.md](../ROADMAP.md): a summary, what the item builds, and a "Done when" line |
+| Research spike | a research note in this folder, `<topic>-research.md`, when a plan item or its design hangs on an open question; it leaves when its item is finished | M6's [research-note template](../modules/M6-feature-delivery-pipeline/templates/research-note-template.md) |
+| [PRD](../GLOSSARY.md) (product requirements document) | the plan item: what will be built, for whom, and when it is done, with its short form on the roadmap | the items in [plan.md](plan.md): a summary, what the item builds, and a "Done when" line |
 | Architecture | the design in this folder | the skeleton in [§ Starting a design](#starting-a-design) |
 | Design-prototype loop | for a browser interface, a design brief for an external design session, whose result may reopen the design | [`/jig:design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md) |
 | Epic decomposition | the design's build order, one pull request per step | the design's Build order section |
 
-Small items skip the design: their roadmap entry goes straight to pull
+Small items skip the design: their plan item goes straight to pull
 requests.
 
 ## Review before building
@@ -39,7 +41,7 @@ author settles every point in the text. The artifact is then
 [de-scarred](../GLOSSARY.md): the findings live in the pull request, and the
 artifact states only the result.
 
-A roadmap item or a research note gets that critique from the review of its
+A plan item or a research note gets that critique from the review of its
 pull request; a design brief gets it before it goes to the design session. A
 design and its build order get a critique of their own before the first pull
 request that builds them, and the design records it in a closing `## Review`
@@ -49,7 +51,7 @@ with the review.
 
 ## Current designs
 
-| Design | Roadmap items |
+| Design | Plan items |
 |--------|---------------|
 | [Reflection stores](reflection.md) | Later: the Jira store |
 | [The `changelog` skill](changelog.md) | 4 |
@@ -68,7 +70,7 @@ and fill in each section; drop a section that has nothing to say.
 **What problem this solves.** <What goes wrong today, and for whom, in plain
 language. What it looks like with this built.>
 
-This is the design of [ROADMAP.md](../ROADMAP.md) item <n>. <What is built
+This is the design of [plan.md](plan.md) item <n>. <What is built
 so far, if anything, and where it is documented.>
 
 ## How it works

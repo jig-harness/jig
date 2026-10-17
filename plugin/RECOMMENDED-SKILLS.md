@@ -21,7 +21,7 @@ marketplace.
 
 | Skill | What it is for | Where it fits |
 |-------|----------------|---------------|
-| `skill-creator` | Drafts a new skill, writes evaluation prompts for it, and iterates on its description so agents invoke it at the right time | Writing your repository's own skills, or a Jig skill (see [Add or change a skill](README.md#add-or-change-a-skill)) |
+| `skill-creator` | Drafts a new skill, writes evaluation prompts for it, and iterates on its description so agents invoke it at the right time | Writing your repository's own skills, or a Jig skill (see [Adding or changing a plugin skill](../CONTRIBUTING.md#adding-or-changing-a-plugin-skill)) |
 | `webapp-testing` | Drives a local web application in a real browser (Playwright) to check behaviour and capture screenshots and logs | Verifying a user-facing change before `drive-pr` pushes it; a browser check that complements the repository's gates |
 
 ## Engineering practice
