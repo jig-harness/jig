@@ -84,7 +84,7 @@ const ROOT_PAGES: readonly Link[] = [
   {
     title: "What you get",
     route: "/features/",
-    note: "what a team can run, install or copy from Jig today, and what is not built yet",
+    note: "what a team can run, install or copy from Jig today, and what is on the roadmap",
   },
   {
     title: "What's new",

@@ -71,11 +71,11 @@ export function actorTip(a: Actor): ActorTip {
       const item = roadmapItem(a.item);
       return {
         href: roadmapHref(a.item),
-        head: `Not built yet · ${roadmapLabel(a.item)}`,
+        head: `On the roadmap · ${roadmapLabel(a.item)}`,
         kind: "Roadmap",
         body: item ? clip(`${item.title}. ${plain(item.body)}`, 220) : a.text,
         more: "Open the roadmap item →",
-        said: "Not built yet: ",
+        said: "On the roadmap: ",
       };
     }
   }

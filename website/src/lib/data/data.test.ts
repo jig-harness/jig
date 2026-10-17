@@ -501,7 +501,7 @@ Prose about the thing, long enough to count.
 
 - **Skills:** [\`a\`](plugin/skills/a/SKILL.md), [\`b\`](plugin/agents/b.md)
 - **Practice:** [M1](modules/M1-x/), [M12](modules/M12-y/)
-- **Not built yet:** this (item 4); that (items 14 and 15); more (item 9);
+- **On the roadmap:** this (item 4); that (items 14 and 15); more (item 9);
   the rest (Later)
 `);
     expect(one.intro).toBe("Intro.");
@@ -521,7 +521,7 @@ Prose about the thing, long enough to count.
     });
     expect(
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **Not built yet:** the `x` skill (item 4), which does y (Later)\n",
+        "# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** the `x` skill (item 4), which does y (Later)\n",
       ).features[0]?.notBuiltEntries,
     ).toEqual([
       { text: "the `x` skill, which does y", items: ["4"], groups: ["Later"] },
@@ -589,10 +589,10 @@ Prose about the thing, long enough to count.
       ).not.toThrow();
   });
 
-  test("refuses a Not built yet parenthetical that is not a roadmap reference", () => {
+  test("refuses an On the roadmap parenthetical that is not a roadmap reference", () => {
     const notBuilt = (text: string) =>
       parseFeatures(
-        `# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **Not built yet:** ${text}\n`,
+        `# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** ${text}\n`,
       ).features[0];
     expect(notBuilt("missing work ( item 999 )")?.roadmapItems).toEqual([
       "999",

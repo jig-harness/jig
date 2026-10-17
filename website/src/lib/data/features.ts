@@ -1,8 +1,8 @@
 /**
  * FEATURES.md: what a team gets from Jig, one section per feature. Each
  * section is Markdown prose followed by a list of fields: the skills that run
- * it, the practice (the modules that state it) and what is not built yet.
- * The field list closes the section. Not built yet is entries separated by
+ * it, the practice (the modules that state it) and what is on the roadmap.
+ * The field list closes the section. On the roadmap is entries separated by
  * semicolons, each naming its roadmap work in parentheses, and its
  * parentheses hold nothing else: items by number ("item 4", "items 14 and
  * 15") or a group by name ("Later").
@@ -26,17 +26,17 @@ export interface Feature {
   practice: string;
   /** Module ids the Practice field names, in order. */
   modules: string[];
-  /** The Not built yet field, Markdown; empty when the feature is whole. */
+  /** The On the roadmap field, Markdown; empty when the feature is whole. */
   notBuilt: string;
-  /** The Not built yet field entry by entry, each with the work it names. */
+  /** The On the roadmap field entry by entry, each with the work it names. */
   notBuiltEntries: NotBuilt[];
-  /** Roadmap item numbers the Not built yet field names. */
+  /** Roadmap item numbers the On the roadmap field names. */
   roadmapItems: string[];
-  /** Roadmap group names the Not built yet field names ("Later"). */
+  /** Roadmap group names the On the roadmap field names ("Later"). */
   roadmapGroups: string[];
 }
 
-/** One Not built yet entry: its text without the parentheticals, and its work. */
+/** One On the roadmap entry: its text without the parentheticals, and its work. */
 export interface NotBuilt {
   /** Markdown. */
   text: string;
@@ -50,7 +50,7 @@ export interface Features {
   features: Feature[];
 }
 
-const FIELDS = ["Skills", "Practice", "Not built yet"] as const;
+const FIELDS = ["Skills", "Practice", "On the roadmap"] as const;
 type Field = (typeof FIELDS)[number];
 
 /** A field list item: `**Skills:** …` -> its name and the rest. */
@@ -95,7 +95,7 @@ function skillNames(title: string, text: string): string[] {
 const ITEMS = /^(?:roadmap )?items? ((?:\d+(?:,? and |, ))*\d+)$/;
 
 /**
- * The Not built yet field, entry by entry with the roadmap work each names.
+ * The On the roadmap field, entry by entry with the roadmap work each names.
  * The field is entries separated by semicolons; every entry names its work in
  * at least one parenthetical, every parenthetical is a reference (item
  * numbers, optionally prefixed "roadmap", or a group), and every parenthesis is matched, so no entry renders
@@ -104,7 +104,7 @@ const ITEMS = /^(?:roadmap )?items? ((?:\d+(?:,? and |, ))*\d+)$/;
 function notBuiltEntries(title: string, text: string): NotBuilt[] {
   const fail = (what: string) =>
     new Error(
-      `FEATURES.md: "${title}" Not built yet must name roadmap work as (roadmap item N), (roadmap items N and M), (item N) or (Group): ${what}`,
+      `FEATURES.md: "${title}" On the roadmap must name roadmap work as (roadmap item N), (roadmap items N and M), (item N) or (Group): ${what}`,
     );
   const out: NotBuilt[] = [];
   for (const entry of text.split(";").map((e) => e.trim())) {
@@ -192,7 +192,7 @@ function feature(title: string, body: string): Feature {
   }
   const practice = fields.get("Practice") ?? "";
   if (!practice) throw new Error(`FEATURES.md: "${title}" has no Practice`);
-  const notBuilt = fields.get("Not built yet") ?? "";
+  const notBuilt = fields.get("On the roadmap") ?? "";
   const prose = paragraphs(head).join("\n\n");
   if (!prose) throw new Error(`FEATURES.md: "${title}" has no prose`);
   const entries = notBuiltEntries(title, notBuilt);

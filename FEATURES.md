@@ -2,8 +2,8 @@
 
 The [modules](modules/README.md) state Jig's practices as rules that name no
 tool. This page is the other view: what a team can run, install or copy from
-Jig today, each with the practice it carries out and what is not built yet.
-The [skills](plugin/README.md) come from one plugin installed once per
+Jig today, each with the practice it carries out and what is on the roadmap
+for it. The [skills](plugin/README.md) come from one plugin installed once per
 machine; the [quality gates](GLOSSARY.md) (checks a change must pass),
 templates and tools ship with their modules; your own values (gate command,
 reviewers, issue-tracker team and labels) live in one
@@ -51,7 +51,7 @@ merges. Outside a drive, `fix-ci` fixes a failed run from its log.
   [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md)
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M9](modules/M9-tasks-memory/)
-- **Not built yet:** a converged drive arming the merge it certified
+- **On the roadmap:** a converged drive arming the merge it certified
   (roadmap item 9); batching small items into one pull request (roadmap
   item 13); the drive's CI-repair round running `fix-ci` (Later)
 
@@ -93,7 +93,7 @@ before it may block anything.
   [`promote-memory`](plugin/skills/promote-memory/SKILL.md)
 - **Practice:** [M8](modules/M8-learning-loop/),
   [M9](modules/M9-tasks-memory/)
-- **Not built yet:** a Jira store for reflections (Later)
+- **On the roadmap:** a Jira store for reflections (Later)
 
 ## Decisions recorded, found again, and turned into checks
 
@@ -124,7 +124,7 @@ against the repository's decisions.
 - **Skills:** [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md),
   [`review`](plugin/skills/review/SKILL.md)
 - **Practice:** [M6](modules/M6-feature-delivery-pipeline/)
-- **Not built yet:** the greenfield kickoff as skills and an adversarial
+- **On the roadmap:** the greenfield kickoff as skills and an adversarial
   reviewer (roadmap item 3); epic planning on the tracker (Later)
 
 ## Gates that ship with their tests, each on a named rung
@@ -142,7 +142,7 @@ changes a merge decision, and the testing strategy sets tiers with budgets.
   [M2](modules/M2-generated-artifact-freshness/),
   [M13](modules/M13-pipeline-economy/),
   [M14](modules/M14-testing-strategy/)
-- **Not built yet:** the rest of M14 (roadmap item 15)
+- **On the roadmap:** the rest of M14 (roadmap item 15)
 
 ## Change notes, and a changelog nobody fights over
 
@@ -159,7 +159,7 @@ Jig's own releases are made this way.
 
 - **Skills:** [`changelog`](plugin/skills/changelog/README.md)
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **Not built yet:** the rest of the `changelog` skill (roadmap item 4):
+- **On the roadmap:** the rest of the `changelog` skill (roadmap item 4):
   drafting each pull request's note, a check of the whole file against its
   format's own rules, and the way a release reaches the integration branch
 
@@ -181,7 +181,7 @@ directory needs its own install
 ([where it works](plugin/README.md#where-it-works)).
 
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **Not built yet:** the launcher's Herdr provider and the skills checked
+- **On the roadmap:** the launcher's Herdr provider and the skills checked
   inside Herdr (roadmap item 19), and a runnable form of the workspace
   lifecycle (Later)
 
@@ -200,7 +200,7 @@ organization plugs in its own commands, skills, reviewers and stores.
 
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M9](modules/M9-tasks-memory/)
-- **Not built yet:** Jira and plan-file tracker adapters (roadmap item 12); the
+- **On the roadmap:** Jira and plan-file tracker adapters (roadmap item 12); the
   values the skills still assume (roadmap item 10)
 
 ## Documents that say what is true now

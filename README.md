@@ -45,7 +45,7 @@ scaffolding, the plugin's skills run the factory's stations at two levels:
 `design-brief-builder`, `review`) and **execution** (one work item:
 `do-item` picks it up, `drive-pr` runs its review rounds unattended, a person
 merges, follow-ups go back to the tracker). [FACTORY.md](FACTORY.md) maps
-it all, including what is not built yet and what stays your own platform.
+it all, including what is on the roadmap and what stays your own platform.
 
 New to these ideas? Every term of art used in this repo is defined in plain
 language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
@@ -73,7 +73,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | Path | What it holds |
 |------|---------------|
 | [GLOSSARY.md](GLOSSARY.md) | Plain-language definitions of every term of art |
-| [FEATURES.md](FEATURES.md) | What a team gets from Jig today: each feature with the skills that run it, the practice it carries out and what is not built yet |
+| [FEATURES.md](FEATURES.md) | What a team gets from Jig today: each feature with the skills that run it, the practice it carries out and what is on the roadmap for it |
 | [FACTORY.md](FACTORY.md) | Jig as a software factory: the scaffolding it runs on, and its stations at the design-and-planning and execution levels |
 | [ROADMAP.md](ROADMAP.md) | Open work, in priority order |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |

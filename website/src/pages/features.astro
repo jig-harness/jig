@@ -47,7 +47,7 @@ const list = await Promise.all(
 );
 ---
 
-<Base title="What you get" description="What a team can run, install or copy from Jig today, each with the practice it carries out and what is not built yet.">
+<Base title="What you get" description="What a team can run, install or copy from Jig today, each with the practice it carries out and what is on the roadmap.">
   <section class="page wrap">
     <div class="intro-row bleed" style="--bleed-w: min(50vw, 820px); --bleed-shift: 0">
       <div class="intro">
@@ -129,7 +129,7 @@ const list = await Promise.all(
               )}
               {x.notBuilt.length > 0 && (
                 <div class="row">
-                  <dt>Not built yet</dt>
+                  <dt>On the roadmap</dt>
                   <dd>
                     <ul class="todo">
                       {x.notBuilt.map((e) => (

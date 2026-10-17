@@ -33,7 +33,7 @@ const todoMark = (t: Todo) => (isRoadmapGroup(t.item) ? t.item[0] : t.item);
 /** What a screen reader hears for a marked cell: the row's actor at the column's station. */
 function cellLabel(row: Actor, at: Actor, c: Column): string {
   if (row.kind === "person") return `a person at ${c.name}`;
-  if (at.kind === "todo") return `not built: ${at.text} at ${c.name}`;
+  if (at.kind === "todo") return `on the roadmap: ${at.text} at ${c.name}`;
   return `${"name" in row ? row.name : ""} at ${c.name}`;
 }
 ---
@@ -65,7 +65,7 @@ function cellLabel(row: Actor, at: Actor, c: Column): string {
         {
           ordered.map(([k, a]) => (
             <tr class={a.kind}>
-              <th scope="row">{a.kind === "todo" ? <span class="todo-head"><StatusMark kind="todo" size={13} />not built yet</span> : <ActorChip actor={{ ...a, note: undefined } as Actor} />}</th>
+              <th scope="row">{a.kind === "todo" ? <span class="todo-head"><StatusMark kind="todo" size={13} />on the roadmap</span> : <ActorChip actor={{ ...a, note: undefined } as Actor} />}</th>
               {columns.map((c) => {
                 const at = cell(c, k);
                 return (
@@ -86,6 +86,6 @@ function cellLabel(row: Actor, at: Actor, c: Column): string {
     </table>
   </div>
   <figcaption id="mx-cap">
-    Figure 3: who works where. A row per skill, agent, tool and person, a column per station; a dashed cell holds the roadmap item of work not built yet. Only a person works one column, Merge; delegating that merge is a roadmap item.
+    Figure 3: who works where. A row per skill, agent, tool and person, a column per station; a dashed cell holds the roadmap item of work still to build. Only a person works one column, Merge; delegating that merge is a roadmap item.
   </figcaption>
 </figure>

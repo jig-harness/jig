@@ -59,7 +59,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
 | `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement, two reader paths, the compact module map, the factory miniature, the limits, the enforcement ladder, the profiles, the live audit, the ways to use Jig and the principles |
-| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, number, title and skill chips) linking to its section, then one section per feature: its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is not built yet as roadmap chips beside each entry |
+| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, number, title and skill chips) linking to its section, then one section per feature: its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
 | `/modules/<Mn>/mappings/` | mappings.md | the whole file, for links that name it |
@@ -87,7 +87,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 - **Shared components** (`website/src/components/`): the level glyph (three
   rising bars), the rung mark (half or full square), the status mark (a key
   cap holding the actor's glyph: `/` a skill, `@` an agent, `>` a tool; a
-  silhouette for a person; a dashed cap for work not built yet), the actor
+  silhouette for a person; a dashed cap for work on the roadmap), the actor
   chip (the same glyph before the actor's name, opening what it does on
   hover; a link to a skill, the agent or a tool in rendered Markdown opens
   the same popover and draws the glyph when its text is the bare name),

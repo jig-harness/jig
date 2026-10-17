@@ -143,7 +143,7 @@ function moduleEntries(): Entry[] {
 
 const actorText = (a: Actor) =>
   a.kind === "todo"
-    ? `not built: ${a.text}`
+    ? `on the roadmap: ${a.text}`
     : a.kind === "person"
       ? "a person"
       : a.name;

@@ -117,7 +117,7 @@ beats a guessed edit.
   it is a view of the skills, the stores and adapters, and the roadmap, so
   a skill added or renamed, a store or adapter built, or a roadmap item it
   names as not built that is finished is a change it owes; its tests say
-  which feature, and the fix is the feature's text and its "Not built yet"
+  which feature, and the fix is the feature's text and its "On the roadmap"
   field.
 - **Prefer deriving to retyping.** When a hand-typed fact has gone stale and
   the document it comes from already holds it, reading it from there (a

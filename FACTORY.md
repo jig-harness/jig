@@ -145,7 +145,7 @@ The skills that run stations at this level:
 | [`review`](plugin/skills/review/SKILL.md) | Every stage: a plan or document reviewed against the repository's decisions |
 
 A person sets the intent, accepts each stage's artifact and takes the
-decisions `decide` escalates. Not built yet: the greenfield kickoff and an
+decisions `decide` escalates. On the roadmap: the greenfield kickoff and an
 adversarial `red-team` reviewer ([ROADMAP.md](ROADMAP.md) item 3), and epic
 planning on the tracker (ROADMAP.md, Later).
 
@@ -185,7 +185,7 @@ The plugin runs that loop as a line of stations, one work item at a time:
 
 Follow-up items enter the line again at station 1, so the execution level is
 itself a loop. `drive-pr` stops on one named end state (converged, waiting on
-a person, conflicting, …) and never approves or merges. Not built yet:
+a person, conflicting, …) and never approves or merges. On the roadmap:
 batching small items into one pull request (ROADMAP.md item 13), a converged
 drive arming the merge it certified (item 9, which changes "a person merges"
 and is decided on its own), and a post-merge stage that carries out the

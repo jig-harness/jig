@@ -59,7 +59,7 @@ Ask these of every `content` commit. One yes is enough to look closer.
   skill, module or roadmap item that no longer exists, or when a skill the
   plugin ships is named by no feature. The document itself goes stale when a
   skill, a store or an adapter is added, or when a roadmap item it names as
-  not built is finished: then the feature's text and its "Not built yet"
+  not built is finished: then the feature's text and its "On the roadmap"
   field are what to edit (SKILL.md § Phase 3).
 - **Principles** (`website/src/pages/principles/index.astro`): where each
   principle is said to be visible on the site, by number, with the link.
@@ -114,7 +114,7 @@ The parsers and what they read:
 | `skills.ts` | `plugin/README.md` | the `Skill` and `Agent` tables; the paragraph on how skills reach the tracker |
 | `factory.ts` | `FACTORY.md` | its section titles, the jobs, stations and levels tables and their column counts, the paragraphs it finds by their opening words |
 | `readme.ts` | `README.md` | "Jig as a software factory" and "Ways to use" |
-| `features.ts` | `FEATURES.md` | one `##` section per feature; a list of `**Skills:**`, `**Practice:**` and `**Not built yet:**` fields after the prose, skills by their link paths, modules by id, roadmap items as "item N"; an unknown field or a feature without prose or a practice fails the build |
+| `features.ts` | `FEATURES.md` | one `##` section per feature; a list of `**Skills:**`, `**Practice:**` and `**On the roadmap:**` fields after the prose, skills by their link paths, modules by id, roadmap items as "item N"; an unknown field or a feature without prose or a practice fails the build |
 | `adoption.ts` | `adoption/*.md` | the brownfield sections; the greenfield heading that names the phase count |
 | `flywheel.ts` | M8's README | "The flywheel", "The two companion cycles", the "Both cycles" paragraph |
 | `config.ts` | `plugin/CONFIGURATION.md` | the "Configuration layers" table |

@@ -101,8 +101,8 @@ const DESIGN_STAGE: Record<string, number> = {
 };
 
 /**
- * Stations work the factory says is not built yet, by roadmap item. The
- * factory's "Not built yet" sentences name each; the test checks every item
+ * Stations work the factory says is on the roadmap, by roadmap item. The
+ * factory's "On the roadmap" sentences name each; the test checks every item
  * named here still appears in FACTORY.md.
  */
 export const NOT_BUILT: Record<string, Actor[]> = {
