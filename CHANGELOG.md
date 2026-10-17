@@ -232,6 +232,9 @@ changes are marked **Breaking** and say what a consumer changes.
 - FACTORY.md's supply-chain bullet names what M1 covers beside pinned
   automation: the release cooldown, the install-script allowlist and layered
   secret scanning.
+- `design/plan.md` item 15 drops the skip check, stale-test triage, behaviour
+  pins and runtime canary, which M14 now carries; the exceptions that prune
+  themselves stay listed.
 
 ### Fixed
 
