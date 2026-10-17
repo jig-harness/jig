@@ -63,7 +63,7 @@ criteria:
   - id: toolchain-pins-one-source
     level: standard
     requires: mechanical
-    since: next
+    since: 0.48.0
     statement: >-
       Each toolchain version (the runtime, the compiler, the package
       manager) is declared in one source file; every other place that

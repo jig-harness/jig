@@ -41,7 +41,7 @@ criteria:
   - id: stale-test-triage-written
     level: lite
     requires: convention
-    since: next
+    since: 0.48.0
     statement: >-
       The procedure for a test failure the change did not cause is written
       where agents and people read it: the failure is reproduced on a
@@ -130,7 +130,7 @@ criteria:
   - id: spawn-exit-assertions-print-output
     level: standard
     requires: convention
-    since: next
+    since: 0.48.0
     statement: >-
       A test that asserts a spawned process's exit status asserts it through
       a helper that prints the child's captured output when the assertion
@@ -169,7 +169,7 @@ criteria:
   - id: provisioned-suites-executed
     level: standard
     requires: mechanical
-    since: next
+    since: 0.48.0
     statement: >-
       Every CI job that exists for a suite that can run nothing (a job that
       provisions a database, a queue, a browser or a credential the suite
@@ -188,7 +188,7 @@ criteria:
   - id: dependency-workarounds-pinned
     level: standard
     requires: convention
-    since: next
+    since: 0.48.0
     statement: >-
       Every workaround for a defect in a dependency has a test beside it
       that asserts the defective behaviour against the real dependency and
@@ -272,7 +272,7 @@ criteria:
   - id: next-release-canary
     level: strict
     requires: mechanical
-    since: next
+    since: 0.48.0
     statement: >-
       A scheduled workflow with no per-change trigger, which is not a
       required check, runs the suites with behaviour pins and the
