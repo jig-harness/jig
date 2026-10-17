@@ -29,8 +29,6 @@
 !(?<![-+.\w])https://github\.com/{{owner}}/jig(\.git)?(?![-\w])(?!\.[-.\w])
 # The publisher fields of the plugin and marketplace manifests.
 !(?i)^(plugin/\.(claude|codex)-plugin/plugin|\.claude-plugin/marketplace)\.json:\s*"(author|owner|developerName)":\s*(\{\s*"name":\s*)?"{{owner}}"
-# The licensor named in the copyright lines of the licence files.
-!(?i)^((plugin/)?NOTICE|LICENSE-MIT-0):Copyright 2026 {{owner}}$
 # This repository's own values as a consumer of its skills: real account,
 # team and repository names, which is what configuration is for.
 !^\.config/jig\.yaml:.*

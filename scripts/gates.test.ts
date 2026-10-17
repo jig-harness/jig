@@ -808,7 +808,6 @@ test("the real patterns reject the original tracker keys and organization name, 
     `{\n  "author": { "name": "${name}" }\n}\n`,
   );
   write(".config/jig.yaml", jigConfig);
-  write("NOTICE", `Copyright 2026 ${name}\n`);
   // A word that only starts or ends like the team key is not a key.
   const lower = team.toLowerCase();
   write("words.md", `${lower}s2024, ${lower}12, x${lower}1234, ${team}-ish\n`);
