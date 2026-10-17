@@ -24,7 +24,7 @@ and reference gates.
 | [M8 Learning loop](M8-learning-loop/) | Miss→lens flywheel, eval corpus, reflection, memory promotion | [`promote-memory`](../plugin/skills/promote-memory/SKILL.md), [`reflect`](../plugin/skills/reflect/SKILL.md), [`review-reflections`](../plugin/skills/review-reflections/SKILL.md) |
 | [M9 Tasks & memory](M9-tasks-memory/) | Tracker taxonomy with process-driving labels; persistent agent memory | [`do-item`](../plugin/skills/do-item/SKILL.md) |
 | [M10 Environments & deploy](M10-environments-deploy/) | PR gates → verify → deploy → promote; ephemeral envs; test-data factory | [`github-actions`](../plugin/skills/github-actions/SKILL.md) |
-| [M11 Process observability](M11-process-observability/) | Telemetry on the delivery process itself (review quality, gate health) | [`drive-pr`](../plugin/skills/drive-pr/README.md)'s loop and fleet metrics |
+| [M11 Process observability](M11-process-observability/) | Telemetry on the delivery process itself (review quality, gate health), and whether its scheduled jobs are still running | [`drive-pr`](../plugin/skills/drive-pr/README.md)'s loop and fleet metrics |
 | [M12 Parallel-agent ergonomics](M12-parallel-agent-ergonomics/) | Multiple agents, one machine/repo: ports, mutexes, branch discipline, gate output for agents | — |
 | [M13 Pipeline economy](M13-pipeline-economy/) | CI spent only where it changes a merge decision: honest signal, selection, superseding, bounds, ordering, placement, the CI hold, caches | [`github-actions`](../plugin/skills/github-actions/SKILL.md) reviews workflow changes |
 | [M14 Testing strategy](M14-testing-strategy/) | Test tiers with budgets, honest doubles, injected clock, polling, tests with every change | — |

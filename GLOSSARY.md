@@ -707,6 +707,22 @@ make, use the entry's term instead.
   branch's own and whose second parent is the pointer's tip. It restores the
   ancestry a fast-forward needs without merging any of the diverged content;
   forcing the pointer back is never the recovery.
+- **Cadence registry** — the one file listing every scheduled job and how
+  often it must produce a result, with the grace it may be late by and the
+  number of failures in a row that make it *red*. A scheduled workflow missing
+  from it is a job nobody watches, so a check fails it. See
+  [M11](modules/M11-process-observability/README.md#heartbeat-a-stopped-schedule-is-stale-never-green).
+- **Stale (job)** — the class of a scheduled job with no result inside its
+  cadence plus grace, or none at all, unless its failures in a row already
+  make it *red*: it stopped running, was disabled, only
+  ever got cancelled, hung, or never ran. The job's last result is old, not
+  current, so a stale job is never green, and a watcher fails for it as for a
+  red one. A cancelled or skipped run is not a result.
+- **Dead-man's switch** — a check that alarms when an expected signal does *not*
+  arrive. The heartbeat watcher reports to an external monitor on success and
+  on failure; if the watcher itself stops, the report goes missing and the
+  monitor raises the incident. Reporting only on failure would make a dead
+  watcher look like a healthy quiet one.
 - **Digest (content digest)** — a hash of an artifact's exact bytes, such as
   the `sha256:…` that names a container image (`image@sha256:…`). Unlike a
   tag, which can be moved to other bytes, a digest always names the same

@@ -1,0 +1,61 @@
+# TEMPLATE — copy to your repo (e.g. .config/scheduled-jobs.yaml) and replace
+# the examples with every job that runs on a schedule. This is the cadence
+# registry: how often each scheduled job must produce a result. Jig's
+# heartbeat classifier
+# (modules/M11-process-observability/reference/heartbeat/classify-heartbeat.ts)
+# reads it with the jobs' recent runs and puts each job in one class: green,
+# degraded, red, stale or running. A job whose last result is older than its
+# cadence plus grace is STALE, and a stale job is never green: a workflow that
+# stopped running still shows its last green result, and this is what notices.
+# The coverage check (reference/heartbeat/check-schedules-declared.ts) fails a
+# scheduled workflow that is missing from the list, so a new schedule cannot
+# arrive without a cadence.
+#
+#   id          the name the run history gives the job. On GitHub Actions it is
+#               the workflow's file name without the extension (nightly.yml is
+#               "nightly"). Unique, required.
+#   cadence     how often the job must produce a result: 30m, 12h or 7d. Set it
+#               to the schedule's real interval, not a hope. Required.
+#   grace       lateness tolerated before the job is stale. Default: a quarter
+#               of the cadence. Providers start scheduled runs late under load
+#               and sometimes drop one, so a grace of zero pages for noise.
+#   max_run     how long a run may stay in progress before it counts as hung
+#               (and so as no run). Default 6h.
+#   red_after   consecutive failures that make the job red; fewer are degraded.
+#               Default 1. Raise it for a job that is flaky by nature, never to
+#               hide a job that is broken.
+#   watcher     true for the job that runs the classifier itself. It is declared,
+#               so the coverage check accepts its schedule, and not classified:
+#               the external monitor watches it. Default false.
+#   description OPTIONAL — one line for whoever is paged.
+#
+# The VALUES (which jobs, which cadences, how many failures) are your
+# repository's. The file's shape is the mechanism.
+
+version: 1
+
+jobs:
+  # A nightly gate run: due every 24 hours, tolerated up to 6 hours late.
+  - id: nightly
+    description: the gate set on the platforms CI does not run per change
+    cadence: 24h
+    grace: 6h
+    red_after: 2
+
+  # A weekly job: the default grace is a quarter of the cadence (42 hours).
+  - id: weekly-audit
+    description: the weekly repository audit
+    cadence: 7d
+
+  # A frequent check: a run still going after half an hour is hung.
+  - id: verified-pointer-watchdog
+    description: the post-merge verification watchdog
+    cadence: 30m
+    grace: 15m
+    max_run: 20m
+
+  # The workflow that runs the classifier: declared, not classified.
+  - id: heartbeat
+    description: the heartbeat watcher itself
+    cadence: 30m
+    watcher: true

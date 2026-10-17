@@ -1,0 +1,9 @@
+name: rogue cleanup
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo clean

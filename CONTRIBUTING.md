@@ -130,7 +130,9 @@ design. Run all with one command: `bun run gates`. The set, in order:
    (M7's PR-target safety lint); the workflows meeting M13's pipeline
    conventions (the workflow-convention lint, with its heavy suites in
    `.config/workflow-conventions.yaml` and its reasoned exceptions in
-   `.config/workflow-conventions-exceptions.txt`); the licence files and NOTICE complete
+   `.config/workflow-conventions-exceptions.txt`); every scheduled workflow
+   declared with its cadence in `.config/scheduled-jobs.yaml` (M11's
+   heartbeat coverage check); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); a changelog section for the current plugin
    version, change notes the release step can read, and a branch that leaves
    the changelog's open sections and the version to that step (with a note

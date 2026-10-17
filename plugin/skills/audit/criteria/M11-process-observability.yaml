@@ -48,6 +48,22 @@ criteria:
       - "review_completed and gate_result events are emitted with their required fields"
       - "an event-schema lint validates a stream and fails on an unknown type or missing required field"
 
+  - id: scheduled-jobs-staleness-watched
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      Every scheduled job is declared in a cadence registry with the interval
+      it must produce a result at, a check fails a scheduled workflow missing
+      from it, and a scheduled watcher classifies each job's run history and
+      fails for a job that is stale (no result inside its cadence plus grace)
+      or red, so a schedule that stopped running never reads as green
+      (expected-absent for a repository with no scheduled job).
+    observe:
+      - "a cadence registry lists each scheduled job with an expected cadence (and a grace and a red threshold, or the defaults)"
+      - "a check fails a scheduled workflow that the registry does not list"
+      - "a scheduled workflow classifies each job's runs against its cadence and exits non-zero for stale and for red"
+
   - id: observability-gates-self-tested
     level: strict
     requires: mechanical
@@ -78,3 +94,17 @@ criteria:
     observe:
       - "dashboards for pass-rate + adoption + cost exist and trace to registry metrics"
       - "a review cadence for them is stated (drift is looked at, not just recorded)"
+
+  - id: heartbeat-reports-to-external-monitor
+    level: strict
+    requires: mechanical
+    since: next
+    statement: >-
+      The heartbeat watcher reports to a monitor outside the system it watches
+      on both outcomes, a success when no job is red or stale and a failure
+      otherwise, and the monitor raises an incident when a report does not
+      arrive, so a watcher that itself stopped is an incident
+      (expected-absent for a repository with no scheduled job).
+    observe:
+      - "the watcher's workflow sends a report to an external monitor after the verdict, with a success form and a failure form"
+      - "the monitor's expected period matches the watcher's cadence and it alerts on a missing report"

@@ -1,0 +1,4 @@
+jobs:
+  - id: nightly
+    cadence: 24h
+    cadance: 12h

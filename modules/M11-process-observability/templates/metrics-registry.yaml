@@ -94,6 +94,14 @@ metrics:
     source: query:promotion_gap_items
     owner: <delivery-lead>
 
+  # --- scheduled automation (M11 heartbeat) ---
+  - id: scheduled-jobs-red-or-stale
+    description: scheduled jobs the heartbeat watcher classified red or stale
+      at its last run — a stale job stopped running, which its last green
+      result hides; the external monitor pages on the watcher's own silence
+    source: event:heartbeat.red_or_stale_jobs
+    owner: <platform-team>
+
   # --- flow (cycle time) ---
   - id: open-to-ready-cycle-time
     description: median elapsed_ms for cycle_time events at stage=open-to-ready

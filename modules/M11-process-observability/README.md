@@ -15,6 +15,15 @@ looks done and the decision runs on a gauge that reads zero because nothing
 feeds it. This module instruments the delivery system itself, and makes
 "claimed but not wired" a mechanical failure.
 
+The same silence has a second form that no dashboard shows: **scheduled
+automation that has stopped running.** A nightly run, a verification
+watchdog, a weekly audit: each keeps displaying its last result after the
+schedule is disabled, paused by the provider or edited out, and that last
+result is usually green. A job that fails loudly gets fixed; a job that stops
+quietly is found by accident, days later, by the failure it was there to
+catch. This module also watches whether the schedules are still running, not
+only how they last finished.
+
 ## Invariant
 
 > The delivery process **emits telemetry** — review outcomes and their cost,
@@ -25,6 +34,16 @@ feeds it. This module instruments the delivery system itself, and makes
 > **measurements drive promote/demote decisions** for gates and review
 > [lenses](../../GLOSSARY.md) — a promotion must cite a recorded measurement
 > from a **provably live** instrument before autonomy increases.
+
+> Every **scheduled job** declares the **cadence** it is expected to produce a
+> result at. A job whose latest result is older than that cadence plus a
+> grace, or that has produced none, is **stale** (unless its failures in a
+> row already make it **red**, the more specific fact), and **stale is never
+> green**: a job is exactly one of green, degraded, red, stale or running.
+> The watcher reports to an **external monitor** on a success and on a
+> failure, so if the watcher itself stops, the missing report raises the
+> incident (a **dead-man's switch**). How many failures in a row make a job
+> red is configured per job.
 
 Everything below is that one tool-independent statement made mechanical;
 concrete per-backend wiring lives in [mappings.md](mappings.md).
@@ -61,7 +80,83 @@ concrete per-backend wiring lives in [mappings.md](mappings.md).
    advisory, fix the instrument) needs no such ceremony. Trust is
    one-directional: real measurement before more autonomy.
 
+6. **A heartbeat for scheduled automation** — see the next section. A
+   [cadence registry](templates/scheduled-jobs.yaml) names every scheduled job
+   and how often it must produce a result; the
+   [heartbeat classifier](reference/heartbeat/) puts each job in a class from
+   its run history; an external monitor notices when the watcher itself goes
+   quiet.
+
 The model as a copyable narrative is [`templates/TELEMETRY.md`](templates/TELEMETRY.md).
+
+## Heartbeat: a stopped schedule is stale, never green
+
+A disabled workflow keeps its last green run. So "how did it last finish?" is
+the wrong only question: the other is "when did it last finish?", asked of the
+clock.
+
+**The cadence registry.** Every scheduled job is listed in one file with the
+interval it must produce a result at, a grace for the lateness a provider
+adds (it starts scheduled runs late under load and sometimes drops one), and
+the number of failures in a row that make it red. The job that runs the
+classifier is listed too, marked as the watcher, and left out of the
+classification: the external monitor is what watches it. One list is the single
+source of truth for what is watched. A check fails a scheduled workflow that
+is missing from it, so a new schedule cannot arrive unwatched: that is the
+dark instrument the registry's own gate refuses, one level up.
+
+**The classes.** From the registry, the job's recent runs and the time now,
+the [classifier](reference/heartbeat/) puts each job in exactly one:
+
+| Class | Means |
+|-------|-------|
+| green | the last result is a success, inside the cadence plus grace |
+| degraded | recent failures, fewer in a row than the job's red threshold |
+| red | at least the job's threshold of failures in a row |
+| stale | no result inside the cadence plus grace, or never one |
+| running | a run is in progress, and the job is otherwise green or degraded |
+
+These rules keep the classes honest:
+
+1. **Stale is a failure of the watcher's verdict.** A watcher exits non-zero
+   for red and for stale alike. "It stopped" and "it failed" both need a
+   person, and only one of them used to show.
+2. **Only a success or a failure is a result.** A cancelled or skipped run says
+   nothing about whether the job works; it neither makes the job fresh nor
+   ends a streak of failures. A job whose every run is cancelled is stale.
+3. **A run in progress is bounded.** It counts as running for a declared
+   maximum; past it the run is hung and counts as no run. A job that has never
+   produced a result is running only while its first run is younger than the
+   cadence plus grace. It never excuses an
+   overdue job and never hides a red one.
+4. **Missing evidence reads as stale.** A declared job with no run in the
+   history is stale, and so is every job when the history is empty, because an
+   empty history is what a collection that failed silently leaves behind. A
+   history the classifier cannot trust (not valid, a time more than five
+   minutes ahead of the watcher's clock) is an error, never a pass.
+
+**The dead-man's switch.** The watcher is itself a scheduled job, and nothing
+inside the repository can notice that it has stopped. So it reports its
+verdict to a monitor *outside* the system it watches, on **both** outcomes: a
+success report when every job is green, degraded or running, a failure report
+when any is red or stale. The monitor expects a report every cadence and
+raises an incident when none arrives. Silence is then a signal in its own
+right: the watcher stopped, the schedule that runs it was disabled, the runner
+pool is down, or the provider is. Reporting only on failure would make a dead
+watcher indistinguishable from a healthy quiet one. The monitor products that
+do this, and the watcher workflow, are in [mappings.md](mappings.md#heartbeat-monitoring).
+
+**Thresholds per job.** How many consecutive failures make a job red is the
+job's own setting, because a flaky external check and a deploy verification
+should not page at the same count. The value is the repository's; the rule is
+that a threshold can only be raised in the registry, in review, never in the
+watcher, so a job cannot be quietened by tuning the thing that watches it.
+
+Tie-ins: [M10](../M10-environments-deploy/README.md)'s verified-pointer
+watchdog is one scheduled job this registry should list, and the heartbeat is
+what notices if the watchdog itself stops; [M13](../M13-pipeline-economy/README.md)'s
+queue-stall check covers a run that never started, this covers a schedule
+that never fired.
 
 ## Maturity levels
 
@@ -72,9 +167,14 @@ The model as a copyable narrative is [`templates/TELEMETRY.md`](templates/TELEME
 - **Standard** — a **metrics registry** exists with wired sources and the
   [no-dark-instruments check](reference/no-dark-instruments/) runs
   (mechanical); **review outcomes and gate results are emitted as events**
-  validated by the [event-schema lint](reference/event-schema-lint/).
+  validated by the [event-schema lint](reference/event-schema-lint/);
+  **every scheduled job is in the [cadence registry](templates/scheduled-jobs.yaml)
+  and a scheduled watcher classifies its runs**, failing for a job that is
+  stale or red (mechanical).
 - **Strict** — both gates run in [CI](../../GLOSSARY.md) with their self-tests
-  (mechanical); **reviewer/lens promotion decisions cite recorded measurements**
+  (mechanical); **the watcher reports to an external monitor on success and
+  on failure**, so a watcher that stops is itself an incident;
+  **reviewer/lens promotion decisions cite recorded measurements**
   (ties to [M7](../M7-pr-lifecycle-review/) / [M8](../M8-learning-loop/)); and
   dashboards for **gate pass-rate, review-adoption, and cost** exist and are
   reviewed on a cadence.
@@ -95,7 +195,16 @@ The model as a copyable narrative is [`templates/TELEMETRY.md`](templates/TELEME
    drift from the schema.
 4. Build dashboards from the registry (recipes per backend in
    [mappings.md](mappings.md)); review them on a cadence.
-5. Gate every promote decision in [M7](../M7-pr-lifecycle-review/) /
+5. List every scheduled job in a
+   [`scheduled-jobs.yaml`](templates/scheduled-jobs.yaml) with the cadence you
+   expect, add the [coverage check](reference/heartbeat/) so a new schedule
+   cannot arrive unlisted, and run the
+   [heartbeat classifier](reference/heartbeat/) on a schedule of its own over
+   the provider's run history ([collectors per provider](mappings.md#heartbeat-monitoring)).
+   Make it fail on red and on stale.
+6. Have the watcher report to an external monitor on both outcomes, and have
+   the monitor page when a report is missing.
+7. Gate every promote decision in [M7](../M7-pr-lifecycle-review/) /
    [M8](../M8-learning-loop/) on a measurement from a **live** instrument —
    never a dark one.
 
@@ -125,8 +234,16 @@ Their configuration is `fleet_health` and `drive.escape_baseline_doc` in the
 | [`templates/metrics-registry.yaml`](templates/metrics-registry.yaml) | The registry of process metrics, each with a wired source and an owner |
 | [`reference/event-schema-lint/`](reference/event-schema-lint/) | Validates an emitted event stream against the schema |
 | [`reference/no-dark-instruments/`](reference/no-dark-instruments/) | Fails when a registered metric's source is missing, empty or a placeholder |
+| [`templates/scheduled-jobs.yaml`](templates/scheduled-jobs.yaml) | The cadence registry: every scheduled job, how often it must produce a result, its grace and its red threshold |
+| [`reference/heartbeat/`](reference/heartbeat/) | The classifier (green, degraded, red, stale, running, over a run history and the registry) and the coverage check (a scheduled workflow missing from the registry fails) |
 | [`mappings.md`](mappings.md) | Telemetry and analytics backends, where events are emitted from, dashboard homes |
 | [maturity criteria](../../plugin/skills/audit/criteria/M11-process-observability.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
+
+Jig declares its own scheduled workflow in `.config/scheduled-jobs.yaml` and
+runs the coverage check in its gates. It does not yet run the watcher: that
+needs a monitor account, which is a person's decision, so the watcher and its
+dead-man's switch are described and tested here but not yet switched on for
+Jig itself.
 
 Each reference gate is a standalone Bun script with a self-test and fixtures.
 The parity and precision computation is not repeated here: it is
@@ -140,6 +257,14 @@ and M11 owns the emission, registry and dashboard side.
   repository. The module provides the mechanism (typed events, a wired
   registry, the two gates) and the decision rules, not the numbers or a
   particular vendor's dashboard.
+- **A monitor product, and the cadences.** Which external monitor receives the
+  watcher's reports, and which jobs run how often, are the repository's.
+  [mappings.md](mappings.md#heartbeat-monitoring) lists the products that
+  support the pattern; the module requires only a monitor that raises an
+  incident when an expected report does not arrive.
+- **Remediation.** The heartbeat says a job is stale or red; it does not
+  restart it, and it opens no issue: what a person or an agent does about a
+  stale or red job is outside this module.
 - **A required backend.** Telemetry backends (product-analytics tools, data
   warehouses, CI-native metrics) appear only as options in
   [mappings.md](mappings.md).

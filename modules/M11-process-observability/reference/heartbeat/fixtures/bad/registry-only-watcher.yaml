@@ -1,0 +1,4 @@
+jobs:
+  - id: heartbeat
+    cadence: 30m
+    watcher: true

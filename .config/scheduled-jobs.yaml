@@ -1,0 +1,15 @@
+# Jig's cadence registry (M11 heartbeat): every scheduled workflow and how
+# often it must produce a result. The id is the workflow's file name without
+# its extension. `bun run gates` fails a scheduled workflow that is missing
+# here (scripts/check-schedules-declared.ts), so a new schedule always arrives
+# with a cadence.
+version: 1
+jobs:
+  # .github/workflows/nightly.yml: the gate set on macOS and Windows, daily at
+  # 03:17 UTC. GitHub starts scheduled runs late under load, so the grace is
+  # generous, and a run in progress for over two hours is hung. Two failures in a row are red.
+  - id: nightly
+    cadence: 24h
+    grace: 6h
+    max_run: 2h
+    red_after: 2

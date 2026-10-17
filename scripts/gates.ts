@@ -16,6 +16,7 @@ import { checkChangeAreas } from "./change-areas.ts";
 import { checkGeneratedFiles } from "./check-generated-files.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { checkWorkflowConventions } from "./check-workflow-conventions.ts";
+import { checkSchedulesDeclared } from "./check-schedules-declared.ts";
 import { checkReviewRisk } from "./review-risk.ts";
 import { checkContextBudget } from "./check-context-budget.ts";
 const root = join(import.meta.dir, "..");
@@ -86,6 +87,7 @@ export const CHECKS = [
   checkLicences,
   checkWorkflowSafety,
   checkWorkflowConventions,
+  checkSchedulesDeclared,
   checkChangelog,
   checkAuditFit,
   checkChangeAreas,

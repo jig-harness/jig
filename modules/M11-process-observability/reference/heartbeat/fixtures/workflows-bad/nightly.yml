@@ -1,0 +1,9 @@
+name: nightly
+on:
+  schedule:
+    - cron: "20 3 * * *"
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo nightly

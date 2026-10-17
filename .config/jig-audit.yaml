@@ -683,6 +683,10 @@ criteria:
     # prior: absent: No review_completed or gate_result events are emitted; event-schema-lint exists only as a module reference
     score: absent
     evidence: "No review_completed or gate_result events; event-schema-lint exists only as a module reference"
+  M11/scheduled-jobs-staleness-watched:   # standard, requires mechanical
+    # Every scheduled job is declared in a cadence registry with the interval it must produce a result at, a check fails a scheduled workflow missing from it, and a scheduled watcher classifies each job's run history and fails for a job that is stale (no result inside its cadence plus grace) or red, so a schedule that stopped running never reads as green (expected-absent for a repository with no scheduled job).
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled job existed to declare or watch"
   M11/observability-gates-self-tested:   # strict, requires mechanical
     # The no-dark-instruments gate and the event-schema lint each ship a self-test that runs in CI, so a broken observability gate fails loudly.
     # prior: absent: These gates are not applied to Jig; module reference self-tests cover examples only
@@ -698,6 +702,10 @@ criteria:
     # prior: absent: No dashboards or review cadence; fleet-health.ts and fractal-metrics.ts are not configured (.config/jig.yaml has no fleet_health) and no workflow runs them
     score: absent
     evidence: "No dashboards or review cadence; fleet-health.ts and fractal-metrics.ts are not configured and no workflow runs them"
+  M11/heartbeat-reports-to-external-monitor:   # strict, requires mechanical
+    # The heartbeat watcher reports to a monitor outside the system it watches on both outcomes, a success when no job is red or stale and a failure otherwise, and the monitor raises an incident when a report does not arrive, so a watcher that itself stopped is an incident (expected-absent for a repository with no scheduled job).
+    score: expected-absent
+    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no scheduled job existed, so there was no watcher to report to a monitor"
   # M12 parallel-agent-ergonomics
   M12/branch-reuse-and-footgun-bans-written:   # lite, requires convention
     # The branch reuse-before-create rule and the shared-state footgun bans (no git stash across worktrees, no root install with the wrong package manager) are written down where agents will read them.

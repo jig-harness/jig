@@ -1,0 +1,7 @@
+name: weekly audit
+on: [schedule, workflow_dispatch]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo weekly

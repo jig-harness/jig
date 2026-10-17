@@ -574,6 +574,10 @@ criteria:
     # Review outcomes and gate results are emitted as typed events and validated against the declared event schema by a lint.
     score: absent
     evidence: "No review_completed or gate_result events and no schema lint. Gate results exist only as GitHub Actions run status."
+  M11/scheduled-jobs-staleness-watched:   # standard, requires mechanical
+    # Every scheduled job is declared in a cadence registry with the interval it must produce a result at, a check fails a scheduled workflow missing from it, and a scheduled watcher classifies each job's run history and fails for a job that is stale (no result inside its cadence plus grace) or red, so a schedule that stopped running never reads as green (expected-absent for a repository with no scheduled job).
+    score: expected-absent
+    evidence: "No scheduled job: main.yml triggers on push and pull_request only and has no schedule: trigger."
   M11/observability-gates-self-tested:   # strict, requires mechanical
     # The no-dark-instruments gate and the event-schema lint each ship a self-test that runs in CI, so a broken observability gate fails loudly.
     score: absent
@@ -586,6 +590,10 @@ criteria:
     # Dashboards for gate pass-rate, review-adoption, and reviewer cost exist, render from the registry, and are reviewed on a cadence.
     score: absent
     evidence: "No pass-rate, adoption or cost dashboards and no review cadence. Nothing in the repository refers to the hosted coverage UI."
+  M11/heartbeat-reports-to-external-monitor:   # strict, requires mechanical
+    # The heartbeat watcher reports to a monitor outside the system it watches on both outcomes, a success when no job is red or stale and a failure otherwise, and the monitor raises an incident when a report does not arrive, so a watcher that itself stopped is an incident (expected-absent for a repository with no scheduled job).
+    score: expected-absent
+    evidence: "No scheduled job, so no watcher to report to a monitor; main.yml has no schedule: trigger."
   # M12 parallel-agent-ergonomics
   M12/branch-reuse-and-footgun-bans-written:   # lite, requires convention
     # The branch reuse-before-create rule and the shared-state footgun bans (no git stash across worktrees, no root install with the wrong package manager) are written down where agents will read them.

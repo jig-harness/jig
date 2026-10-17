@@ -1,0 +1,5 @@
+[
+  {"job":"nightly","id":"100","status":"success","startedAt":"2026-03-10T03:20:00Z","finishedAt":"2026-03-10T03:31:00Z"},
+  {"job":"heartbeat","id":"101","status":"failure","startedAt":"2026-03-10T11:30:00Z","finishedAt":"2026-03-10T11:31:00Z"},
+  {"job":"heartbeat","id":"102","status":"failure","startedAt":"2026-03-10T11:00:00Z","finishedAt":"2026-03-10T11:01:00Z"}
+]

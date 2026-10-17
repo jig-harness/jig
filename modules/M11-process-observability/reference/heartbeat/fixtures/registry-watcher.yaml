@@ -1,0 +1,9 @@
+# A registry that lists the job running the classifier. It is declared so the
+# coverage check accepts its schedule, and not classified.
+jobs:
+  - id: nightly
+    cadence: 24h
+    grace: 2h
+  - id: heartbeat
+    cadence: 30m
+    watcher: true

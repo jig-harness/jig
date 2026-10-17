@@ -21,6 +21,7 @@ modules/M10-environments-deploy/templates/pipeline.example.yaml
 modules/M11-process-observability/templates/TELEMETRY.md
 modules/M11-process-observability/templates/event-schema.yaml
 modules/M11-process-observability/templates/metrics-registry.yaml
+modules/M11-process-observability/templates/scheduled-jobs.yaml
 modules/M12-parallel-agent-ergonomics/templates/WORKTREE-ERGONOMICS.md
 modules/M12-parallel-agent-ergonomics/templates/branch-discipline.md
 modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md

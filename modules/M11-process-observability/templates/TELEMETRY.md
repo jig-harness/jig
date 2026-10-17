@@ -43,6 +43,13 @@ Process events are a **closed set** declared in
 | `deploy_result` | a deploy/promotion runs | environment, result, duration |
 | `heartbeat` | an emitter proves it is still alive | emitter id (its silence is a signal) |
 
+A `heartbeat` does two jobs. It lets any emitter prove it is not silently dark.
+And the heartbeat *watcher* (see
+[the heartbeat section](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/README.md#heartbeat-a-stopped-schedule-is-stale-never-green))
+has one emitted per run (from its `--json` report, by the repository's
+adapter), so a scheduled job that stopped running is stale rather than
+green, and a watcher that stopped is caught by the external monitor it reports to.
+
 Two of these are owned elsewhere and *referenced* here: `gate_result` is the
 [M1](https://github.com/docomply/jig/tree/main/modules/M1-gates-enforcement-ladder) gate ladder's output made into an
 event, and `deploy_result` sources from [M10](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy).

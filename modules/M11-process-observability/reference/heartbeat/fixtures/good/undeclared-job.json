@@ -1,0 +1,6 @@
+[
+  {"job":"nightly","id":"100","status":"success","startedAt":"2026-03-10T03:20:00Z","finishedAt":"2026-03-10T03:31:00Z"},
+  {"job":"weekly","id":"101","status":"success","startedAt":"2026-03-08T02:00:00Z","finishedAt":"2026-03-08T02:12:00Z"},
+  {"job":"hourly-smoke","id":"102","status":"success","startedAt":"2026-03-10T11:30:00Z","finishedAt":"2026-03-10T11:35:00Z"},
+  {"job":"experiment","id":"103","status":"failure","startedAt":"2026-03-10T11:00:00Z","finishedAt":"2026-03-10T11:01:00Z"}
+]

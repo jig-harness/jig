@@ -1,0 +1,17 @@
+# The jobs the fixtures' histories describe. The tests pin the clock at
+# 2026-03-10T12:00:00Z.
+version: 1
+jobs:
+  # Daily at 03:20; two failures in a row are red, one is degraded.
+  - id: nightly
+    cadence: 24h
+    grace: 2h
+    red_after: 2
+  # Weekly; the grace defaults to a quarter of the cadence (42h).
+  - id: weekly
+    cadence: 7d
+  # Hourly; a run still going after 30 minutes is hung.
+  - id: hourly-smoke
+    cadence: 1h
+    grace: 15m
+    max_run: 30m

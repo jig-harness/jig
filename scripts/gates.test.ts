@@ -14,6 +14,7 @@ import { remediation } from "./check-branch-protection.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { checkWorkflowConventions } from "./check-workflow-conventions.ts";
+import { checkSchedulesDeclared } from "./check-schedules-declared.ts";
 import { readPatterns } from "./check-no-tracker-refs.ts";
 import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 import {
@@ -1508,6 +1509,29 @@ test("Jig's workflows pass the workflow-convention lint, and a broken one fails 
     "runs:\n  using: composite\n  steps: []\n",
   );
   expect(checkWorkflowConventions(actionOnly, {})).toBe(2);
+});
+
+test("Jig's scheduled workflows are declared, and an undeclared one fails the check", () => {
+  expect(checkSchedulesDeclared(root)).toBe(0);
+  const dir = temp();
+  mkdirSync(join(dir, ".github/workflows"), { recursive: true });
+  mkdirSync(join(dir, ".config"), { recursive: true });
+  writeFileSync(
+    join(dir, ".github/workflows/cleanup.yml"),
+    'on:\n  schedule:\n    - cron: "0 5 * * 1"\njobs: {}\n',
+  );
+  // No registry: the check could not read what declares the cadence.
+  expect(checkSchedulesDeclared(dir)).toBe(2);
+  writeFileSync(
+    join(dir, ".config/scheduled-jobs.yaml"),
+    "jobs:\n  - id: other\n    cadence: 24h\n",
+  );
+  expect(checkSchedulesDeclared(dir)).toBe(1);
+  writeFileSync(
+    join(dir, ".config/scheduled-jobs.yaml"),
+    "jobs:\n  - id: cleanup\n    cadence: 7d\n",
+  );
+  expect(checkSchedulesDeclared(dir)).toBe(0);
 });
 
 test("the origin-reference gate with no text file to read could not check", () => {

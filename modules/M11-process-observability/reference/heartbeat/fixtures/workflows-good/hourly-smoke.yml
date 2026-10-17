@@ -1,0 +1,7 @@
+name: hourly smoke
+on: schedule
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo smoke

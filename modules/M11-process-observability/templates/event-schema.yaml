@@ -48,5 +48,10 @@ event_types:
 
   # A liveness ping proving an emitter is not silently dark. It names the
   # emitter, so its ABSENCE is a signal about that one (it stopped emitting).
+  # The heartbeat watcher (reference/heartbeat/) has one emitted per run, from
+  # its --json report, by the repository's own adapter.
+  # optional: red_jobs, stale_jobs and red_or_stale_jobs, the counts of
+  # scheduled jobs the run classified red, stale, and either; the
+  # scheduled-jobs-red-or-stale metric reads red_or_stale_jobs
   - type: heartbeat
     required: [emitter]
