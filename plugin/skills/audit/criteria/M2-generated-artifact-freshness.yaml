@@ -37,7 +37,7 @@ criteria:
     observe:
       - "the universal instruction file, or a rule it links, states the constraint-versus-tally test with an example of each"
       - "the rule names what a tally that stays needs: a registered fact with a check, or a marker saying the number is a measurement"
-    since: next
+    since: 0.44.0
 
   - id: committed-derived-full-triad
     level: standard
@@ -108,7 +108,7 @@ criteria:
       - "a workflow on the push to the integration branch, filtered to the generator's inputs and never its outputs, regenerates and publishes through a pull request; no step pushes a generated commit straight to the protected branch"
       - "the branch name is fixed per generator, so an open pull request is updated rather than duplicated; the job neither merges it nor arms an automatic merge, and overwrites the branch only while every commit on it is the generator's own, with the push leased to the tip it inspected"
       - "the publish step refuses a branch commit message carrying any of the platform's CI-skip instructions, no merge commit message (subject, body or trailers) carries one, and the step fails before any work when the publishing credential is missing"
-    since: next
+    since: 0.44.0
 
   - id: generator-reaches-every-input
     level: standard
@@ -121,7 +121,7 @@ criteria:
       - "for each generator with a maintained input list (stubs, includes, a roster), a check enumerates the inputs that exist and the inputs the generator reads and fails on any difference"
       - "the check runs under a required check, beside the artifact's freshness check or as part of its inventory entry's `check`"
       - "the check fails closed when either enumeration cannot be read or finds nothing"
-    since: next
+    since: 0.44.0
 
   - id: derivation-one-way-compared-as-data
     level: standard
@@ -136,4 +136,4 @@ criteria:
       - "the hand-edit ban names the source as the place to change and the regenerate command as the only fix; no artifact is both generated and maintained by hand"
       - "the drift check of each JSON or YAML artifact parses both copies and compares data, naming the differing paths, and any normalization is one function applied to both sides"
       - "where one derived file feeds another, each link has its own check with its own fresh output"
-    since: next
+    since: 0.44.0

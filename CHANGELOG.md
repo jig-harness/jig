@@ -247,6 +247,68 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.44.0] - 2026-10-17
+
+The `changelog` skill: a repository turns change notes on with one section of its own configuration, and the release step and branch check read it.
+
+### Added
+
+- M2's [generated-file inventory](GLOSSARY.md): every derived file is
+  declared once, with its outputs, its source, its regenerate command and
+  its check, and one generic runner
+  (`modules/M2-generated-artifact-freshness/reference/inventory/`) runs
+  every declared check as the only CI step the practice needs, reporting
+  every result and failing closed on an inventory it cannot read or a check
+  that cannot start; each check runs in a process of its own with a
+  deadline (`$JIG_COMMAND_TIMEOUT_SEC`, `lib/bounded-shell.ts`); a copyable
+  inventory starter in M2's `templates/`.
+- M3's catalog `generated:` block is the list of M2 inventory entries an
+  area owns, which the runner reads straight from the catalog; Jig's own
+  derived files are declared there and `bun run gates` runs their checks
+  through the runner (`scripts/check-generated-files.ts`).
+- Regeneration after merge through a pull request: the GitHub Actions
+  skeleton `modules/M2-generated-artifact-freshness/templates/regenerate-after-merge.yml`
+  (one pull request per generator on a fixed branch, merged by a person, no
+  CI-skip marker on any commit, a credential of its own), with the
+  steps for other providers in M2's `mappings.md`.
+- Generator coverage (`reference/generator-coverage/`): the inputs a
+  generator reads are the inputs that exist; and one-way derivation with
+  structured artifacts compared as parsed data (`reference/compare-as-data/`).
+- Numbers in prose: the constraint-versus-tally test in M2's README and in
+  M0's `AGENTS-skeleton.md`; a facts registry checked exactly by
+  `reference/prose-facts/check-registered-facts.ts` (each fact derived from
+  globs or a command, every registered phrasing of a stated copy compared);
+  and the advisory lint `reference/prose-facts/lint-derivable-counts.ts` over
+  tallies nobody registered, with the `<!-- measured -->` escape.
+- Audit criteria, each `since: next`: M2 `regeneration-after-merge-via-pull-request`,
+  `generator-reaches-every-input`, `derivation-one-way-compared-as-data` and
+  `numbers-in-prose-rule-stated`.
+- `/jig:changelog` ([README](plugin/skills/changelog/README.md)): when a change needs a change note, how to write one a reader of the changelog can use, and `check.ts`, `status.ts` and `release.ts`, each printing the plugin version it ran as. It is on only in a repository whose own `.config/jig.yaml` sets `changelog.file`; elsewhere every command says `not configured` and writes nothing.
+- The `changelog:` configuration section (`file`, `format`, `notes_dir`, `version`, `release_paths`, `note_paths`, `placeholders`, `after_version`, `unreleased`, `authors`, `tag_prefix`, `release.push`, `release.branch`), documented in [CONFIGURATION.md](plugin/CONFIGURATION.md#changelog) and listed in the audit's configuration schema. It is read from the repository's own file alone: a user file or a `JIG__CHANGELOG__*` variable that sets a field is refused, never merged. The audit refuses what the skill refuses: it resolves the section against the repository, so a changelog, format, version file or version key that is missing, or version files that disagree, are reported.
+- The branch check holds a branch to the `changelog:` section its base holds (`git show <base>:.config/jig.yaml`), so a pull request cannot weaken its own check. A branch that edits the section is also checked against the section it proposes, and the check prints the change.
+- Common Changelog beside Keep a Changelog: format detection, its change types, no Unreleased section, references to the pull request or commit and the authors taken from git alone, one notice per release, `**Breaking:**` entries listed first and tied to `release: major`, a link definition per version.
+- Versions kept in JSON, TOML or YAML files at a key, in a plain `VERSION` file, or only in tags; derived from `package.json`, `pyproject.toml` and `Cargo.toml` when the repository names none. Only the value at the key changes, and the file is parsed again to confirm it.
+- `after_version`, a command the release step runs after it moves the version, for files that repeat it. Inside a CI job (`CI`, `GITHUB_ACTIONS` or another service's marker set) it runs only when the job sets `JIG_AFTER_VERSION_IN_CI=1`. Its output goes to standard error, and after `JIG_AFTER_VERSION_TIMEOUT_SEC` seconds (1800 by default) it is stopped with every process it started.
+- `changelog.unreleased: wait` for Keep a Changelog, and a first-release link that points at the version's own tag.
+- A structural check of each note with `Bun.markdown` for the format's change types; a Bun without it fails with the version it needs (1.4.3).
+
+### Changed
+
+- M2's Strict criterion `artifact-inventory-generated-and-gated` now asks
+  for the declared inventory and the one runner, so it can be met;
+  `prose-facts-ci-checked` asks for the registry and its phrasings.
+- M3's graph-validated criterion and reference follow the inventory's field
+  names (`generated[].source`), and the catalog checker validates `generated:`
+  entries with the runner's own validation.
+- CONTRIBUTING's derived-files section points at the catalog as the one
+  source instead of carrying its own table.
+- The shared `lib/files.ts` lists only files present on disk (a tracked file
+  deleted from the working tree no longer counts), with forward slashes on
+  every platform, and blanks code with CommonMark's fence grammar, now shared
+  with `check-referenced-paths.ts`.
+- **Breaking:** `check.ts` and `release.ts` under `plugin/skills/changelog/scripts/` no longer take `--notes`, `--changelog`, `--version-file`, `--release-path` or `--stamp*`; they read the `changelog:` section of `.config/jig.yaml`. A repository that called them by hand moves those values into that section.
+- Jig's own release step and changelog gate read the `changelog:` section of Jig's `.config/jig.yaml` instead of constants in `scripts/`.
+
 ## [0.43.0] - 2026-10-16
 
 ### Added
@@ -2159,7 +2221,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.44.0...HEAD
+[0.44.0]: https://github.com/docomply/jig/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/docomply/jig/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/docomply/jig/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/docomply/jig/compare/v0.40.0...v0.41.0

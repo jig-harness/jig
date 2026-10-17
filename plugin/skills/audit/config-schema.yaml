@@ -428,38 +428,38 @@ fields:
     exists: required
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.format:
     type: enum
     values: [keep-a-changelog, common-changelog]
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.notes_dir:
     type: path
     default: changes
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.version:
     type: map
     keys: [files, tags]
     values_type: any
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.release_paths:
     type: list
     items: string
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.note_paths:
     type: list
     items: string
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.placeholders:
     type: list
     items:
@@ -469,40 +469,40 @@ fields:
         to: string
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.after_version:
     type: command
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.unreleased:
     type: enum
     values: [write, wait]
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.authors:
     type: boolean
     default: true
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.tag_prefix:
     type: string
     default: v
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.release.push:
     type: enum
     values: [direct, pull-request]
     default: direct
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
   changelog.release.branch:
     type: string
     default: changelog-release
     read_by: [changelog]
     repository_only: true
-    since: next
+    since: 0.44.0
