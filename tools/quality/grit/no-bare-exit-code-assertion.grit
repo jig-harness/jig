@@ -1,0 +1,20 @@
+// Flags a test that asserts a process result's exit code directly, or a
+// spawned child's awaited `exited` promise: when the
+// assertion fails, the report says "expected 0, received 1" and nothing of
+// what the child printed, so a genuine regression reads the same as a process
+// killed under load and gets dismissed as flaky. The helpers in
+// lib/test-helpers/expect-spawn-exit.ts print the child's output with the
+// mismatch (expectSpawnExited for the awaited form). The member is matched as written: a destructured exit code, or
+// Node's `status` field (a name HTTP responses share), is not followed.
+or {
+  `expect($result.exitCode).$matcher($...)`,
+  `expect($result.exitCode).not.$matcher($...)`,
+  `expect(await $proc.exited).$matcher($...)`,
+  `expect(await $proc.exited).not.$matcher($...)`
+} as $assertion where {
+  register_diagnostic(
+    span = $assertion,
+    message = "jig/no-bare-exit-code-assertion: a bare exit-code assertion discards the child's output. Assert through expectSpawnExit, expectSpawnExitNot or expectSpawnKilled, or expectSpawnExited for an awaited child (lib/test-helpers/expect-spawn-exit.ts).",
+    severity = "warn"
+  )
+}

@@ -1,0 +1,5 @@
+bun test v1.4.0
+
+ 12 pass
+ 0 fail
+Ran 12 tests across 3 files. [245.00ms]

@@ -1,0 +1,4 @@
+tools:
+  bun:
+    source: { file: mise.toml, toml: tools.bun }
+    sites: []

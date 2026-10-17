@@ -177,6 +177,10 @@ criteria:
     # The derived-file inventory is itself a generated artifact with its own drift gate, so the inventory cannot silently omit a new derived file.
     score: expected-absent
     evidence: "No derived files, so there is no inventory to generate (see derived-inventory-exists)."
+  M2/toolchain-pins-one-source:   # standard, requires mechanical
+    # Each toolchain version (the runtime, the compiler, the package manager) is declared in one source file; every other place that repeats it (CI setup steps, container build arguments, package-manager fields, a type package that tracks the runtime) is checked in CI to equal it; and a pin that differs on purpose is registered as an exception with a reason.
+    score: absent
+    evidence: "The Node.js version is repeated in main.yml's matrix (26, 24, 22), package.json's engines (>=22) and @types/node (^26) with no file named as their source and no check comparing them; no .nvmrc or .node-version"
   M2/numbers-in-prose-rule-stated:   # standard, requires convention
     # The universal instruction file states the test for a number in prose: one that constrains its content stays, one that tallies an adjacent list is dropped or registered as a fact a commit-nothing check derives.
     score: absent
@@ -821,6 +825,26 @@ criteria:
     # A scheduled CI job publishes coverage as a trend, also when it is below target, refuses to publish incomplete data, and no merge is blocked on a per-file coverage threshold.
     score: absent
     evidence: "Coverage is uploaded to Codecov from every matrix leg on each push and pull request (.github/workflows/main.yml, fail_ci_if_error: false), not on a schedule, and nothing refuses incomplete data; .github/codecov.yml sets no per-file threshold"
+  M14/stale-test-triage-written:   # lite, requires convention
+    # The procedure for a test failure the change did not cause is written where agents and people read it: the failure is reproduced on a freshly fetched base in a throwaway worktree before it is attributed, never with a stash, and a failed fetch is no answer; a test that fails on the base too is fixed inline when cheap or deleted with a tracker item recording what it covered; a test is regenerated only when its premise is obsolete and the new test asserts what the old one protected.
+    score: absent
+    evidence: "No testing document, rule file or instruction file at the root: readme.md and docs/*.md document the library for its users, and .github/ holds codecov.yml, security.md and the workflow; nothing states a fresh-base reproduction or a fix-or-delete rule"
+  M14/spawn-exit-assertions-print-output:   # standard, requires convention
+    # A test that asserts a spawned process's exit status asserts it through a helper that prints the child's captured output when the assertion fails, and the rule is written where agents and people read it (expected-absent where no test spawns a process).
+    score: absent
+    evidence: "The tests spawn subprocesses throughout (the library's purpose) and assert their exit codes directly through node:assert (assert.equal(exitCode, 0) in test/arguments/command-resolution.js:170, and the same shape across test/), with no shared helper that prints the child's output on a mismatch and no written rule"
+  M14/provisioned-suites-executed:   # standard, requires mechanical
+    # Every CI job that exists for a suite that can run nothing (a job that provisions a database, a queue, a browser or a credential the suite skips itself without; a shard or path selection of one suite) fails when that suite executed zero tests, counted from the runner's machine-readable report as the test cases not skipped, and fails when the report is missing (expected-absent where no job exists for such a suite).
+    score: absent
+    evidence: "main.yml's unit step runs node --test over the glob test/!(fixtures|helpers)/*.js and nothing reads a report to confirm that a test case executed; no job provisions a dependency, but the glob is a selection that can match nothing, and whether that fails the step was not verified"
+  M14/dependency-workarounds-pinned:   # standard, requires convention
+    # Every workaround for a defect in a dependency has a test beside it that asserts the defective behaviour against the real dependency and names the workaround, and the written rule is that a pin failing after an upgrade retires or adapts the workaround rather than updating the assertion (expected-absent where the repository has no such workaround).
+    score: absent
+    evidence: "lib/terminate/graceful.js converts a DOMException cancel reason into an Error because V8 cannot serialize it, a workaround for a Node.js defect its comment links, and no test asserts that defect against Node.js itself or names the workaround; no written rule about a pin failing after an upgrade"
+  M14/next-release-canary:   # strict, requires mechanical
+    # A scheduled workflow with no per-change trigger, which is not a required check, runs the suites with behaviour pins and the integration tier with its dependencies provisioned, and a compiled-binary smoke test where the product ships a binary, against the next release of the runtime or a driver, and records the build it used.
+    score: absent
+    evidence: "main.yml is the only workflow: it has no schedule, pins the released lines 26, 24 and 22 on every push and pull request, and writes no runtime build to the run summary"
   # M15 contracts-errors
   M15/error-contract-written:   # lite, requires convention
     # The error contract is written where agents and people read it: the three failure channels and which situation takes which, never swallow and keep the cause, branch on type or code and never on message text, a failure inside a transaction aborts it (rolls it back, by the path the transaction tool rolls back on), and errors reach callers only through one boundary.

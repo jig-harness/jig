@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 const fixture = (name: string) => join(import.meta.dir, "fixtures", name);
 // Each bad fixture breaks exactly one invariant: it fails with one problem,
 // and that problem is the one the fixture is named for.
@@ -27,7 +28,7 @@ for (const [name, code, expected] of cases)
       fixture(name),
     ]);
     const out = run.stdout.toString();
-    expect(run.exitCode).toBe(code);
+    expectSpawnExit(run, code);
     expect(out).toContain(expected);
     if (code === 1) expect(out).toContain("FAILED: 1 problem(s)");
   });
@@ -37,5 +38,5 @@ test("the template passes", () => {
     join(import.meta.dir, "check-label-taxonomy.ts"),
     join(import.meta.dir, "../../templates/label-taxonomy.yaml"),
   ]);
-  expect(run.exitCode).toBe(0);
+  expectSpawnExit(run, 0);
 });

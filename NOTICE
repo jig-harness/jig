@@ -33,6 +33,7 @@ modules/M13-pipeline-economy/templates/PIPELINE-ECONOMY.md
 modules/M13-pipeline-economy/templates/ci-cost-ledger.yaml
 modules/M13-pipeline-economy/templates/queue-watchdog.yml
 modules/M14-testing-strategy/templates/TESTING.md
+modules/M14-testing-strategy/templates/runtime-canary.yml
 modules/M15-contracts-errors/templates/ERROR-HANDLING.md
 modules/M15-contracts-errors/templates/INTERFACE-SURFACE.md
 modules/M15-contracts-errors/templates/MIGRATIONS.md

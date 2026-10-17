@@ -1,6 +1,7 @@
-import { test, expect } from "bun:test";
+import { test } from "bun:test";
 import { join } from "node:path";
 import cases from "./cases.json";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 for (const [want, label, filter, catalog] of cases) {
   test(String(label), () => {
     const result = Bun.spawnSync(
@@ -14,6 +15,6 @@ for (const [want, label, filter, catalog] of cases) {
         },
       },
     );
-    expect(result.exitCode).toBe(Number(want));
+    expectSpawnExit(result, Number(want));
   });
 }

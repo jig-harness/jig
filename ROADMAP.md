@@ -99,10 +99,10 @@ so small fixes do not each pay for a full review.
 
 ### 15. M14 Testing strategy: the rest
 
-[M14](modules/M14-testing-strategy/README.md) gains a check that a job which
-needed a real dependency ran at least one test, exception lists that prune
-themselves, stale-test triage on a fresh base, and tests that pin the
-dependency behaviour a workaround exists for.
+[M14](modules/M14-testing-strategy/README.md) gains exception lists that prune
+themselves: the tests-with-changes gate failing on an exemption that matches no
+file, and a `fixed-delay:` token gate that fails on a token with no delay
+beside it.
 
 ### 17. Corrected designs for the existing modules
 

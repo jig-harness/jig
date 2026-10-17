@@ -493,7 +493,11 @@ describe("the map", () => {
     const m14 = rows.find((r) => r.module.module === "M14");
     expect(m14?.naReason).toBeFalsy();
     expect(m14?.cells.filter((c) => c.gap).map((c) => c.criterion.key)).toEqual(
-      ["M14/test-tiers-declared", "M14/testing-rules-written"],
+      [
+        "M14/test-tiers-declared",
+        "M14/testing-rules-written",
+        "M14/stale-test-triage-written",
+      ],
     );
   });
 
@@ -556,7 +560,7 @@ describe("the fixture records", () => {
     const m14 = modules
       .find((m) => m.module === "M14")
       ?.criteria.map((c) => c.key);
-    expect(m14?.length).toBe(12);
+    expect(m14?.length).toBe(17);
     expect(added).toEqual(addedAfter("0.26.0"));
     expect(added).toEqual(expect.arrayContaining(m14 ?? []));
   });
@@ -836,7 +840,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toMatch(
-      /What changed \(103\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+      /What changed \(109\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
     );
     // A criterion Jig added after the prior audit's plugin was not assessed then.
     const added = addedAfter("0.14.0");
@@ -1100,7 +1104,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>102</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>108</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -1480,7 +1484,7 @@ describe("the Markdown copy", () => {
       [
         "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
         "",
-        "### What changed (103)",
+        "### What changed (109)",
         "",
         "| Module | Criterion | Before → after | Change |",
         "|--------|-----------|----------------|--------|",
@@ -1500,6 +1504,7 @@ describe("the Markdown copy", () => {
         "| M1 Gates enforcement ladder | `agent-runtime-hooks-self-tested` | not scored → expected absent | Added by Jig |",
         "| M1 Gates enforcement ladder | `retries-classify-errors` | not scored → expected absent | Added by Jig |",
         "| M2 Generated artifact freshness | `numbers-in-prose-rule-stated` | not scored → absent | Added by Jig |",
+        "| M2 Generated artifact freshness | `toolchain-pins-one-source` | not scored → absent | Added by Jig |",
         "| M2 Generated artifact freshness | `regeneration-after-merge-via-pull-request` | not scored → expected absent | Added by Jig |",
         "| M2 Generated artifact freshness | `generator-reaches-every-input` | not scored → expected absent | Added by Jig |",
         "| M2 Generated artifact freshness | `derivation-one-way-compared-as-data` | not scored → expected absent | Added by Jig |",
@@ -1555,16 +1560,21 @@ describe("the Markdown copy", () => {
         "| M13 Pipeline economy | `cost-decisions-reopenable` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `test-tiers-declared` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `testing-rules-written` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `stale-test-triage-written` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `tier-budgets-enforced` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `full-e2e-never-per-change` | not scored → expected absent | Added by Jig |",
         "| M14 Testing strategy | `tests-type-checked` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `spawn-exit-assertions-print-output` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `tests-come-with-changes` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `fixed-sleeps-banned` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `provisioned-suites-executed` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `dependency-workarounds-pinned` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `clock-reads-linted` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `predicates-proven-against-engine` | not scored → expected absent | Added by Jig |",
         "| M14 Testing strategy | `developer-state-isolated` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `doubles-and-builders-typed` | not scored → absent | Added by Jig |",
         "| M14 Testing strategy | `coverage-trend-scheduled` | not scored → absent | Added by Jig |",
+        "| M14 Testing strategy | `next-release-canary` | not scored → absent | Added by Jig |",
         "| M15 Contracts errors | `error-contract-written` | not scored → absent | Added by Jig |",
         "| M15 Contracts errors | `typed-error-with-code` | not scored → absent | Added by Jig |",
         "| M15 Contracts errors | `error-code-registry` | not scored → expected absent | Added by Jig |",

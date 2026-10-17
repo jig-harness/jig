@@ -105,7 +105,12 @@ compatibility layer and its standard utilities behave differently on macOS
 and Linux. Bun is this repository's toolchain, not a requirement on consumer
 repositories: tooling a non-JavaScript repository runs ships as a standalone
 executable or is pinned through mise. The repository and module gates run
-natively under the pinned Bun runtime.
+natively under the pinned Bun runtime. That version has one source,
+`mise.toml`, which the workflows install through mise; `package.json`'s
+`packageManager` field and its Bun types package repeat it,
+`.config/toolchain-pins.yaml` declares them as its pin sites, and
+`bun run pins` (in the gates) fails when one differs
+([M2](modules/M2-generated-artifact-freshness/README.md#one-version-source)).
 
 ## Quality gates
 

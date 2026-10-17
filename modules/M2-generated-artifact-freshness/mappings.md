@@ -213,3 +213,43 @@ repos:
 Whatever the engine, the invariants hold: replay from zero, pin versions and
 ordering, normalize both sides identically, and always tear down, even on
 failure or interrupt.
+
+## Toolchain pin sites
+
+[`reference/toolchain-pins/`](reference/toolchain-pins/) takes a declaration
+of each tool's one source and its pin sites, each with how to read it: a
+`toml:`, `json:` or `yaml:` dotted path; a `step:` naming a CI setup action
+with the input that holds its version (`with:`) and the one that names a
+version file (`with-file:`), read from the parsed workflow so a comment is
+no step and a step without its input is caught (a step reading a file agrees
+only for `actions/setup-node` and `oven-sh/setup-bun`, whose own readers the
+check mirrors, when that reader takes the source's value from it; any other
+setup action, and a file the action reads in a way the check does not follow
+such as `mise.toml` or `global.json`, sets its version explicitly); or a
+`pattern:` whose first
+capture group is the version, for files that are text. The rows name the
+sites a repository commonly has and the reader for each; a declaration lists
+the sites the repository has and nothing else, because a declared glob that
+matches no file fails the check.
+A version range (`engines`, `requires-python`, a `>=` in a project file) is
+not a pin and is left out.
+
+| Tool | One source | Pin sites, with the reader |
+|------|------------|----------------------------|
+| Bun | `mise.toml` (`toml: tools.bun`), or `.tool-versions` (`pattern: '^bun (\S+)$'`) | `package.json` `packageManager` (`json: packageManager` with `pattern: '^bun@(.+)$'`); `@types/bun`, released with the runtime (`json: devDependencies.@types/bun`); `oven-sh/setup-bun` steps (`step: oven-sh/setup-bun`, `with: bun-version`, `with-file: bun-version-file`; a step with neither installs the latest); a `Dockerfile` (`pattern: '^ARG BUN_VERSION=(\S+)$'`, with `FROM oven/bun:${BUN_VERSION}` so the image follows the argument) |
+| Node.js | `.node-version` or `.nvmrc` (`pattern: '^v?(\S+)$'`), or `mise.toml` (`toml: tools.node`) | `actions/setup-node` steps (`step: actions/setup-node`, `with: node-version`, `with-file: node-version-file`); a `Dockerfile` (`pattern: '^FROM node:(\d+\.\d+\.\d+)'`); `@types/node` tracks the major only, so it is a second tool whose source and site are read with a pattern that captures the major |
+| Python | `.python-version` (`pattern: '^(\S+)$'`), or `mise.toml` | `actions/setup-python` steps (`step: actions/setup-python`, `with: python-version`, `with-file: python-version-file`); a `Dockerfile` (`pattern: '^FROM python:(\d+\.\d+\.\d+)'`) |
+| Go | `go.mod` (`pattern: '^go (\S+)$'`, and `^toolchain go(\S+)$` where one is set) | `actions/setup-go` steps (`step: actions/setup-go`, `with: go-version`, `with-file: go-version-file`); a `Dockerfile` (`pattern: '^FROM golang:(\S+)'`) |
+| Rust | `rust-toolchain.toml` (`toml: toolchain.channel`) | `dtolnay/rust-toolchain@<channel>` steps, whose channel is the action's `@ref` and so is read with a pattern anchored at the step (`pattern: '^\s*(?:-\s+)?uses: dtolnay/rust-toolchain@(\S+)'`); a `Dockerfile` (`pattern: '^FROM rust:(\S+)'`) |
+| Ruby | `.ruby-version` (`pattern: '^(\S+)$'`) | `ruby/setup-ruby` steps (`step: ruby/setup-ruby`, `with: ruby-version`); a `Dockerfile` (`pattern: '^FROM ruby:(\S+)'`) |
+| JVM | `.sdkmanrc` (`pattern: '^java=(\S+)$'`) or `.java-version` | `actions/setup-java` steps (`step: actions/setup-java`, `with: java-version`, `with-file: java-version-file`); a `Dockerfile` (`pattern: '^FROM eclipse-temurin:(\S+)'`); a language level in the build file is a different fact from the runtime, so it is its own tool entry if pinned |
+| .NET | `global.json` (`json: sdk.version`) | `actions/setup-dotnet` steps (`step: actions/setup-dotnet`, `with: dotnet-version`; `global.json` is a structured source, so a step reading it through `global-json-file` is a finding); a `Dockerfile` (`pattern: '^FROM mcr\.microsoft\.com/dotnet/sdk:(\S+)'`) |
+| pnpm, Yarn | `package.json` `packageManager` (`json: packageManager` with `pattern: '^pnpm@(.+)$'`) | `pnpm/action-setup` steps (`step: pnpm/action-setup`, `with: version`; a step without it reads `packageManager`, the source, so a repository whose steps all leave it out declares no such site); `corepack prepare pnpm@(\S+)` in scripts and a `Dockerfile` |
+
+Other CI providers' files are read with a path or an anchored pattern: a
+GitLab CI job pins an image (`pattern: '^\s*image: oven/bun:(\S+)'` in
+`.gitlab-ci.yml`), a CircleCI job a `docker:` image. Where the version manager is mise or asdf, one file is the
+source for every runtime, with one tool entry per runtime in the
+declaration. The pin a [runtime canary](../M14-testing-strategy/README.md)
+holds (`canary`, `nightly`, `head`, a release candidate) is registered as
+an exception with that reason.

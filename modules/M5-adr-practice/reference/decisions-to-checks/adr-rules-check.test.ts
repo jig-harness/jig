@@ -32,7 +32,7 @@ for (const [want, label, params] of cases) {
       [process.execPath, join(import.meta.dir, "adr-rules-check.ts"), ...args],
       { env },
     );
-    expect(result.exitCode).toBe(want);
+    expectSpawnExit(result, want);
   });
 }
 
@@ -51,6 +51,7 @@ test("exclusion globs match native Windows separators and preserve POSIX literal
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 test("companion window boundaries preserve negative empty neighborhoods and reject invalid configuration", () => {
   const root = mkdtempSync(join(tmpdir(), "jig-adr-window-"));
   try {

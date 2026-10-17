@@ -97,7 +97,8 @@ Run what the change needs, decided once, failing toward running more.
 - **Attribute a failure to a change only after reproducing it on a freshly
   fetched base.** A failure that also occurs on the base belongs to the base:
   fix or report it there, rather than working around it in an unrelated
-  change.
+  change. [M14](../M14-testing-strategy/README.md#core-pieces) gives the
+  triage: how to reproduce it, and what a stale test owes.
 
 ### 3. Supersede
 

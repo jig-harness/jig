@@ -72,3 +72,46 @@ export function expectSpawnKilled(result: SpawnResult, label?: string): void {
       `${prefixed(label)}expected a signal-killed run (null exit code), got ${result.exitCode}${diagnostics(result)}`,
     );
 }
+
+/**
+ * A child spawned asynchronously (`Bun.spawn`): its exit status is a promise
+ * and its captured output arrives as streams, or as a descriptor number when
+ * it was not piped.
+ */
+export interface AsyncSpawnResult {
+  exited: Promise<number>;
+  stdout: ReadableStream<Uint8Array> | number | null | undefined;
+  stderr: ReadableStream<Uint8Array> | number | null | undefined;
+}
+
+/** The whole of a piped stream as text; null when nothing was piped, a note when the test read it first. */
+async function streamText(
+  stream: AsyncSpawnResult["stdout"],
+): Promise<string | null> {
+  if (stream == null || typeof stream === "number") return null;
+  try {
+    return await new Response(stream).text();
+  } catch {
+    return "(already read by the test)";
+  }
+}
+
+/**
+ * `expectSpawnExit` for an awaited child: waits for it to exit and, on a
+ * mismatch, reads its piped streams into the report. The streams are read
+ * only on a mismatch, so a test that reads them itself after a passing
+ * assertion is unaffected.
+ */
+export async function expectSpawnExited(
+  proc: AsyncSpawnResult,
+  expected: number,
+  label?: string,
+): Promise<void> {
+  const exitCode = await proc.exited;
+  if (exitCode === expected) return;
+  const [stdout, stderr] = await Promise.all([
+    streamText(proc.stdout),
+    streamText(proc.stderr),
+  ]);
+  expectSpawnExit({ exitCode, stdout, stderr }, expected, label);
+}

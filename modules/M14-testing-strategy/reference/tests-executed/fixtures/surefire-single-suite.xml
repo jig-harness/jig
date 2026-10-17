@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by the build; a comment that mentions <testcase/> and <skipped/> is not a test case. -->
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="shop.OrdersRepositoryIT" time="1.204" tests="2" errors="0" skipped="1" failures="0">
+  <properties>
+    <property name="java.version" value="21"/>
+  </properties>
+  <testcase name="findsByCustomer" classname="shop.OrdersRepositoryIT" time="1.1">
+    <system-out><![CDATA[container started
+<testcase name="quoted in output"/>
+<skipped/>
+]]></system-out>
+  </testcase>
+  <testcase name="archivesOldOrders" classname="shop.OrdersRepositoryIT" time="0.1">
+    <skipped message="Assumption failed: ARCHIVE_BUCKET is not set"/>
+  </testcase>
+</testsuite>

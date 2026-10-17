@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   chmodSync,
   existsSync,
@@ -2196,7 +2197,7 @@ describe("drive-status.ts reports counts it never measured as null", () => {
           stderr: "ignore",
         },
       );
-      expect(await parked.exited).toBe(0);
+      await expectSpawnExited(parked, 0);
     }
     const r = await probeIn(dir, stateDir);
     const work = r.json.work as Record<string, unknown>;

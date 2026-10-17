@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" errors="0" failures="0" skipped="2" tests="2" time="0.012" timestamp="2026-01-01T12:00:00.000000" hostname="runner">
+    <testcase classname="tests.integration.test_orders" name="test_create_order" time="0.001">
+      <skipped type="pytest.skip" message="DATABASE_URL is not set">/app/tests/integration/test_orders.py:5: DATABASE_URL is not set</skipped>
+    </testcase>
+    <testcase classname="tests.integration.test_orders" name="test_reject_negative_total" time="0.001">
+      <skipped type="pytest.skip" message="DATABASE_URL is not set">/app/tests/integration/test_orders.py:5: DATABASE_URL is not set</skipped>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -3,7 +3,7 @@
   "license": "Apache-2.0 AND MIT-0",
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.3",
     "@types/js-yaml": "4.0.9",
     "fallow": "3.33.1",
     "happy-dom": "20.11.6",
@@ -24,7 +24,8 @@
     "format:check": "biome format .",
     "build": "bun scripts/build.ts",
     "quality": "bun modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts --config tools/quality/ratchet.jsonc",
-    "quality:report": "bun modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts --config tools/quality/ratchet.jsonc --report"
+    "quality:report": "bun modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts --config tools/quality/ratchet.jsonc --report",
+    "pins": "bun modules/M2-generated-artifact-freshness/reference/toolchain-pins/check-toolchain-pins.ts .config/toolchain-pins.yaml"
   },
   "type": "module",
   "trustedDependencies": []

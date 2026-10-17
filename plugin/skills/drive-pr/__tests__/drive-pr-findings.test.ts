@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   chmodSync,
   existsSync,
@@ -1052,7 +1053,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
         stderr: "ignore",
       },
     );
-    expect(await ok.exited).toBe(0);
+    await expectSpawnExited(ok, 0);
   });
 
   it("refuses when the `.git` marker EXISTS but the filesystem cannot resolve it", async () => {

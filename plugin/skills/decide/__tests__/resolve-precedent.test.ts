@@ -50,6 +50,7 @@ import {
   UNREADABLE_FRONTMATTER_STATUS,
   vocabularyFlags,
 } from "../scripts/resolve-precedent.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const REPO_ROOT = resolve(dirname(import.meta.path), "..", "..", "..", "..");
 const SCRIPT = join(
@@ -1516,7 +1517,7 @@ describe("worked example against this repository's own corpus", () => {
       [process.execPath, SCRIPT, "markdown tables blank line", "--json"],
       { cwd: REPO_ROOT, env },
     );
-    expect(proc.exitCode).toBe(0);
+    expectSpawnExit(proc, 0);
     const report = JSON.parse(proc.stdout.toString());
     expect(report.corpus.policy).toBeGreaterThan(3);
     expect(report.candidates.length).toBeGreaterThan(0);
@@ -1533,7 +1534,7 @@ describe("worked example against this repository's own corpus", () => {
       { cwd: mkdtempSync(join(tmpdir(), "precedent-elsewhere-")), env },
     );
     expect(proc.stderr.toString()).toBe("");
-    expect(proc.exitCode).toBe(0);
+    expectSpawnExit(proc, 0);
     expect(JSON.parse(proc.stdout.toString()).corpus.policy).toBeGreaterThan(3);
   });
 });

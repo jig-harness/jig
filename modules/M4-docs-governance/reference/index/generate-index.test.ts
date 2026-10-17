@@ -14,6 +14,7 @@ import {
   generateOrphans,
   renderOrphans,
 } from "./generate-index";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 let root: string;
 let docs: string;
@@ -41,10 +42,10 @@ const outputs = () => [join(docs, "INDEX.md"), join(docs, ".orphans.md")];
 describe("INDEX.md", () => {
   test("the fixture index reproduces exactly and an added doc makes the gate fail", () => {
     expect(generateIndex(docs, outputs())).toBe(read("INDEX.md"));
-    expect(check().exitCode).toBe(0);
+    expectSpawnExit(check(), 0);
     writeFileSync(join(docs, "added.md"), "# Added\n");
     const result = check();
-    expect(result.exitCode).toBe(1);
+    expectSpawnExit(result, 1);
     expect(result.stdout.toString()).toContain("INDEX.md is stale");
     expect(read("INDEX.md")).not.toContain("added.md");
   });
@@ -75,7 +76,7 @@ describe("generator inputs", () => {
   test("present but unreadable frontmatter is an error, naming the document", () => {
     writeFileSync(join(docs, "bad.md"), "---\ntitle: &t Bad\n---\n");
     const result = check();
-    expect(result.exitCode).toBe(2);
+    expectSpawnExit(result, 2);
     expect(result.stderr.toString()).toContain(
       "bad.md: unreadable frontmatter",
     );
@@ -85,7 +86,7 @@ describe("generator inputs", () => {
     const before = read("INDEX.md");
     writeFileSync(join(docs, "added.md"), "# Added\n");
     const result = run(["--chek"]);
-    expect(result.exitCode).toBe(2);
+    expectSpawnExit(result, 2);
     expect(result.stderr.toString()).toContain("unknown argument: --chek");
     expect(read("INDEX.md")).toBe(before);
   });
@@ -93,7 +94,7 @@ describe("generator inputs", () => {
   test("OUT and ORPHANS naming one file is an error", () => {
     const same = join(docs, "same.md");
     const result = run([], { OUT: same, ORPHANS: same });
-    expect(result.exitCode).toBe(2);
+    expectSpawnExit(result, 2);
     expect(result.stderr.toString()).toContain("need two files");
   });
 });
@@ -148,14 +149,14 @@ describe("orphan report", () => {
 
   test("--check fails on report drift alone, and orphans never fail it", () => {
     const fresh = check();
-    expect(fresh.exitCode).toBe(0);
+    expectSpawnExit(fresh, 0);
     expect(fresh.stdout.toString()).toContain("WARN — 1 orphaned doc(s)");
     writeFileSync(
       join(docs, ".orphans.md"),
       read(".orphans.md").replace("owner: docs", "owner: operations"),
     );
     const drift = check();
-    expect(drift.exitCode).toBe(1);
+    expectSpawnExit(drift, 1);
     expect(drift.stdout.toString()).toContain(".orphans.md is stale");
     expect(drift.stdout.toString()).not.toContain("INDEX.md is stale");
   });

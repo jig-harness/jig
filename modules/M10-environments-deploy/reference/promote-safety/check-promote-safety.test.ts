@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findings } from "./check-promote-safety";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 const gate = join(import.meta.dir, "check-promote-safety.ts"),
   fix = join(import.meta.dir, "fixtures");
 function run(args: string[], env: Record<string, string> = {}) {
@@ -79,17 +80,17 @@ const cases: [string, number, Record<string, string>][] = [
   ["unsafe/step-input-environment-prod.yml", 1, {}],
 ];
 for (const [file, code, env] of cases)
-  test(file, () => expect(run([join(fix, file)], env).exitCode).toBe(code));
+  test(file, () => expectSpawnExit(run([join(fix, file)], env), code));
 test("missing input file fails closed", () =>
-  expect(run([join(fix, "absent-file")]).exitCode).toBe(2));
+  expectSpawnExit(run([join(fix, "absent-file")]), 2));
 test("missing directory passes", () =>
-  expect(run([], { WORKFLOWS_DIR: join(fix, "none") }).exitCode).toBe(0));
+  expectSpawnExit(run([], { WORKFLOWS_DIR: join(fix, "none") }), 0));
 test("a workflows path that is a regular file fails closed", () => {
   const temp = mkdtempSync(join(tmpdir(), "promote-safety-"));
   try {
     const file = join(temp, "workflows");
     writeFileSync(file, "not a directory\n");
-    expect(run([], { WORKFLOWS_DIR: file }).exitCode).toBe(2);
+    expectSpawnExit(run([], { WORKFLOWS_DIR: file }), 2);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
@@ -100,9 +101,7 @@ test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     const temp = mkdtempSync(join(tmpdir(), "promote-safety-"));
     try {
       chmodSync(temp, 0);
-      expect(run([], { WORKFLOWS_DIR: join(temp, "workflows") }).exitCode).toBe(
-        2,
-      );
+      expectSpawnExit(run([], { WORKFLOWS_DIR: join(temp, "workflows") }), 2);
     } finally {
       chmodSync(temp, 0o700);
       rmSync(temp, { recursive: true, force: true });
@@ -111,7 +110,8 @@ test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
 );
 for (const dir of ["safe", "unsafe"])
   test(`directory ${dir}`, () =>
-    expect(run([], { WORKFLOWS_DIR: join(fix, dir) }).exitCode).toBe(
+    expectSpawnExit(
+      run([], { WORKFLOWS_DIR: join(fix, dir) }),
       dir === "safe" ? 0 : 1,
     ));
 test("findings explain the missing gate and mutable ref", () => {

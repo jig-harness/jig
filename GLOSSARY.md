@@ -216,6 +216,12 @@ make, use the entry's term instead.
   (a count, a roster) and compares it to what the prose claims, committing
   no generated file — freshness without the merge-conflict liability of a
   committed cache.
+- **Pin site** — a place that repeats a toolchain version declared
+  elsewhere: a CI setup step, a container build argument, a package-manager
+  field, a type package that tracks the runtime. Every pin site is gated to
+  equal the one source, and a pin that differs on purpose is a registered
+  exception with a reason
+  ([M2](modules/M2-generated-artifact-freshness/README.md)).
 - **Tally (versus constraint)** — the test for a number in prose. A
   *constraint* (a limit, a budget, `3 retries`) is part of what the text
   means and stays; a *tally* describes an adjacent list (`the 6 passes`,
@@ -824,12 +830,44 @@ make, use the entry's term instead.
 - **False green** — a check that reports success while the thing it claims
   to check is broken: a suite that skipped itself, a *test double* that
   accepts anything, a test that was never seen to fail.
+- **Skip tripwire** — a check at the end of a CI job that reads the test
+  runner's machine-readable report and fails the job when the suites it
+  exists for executed zero tests (the test cases not skipped), so a suite
+  that skipped itself, or a selection that matched nothing, cannot report a
+  *false green* ([M14](modules/M14-testing-strategy/README.md)).
 - **Flaky test** — a test that sometimes passes and sometimes fails on the
   same code, because of timing, shared state or an unreliable dependency.
 - **Flaky-test quarantine** — setting a *flaky test* aside so its failures
   stop blocking merges while it is fixed, without hiding them: the test keeps
   running and reporting, and the quarantine list is reviewed and short
   ([M14](modules/M14-testing-strategy/README.md) lists it as future work).
+- **Stale test** — a test whose failure predates the change under work and
+  was not caused by it: its subject moved, its premise no longer matches the
+  code, or the base it was last green on has changed since. Known only by
+  reproducing the failure with a *fresh-base probe*; fixed inline when the
+  fix is cheap, otherwise deleted with a tracker item recording what it
+  covered ([M14](modules/M14-testing-strategy/README.md)).
+- **Fresh-base probe** — running a failing check again on a freshly fetched
+  base branch, in a throwaway *worktree*, before the failure is attributed to
+  a change. The failing test passes on the base (the failure is the
+  change's), fails there, read from that test case's own result in the
+  runner's report rather than from its name in the output (a *stale test*),
+  or the probe cannot decide (the fetch failed, no worktree, a different
+  failure), and a failed fetch is never read as a pass
+  ([M14](modules/M14-testing-strategy/README.md); `fix-ci` ships it as
+  `probe-base.ts`).
+- **Behaviour pin** — a test that asserts the defective behaviour of a
+  dependency that a workaround compensates for, run against the real
+  dependency and named for the workaround. It fails on the release that
+  fixes the defect, which is the signal to retire or adapt the workaround,
+  never to update the assertion
+  ([M14](modules/M14-testing-strategy/README.md)).
+- **Runtime canary** — a scheduled job that runs the most informative test
+  suites, and a compiled-binary smoke test, against the next release of the
+  runtime or a driver (its canary, nightly, beta or release-candidate
+  channel), blocks nothing and records the exact build it used, so an
+  incompatibility is known before the upgrade and a red run can be
+  attributed ([M14](modules/M14-testing-strategy/README.md)).
 - **Test double** — a stand-in for a real dependency in a test (a fake,
   stub or mock). An honest one rejects what the real dependency would
   reject, so a wrong call fails the test instead of passing it.

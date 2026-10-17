@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="3" failures="0" errors="0" time="0.512">
+  <testsuite tests="2" failures="0" time="0.004" name="example.com/app/db" timestamp="2026-01-01T12:00:00Z">
+    <properties>
+      <property name="go.version" value="go1.24 linux/amd64"></property>
+    </properties>
+    <testcase classname="example.com/app/db" name="TestQueryOrders" time="0.000">
+      <skipped message="db_test.go:12: DATABASE_URL not set"></skipped>
+    </testcase>
+    <testcase classname="example.com/app/db" name="TestInsertOrder" time="0.000">
+      <skipped message="db_test.go:12: DATABASE_URL not set"></skipped>
+    </testcase>
+  </testsuite>
+  <testsuite tests="1" failures="0" time="0.508" name="example.com/app/api" timestamp="2026-01-01T12:00:00Z">
+    <properties>
+      <property name="go.version" value="go1.24 linux/amd64"></property>
+    </properties>
+    <testcase classname="example.com/app/api" name="TestHealth" time="0.508"></testcase>
+  </testsuite>
+</testsuites>

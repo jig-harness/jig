@@ -3,10 +3,11 @@
 The module [invariant](README.md) is tool-independent: declared tiers with
 budgets, honest doubles, an injected clock, polling instead of sleeping,
 predicates proven where they execute, typed builders, type-checked tests,
-tests with every change, no real developer state, and coverage as a trend.
+tests with every change, no real developer state, coverage as a trend, and
+a tripwire on suites that skipped themselves.
 This file maps each piece onto concrete languages, test runners and
 [CI](../../GLOSSARY.md) providers. Replace `<placeholders>` with your values.
-The two reference scripts need the pinned Bun runtime; everything else here
+The reference scripts need the pinned Bun runtime; everything else here
 is a feature of the named tool.
 
 ## Tiers in CI
@@ -156,6 +157,20 @@ values inside a typed builder, not as the builder.
 To trust a new type check over tests, put a deliberate type error in one test
 file and see the check report it before relying on a clean run.
 
+### Spawned exit codes
+
+An assertion on a spawned process's exit status prints the child's captured
+output when it fails, so a regression is told apart from a process killed
+under load. The spawn call pipes both streams; a result that captured
+neither says so rather than leaving the fields out.
+
+| Ecosystem | Helper | Lint for the bare shape |
+|-----------|--------|-------------------------|
+| TypeScript (Bun, Node) | [`lib/test-helpers/expect-spawn-exit.ts`](../../lib/test-helpers/expect-spawn-exit.ts): `expectSpawnExit(result, code)`, `expectSpawnExitNot(result, code)` and `expectSpawnKilled(result)` take the spawn result with its piped `stdout` and `stderr` (`null` where a run captured none) and throw with both on a mismatch; an in-process runner that returns `{ exitCode, stdout }` passes `stderr: null` | Biome: a GritQL plugin on `expect($result.exitCode).$matcher(...)` and its `.not` form in test files, [`tools/quality/grit/no-bare-exit-code-assertion.grit`](../../tools/quality/grit/no-bare-exit-code-assertion.grit), at `warn` under the ratchet; ESLint: `no-restricted-syntax` with a selector for a call to `expect` whose argument is a member named `exitCode`. Node's `status` field is not matched, since HTTP responses share the name: read a Node result into the helper's shape |
+| Python | `subprocess.run(..., capture_output=True, text=True)` and `assert result.returncode == code, result.stdout + result.stderr`, or a fixture that wraps the run and the assertion | a grep gate over test files for `returncode ==` in an `assert` without a message |
+| Go | `out, err := cmd.CombinedOutput()`, then `t.Fatalf("%v\n%s", err, out)` on failure; the code is on `exec.ExitError` | review: `go vet` has no such rule |
+| JVM, .NET | the assertion's message argument carries the captured output (`assertEquals(0, code, output)`; a helper that throws with the output around `Assert.Equal`) | review |
+
 ## Tests come with changes
 
 [`reference/tests-with-changes/`](reference/tests-with-changes/) takes the
@@ -246,3 +261,171 @@ them counts shared files twice. Hosted services that chart the trend
 `informational: true`); runner settings that block per file (Jest
 `coverageThreshold` with path keys, Vitest `coverage.thresholds.perFile`,
 JaCoCo `check` rules per class) are what the module advises against.
+
+## Skipped is not passed
+
+[`reference/tests-executed/`](reference/tests-executed/) reads the JUnit
+report (the XML test report every runner below can write) and fails when
+the test cases that were not skipped number zero. Write the report with the
+runner's own flag, then run the check on it in the same job, after the
+suite. Each row names the flag and how a suite's self-skip shows in the
+report, which is what the check counts.
+
+| Runner | Write the report | How a self-skip appears in it |
+|--------|------------------|-------------------------------|
+| Bun | `bun test <paths> --reporter=junit --reporter-outfile=<file>` | `describe.skipIf(...)` and `test.skipIf(...)` cases carry `<skipped />`; one `<testsuite>` per file, with one nested per `describe` |
+| Vitest | `vitest run --reporter=junit --outputFile=<file>` | `describe.skipIf` and `test.skip` cases carry `<skipped/>`; one `<testsuite>` per file |
+| Jest | the `jest-junit` reporter (`--reporters=default --reporters=jest-junit`), with `JEST_JUNIT_OUTPUT_DIR` and `JEST_JUNIT_OUTPUT_NAME` naming the file | `describe.skip` and `test.skip` cases carry `<skipped/>`; one `<testsuite>` per file |
+| Playwright | `playwright test --reporter=junit` with `PLAYWRIGHT_JUNIT_OUTPUT_NAME=<file>` | `test.skip(condition)` cases carry `<skipped/>`; one `<testsuite>` per file |
+| pytest | `pytest --junitxml=<file>` | `pytest.mark.skipif`, `pytest.skip(allow_module_level=True)` and `pytest.importorskip` cases carry `<skipped>`; one `<testsuite>` named `pytest` for the whole run, so a per-file count means one run per file |
+| Go | `gotestsum --junitfile <file> ./...` (`go test` alone writes no report) | `t.Skip` and `testing.Short()` cases carry `<skipped>`; one `<testsuite>` per package, without a `skipped` attribute, which is why the check counts cases rather than attributes |
+| JVM (JUnit 5) | Maven Surefire and Failsafe write `target/surefire-reports/TEST-*.xml` and `target/failsafe-reports/TEST-*.xml`; Gradle writes `build/test-results/test/TEST-*.xml`; pass every file | a failed assumption (`Assumptions.assumeTrue`), `@EnabledIfEnvironmentVariable` and Testcontainers' `disabledWithoutDocker` cases carry `<skipped>`; one file per class, each a root `<testsuite>` |
+| .NET | `dotnet test --logger "junit;LogFilePath=<file>"` with the `JunitXml.TestLogger` package | xUnit `Skip =` and NUnit `Assume.That` cases carry `<skipped/>` |
+| Ruby (RSpec) | `rspec --format RspecJunitFormatter --out <file>` (the `rspec_junit_formatter` gem) | `skip` and `pending` examples carry `<skipped/>` |
+| PHPUnit | `phpunit --log-junit <file>` | `markTestSkipped` cases carry `<skipped/>` |
+
+A job that runs several suites which could each skip passes `--each-suite`,
+so one suite that ran does not vouch for the others. A job that exists for
+one file names it with `--suite <name>`, as the report names it, so a file
+the runner never discovered is a failure rather than a silence. A runner
+given a path or shard that matches nothing usually exits 0 and writes no
+report; the check then reports could not check (exit 2), and the job fails
+either way.
+
+Run it from a pinned Jig checkout, as the
+[tests-with-changes recipe](#tests-come-with-changes) does, in the job that
+provisions the dependency:
+
+```yaml
+# GitHub Actions: the job that provisions the database, after the pinned Jig
+# checkout and setup-bun steps of the recipe above
+      - name: Run the integration suite with a report
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/app
+        run: bun test src/db --reporter=junit --reporter-outfile=reports/db.xml
+      - name: Fail unless the suite executed a test
+        if: always()
+        run: >-
+          bun "$M14"/reference/tests-executed/check-tests-executed.ts
+          --each-suite reports/db.xml
+```
+
+The report path the second step names is the one the first wrote; a path
+the runner did not write fails the step. The same two commands go into a
+GitLab CI `script:` list, a Jenkins `sh` step or a CircleCI `run`.
+
+## Triage before attribution
+
+The [fresh-base probe](../../GLOSSARY.md) is runner-independent:
+[`fix-ci`'s `probe-base.ts`](../../plugin/skills/fix-ci/scripts/probe-base.ts)
+takes the base branch, the failing test's name (`--expect`), the JUnit
+report the command writes (`--junit`, with the runner's flag from *Skipped
+is not passed* above) and the command that runs the one failing file,
+fetches the base, runs the command in a throwaway worktree at the commit the
+fetch returned, removes the worktree, and exits 0 (that test case passed on
+the base: the failure is the change's), 1 (it failed there: pre-existing)
+or 2 (could not decide: the fetch failed, no worktree, the command did not
+run, or the report has no case by that name, several with different
+results, or only skipped ones). The verdict reads the case, not the output:
+a passing test prints its name too, so a name in a failed run's output says
+nothing about which test failed. A check with no per-case report (a type
+check, a lint) is probed without `--junit`, with the error message as
+`--expect`, and counts as pre-existing when it fails on the base showing
+that message.
+The worktree starts with nothing installed, so `--setup` names the
+repository's install command, run there first: `bun install
+--frozen-lockfile`, `npm ci`, `pnpm install --frozen-lockfile`, `yarn install
+--immutable`, `bundle install`, `composer install`; for Python a fresh
+virtual environment in the worktree (`uv sync`, or `python -m venv .venv &&
+.venv/bin/pip install -e .`), because an editable install into the working
+checkout's environment points at that checkout's sources and the probe
+would run the change's code against the base's test; Go, the JVM and .NET
+resolve through their build tool's shared cache and need no step. The setup
+runs in a shell of its own, so the test command reaches the worktree's
+environment directly (`uv run pytest`, `.venv/bin/python -m pytest`, `bundle
+exec rspec`): a bare `pytest` resolves from the caller's `PATH`, which can be
+the working checkout's environment. Without the plugin, five commands do the
+same: `git fetch origin <base>`, stopping if it fails; `git worktree add
+--detach <new path> FETCH_HEAD`; the install command, then the test command,
+both run from that path, reading the report for the failing case's result;
+`git worktree remove --force <path>`. The command per runner is the one
+that runs a single file:
+
+| Runner | Run one failing file on the base |
+|--------|----------------------------------|
+| Bun | `bun test <file>` |
+| Vitest | `vitest run <file>` |
+| Jest | `jest <path>` |
+| Playwright | `playwright test <file>` |
+| pytest | `uv run pytest <file>` or `.venv/bin/python -m pytest <file>` (`<file>::<test>` for one case) |
+| Go | `go test ./<package> -run '^<TestName>$'` |
+| JVM | `mvn -q test -Dtest=<Class>` (Gradle: `gradle test --tests <Class>`) |
+| .NET | `dotnet test --filter "FullyQualifiedName~<Class>"` |
+| Ruby (RSpec) | `rspec <file>` |
+| PHPUnit | `phpunit <file>` |
+
+```bash
+# From the repository whose check failed, with the plugin's skill directory in SKILL
+bun "$SKILL/scripts/probe-base.ts" --base main --setup "bun install --frozen-lockfile" --expect "total rounds to cents" --junit probe.xml -- bun test src/cart/total.test.ts --reporter=junit --reporter-outfile=probe.xml
+bun "$SKILL/scripts/probe-base.ts" --base develop --remote upstream --setup "uv sync" --expect test_total_rounds --junit probe.xml -- uv run pytest tests/test_total.py --junitxml=probe.xml
+```
+
+The tracker item that records a deleted stale test is opened with the
+tracker's own command-line tool (`gh issue create --body-file <notes>`,
+`glab issue create`, the tracker's CLI); its body lists the file, the number
+of cases, the behaviours they asserted, the failing output and why the fix
+was not cheap, so the coverage is owed, not lost.
+
+A per-change check scoped to the diff (Turborepo `--filter=...[<base>]`, Nx
+`affected`, a job-level path condition, a change-area resolver) is what lets
+a stale test exist; its unscoped run on the integration branch, per CI host,
+is in [M13's mappings](../M13-pipeline-economy/mappings.md).
+
+## Behaviour pins
+
+A pin asserts the dependency's defective behaviour against the real
+dependency, so it belongs to the integration tier, skips itself without the
+dependency, and runs in the job that provisions it, which ends with the
+[skip tripwire](#skipped-is-not-passed). Its title names the workaround, so
+a failure reads as the signal to retire or adapt that workaround; its header
+says
+which release fixes the defect, when that is known, and that the assertion
+is never updated on its own.
+
+| Runner | The shape of a pin |
+|--------|--------------------|
+| Bun, Vitest, Jest | a `<workaround>.pins.integration.test.ts` beside the workaround's file, each `describe` named for the defect and the workaround file whose premise it pins |
+| Playwright | the same file beside the client-side workaround, run against the real browser |
+| pytest | a `test_<workaround>_premise.py` beside the workaround, each test's docstring naming the workaround and the defect |
+| Go | `Test<Workaround>Premise` functions in the workaround's package, against the real driver |
+| JVM, .NET | a test class named for the workaround's premise in the workaround's package or project |
+
+## Canary on the next release
+
+[`templates/runtime-canary.yml`](templates/runtime-canary.yml) is the
+workflow. Each row says how the runtime's next release is installed in a
+GitHub Actions step and which command prints the build it ran, which the
+workflow writes to the run summary; the pin the canary holds (`canary`,
+`nightly`, `head`, a release candidate) is registered as an exception in the
+repository's toolchain-pins declaration
+([M2](../M2-generated-artifact-freshness/mappings.md#toolchain-pin-sites)).
+
+| Runtime | The next release, in a setup step | The build it ran |
+|---------|-----------------------------------|------------------|
+| Bun | `oven-sh/setup-bun` with `bun-version: canary` | `bun --version` and `bun --revision` |
+| Node.js | `actions/setup-node` with a version-qualified nightly, `node-version: <next>-nightly` (a release candidate is named exactly, `node-version: <next>.0.0-rc.1`; there is no bare `rc` alias) | `node --version` |
+| Deno | `denoland/setup-deno` with `deno-version: canary` | `deno --version` |
+| Python | `actions/setup-python` with `python-version: <next>-dev` and `allow-prereleases: true` | `python --version` |
+| Go | `go install golang.org/dl/gotip@latest && gotip download`, then `gotip` in place of `go` | `gotip version` |
+| Rust | `dtolnay/rust-toolchain@beta` (or `@nightly`) | `rustc --version --verbose`, which includes the commit |
+| Ruby | `ruby/setup-ruby` with `ruby-version: head` | `ruby --version`, which includes the revision |
+| JVM | `actions/setup-java` with `java-version: <next>-ea` | `java -version` |
+| .NET | `actions/setup-dotnet` with `dotnet-version: <next>.0.x` and `dotnet-quality: preview` | `dotnet --version` |
+| A driver or library | install it at its pre-release tag in the canary job only (`npm install <package>@next`, `pip install --pre <package>`), leaving the lockfile as it is | the resolved version in the package manager's listing |
+
+The compiled-binary job uses the same build command and target as the
+release build (`bun build --compile --target=<target>`, `go build`,
+`cargo build --release`, `dotnet publish`), so the canary compiles what
+production runs, and executes the binary once in a way that must succeed
+and once in a way that must fail, so the exit-code contract is checked
+rather than only the start.

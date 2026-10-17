@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   expectSpawnExit,
+  expectSpawnExited,
   expectSpawnExitNot,
   expectSpawnKilled,
 } from "./expect-spawn-exit.ts";
@@ -129,6 +130,60 @@ describe("expectSpawnKilled", () => {
       ),
     ).toThrow(
       /^cancel: expected a signal-killed run \(null exit code\), got 0[\s\S]*stdout-marker[\s\S]*stderr-marker/,
+    );
+  });
+});
+
+describe("expectSpawnExited", () => {
+  const child = (code: number, out = "", err = "") =>
+    Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `process.stdout.write(${JSON.stringify(out)}); process.stderr.write(${JSON.stringify(err)}); process.exit(${code});`,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+
+  test("a match resolves and leaves the streams to the test", async () => {
+    const p = child(0, "kept");
+    await expectSpawnExited(p, 0);
+    expect(await new Response(p.stdout).text()).toBe("kept");
+  });
+
+  test("a mismatch reports the code and the piped output", async () => {
+    const p = child(3, "out line", "err line");
+    let message = "";
+    try {
+      await expectSpawnExited(p, 0, "child");
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("child: expected exit 0, got 3");
+    expect(message).toContain("--- stdout ---\nout line");
+    expect(message).toContain("--- stderr ---\nerr line");
+  });
+
+  test("a stream the test already read is named, not an error", async () => {
+    const p = child(1, "gone");
+    expect(await new Response(p.stdout).text()).toBe("gone");
+    let message = "";
+    try {
+      await expectSpawnExited(p, 0);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("expected exit 0, got 1");
+    expect(message).toContain("(already read by the test)");
+  });
+
+  test("a child whose output was not piped reports the code alone", async () => {
+    const p = Bun.spawn([process.execPath, "-e", "process.exit(2)"], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await expect(expectSpawnExited(p, 0)).rejects.toThrow(
+      "expected exit 0, got 2",
     );
   });
 });

@@ -54,6 +54,39 @@ spin a throwaway database/container, replay the source of truth (migrations)
 from scratch, dump, normalize, and compare — testing the *whole chain*, not
 just file timestamps.
 
+## One version source
+
+A toolchain version (the runtime, the compiler, the package manager a
+repository builds and tests with) is a derived fact with many copies. It is
+declared once, in the file the developers' version manager reads, and then
+repeated wherever something installs the tool on its own: a CI setup step, a
+container build argument, a package-manager field, a type package that
+tracks the runtime. Each copy is a [pin site](../../GLOSSARY.md), and pin
+sites drift the way every derived copy does: one is left out and floats to
+the tool's latest release, which changes on the day the tool releases; one
+is missed by an upgrade and stays a version behind. Code then runs under one
+version in CI, another in the container and a third on a laptop, and the
+difference shows up as a failure nobody can reproduce.
+
+The rule is rung 2 of the ladder applied to a version: one file is the
+source, every other pin site is gated to equal it, and nothing is generated.
+A declaration names, per tool, the source and every pin site with how to
+read each; a gate fails a pin that differs, a site whose pin is gone, and a
+setup step that names no version at all. A pin that differs on purpose, such
+as the [runtime canary](../M14-testing-strategy/README.md) that runs the
+suites on the tool's next release, is registered as an exception with a
+reason, and the exception prunes itself: one that excuses nothing (its value
+is the source's now, or no pin holds it) is a finding, as
+[M1](../M1-gates-enforcement-ladder/README.md) asks of every exception.
+Version ranges (`engines`, a minimum in a project file) are not pins and
+stay out: a range stays true across an upgrade, and the install checks it.
+[`reference/toolchain-pins/`](reference/toolchain-pins/) is the gate; the
+sites per ecosystem are in [mappings](mappings.md#toolchain-pin-sites). An
+upgrade then changes the source and lets the gate list every site to
+follow; `upgrade-deps`
+([ROADMAP item 3](../../ROADMAP.md#3-the-kickoff-family)) is planned as the
+runnable form of that upgrade.
+
 ## The inventory and the one runner
 
 A triad per derived file is not enough on its own: each triad's drift check
@@ -237,7 +270,9 @@ so a reviewer applies it where the lint's shape test cannot.
   generator that selects its inputs by a list has a coverage check;
   structured artifacts are compared as parsed data; at least prose
   path-references in instruction files are checked to exist; the
-  instruction file states which numbers in prose may stay.
+  instruction file states which numbers in prose may stay; every toolchain
+  version pin equals its one declared source, and a check in CI fails one
+  that differs.
 - **Strict** — derivable prose facts are declared in a registry and
   CI-checked (commit-nothing);
   schema-like artifacts use ephemeral replay; every derived file is
@@ -264,8 +299,10 @@ so a reviewer applies it where the lint's shape test cannot.
    paths that instruction files reference with
    [`reference/prose-facts/check-referenced-paths.ts`](reference/prose-facts/check-referenced-paths.ts),
    and state in the instruction file that a number which tallies a list is
-   dropped or registered, and one that constrains stays. This is
-   **Standard**.
+   dropped or registered, and one that constrains stays. Declare each toolchain version's source and
+   pin sites and run
+   [`reference/toolchain-pins/`](reference/toolchain-pins/) on every change.
+   This is **Standard**.
 3. Declare the facts prose states in a registry and check them with
    [`reference/prose-facts/check-registered-facts.ts`](reference/prose-facts/check-registered-facts.ts),
    with the tally lint beside it advisory
@@ -294,6 +331,10 @@ What this module provides:
 - [`reference/ephemeral-replay/`](reference/ephemeral-replay/) — a schema
   drift check that replays migrations into a throwaway Postgres container
   with docker, plus the normalization and operational lessons.
+- [`reference/toolchain-pins/`](reference/toolchain-pins/) — the one
+  version source: a gate that reads a declaration of each tool's source and
+  pin sites and fails a pin that differs, with fixtures and a self-test; Jig
+  runs it on its own pins (`bun run pins`).
 - [`reference/inventory/`](reference/inventory/) — the generated-file
   inventory's format and the generic runner that runs every declared check,
   with fixtures for each outcome and its self-test beside it.
@@ -310,11 +351,12 @@ What this module provides:
   — the GitHub Actions skeleton that regenerates after a merge and
   publishes through a pull request a person merges.
 - [`mappings.md`](mappings.md) (CI providers, hook managers, container and
-  database variants) and the module's [maturity criteria](../../plugin/skills/audit/criteria/M2-generated-artifact-freshness.yaml).
+  database variants, toolchain pin sites) and the module's [maturity criteria](../../plugin/skills/audit/criteria/M2-generated-artifact-freshness.yaml).
 
 The self-tests for the triad, the one-fact count and referenced-paths
 checks and the ephemeral-replay reference are in
-[`scripts/freshness.test.ts`](../../scripts/freshness.test.ts). The
+[`scripts/freshness.test.ts`](../../scripts/freshness.test.ts); the
+toolchain-pins gate's is beside it. The
 [`/jig:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) skill uses this
 module's vocabulary when a drift check fails: it finds the regenerate command
 beside the check and runs it.

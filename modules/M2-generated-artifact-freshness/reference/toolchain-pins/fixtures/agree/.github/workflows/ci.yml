@@ -1,0 +1,14 @@
+name: CI
+on: [pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<sha>
+      - uses: oven-sh/setup-bun@<sha>
+        with:
+          bun-version: "1.4.3"
+      - uses: actions/setup-node@<sha>
+        with:
+          node-version: 24.3.0
+      - run: bun test

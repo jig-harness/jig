@@ -40,6 +40,7 @@ import {
   renderIntentChain,
   TRUNCATION_MARKER,
 } from "../scripts/intent-chain.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 /** The escape both consumers apply — strip the arm line, then expand every
  * literal `<!--` to `&lt;!--` — reproduced here so a test can assert on what
@@ -893,9 +894,7 @@ describe("main", () => {
         )
           env[k] = v;
       }
-      expect(Bun.spawnSync(["git", "init", "-q", repo], { env }).exitCode).toBe(
-        0,
-      );
+      expectSpawnExit(Bun.spawnSync(["git", "init", "-q", repo], { env }), 0);
       const scriptPath = join(import.meta.dir, "../scripts/intent-chain.ts");
       const input = JSON.stringify({
         issue: { identifier: "ENG-9001", description: issueMd({}) },
@@ -906,7 +905,7 @@ describe("main", () => {
         env: writerEnv,
         stdin: Buffer.from(input),
       });
-      expect(writer.exitCode).toBe(0);
+      expectSpawnExit(writer, 0);
       const summary = JSON.parse(writer.stdout.toString());
       // realpathSync: `git rev-parse --show-toplevel` resolves symlinks
       // (macOS's /var → /private/var), while mkdtempSync's return value does
@@ -964,9 +963,7 @@ describe("main", () => {
         env[k] = v;
     }
     Object.assign(env, extraEnv);
-    expect(Bun.spawnSync(["git", "init", "-q", repo], { env }).exitCode).toBe(
-      0,
-    );
+    expectSpawnExit(Bun.spawnSync(["git", "init", "-q", repo], { env }), 0);
     return Bun.spawnSync(
       ["bun", join(import.meta.dir, "../scripts/intent-chain.ts"), ...args],
       { cwd: repo, env, stdin: Buffer.from(JSON.stringify(input)) },
@@ -1188,7 +1185,7 @@ describe("main", () => {
           { identifier: "ENG-412", title: "highest priority" },
         ],
       });
-      expect(writer.exitCode).toBe(0);
+      expectSpawnExit(writer, 0);
       const chainDir = join(realpathSync(repo), ".context", "intent-chain");
       const anchorText = readFileSync(join(chainDir, "ENG-411.md"), "utf8");
       for (const alias of ["ENG-412", "ENG-420"]) {
@@ -1211,7 +1208,7 @@ describe("main", () => {
         issue: { identifier: "ENG-420", description: issueMd({}) },
         items: [{ identifier: "ENG-421", title: "not a batch" }],
       });
-      expect(writer.exitCode).toBe(0);
+      expectSpawnExit(writer, 0);
       const chainDir = join(realpathSync(repo), ".context", "intent-chain");
       expect(existsSync(join(chainDir, "ENG-420.md"))).toBe(true);
       expect(existsSync(join(chainDir, "ENG-421.md"))).toBe(false);
@@ -1221,7 +1218,7 @@ describe("main", () => {
         issue: { identifier: "ENG-422", description: issueMd({}) },
         items: [{ identifier: "ENG-423", title: "not a batch either" }],
       });
-      expect(explicit.exitCode).toBe(0);
+      expectSpawnExit(explicit, 0);
       expect(existsSync(join(chainDir, "ENG-423.md"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
@@ -1238,7 +1235,7 @@ describe("main", () => {
         { issue: { identifier: "ENG-9003", description: issueMd({}) } },
         { CODEX_THREAD_ID: "thread-abc/123" },
       );
-      expect(codex.exitCode).toBe(0);
+      expectSpawnExit(codex, 0);
       // Sanitized exactly as the consumer's refocus.sh hook names the file it
       // will look up.
       expect(
@@ -1251,7 +1248,7 @@ describe("main", () => {
         { issue: { identifier: "ENG-9004", description: issueMd({}) } },
         { CLAUDE_CODE_SESSION_ID: "claude-sess", CODEX_THREAD_ID: "thread-x" },
       );
-      expect(both.exitCode).toBe(0);
+      expectSpawnExit(both, 0);
       expect(
         readFileSync(join(stateDir, "claude-sess.intent-chain.md"), "utf8"),
       ).toContain("ENG-9004");
@@ -1275,9 +1272,7 @@ describe("main", () => {
           env[k] = v;
       }
       env.CLAUDE_CODE_SESSION_ID = "retention-sess";
-      expect(Bun.spawnSync(["git", "init", "-q", repo], { env }).exitCode).toBe(
-        0,
-      );
+      expectSpawnExit(Bun.spawnSync(["git", "init", "-q", repo], { env }), 0);
       const writer = (id: string) =>
         Bun.spawnSync(
           ["bun", join(import.meta.dir, "../scripts/intent-chain.ts")],
@@ -1291,7 +1286,7 @@ describe("main", () => {
             ),
           },
         );
-      expect(writer("ENG-9101").exitCode).toBe(0);
+      expectSpawnExit(writer("ENG-9101"), 0);
       const stateDir = join(realpathSync(repo), ".context", "refocus-state");
       const used = join(stateDir, "retention-sess.intent-chain.md");
       const unused = join(stateDir, "unused-sess.intent-chain.md");
@@ -1300,13 +1295,14 @@ describe("main", () => {
       utimesSync(unused, old, old);
 
       // A later pickup for a different item writes — and prunes.
-      expect(
+      expectSpawnExit(
         runWriter(
           repo,
           { issue: { identifier: "ENG-9102" } },
           { CLAUDE_CODE_SESSION_ID: "later-sess" },
-        ).exitCode,
-      ).toBe(0);
+        ),
+        0,
+      );
       expect(existsSync(used)).toBe(true);
       expect(existsSync(unused)).toBe(false);
     } finally {
@@ -1324,9 +1320,7 @@ describe("main", () => {
       for (const [k, v] of Object.entries(process.env)) {
         if (v !== undefined && !k.startsWith("GIT_")) env[k] = v;
       }
-      expect(Bun.spawnSync(["git", "init", "-q", repo], { env }).exitCode).toBe(
-        0,
-      );
+      expectSpawnExit(Bun.spawnSync(["git", "init", "-q", repo], { env }), 0);
       const writer = (id: string) =>
         Bun.spawnSync(
           ["bun", join(import.meta.dir, "../scripts/intent-chain.ts")],
@@ -1340,7 +1334,7 @@ describe("main", () => {
             ),
           },
         );
-      expect(writer("ENG-9301").exitCode).toBe(0);
+      expectSpawnExit(writer("ENG-9301"), 0);
       const chainDir = join(realpathSync(repo), ".context", "intent-chain");
       const daysAgo = (n: number) =>
         new Date(Date.now() - n * 24 * 60 * 60 * 1000);
@@ -1355,7 +1349,7 @@ describe("main", () => {
       utimesSync(item20, daysAgo(20), daysAgo(20));
 
       // A later, unrelated pickup writes — and prunes.
-      expect(writer("ENG-9303").exitCode).toBe(0);
+      expectSpawnExit(writer("ENG-9303"), 0);
       expect(existsSync(pin20)).toBe(true);
       expect(existsSync(pin100)).toBe(false);
       expect(existsSync(item20)).toBe(false);
@@ -1374,7 +1368,7 @@ describe("main", () => {
       const writer = runWriter(repo, {
         issue: { identifier: "ENG-9002", description: issueMd({}) },
       });
-      expect(writer.exitCode).toBe(1);
+      expectSpawnExit(writer, 1);
       const summary = JSON.parse(writer.stdout.toString());
       expect(summary.pointerErrors).toHaveLength(1);
       expect(summary.pointerErrors[0]).toContain(".current pointer");

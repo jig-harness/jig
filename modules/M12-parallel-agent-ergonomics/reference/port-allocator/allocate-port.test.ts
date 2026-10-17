@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checksum } from "./allocate-port";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 const gate = join(import.meta.dir, "allocate-port.ts");
 function run(args: string[] = [], env: Record<string, string> = {}) {
   return Bun.spawnSync([process.execPath, gate, ...args], {
@@ -73,5 +74,5 @@ for (const env of [
   { PORT_BASE: "999999999999999999999999" },
 ] as Record<string, string>[])
   test(`bad range ${JSON.stringify(env)}`, () =>
-    expect(run(["x"], env).exitCode).toBe(2));
-test("missing identity errors", () => expect(run().exitCode).toBe(2));
+    expectSpawnExit(run(["x"], env), 2));
+test("missing identity errors", () => expectSpawnExit(run(), 2));

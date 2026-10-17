@@ -38,6 +38,24 @@ criteria:
       - "a testing doc, rule file or the instruction file states the rules for doubles, time, waiting, developer state and seeing a new test fail first"
       - "the instruction file points at it"
 
+  - id: stale-test-triage-written
+    level: lite
+    requires: convention
+    since: next
+    statement: >-
+      The procedure for a test failure the change did not cause is written
+      where agents and people read it: the failure is reproduced on a
+      freshly fetched base in a throwaway worktree before it is attributed,
+      never with a stash, and a failed fetch is no answer; a test that fails
+      on the base too is fixed inline when cheap or deleted with a tracker
+      item recording what it covered; a test is regenerated only when its
+      premise is obsolete and the new test asserts what the old one
+      protected.
+    observe:
+      - "a testing doc, rule file or the instruction file states the fresh-base reproduction, the fix-inline-or-delete-with-a-tracker-item rule and the regenerate-only-on-an-obsolete-premise rule"
+      - "it names the steps or the command (fetch, a throwaway worktree, the install into it, the test command on one file) and forbids a stash or a checkout of the base in the working tree"
+      - "the instruction file points at it"
+
   - id: tier-budgets-enforced
     level: standard
     requires: mechanical
@@ -109,6 +127,20 @@ criteria:
       - "the type-check configuration CI runs includes the test files (tsconfig include, tsconfig.test.json, mypy/pyright paths)"
       - "or the language compiles test sources as part of the CI build"
 
+  - id: spawn-exit-assertions-print-output
+    level: standard
+    requires: convention
+    since: next
+    statement: >-
+      A test that asserts a spawned process's exit status asserts it through
+      a helper that prints the child's captured output when the assertion
+      fails, and the rule is written where agents and people read it
+      (expected-absent where no test spawns a process).
+    observe:
+      - "a shared test helper takes the spawn result with its captured stdout and stderr and throws with both on a mismatch, and the tests that spawn a process assert through it"
+      - "the testing doc or the instruction file names the helper as the rule"
+      - "at the mechanical rung, a lint rule or grep gate flags an assertion on a spawn result's exit field in test files, blocking in CI directly or through a ratchet on its count"
+
   - id: tests-come-with-changes
     level: standard
     requires: mechanical
@@ -133,6 +165,40 @@ criteria:
     observe:
       - "a lint rule or grep gate run in CI flags sleep / setTimeout / time.sleep / Thread.sleep in tests"
       - "its suppression token is listed in the suppression-token registry"
+
+  - id: provisioned-suites-executed
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      Every CI job that exists for a suite that can run nothing (a job that
+      provisions a database, a queue, a browser or a credential the suite
+      skips itself without; a shard or path selection of one suite) fails
+      when that suite executed zero tests, counted from the runner's
+      machine-readable report as the test cases not skipped, and fails when
+      the report is missing (expected-absent where no job exists for such a
+      suite).
+    observe:
+      - "the job runs the suite with a JUnit (or equivalent) report written to a file"
+      - "a step after the suite reads the report and fails the job when no test case executed, per suite where several suites in the job could each skip"
+      - "the count comes from the report's test cases, not from the runner's human summary line, and a missing or unreadable report fails the job"
+    probe:
+      files: *ci-config
+
+  - id: dependency-workarounds-pinned
+    level: standard
+    requires: convention
+    since: next
+    statement: >-
+      Every workaround for a defect in a dependency has a test beside it
+      that asserts the defective behaviour against the real dependency and
+      names the workaround, and the written rule is that a pin failing
+      after an upgrade retires or adapts the workaround rather than
+      updating the assertion (expected-absent where the repository has no
+      such workaround).
+    observe:
+      - "each dependency workaround (a patch, a wrapper, a decode step compensating for a driver's or library's defect) has a test naming it that asserts the defective behaviour against the real dependency, not against the workaround or a double"
+      - "the testing doc or the pin's header states that a failure after an upgrade is the signal to retire or adapt the workaround, never an assertion to update"
 
   - id: clock-reads-linted
     level: strict
@@ -200,5 +266,24 @@ criteria:
       - "a workflow on a schedule runs coverage and publishes it (dashboard, hosted service, artifact)"
       - "the publish step runs even when the coverage step fails, and fails when a package's report is missing"
       - "no per-file blocking coverage threshold is configured"
+    probe:
+      files: *ci-config
+
+  - id: next-release-canary
+    level: strict
+    requires: mechanical
+    since: next
+    statement: >-
+      A scheduled workflow with no per-change trigger, which is not a
+      required check, runs the suites with behaviour pins and the
+      integration tier with its dependencies provisioned, and a
+      compiled-binary smoke test where the product ships a binary, against
+      the next release of the runtime or a driver, and records the build it
+      used.
+    observe:
+      - "a workflow on schedule and manual dispatch installs the runtime's next-release channel (canary, nightly, beta, release candidate) and runs the integration-tier suites with their dependencies provisioned"
+      - "it writes the runtime's version and revision to the run summary or log"
+      - "it has no pull_request or push trigger and is not among the required checks; where the product ships a compiled binary, a job builds it with the next release and executes it against its exit-code contract"
+      - "its next-release pin is a registered exception wherever the repository checks its pin sites (M2's toolchain-pins declaration, or its equivalent)"
     probe:
       files: *ci-config

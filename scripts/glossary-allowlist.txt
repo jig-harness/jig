@@ -74,6 +74,7 @@ OSS
 ESM
 PID
 JVM
+XML
 # licence identifiers, and the licence file's name
 LICENSE
 ISC

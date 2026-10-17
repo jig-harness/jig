@@ -120,7 +120,7 @@ export async function spooledRun(
     }
     return {
       code: child.signalCode ? null : child.exitCode,
-      signal: child.signalCode ?? null,
+      signal: child.signalCode == null ? null : String(child.signalCode),
       interrupted,
       out,
       err,

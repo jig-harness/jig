@@ -122,8 +122,10 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Never edit a derived file by hand**; regenerate it.
 - **Tests** are type-checked, change the home directory, working directory
   or environment only in a subprocess they spawn, wait by polling with a
-  deadline rather than a fixed sleep, and are seen to fail once before their
-  pass is trusted ([M14](modules/M14-testing-strategy/README.md)).
+  deadline rather than a fixed sleep, assert a spawned child's exit code
+  through `lib/test-helpers/expect-spawn-exit.ts` so a failure prints the
+  child's output, and are seen to fail once before their pass is trusted
+  ([M14](modules/M14-testing-strategy/README.md)).
 - **Keep the auditor current**: re-evaluate the audit skill against the
   change, and say in the pull request what changed in the audit.
 - **Anything under `plugin/`** follows [plugin/AGENTS.md](plugin/AGENTS.md):

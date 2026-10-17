@@ -60,6 +60,22 @@ criteria:
     observe:
       - "CI job runs a referenced-path-exists check over the instruction files"
 
+  - id: toolchain-pins-one-source
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      Each toolchain version (the runtime, the compiler, the package
+      manager) is declared in one source file; every other place that
+      repeats it (CI setup steps, container build arguments,
+      package-manager fields, a type package that tracks the runtime) is
+      checked in CI to equal it; and a pin that differs on purpose is
+      registered as an exception with a reason.
+    observe:
+      - "one file (a version manager's file, a project file) is named as the source of each tool's version, and the places that repeat it are listed with it"
+      - "a check in CI reads every listed pin site and fails when a pin differs from the source, names no version, or is gone"
+      - "a deliberate exception (a canary on the next release) is registered with a reason, and the check fails an exception that excuses nothing"
+
   - id: prose-facts-ci-checked
     level: strict
     requires: mechanical

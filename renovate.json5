@@ -75,6 +75,18 @@
 
   packageRules: [
     {
+      // The toolchain-pins gate (.config/toolchain-pins.yaml) requires
+      // mise.toml's bun, package.json's packageManager and @types/bun to
+      // agree, so an update to one of them alone fails `bun run pins`.
+      // Renovate's mise manager names Bun by its release repository,
+      // `oven-sh/bun`, so the matcher lists that name beside `bun`.
+      description: "Keep the Bun runtime and its type pins in one PR",
+      matchManagers: ["bun", "mise"],
+      matchPackageNames: ["bun", "@types/bun", "oven-sh/bun"],
+      groupName: "bun-toolchain",
+      separateMajorMinor: false,
+    },
+    {
       // Actions are referenced as `uses: owner/action@<full-sha> # vN` so a
       // moved tag cannot change what CI runs. Renovate keeps the SHA and the
       // version comment in sync, and proposes all action bumps in one PR.

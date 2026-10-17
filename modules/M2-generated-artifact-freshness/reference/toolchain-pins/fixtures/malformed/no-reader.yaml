@@ -1,0 +1,5 @@
+tools:
+  bun:
+    source: { file: mise.toml }
+    sites:
+      - { files: package.json, json: packageManager }

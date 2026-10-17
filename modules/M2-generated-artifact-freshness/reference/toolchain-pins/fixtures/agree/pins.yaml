@@ -1,0 +1,24 @@
+# Every place a tool's version is repeated, and the one place it is declared.
+tools:
+  bun:
+    source: { file: mise.toml, toml: tools.bun }
+    sites:
+      - { files: package.json, json: packageManager, pattern: '^bun@(.+)$' }
+      - { files: package.json, json: devDependencies.@types/bun }
+      - files: .github/workflows/*.yml
+        step: oven-sh/setup-bun
+        with: bun-version
+        with-file: bun-version-file
+      - { files: Dockerfile, pattern: '^ARG BUN_VERSION=(\S+)$' }
+    exceptions:
+      - file: .github/workflows/canary.yml
+        value: canary
+        reason: the canary runs the suites on the next release on purpose
+  node:
+    source: { file: .node-version, pattern: '^v?(\S+)$' }
+    sites:
+      - files: [.github/workflows/*.yml]
+        step: actions/setup-node
+        with: node-version
+        with-file: node-version-file
+      - { files: Dockerfile, pattern: '^FROM node:(\d+\.\d+\.\d+)' }

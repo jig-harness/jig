@@ -1,5 +1,6 @@
-import { test, expect } from "bun:test";
+import { test } from "bun:test";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 const cases: [number, string, string[]][] = [
   [0, "unique ADR numbers pass", ["$fix/unique"]],
   [1, "duplicate ADR number fails", ["$fix/dupe"]],
@@ -29,6 +30,6 @@ for (const [want, label, params] of cases) {
       ],
       { env },
     );
-    expect(result.exitCode).toBe(want);
+    expectSpawnExit(result, want);
   });
 }

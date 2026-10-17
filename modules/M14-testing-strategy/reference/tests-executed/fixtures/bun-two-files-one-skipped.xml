@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="6" assertions="1" failures="0" skipped="5" time="0.008529">
+  <testsuite name="outbox.integration.test.ts" file="outbox.integration.test.ts" tests="2" assertions="0" failures="0" skipped="2" time="0.00296" hostname="runner">
+    <testsuite name="outbox" file="outbox.integration.test.ts" line="2" tests="2" assertions="0" failures="0" skipped="2" time="0" hostname="runner">
+      <testcase name="relays a queued message" classname="outbox" time="0" file="outbox.integration.test.ts" line="3" assertions="0">
+        <skipped />
+      </testcase>
+      <testcase name="claims a row once" classname="outbox" time="0" file="outbox.integration.test.ts" line="4" assertions="0">
+        <skipped />
+      </testcase>
+    </testsuite>
+  </testsuite>
+  <testsuite name="orders.integration.test.ts" file="orders.integration.test.ts" tests="4" assertions="1" failures="0" skipped="3" time="0.00023" hostname="runner">
+    <testsuite name="orders" file="orders.integration.test.ts" line="2" tests="3" assertions="1" failures="0" skipped="2" time="0" hostname="runner">
+      <testcase name="creates an order" classname="orders" time="0.00001" file="orders.integration.test.ts" line="3" assertions="1" />
+      <testcase name="rejects a negative total" classname="orders" time="0" file="orders.integration.test.ts" line="4" assertions="0">
+        <skipped />
+      </testcase>
+      <testcase name="refunds later" classname="orders" time="0" file="orders.integration.test.ts" line="5" assertions="0">
+        <skipped message="TODO" />
+      </testcase>
+    </testsuite>
+    <testsuite name="invoices" file="orders.integration.test.ts" line="7" tests="1" assertions="0" failures="0" skipped="1" time="0" hostname="runner">
+      <testcase name="never without the ledger" classname="invoices" time="0" file="orders.integration.test.ts" line="8" assertions="0">
+        <skipped />
+      </testcase>
+    </testsuite>
+  </testsuite>
+</testsuites>

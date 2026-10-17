@@ -38,6 +38,7 @@ import {
   splitlines,
   upstreamLint,
 } from "../scripts/ste-lint/ste-lint.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../../..");
 const LINT_DIR = join(import.meta.dir, "../scripts/ste-lint");
@@ -59,7 +60,9 @@ function runCli(mode: string[], args: string[], stdin = "") {
     },
     () => stdin,
   );
-  return { exitCode, stdout };
+  // `stderr: null` says the in-process run captured no error stream, so the
+  // exit helpers print what there is.
+  return { exitCode, stdout, stderr: null };
 }
 
 /** Findings for `text` on stdin. Exit 1 means hard findings, which is not an error here. */
@@ -117,13 +120,13 @@ describe("translated linter", () => {
 
   it("passes the upstream selftest (--raw --selftest)", () => {
     const result = runCli(UPSTREAM, ["--selftest"]);
-    expect(result.exitCode).toBe(0);
+    expectSpawnExit(result, 0);
     expect(result.stdout).toBe("selftest OK\n");
   });
 
   it("passes the wrapper selftest (upstream selftest first, then its own)", () => {
     const result = runCli(JOINED, ["--selftest"]);
-    expect(result.exitCode).toBe(0);
+    expectSpawnExit(result, 0);
     expect(result.stdout).toBe("selftest OK\nselftest OK (joined)\n");
   });
 
@@ -157,7 +160,7 @@ describe("translated linter", () => {
       const { hard_count: hardCount } = JSON.parse(golden) as {
         hard_count: number;
       };
-      expect(proc.exitCode).toBe(hardCount > 0 ? 1 : 0);
+      expectSpawnExit(proc, hardCount > 0 ? 1 : 0);
     },
   );
 
@@ -183,7 +186,7 @@ describe("translated linter", () => {
         expect(result.stdout.toString()).toBe(
           readFileSync(join(FIXTURES, `crlf.${mode}.json`), "utf8"),
         );
-        expect(result.exitCode).toBe(1);
+        expectSpawnExit(result, 1);
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
@@ -195,7 +198,7 @@ describe("translated linter", () => {
       stdin: Buffer.from("A; B."),
       stdout: "pipe",
     });
-    expect(proc.exitCode).toBe(1);
+    expectSpawnExit(proc, 1);
     expect(proc.stdout.toString()).toBe(
       "<stdin>:1:2 semicolon: STE bans the semicolon (Rule 8.1). Split into separate sentences. [;]\n" +
         "\n1 violations (1 hard, baseline 0), 2 words, 50.0 per 100 words\n" +
@@ -205,16 +208,14 @@ describe("translated linter", () => {
 
   it("honours --baseline and --disable as the Python linter does", () => {
     const text = "A; B; C.";
-    expect(runCli(JOINED, ["--json"], text).exitCode).toBe(1);
-    expect(runCli(JOINED, ["--json", "--baseline", "2"], text).exitCode).toBe(
-      0,
-    );
+    expectSpawnExit(runCli(JOINED, ["--json"], text), 1);
+    expectSpawnExit(runCli(JOINED, ["--json", "--baseline", "2"], text), 0);
     const disabled = runCli(
       JOINED,
       ["--json", "--disable", "semicolon,x"],
       text,
     );
-    expect(disabled.exitCode).toBe(0);
+    expectSpawnExit(disabled, 0);
     expect(JSON.parse(disabled.stdout)).toEqual({
       violations: [],
       count: 0,
@@ -233,7 +234,7 @@ describe("translated linter", () => {
         stdout: "pipe",
         stderr: "pipe",
       });
-      expect(proc.exitCode).toBe(1);
+      expectSpawnExit(proc, 1);
       expect(proc.stderr.toString()).toStartWith("ste-lint: ");
     }
   });
@@ -459,12 +460,12 @@ describe("synonym rotation is advice, not a hard finding", () => {
   const text = "Validate the input. Confirm the choice.";
 
   it("upstream reports it as a hard finding", () => {
-    expect(runCli(UPSTREAM, ["--json"], text).exitCode).toBe(1);
+    expectSpawnExit(runCli(UPSTREAM, ["--json"], text), 1);
   });
 
   it("the wrapper reports the same finding as advice and exits 0", () => {
     const result = runCli(JOINED, ["--json"], text);
-    expect(result.exitCode).toBe(0);
+    expectSpawnExit(result, 0);
     const report = JSON.parse(result.stdout) as {
       hard_count: number;
       violations: Finding[];
@@ -639,10 +640,10 @@ describe("the command line", () => {
   });
 
   it("still accepts every documented flag", () => {
-    expect(
-      runCli(JOINED, ["--json", "--baseline", "0", "--disable", "x"], "Hi.")
-        .exitCode,
-    ).toBe(0);
-    expect(runCli(UPSTREAM, ["--selftest"]).exitCode).toBe(0);
+    expectSpawnExit(
+      runCli(JOINED, ["--json", "--baseline", "0", "--disable", "x"], "Hi."),
+      0,
+    );
+    expectSpawnExit(runCli(UPSTREAM, ["--selftest"]), 0);
   });
 });

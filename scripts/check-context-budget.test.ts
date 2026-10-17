@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
+import { expectSpawnExitNot } from "../lib/test-helpers/expect-spawn-exit.ts";
 
 const script = join(import.meta.dir, "check-context-budget.ts");
 const scratch = mkdtempSync(join(tmpdir(), "jig-context-budget-"));
@@ -81,7 +82,7 @@ test.skipIf(process.platform === "win32")(
     const root = repo({ p0: "A plugin skill." });
     mkdirSync(join(root, ".claude"));
     symlinkSync(join(root, "missing"), join(root, ".claude/skills"));
-    expect(run(root).exitCode).not.toBe(0);
+    expectSpawnExitNot(run(root), 0);
   },
 );
 

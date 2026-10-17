@@ -16,6 +16,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   existsSync,
   mkdirSync,
@@ -685,7 +686,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
       stdout: "ignore",
       stderr: "pipe",
     });
-    expect(await init.exited).toBe(0);
+    await expectSpawnExited(init, 0);
     // The lock name for the scratch tree, resolved through the SAME function
     // drive.ts calls — from a subprocess standing in that tree, because this
     // process's own derivation is memoised on the suite's cwd. Recomputing

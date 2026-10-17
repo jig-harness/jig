@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="0" errors="0" time="0.213">
+    <testsuite name="src/queue.integration.test.ts" timestamp="2026-01-01T12:00:00.000Z" hostname="runner" tests="2" failures="0" errors="0" skipped="2" time="0.001">
+        <testcase classname="src/queue.integration.test.ts" name="queue &gt; publishes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="src/queue.integration.test.ts" name="queue &gt; acknowledges" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/parse.test.ts" timestamp="2026-01-01T12:00:00.000Z" hostname="runner" tests="1" failures="0" errors="0" skipped="0" time="0.212">
+        <testcase classname="src/parse.test.ts" name="parse &gt; reads a header" time="0.212">
+        </testcase>
+    </testsuite>
+</testsuites>

@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   appendFileSync,
   existsSync,
@@ -1287,7 +1288,7 @@ describe("mailbox.ts ack CLI validation", () => {
     const first = runAck(["--id", msg.id]);
     if ((await first.exited) !== 0) throw new Error("first ack failed");
     const second = runAck(["--id", msg.id]); // re-ack the same id
-    expect(await second.exited).toBe(0);
+    await expectSpawnExited(second, 0);
 
     const respond = runRespond(["--id", msg.id, "--response", "done"]);
     const [respondExit, respondStderr] = await Promise.all([

@@ -973,13 +973,15 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
   const test = testStage(["suite/**"], () => []);
   const full = plan(false, test).map((stage) => stage.name);
   const fast = plan(true, test).map((stage) => stage.name);
-  // The pre-push hook's fast set: the context budget, format, lint and
-  // types, then every repository check, and nothing that takes minutes.
+  // The pre-push hook's fast set: the context budget, format, lint, types
+  // and the toolchain pins, then every repository check, and nothing that
+  // takes minutes.
   expect(fast).toEqual([
     "bun scripts/check-context-budget.ts",
     "bun run format:check",
     "bun run lint",
     "bun run typecheck",
+    "bun run pins",
     ...CHECKS.map((stage) => stage.name),
   ]);
   // The full set is the fast set followed by the heavy stages, so every

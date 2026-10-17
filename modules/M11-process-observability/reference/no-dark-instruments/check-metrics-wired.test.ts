@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 const gate = join(import.meta.dir, "check-metrics-wired.ts"),
   fix = join(import.meta.dir, "fixtures");
 function run(args: string[], env: Record<string, string> = {}) {
@@ -39,9 +40,9 @@ const cases: [string, number, Record<string, string>][] = [
   ["bad/does-not-exist.yaml", 2, {}],
 ];
 for (const [file, code, env] of cases)
-  test(file, () => expect(run([join(fix, file)], env).exitCode).toBe(code));
+  test(file, () => expectSpawnExit(run([join(fix, file)], env), code));
 test("missing input file fails closed", () =>
-  expect(run([join(fix, "absent-file")]).exitCode).toBe(2));
+  expectSpawnExit(run([join(fix, "absent-file")]), 2));
 test("report names dark metrics and keeps the wired source", () => {
   expect(run([join(fix, "bad/todo-source.yaml")]).stdout.toString()).toContain(
     "DARK review-adoption-rate",

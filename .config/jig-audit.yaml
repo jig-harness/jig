@@ -195,6 +195,10 @@ criteria:
     # prior: absent: scripts/check-md-links.ts (in scripts/gates.ts, required CI) fails on unresolved Markdown link targets in all tracked Markdown, AGENTS.md files included; backticked paths, which the criterion includes, are not checked, so the criterion as stated is not met
     score: absent
     evidence: "scripts/check-md-links.ts checks only Markdown link targets; backticked paths in the AGENTS.md files are unchecked; modules/M2-generated-artifact-freshness/reference/prose-facts/check-referenced-paths.ts runs on fixtures only"
+  M2/toolchain-pins-one-source:   # standard, requires mechanical
+    # Each toolchain version (the runtime, the compiler, the package manager) is declared in one source file; every other place that repeats it (CI setup steps, container build arguments, package-manager fields, a type package that tracks the runtime) is checked in CI to equal it; and a pin that differs on purpose is registered as an exception with a reason.
+    score: absent
+    evidence: "At a66ee22 the Bun version was repeated in mise.toml (1.4.3), package.json's packageManager (bun@1.4.3) and its @types/bun (1.4.2, a patch behind), and nothing compared them: no declaration named the source and its pin sites, and no check in scripts/gates.ts or the workflows read them; the workflows install Bun through mise, so they repeat no pin"
   M2/prose-facts-ci-checked:   # strict, requires mechanical
     # Derivable facts stated in prose (counts, rosters) are re-derived and compared by a CI check that commits no generated file.
     # prior: convention: Some facts are re-derived in CI without a committed cache (manifest versions in scripts/check-changelog.ts, the 13-module count in plugin/skills/audit/__tests__/score.test.ts), but there is no registry of stated facts and README.md's counts are unchecked
@@ -902,6 +906,10 @@ criteria:
     # The testing rules are written where agents and people read them: test doubles reject what the real dependency rejects, runtime code reads time from an injected clock, waits poll with a deadline instead of sleeping, tests change the home directory, working directory or environment only in a subprocess, and a new test is seen to fail before its pass is trusted.
     score: convention
     evidence: "AGENTS.md § Rules for every change, Tests: tests type-checked, home/cwd/environment changed only in a spawned subprocess, polling with a deadline instead of fixed sleeps, a new test seen to fail first; the rules for doubles and the injected clock are by its pointer to modules/M14-testing-strategy/README.md, not restated. Nothing enforces them yet (see the Standard and Strict M14 criteria)"
+  M14/stale-test-triage-written:   # lite, requires convention
+    # The procedure for a test failure the change did not cause is written where agents and people read it: the failure is reproduced on a freshly fetched base in a throwaway worktree before it is attributed, never with a stash, and a failed fetch is no answer; a test that fails on the base too is fixed inline when cheap or deleted with a tracker item recording what it covered; a test is regenerated only when its premise is obsolete and the new test asserts what the old one protected.
+    score: absent
+    evidence: "At a66ee22 AGENTS.md § Rules for every change states the testing rules but no procedure for a failure the change did not cause, and plugin/skills/fix-ci/SKILL.md § test_failure deferred to 'the repository's own stale-test triage procedure, if it has one', which Jig had none of: nothing named a fresh-base reproduction, a throwaway worktree, or what a deleted test owes"
   M14/tier-budgets-enforced:   # standard, requires mechanical
     # Every CI job that runs tests has an enforced budget on the suite's elapsed time: a job timeout, a timeout on the command that runs the suite, or a step that fails when the suite runs over its tier's budget. A per-test timeout alone does not count: it bounds one test, not the suite.
     score: mechanical
@@ -914,6 +922,10 @@ criteria:
     # Test files are type-checked in CI by the same kind of check as runtime code (for a compiled language, the test sources compile in CI).
     score: mechanical
     evidence: "tsconfig.json includes every .ts under scripts, lib, tools, plugin, modules and audit, test files included (only fixtures/ excluded), with strict on; bun run typecheck (bun check) is in scripts/gates.ts, which CI runs on every pull request"
+  M14/spawn-exit-assertions-print-output:   # standard, requires convention
+    # A test that asserts a spawned process's exit status asserts it through a helper that prints the child's captured output when the assertion fails, and the rule is written where agents and people read it (expected-absent where no test spawns a process).
+    score: absent
+    evidence: "At a66ee22 lib/test-helpers/expect-spawn-exit.ts existed and 9 test files used it, but no instruction file or testing doc named it as the rule (git grep expect-spawn-exit a66ee22 -- '*.md' finds nothing) and no lint rule flagged the bare shape: 1,067 lines of exitCode).toBe-style assertions remained in test files, 994 of them in the drive-pr suite"
   M14/tests-come-with-changes:   # standard, requires mechanical
     # A CI check fails a change whose changed source file has no test, unless the file is listed in a registered exemption with a reason, and a pre-push hook runs the same check before the push.
     score: absent
@@ -922,6 +934,14 @@ criteria:
     # A gate rejects fixed sleeps in test and tooling code, except those carrying a suppression token registered for local timing; waits for external state poll with a deadline.
     score: absent
     evidence: "No sleep gate in scripts/gates.ts or tools/quality/grit/; about two dozen test files call Bun.sleep or setTimeout (git grep -lE 'Bun\\.sleep\\(|setTimeout\\(' -- '*.test.ts' '**/__tests__/**')"
+  M14/provisioned-suites-executed:   # standard, requires mechanical
+    # Every CI job that exists for a suite that can run nothing (a job that provisions a database, a queue, a browser or a credential the suite skips itself without; a shard or path selection of one suite) fails when that suite executed zero tests, counted from the runner's machine-readable report as the test cases not skipped, and fails when the report is missing (expected-absent where no job exists for such a suite).
+    score: absent
+    evidence: "At a66ee22 .github/workflows/gates.yml runs the drive-pr suite in four shard jobs (bun run test --shard=N/4 ./plugin/skills/drive-pr/) with Bun's default reporter, and no step reads an executed count; bun test exits 0 and writes no report when a shard or path filter matches no file, so a shard that ran nothing would pass. No job provisions a dependency"
+  M14/dependency-workarounds-pinned:   # standard, requires convention
+    # Every workaround for a defect in a dependency has a test beside it that asserts the defective behaviour against the real dependency and names the workaround, and the written rule is that a pin failing after an upgrade retires or adapts the workaround rather than updating the assertion (expected-absent where the repository has no such workaround).
+    score: expected-absent
+    evidence: "At a66ee22 nothing in lib/, scripts/, tools/ or plugin/ compensates for a defect in a dependency (git grep -il workaround a66ee22 -- '*.ts' finds nothing); the vendored js-yaml copies are a packaging choice, not a workaround, so there is no premise to pin"
   M14/clock-reads-linted:   # strict, requires mechanical
     # A lint rule rejects direct wall-clock reads in runtime code outside the one system-clock adapter, so runtime code gets the current time from an injected clock.
     score: absent
@@ -942,6 +962,10 @@ criteria:
     # A scheduled CI job publishes coverage as a trend, also when it is below target, refuses to publish incomplete data, and no merge is blocked on a per-file coverage threshold.
     score: absent
     evidence: "No coverage job: neither gates.yml nor the scheduled nightly.yml measures coverage, and website.yml only deploys; no per-file threshold either"
+  M14/next-release-canary:   # strict, requires mechanical
+    # A scheduled workflow with no per-change trigger, which is not a required check, runs the suites with behaviour pins and the integration tier with its dependencies provisioned, and a compiled-binary smoke test where the product ships a binary, against the next release of the runtime or a driver, and records the build it used.
+    score: absent
+    evidence: "At a66ee22 the only workflow, gates.yml, installs Bun through mise at mise.toml's pin (1.4.3) on pull_request and push; no workflow ran on a schedule, none installed a next-release channel, none recorded a build, and no compiled binary is shipped"
   # M15 contracts-errors
   M15/error-contract-written:   # lite, requires convention
     # The error contract is written where agents and people read it: the three failure channels and which situation takes which, never swallow and keep the cause, branch on type or code and never on message text, a failure inside a transaction aborts it (rolls it back, by the path the transaction tool rolls back on), and errors reach callers only through one boundary.

@@ -51,7 +51,10 @@ pointer waits for them ([M10](https://github.com/docomply/jig/blob/main/modules/
    builder returns one declared contract type with fixed defaults; a test
    overrides only the fields it is about.
 6. **Tests are code.** Test files are type-checked by `<type-check command>`
-   in CI. A new test is seen to fail once before its pass is trusted.
+   in CI. A new test is seen to fail once before its pass is trusted. An
+   assertion on a spawned process's exit status goes through
+   `<spawn-exit helper>`, which prints the child's output when it fails;
+   `<lint rule>` flags the bare shape.
 7. **Tests come with changes.** A changed file under `<source globs>` comes
    with a test at `<test path convention>`, or a line in
    `<exemptions file>` giving its reason. `<gate>` checks this in the
@@ -60,6 +63,31 @@ pointer waits for them ([M10](https://github.com/docomply/jig/blob/main/modules/
    directory, working directory or environment variable runs the code under
    test in a subprocess with those values; it never changes them in the test
    process.
+9. **Skipped is not passed.** `<integration suite>` skips itself without
+   `<its dependency variable>`; `<CI job>` provisions the dependency, runs
+   the suite with `<report flag>` and fails when the report shows zero
+   executed tests or is missing (`<tripwire command>`).
+10. **A failure is attributed on a fresh base.** A failing test that the
+    change did not touch is run again on freshly fetched `<base branch>` in
+    a throwaway worktree (`<probe command>`), never with `git stash` or a
+    checkout of the base in the working tree; a fetch that fails is no
+    answer. A test that fails on the base too is stale: fix it inline when
+    the fix is cheap, otherwise delete it and open a `<tracker>` item that
+    records the file, its cases and the behaviours they asserted. Regenerate
+    a test only when its premise is obsolete, and only once the new test
+    asserts what the old one protected.
+11. **A workaround has a pin.** A workaround for a defect in a dependency
+    (`<where workarounds live>`) has a test beside it that asserts the
+    defective behaviour against the real dependency and names the
+    workaround in its title. When the pin fails after an upgrade, retire or
+    adapt the workaround in the same change; never update the assertion on
+    its own.
+12. **The next release runs on a schedule.** `<canary workflow>` runs
+    `<the suites with pins and the integration tier>` and the
+    compiled-binary smoke test against `<the runtime>`'s next release every
+    `<week>`, blocks nothing, and records the build it used. A red run is
+    triaged before the upgrade; its next-release pin is registered as an
+    exception in `<toolchain-pins declaration>`.
 
 ## Exemptions
 

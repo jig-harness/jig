@@ -74,6 +74,10 @@
     {
       "path": "./tools/quality/grit/no-bare-signal-handlers.grit",
       "includes": ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"]
+    },
+    {
+      "path": "./tools/quality/grit/no-bare-exit-code-assertion.grit",
+      "includes": ["**/*.test.ts", "**/__tests__/**/*.ts"]
     }
   ],
   "assist": {

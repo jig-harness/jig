@@ -1,0 +1,22 @@
+tools:
+  bun:
+    source: { file: mise.toml, toml: tools.bun }
+    sites:
+      - { files: package.json, json: packageManager, pattern: '^bun@(.+)$' }
+      - { files: package.json, json: devDependencies.@types/bun }
+      - { files: package.json, json: engines.bun, pattern: '^=(.+)$' }
+      - files: .github/workflows/*.yml
+        step: oven-sh/setup-bun
+        with: bun-version
+        with-file: bun-version-file
+      - { files: Dockerfile, pattern: '^ARG BUN_VERSION=(\S+)$' }
+    exceptions:
+      - file: .github/workflows/canary.yml
+        value: canary
+        reason: the canary runs the suites on the next release on purpose
+      - file: package.json
+        value: "1.4.3"
+        reason: the types package was upgraded ahead of the runtime
+      - file: .github/workflows/ci.yml
+        value: "1.4.1"
+        reason: this workflow stays a release behind while a bug is open

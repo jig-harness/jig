@@ -129,6 +129,68 @@ message is on stderr. Report it and stop: it says nothing about whether CI
 failed. Exit 2 is a usage error, including a detached `HEAD` with no run ID,
 `--pr` or `--branch` to say which run to read.
 
+### `scripts/probe-base.ts`
+
+Runs a failing check again on a freshly fetched base, in a throwaway
+[worktree](https://github.com/docomply/jig/blob/main/GLOSSARY.md), so a test
+failure is attributed before it is fixed (the
+[fresh-base probe](https://github.com/docomply/jig/blob/main/GLOSSARY.md)).
+The command after `--` is spawned as given, with the worktree as its working
+directory; the checkout you run it from is never touched.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/probe-base.ts" --base main --expect "total rounds to cents" --junit probe.xml -- bun test src/cart/total.test.ts --reporter=junit --reporter-outfile=probe.xml
+bun "${CLAUDE_SKILL_DIR}/scripts/probe-base.ts" --base develop --remote upstream --timeout 300 --setup "uv sync" --expect test_total_rounds --junit probe.xml -- uv run pytest tests/test_total.py --junitxml=probe.xml
+bun "${CLAUDE_SKILL_DIR}/scripts/probe-base.ts" --base main --expect "TS2322: Type 'string' is not assignable" -- bunx tsc --noEmit
+```
+
+A command that fails on the base proves only that something failed there
+(a missing install, an import error, a runner that found nothing, another
+test), and a test's name in the output proves nothing either: a passing
+test prints its name too. So for a test, the command writes a JUnit report
+(the runner's flag is in M14's mappings, under *Skipped is not passed*),
+`--junit` names it as a path inside the worktree, and `--expect` is the
+failing test's name: the verdict is that test case's own result on the
+base, pre-existing when it failed there and the change's when it passed,
+whatever else failed beside it. The cases named exactly that are read when
+there are any, otherwise the cases whose name holds it. A report already
+at that path on the base is removed before the command runs, so only the
+report the command writes is read. No case by that name, cases by that
+name with different results (a skipped one among them), only skipped ones,
+no report, a report that is not well-formed JUnit, or one that is a link or
+lies under a link leading out of the worktree: it cannot decide (exit 2). Without `--junit`, for a check with no per-case report (a type
+check, a lint, a build), `--expect` is the error message CI showed, and the
+failure is pre-existing only when the command fails on the base with that
+text in its output; a failure without it cannot decide (exit 2).
+
+The worktree starts with nothing installed (no `node_modules`, no virtual
+environment, no `vendor/`): `--setup` names the repository's install
+command (`install_command` from Step 0's configuration), run through the
+shell in the worktree before the command; a setup that fails is no answer
+(exit 2). Install into the worktree itself: an install that links the
+package to the working checkout (an editable install, a workspace link)
+runs the change's code against the base's test and gets the verdict
+backwards. The setup runs in a shell of its own, so the command must find
+what it installed without activation: `uv run pytest`, `.venv/bin/python -m
+pytest`, `bundle exec rspec`, never a bare `pytest` that resolves from the
+caller's environment.
+
+It fetches `<remote> <base>` first, into a ref of its own, and checks out
+the commit that ref names: never the remote-tracking ref already present
+locally, which is only as fresh as the last fetch, and never `FETCH_HEAD`,
+which another fetch can overwrite. `--timeout` bounds each git call, the
+setup and the command on its own, not the probe as a whole: a slow fetch, a
+slow setup and a slow command can together take several times as long. One JSON line on stdout gives the base, the
+commit probed, the expected text, the `evidence` the verdict rests on
+(`junit` or `output`), the command, its exit status there and the
+`verdict`; the tail of the command's own output is on stderr as evidence.
+
+| Exit | Meaning | What to do |
+|------|---------|------------|
+| 0 | the named test case passed on the base or, without a report, the check did (`"verdict": "change"`) | the failure belongs to the change: fix the code, or the test if its assumption is what the change made stale |
+| 1 | the named test case failed on the base or, without a report, the check failed there showing the expected text (`"verdict": "pre-existing"`) | the failure is not this change's: triage it as Step 2's `test_failure` says |
+| 2 | could not decide: not a git repository, the fetch failed, no worktree could be made, the setup failed, the command could not start or either ran over the deadline, the report gave no answer for the named case, or the check failed without the expected text | fix what the message names and run it again; a fetch that fails is no answer |
+
 ## Step 0: Parse the CI errors
 
 ```bash
@@ -259,9 +321,64 @@ block it suppresses, not above an `export`.
 
 Read the failing test and understand its assertion. **Fix the code, not the
 test, unless the test encodes a stale assumption**: that is the order of
-preference, not an either-or. For failures that predate the current change
-and are unrelated to it, follow the repository's own stale-test triage
-procedure, if it has one.
+preference, not an either-or.
+
+**Attribute before you fix.** Where the failing test, the file it tests or
+their directory is not in the branch's diff, do not assume the change broke
+it: run the fresh-base probe on that one file, with the base the pull
+request merges into (`gh pr view --json baseRefName --jq .baseRefName`, or
+the repository's default branch).
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/probe-base.ts" --base <base> --setup "<install_command>" --expect "<the failing test's name from the CI log>" --junit probe.xml -- <the repository's test command> <failing test file> <the runner's flag writing a JUnit report to probe.xml>
+```
+
+A test is probed with `--junit` and its name: a verdict from the output
+alone (`"evidence": "output"`) is about the check, not the test, and never
+calls a test stale.
+
+`--setup` is the repository's install command (`bun install
+--frozen-lockfile`, `pnpm install --frozen-lockfile`, `uv sync`), since the
+throwaway worktree has nothing installed; drop it only where the test
+command needs no install (Go, the JVM and .NET resolve through a shared
+cache).
+
+Never reproduce on the base with `git stash` or by checking the base out in
+the working checkout: worktrees share one stash stack and one set of
+branches, and either can revert another session's work. Exit 2 (the fetch
+failed, no worktree, a report with no answer for the named case) is not a
+verdict: fix what it names and run it again. A different
+failure on the base usually means the setup did not install what the test
+needs; never read it as a stale test.
+
+- `"verdict": "change"` (exit 0): the failure is this change's. Fix the code,
+  or the test when the change deliberately altered the behaviour it asserts.
+- `"verdict": "pre-existing"` (exit 1): the test is **stale**: the same
+  test case failed on the base, so its failure predates the change. Then, in this order:
+  1. **Fix it inline when the fix is cheap** (an assertion value, a mock's
+     return value, an import path, a renamed export): read the implementation
+     to learn the current behaviour, apply the smallest fix, run that file.
+  2. **Otherwise delete it and open a tracker item** that records what it
+     covered: the file, how many cases, the behaviours and failure paths they
+     asserted, the failing output and why it was not fixed inline. The item
+     is the test's replacement until a new test exists; a deletion without
+     one loses the coverage silently.
+  3. **Regenerate it only when its premise is obsolete** (its setup mocks a
+     dependency shape that no longer exists, it was written against a
+     replaced architecture). List every behaviour the old assertions protect
+     first; the new test asserts each of them, and the old one goes only once
+     each is covered. Never regenerate a test to make a failing assertion go
+     away.
+
+  Report the base commit the probe named, so the pull request says the
+  failure was there before. A red base is the base's problem as much as this
+  change's: the integration branch can stay red without any pull request
+  going red when the per-change checks are scoped to the diff, which is why
+  [M13](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md)
+  asks for an unscoped run there.
+
+The rule itself, independent of this skill, is
+[M14's triage section](https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/README.md#core-pieces).
 
 **Bun: tests pass alone but fail together?** That is `mock.module()`
 contamination: a module mock leaks into the other test files of the same run.
@@ -395,6 +512,9 @@ its consumer), say which and why.
 - Follow the repository's own coding standards (its instruction file and
   decision records) in every fix.
 - Regenerate generated files with their command; never edit them by hand.
+- Attribute a test failure before fixing it: a test the diff did not touch
+  is reproduced on a freshly fetched base with `probe-base.ts`, never with
+  `git stash` or a checkout of the base in the working tree.
 - Never pass `--no-verify` or `--no-gpg-sign` to a commit: if a hook fails,
   fix what it found.
 - **CI not starting after a push?** Check `mergeable_state` first (Step 0).

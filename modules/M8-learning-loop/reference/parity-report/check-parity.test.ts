@@ -1,5 +1,6 @@
-import { test, expect } from "bun:test";
+import { test } from "bun:test";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 const fixture = (name: string) => join(import.meta.dir, "fixtures", name);
 const cases: [string, number, string][] = [
   ["bad-row.tsv", 2, "token"],
@@ -17,5 +18,5 @@ for (const [name, code, _encoding] of cases)
       [process.execPath, join(import.meta.dir, "check-parity.ts"), ...args],
       { env: { ...process.env, ...env } },
     );
-    expect(run.exitCode).toBe(code);
+    expectSpawnExit(run, code);
   });

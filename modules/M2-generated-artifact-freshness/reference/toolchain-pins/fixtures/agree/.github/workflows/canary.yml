@@ -1,0 +1,13 @@
+name: Runtime canary
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+jobs:
+  suites:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<sha>
+      - uses: oven-sh/setup-bun@<sha>
+        with:
+          bun-version: canary
+      - run: bun test

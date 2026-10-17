@@ -189,6 +189,7 @@ export function plan(fast: boolean, test: Stage): Stage[] {
     command("run", "format:check"),
     command("run", "lint"),
     command("run", "typecheck"),
+    command("run", "pins"),
     ...CHECKS,
   ];
   return fast ? quick : [...quick, ...heavyStages(test)];

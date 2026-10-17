@@ -1,5 +1,9 @@
 import { afterAll, expect, test } from "bun:test";
 import {
+  expectSpawnExit,
+  expectSpawnExited,
+} from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
@@ -42,12 +46,24 @@ const spawn = (args: string[], env: Record<string, string> = {}) =>
   });
 const run = async (args: string[], env: Record<string, string> = {}) => {
   const proc = spawn(args, env);
-  return {
-    code: await proc.exited,
-    out: await new Response(proc.stdout).text(),
-    error: await new Response(proc.stderr).text(),
-  };
+  const [exitCode, out, error] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { code: exitCode, out, error };
 };
+/** The exit-status assertion for a finished `run`, with its output on a mismatch. */
+const expectRunExit = (
+  r: { code: number; out: string; error: string },
+  expected: number,
+  label?: string,
+) =>
+  expectSpawnExit(
+    { exitCode: r.code, stdout: r.out, stderr: r.error },
+    expected,
+    label,
+  );
 function serialized(log: string): boolean {
   let inside = 0;
   for (const line of log.trim().split("\n")) {
@@ -72,7 +88,9 @@ test("actual concurrent critical sections serialize; bypass sensitivity interlea
         RESOURCE_LOCK_BYPASS: bypass,
       }),
     );
-    expect(await Promise.all(children.map((p) => p.exited))).toEqual([0, 0]);
+    await Promise.all(
+      children.map((p, i) => expectSpawnExited(p, 0, `child ${i}`)),
+    );
     const text = readFileSync(log, "utf8");
     expect(text.match(/ENTER/g)?.length).toBe(2);
     expect(serialized(text)).toBe(!bypass);
@@ -93,23 +111,21 @@ test("live holder times out, CI and explicit bypass ignore it", async () => {
         })
       ).out.trim(),
     ).toBe("ran");
-    expect(
-      (
-        await run([process.execPath, "-e", "console.log('ran')"], {
-          LOCK_NAME: "live",
-          RESOURCE_LOCK_BYPASS: "1",
-          LOCK_TIMEOUT: "0",
-        })
-      ).code,
-    ).toBe(0);
-    expect(
-      (
-        await run([process.execPath, "-e", ""], {
-          LOCK_NAME: "live",
-          LOCK_TIMEOUT: "0",
-        })
-      ).code,
-    ).toBe(3);
+    expectRunExit(
+      await run([process.execPath, "-e", "console.log('ran')"], {
+        LOCK_NAME: "live",
+        RESOURCE_LOCK_BYPASS: "1",
+        LOCK_TIMEOUT: "0",
+      }),
+      0,
+    );
+    expectRunExit(
+      await run([process.execPath, "-e", ""], {
+        LOCK_NAME: "live",
+        LOCK_TIMEOUT: "0",
+      }),
+      3,
+    );
     expect(
       process.platform === "win32"
         ? readFileSync(lock, "utf8")
@@ -143,18 +159,17 @@ test("dead holder and foreign directory are reclaimed", async () => {
 });
 test("command result propagates and lock releases", async () => {
   for (const code of [7, 0])
-    expect(
-      (
-        await run([
-          "--lock",
-          "exit",
-          "--",
-          process.execPath,
-          "-e",
-          `process.exit(${code})`,
-        ])
-      ).code,
-    ).toBe(code);
+    expectRunExit(
+      await run([
+        "--lock",
+        "exit",
+        "--",
+        process.execPath,
+        "-e",
+        `process.exit(${code})`,
+      ]),
+      code,
+    );
   expect(existsSync(join(scratch, "jig-lock.exit"))).toBe(false);
 });
 for (const [args, env] of [
@@ -171,7 +186,7 @@ for (const [args, env] of [
   [[process.execPath, "-e", ""], { LOCK_ROOT: gate }],
 ] as [string[], Record<string, string>][])
   test(`usage ${JSON.stringify([args, env])}`, async () =>
-    expect((await run(args, env)).code).toBe(2));
+    expectRunExit(await run(args, env), 2));
 test("Windows hard-link protocol serializes real processes and reclaims stale files", async () => {
   const log = join(scratch, "hardlink-events.log"),
     program =
@@ -186,20 +201,21 @@ test("Windows hard-link protocol serializes real processes and reclaims stale fi
   const children = [0, 1, 2].map(() =>
     launch([process.execPath, "-e", program]),
   );
-  expect(await Promise.all(children.map((child) => child.exited))).toEqual([
-    0, 0, 0,
-  ]);
+  await Promise.all(
+    children.map((child, i) => expectSpawnExited(child, 0, `child ${i}`)),
+  );
   expect(readFileSync(log, "utf8")).toBe(
     "ENTER\nEXIT\nENTER\nEXIT\nENTER\nEXIT\n",
   );
   const lock = join(scratch, "jig-lock.hardlink");
   writeFileSync(lock, String(process.pid));
   try {
-    expect(
-      await launch([process.execPath, "-e", "process.exit(0)"], {
+    await expectSpawnExited(
+      launch([process.execPath, "-e", "process.exit(0)"], {
         LOCK_TIMEOUT: "0",
-      }).exited,
-    ).toBe(3);
+      }),
+      3,
+    );
   } finally {
     rmSync(lock);
   }
@@ -209,7 +225,8 @@ test("Windows hard-link protocol serializes real processes and reclaims stale fi
   });
   await dead.exited;
   writeFileSync(lock, String(dead.pid));
-  expect(await launch([process.execPath, "-e", "process.exit(0)"]).exited).toBe(
+  await expectSpawnExited(
+    launch([process.execPath, "-e", "process.exit(0)"]),
     0,
   );
   expect(existsSync(lock)).toBe(false);
@@ -231,15 +248,14 @@ test("wait is capped at the deadline even with a long poll interval", async () =
   record(lock, process.pid);
   try {
     const started = performance.now();
-    expect(
-      (
-        await run([process.execPath, "-e", ""], {
-          LOCK_NAME: "capped",
-          LOCK_TIMEOUT: "1",
-          LOCK_POLL: "3600",
-        })
-      ).code,
-    ).toBe(3);
+    expectRunExit(
+      await run([process.execPath, "-e", ""], {
+        LOCK_NAME: "capped",
+        LOCK_TIMEOUT: "1",
+        LOCK_POLL: "3600",
+      }),
+      3,
+    );
     const elapsed = performance.now() - started;
     // The wait lasts the 1s timeout, not the 3600s poll. The lower bound
     // allows a little timer jitter; the upper bound leaves about 2s for
@@ -273,14 +289,13 @@ test("claim held by a live reclaimer is respected and the stale lock stays", asy
   record(lock, deadHolder);
   record(claim, process.pid);
   try {
-    expect(
-      (
-        await run([process.execPath, "-e", ""], {
-          LOCK_NAME: "live-claim",
-          LOCK_TIMEOUT: "0",
-        })
-      ).code,
-    ).toBe(3);
+    expectRunExit(
+      await run([process.execPath, "-e", ""], {
+        LOCK_NAME: "live-claim",
+        LOCK_TIMEOUT: "0",
+      }),
+      3,
+    );
     expect(existsSync(claim)).toBe(true);
     expect(existsSync(lock)).toBe(true);
   } finally {
@@ -302,8 +317,10 @@ test("many contenders recovering one dead lock never overlap and leave nothing b
         LOCK_POLL: "0.001",
       }),
     );
-    expect(await Promise.all(children.map((p) => p.exited))).toEqual(
-      Array(6).fill(0),
+    await Promise.all(
+      children.map((p, i) =>
+        expectSpawnExited(p, 0, `round ${round} child ${i}`),
+      ),
     );
   }
   const text = readFileSync(log, "utf8");
@@ -315,4 +332,4 @@ test("many contenders recovering one dead lock never overlap and leave nothing b
   );
 });
 test("missing executable propagates shell-compatible 127", async () =>
-  expect((await run([join(scratch, "missing-executable")])).code).toBe(127));
+  expectRunExit(await run([join(scratch, "missing-executable")]), 127));

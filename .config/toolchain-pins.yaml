@@ -1,0 +1,15 @@
+# Toolchain pins: the one place each tool's version is declared, and every
+# place that repeats it. `bun run pins` (part of the gates) fails when a pin
+# site differs from its source, when a site lost its pin, and when an
+# exception excuses nothing. Format and reader kinds:
+# modules/M2-generated-artifact-freshness/reference/toolchain-pins/README.md
+#
+# The workflows install Bun through mise, which reads mise.toml, so they
+# carry no pin of their own and are not sites.
+tools:
+  bun:
+    source: { file: mise.toml, toml: tools.bun }
+    sites:
+      - { files: package.json, json: packageManager, pattern: '^bun@(.+)$' }
+      # The types package is released with the runtime and carries its version.
+      - { files: package.json, json: devDependencies.@types/bun }

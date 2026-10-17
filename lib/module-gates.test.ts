@@ -28,6 +28,7 @@ import {
   stageAccepted,
   threadsResolved,
 } from "./module-gates.ts";
+import { expectSpawnExit } from "./test-helpers/expect-spawn-exit.ts";
 const root = join(import.meta.dir, "..");
 const m6 = join(root, "modules/M6-feature-delivery-pipeline/reference");
 const m7 = join(root, "modules/M7-pr-lifecycle-review/reference");
@@ -567,9 +568,10 @@ test("reflection threshold and required configuration errors", () => {
     ["5", 0],
     ["0", 2],
   ] as const)
-    expect(
-      reflectionCli([hard], { ...env, ROUND_THRESHOLD: threshold }).exitCode,
-    ).toBe(code);
+    expectSpawnExit(
+      reflectionCli([hard], { ...env, ROUND_THRESHOLD: threshold }),
+      code,
+    );
   for (const bad of [
     { CHANGE: "" },
     { INBOX: "" },
@@ -578,11 +580,11 @@ test("reflection threshold and required configuration errors", () => {
     { ARCHIVE: `${inbox}missing` },
     { LOCK_TIMEOUT: "-1" },
   ])
-    expect(reflectionCli([hard], { ...env, ...bad }).exitCode).toBe(2);
+    expectSpawnExit(reflectionCli([hard], { ...env, ...bad }), 2);
 });
 test("reflection records measurement, re-prompts placeholders, skips completion, extends census through archive", () => {
   const { dir, inbox, env } = setupInbox();
-  expect(reflectionCli([hard], env).exitCode).toBe(0);
+  expectSpawnExit(reflectionCli([hard], env), 0);
   for (const pattern of [
     /^- change: PR-482$/m,
     /^- rounds: 5$/m,
@@ -590,7 +592,7 @@ test("reflection records measurement, re-prompts placeholders, skips completion,
     /^- disposition:/m,
   ])
     expect(readFileSync(inbox, "utf8")).toMatch(pattern);
-  expect(reflectionCli([hard], env).exitCode).toBe(0);
+  expectSpawnExit(reflectionCli([hard], env), 0);
   expect(readFileSync(inbox, "utf8").match(/^- change:/gm)?.length).toBe(1);
   writeFileSync(
     inbox,
@@ -599,19 +601,19 @@ test("reflection records measurement, re-prompts placeholders, skips completion,
       "- disposition: L-0042",
     ),
   );
-  expect(reflectionCli([hard], env).exitCode).toBe(3);
+  expectSpawnExit(reflectionCli([hard], env), 3);
   const round7 = join(dir, "round7.txt");
   writeFileSync(
     round7,
     "CONVERGED round=7 open_threads=0 reviewers=2/2 pr_state=open\n",
   );
-  expect(reflectionCli([round7], env).exitCode).toBe(0);
+  expectSpawnExit(reflectionCli([round7], env), 0);
   expect(readFileSync(inbox, "utf8").match(/^- change:/gm)?.length).toBe(2);
   const archive = join(dir, "archive.md");
   writeFileSync(archive, readFileSync(inbox, "utf8"));
   writeFileSync(inbox, "# Reflection inbox\n");
-  expect(reflectionCli([hard], { ...env, ARCHIVE: archive }).exitCode).toBe(3);
-  expect(reflectionCli([hard], env).exitCode).toBe(0);
+  expectSpawnExit(reflectionCli([hard], { ...env, ARCHIVE: archive }), 3);
+  expectSpawnExit(reflectionCli([hard], env), 0);
 });
 test("eight concurrent reflection invocations write exactly one record and release lock", async () => {
   const { inbox, env } = setupInbox();
@@ -642,18 +644,16 @@ test("stale locks fail bounded with a recovery instruction, while foreign lock p
     writeFileSync(`${inbox}.lock`, "jig-reflection-lock-v1 999999999 stale\n");
   else symlinkSync("999999999", `${inbox}.lock`);
   const run = reflectionCli([hard], { ...env, LOCK_TIMEOUT: "1" });
-  expect(run.exitCode).toBe(2);
+  expectSpawnExit(run, 2);
   expect(run.stderr.toString()).toContain(`rm -f ${inbox}.lock`);
   expect(readFileSync(inbox, "utf8")).not.toContain("- change:");
   unlinkSync(`${inbox}.lock`);
-  expect(reflectionCli([hard], env).exitCode).toBe(0);
+  expectSpawnExit(reflectionCli([hard], env), 0);
   for (const directory of [false, true]) {
     const lock = `${inbox}.lock`;
     if (directory) require("node:fs").mkdirSync(lock);
     else writeFileSync(lock, "foreign");
-    expect(reflectionCli([hard], { ...env, LOCK_TIMEOUT: "1" }).exitCode).toBe(
-      2,
-    );
+    expectSpawnExit(reflectionCli([hard], { ...env, LOCK_TIMEOUT: "1" }), 2);
     expect(existsSync(lock)).toBe(true);
     rmSync(lock, { recursive: true });
   }
@@ -665,7 +665,7 @@ test.skipIf(process.platform === "win32")(
     const link = join(dir, "link.md");
     symlinkSync("inbox.md", link);
     chmodSync(inbox, 0o664);
-    expect(reflectionCli([hard], { ...env, INBOX: link }).exitCode).toBe(0);
+    expectSpawnExit(reflectionCli([hard], { ...env, INBOX: link }), 0);
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
     expect(readFileSync(inbox, "utf8")).toContain("- change: PR-482");
     if (process.platform !== "win32")

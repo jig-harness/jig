@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 const gate = join(import.meta.dir, "check-events.ts"),
   fix = join(import.meta.dir, "fixtures");
 function run(args: string[], env: Record<string, string> = {}) {
@@ -28,9 +29,9 @@ const cases: [string, number, Record<string, string>][] = [
   ["bad/does-not-exist.log", 2, {}],
 ];
 for (const [file, code, env] of cases)
-  test(file, () => expect(run([join(fix, file)], env).exitCode).toBe(code));
+  test(file, () => expectSpawnExit(run([join(fix, file)], env), code));
 test("missing input file fails closed", () =>
-  expect(run([join(fix, "absent-file")]).exitCode).toBe(2));
+  expectSpawnExit(run([join(fix, "absent-file")]), 2));
 for (const file of [
   "schema-no-required.yaml",
   "schema-no-types.yaml",
@@ -38,10 +39,10 @@ for (const file of [
   "schema-duplicate-required.yaml",
 ])
   test(file, () =>
-    expect(
-      run([join(fix, "good/events.log")], { SCHEMA: join(fix, "bad", file) })
-        .exitCode,
-    ).toBe(2),
+    expectSpawnExit(
+      run([join(fix, "good/events.log")], { SCHEMA: join(fix, "bad", file) }),
+      2,
+    ),
   );
 test("report identifies offending event and field", () => {
   expect(run([join(fix, "bad/unknown-type.log")]).stdout.toString()).toContain(

@@ -1,0 +1,139 @@
+# Runtime canary — GitHub Actions skeleton (Jig module M14).
+#
+# Copy to .github/workflows/runtime-canary.yml and replace every <placeholder>.
+# The SHAPE is the point:
+#
+#   - It runs the most informative suites against the runtime's NEXT release
+#     (its canary, nightly, beta or release-candidate channel) on a schedule,
+#     so an incompatibility surfaces with time to retire or adapt what it
+#     breaks, rather than on the day of the upgrade.
+#   - It never blocks: no per-change trigger, and never a required check. A
+#     red run is a finding to triage before the upgrade, not a reason to
+#     stop a merge.
+#   - It records the exact build it ran, in the run summary. Next-release
+#     builds change daily; without the version and revision a red run cannot
+#     be attributed to one of them.
+#   - It provisions the suites' real dependencies, so the integration tier,
+#     where the behaviour pins live, runs for real instead of skipping, and
+#     it ends with the skip tripwire so a skipped suite cannot read as green.
+#   - Where the product ships as a compiled binary, a second job builds it
+#     with the next release and executes it against its exit-code contract.
+#   - A behaviour pin that fails here is the signal to retire or adapt the
+#     workaround it names, never an assertion to update.
+#   - The next-release pin below is a deliberate exception to the one
+#     version source: register it, with this reason, in the toolchain-pins
+#     declaration (module M2), so the pin gate does not flag it.
+#   - Least privilege: it reads the repository and nothing else.
+#
+# The practice:
+#   https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/README.md
+# The next-release channel and the build command per runtime:
+#   https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/mappings.md
+# The skip tripwire:
+#   https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/reference/tests-executed/README.md
+# The one version source and its exceptions:
+#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/reference/toolchain-pins/README.md
+name: Runtime canary
+
+on:
+  schedule:
+    # Weekly, early in the week, so a red run is triaged before the weekend.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+# A newer scheduled run supersedes an older one still running; scheduled
+# runs all use the default branch's workflow, so they cover one another. A
+# manual run may come from another ref with other code, so it gets a group
+# of its own and neither cancels nor is cancelled.
+concurrency:
+  group: runtime-canary-${{ github.event_name == 'schedule' && 'schedule' || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  suites:
+    name: Suites on the next <runtime> release
+    runs-on: ubuntu-latest
+    # The integration tier's budget, as the job that runs it per change has.
+    timeout-minutes: <budget>
+    services:
+      <database>:
+        image: <image>@<digest>
+        env:
+          <the credentials the suites expect>
+        ports:
+          - <port>:<port>
+        options: >-
+          --health-cmd="<the engine's readiness command>"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@<pinned-sha>
+      # The runtime at its next-release channel. The setup action and the
+      # channel name per runtime are in the mappings; this is Bun's.
+      - uses: oven-sh/setup-bun@<pinned-sha>
+        with:
+          bun-version: canary
+      - name: Record the build this run used
+        # Written to the run summary, so a red run names the build it ran.
+        run: echo "bun $(bun --version) ($(bun --revision))" | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: bun install --frozen-lockfile
+      - name: Run the suites with the behaviour pins, with a report
+        # The most informative suites: the ones with behaviour pins, and the
+        # integration tier, with its dependency provisioned above so it runs
+        # rather than skips. Context values reach the suite through env:,
+        # never through ${{ }} inside run:.
+        env:
+          DATABASE_URL: <the provisioned dependency's address>
+        run: >-
+          bun test <paths> --reporter=junit --reporter-outfile=reports/canary.xml
+      # The skip tripwire runs from a pinned Jig checkout: it imports helpers
+      # from across that repository. A private Jig repository needs a
+      # read-only credential here; drop `token` when Jig is public.
+      - uses: actions/checkout@<pinned-sha>
+        if: always()
+        with:
+          repository: <owner/name of the Jig repository>
+          ref: <pinned Jig commit>
+          token: ${{ secrets.<read-only token for the Jig repository> }}
+          persist-credentials: false
+          path: jig
+      - name: Fail unless every suite executed a test
+        # Runs after a failed suite too: a red that executed nothing is a
+        # different finding from a red that failed.
+        if: always()
+        run: >-
+          bun jig/modules/M14-testing-strategy/reference/tests-executed/check-tests-executed.ts
+          --each-suite reports/canary.xml
+
+  compiled-binary:
+    # Delete this job when the product does not ship as a compiled binary.
+    name: Compiled binary on the next <runtime> release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@<pinned-sha>
+      - uses: oven-sh/setup-bun@<pinned-sha>
+        with:
+          bun-version: canary
+      - name: Record the build this run used
+        run: echo "bun $(bun --version) ($(bun --revision))" | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: bun install --frozen-lockfile
+      - name: Build the binary as the release does
+        # The same target and flags as the release build, so the canary
+        # compiles what production runs.
+        run: bun build --compile --target=<the release target> <entry file> --outfile dist/<binary>
+      - name: Execute it against its exit-code contract
+        # One invocation that must succeed and one that must fail: proving
+        # the binary built with the next release starts at all, and that its
+        # exit codes still mean what its callers expect.
+        run: |
+          set -euo pipefail
+          ./dist/<binary> <arguments that must exit 0>
+          if ./dist/<binary> <arguments that must exit non-zero>; then
+            echo "expected a non-zero exit" >&2
+            exit 1
+          fi
