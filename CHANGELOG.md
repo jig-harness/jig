@@ -260,6 +260,24 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.49.0] - 2026-10-17
+
+`/jig:drive-pr` no longer assumes every repository has an AI reviewer.
+
+### Changed
+
+- **Breaking**: `/jig:drive-pr` waits for an AI reviewer only where the
+  repository names one, with `review.reviewer_app` or
+  `review.reviewer_check_pattern` in `.config/jig.yaml` (or the
+  `DRIVE_PR_REVIEWER_APP` and `DRIVE_PR_REVIEWER_CHECK` overrides). Before, a
+  repository that set neither was held in `AWAITING_REVIEWER` until the
+  timeout, looking for a check named `AI review`. Now it converges on zero
+  unresolved threads, zero unaddressed summary findings and green CI, and a
+  check that only looks like a reviewer's counts as an ordinary check. A
+  repository whose AI reviewer relied on the built-in check name must set
+  `review.reviewer_app` (its GitHub App slug) to keep waiting for it;
+  `review.bots` alone no longer makes the drive expect one.
+
 ## [0.48.1] - 2026-10-17
 
 ### Changed
@@ -2478,7 +2496,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.48.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.49.0...HEAD
+[0.49.0]: https://github.com/docomply/jig/compare/v0.48.1...v0.49.0
 [0.48.1]: https://github.com/docomply/jig/compare/v0.48.0...v0.48.1
 [0.48.0]: https://github.com/docomply/jig/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/docomply/jig/compare/v0.46.0...v0.47.0
