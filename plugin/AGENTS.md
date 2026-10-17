@@ -39,6 +39,12 @@ once.
   skill. A module moves
   there, with its tests in `shared/__tests__/`, when a second skill needs it.
   A skill's own logic that another skill reads stays in the skill.
+- **A skill holds the templates and gates it uses.** The plugin installs only
+  this directory, so a template or a gate a skill uses moves in from its module
+  (`templates/`, `scripts/` with `__tests__/`), never copied, and the module
+  links to it ([modules/AGENTS.md](../modules/AGENTS.md#the-module-contract)). A
+  template in a skill is licensed MIT No Attribution and listed in the root
+  NOTICE (copied here as [NOTICE](NOTICE): `cp NOTICE plugin/`).
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **A hook** lives in `hooks/<name>.ts`, is registered in `hooks/hooks.json`

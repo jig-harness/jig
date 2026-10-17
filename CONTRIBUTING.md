@@ -310,7 +310,7 @@ review.
 ## Licences
 
 Jig is under the Apache License 2.0 ([LICENSE](LICENSE)); the files under
-`modules/*/templates/` are under MIT No Attribution
+`modules/*/templates/` and `plugin/skills/*/templates/` are under MIT No Attribution
 ([LICENSE-MIT-0](LICENSE-MIT-0)). [NOTICE](NOTICE) names the licensor, lists
 those template files one by one, and lists the third-party code the plugin
 vendors with the licence file beside each. A new template gets its line in
@@ -335,6 +335,12 @@ work as part of the plugin:
   frontmatter. Supporting files sit beside it (`scripts/`, `references/`).
   Code more than one skill uses lives in `plugin/shared/` and is imported by
   relative path ([plugin/AGENTS.md](plugin/AGENTS.md)).
+- **Assets from a module:** a template or a gate the skill uses moves in from
+  its module, never copied: templates to `templates/`, gates to `scripts/`
+  with their self-tests in `__tests__/` and no import of the repository's
+  `lib/`. The module's README links them in the skill, and the skill's
+  README links back ([modules/AGENTS.md](modules/AGENTS.md#the-module-contract)).
+  A template gets its line in [NOTICE](NOTICE), and `cp NOTICE plugin/`.
 - **Paths:** reach your own files as `${CLAUDE_SKILL_DIR}/…` in `SKILL.md`, and
   explain the placeholder once for other tools, as
   [resolve-review-comments](plugin/skills/resolve-review-comments/SKILL.md#paths-and-working-directory)

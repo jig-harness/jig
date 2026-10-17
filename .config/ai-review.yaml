@@ -34,7 +34,7 @@ platform_description: "Jig — a vendor-agnostic toolkit for AI-native software-
 architecture_invariants: |-
   Weigh these repository invariants (flag violations):
   - Keep Jig vendor-agnostic and technology-flexible: state the invariant before naming tools, and put ecosystem-specific mappings in each module's mappings.md.
-  - Preserve the module contract: a complete module has a plain-language README, copyable templates, portable reference material, mappings.md, and maturity criteria in the audit skill (plugin/skills/audit/criteria/). Maturity criteria must be observable repository facts and use the absent → convention-only → mechanically enforced ladder.
+  - Preserve the module contract: a complete module has a plain-language README, mappings.md, copyable templates and portable reference material (in the module, or in the skill that uses them), and maturity criteria in the audit skill (plugin/skills/audit/criteria/); a template or gate a skill uses lives in that skill (plugin/skills/<skill>/templates/, scripts/), moved and not copied, and the module's README links it. Maturity criteria must be observable repository facts and use the absent → convention-only → mechanically enforced ladder.
   - Name no organization Jig learned from and import no product-domain material from one: no organization names, tracker keys, foreign pull-request numbers or paths that exist only elsewhere. Keep portable mechanisms separate from local values; use neutral examples and flag uncertain boundary changes for human review.
   - Everything under plugin/ runs from a copy outside this repository and ships only as a new version: a change there adds a change note under changes/ with `release:`, and leaves the manifests' version and CHANGELOG.md's sections to the release step that runs after the merge.
   - Approved documentation states current truth without review dialogue or correction traces. Define new terms of art in GLOSSARY.md, keep Markdown tables preceded by a blank line, and preserve working relative links.
@@ -100,7 +100,7 @@ rules:
     attention: "Check that the pull request re-evaluated the audit skill (plugin/skills/audit/) against its change and that its description states the audit impact. Flag a new or changed configuration field, skill, module practice, criterion, gate or template that config-schema.yaml, the criteria and their probes, or config-fit.ts do not reflect, and a description that does not say what changed in the audit or why nothing did."
     severity: medium
   - id: template-reference-separation
-    paths: ["modules/**/templates/**", "modules/**/reference/**"]
+    paths: ["modules/**/templates/**", "modules/**/reference/**", "plugin/skills/*/templates/**"]
     attention: "Ensure templates are neutral copyable skeletons and reference material contains portable mechanisms rather than local policy values. Keep fixture changes aligned with the documented contract and paired self-test expectations."
     severity: medium
 

@@ -2,8 +2,10 @@
 // - LICENSE (Apache-2.0), LICENSE-MIT-0 and NOTICE exist at the root, and
 //   plugin/LICENSE and plugin/NOTICE are byte copies of the root files (agent
 //   tools install only plugin/, so it carries its own copy);
-// - NOTICE lists exactly the files under modules/*/templates/, the files
-//   licensed under MIT-0, so a template added, moved or removed updates it;
+// - NOTICE lists exactly the files under modules/*/templates/ and
+//   plugin/skills/*/templates/ (a template lives in the skill that uses it),
+//   the files licensed under MIT-0, so a template added, moved or removed
+//   updates it;
 // - every third-party entry NOTICE lists is a licence file that exists, every
 //   licence file in the repository is listed (the root's own files and
 //   plugin/'s copies aside), and every `vendor/` folder holds a listed one.
@@ -23,7 +25,7 @@ import { couldNotCheck } from "../lib/findings.ts";
 const ROOT_FILES = ["LICENSE", "LICENSE-MIT-0", "NOTICE"];
 const PLUGIN_COPIES = ["LICENSE", "NOTICE"];
 const THIRD_PARTY = "Third-party code";
-const TEMPLATE = /^modules\/[^/]+\/templates\//;
+const TEMPLATE = /^(?:modules\/[^/]+|plugin\/skills\/[^/]+)\/templates\//;
 const LICENCE_FILE = /^(licen[cs]e|copying)([.-].*)?$|\.licen[cs]e$/i;
 const OWN = new Set([
   ...ROOT_FILES,

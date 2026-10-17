@@ -1792,6 +1792,20 @@ test("the licence files hold together, and each gap fails", () => {
   put("plugin/x/vendor/lib.LICENSE");
   write(["modules/M0-a/templates/a.md"], ["plugin/x/vendor/lib.LICENSE"]);
   expectSpawnExit(run(gate, [dir]), 0);
+  // A template in a skill is held to NOTICE like one in a module, nested too.
+  put("plugin/skills/k/templates/sub/p.md");
+  const skillResult = run(gate, [dir]);
+  expectSpawnExit(skillResult, 1);
+  expect(skillResult.stderr.toString()).toContain(
+    "template plugin/skills/k/templates/sub/p.md is not listed",
+  );
+  write(
+    ["modules/M0-a/templates/a.md", "plugin/skills/k/templates/sub/p.md"],
+    ["plugin/x/vendor/lib.LICENSE"],
+  );
+  expectSpawnExit(run(gate, [dir]), 0);
+  rmSync(join(dir, "plugin/skills"), { recursive: true });
+  write(["modules/M0-a/templates/a.md"], ["plugin/x/vendor/lib.LICENSE"]);
   // A template NOTICE does not list.
   put("modules/M0-a/templates/b.md");
   expectSpawnExit(run(gate, [dir]), 1);

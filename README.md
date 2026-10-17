@@ -105,7 +105,7 @@ module, is still open.
 ## Licence
 
 Jig is licensed under the [Apache License 2.0](LICENSE). The template files
-under `modules/*/templates/`, which other repositories copy into their own,
+under `modules/*/templates/` and `plugin/skills/*/templates/`, which other repositories copy into their own,
 are under [MIT No Attribution](LICENSE-MIT-0), so a copy needs no notice.
 [NOTICE](NOTICE) lists those templates and the third-party code the plugin
 vendors, each with its licence. Contributions from outside the maintainers

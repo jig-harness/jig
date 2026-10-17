@@ -17,21 +17,6 @@ here have a design in this folder ([README.md](README.md)).
 
 ## Now
 
-### 2. Skill assets live in the plugin
-
-The plugin installs only `plugin/`, so a skill cannot read anything under
-`modules/`. Templates and gates a skill uses move into the skill that uses
-them (moved, not copied), and the module links to them there: one source,
-nothing to keep in step, as the maturity criteria already do from the
-[audit skill](../plugin/skills/audit/criteria/README.md). This unblocks items 3
-and 4, which need M6's templates and M4's gates. The module contract changes
-in the same pull request: [modules/AGENTS.md](../modules/AGENTS.md) requires
-`templates/` and `reference/` in every module directory, so the contract
-changes with the move, and each module links to the assets it no longer
-holds. Moving the plugin to the repository root is not an option: the root
-`package.json` would make each tool install the development dependencies on
-every machine.
-
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
@@ -45,7 +30,10 @@ rollout:
   It replaces `seeds/project-kickoff/`, which is an older copy. M6's PRD and
   architecture templates and the kickoff's own are merged into one of each.
   The opinions M6 leaves out (personas, tiers, model routing) belong in the
-  skill, not the module.
+  skill, not the module. M6's PRD and architecture templates move into the
+  skill (`templates/`), moved and not copied, and M6's README links them there
+  ([the module contract](../modules/AGENTS.md#the-module-contract)); the
+  NOTICE entries move with them.
 - **`red-team`**: adversarial review of a requirements or architecture
   document by persona (critical chief technology officer, security auditor, performance engineer,
   cost optimizer), in a fresh session; the runnable form of M6's per-stage
@@ -55,8 +43,10 @@ rollout:
   effort checks.
 - **`docs`**: the runnable form of M4: runs the repository's frontmatter,
   index and scar checks, flags stale drafts, and plans missing documentation by
-  project type. The repository's M4 schema wins over the source skill's own
-  frontmatter rules.
+  project type. M4's gates (`modules/M4-docs-governance/reference/`) and their
+  self-tests move into the skill's `scripts/` and `__tests__/`, moved and not
+  copied, and M4's README links them there. The repository's M4 schema wins
+  over the source skill's own frontmatter rules.
 - **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
   majors an update bot cannot do alone), opened through `do-item`'s
   pull-request policy and driven by `drive-pr`; the runnable side of M1's

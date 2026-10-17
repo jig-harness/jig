@@ -2,9 +2,10 @@
 
 The practice modules. Each adopts independently at three maturity levels
 (Lite / Standard / Strict — see [principle 2](../principles/02-modular-profile-composed.md))
-and carries the same directory contract: `README.md`, `templates/`,
-`reference/`, `mappings.md`, and its [maturity criteria](#maturity-criteria) in
-the audit skill. The contract, the README order and the facts to keep
+and carries the same contract: `README.md`, `mappings.md`, its
+`templates/` and `reference/` (which live in the skill that uses them once a
+skill does), and its [maturity criteria](#maturity-criteria) in the audit
+skill. The contract, the README order and the facts to keep
 consistent across modules are in [AGENTS.md](AGENTS.md).
 
 The last column names the [plugin](../plugin/README.md) skills that run a

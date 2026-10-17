@@ -4,7 +4,7 @@ type: adr
 status: amended
 description: "Agent tools install only plugin/ from main; everything a skill needs lives there, and each change is a tagged version"
 lifecycle: permanent
-version: "1.3"
+version: "1.4"
 last_updated: 2026-10-17
 owner: maintainers
 decision_date: 2026-10-09
@@ -120,3 +120,19 @@ per-merge mode. It writes one when at least one waiting note asks for a
 release, at the largest bump any asks for; notes that ask for none go under
 Unreleased without moving the version, and a run with no notes waiting
 writes nothing.
+
+### 2026-10-17 — A template or gate a skill uses lives in the skill (v1.4)
+
+Touches the Costs section's "such as the maturity criteria": the rule that
+material a skill reads lives under `plugin/` is now stated for every kind of
+asset, not for the criteria alone. A template or a gate (a script with its
+self-test) stays in its module until a skill reads or runs it, then moves into
+that skill (`templates/`, `scripts/`, `__tests__/`), moved and not copied, and
+the module's README links it there. Nothing moves ahead of a skill that uses
+it. The module contract in [modules/AGENTS.md](../../modules/AGENTS.md)
+no longer requires `templates/` and `reference/` in every module directory,
+and the licence gate (`scripts/check-licences.ts`) lists templates in a skill
+(`plugin/skills/*/templates/`) as it lists those in a module. Rejected:
+moving the plugin to the repository root (its `package.json` would make each
+agent tool install the development dependencies on every machine), and a
+copy of the asset in the skill (it drifts from the module's).
