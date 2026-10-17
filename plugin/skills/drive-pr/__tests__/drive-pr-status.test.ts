@@ -3,8 +3,11 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
-import { describe, expect, it } from "bun:test";
-import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { afterAll, describe, expect, it } from "bun:test";
+import {
+  expectSpawnExit,
+  expectSpawnExited,
+} from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   chmodSync,
   existsSync,
@@ -42,6 +45,7 @@ import {
   STICKY_ROUND,
   REVIEWER_RUN,
   DORMANT_ARM,
+  stickyBody,
   tmpRoot,
   binDir,
   scratchClean,
@@ -340,6 +344,165 @@ describe("drive-status.ts terminal states", () => {
     expect(r.state).toBe("ROUND_READY");
     expect(r.exitCode).toBe(0);
     expect((r.json.work as Record<string, unknown>).unresolvedThreads).toBe(1);
+  });
+
+  describe("a repository that names no AI reviewer", () => {
+    const scratchDirs: string[] = [];
+    afterAll(() => {
+      for (const dir of scratchDirs)
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    // The suite's overlay minus `review.reviewer_app`: no app and no check
+    // pattern, so the drive has no reviewer to wait on. `bots` replaces
+    // `review.bots`, which alone must not make a reviewer expected.
+    function noReviewerEnv(bots?: string[]): Record<string, string> {
+      const source = readFileSync(
+        join(import.meta.dir, "fixtures", "overlay.yaml"),
+        "utf8",
+      );
+      const text = source
+        .split("\n")
+        .filter((line) => !line.includes("reviewer_app"))
+        .map((line) =>
+          bots !== undefined && line.trimStart().startsWith("bots:")
+            ? `  bots: ${JSON.stringify(bots)}`
+            : line,
+        )
+        .join("\n");
+      const dir = mkdtempSync(join(tmpdir(), "drive-no-reviewer-"));
+      scratchDirs.push(dir);
+      const path = join(dir, "overlay.yaml");
+      writeFileSync(path, text);
+      return { JIG_OVERLAY: path };
+    }
+
+    // A reviewer sticky whose backlog blob cannot be decoded: reading it as
+    // reviewer protocol evidence makes the summary enumeration fail closed.
+    const unreadableSticky = `${stickyBody({ backlog: false })}\n<!-- ai-review-backlog: bm90IGpzb24= -->`;
+
+    it("CONVERGED on zero threads and green CI, with no reviewer check or stamp", async () => {
+      const r = await probe(
+        { threads: [], checkRuns: [], reviewedSha: null },
+        [],
+        { env: noReviewerEnv() },
+      );
+      expect(r.state).toBe("CONVERGED");
+      expect(r.json.ci).toBe("green");
+      expect(String(r.json.reason)).toContain("no AI reviewer is configured");
+    });
+
+    it("reads no sticky from a review.bots login, so an undecodable one does not stop convergence", async () => {
+      const fixture = {
+        threads: [],
+        reviewedSha: null,
+        decoyReviewerComments: [unreadableSticky],
+      };
+      const named = await probe(fixture);
+      expect(named.state).toBe("INDETERMINATE");
+      const r = await probe({ ...fixture, checkRuns: [] }, [], {
+        env: noReviewerEnv(["example-review[bot]"]),
+      });
+      expect(r.state).toBe("CONVERGED");
+      expect((r.json.work as Record<string, unknown>).summaryFindings).toBe(0);
+    });
+
+    it("summary-findings.ts still reads a review.bots sticky unless the drive's flag is passed", async () => {
+      // The standalone resolver runs the enumerator without the flag, and its
+      // minimal configuration declares `review.bots` alone.
+      const { dir } = writeFixture({
+        threads: [],
+        reviewedSha: null,
+        decoyReviewerComments: [unreadableSticky],
+      });
+      const enumerate = (flags: string[]) => {
+        const r = Bun.spawnSync(
+          [join(SCRIPTS, "summary-findings.ts"), "999", "--json", ...flags],
+          {
+            env: {
+              ...process.env,
+              PATH: `${binDir}:${process.env.PATH}`,
+              DRIVE_PR_FIXTURES: dir,
+              ...noReviewerEnv(["example-review[bot]"]),
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+        return {
+          exitCode: r.exitCode,
+          stdout: r.stdout.toString(),
+          stderr: r.stderr.toString(),
+        };
+      };
+      const standalone = enumerate([]);
+      expectSpawnExit(standalone, 1, "standalone reads the bot's sticky");
+      const drive = enumerate(["--configured-reviewer-only"]);
+      expectSpawnExit(drive, 0, "the drive reads no sticky");
+      expect(JSON.parse(drive.stdout).total).toBe(0);
+    });
+
+    it("summary-findings.ts reads no PR comments for the drive when no reviewer is named", async () => {
+      // A `gh` that always fails: any read of the PR's comments is an error.
+      const failingBin = mkdtempSync(join(tmpdir(), "drive-no-gh-"));
+      scratchDirs.push(failingBin);
+      writeFileSync(join(failingBin, "gh"), "#!/bin/sh\nexit 1\n");
+      chmodSync(join(failingBin, "gh"), 0o755);
+      const enumerate = (flags: string[]) => {
+        const r = Bun.spawnSync(
+          [join(SCRIPTS, "summary-findings.ts"), "999", "--json", ...flags],
+          {
+            env: {
+              ...process.env,
+              PATH: `${failingBin}:${process.env.PATH}`,
+              JIG_GH_CACHE: "off",
+              ...noReviewerEnv(),
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+        return {
+          exitCode: r.exitCode,
+          stdout: r.stdout.toString(),
+          stderr: r.stderr.toString(),
+        };
+      };
+      expectSpawnExit(enumerate([]), 1, "standalone reads the comments");
+      const drive = enumerate(["--configured-reviewer-only"]);
+      expectSpawnExit(drive, 0, "the drive reads nothing");
+      expect(JSON.parse(drive.stdout).total).toBe(0);
+    });
+
+    it("ignores a reviewer-shaped check, which is an ordinary check here", async () => {
+      const r = await probe(
+        {
+          threads: [],
+          checkRuns: [{ ...REVIEWER_RUN, conclusion: "failure" }],
+        },
+        [],
+        { env: noReviewerEnv() },
+      );
+      expect(r.state).toBe("CONVERGED");
+      expect(r.json.ci).not.toBe("green");
+    });
+
+    it("ROUND_READY on unresolved threads", async () => {
+      const r = await probe(
+        {
+          threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+          checkRuns: [],
+        },
+        [],
+        { env: noReviewerEnv() },
+      );
+      expect(r.state).toBe("ROUND_READY");
+    });
+
+    it("the same fixture still waits for the reviewer when one is named", async () => {
+      const r = await probe({ threads: [], checkRuns: [] });
+      expect(r.state).toBe("AWAITING_REVIEWER");
+    });
   });
 
   it("PR_NOT_OPEN — merged mid-loop, detected before anything else", async () => {

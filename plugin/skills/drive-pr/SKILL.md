@@ -145,7 +145,7 @@ consumer polling `--json` for one of these four will never see it there.
 
 | State | Exit | Meaning |
 |---|---|---|
-| `CONVERGED` | 3 (`drive.ts`: 0) | The posting reviewer completed on **this exact head**, its recorded reviewed-SHA equals that head, zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead. |
+| `CONVERGED` | 3 (`drive.ts`: 0) | Where the repository names an AI reviewer (`review.reviewer_app` or `review.reviewer_check_pattern`): the posting reviewer completed on **this exact head** and its recorded reviewed-SHA equals that head. Where it names none, no reviewer evidence is required. Either way: zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead. |
 | `PR_NOT_OPEN` | 5 | Merged or closed — detected **before** any push, so nothing lands on an orphaned branch |
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and does **not** re-arm |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
@@ -996,7 +996,7 @@ it exempt.
 set -o pipefail
 bun ${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-unresolved-threads.ts [PR] [--bots-only] \
   | bun ${CLAUDE_SKILL_DIR}/scripts/self-inflicted.ts [PR]
-bun ${CLAUDE_SKILL_DIR}/scripts/summary-findings.ts [PR] \
+bun ${CLAUDE_SKILL_DIR}/scripts/summary-findings.ts [PR] --configured-reviewer-only \
   | bun ${CLAUDE_SKILL_DIR}/scripts/self-inflicted.ts [PR] --summary-report
 ```
 
@@ -1015,6 +1015,12 @@ Both are open work. A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a
 thread count alone reports such a PR converged. It also has no `threadId`, so
 `reply-to-thread.ts` cannot answer it.
+
+`--configured-reviewer-only` keeps this enumeration in step with § 1's gate,
+which passes the same flag: where the repository names no AI reviewer, neither
+reads a reviewer sticky, so a round never works summary findings the gate did
+not count. `/jig:resolve-review-comments`'s `await-round.ts` calls it without
+the flag.
 
 **`set -o pipefail` is load-bearing on the first pipe, not decoration.**
 `self-inflicted.ts` is a filter that treats an empty stdin as a legitimate

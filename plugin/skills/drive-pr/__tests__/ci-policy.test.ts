@@ -801,22 +801,25 @@ describe("hold label configuration changes", () => {
 });
 
 describe("a base branch that requires no checks", () => {
+  // The reviewer's checks are set apart only where the repository names one.
+  const REVIEWED = `${DERIVED}review:\n  reviewer_app: reviewer\n`;
+
   it("waits until some CI other than the reviewer's has registered", () => {
     for (const runs of [
       [],
       [checkRun("AI review", "success", 1, "reviewer")],
     ]) {
-      const repo = noHoldRepo({ overlay: DERIVED, runs, protection: "none" });
+      const repo = noHoldRepo({ overlay: REVIEWED, runs, protection: "none" });
       expect(run(repo.env, ["final-ready", "--require-success"]).code).toBe(4);
     }
     const withCi = noHoldRepo({
-      overlay: DERIVED,
+      overlay: REVIEWED,
       runs: [checkRun("build", "success", 1)],
       protection: "none",
     });
     expect(run(withCi.env, ["final-ready", "--require-success"]).code).toBe(0);
     const reviewerStatusOnly = noHoldRepo({
-      overlay: DERIVED,
+      overlay: REVIEWED,
       runs: [checkRun("AI review", "success", 1, "reviewer")],
       statuses: [{ context: "AI review", state: "success" }],
       protection: "none",
@@ -825,7 +828,7 @@ describe("a base branch that requires no checks", () => {
       run(reviewerStatusOnly.env, ["final-ready", "--require-success"]).code,
     ).toBe(4);
     const withStatus = noHoldRepo({
-      overlay: DERIVED,
+      overlay: REVIEWED,
       runs: [],
       statuses: [{ context: "ci/legacy", state: "success" }],
       protection: "none",
@@ -833,6 +836,15 @@ describe("a base branch that requires no checks", () => {
     expect(run(withStatus.env, ["final-ready", "--require-success"]).code).toBe(
       0,
     );
+  });
+
+  it("counts a reviewer-shaped check as CI where the repository names no reviewer", () => {
+    const repo = noHoldRepo({
+      overlay: DERIVED,
+      runs: [checkRun("AI review", "success", 1, "reviewer")],
+      protection: "none",
+    });
+    expect(run(repo.env, ["final-ready", "--require-success"]).code).toBe(0);
   });
 
   it("certifies on the overall verdict alone when the repository says none are required", () => {

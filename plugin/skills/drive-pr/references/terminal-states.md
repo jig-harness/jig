@@ -142,7 +142,8 @@ then the PR remains visibly held/non-green and
 the PR-global `verifiedSha` does not advance. A human remove/re-add makes the
 new event externally owned; the driver never removes it.
 
-All of these, simultaneously:
+All of these, simultaneously (1 and 2 only where the repository names an AI
+reviewer, [below](#the-reviewer-is-identified-by-app-slug-not-by-check-name)):
 
 1. The **posting reviewer's** check-run exists for the current PR head, with
    `status: completed` and a conclusion that is not a failure and not `skipped`
@@ -178,7 +179,14 @@ and `DRIVE_PR_REVIEWER_CHECK` is matched as an **anchored** regular expression
 suffix and nothing else. Unanchored it would be a substring match, so a sibling
 named `AI review telemetry` would rejoin the very set the pair exists to split.
 
-With no app configured, the name is the whole identity: a check run matching
+With neither an app nor a check pattern configured, **no reviewer is
+expected**: every reviewer gate in this section is skipped, no reviewer
+check run, sticky comment or stamp is read, and a check named like a reviewer's
+is an ordinary check in the CI verdict. `CONVERGED` then needs only the zero
+unresolved threads and zero unaddressed summary findings below, and says in its
+reason that no reviewer was configured.
+
+With no app configured but a check pattern, the name is the whole identity: a check run matching
 `DRIVE_PR_REVIEWER_CHECK` from any app counts, and the reviewer's sticky
 comment is accepted only from a login listed in `review.bots`. That cannot
 separate the decoy above from the real reviewer, so configure the app wherever

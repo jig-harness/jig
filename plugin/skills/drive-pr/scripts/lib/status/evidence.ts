@@ -11,6 +11,7 @@ import {
   reviewedShaMarker,
   reviewerApp,
   reviewerCheckPattern,
+  reviewerExpected,
   stickyMarker,
 } from "../overlay.ts";
 import { ghCall, run, tsArgv } from "../proc.ts";
@@ -187,17 +188,19 @@ export async function commitStatusesFor(
  * Does the head carry any CI evidence besides the reviewer's own? A head
  * certified on the overall verdict alone needs it: with nothing registered
  * yet, that verdict reads green. The combined-status read carries no
- * publisher, so a status whose context reads as the reviewer's check is
- * never counted, whoever published it: a missed independent status only
- * keeps the head waiting, where a counted reviewer status would certify it.
+ * publisher, so where a reviewer is expected a status whose context reads as
+ * the reviewer's check is never counted, whoever published it: a missed
+ * independent status only keeps the head waiting, where a counted reviewer
+ * status would certify it. With no reviewer named, every status counts.
  */
 export function hasNonReviewerCi(
   runs: readonly CheckRun[],
   statuses: readonly CommitStatus[],
 ): boolean {
   return (
-    statuses.some((status) => !REVIEWER_CHECK.test(status.context)) ||
-    runs.some((run) => !isReviewerCheck(run))
+    statuses.some(
+      (status) => !reviewerExpected() || !REVIEWER_CHECK.test(status.context),
+    ) || runs.some((run) => !isReviewerCheck(run))
   );
 }
 
@@ -319,8 +322,13 @@ export async function statusesByPublisher(
   }));
 }
 
-/** Is this check-run the posting reviewer's own check? */
+/**
+ * Is this check-run the posting reviewer's own check? Never, where the
+ * repository names no reviewer: a reviewer-shaped check is then an ordinary
+ * check, counted in the CI verdict like any other.
+ */
 export function isReviewerCheck(run: CheckRun): boolean {
+  if (!reviewerExpected()) return false;
   const app = reviewerApp();
   return (app === "" || run.app === app) && REVIEWER_CHECK.test(run.name);
 }
@@ -734,16 +742,23 @@ export interface SummaryReportLite {
   unaddressed: Array<{ fingerprint: string; path: string }>;
 }
 
-/** The summary-finding enumerator, same deadline. `null` on any failure. */
+/**
+ * The summary-finding enumerator, same deadline. `null` on any failure.
+ * `--configured-reviewer-only`: where no AI reviewer is named, the drive reads
+ * no reviewer sticky, matching the gate taking no reviewer evidence.
+ */
 export async function summaryFindings(
   summaryScript: string,
   pr: string,
   timeoutSec: number,
 ): Promise<SummaryReportLite | null> {
-  const r = await run(tsArgv(summaryScript, [pr, "--json"]), {
-    timeoutSec,
-    stderr: "ignore",
-  });
+  const r = await run(
+    tsArgv(summaryScript, [pr, "--json", "--configured-reviewer-only"]),
+    {
+      timeoutSec,
+      stderr: "ignore",
+    },
+  );
   if (r.code !== 0) return null;
   try {
     const parsed = JSON.parse(r.stdout) as SummaryReportLite;

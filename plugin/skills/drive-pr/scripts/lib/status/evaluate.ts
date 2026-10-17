@@ -55,7 +55,7 @@ import {
   qualifyingOutcome,
 } from "../outcome.ts";
 import { readPrState } from "../pr-state.ts";
-import { reviewerLabel, reviewsDrafts } from "../overlay.ts";
+import { reviewerExpected, reviewerLabel, reviewsDrafts } from "../overlay.ts";
 import { ghCall, git, run, tsArgv } from "../proc.ts";
 import {
   checkRunsFor,
@@ -570,6 +570,43 @@ export async function evaluate(
     : evaluateFresh(ctx, report);
 }
 
+/**
+ * Do the reviewer gates apply? Only where the repository names an AI reviewer
+ * (`reviewerExpected`), and on a head that is not conflicting. A repository
+ * that names none has no reviewer evidence to take: the drive converges on
+ * threads, summary findings and CI alone, and no check run is the reviewer's
+ * because `isReviewerCheck` matches nothing.
+ */
+function reviewerGatesApply(conflicting: boolean): boolean {
+  return !conflicting && reviewerExpected();
+}
+
+/**
+ * The reviewed-SHA stamp the gates judge: `""` where no reviewer is expected,
+ * `null` when the reviewer's comments cannot be read, else the stamp. Reuses
+ * the stranded-check-run bypass's read (`earlySticky`) when it made one.
+ */
+async function reviewerStamp(
+  ctx: EvaluateContext,
+  earlySticky: ReviewerSticky | null | undefined,
+): Promise<string | null> {
+  if (!reviewerExpected()) return "";
+  if (earlySticky === undefined)
+    return reviewedShaFromComments(ctx.owner, ctx.repo, ctx.pr);
+  return earlySticky === null ? null : earlySticky.sha;
+}
+
+/** Convergence needs the reviewer's own stamp, where a reviewer is expected. */
+function lacksReviewerStamp(report: StatusReport): boolean {
+  return reviewerExpected() && report.reviewedShaSource !== "comment-marker";
+}
+
+function convergedReasonOf(report: StatusReport): string {
+  return reviewerExpected()
+    ? `${reviewerLabel()} completed on ${report.apiHead} (reviewed-SHA verified via ${report.reviewedShaSource}), 0 unresolved threads, 0 unaddressed summary findings`
+    : `no AI reviewer is configured for this repository (review.reviewer_app, review.reviewer_check_pattern), so no reviewer evidence was required: ${report.apiHead} has 0 unresolved threads, 0 unaddressed summary findings`;
+}
+
 async function evaluateFresh(
   ctx: EvaluateContext,
   report: StatusReport,
@@ -1010,6 +1047,8 @@ async function evaluateFresh(
   // attempt).
   const reviewer = reviewerRun(runs);
 
+  const awaitReviewer = reviewerGatesApply(conflicting);
+
   // An unreadable status API is UNKNOWN, never an empty (therefore clean)
   // set: a timeout or a 403 reading as "no legacy statuses exist" would let
   // announce-merge-ready post that every non-reviewer check is green over a
@@ -1025,7 +1064,7 @@ async function evaluateFresh(
   // conflicting PR that state polls until `--timeout`. The work enumeration
   // further down still runs, so findings the poller DID post are picked up
   // rather than discarded.
-  if (!conflicting && reviewer === null) {
+  if (awaitReviewer && reviewer === null) {
     // THIS is modes 2 and 4. Other checks being settled — including a
     // rate-limited CodeRabbit reporting `success` for a review it never ran —
     // is not evidence about the app that posts findings. Absence of the
@@ -1072,7 +1111,7 @@ async function evaluateFresh(
   // bypass trust one snapshot while the gate below judges a different one.
   let earlySticky: ReviewerSticky | null | undefined;
 
-  if (!conflicting) {
+  if (awaitReviewer) {
     if (report.reviewerStatus !== "completed") {
       // Stranded-check-run bypass: a check-run stuck 'in_progress' for hours —
       // a crashed daemon, an exhausted PATCH retry — is indistinguishable from
@@ -1256,12 +1295,7 @@ async function evaluateFresh(
   // fetched it, rather than issuing a second `issues/{pr}/comments` call —
   // see that variable's own doc comment for why this is about correctness
   // (one snapshot, not two that could disagree), not merely avoiding a call.
-  const markerRead =
-    earlySticky !== undefined
-      ? earlySticky === null
-        ? null
-        : earlySticky.sha
-      : await reviewedShaFromComments(ctx.owner, ctx.repo, ctx.pr);
+  const markerRead = await reviewerStamp(ctx, earlySticky);
   let marker: string;
   if (markerRead === null) {
     // Where the marker is DECISION evidence, an unreadable one is
@@ -1286,7 +1320,7 @@ async function evaluateFresh(
   // resolved here — both of which the gate below treats as "not a witness".
   const markerFull = await resolveMarkerSha(marker);
 
-  if (!conflicting) {
+  if (awaitReviewer) {
     // Second witness. When the reviewer has stamped a reviewed-SHA anywhere on
     // this PR, that stamp must name THIS head; a stamp naming an older commit
     // is the stale-review signature (checks read settled, review was of the
@@ -1598,7 +1632,7 @@ async function evaluateFresh(
     // ROUND_READY keeps the fallback: there, the evidence of live work is
     // positive, so a weak SHA witness costs nothing. Only the terminal claim
     // is gated.
-    if (report.reviewedShaSource !== "comment-marker") {
+    if (lacksReviewerStamp(report)) {
       return terminal(
         report,
         "AWAITING_REVIEWER",
@@ -1607,7 +1641,7 @@ async function evaluateFresh(
     }
     const rc = await stillOnHead();
     if (rc !== 0) return rc;
-    let convergedReason = `${reviewerLabel()} completed on ${report.apiHead} (reviewed-SHA verified via ${report.reviewedShaSource}), 0 unresolved threads, 0 unaddressed summary findings`;
+    let convergedReason = convergedReasonOf(report);
     if (stalledCheckRunNote !== "")
       convergedReason += ` — ${stalledCheckRunNote}`;
     return terminal(report, "CONVERGED", convergedReason);

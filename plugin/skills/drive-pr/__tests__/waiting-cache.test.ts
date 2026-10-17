@@ -302,6 +302,8 @@ console.log(JSON.stringify(results));
         ...fixtureEnv,
         PATH: `${dir}:${process.env.PATH}`,
         FIXTURE_DIR: dir,
+        // The drive waits only on a reviewer the repository names.
+        DRIVE_PR_REVIEWER_APP: "example-review",
         JIG_GH_CACHE_DIR: join(dir, "cache"),
         JIG_GH_CACHE: "on",
         NODE_ENV: "test",

@@ -16,6 +16,7 @@ import {
   reviewedShaMarker,
   reviewerApp,
   reviewerCheckPattern,
+  reviewerExpected,
   reviewerLabel,
   reviewsDrafts,
   stickyMarker,
@@ -82,7 +83,9 @@ describe("reviewer identity", () => {
   });
 
   it("without an app, the check name decides and the sticky author must be a declared bot", () => {
-    overlay('review:\n  bots: ["rev[bot]"]\n');
+    overlay(
+      'review:\n  bots: ["rev[bot]"]\n  reviewer_check_pattern: "^ai[ _-]?review(\\\\s*\\\\(.+\\\\))?$"\n',
+    );
     expect(reviewerApp()).toBe("");
     expect(reviewerLabel()).toBe("the AI reviewer");
     expect(isReviewerCheck(run("anything"))).toBe(true);
@@ -92,9 +95,33 @@ describe("reviewer identity", () => {
     expect(isReviewerLogin("")).toBe(false);
   });
 
+  it("a reviewer is expected only where the repository or the environment names one", () => {
+    overlay('review:\n  bots: ["rev[bot]"]\n');
+    expect(reviewerExpected()).toBe(false);
+    overlay("review:\n  reviewer_app: rev\n");
+    expect(reviewerExpected()).toBe(true);
+    overlay('review:\n  reviewer_check_pattern: "^Bot review$"\n');
+    expect(reviewerExpected()).toBe(true);
+    overlay("review: {}\n");
+    process.env.DRIVE_PR_REVIEWER_APP = "from-env";
+    expect(reviewerExpected()).toBe(true);
+    delete process.env.DRIVE_PR_REVIEWER_APP;
+    process.env.DRIVE_PR_REVIEWER_CHECK = "^env$";
+    expect(reviewerExpected()).toBe(true);
+    process.env.DRIVE_PR_REVIEWER_CHECK = " ";
+    expect(reviewerExpected()).toBe(false);
+  });
+
+  it("where no reviewer is named, a reviewer-shaped check is an ordinary check", () => {
+    overlay('review:\n  bots: ["rev[bot]"]\n');
+    expect(isReviewerCheck(run("anything"))).toBe(false);
+    expect(isReviewerCheck(run("github-actions"))).toBe(false);
+  });
+
   it("a repository with no configuration file drives on the defaults", () => {
     process.env.JIG_OVERLAY = join(dir, "absent.yaml");
     expect(reviewerApp()).toBe("");
+    expect(reviewerExpected()).toBe(false);
     expect(validationPlanCommand()).toBeUndefined();
     expect(reviewsDrafts()).toBeUndefined();
   });

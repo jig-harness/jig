@@ -267,11 +267,13 @@ plugin's. Delete such a copy when you adopt the plugin's version.
 
 `drive-pr` and `do-item` read the same configuration file as the review
 skill. Every field below has a default except `issue_tracker.team`, which the
-tracker scripts require. A drive also needs an AI reviewer that publishes the
-check run, sticky comment and reviewed-commit marker described in the
-[drive-pr README](skills/drive-pr/README.md#consumer-configuration); a
-repository configured only for `resolve-review-comments` does not have that
-yet. Add a field only when its default does not fit. The
+tracker scripts require. A drive does not need an AI reviewer: without one it
+converges on review threads and CI alone. A repository that has one names it
+with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
+then also waits for the check run, sticky comment and reviewed-commit marker
+described in the
+[drive-pr README](skills/drive-pr/README.md#consumer-configuration). Add a
+field only when its default does not fit. The
 [configuration reference](CONFIGURATION.md) lists every field, including the
 `pull_requests` policy below.
 
@@ -286,7 +288,7 @@ pull_requests:                # how agents open and stack pull requests
   issue_link: closes          # closes | refs | none
   size_budget: 600            # changed lines per pull request; default: no budget
 review:
-  reviewer_app: example-review   # GitHub App whose check runs show the AI reviewer ran; default: none (any app's check run with a reviewer-shaped name)
+  reviewer_app: example-review   # GitHub App whose check runs show the AI reviewer ran; naming it (or reviewer_check_pattern) is what makes drive-pr wait for a reviewer; default: none, no reviewer expected
 drive:
   validation_plan_command: "<your plan command>"
                               # reads changed files on stdin, prints a JSON validation plan; default: run gates.command

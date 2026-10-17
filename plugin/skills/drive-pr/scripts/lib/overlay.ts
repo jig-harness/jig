@@ -79,6 +79,23 @@ export function reviewerApp(): string {
   );
 }
 
+/**
+ * Does the repository have an AI reviewer for the drive to wait on? Only when
+ * it names one: an app (`review.reviewer_app`, `DRIVE_PR_REVIEWER_APP`) or a
+ * check-run name (`review.reviewer_check_pattern`, `DRIVE_PR_REVIEWER_CHECK`).
+ * The built-in check-run pattern is a default for a repository that has said
+ * it has a reviewer, not a claim that every repository does, so without
+ * either the drive takes no reviewer evidence and converges on threads and CI.
+ */
+export function reviewerExpected(): boolean {
+  return (
+    nonEmptyEnv("DRIVE_PR_REVIEWER_APP") !== undefined ||
+    nonEmptyEnv("DRIVE_PR_REVIEWER_CHECK") !== undefined ||
+    optionalString("review", "reviewer_app") !== undefined ||
+    optionalString("review", "reviewer_check_pattern") !== undefined
+  );
+}
+
 /** How messages name the reviewer: its app slug, or a generic phrase. */
 export function reviewerLabel(): string {
   const app = reviewerApp();

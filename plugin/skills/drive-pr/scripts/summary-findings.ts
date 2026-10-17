@@ -38,7 +38,12 @@
  * past the one it names. See `collectAddressed`.
  *
  * Usage:
- *   bun summary-findings.ts [PR] [--json]
+ *   bun summary-findings.ts [PR] [--json] [--configured-reviewer-only]
+ *
+ * `--configured-reviewer-only` reads no sticky unless the repository names an
+ * AI reviewer (`reviewerExpected`), and without one reports no findings before
+ * reading the PR's comments at all; drive-pr's gate and its round enumeration
+ * (SKILL.md § 2) pass it.
  *
  * Exits 0 with the report on stdout; 1 if the PR's comments cannot be read.
  */
@@ -49,6 +54,7 @@ import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
   isReviewerLogin,
   reviewedShaMarker,
+  reviewerExpected,
   stickyMarker,
 } from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
@@ -1748,8 +1754,82 @@ export function reviewerPosition(
   }
 }
 
+/**
+ * The reviewer's sticky summary comment, if any: the last comment from the
+ * reviewer's login carrying the sticky marker. With `configuredOnly` (the
+ * drive's gate, `--configured-reviewer-only`), a repository that names no AI
+ * reviewer (`reviewerExpected`) has none to read: a summary comment from a bot
+ * in `review.bots` is not reviewer protocol evidence for the drive, so its
+ * backlog and reviewed-SHA stamp are never decoded. Without it, a `review.bots`
+ * login's sticky is read, which is what the standalone resolver relies on.
+ */
+function reviewerSticky(
+  comments: IssueComment[],
+  configuredOnly: boolean,
+): IssueComment | undefined {
+  if (configuredOnly && !reviewerExpected()) return undefined;
+  return comments
+    .filter(
+      (c) =>
+        isReviewerLogin(c.user?.login ?? "") && c.body?.includes(STICKY_MARKER),
+    )
+    .pop();
+}
+
+/** The PR number from `argv`, else the current branch's PR. */
+async function resolvePrNumber(argv: string[]): Promise<number | undefined> {
+  const pr =
+    argv.find((a) => /^\d+$/.test(a)) ??
+    (await gh(["pr", "view", "--json", "number", "-q", ".number"])).trim();
+  const prNumber = Number.parseInt(pr, 10);
+  return Number.isFinite(prNumber) ? prNumber : undefined;
+}
+
+/**
+ * Whether this run has nothing to read on the PR: the drive's gate
+ * (`configuredOnly`) where no AI reviewer is named, outside
+ * `--check-addressed`.
+ */
+function readsNoComments(
+  configuredOnly: boolean,
+  checkFingerprints: string | undefined,
+): boolean {
+  return (
+    configuredOnly && !reviewerExpected() && checkFingerprints === undefined
+  );
+}
+
+/** The report for a PR with no reviewer summary to read. */
+function emptyReport(pr: number): SummaryReport {
+  return {
+    pr,
+    stickyCommentId: null,
+    declaredUnanchored: 0,
+    total: 0,
+    findings: [],
+    unaddressed: [],
+  };
+}
+
+/** The comments that may carry an answer marker: every non-reviewer comment. */
+function markerSourcesOf(
+  comments: IssueComment[],
+): { body: string; authorAssociation: string }[] {
+  return comments
+    .filter((c) => !isReviewerLogin(c.user?.login ?? ""))
+    .map((c) => ({
+      body: c.body ?? "",
+      authorAssociation: c.author_association ?? "",
+    }));
+}
+
 async function main(): Promise<number> {
-  const rawArgv = process.argv.slice(2).filter((a) => a !== "--json");
+  const rawArgv = process.argv
+    .slice(2)
+    .filter((a) => a !== "--json" && a !== "--configured-reviewer-only");
+  const configuredReviewerOnly = process.argv.includes(
+    "--configured-reviewer-only",
+  );
 
   // Printing mode, deliberately before anything that touches the network: a
   // read-only surface for the ONE definition of "an author GitHub vouches
@@ -1809,13 +1889,19 @@ async function main(): Promise<number> {
   );
   const argv = rawArgv.filter((_, i) => !stripIdx.has(i));
 
-  let pr = argv.find((a) => /^\d+$/.test(a));
-  if (!pr)
-    pr = (await gh(["pr", "view", "--json", "number", "-q", ".number"])).trim();
-  const prNumber = Number.parseInt(pr, 10);
-  if (!Number.isFinite(prNumber)) {
+  const prNumber = await resolvePrNumber(argv);
+  if (prNumber === undefined) {
     console.error("summary-findings: could not resolve a PR number");
     return 1;
+  }
+
+  // The drive with no AI reviewer named reads no sticky, so it has no reason to
+  // read the PR's comments either: a failed read here would hold back a
+  // convergence that does not depend on them. `--check-addressed` matches
+  // answer markers, which it still has to read.
+  if (readsNoComments(configuredReviewerOnly, checkFingerprintsArg)) {
+    console.log(JSON.stringify(emptyReport(prNumber)));
+    return 0;
   }
 
   const repoView = await cachedRepoView([
@@ -1845,12 +1931,7 @@ async function main(): Promise<number> {
     ]),
   ).flat();
 
-  const sticky = issueComments
-    .filter(
-      (c) =>
-        isReviewerLogin(c.user?.login ?? "") && c.body?.includes(STICKY_MARKER),
-    )
-    .pop();
+  const sticky = reviewerSticky(issueComments, configuredReviewerOnly);
   // The round the sticky describes. Read here — above the `--check-addressed`
   // branch — so the PRODUCER of a marker's `#<round>` suffix and the CONSUMER
   // that measures the winddown exemption against it read the same field off the
@@ -1878,12 +1959,7 @@ async function main(): Promise<number> {
         return 1;
       }
     }
-    const markerSources = issueComments
-      .filter((c) => !isReviewerLogin(c.user?.login ?? ""))
-      .map((c) => ({
-        body: c.body ?? "",
-        authorAssociation: c.author_association ?? "",
-      }));
+    const markerSources = markerSourcesOf(issueComments);
     const found = findExactMarkers(
       markerSources,
       new Set(requested),
@@ -1908,17 +1984,11 @@ async function main(): Promise<number> {
 
   // No sticky comment means the reviewer has posted no summary — there are no
   // summary-only findings to answer. That is a real zero, not an unknown: the
-  // caller has separately verified the reviewer's check-run completed on head.
+  // caller has separately verified the reviewer's check-run completed on head,
+  // or, under `--configured-reviewer-only`, no reviewer is configured and so
+  // none was expected.
   if (!sticky) {
-    const empty: SummaryReport = {
-      pr: prNumber,
-      stickyCommentId: null,
-      declaredUnanchored: 0,
-      total: 0,
-      findings: [],
-      unaddressed: [],
-    };
-    console.log(JSON.stringify(empty));
+    console.log(JSON.stringify(emptyReport(prNumber)));
     return 0;
   }
 
@@ -1962,20 +2032,12 @@ async function main(): Promise<number> {
   const reviewedSha = reviewedShaFrom(sticky.body);
   // `winddownDeferred` is computed above, before the `--check-addressed`
   // branch, and reused here as-is.
-  const addressed = collectAddressed(
-    issueComments
-      .filter((c) => !isReviewerLogin(c.user?.login ?? ""))
-      .map((c) => ({
-        body: c.body ?? "",
-        authorAssociation: c.author_association ?? "",
-      })),
-    {
-      reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
-      backlogFingerprints: backlogFingerprintsOf(sticky.body),
-      winddownDeferred,
-      currentRound: stickyRound,
-    },
-  );
+  const addressed = collectAddressed(markerSourcesOf(issueComments), {
+    reviewerPosition: (sha) => reviewerPosition(sha, reviewedSha),
+    backlogFingerprints: backlogFingerprintsOf(sticky.body),
+    winddownDeferred,
+    currentRound: stickyRound,
+  });
 
   console.log(
     JSON.stringify(

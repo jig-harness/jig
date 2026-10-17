@@ -183,10 +183,10 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 | `review.taxonomy.ownership_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of ownership labels; two findings share a batch only when these agree. Required when `types`, `repos` or `context_prefixes` is set |
 | `review.taxonomy.provenance_label` | label | `pr-followup` | resolve-review-comments, drive-pr (fleet health) | Older name for `issue_tracker.labels.followup`, still read when that is unset; the two may not disagree |
 | `review.taxonomy.epic_label` | label | `epic` | resolve-review-comments, drive-pr (fleet health) | Older name for `issue_tracker.labels.epic`, still read when that is unset; the two may not disagree |
-| `review.reviewer_app` | GitHub App slug | none: reviewer checks recognised by name from any app, summary comment accepted only from `review.bots` | drive-pr | App whose check runs and `<app>[bot]` summary comment are the AI reviewer's evidence. `DRIVE_PR_REVIEWER_APP` overrides it |
-| `review.reviewer_check_pattern` | anchored regular expression | `^ai[ _-]?review(\s*\(.+\))?$` | drive-pr | Name of the posting reviewer's check run. `DRIVE_PR_REVIEWER_CHECK` overrides it |
-| `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. `DRIVE_PR_STICKY_MARKER` overrides it |
-| `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. `DRIVE_PR_SHA_MARKER` overrides it |
+| `review.reviewer_app` | GitHub App slug | none | drive-pr | App whose check runs and `<app>[bot]` summary comment are the AI reviewer's evidence. Setting it, or `review.reviewer_check_pattern`, is what makes the drive expect an AI reviewer; with neither, the drive waits for none and converges on threads and CI. `DRIVE_PR_REVIEWER_APP` overrides it |
+| `review.reviewer_check_pattern` | anchored regular expression | `^ai[ _-]?review(\s*\(.+\))?$`, used once a reviewer is expected | drive-pr | Name of the posting reviewer's check run. Without `review.reviewer_app`, reviewer checks are recognised by name from any app and the summary comment is accepted only from `review.bots`. `DRIVE_PR_REVIEWER_CHECK` overrides it |
+| `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it |
+| `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it |
 
 The [resolve-review-comments README](skills/resolve-review-comments/README.md)
 and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
