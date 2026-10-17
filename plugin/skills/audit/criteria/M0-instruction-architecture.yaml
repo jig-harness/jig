@@ -33,7 +33,7 @@ criteria:
       - "the universal instruction file is on the order of 150 lines or less"
       - "long content (full workflows, gate documentation, background) lives in documents the file links to"
       - "where shrinking the file means moving content the repository's own rules guard (a trust posture, a safety rule), a recommendation names that tension"
-    since: next
+    since: 0.51.0
 
   - id: gates-and-guardrails-listed
     level: lite
