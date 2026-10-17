@@ -273,6 +273,14 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.52.1] - 2026-10-17
+
+### Changed
+
+- Jig names its creator, Ophir Radnitz: the copyright line in `NOTICE` and
+  `LICENSE-MIT-0`, the plugin's author in its Claude Code and Codex
+  manifests, and a "Created by" line in the website's footer.
+
 ## [0.52.0] - 2026-10-17
 
 M7 now covers what happens after the merge.
@@ -2635,7 +2643,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.52.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.52.1...HEAD
+[0.52.1]: https://github.com/docomply/jig/compare/v0.52.0...v0.52.1
 [0.52.0]: https://github.com/docomply/jig/compare/v0.51.1...v0.52.0
 [0.51.1]: https://github.com/docomply/jig/compare/v0.51.0...v0.51.1
 [0.51.0]: https://github.com/docomply/jig/compare/v0.50.0...v0.51.0
