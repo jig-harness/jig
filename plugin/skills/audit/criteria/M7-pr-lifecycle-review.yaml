@@ -139,7 +139,7 @@ criteria:
       - "the stage picks the next item with a bias toward closure (a nearly-done epic, then operations that can be cleared, then a batch of small items) and leaves the pick to a person"
       - "the stage reverts temporary scaffolding in the repository and outside it (timeouts, gates, drivers, branches, environments, flags) and asks for live verification only when the change has a runtime surface, has reached an environment and is not covered by CI"
       - "on recent merges, a closing comment or pass report records each class as owed or not owed (a scheduled or hook-run pass that only reports is advisory; mechanical needs a check that fails while a merge has a class nobody recorded)"
-    since: next
+    since: 0.52.0
 
   - id: pr-target-wiring-fork-safe
     level: standard

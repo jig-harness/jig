@@ -273,6 +273,29 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.52.0] - 2026-10-17
+
+M7 now covers what happens after the merge.
+
+### Added
+
+- M7's lifecycle template gains a post-merge stage, "what does the merge still
+  owe?": after every merge, each class of residual obligation (the tracker
+  state, deferred findings, out-of-tree actions, temporary scaffolding, live
+  verification and the next step) is settled as owed, and filed or done, or as
+  not owed, with the evidence that settled it. A deferred reply is checked
+  against the tracker, since the unresolved-threads gate can see that a reply
+  names a reference but not that the item behind it exists. The next step is
+  picked with a bias toward closure.
+- Both human-in-the-loop registry templates (M7's and M0's) gain two rows:
+  picking the next item from the computed ranking, and reopening on a
+  rejecting verdict or waiving a missing acceptance review, which needs an
+  approver other than whoever runs the sweep.
+- A criterion in the audit's M7 file, `post-merge-obligations-settled`, at the
+  Standard level. A repository that has the practice scores it from its
+  lifecycle document and its recent merges; one that does not gains a
+  recommendation.
+
 ## [0.51.1] - 2026-10-17
 
 ### Changed
@@ -2612,7 +2635,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.51.1...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.52.0...HEAD
+[0.52.0]: https://github.com/docomply/jig/compare/v0.51.1...v0.52.0
 [0.51.1]: https://github.com/docomply/jig/compare/v0.51.0...v0.51.1
 [0.51.0]: https://github.com/docomply/jig/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/docomply/jig/compare/v0.49.0...v0.50.0
