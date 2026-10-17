@@ -253,6 +253,7 @@ changes are marked **Breaking** and say what a consumer changes.
   as the module map's page now does. The frames are provisional, cut from
   the jig plate; [design/website.md](design/website.md) has the series
   to draw in their place.
+- On the website, the left-hand index of a page of in-page sections (the features page, the plugin guide, the "On this page" lists) now quietly marks the section being read as you scroll.
 
 ### Fixed
 
