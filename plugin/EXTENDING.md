@@ -87,6 +87,7 @@ contract column says what else the command is given or must print.
 | `fix_ci.regenerate_commands` | fix-ci | Each regenerates committed generated files a CI check compares |
 | `resolve_conflicts.generated[].command` | resolve-conflicts | Rebuilds the files its `paths` match when they conflict |
 | `explain.figure_build_command` | explain | Builds one explainer figure; the figure's stem is appended |
+| `code_stats.classify_command` | code-stats | Reads every tracked path, one per line, on standard input; prints one JSON object per line, `{"path", "area"?, "kind"?, "language"?, "module"?}`, whose values override the skill's own classification ([contract](skills/code-stats/README.md#the-classify-command)). Exit 0 within 300 seconds; any other exit, or a line it cannot use, fails the report |
 
 `issue_tracker.file_command` is different: no skill runs it. It is an
 instruction that `do-item`, `decide` and others hand to the agent, saying how
@@ -238,7 +239,7 @@ supports. What they rely on:
 - `CODEOWNERS` and the "delete head branches on merge" setting, read and
   reported.
 
-**Works without GitHub:** `adr`, `decide`, `explain`, `design-brief-builder`,
+**Works without GitHub:** `adr`, `code-stats`, `decide`, `explain`, `design-brief-builder`,
 `programmatic-execution`, `promote-memory`, `resolve-conflicts`, `review` on a
 local diff, `fix-ci` on a saved log (`--log <file>`), and the audit with
 `--offline`. The modules' reference gates take their input as files or

@@ -314,6 +314,33 @@ works and what is left. Done when:
 Opening the site to the public is a decision for a person, together with
 the repository's own visibility.
 
+### 20. `code-stats`: test-runner configuration and audit evidence
+
+The [code-stats skill](../plugin/skills/code-stats/README.md) classifies a
+repository's files from conventions, attributes, its `code_stats`
+configuration and a classify command. What is left:
+
+- **Test-runner configuration** as the classification layer between
+  built-in detection and `code_stats` (the seam is marked in
+  `classify.ts`): jest and vitest `testMatch` and `include`, pytest
+  `testpaths` and `python_files`, Gradle and Maven test source sets. Each
+  reader states what it cannot read (a computed configuration) rather than
+  guessing.
+- **A reference set** of public repositories (a Python service, a Go
+  module, a Rust workspace, a Java build, a JavaScript monorepo), each run
+  recorded with its commit and its results beside it, as
+  [the audit's calibration](../plugin/skills/audit/calibration/) is, so a
+  change to a rule shows what it moves.
+- **Audit evidence**: `jig:audit` reads `--json` (schema `code-stats/v1`)
+  for the criteria that need a measure: the test-to-code ratio, the
+  generated share, the scaffolding size, and a large unclassified share as a
+  finding about the configuration.
+
+Done when a repository whose tests only its test runner names is classified
+correctly with no `code_stats` section, the reference set's recorded results
+are checked by a test, and an audit sheet cites code-stats figures as
+evidence.
+
 ## Later
 
 - **Jira store for reflections.** One issue per finding, of a custom issue

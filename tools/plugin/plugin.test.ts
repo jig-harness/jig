@@ -955,6 +955,44 @@ fix_ci:
   expect(fixCi.stdout).toContain("  - bun run generate\n");
 });
 
+test("code-stats runs from the plugin copy and reads the consumer's code_stats", () => {
+  const consumer = consumerRepo(
+    "code-stats",
+    `code_stats:
+  areas:
+    - name: product
+      paths: ["app/**"]
+  default_area: leftover
+`,
+  );
+  writeFileSync(join(consumer, "README.md"), "# Shop\n");
+  mkdirSync(join(consumer, "app"));
+  writeFileSync(join(consumer, "app", "main.ts"), "export const x = 1;\n");
+  const add = spawnSync("git", ["-C", consumer, "add", "-A"], { env });
+  expectSpawnExit({ ...add, exitCode: add.status }, 0);
+  const run = spawnSync(
+    process.execPath,
+    [
+      join(
+        scratch,
+        "cache",
+        "skills",
+        "code-stats",
+        "scripts",
+        "code-stats.ts",
+      ),
+      "--json",
+    ],
+    { cwd: consumer, env, encoding: "utf8" },
+  );
+  expectSpawnExit({ ...run, exitCode: run.status }, 0);
+  const report = JSON.parse(run.stdout) as {
+    byArea: Record<string, { files: number }>;
+  };
+  expect(Object.keys(report.byArea)).toEqual(["product", "leftover"]);
+  expect(report.byArea.product?.files).toBe(1);
+});
+
 test("one change-area catalog reader serves the skills from the plugin copy", () => {
   const consumer = consumerRepo(
     "catalog",

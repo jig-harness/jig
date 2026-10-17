@@ -48,6 +48,7 @@ strict:
   - issue_tracker.labels
   - resolve_conflicts
   - reflection
+  - code_stats
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -506,3 +507,36 @@ fields:
     read_by: [changelog]
     repository_only: true
     since: 0.44.0
+
+  code_stats.areas:
+    type: list
+    items: { type: map, values_type: any }
+    read_by: [code-stats]
+    repository_only: true
+    since: next
+  code_stats.default_area:
+    type: string
+    default: production
+    read_by: [code-stats]
+    repository_only: true
+    since: next
+  code_stats.kinds:
+    type: map
+    keys: [code, test, docs, config, data, generated, fixture, asset, vendored, other]
+    values_type: { type: list, items: string }
+    read_by: [code-stats]
+    repository_only: true
+    since: next
+  code_stats.modules:
+    type: list
+    items: string
+    nonempty: true
+    read_by: [code-stats]
+    repository_only: true
+    since: next
+  code_stats.classify_command:
+    type: command
+    nullable: true
+    read_by: [code-stats]
+    repository_only: true
+    since: next

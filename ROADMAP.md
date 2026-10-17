@@ -111,6 +111,15 @@ watchdogs for what is deployed (M10, M11), acceptance and post-merge stages
 (M6, M7), a generator for the model roster and instructions that keep working
 in every agent tool (M0, M4, M5).
 
+### 20. `code-stats`: test-runner configuration and audit evidence
+
+The [code-stats skill](plugin/skills/code-stats/README.md) learns which
+files are tests from the test runner's own configuration (jest, vitest,
+pytest, Gradle, Maven), is checked against a recorded set of public
+repositories in several languages, and gives
+[`jig:audit`](plugin/skills/audit/README.md) measured evidence: the test to
+code ratio, the generated share and the size of the agent scaffolding.
+
 ## Later
 
 - **Jira store for reflections.** Reflections kept as Jira issues, for a team

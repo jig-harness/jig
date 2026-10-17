@@ -337,6 +337,26 @@ other_tool:
     );
   });
 
+  test("the code-stats skill's own validation refuses what it would refuse", () => {
+    const refused = (codeStats: string) =>
+      ids(
+        fit({ ".config/jig.yaml": `code_stats:\n${codeStats}` }).report,
+      ).includes("rejected:code-stats");
+    expect(refused("  areas: [{}]\n")).toBe(true);
+    expect(
+      refused(
+        "  areas:\n    - { name: web, paths: [a/**] }\n    - { name: web, paths: [b/**] }\n",
+      ),
+    ).toBe(true);
+    expect(refused('  areas:\n    - { name: web, paths: ["a/[**"] }\n')).toBe(
+      true,
+    );
+    expect(refused("  kinds: { test: [] }\n")).toBe(true);
+    expect(refused("  areas:\n    - { name: web, paths: [web/**] }\n")).toBe(
+      false,
+    );
+  });
+
   test("the changelog skill's own validation refuses what it would refuse", () => {
     const refused = (changelog: string, files: Record<string, string> = {}) =>
       ids(

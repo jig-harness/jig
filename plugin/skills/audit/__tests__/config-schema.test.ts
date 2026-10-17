@@ -41,6 +41,12 @@ import {
   parseChangelogSection,
 } from "../../changelog/scripts/config.ts";
 import { FORMAT_IDS } from "../../changelog/scripts/formats.ts";
+import {
+  DEFAULT_AREA as CODE_STATS_DEFAULT_AREA,
+  FIELDS as CODE_STATS_FIELDS,
+  parseCodeStatsConfig,
+} from "../../code-stats/scripts/lib/config.ts";
+import { KINDS as CODE_STATS_KINDS } from "../../code-stats/scripts/lib/model.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -150,6 +156,12 @@ describe("CONFIGURATION.md", () => {
   });
 });
 
+test("its complete example's code_stats section passes the skill", () => {
+  expect(() =>
+    parseCodeStatsConfig(completeExample().code_stats),
+  ).not.toThrow();
+});
+
 describe("the reading skills", () => {
   test("accept the value sets the schema lists", () => {
     expect(field("pull_requests.stacking")?.values).toEqual([
@@ -165,6 +177,15 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+  });
+
+  test("read the code_stats section's fields, all of them repository-only", () => {
+    expect(under("code_stats").sort()).toEqual([...CODE_STATS_FIELDS].sort());
+    expect(field("code_stats.kinds")?.keys).toEqual([...CODE_STATS_KINDS]);
+    for (const f of schema.fields.filter((f) =>
+      f.path.startsWith("code_stats."),
+    ))
+      expect([f.path, f.repository_only]).toEqual([f.path, true]);
   });
 
   test("read the changelog section's fields, all of them repository-only", () => {
@@ -201,6 +222,7 @@ describe("the reading skills", () => {
       "changelog.tag_prefix": CHANGELOG_DEFAULTS.tagPrefix,
       "changelog.release.push": CHANGELOG_DEFAULTS.push,
       "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
+      "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
     });
   });
 

@@ -24,6 +24,7 @@ Contents: [the file](#the-file) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
 [`fleet_health`](#fleet_health) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
+[`code_stats`](#code_stats) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
 [complete example](#complete-example)
@@ -45,7 +46,8 @@ Contents: [the file](#the-file) ·
   was written to change, so it is an error. They are `pull_requests`,
   `issue_tracker.states` (keys are canonical states),
   `issue_tracker.labels` (keys are label roles), `resolve_conflicts`
-  (including each `generated` entry) and `reflection`. In `review.taxonomy` every
+  (including each `generated` entry), `reflection` and `code_stats`
+  (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
   distinct, nonempty strings, so an unrelated key there is an error too.
 - **Wrong types** are refused with an error that names the field, except by
@@ -115,10 +117,10 @@ Command-line flags, where a script has them, override all three.
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
   `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
-  `review.repo_label`, `ci.required_checks` and every `changelog` field
-  describe one repository. Set in the user file they would apply to every
-  repository on the machine, so the user file refuses them with an error naming
-  the field. An environment variable may still override them for one run,
+  `review.repo_label`, `ci.required_checks`, every `changelog` field and
+  every `code_stats` field describe one repository. Set in the user file
+  they would apply to every repository on the machine, so the user file
+  refuses them with an error naming the field. An environment variable may still override them for one run,
   except the `changelog` fields, which the `changelog` skill reads from the
   repository's own file alone and refuses from any other layer
   ([`changelog`](#changelog)).
@@ -215,7 +217,7 @@ an error.
 | `severity_mapping` | map from each severity, and `unknown`, to `{linear_priority, acceptance}` | no | The tracker priority and acceptance tier each severity corresponds to; checked when present, not used by the ladder |
 | `calibration` | any | no | Notes for people; not read |
 
-The test fixture
+The [test fixture](../GLOSSARY.md)
 [`review-triage.yaml`](skills/resolve-review-comments/__tests__/fixtures/review-triage.yaml)
 is a complete example.
 
@@ -500,6 +502,56 @@ job from the event that started it; elsewhere from `origin/HEAD`, then
 `repository.base_branch`; see
 [the skill's scripts reference](skills/changelog/scripts/README.md#the-branch-check).
 
+## `code_stats`
+
+How the [code-stats](skills/code-stats/README.md) skill classifies the
+repository's files. Every field is optional: without the section the skill
+uses its built-in detection and the default areas, and the fields fix what
+detection gets wrong. Every field is repository-only. A value the skill
+cannot use (an unknown kind, a malformed glob, an empty or repeated area
+name, a value of the wrong type, an unknown key) is refused with a message
+naming the field.
+
+```yaml
+code_stats:
+  areas:
+    - name: product
+      description: The shipped applications and their packages
+      paths: ["apps/**", "packages/**"]
+    - name: content
+      paths: ["content/**"]
+      content: true
+  default_area: production
+  kinds:
+    test: ["scripts/smoke-*.sh"]
+  modules: ["apps/*", "packages/*"]
+```
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `code_stats.areas` | list of `{name, description?, paths: [globs], content?: true or false}`; globs are relative to the root (`**`, `*`, `?`, `{a,b}`, `[...]`) | The default areas below | code-stats | What each file is for, in order: the first rule whose glob matches names a file's area. The list replaces the default areas whole. `content: true` makes YAML, JSON and other configuration files in that area count as data. A name holds no `/` |
+| `code_stats.default_area` | area name | `production` | code-stats | The area of a file no rule matches; such a file counts as unclassified |
+| `code_stats.kinds` | map of kind (`code`, `test`, `docs`, `config`, `data`, `generated`, `fixture`, `asset`, `vendored`, `other`) to a list of globs | none: built-in detection alone | code-stats | Kinds checked before built-in detection, in the order written; the first glob that matches decides |
+| `code_stats.modules` | list of globs naming module folders | Detected from the [workspace manifests](../GLOSSARY.md) (pnpm, npm, Yarn or Bun workspaces, `go.work`, Cargo, Gradle, uv), else the top folders | code-stats | The module folders; a file belongs to the deepest one that holds it |
+| `code_stats.classify_command` | shell command | none | code-stats | The last layer, a [classify command](../GLOSSARY.md): run once from the root with the tracked paths on standard input, one per line; prints JSON lines `{"path", "area"?, "kind"?, "language"?, "module"?}` whose values override every other layer. A non-zero exit, a line it cannot read, an untracked path, or an unknown area or kind fails the report ([contract](skills/code-stats/README.md#the-classify-command)) |
+
+The default areas, in order:
+
+| Area | What it holds |
+|------|---------------|
+| `scaffolding` | AI agent scaffolding: agent instructions, skills, rules and agent tool settings |
+| `ci` | CI pipelines: workflow and pipeline definitions |
+| `build` | Build definitions and build tooling: the files of a dedicated build tool (see the build tool table) |
+| `database` | Database schema and migrations, by the tool or convention that writes them (see the database table) |
+| `ops` | Deployment and infrastructure: Terraform, Helm, Kubernetes, Ansible, containers and compose files |
+| `tools` | Internal developer tooling that does not ship: tools/, scripts/, bin/, hack/ |
+| `docs` | Documentation: docs/, doc/, root-level documents and licence files |
+| `repo-config` | Repository configuration: root-level files that are not code (manifests, lockfiles, linter and editor settings) and the .github/ files no other area takes (CODEOWNERS, issue templates, dependency-update settings) |
+| `production` | Everything no other area takes (the default area) |
+
+The [skill's README](skills/code-stats/README.md#default-areas) lists each
+area's paths, the build tools and the database conventions.
+
 ## Procedure skills
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
@@ -542,6 +594,7 @@ These are set per machine or per run, not committed:
 | `JIG_HOME` | The folder holding the user layer's `jig.yaml`, instead of `~/.jig` |
 | `JIG_USER_LAYER` | `off` leaves the user layer out (see [configuration layers](#configuration-layers)) |
 | `JIG_AFTER_VERSION_IN_CI` | `1` lets `changelog.after_version` run inside a CI job (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`, `TF_BUILD` or `JENKINS_URL` set); set it only in a job that holds no secret |
+| `JIG_CODE_STATS_COMMAND_TIMEOUT_SEC` | Seconds `code_stats.classify_command` may run before it is stopped and the report fails; 300 by default |
 | `JIG_AFTER_VERSION_TIMEOUT_SEC` | Seconds `changelog.after_version` may run before it is stopped and the release fails; 1800 by default |
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
@@ -715,4 +768,17 @@ changelog:
   release:
     push: direct                         # direct | pull-request
     branch: changelog-release
+code_stats:
+  areas:                                 # ordered, first match wins; replaces the default areas
+    - name: product
+      description: The shipped applications
+      paths: ["apps/**", "packages/**"]
+    - name: content
+      paths: ["content/**"]
+      content: true                      # YAML and JSON here are data
+  default_area: production
+  kinds:
+    test: ["scripts/smoke-*.sh"]
+  modules: ["apps/*", "packages/*"]      # default: from the workspace manifests
+  classify_command: "<your classify command>"   # paths on stdin, JSON lines on stdout
 ```

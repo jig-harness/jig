@@ -75,6 +75,10 @@ ESM
 PID
 JVM
 XML
+CSS
+CSV
+TSV
+PHP
 # licence identifiers, and the licence file's name
 LICENSE
 ISC
@@ -88,6 +92,7 @@ PostgreSQL
 FastAPI
 MongoDB
 CircleCI
+SWC
 # the .NET platform
 NET
 # remote procedure call, the industry's name for the interface style
@@ -101,3 +106,4 @@ SIGTERM
 
 # units of data size, not terms of art
 MiB
+KiB

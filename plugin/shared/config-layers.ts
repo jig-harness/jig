@@ -65,6 +65,12 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "changelog.tag_prefix",
   "changelog.release.push",
   "changelog.release.branch",
+  // How a repository's files are classified describes that repository.
+  "code_stats.areas",
+  "code_stats.default_area",
+  "code_stats.kinds",
+  "code_stats.modules",
+  "code_stats.classify_command",
 ];
 
 export type LayerName = "user" | "repository" | "environment";

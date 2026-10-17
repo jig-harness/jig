@@ -27,9 +27,18 @@ text and hands them to an agent. The run's record stays in the repository, so
 the next audit reports what drifted. It also checks the repository's
 configuration against the repository itself.
 
-- **Skills:** [`audit`](plugin/skills/audit/README.md)
+`/jig:code-stats` measures what the repository is made of: every tracked file
+by area (product code, tests, tooling, agent scaffolding, build, database,
+docs, ops), kind, language and module, with its lines of code, in the
+terminal, as JSON or as an interactive HTML report. It needs no setup, says
+how much it could not classify, and names the rule behind any file.
+
+- **Skills:** [`audit`](plugin/skills/audit/README.md),
+  [`code-stats`](plugin/skills/code-stats/README.md)
 - **Practice:** every module's criteria, as
   [principle 6](principles/06-audit-first.md) asks
+- **On the roadmap:** test-runner configuration for `code-stats`, and its
+  figures as audit evidence (item 20)
 
 ## A work item carried from pickup to merge
 

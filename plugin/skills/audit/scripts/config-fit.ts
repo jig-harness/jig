@@ -65,6 +65,7 @@ import {
   resolve as resolveChangelog,
 } from "../../changelog/scripts/config.ts";
 import { workingTree } from "../../changelog/scripts/notes-dir.ts";
+import { parseCodeStatsConfig } from "../../code-stats/scripts/lib/config.ts";
 import { releasableVersion } from "../../changelog/scripts/versions.ts";
 import { parsePrPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
@@ -764,6 +765,7 @@ function skillValidation(
   attempt("resolve-review-comments", () => parseReviewConfig(config.review));
   attempt("adr", () => adrConfig(path));
   attempt("changelog", () => changelogValidation(config, root));
+  attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
   attempt("reflect", () => {
     const reflection = parseReflection(config.reflection, root);
     const journal = reflection.journal ?? null;

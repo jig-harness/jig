@@ -1374,3 +1374,41 @@ make, use the entry's term instead.
   link to a page as Markdown, so they need not read the site's HTML. Jig's
   website derives its own from the same documents as its pages
   ([design/website.md](design/website.md)).
+- **LOC (lines of code)** — the lines of a source file that are neither blank
+  nor only a comment. The [code-stats](plugin/skills/code-stats/README.md)
+  skill reports it beside all lines, comment lines and blank lines.
+- **Shebang line** — the first line of a script, starting `#!`, that names
+  the program to run it (`#!/usr/bin/env python3`). A file without an
+  extension can be recognised by it.
+- **Git attributes** — settings git keeps per path in `.gitattributes`
+  files. The `linguist-vendored`, `linguist-generated`,
+  `linguist-documentation` and `linguist-language` attributes, a convention
+  of GitHub's language statistics, mark a file as another project's code, as
+  generated, as documentation, or as written in a named language.
+- **Test fixture** — data a test reads (an input file, a recorded response, a
+  snapshot of expected output), as opposed to the test's own code.
+- **DDL (data definition language)** — the statements that define a
+  database's structure (tables, columns, indexes), as opposed to the queries
+  that read and change its data. Schema files and migrations hold it.
+- **Database migration** — a file that changes a database's structure, or
+  moves its data, from one version to the next; migrations are applied in
+  order.
+- **Workspace manifest** — the file that lists the packages or modules of a
+  repository that holds several: `pnpm-workspace.yaml`, a `package.json`
+  `workspaces` list, `go.work`, Cargo's `[workspace]`, Gradle's
+  `settings.gradle`, uv's `[tool.uv.workspace]`.
+- **Unclassified share** — the part of a repository, in files and in
+  *LOC*, that the code-stats skill could not place: files no kind rule
+  matched, or no area rule matched, so they fell to the default area. A large
+  share means the repository's `code_stats` configuration needs work.
+- **Code-stats dimensions** — the values the code-stats skill gives every
+  tracked file: its *area* (what the file is for: product code, tests,
+  tooling, agent scaffolding, docs, build, database, ops), its *kind* (what
+  the file is: code, test, docs, configuration, data, generated, fixture,
+  asset, vendored), its language, and its *module* (the unit of the
+  repository it belongs to, from the *workspace manifests*). Unrelated to
+  the change-area catalog's areas.
+- **Classify command** — a command a repository supplies to the code-stats
+  skill (`code_stats.classify_command`) when globs cannot describe its
+  layout: it reads the tracked paths and prints, per file, the area, kind,
+  language or module that overrides the skill's own classification.
