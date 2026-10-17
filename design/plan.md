@@ -266,20 +266,14 @@ Done when:
 
 [M14](../modules/M14-testing-strategy/README.md) states test tiers with budgets,
 honest doubles, the injected clock, polling, predicates proven where they
-execute, typed builders, tests with every change and coverage as a trend.
-Still open:
+execute, typed builders, tests with every change, coverage as a trend, a skip
+tripwire, stale-test triage, behaviour pins and a runtime canary. Still open:
 
-- a check that a job which provisions a real dependency executed at least one
-  test, so a suite that skipped itself cannot report success;
 - exceptions that prune themselves: the tests-with-changes gate failing on an
   exemption that matches no file, and a `fixed-delay:` token gate that fails
-  on a token with no delay beside it;
-- stale-test triage on a freshly fetched base, which `fix-ci` then follows;
-- tests that pin the dependency behaviour a workaround exists for, and a
-  scheduled run of the suite on the language runtime's next release.
+  on a token with no delay beside it.
 
-Done when the skip check is in M14's reference with its criterion, and the
-rest of the work listed above is in the module.
+Done when both gates are in M14's reference with their criteria.
 
 ### 17. Corrected designs for the existing modules
 
