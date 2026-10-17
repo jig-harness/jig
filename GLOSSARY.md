@@ -1008,6 +1008,13 @@ make, use the entry's term instead.
   Collapsing the two feeds a *miss→lens flywheel* false positives the reviewer
   never committed, training away findings it got right. Still needs a trail
   naming what superseded it.
+- **Post-merge stage** — the step after a pull request merges that settles
+  what the merge still owes: for each class of residual obligation (the
+  tracker state, deferred findings, out-of-tree actions, temporary
+  scaffolding, live verification, the next step) it records *owed* (filed or
+  done) or *not owed* (with the evidence that settled it). "Nothing found" is
+  not evidence
+  ([M7](modules/M7-pr-lifecycle-review/README.md#core-pieces)).
 - **Declared verdict** — the resolution state written by the author, in a
   machine-readable form anchored to a fixed position in the reply, at the moment
   of replying — rather than reconstructed later from the thread's prose.

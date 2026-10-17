@@ -2,7 +2,8 @@
 
 > TEMPLATE — copy to your repo (e.g. `docs/development/pr-lifecycle.md`) and
 > adjust the forge-specific steps (the `<...>` bits). This is the narrative
-> contract for how a change moves from branch to merged; the executable steps
+> contract for how a change moves from branch through the merge and what the
+> merge still owes; the executable steps
 > (skills, gates, bots) are referenced, not restated.
 >
 > **On copying, repoint the links you adopted.** The links below point at
@@ -17,8 +18,11 @@
 > none of its reviewers reviews drafts); a human, or an adopted review driver at the round the
 > repository declares, marks Ready; a human merges; every review
 > thread ends resolved with an audit trail, in a terminal state the author
-> declares rather than one anybody infers later; and review is a loop over
-> rounds whose stop condition is a round that finds nothing left.**
+> declares rather than one anybody infers later; review is a loop over
+> rounds whose stop condition is a round that finds nothing left; and the
+> lifecycle does not stop at the merge: after it, each class of residual
+> obligation is settled as owed (filed or done) or not owed (with the
+> evidence).**
 
 ## The loop
 
@@ -29,7 +33,9 @@ branch → open DRAFT PR → self-review → CI + automated review + human revie
             once the draft reviewers settle: mark READY (human, or a review driver)
             until a round after READY is settled with nothing left
             (not merely "nothing open")
-      → gates green → merge (human) → update tracker
+      → gates green → merge (human)
+      → settle what the merge still owes: each class owed (filed or done)
+        or not owed (with evidence)
 ```
 
 Each stage below states its exit condition — you do not advance until it holds.
@@ -171,19 +177,64 @@ if the merge changed the diff.
 **Executable:** the merge is a human-only forge action, enforced by branch
 protection requiring a human actor — see the [HITL registry](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md).
 
-### 6. Update the tracker
+### 6. After the merge: what does the merge still owe?
 
-On merge, move the tracked work item to its next state and record anything the
-next agent needs (a follow-up filed in step 4, a decision worth an ADR).
+Merging closes the pull request, not the work. A merge can leave a tracker
+item in the wrong state, a deferred finding that was never filed, an action
+outside the repository nobody wrote down, a widened timeout or a running
+driver nobody turned back, a change nobody has seen run, and no decision about
+what comes next. Nothing else looks for these after the merge, so this stage
+does: one pass, run by the session that drove the pull request while the
+facts are still in its context, by a person, or by a scheduled job.
+
+Each class ends in exactly one of two states, and "nothing found" is neither:
+
+- **Owed**: the obligation exists and is filed (an item, with its id) or done
+  (with what was done).
+- **Not owed**: the obligation does not exist, with the evidence that settled
+  it. "No file under `src/` changed" is evidence; "I saw nothing" is not.
+
+| Class | Settled when | Not owed, for example |
+|-------|--------------|-----------------------|
+| **Tracker state** | The item's own state follows the merge (done, or waiting while a manual, operational or legal step remains), and the epic above it has been rolled up from its children. An epic closes only as [M9](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/README.md#an-epic-closes-on-an-accepted-verdict) says, never on the merge | The pull request names no tracked item |
+| **Deferred findings** | Every `deferred` reply produced a tracked item that exists. Re-list the resolved threads, because a deferred thread resolves the moment its reply posts, and the summary findings, which have no thread: a reply that says "deferred" proves only that someone typed it | The re-listed threads and summary findings hold no deferred outcome |
+| **Out-of-tree obligations** | Every action the merge leaves outside the repository (a secret or setting to provision, a manual rollout, a migration run by hand, an announcement) is listed when the pull request opens, with an explicit "None" when there are none, and is recorded where a person will find it: the tracker item's closing comment, and the repository's own ledger of such work where it keeps one | The list reads "None", and the diff touches no workflow, configuration or migration |
+| **Temporary scaffolding** | Whatever the work put in place to get here is gone, in the repository and outside it: a widened timeout, a disabled or skipped gate, a live review driver, a working branch, a preview environment, a flipped flag | The pull request description and the driver's log name no scaffolding, and no branch, environment or driver of this work is left |
+| **Live verification** | The change was seen working, but only when it has a runtime surface, has reached an environment, and is not already covered by CI. Owed means run it and record what it showed | The change is documentation only, or no environment has it yet, or a named CI job exercises it |
+| **Next step** | The next item is picked, with a bias toward closure (below) | No open work remains, shown by the tracker's open-item list; never "not owed" in a repository that has open work; the pick itself is a [human decision](#human-in-the-loop-boundaries) |
+
+**Picking the next step.** In order: finish a nearly-done epic first, since
+closing one removes a whole line from the board; otherwise clear the
+operations that can be cleared now (a step waiting only on a person who is
+here, a drill, a sign-off); otherwise take a batch of small items together
+([batching small issues into one pull request](https://github.com/docomply/jig/blob/main/ROADMAP.md#13-batching-small-issues-into-one-pull-request-work-batch)).
+A computed ranking proposes the shortlist; a person picks from it.
+
+Fixes the pass finds go in one follow-up pull request, not one each. Run
+before the merge, the same pass lists what the merge will owe, and carries out
+nothing.
+
+**Exit:** every class above is recorded as owed (with the item or what was
+done) or not owed (with the evidence), and the next item is picked, or the
+evidence that no open work remains is recorded.
+**Executable:** `do-item`'s post-merge status rule moves the item's state, and
+its [Step 5a](https://github.com/docomply/jig/blob/main/plugin/skills/do-item/SKILL.md#step-5a-all-sub-issues-complete)
+rolls the epic up: `reconcile_parent_status.ts` proposes the epic's state from
+its children, and Step 5a applies it only after the acceptance and closing
+checks; the
+[deferral protocol](https://github.com/docomply/jig/blob/main/plugin/skills/resolve-review-comments/references/deferral-protocol.md)
+files what a deferred reply left unfiled. The
+[unresolved-threads gate](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution)
+checks before the merge that a deferred reply names a reference, not that the
+referenced item exists; only this stage, which can reach the tracker, checks
+that. See [M9](https://github.com/docomply/jig/tree/main/modules/M9-tasks-memory)
+for the tracker.
 
 A change that took **many rounds** to converge is itself a signal: usually the
 scaffolding under-served it, not that the reviewer was noisy. Feed the round count
 to the learning loop rather than letting it evaporate with the session — see
 [M8](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop)'s
 [reflection trigger](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop/reference/reflection-trigger).
-
-**Executable:** your tracker's transition command / task update (see
-[M9](https://github.com/docomply/jig/tree/main/modules/M9-tasks-memory)).
 
 ## Human-in-the-loop boundaries
 
@@ -198,6 +249,10 @@ rationale:
 - **Expanding scope** beyond what the PR set out to do.
 - **Overruling a human** reviewer's thread.
 - **Promoting an automated reviewer** (or a lens) from comment-only to blocking.
+- **Picking the next item** from the computed ranking (step 6).
+- **Reopening on a rejecting verdict, or waiving a missing acceptance
+  review.** The approver is someone other than whoever runs the post-merge
+  pass or the epic-closing step that found the gap.
 
 An item carrying the `hitl` label revokes autonomous merge for that PR
 entirely. Enforcement is the forge's branch-protection rule that requires a

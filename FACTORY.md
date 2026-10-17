@@ -188,8 +188,9 @@ itself a loop. `drive-pr` stops on one named end state (converged, waiting on
 a person, conflicting, …) and never approves or merges. On the roadmap:
 batching small items into one pull request (ROADMAP.md item 13), a converged
 drive arming the merge it certified (item 9, which changes "a person merges"
-and is decided on its own), and a post-merge stage that carries out the
-follow-ups (item 17).
+and is decided on its own), and a skill that runs the post-merge stage
+[M7](modules/M7-pr-lifecycle-review/README.md) states, which settles what a
+merge still owes beyond the follow-ups station 7 files (item 17).
 
 ## The learning loop (wraps both)
 

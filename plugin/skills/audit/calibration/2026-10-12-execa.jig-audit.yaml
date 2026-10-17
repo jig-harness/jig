@@ -397,6 +397,10 @@ criteria:
     # The loop's stop condition distinguishes 'no open threads' from 'the reviewer has not reported yet', and re-checks that the PR is still open each round.
     score: absent
     evidence: "No review-loop automation. Rounds end when a maintainer decides to merge. No workflow other than .github/workflows/main.yml exists."
+  M7/post-merge-obligations-settled:   # standard, requires convention
+    # After a merge, each class of residual obligation (tracker state, deferred findings, out-of-tree actions, temporary scaffolding, live verification, the next step) is settled as owed and filed or done, or as not owed with the evidence that settled it, and a deferred reply is checked against the tracker rather than trusted.
+    score: absent
+    evidence: "No PR lifecycle written anywhere, so no post-merge stage: git ls-files | grep -iE 'CONTRIBUTING|PULL_REQUEST_TEMPLATE|AGENTS|CLAUDE' finds nothing, and .github/ holds only workflows/main.yml, codecov.yml and security.md."
   M7/pr-target-wiring-fork-safe:   # standard, requires mechanical
     # No secret-bearing reviewer workflow checks out and runs untrusted fork code, and a lint enforces it.
     score: expected-absent

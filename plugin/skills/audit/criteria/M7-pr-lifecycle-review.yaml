@@ -124,6 +124,23 @@ criteria:
       - "the loop aborts when the PR stops being open, rather than pushing to a branch that will not merge"
       - "the check counts every thread the merge gate would reject, not only those literally marked open"
 
+  - id: post-merge-obligations-settled
+    level: standard
+    requires: convention
+    statement: >-
+      After a merge, each class of residual obligation (tracker state,
+      deferred findings, out-of-tree actions, temporary scaffolding, live
+      verification, the next step) is settled as owed and filed or done, or
+      as not owed with the evidence that settled it, and a deferred reply is
+      checked against the tracker rather than trusted.
+    observe:
+      - "the lifecycle doc has a post-merge stage naming those classes, each ending owed or not owed with evidence ('nothing found' is not evidence)"
+      - "the stage re-lists resolved threads and summary findings and confirms each deferred reply's referenced item exists, instead of relying on the reply's text"
+      - "the stage picks the next item with a bias toward closure (a nearly-done epic, then operations that can be cleared, then a batch of small items) and leaves the pick to a person"
+      - "the stage reverts temporary scaffolding in the repository and outside it (timeouts, gates, drivers, branches, environments, flags) and asks for live verification only when the change has a runtime surface, has reached an environment and is not covered by CI"
+      - "on recent merges, a closing comment or pass report records each class as owed or not owed (a scheduled or hook-run pass that only reports is advisory; mechanical needs a check that fails while a merge has a class nobody recorded)"
+    since: next
+
   - id: pr-target-wiring-fork-safe
     level: standard
     requires: mechanical
@@ -175,12 +192,15 @@ criteria:
     statement: >-
       The human-only decision classes (merge, promote a reviewer to blocking,
       expand scope, overrule a human, and mark Ready unless delegated to a
-      review driver) are listed in one registry, and
-      a hitl label revokes autonomous merge.
+      review driver; where the repository runs a post-merge stage or closes
+      epics on a verdict, also picking the next item and reopening on a
+      rejecting verdict or waiving a missing acceptance review) are listed in
+      one registry, and a hitl label revokes autonomous merge.
     observe:
       - "a HITL decision registry enumerates the human-only decisions with a trigger each"
       - "a hitl label is defined and revokes autonomous merge for the linked PR"
       - "the registry names who may mark Ready: humans, plus the review driver when the repository delegates to it"
+      - "where the repository runs a post-merge stage or closes epics on a verdict, the registry also lists picking the next item and reopening on a rejecting verdict or waiving a missing acceptance review, the latter naming an approver other than whoever runs the post-merge pass or the epic-closing step"
       - "on recent PRs, every draft-to-Ready transition was made by a human or by the declared review driver"
 
   - id: reviewer-promotion-gated-on-measurement

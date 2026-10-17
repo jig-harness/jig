@@ -126,7 +126,7 @@ export const NOT_BUILT: Record<string, Actor[]> = {
     {
       kind: "todo",
       item: "17",
-      text: "a post-merge stage that carries out the follow-ups",
+      text: "a skill that runs the post-merge stage M7 states",
     },
   ],
 };

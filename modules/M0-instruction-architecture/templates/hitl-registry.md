@@ -52,6 +52,8 @@ Each class names the rung at which the boundary is currently held:
 | 6 | **Scope expansion beyond a task's stated boundaries** | Silently widening a PR removes the human's implement-now-or-defer call and inflates review burden. Judgment + accountability. | <instruction-file clause: flag scope-ballooning feedback instead of silently implementing> | ⚙️ Convention-only |
 | 7 | **Customer-facing copy & legal sign-offs** | External-facing correctness and legal accountability. Accountability + judgment. | <required reviewer on the relevant paths; checklist prompt in review steps> | Semi-mechanical |
 | 8 | **Bypassing a failing gate** (`--no-verify` and equivalents) | Judging that every remaining failure is genuinely unrelated/systemic needs a human and an audit trail. Judgment + accountability. | <documented bypass protocol: allowed only with a written justification in the PR body + a follow-up issue; CI re-runs the same gates as required checks> | ⚙️ Convention-only (CI backstop is mechanical) |
+| 9 | **Pick the next item from the computed ranking** | The ranking is a computed proposal; choosing what to work next spends the team's attention and sets its direction, and an agent that picks its own next work also decides what nobody looks at. Judgment + accountability. | <the post-merge stage's next-step instruction: the agent presents the shortlist and stops; a person picks> | ⚙️ Convention-only |
+| 10 | **Reopen on a rejecting verdict, or waive a missing acceptance review** | A reopened item re-spends review effort; a waiver stands in for a review nobody ran and never overrides a rejecting verdict. The approver must be someone other than whoever runs the post-merge pass or the epic-closing step that found the gap, or the check excuses itself. Judgment + accountability. | <the epic-closing step and the post-merge stage: the agent reports the gap and stops; tracker permissions or a workflow validator on the reopen/close transition if mechanized> | ⚙️ Convention-only |
 
 ## Convention-only entries — mechanization candidates
 
@@ -66,6 +68,9 @@ the registry only *names* the gap so it stays visible. Typical moves:
   rows 4–5 on human review.
 - A bot that **requires the bypass-justification section** in the PR body
   whenever a push skipped local hooks backstops row 8.
+- A **tracker workflow validator or permission** on the reopen and close
+  transitions, restricted to a person other than the account that runs the post-merge pass,
+  turns row 10 from convention into a gate.
 
 ## Related
 

@@ -468,6 +468,10 @@ criteria:
     # prior: mechanical: plugin/skills/drive-pr/references/terminal-states.md and scripts/lib/status/evaluate.ts: the pull request being open is checked every pass; the reviewer must settle on the head before a zero-thread stop; terminal-states-consistency.ts runs in gates.yml
     score: mechanical
     evidence: "drive-pr scripts/lib/status/evaluate.ts re-checks closure every pass and waits for the reviewer to settle on the head; terminal-states-consistency.ts runs in gates.yml (drive-pr suite shard 1 when the area is affected, always on push to main)"
+  M7/post-merge-obligations-settled:   # standard, requires convention
+    # After a merge, each class of residual obligation (tracker state, deferred findings, out-of-tree actions, temporary scaffolding, live verification, the next step) is settled as owed and filed or done, or as not owed with the evidence that settled it, and a deferred reply is checked against the tracker rather than trusted.
+    score: absent
+    evidence: ".claude/skills/followup/SKILL.md runs a post-merge pass whose arms end owed or not owed with a reason, re-lists resolved threads and summary findings to confirm each deferred reply produced an item, and checks a live driver, the branch and scaffolding in the merged diff; CONTRIBUTING.md § Pull-request lifecycle step 5 tells every session to run it. Gaps against the criterion: no arm asks whether the change needs live verification, and its next-item step hands the epic's next sub-issue to do-item without a closure-first order or a person's pick"
   M7/pr-target-wiring-fork-safe:   # standard, requires mechanical
     # No secret-bearing reviewer workflow checks out and runs untrusted fork code, and a lint enforces it.
     # prior: convention: gates.yml uses pull_request with contents: read and no pull_request_target (grep .github: none), but modules/M7-pr-lifecycle-review/reference/pr-target-safety is not run over Jig's own workflows
@@ -489,7 +493,7 @@ criteria:
     score: convention
     evidence: "do-item/scripts/pr-plan.ts refuses policy violations, but Jig's pull requests are not opened through it; all recent ones target main directly"
   M7/hitl-registry-published:   # strict, requires convention
-    # The human-only decision classes (merge, promote a reviewer to blocking, expand scope, overrule a human, and mark Ready unless delegated to a review driver) are listed in one registry, and a hitl label revokes autonomous merge.
+    # The human-only decision classes (merge, promote a reviewer to blocking, expand scope, overrule a human, and mark Ready unless delegated to a review driver; where the repository runs a post-merge stage or closes epics on a verdict, also picking the next item and reopening on a rejecting verdict or waiving a missing acceptance review) are listed in one registry, and a hitl label revokes autonomous merge.
     # prior: absent: AGENTS.md § Ways of working lists human decisions (publishing, licence, seed deletion, origin boundary) but not merge, Ready or reviewer promotion; no hitl label declared in .config/jig.yaml
     score: absent
     evidence: "AGENTS.md's HITL line lists publishing, licence, seed deletion and the origin boundary only, not merge, Ready or reviewer promotion; a hitl label exists in the tracker but nothing ties it to merge"

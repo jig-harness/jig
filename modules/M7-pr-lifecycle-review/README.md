@@ -27,7 +27,12 @@ automation, and the human checkpoints kept explicit.
 > an audit trail** — in one of a **closed set of terminal states, declared by
 > the author rather than inferred from prose** — before merge. Review is a
 > **loop over [rounds](../../GLOSSARY.md)**, and its stop condition is a round
-> that finds nothing left, not a single pass. **Automated reviewers run
+> that finds nothing left, not a single pass. **The lifecycle does not stop at
+> the merge**: after it, each class of residual obligation (the tracker
+> state, deferred findings, out-of-tree actions, temporary scaffolding, live
+> verification, the next step) is settled as **owed**, and filed or done, or
+> as **not owed**, with the evidence that settled it; "nothing found" is not
+> evidence. **Automated reviewers run
 > comment-only** until measured precision clears a pre-committed bar that
 > justifies more. And any
 > reviewer that executes PR code runs it under a **fork-safe** wiring that
@@ -142,8 +147,12 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    The [PR-target safety lint](reference/pr-target-safety/) fails a workflow
    that checks out and runs untrusted PR head code in a secret-bearing job.
 10. **Explicit HITL boundaries** — the human-only decision classes (merge,
-   promote a reviewer to blocking, expand scope, override a human thread, and
-   mark Ready unless the repository delegates it to a review driver) are
+   promote a reviewer to blocking, expand scope, override a human thread,
+   pick the next item from the computed ranking, reopen on a rejecting
+   verdict or waive a missing acceptance review, with an approver other than
+   whoever runs the post-merge pass or the epic-closing step that found the
+   gap, and mark Ready unless the repository delegates it to a review driver)
+   are
    listed once in [`HITL-REGISTRY.md`](templates/HITL-REGISTRY.md)
    rather than scattered across skills and habits, so autonomous runs know
    exactly where to stop.
@@ -163,6 +172,48 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    [`do-item`](../../plugin/skills/do-item/SKILL.md) applies the policy with
    `pr-plan.ts` and refuses a PR that breaks it; the fields are in the
    [configuration reference](../../plugin/CONFIGURATION.md#pull_requests).
+12. **A post-merge stage: what does the merge still owe?** — merging closes
+   the pull request, not the work, and nothing else looks at what a merge
+   leaves behind. After every merge one pass settles each class of residual
+   obligation, and each ends in one of two states: **owed**, and filed or
+   done, or **not owed**, with the evidence that settled it. The classes:
+
+   - **Tracker state**: the item's own state, and the epic rolled up from its
+     children. The epic closes as [M9](../M9-tasks-memory/README.md#an-epic-closes-on-an-accepted-verdict)
+     says, never because a pull request merged.
+   - **Deferred findings**: each `deferred` reply really produced a tracked
+     item. The pass re-lists the resolved threads and the summary findings,
+     because a deferred thread resolves the moment its reply posts and a
+     summary finding has no thread. The
+     [unresolved-threads gate](reference/comment-resolution/) can check that a
+     deferred reply names a reference, not that the item behind it exists:
+     only a step that can reach the tracker can.
+   - **Out-of-tree obligations**: every action the merge leaves outside the
+     repository is listed when the pull request opens and recorded where a
+     person will find it, in the tracker item and in the repository's own
+     ledger of such work where it keeps one.
+   - **Temporary scaffolding**: reverted, in the repository and outside it. A
+     widened timeout, a disabled gate, a live review driver, a working
+     branch, an environment or a flipped flag each stays behind unless
+     something looks for it.
+   - **Live verification**: owed only when the change has a runtime surface,
+     has reached an environment and is not already covered by CI. Anything
+     else is not owed, and says which condition it fails.
+   - **Next step**: picked with a bias toward closure. Finish a nearly-done
+     epic first; otherwise clear the operations that can be cleared;
+     otherwise take a batch of small items
+     ([ROADMAP item 13](../../ROADMAP.md#13-batching-small-issues-into-one-pull-request-work-batch)).
+     A computed ranking proposes the shortlist; picking from it is a human
+     decision. It is not owed only when the tracker shows no open work.
+
+   "Nothing found" is not evidence because a pass that looks in the wrong
+   place finds nothing just as a clean one does; a reason names a fact
+   ("no file under the deploy directory changed") that someone else can
+   check. The decisions the stage hands to a person (see core piece 10)
+   are rows of the [HITL registry](templates/HITL-REGISTRY.md). Step 6 of
+   [`PR-LIFECYCLE.md`](templates/PR-LIFECYCLE.md) is the copyable form, and
+   [mappings.md](mappings.md#the-post-merge-stage) says how each class is
+   checked per forge and tracker.
 
 ## Maturity levels
 
@@ -181,8 +232,11 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
   every thread terminal, the state declared in an anchored encoding that an
   export adapter decodes rather than inferred from prose) and no PR merges with
   unresolved threads; any reviewer executing
-  PR code uses the fork-safe wiring; and no authoritative reviewer obtains its
-  runtime, prompts, or active policy from the PR head it is reviewing.
+  PR code uses the fork-safe wiring; no authoritative reviewer obtains its
+  runtime, prompts, or active policy from the PR head it is reviewing; and
+  a post-merge stage settles each class of residual obligation as owed (filed
+  or done) or not owed (with evidence), including that every deferred reply
+  produced a tracked item.
 - **Strict** — the unresolved-threads gate and the PR-target safety lint run in
   CI (the authority); the declared verdict is validated by whatever *posts* the
   reply, at write time, with an opt-out for replies that are not verdicts; the
@@ -227,6 +281,13 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    that is the `pull_requests` section of `.config/jig.yaml`
    ([reference](../../plugin/CONFIGURATION.md#pull_requests)); per-tool
    options are in [mappings.md](mappings.md#stacked-pull-requests).
+8. Run the post-merge stage after every merge, as step 6 of
+   [`PR-LIFECYCLE.md`](templates/PR-LIFECYCLE.md) states it: by the session
+   that drove the pull request, by a person, or by a scheduled job. Record
+   each class as owed or not owed with its evidence in the tracker item's
+   closing comment, or, for a pull request no tracked item names, in a pass
+   report or a comment on the pull request, and add the rows for its human
+   decisions to your [HITL registry](templates/HITL-REGISTRY.md).
 
 ## Status
 
@@ -242,7 +303,7 @@ values and gate commands from its configuration at run time
 |----------------|-----------------------------------|
 | [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/README.md) | The comment-resolution loop (core pieces 5 and 6): walks every unresolved thread to a declared outcome, and its `reply-to-thread.ts` validates the verdict as the reply is written (`--no-outcome` is the opt-out for a reply that is not a verdict) |
 | [`drive-pr`](../../plugin/skills/drive-pr/README.md) | The [PR drive loop](../../GLOSSARY.md) (core piece 7) run unattended: waits for reviewers to settle, stops on a named end state, marks a draft Ready at the point `pull_requests.mark_ready` declares, and never merges |
-| [`do-item`](../../plugin/skills/do-item/SKILL.md) | Opens the pull request under the declared shape policy (core piece 11) through its `pr-plan.ts`, and refuses one that breaks it |
+| [`do-item`](../../plugin/skills/do-item/SKILL.md) | Opens the pull request under the declared shape policy (core piece 11) through its `pr-plan.ts`, and refuses one that breaks it; its post-merge status rule and mandatory `## Out-of-tree follow-ups` section run the tracker-state and out-of-tree classes of the post-merge stage (core piece 12) |
 | [`review`](../../plugin/skills/review/SKILL.md) | The author-side tiered review before pushing (the agent-runtime reviewer in core piece 3) |
 | [Review Arbiter](../../plugin/agents/review-arbiter.md) | Rules on contested findings the triage rubric cannot settle |
 | [`resolve-conflicts`](../../plugin/skills/resolve-conflicts/SKILL.md) | Brings a conflicting pull request up to date with its base: records each conflict decision in the merge commit for reviewers and refuses a resolution that silently drops either side's change |
@@ -251,7 +312,7 @@ values and gate commands from its configuration at run time
 
 | Piece | What it is |
 |-------|------------|
-| [`templates/PR-LIFECYCLE.md`](templates/PR-LIFECYCLE.md) | The copyable lifecycle contract, draft to merge, with its human-in-the-loop boundaries |
+| [`templates/PR-LIFECYCLE.md`](templates/PR-LIFECYCLE.md) | The copyable lifecycle contract, draft to the post-merge stage, with its human-in-the-loop boundaries |
 | [`templates/HITL-REGISTRY.md`](templates/HITL-REGISTRY.md) | The human-only decision classes, each with its trigger (shared with [M0](../M0-instruction-architecture/)) |
 | [`templates/review-config.yaml`](templates/review-config.yaml) | The config half of the review-harness core/config split: tool registry, postures, reviewer source, verify tool, containment guards, precision bar, numbered lenses |
 | [`reference/comment-resolution/`](reference/comment-resolution/) | The unresolved-threads merge gate, and the verdict export adapter that decodes a declared reply into the gate's states |
@@ -312,6 +373,12 @@ change; the practice references above would not.
   [M13 pipeline economy](../M13-pipeline-economy/README.md).
 
 ### Future
+
+- **A runnable post-merge stage for any repository.** The stage is stated
+  here and run by hand or by a repository's own skill; the plugin does not
+  yet ship a skill that runs the whole pass (it runs the status rule and the
+  out-of-tree section only). It is part of
+  [ROADMAP item 17](../../ROADMAP.md#17-corrected-designs-for-the-existing-modules).
 
 - **Delegated merge.** Letting a converged drive arm the forge's auto-merge
   for the exact head it certified relaxes "a human merges", so it waits on

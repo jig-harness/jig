@@ -399,6 +399,26 @@ The decision line is also
 [reflection trigger](../M8-learning-loop/reference/reflection-trigger/) input, so
 keep `decision.txt` around for that step.
 
+## The post-merge stage
+
+The classes of [core piece 12](README.md#core-pieces) are tool-independent; what
+reaches each fact differs by forge and tracker.
+
+| Class | What to read | GitHub / GitLab | Linear / Jira / forge issues |
+|-------|--------------|-----------------|------------------------------|
+| Tracker state | the item's state and its parent's children | the closing reference (`Closes #123`) names the issue and the forge closes it on merge; check it did not close an item that still owes a step | the item's state and its parent's child list; Jig's `do-item` applies the post-merge status rule, and its Step 5a rolls the parent up (`reconcile_parent_status.ts` proposes the state; Step 5a applies it only after the acceptance and closing checks) |
+| Deferred findings | every `deferred` reply, resolved threads included, and summary findings | GitHub: `pullRequest.reviewThreads` with `isResolved` unfiltered, plus the PR's issue comments; GitLab: `merge_requests/:iid/discussions` with `resolved` unfiltered, plus the MR notes | look each referenced id up in the tracker; a reply that names an id nobody can open is unfiled |
+| Out-of-tree obligations | the list made when the PR opened | the PR description and the tracker item's closing comment | an unchecked-checkbox list on the item, or a ledger the promotion step reads |
+| Temporary scaffolding | what the work put in place | `git branch -r` and the forge's branch and environment lists; scheduled or running workflows; the diff for a disabled check, a widened timeout or a flipped flag | the tracker holds none of it; read the PR description and the driver's log |
+| Live verification | whether the change reached an environment | the deployment record of the forge's environments, the CI jobs that exercise the change | not tracker state; the tracker item may name where it was checked |
+| Next step | the ranking, open epics and waiting operations | not forge state | the tracker's computed ranking ([M9](../M9-tasks-memory/README.md#computed-prioritization)) |
+
+Ways to run the pass: by hand after a merge; as a skill the session that drove
+the pull request runs (Jig's own repository does this with a skill of its
+own); or as a scheduled job that lists recent merges and reports the classes
+no one has recorded. A scheduled job reports; it does not reopen, waive or pick
+(the [HITL registry](templates/HITL-REGISTRY.md) keeps those with a person).
+
 ## Stacked pull requests
 
 A stack is only safe when every tool that reads settings from a PR's base can
