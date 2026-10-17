@@ -228,6 +228,7 @@ changes are marked **Breaking** and say what a consumer changes.
   way the factory overview does: larger, behind the intro, fading into the
   page on its left, right and lower edges. A page using the pattern can now
   set the drawing's width and how far it reaches past the window's edge.
+- The roadmap and the plan no longer list the M11 heartbeat as open work; it shipped with the cadence registry and the staleness classifier.
 
 ### Fixed
 
