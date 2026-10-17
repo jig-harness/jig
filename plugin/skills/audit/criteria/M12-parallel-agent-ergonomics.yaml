@@ -106,7 +106,7 @@ criteria:
   - id: unattended-agent-control-channel
     level: standard
     requires: mechanical
-    since: next
+    since: 0.46.0
     statement: >-
       An agent left running unattended can be reached without killing it,
       through a control channel whose directives (at least stopping, pausing
