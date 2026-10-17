@@ -20,9 +20,20 @@ pre-commit:
       stage_fixed: true
 
 pre-push:
+  # Piped: the commands run one at a time in priority order, so the push-hold
+  # recheck is the last thing before git transfers anything.
+  piped: true
   commands:
     # Format, lint, types and the repository checks (scripts/gates.ts
     # --fast): seconds, not the minutes the tests and build take in CI.
     fast-gates:
+      priority: 1
       timeout: 5m
       run: bun scripts/gates.ts --fast
+    # drive-pr's push-hold recheck: a hold-push directive sent while the
+    # commands above ran still stops the push. Armed only by guarded-push.ts
+    # (DRIVE_PR_HOLD_RECHECK_PR), so an ordinary push skips it before bun
+    # starts. It must stay the last command.
+    push-hold-recheck:
+      priority: 2
+      run: '[ -z "${DRIVE_PR_HOLD_RECHECK_PR+x}" ] && exit 0; bun plugin/skills/drive-pr/scripts/push-hold-recheck.ts'

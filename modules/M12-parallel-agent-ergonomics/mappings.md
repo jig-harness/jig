@@ -3,7 +3,8 @@
 The module [invariant](README.md) — deterministic per-worktree ports, a
 cross-worktree heavy-run mutex with a CI bypass, branch reuse-before-create,
 change records of their own assembled after the merge, banned shared-state
-footguns, and gate output shaped for an agent — is tool-independent. This file maps its mechanisms
+footguns, gate output shaped for an agent, and a control channel into an
+unattended agent — is tool-independent. This file maps its mechanisms
 onto concrete worktree managers / agent runners, package managers, and
 [CI](../../GLOSSARY.md) providers. Replace `<placeholders>` with your values.
 
@@ -122,6 +123,32 @@ The same shape on every database: only the commands differ.
 A production target is refused in the migration runner (the empty prefix
 needs an explicit flag), in the reaper (`--production <name>` is never a
 candidate), and wherever the drop runs, so no single mistake reaches it.
+
+## Control channels
+
+The invariant: an unattended agent is reached through a closed set of
+directives that code enforces and that fail closed, plus notes that only
+advise. The mechanisms an agent runner already has cover part of that; the
+table says which part.
+
+| Mechanism | Binding directives | Advisory notes | Fails closed | Note |
+|-----------|--------------------|----------------|--------------|------|
+| [`drive-pr`'s drive mailbox](../../plugin/skills/drive-pr/SKILL.md#the-drive-mailbox) | `hold-push`, `pause`, `stop`, each with its `resume` | yes, read by choice with `mailbox.ts check` | yes: an unreadable inbox or directive holds the push and stops the loop | the reference; two append-only files under the worktree's `.context/drive-mailbox/` |
+| A process signal (`SIGKILL`) | termination only, immediately rather than at a safe point | no | not applicable | the hard kill the channel exists to avoid needing |
+| A runner's message to a running subagent (Claude Code's `SendMessage`) | none: the message enters the agent's context, and the agent decides | yes | no | suits a subagent in the same session; give it nothing it must obey |
+| Typing into the agent's terminal (`tmux send-keys`) | none | yes, but as if the person typed it | no | free text with the force of a person's instruction, which is what keeping notes advisory prevents |
+
+A runner's own messaging covers the notes; the directives need code at the
+agent's checkpoints, whichever runner starts it.
+
+The reference's layout: two append-only files in the worktree's scratch
+directory (`.context/drive-mailbox/`), an inbox any sender appends to and an
+outbox only the agent writes, recording what it has read and answered. Each
+append takes a lock, so concurrent senders never interleave a line. A hold
+sent while the push's own pre-push hooks run lands after the push's first
+check; running `push-hold-recheck.ts` as the last pre-push hook command
+closes that window
+([drive-pr README § Push hold](../../plugin/skills/drive-pr/README.md#push-hold)).
 
 ## Change notes — per ecosystem
 

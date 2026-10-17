@@ -627,6 +627,10 @@ criteria:
     # A release step assembles the per-change notes into the changelog and sets the version after the merge, one run at a time, and a check fails a change whose note it cannot read or that edits what the step writes.
     score: expected-absent
     evidence: "Same as change-records-one-file-per-change: no per-change changelog or version to assemble; releases are cut by the maintainer."
+  M12/unattended-agent-control-channel:   # standard, requires mechanical
+    # An agent left running unattended can be reached without killing it, through a control channel whose directives (at least stopping, pausing or holding its push) are a closed set enforced by code and fail closed, while free-text notes only advise (expected-absent where no agent runs unattended).
+    score: expected-absent
+    evidence: "No agent runs unattended: no review loop or agent runner is configured. Single-checkout library."
   M12/utilities-self-tested-in-ci:   # strict, requires mechanical
     # The port allocator and the resource lock each ship a self-test that runs in CI, so a broken utility fails loudly instead of silently misallocating.
     score: expected-absent

@@ -744,6 +744,10 @@ criteria:
     # A release step assembles the per-change notes into the changelog and sets the version after the merge, one run at a time, and a check fails a change whose note it cannot read or that edits what the step writes.
     score: absent
     evidence: "At the audited commit no release step runs after a merge: .github/workflows/ has no release workflow, the version and the changelog section are written in each pull request, and v<version> tags are pushed by hand"
+  M12/unattended-agent-control-channel:   # standard, requires mechanical
+    # An agent left running unattended can be reached without killing it, through a control channel whose directives (at least stopping, pausing or holding its push) are a closed set enforced by code and fail closed, while free-text notes only advise (expected-absent where no agent runs unattended).
+    score: convention
+    evidence: "At the audited commit Jig's pull requests are driven by its own drive-pr, whose drive mailbox (plugin/skills/drive-pr/scripts/lib/state/mailbox.ts) carries hold-push, pause and stop: guarded-push.ts refuses a held push, drive.ts honours pause and stop at round checkpoints, and an unreadable directive fails closed (mailbox.test.ts). push-hold-recheck.ts exists, but the commit has no lefthook.yml or other installed pre-push hook that runs it, so a hold sent during the pre-push hooks is not honoured; the criterion's last observation scores that below mechanical"
   M12/utilities-self-tested-in-ci:   # strict, requires mechanical
     # The port allocator and the resource lock each ship a self-test that runs in CI, so a broken utility fails loudly instead of silently misallocating.
     # prior: absent: Jig has no port allocator or heavy-run lock of its own to self-test

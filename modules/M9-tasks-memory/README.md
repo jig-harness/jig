@@ -31,7 +31,10 @@ honest.
 > flag revokes autonomous execution/merge). A label that fires nothing is not
 > allowed. Work is tiered **what** (the tracker, which holds all work state) /
 > **how** (persistent agent memory about the code) / **in-session** (the task
-> list and worktree scratch), and a
+> list and worktree scratch). What tools share across the worktrees of one
+> machine lives in a **machine-local store** outside every worktree, which
+> holds no work state the tracker lacks, so deleting it costs a rebuild and
+> no decision. A
 > durable lesson is **promoted** from private memory into git-tracked shared
 > memory through a review point. Recurring multi-phase work runs a **formula**
 > whose **required phases must be recorded before the item may close** (staging
@@ -70,8 +73,12 @@ concrete per-tracker, per-runtime wiring lives in [mappings.md](mappings.md).
    Putting a lasting decision in the ephemeral tier is how knowledge
    evaporates; parking a handoff in worktree scratch hides it from every other
    worktree; a second store for work state beside the tracker drifts from
-   it. The
-   tiers and the handoff format are spelled out in
+   it. What tools share across the worktrees of one machine (locks, leases,
+   a review loop's records, a working copy of a brief) lives in a
+   **machine-local store** outside every worktree: not a fourth tier,
+   because it must hold no work state the tracker lacks, so that losing it
+   costs a rebuild and no decision. The
+   tiers, the machine-local store and the handoff format are spelled out in
    [`MEMORY-TIERS.md`](templates/MEMORY-TIERS.md).
 3. **Memory promotion** — private, per-session agent memory becomes reliable for
    the whole team only when a durable lesson is **promoted** into git-tracked

@@ -16,7 +16,10 @@ request in conflict, and each conflict costs a resolution and another full CI
 run. And the agents collide with their own budgets: a clean test run
 prints hundreds of lines an agent pays to read and learns nothing from,
 while the filter that would quiet it (`| tail`) swallows the run's exit
-status, so a red run comes out green. This module treats "N agents in
+status, so a red run comes out green. And an agent left running unattended
+is either running or killed: a person who wants it to hold a push for a
+minute, pause while they look, or stop at a safe point has no way to say so,
+so they kill it mid-step or let it carry on. This module treats "N agents in
 parallel" as a **designed-for condition** and engineers the collisions away
 up front.
 
@@ -32,12 +35,15 @@ up front.
 > are **banned with a stated rationale**; each worktree's data lives in a
 > **namespace derived from its identity**, created with an owner and an
 > expiry and **reaped by that owner**; worktree **teardown nudges
-> reflection** so a session's lessons reach the learning loop; and **no pull
+> reflection** so a session's lessons reach the learning loop; **no pull
 > request edits a file every pull request edits**: a change's changelog entry
 > and version bump are a **change note** of its own, which a release step
-> writes into the changelog after the merge; and a **gate speaks to an
+> writes into the changelog after the merge; a **gate speaks to an
 > agent** in a condensed voice on green and in full on red, keeping its own
-> exit status, with one named verdict line per part.
+> exit status, with one named verdict line per part; and an agent left
+> running unattended can be reached through a **control channel** of its
+> worktree, whose binding **directives** are a closed set enforced by code
+> that **fails closed**, while free-text notes only advise.
 
 Everything below is one tool-independent statement made mechanical; the
 per-ecosystem wiring lives in [mappings.md](mappings.md).
@@ -145,6 +151,39 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    [`reference/quiet-run/`](reference/quiet-run/) (`quiet-run.ts` +
    self-test); the runners' own flags and the hook shape per runtime are in
    [mappings.md](mappings.md#agent-facing-gate-output).
+9. **A control channel into an unattended agent** — an agent left running
+   on its own (a review loop driving a pull request to convergence for an
+   hour, say) has only two states seen from outside: running, or killed. A
+   person, or the session that started it, who notices a problem needs
+   something in between: *do not push yet*, *pause*, *stop at the next safe
+   point*, *here is context you may want*. The channel is scoped to the
+   agent's worktree: a sender can leave a message on it while the agent
+   runs, and the agent records what it has read, so a sender can tell a
+   message seen from one lost. Its messages come in two kinds, and the split
+   is the point:
+
+   - **Directives** bind. They are a closed set (hold the push, pause, stop,
+     and resume one of those), each enforced by code at named checkpoints,
+     so the agent need not cooperate for one to take effect: a held push is
+     refused immediately before it happens; a pause or a stop takes effect
+     between rounds, never in the middle of one. A directive the agent
+     cannot read counts as in force. A check made before an irreversible
+     action must never read "no hold" from a file it could not parse.
+   - **Notes** advise. They are free text the agent may read and is never
+     obliged to act on. The power to bind is reserved for the closed set, so
+     no note can change which directives are in force. That does not make a
+     note's text safe: an agent that reads it has untrusted text in its
+     context, and treats it as such.
+
+   Adding a directive therefore means adding the code that enforces it at a
+   stated checkpoint, never a sentence the agent is asked to obey. The
+   channel belongs to one worktree, not to the machine: it is a
+   conversation with *this* worktree's agent, so it is kept with that
+   worktree (in its scratch, or in the runner that started the agent;
+   [memory tiers](../M9-tasks-memory/templates/MEMORY-TIERS.md)). Jig's
+   [`drive-pr`](../../plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)
+   skill ships it as the drive mailbox; its layout and the equivalents per
+   agent runner are in [mappings.md](mappings.md#control-channels).
 
 The whole copyable model — all its rules in one place, ready to drop into a docs
 tree — is [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md).
@@ -168,11 +207,13 @@ governs how those files layer), so every agent inherits the rules.
   is allocated on create and reflection is nudged on remove; where worktrees
   share a database, each worktree's **namespace is derived from its
   identity** and created with an owner and an expiry, and a report-first
-  reaper drops the stale ones; and a release
+  reaper drops the stale ones; a release
   step **assembles the change notes after the merge**, one run at a time,
   while a check fails a malformed note or a direct edit to what that step
-  writes; and the quiet form is **scripted**: a summary on green, the full
-  output on red, the gate's own exit status, one verdict line per part.
+  writes; the quiet form is **scripted**: a summary on green, the full
+  output on red, the gate's own exit status, one verdict line per part;
+  and where agents run unattended, each takes a **control channel** whose
+  directives are enforced by code and fail closed.
 - **Strict** — the port allocator and the resource lock each **ship a self-test
   that runs in CI**, so a broken utility fails loudly; the teardown hook's
   reflection nudge is wired to the [M8](../M8-learning-loop/) loop; and the
@@ -207,11 +248,17 @@ governs how those files layer), so every agent inherits the rules.
    [`changelog` skill](../../plugin/skills/changelog/README.md), run the release step
    on the integration branch after each merge, and the branch check on every
    pull request. Convert open pull requests' changelog edits into notes once.
-7. Give each gate command a quiet form: a reporter flag from
+8. Give each gate command a quiet form: a reporter flag from
    [mappings.md](mappings.md#agent-facing-gate-output) or
    [`reference/quiet-run/`](reference/quiet-run/) around it, named in the
    package scripts the instruction file lists; where the agent runtime has a
    command-rewriting hook, wire the wrapper there.
+9. Where an agent runs unattended, give it a control channel: use
+   [`drive-pr`](../../plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)'s
+   drive mailbox for review loops (with its push-hold recheck as the last
+   pre-push hook command), or build the same closed set of directives into
+   your own loop, each checked by code at a named checkpoint and failing
+   closed ([mappings.md](mappings.md#control-channels)).
 
 ## Status
 
@@ -227,7 +274,8 @@ governs how those files layer), so every agent inherits the rules.
 | [`changelog` skill](../../plugin/skills/changelog/README.md) | The release step that writes change notes into a Keep a Changelog or Common Changelog file and moves the version, the branch check that holds pull requests to it, and the status report |
 | [`reference/worktree-namespace/`](reference/worktree-namespace/) | The per-worktree data namespace: the name derived from a worktree's identity, and the reaper's decision (which of one owner's namespaces are expired or orphaned, which were created unlabelled, with production refused) |
 | [`reference/quiet-run/`](reference/quiet-run/) | The quiet-run wrapper: a verdict line and the tail on green, everything on red, the command's own exit status; with its self-test |
-| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools, per-database namespace commands, test-runner quiet flags and the command-rewriting hook per agent runtime |
+| [`drive-pr`'s drive mailbox](../../plugin/skills/drive-pr/SKILL.md#the-drive-mailbox) | The control channel into an unattended review loop: notes, and the `hold-push`, `pause` and `stop` directives with their checkpoints |
+| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools, per-database namespace commands, test-runner quiet flags and the command-rewriting hook per agent runtime, control channels |
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference utility is a Bun script with a self-test. The port allocator
@@ -253,7 +301,10 @@ the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
   The gate-output practices (the quiet form, its self-test, one verdict line
   per part) apply to any repository where an agent runs the gates, single
   checkout or not. The change-note criteria are expected-absent where no
-  changelog or version changes with each pull request.
+  changelog or version changes with each pull request, and the
+  control-channel criterion where no agent runs unattended.
+- **A control channel the agent must obey in free text.** Notes stay
+  advisory by design; see core piece 9.
 
 ### Future
 

@@ -66,6 +66,59 @@ durable outcome has already been written up to the *what* or *how* tier.
 Nothing that another worktree, or a person not working in this one, must
 read stays here.
 
+One worktree often holds more than one agent at a time: a session a person
+operates, the unattended loops it starts, the subagents it delegates to.
+They all see the same scratch directory, so it is where they pass working
+files to each other: a brief for a subagent, a loop's resumption file, a
+[control channel](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+into a running loop. These rules keep that sharing safe. Each file has one
+writer, or is an append-only log whose every append takes a lock, so two
+agents never overwrite each other. And a file's name says what it belongs
+to (the pull request or item), so a later session can tell what is stale.
+Jig's skills keep theirs in `.context/` at the root of the worktree, which
+the repository gitignores.
+
+## The machine-local store
+
+Agents in different worktrees of one machine still share things: a lock
+that runs heavy test suites one at a time, a lease saying which session
+owns a pull request's review, a review loop's per-round records, the brief
+an orchestrating session prepares for the agents it starts in other
+worktrees. None of these fits a tier. The tracker is the wrong place for a
+lock or a thousand-line brief bundle; worktree scratch is invisible to the
+sibling worktrees that need them.
+
+They go in a **machine-local store**: a folder outside every worktree, one
+per clone, at a path the user can move (by default a state directory such
+as `~/.local/state/<tool>/<clone>/`, overridden by an environment
+variable). Every worktree of that clone on that machine reads it; no other
+machine and no person away from it does.
+
+It is not a fourth tier, because it must hold no work state the tracker lacks.
+A tool keeps its own working state there, and anything a decision, a plan or
+a handoff depends on is published on the tracker item first, so what the
+store holds is a working copy. The test is to imagine the folder deleted
+tonight:
+
+- if only a tool would have to rebuild or restart (a lock is re-taken, a
+  brief is regenerated from the tracker items, a review loop starts its
+  next round from the pull request), the machine-local store is the right
+  place;
+- if a person, or a session on another machine, would lose something they
+  need (a plan, a decision and its reason, where the work stopped), it
+  belongs on the tracker item, and at most a copy goes in the store.
+
+A tool can fail this test without meaning to. A review loop that records
+which findings it parked for a person, and why, only in its store keeps a
+decision there: deleting the folder re-opens that work. Until the tool
+publishes such a record where the work lives (a comment on the pull
+request) or can rebuild it from there, treat that file as more than a
+working copy and do not delete it.
+
+A sibling worktree's scratch directory is never a machine-local store,
+however convenient: it is removed with that worktree, and it belongs to the
+agents working there.
+
 ## Handoffs
 
 A handoff is the note one session leaves so another can carry on. When the

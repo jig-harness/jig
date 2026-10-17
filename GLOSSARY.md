@@ -678,11 +678,19 @@ make, use the entry's term instead.
   owner and an expiry, reaped by that owner once the worktree is gone or the
   expiry has passed, and never the production namespace, which carries no
   prefix.
-- **Worktree scratch** — working files an agent keeps in a gitignored
-  directory of its *worktree*. They outlive one session but only a session in
-  that same worktree sees them, so nothing another worktree, or a person not
-  working in it, needs belongs there
+- **Worktree scratch** — working files the agents of one *worktree* keep in
+  a gitignored directory of it (`.context/` in Jig's skills). Every agent in
+  that worktree shares it, each file with one writer or as an append-only log
+  under a lock; they outlive one session but only a session in that same
+  worktree sees them, so nothing another worktree, or a person not working
+  in it, needs belongs there
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+- **Machine-local store** — a folder outside every *worktree*, one per clone
+  and at a path the user can move, where tools keep what the worktrees of one
+  machine share: locks, *leases*, a review loop's records, a working copy of
+  a brief. Not a memory tier: it must hold no work state the tracker lacks,
+  so that deleting it costs a rebuild and loses no decision
+  ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md#the-machine-local-store)).
 - **Handoff** — the note one session leaves so another can carry on: what is
   done, what remains, what was decided, what is uncertain, and the command
   that resumes the work. It goes on the tracker item, never in *worktree
@@ -912,6 +920,17 @@ make, use the entry's term instead.
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died
   expires instead of blocking forever.
+- **Control channel** — the way a person, or the session that started it,
+  reaches an agent running unattended without killing it, kept with that
+  agent's worktree (in its *worktree scratch*, or in the runner that started
+  it). Its **directives**
+  (hold the push, pause, stop, resume) are a closed set, enforced by code at
+  fixed checkpoints, and a directive that cannot be read counts as in force;
+  its **notes** are free text the agent may read and never has to obey.
+  `drive-pr` ships one as the drive mailbox, an inbox file in the
+  worktree scratch that any sender appends to
+  ([M12](modules/M12-parallel-agent-ergonomics/README.md)). *Avoid*: mailbox
+  for the general idea.
 - **Review Arbiter** — the judgment-only agent the *comment-resolution loop*
   hands a contested finding to when the triage rubric cannot settle it. It
   reads the code, rules fix now, reject, won't fix, defer or escalate, and

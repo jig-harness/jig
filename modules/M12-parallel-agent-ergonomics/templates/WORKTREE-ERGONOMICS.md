@@ -145,6 +145,30 @@ the runners' own flags and the shape of a hook that applies the wrapper in
 an agent runtime are in the module's
 **[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md#agent-facing-gate-output)**.
 
+### 9. A control channel into an unattended agent
+
+An agent left running on its own (a review loop driving a pull request for
+an hour, say) is otherwise either running or killed. Give it a channel kept
+with its worktree that a person or the session that started it can write
+to while it runs, in two kinds of message:
+
+- **Directives** bind: a closed set (hold the push, pause, stop, and resume
+  one of those), each checked by code at a named checkpoint, so the agent
+  need not cooperate. A held push is refused immediately before it happens;
+  a pause or a stop takes effect between rounds. A directive that cannot be
+  read counts as in force.
+- **Notes** advise: free text the agent may read and never has to act on.
+  A note cannot change which directives are in force, and its text is
+  untrusted input to the agent that reads it, like any other text it did
+  not write.
+
+A new directive comes with the code that enforces it, never as a sentence
+the agent is asked to obey. The runnable form for review loops is the
+drive mailbox of
+**[Jig's drive-pr skill](https://github.com/docomply/jig/blob/main/plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)**;
+its layout and the alternatives per agent runner are in the module's
+**[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md#control-channels)**.
+
 ## Adopt it
 
 1. Vendor `reference/port-allocator/` and `reference/resource-lock/` (or copy the
@@ -164,3 +188,7 @@ an agent runtime are in the module's
    wrapping it with `quiet-run.ts` or the runner's own flag, name it in the
    instruction file as what agents run, and keep the gate's exit status out
    of any pipe (rule 8).
+8. If an agent runs unattended, give it a control channel (rule 9): the
+   drive mailbox for review loops, with its push-hold recheck as the last
+   pre-push hook command, or the same closed set of directives built into
+   your own loop.
