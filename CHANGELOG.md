@@ -229,6 +229,9 @@ changes are marked **Breaking** and say what a consumer changes.
   page on its left, right and lower edges. A page using the pattern can now
   set the drawing's width and how far it reaches past the window's edge.
 - The roadmap and the plan no longer list the M11 heartbeat as open work; it shipped with the cadence registry and the staleness classifier.
+- FACTORY.md's supply-chain bullet names what M1 covers beside pinned
+  automation: the release cooldown, the install-script allowlist and layered
+  secret scanning.
 
 ### Fixed
 
