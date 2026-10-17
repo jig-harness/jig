@@ -30,9 +30,12 @@ import {
   countsOf,
   horizonOf,
   inputProblems,
+  leftOnPurpose,
   mapRows,
   startHere,
   targetsOf,
+  alternativeOf,
+  examinationChanges,
   trendOf,
   trendSummary,
   uncoveredGaps,
@@ -44,7 +47,9 @@ import {
   ReportSourceError,
   reportFingerprint,
 } from "../scripts/report/source.ts";
-import { cleanEnv, runScript, scratchRepo } from "./helpers.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { namesRepository, remotePath } from "../scripts/report.ts";
+import { cleanEnv, git, runScript, scratchRepo } from "./helpers.ts";
 import {
   COMMIT,
   FIT_PATH,
@@ -59,6 +64,7 @@ import {
   recordText,
   reportInput,
   SOURCE_PATH,
+  withScores,
 } from "./report-fixtures.ts";
 
 function problemsOf(change: (s: Record<string, unknown>) => void): string[] {
@@ -265,14 +271,14 @@ describe("the checks against the record and the fit report", () => {
         }),
       ),
     ).toEqual([
-      "$.profile: a declared profile is the record's, and the record's is not set",
+      "$.profile: a declared profile is the record's, and the record's is not set (the record's profile: is the team's choice; the report source's profile only suggests one while the record has none)",
     ]);
     expect(
       inputProblems(
         reportInput({ record: recordText(["profile: team-standard"]) }),
       ),
     ).toEqual([
-      "$.profile: the record declares team-standard; suggest a profile only when the team has none",
+      '$.profile: the record declares team-standard, so the report source suggests none: leave $.profile out, or repeat it with "source": "declared" (the record\'s profile: is the team\'s choice; the report source\'s profile only suggests one while the record has none)',
     ]);
     expect(
       inputProblems(
@@ -473,6 +479,7 @@ describe("the map", () => {
     expect(gaps).toEqual([
       "M1/ci-runs-gates-on-pr",
       "M0/universal-instruction-file",
+      "M0/instruction-file-stays-small",
       "M0/gates-and-guardrails-listed",
       "M0/glossary-exists",
     ]);
@@ -511,10 +518,11 @@ describe("the map", () => {
   };
 
   test("finds the gaps no recommendation covers, and counts them", () => {
-    // R1 and R2 move three of the four gaps; nothing moves the glossary.
+    // R1 and R2 move three of the five gaps; nothing moves the glossary or
+    // the instruction file's size.
     expect(uncovered(reportInput())).toEqual({
-      keys: ["M0/glossary-exists"],
-      count: 1,
+      keys: ["M0/instruction-file-stays-small", "M0/glossary-exists"],
+      count: 2,
     });
     expect(uncovered(reportInput({ source: noProfile }))).toEqual({
       keys: [],
@@ -528,6 +536,7 @@ describe("the map", () => {
         rec(s, 1).refs = [
           ...(rec(s, 1).refs as string[]),
           "M0/glossary-exists",
+          "M0/instruction-file-stays-small",
         ];
       },
     });
@@ -538,7 +547,9 @@ describe("the map", () => {
         '  - refs: ["M0/glossary-exists"]\n    reason: "Two maintainers share the words."\n    revisit_when: "a newcomer asks what a term means"',
       ),
     });
-    expect(uncovered(declined).keys).toEqual([]);
+    expect(uncovered(declined).keys).toEqual([
+      "M0/instruction-file-stays-small",
+    ]);
   });
 });
 
@@ -770,7 +781,7 @@ describe("the trend", () => {
     expect(words).not.toContain("incomplete");
   });
 
-  test("names a change to or from n/a or incomplete apart from a level that came back", () => {
+  test("names a change to or from n/a, not examined or incomplete apart from a level that came back", () => {
     const input = withHistory([historyRecord()]);
     input.history[0]?.criteria.delete("M2/derived-inventory-exists");
     const trend = trendOf(input);
@@ -780,7 +791,7 @@ describe("the trend", () => {
       "Lite",
     ]);
     expect(trend && trendSummary(trend)).toBe(
-      "1 module changed to or from n/a or incomplete since 2026-04-02.",
+      "1 module changed to or from n/a, not examined or incomplete since 2026-04-02.",
     );
   });
 
@@ -840,7 +851,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toMatch(
-      /What changed \(109\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+      /What changed \(110\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
     );
     // A criterion Jig added after the prior audit's plugin was not assessed then.
     const added = addedAfter("0.14.0");
@@ -876,22 +887,22 @@ describe("the sheet", () => {
   });
 
   test("marks the gap no recommendation covers, counts it and lists it under the recommendations", () => {
-    // The legend's mark and the map's.
+    // The legend's mark and the map's two.
     expect([...html.matchAll(/<span class="c c-absent gap unc"/g)].length).toBe(
-      2,
+      3,
     );
     expect(html).toContain(
       '<span class="vh">glossary-exists: absent; needed for the target, not met yet; a gap no recommendation covers</span>',
     );
     expect(html).toContain(
-      '<li class="unc-n"><a class="big" href="#uncovered">1</a>gap no recommendation covers</li>',
+      '<li class="unc-n"><a class="big" href="#uncovered">2</a>gaps no recommendation covers</li>',
     );
     const recs = html.slice(
       html.indexOf('id="recs"'),
       html.indexOf('id="detail"'),
     );
     expect(recs).toMatch(
-      /<div class="uncov" id="uncovered"><h3 class="sev-h">Not covered by a recommendation \(1\)<\/h3>.*<li><span class="cref"><span class="pw mw"><a class="mchip" href="#d-M0"[^>]*>M0<\/a>.*?<\/span><\/span> <a href="#c-M0-glossary-exists"><code>glossary-exists<\/code><\/a><\/span> /,
+      /<div class="uncov" id="uncovered"><h3 class="sev-h">Not covered by a recommendation \(2\)<\/h3>.*<li><span class="cref"><span class="pw mw"><a class="mchip" href="#d-M0"[^>]*>M0<\/a>.*?<\/span><\/span> <a href="#c-M0-glossary-exists"><code>glossary-exists<\/code><\/a><\/span> /,
     );
     // Before the folded groups, after the recommendations for now.
     expect(recs.indexOf('id="uncovered"')).toBeLessThan(
@@ -906,6 +917,7 @@ describe("the sheet", () => {
           rec(s, 1).refs = [
             ...(rec(s, 1).refs as string[]),
             "M0/glossary-exists",
+            "M0/instruction-file-stays-small",
           ];
         },
       }),
@@ -924,7 +936,7 @@ describe("the sheet", () => {
     );
     expect(sectionIds(page)).toContain("recs");
     expect(page).toContain("The audit makes no recommendation.");
-    expect(page).toContain("Not covered by a recommendation (4)");
+    expect(page).toContain("Not covered by a recommendation (5)");
   });
 
   test("shows the signals to revisit the profile beside it, and only when there are some", () => {
@@ -1010,7 +1022,7 @@ describe("the sheet", () => {
     const rings = [
       ...mapOf(html).matchAll(/<span class="c c-[a-z-]+ gap(?: unc)?">/g),
     ].length;
-    expect(rings).toBe(4);
+    expect(rings).toBe(5);
     expect(renderReportHtml(reportInput({ source: noProfile }))).not.toMatch(
       /<span class="c c-[a-z-]+ gap/,
     );
@@ -1104,7 +1116,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>108</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>109</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -1198,6 +1210,8 @@ describe("the sheet", () => {
     expect(changed({ action: "Something else." })).not.toBe(base);
     expect(changed({ lighter: "A lighter way." })).not.toBe(base);
     expect(changed({ effort: "large" })).not.toBe(base);
+    expect(changed({ status: "applied", applied_in: "#53" })).not.toBe(base);
+    expect(changed({ needs: "host-admin" })).not.toBe(base);
     expect(changed({})).toBe(base);
   });
 
@@ -1278,13 +1292,14 @@ describe("the marks and the chips", () => {
   });
 
   test("draws each rung with its own icon, once in a sprite the marks point at", () => {
-    expect(html.match(/<symbol id="lc-/g)?.length).toBe(6);
+    expect(html.match(/<symbol id="lc-/g)?.length).toBe(7);
     for (const icon of [
       "circle-dashed",
       "file-text",
       "eye",
       "shield-check",
       "circle-slash",
+      "eye-off",
       "circle-question-mark",
     ])
       expect(html).toContain(`<use href="#lc-${icon}"/>`);
@@ -1468,9 +1483,9 @@ describe("the Markdown copy", () => {
   });
 
   test("lists the gaps no recommendation covers, and counts them", () => {
-    expect(md).toContain("- 1 gap no recommendation covers");
+    expect(md).toContain("- 2 gaps no recommendation covers");
     expect(md).toContain(
-      "### Not covered by a recommendation (1)\n\nCriteria within the target that do not meet their bar",
+      "### Not covered by a recommendation (2)\n\nCriteria within the target that do not meet their bar",
     );
     expect(md).toContain("- `M0/glossary-exists`: ");
     expect(md).toMatch(
@@ -1484,11 +1499,12 @@ describe("the Markdown copy", () => {
       [
         "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
         "",
-        "### What changed (109)",
+        "### What changed (110)",
         "",
         "| Module | Criterion | Before → after | Change |",
         "|--------|-----------|----------------|--------|",
         "| M1 Gates enforcement ladder | `gate-set-documented` | absent → convention | Fixed |",
+        "| M0 Instruction architecture | `instruction-file-stays-small` | not scored → absent | Added by Jig |",
         "| M0 Instruction architecture | `load-model-recorded` | not scored → absent | Added by Jig |",
         "| M0 Instruction architecture | `model-pins-are-family-aliases` | not scored → expected absent | Added by Jig |",
         "| M0 Instruction architecture | `context-budget-gated` | not scored → absent | Added by Jig |",
@@ -1868,6 +1884,444 @@ describe("the decisions text", () => {
   });
 });
 
+/** The calibration record with the criteria `keys` scored not-examined. */
+const unexamined = (keys: string[], extra: string[] = []) =>
+  withScores(
+    recordText(extra),
+    Object.fromEntries(keys.map((k) => [k, "not-examined"])),
+  );
+
+/** Solo/Lite does not reach M5, so the audit may leave its criteria unexamined. */
+const M5_KEYS = [
+  "M5/adrs-exist-numbered-from-template",
+  "M5/amendment-discipline-documented",
+  "M5/numbering-gate-enforced",
+];
+
+describe("criteria the audit did not examine", () => {
+  const input = reportInput({ record: unexamined(M5_KEYS) });
+  const t = targetsOf(input);
+  const rows = mapRows(input, t);
+  const m5 = rows.find((r) => r.module.module === "M5");
+
+  test("are never a gap, and the counts say how many were examined", () => {
+    const base = countsOf(
+      reportInput(),
+      mapRows(reportInput(), targetsOf(reportInput())),
+      targetsOf(reportInput()),
+    );
+    const n = countsOf(input, rows, t);
+    expect(n.notExamined).toBe(3);
+    expect(n.applicable).toBe(base.applicable - 3);
+    expect(n.met).toBe(base.met);
+    expect(
+      m5?.cells.filter((c) => c.score === "not-examined" && c.gap),
+    ).toEqual([]);
+  });
+
+  test("show as not examined in the map, the detail and the counts, with their own icon", () => {
+    const page = renderReportHtml(input);
+    expect(page).toContain(
+      '<span class="c c-not-examined"><svg class="ic" aria-hidden="true"><use href="#lc-eye-off"/></svg></span>',
+    );
+    expect(page).toContain(
+      "Not examined: beyond the target, so the audit did not look.",
+    );
+    expect(page).toContain("examined criteria met; ");
+    expect(page).toContain("3 not examined, beyond the target</li>");
+    expect(page).toContain('<span class="sch s-not-examined">');
+    const md = renderReportMarkdown(input);
+    expect(md).toMatch(
+      /- \d+ of \d+ examined criteria met; .*3 not examined, beyond the target/,
+    );
+    expect(md).toContain("**not examined**");
+    // The headline reads as before when every criterion was examined.
+    expect(renderReportHtml(reportInput())).not.toContain(
+      "examined criteria met",
+    );
+  });
+
+  test("a module none of whose criteria were examined attains not examined", () => {
+    const all = reportInput({
+      record: unexamined(
+        input.modules
+          .find((m) => m.module === "M5")
+          ?.criteria.map((c) => c.key) ?? [],
+      ),
+    });
+    const row = mapRows(all, targetsOf(all)).find(
+      (r) => r.module.module === "M5",
+    );
+    expect(row?.attained).toBe("not-examined");
+    expect(renderReportMarkdown(all)).toContain("| not examined |");
+  });
+
+  test("within the target of an explored profile, are neither a gap nor at target", () => {
+    const explored = {
+      ...input,
+      explored: { id: "team-standard", conditions: [] },
+    };
+    const row = mapRows(explored, targetsOf(explored)).find(
+      (r) => r.module.module === "M5",
+    );
+    expect(row?.target).toBe("standard");
+    expect(row?.unexamined).toBe(3);
+    expect(row?.cells.filter((c) => c.gap).map((c) => c.criterion.key)).toEqual(
+      expect.not.arrayContaining(M5_KEYS),
+    );
+    expect(renderReportHtml(explored)).toContain(
+      '<span class="tgt">3 not examined</span>',
+    );
+  });
+
+  test("a change into or out of not examined is set apart, never fixed, regressed or still open", () => {
+    // Before: M5's criteria absent and M2's met; now M5's not examined, and
+    // M5's numbering gate examined where it was not.
+    const prior = withScores(priorRecord(), {
+      "M5/numbering-gate-enforced": "not-examined",
+    });
+    const record = withScores(recordText(), {
+      "M5/adrs-exist-numbered-from-template": "not-examined",
+      "M5/amendment-discipline-documented": "not-examined",
+    });
+    const changed = reportInput({ record, prior });
+    const page = renderReportHtml(changed);
+    const since = page.slice(
+      page.indexOf('id="since"'),
+      page.indexOf('id="recs"'),
+    );
+    expect(since).toContain(
+      '<span class="bd bd-examined">Examined now <b>1</b></span>',
+    );
+    expect(since).toContain(
+      '<span class="bd bd-unexamined">Not examined now <b>2</b></span>',
+    );
+    expect(since).toContain("Examined at one audit only (3)");
+    for (const id of [
+      "adrs-exist-numbered-from-template",
+      "amendment-discipline-documented",
+      "numbering-gate-enforced",
+    ])
+      expect(since).not.toMatch(
+        new RegExp(
+          `<code>${id}</code>(?:(?!</tr>).)*bd-(regressed|fixed|open|beyond)`,
+        ),
+      );
+    const md = renderReportMarkdown(changed);
+    expect(md).toContain("### Examined at one audit only (3)");
+    expect(md).toContain(
+      "| M5 ADR practice | `adrs-exist-numbered-from-template` | absent → not examined | Not examined now |",
+    );
+  });
+
+  test("a criterion examined at neither audit is listed nowhere", () => {
+    const both = withScores(priorRecord(), {
+      "M5/numbering-gate-enforced": "not-examined",
+    });
+    const c = compare(
+      parseRecord(both, "prior.yaml"),
+      parseRecord(
+        withScores(recordText(), {
+          "M5/numbering-gate-enforced": "not-examined",
+        }),
+        "record.yaml",
+      ),
+      input.modules,
+      input.schema,
+      "2026-10-13",
+    );
+    const apart = examinationChanges(c);
+    expect([...apart.examined, ...apart.unexamined]).toEqual([]);
+    const md = renderReportMarkdown(
+      reportInput({
+        prior: both,
+        record: withScores(recordText(), {
+          "M5/numbering-gate-enforced": "not-examined",
+        }),
+      }),
+    );
+    expect(md).not.toContain("`numbering-gate-enforced`");
+  });
+});
+
+describe("gaps left on purpose", () => {
+  const leaving = (s: Record<string, unknown>) => {
+    s.left_on_purpose = [
+      {
+        refs: ["M0/glossary-exists", "M0/instruction-file-stays-small"],
+        reason: "Two maintainers share the words.",
+        revisit_when: "a newcomer asks what a term means",
+      },
+    ];
+  };
+
+  test("are validated: criteria only, each once, with a reason", () => {
+    expect(
+      problemsOf((s) => {
+        s.left_on_purpose = [
+          { refs: ["config/x", "M0/a", "M0/a"], revisit_when: " " },
+          [],
+        ];
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        "$.left_on_purpose[0].refs[0]: must be M<n>/<criterion id>",
+        "$.left_on_purpose[0].refs: names a ref twice",
+        "$.left_on_purpose[0].reason: is required",
+        "$.left_on_purpose[0].revisit_when: must be a non-empty string",
+        "$.left_on_purpose[1]: must be an object",
+      ]),
+    );
+  });
+
+  test("name criteria the record scored, which no recommendation moves, once", () => {
+    expect(
+      inputProblems(
+        reportInput({
+          source: (s) => {
+            s.left_on_purpose = [
+              { refs: ["M0/no-such", "M1/ci-runs-gates-on-pr"], reason: "r" },
+              { refs: ["M0/glossary-exists"], reason: "r" },
+              { refs: ["M0/glossary-exists"], reason: "r" },
+            ];
+          },
+        }),
+      ),
+    ).toEqual([
+      "$.left_on_purpose[0].refs: M0/no-such is not a criterion the record scored",
+      "$.left_on_purpose[0].refs: M1/ci-runs-gates-on-pr is also a recommendation's ref; a gap is either recommended or left on purpose",
+      "$.left_on_purpose[2].refs: M0/glossary-exists is left on purpose twice",
+    ]);
+  });
+
+  test("name gaps only: a met or unexamined criterion is refused", () => {
+    expect(
+      inputProblems(
+        reportInput({
+          record: withScores(recordText(), {
+            "M0/glossary-exists": "convention",
+            "M0/instruction-file-stays-small": "not-examined",
+          }),
+          source: leaving,
+        }),
+      ).filter((p) => p.startsWith("$.left_on_purpose")),
+    ).toEqual([
+      expect.stringMatching(
+        /^\$\.left_on_purpose\[0\]\.refs: M0\/glossary-exists is not a gap against the .+ target/,
+      ),
+      expect.stringMatching(
+        /^\$\.left_on_purpose\[0\]\.refs: M0\/instruction-file-stays-small is not a gap/,
+      ),
+    ]);
+  });
+
+  test("are not uncovered, and the sheet lists them with the reason", () => {
+    const input = reportInput({ source: leaving });
+    const t = targetsOf(input);
+    const rows = mapRows(input, t);
+    expect(uncoveredGaps(rows)).toEqual([]);
+    expect(countsOf(input, rows, t).left).toBe(2);
+    const page = renderReportHtml(input);
+    expect(page).not.toContain('id="uncovered"');
+    expect(page).toContain(
+      '<li><a class="big" href="#left">2</a>gaps left on purpose</li>',
+    );
+    expect(page).toMatch(
+      /<div class="left" id="left"><h3 class="sev-h">Left on purpose \(2\)<\/h3>.*?<code>glossary-exists<\/code>.*?<span class="lr">Two maintainers share the words\.<\/span><span class="lw">Revisit when: a newcomer asks what a term means<\/span>/,
+    );
+    expect(page).toContain("Left on purpose: Two maintainers share the words.");
+    const md = renderReportMarkdown(input);
+    expect(md).toContain(
+      "### Left on purpose (2)\n\nGaps within the target the audit leaves on purpose for now, each with the reason.\n\n- `M0/glossary-exists`, `M0/instruction-file-stays-small`: Two maintainers share the words. Revisit when: a newcomer asks what a term means",
+    );
+    expect(md).toContain("- 2 gaps left on purpose");
+  });
+
+  test("are checked against the source's profile, and an explored one only narrows what the sheet shows", () => {
+    const input = reportInput({
+      source: (s) => {
+        (s.profile as Record<string, unknown>).id = "team-standard";
+        s.left_on_purpose = [
+          { refs: ["M1/precommit-autofix-hooks"], reason: "Hooks wait." },
+          { refs: ["M0/glossary-exists"], reason: "Two maintainers." },
+        ];
+      },
+    });
+    expect(inputProblems(input)).toEqual([]);
+    const explored = {
+      ...input,
+      explored: { id: "solo-lite", conditions: [] },
+    };
+    // Beyond the explored target, M1/precommit-autofix-hooks is no gap there.
+    expect(inputProblems(explored)).toEqual([]);
+    expect(leftOnPurpose(explored)).toEqual([
+      { refs: ["M0/glossary-exists"], reason: "Two maintainers." },
+    ]);
+    const t = targetsOf(explored);
+    expect(countsOf(explored, mapRows(explored, t), t).left).toBe(1);
+    expect(renderReportMarkdown(explored)).toContain("### Left on purpose (1)");
+  });
+});
+
+describe("applied recommendations and those that need an admin", () => {
+  const applying = (s: Record<string, unknown>) => {
+    Object.assign(rec(s, 0), { status: "applied", applied_in: "#53" });
+    rec(s, 2).needs = "host-admin";
+  };
+
+  test("are validated: applied with where, and a known need", () => {
+    expect(
+      problemsOf((s) => {
+        rec(s, 0).status = "done";
+        rec(s, 1).status = "applied";
+        rec(s, 2).applied_in = "abc1234";
+        Object.assign(rec(s, 3), {
+          status: "applied",
+          applied_in: "the main branch",
+        });
+        rec(s, 4).needs = "root";
+      }),
+    ).toEqual([
+      "$.recommendations[0].status: must be applied, or left out while the work is open",
+      "$.recommendations[1].applied_in: is required for an applied recommendation",
+      '$.recommendations[2].applied_in: needs "status": "applied"',
+      "$.recommendations[3].applied_in: must be a pull request's URL or number, or a commit",
+      "$.recommendations[4].needs: must be host-admin",
+    ]);
+    for (const at of [
+      "53",
+      "#53",
+      "1a2b3c4",
+      "https://github.com/example/web/pull/53",
+    ])
+      expect(
+        problemsOf((s) => {
+          Object.assign(rec(s, 0), { status: "applied", applied_in: at });
+        }),
+      ).toEqual([]);
+  });
+
+  test("an applied one shows where, offers no choice, and is not work for now", () => {
+    const input = reportInput({ source: applying });
+    const page = renderReportHtml(input);
+    expect(page).toContain(
+      '<article class="rec done" id="rec-R1"><div class="rec-h"><span class="rid">R1</span>',
+    );
+    expect(page).toContain('<span class="tag tag-done">Applied in #53</span>');
+    expect(page).not.toContain('data-rec="R1"');
+    expect(page).not.toContain('name="c-R1"');
+    const t = targetsOf(input);
+    expect(startHere(input, t).top.map((r) => r.id)).not.toContain("R1");
+    const n = countsOf(input, mapRows(input, t), t);
+    expect(n.applied).toBe(1);
+    expect(page).toContain("; 1 applied since the audit</li>");
+    expect(renderReportMarkdown(input)).toContain(
+      "**Applied in #53** · *Leverage* high",
+    );
+  });
+
+  test("an applied one is never copied as a decision", () => {
+    const input: FeedbackInput = {
+      repository: "example/web",
+      commit: COMMIT,
+      report: "0123456789ab",
+      date: "2026-10-12",
+      recommendations: [
+        { id: "R1", refs: ["M1/a"], status: "applied" },
+        { id: "R2", refs: ["M1/b"] },
+      ],
+    };
+    const picks = {
+      decisions: {
+        R1: { choice: "decline" as const },
+        R2: { choice: "accept" as const },
+      },
+    };
+    expect(feedbackText(input, picks)).toContain("  accept: [R2]");
+    expect(feedbackText(input, picks)).not.toContain("R1");
+    expect(missingFields(input, picks)).toEqual([]);
+  });
+
+  test("one only an admin can apply is marked", () => {
+    const input = reportInput({ source: applying });
+    expect(renderReportHtml(input)).toContain(
+      '<span class="tag tag-admin">Needs a repository admin</span>',
+    );
+    expect(renderReportMarkdown(input)).toContain("· Needs a repository admin");
+  });
+});
+
+describe("another profile", () => {
+  test("explored, measures against it and says so", () => {
+    const input = {
+      ...reportInput(),
+      explored: { id: "team-standard", conditions: ["M12"] },
+    };
+    const t = targetsOf(input);
+    expect(t.profile?.source).toBe("explored");
+    expect(t.now?.get("M12")).toBe("lite");
+    expect(t.now?.get("M5")).toBe("standard");
+    expect(renderReportHtml(input)).toContain(
+      'Team/Standard <span class="pchip p-explored">explored, not recorded</span>',
+    );
+  });
+
+  test("the fit report's alternative shows beside the profile with how many modules it would put at target", () => {
+    const input = reportInput();
+    const withAlt = {
+      ...input,
+      fit: input.fit
+        ? {
+            ...input.fit,
+            profile_facts: {
+              alternative: {
+                id: "team-standard",
+                why: ["Two people committed in the last year."],
+              },
+            },
+          }
+        : null,
+    };
+    const alt = alternativeOf(withAlt, targetsOf(withAlt));
+    expect(alt).toMatchObject({ id: "team-standard", withTarget: 10 });
+    const page = renderReportHtml(withAlt);
+    const summary = page.slice(
+      page.indexOf('id="summary"'),
+      page.indexOf('id="map"'),
+    );
+    expect(summary).toContain(
+      `<div class="alt" id="alternative"><h3>Another profile to consider: Team/Standard</h3><ul><li>Two people committed in the last year.</li></ul><p>Under Team/Standard, ${alt?.atTarget} of 10 modules would be at their target.</p></div>`,
+    );
+    expect(renderReportMarkdown(withAlt)).toContain(
+      `**Another profile to consider: Team/Standard.** Under Team/Standard, ${alt?.atTarget} of 10 modules would be at their target.\n\n- Two people committed in the last year.`,
+    );
+    // Naming the profile already measured against adds nothing.
+    const same = {
+      ...withAlt,
+      fit: withAlt.fit
+        ? {
+            ...withAlt.fit,
+            profile_facts: { alternative: { id: "solo-lite", why: [] } },
+          }
+        : null,
+    };
+    expect(alternativeOf(same, targetsOf(same))).toBeNull();
+    expect(
+      inputProblems({
+        ...withAlt,
+        fit: withAlt.fit
+          ? {
+              ...withAlt.fit,
+              profile_facts: { alternative: { id: "no-such", why: [] } },
+            }
+          : null,
+      }),
+    ).toEqual([
+      "fit: profile_facts.alternative.id no-such is not one of solo-lite, team-standard, regulated-strict",
+    ]);
+  });
+});
+
 describe("the command line", () => {
   const dir = mkdtempSync(join(tmpdir(), "jig-audit-report-"));
   const run = (args: string[]) => runScript("report.ts", args, dir, cleanEnv());
@@ -1888,7 +2342,10 @@ describe("the command line", () => {
     ]);
     expect(full.code).toBe(0);
     // A gap no recommendation covers is a warning; the exit code stays 0.
-    expect(JSON.parse(full.out).uncovered).toEqual(["M0/glossary-exists"]);
+    expect(JSON.parse(full.out).uncovered).toEqual([
+      "M0/instruction-file-stays-small",
+      "M0/glossary-exists",
+    ]);
     expect(full.err).toContain(
       "warning: M0/glossary-exists is within the Solo/Lite target and not met, and no recommendation covers it: ",
     );
@@ -2082,15 +2539,158 @@ describe("the command line", () => {
     );
   });
 
+  /** A scratch repository whose own record audits its HEAD, with `origin` set when given. */
+  function auditedRepo(origin?: string): string {
+    const repo = scratchRepo({ "README.md": "# execa\n" });
+    const head = git(repo, "rev-parse", "HEAD");
+    mkdirSync(join(repo, ".config"));
+    writeFileSync(
+      join(repo, ".config", "jig-audit.yaml"),
+      readFileSync(RECORD_PATH, "utf8").replace(COMMIT, head),
+    );
+    if (origin) git(repo, "remote", "add", "origin", origin);
+    return repo;
+  }
+  const exits = (r: ReturnType<typeof run>, code: number) =>
+    expectSpawnExit({ exitCode: r.code, stdout: r.out, stderr: r.err }, code);
+
   test("reads the repository's own record by default and writes to a new temporary folder", () => {
-    const repo = scratchRepo({
-      ".config/jig-audit.yaml": readFileSync(RECORD_PATH, "utf8"),
-    });
+    const repo = auditedRepo("git@github.com:sindresorhus/execa.git");
     const r = runScript("report.ts", ["render", SOURCE_PATH], repo, cleanEnv());
-    expect(r.code).toBe(0);
+    exits(r, 0);
     const files = JSON.parse(r.out) as { sheet: string; markdown: string };
     expect(files.sheet.startsWith(repo)).toBe(false);
     expect(existsSync(files.sheet) && existsSync(files.markdown)).toBe(true);
+  });
+
+  test("refuses, inside a repository, a record of a commit it does not hold or a source for another repository", () => {
+    const repo = auditedRepo("https://github.com/example/web.git");
+    const inRepo = (args: string[]) =>
+      runScript("report.ts", args, repo, cleanEnv());
+    const foreign = inRepo(["validate", SOURCE_PATH, "--record", RECORD_PATH]);
+    exits(foreign, 2);
+    expect(foreign.err).toContain(
+      `the record audits commit ${COMMIT.slice(0, 12)}, which the repository at `,
+    );
+    // On purpose, another repository's audit renders anywhere.
+    exits(
+      inRepo([
+        "validate",
+        SOURCE_PATH,
+        "--record",
+        RECORD_PATH,
+        "--other-repository",
+      ]),
+      0,
+    );
+    // A prior or older record of another repository is refused too.
+    const prior = inRepo([
+      "render",
+      SOURCE_PATH,
+      "--prior",
+      RECORD_PATH,
+      "--out",
+      join(dir, "x"),
+    ]);
+    exits(prior, 2);
+    expect(prior.err).toContain(
+      `the --prior record audits commit ${COMMIT.slice(0, 12)}, which the repository at `,
+    );
+    const renamed = inRepo(["render", SOURCE_PATH, "--out", join(dir, "x")]);
+    exits(renamed, 2);
+    expect(renamed.err).toContain(
+      "the report source is for sindresorhus/execa, and the repository at ",
+    );
+    expect(renamed.err).toContain(" is example/web (its remotes)");
+    expect(existsSync(join(dir, "x"))).toBe(false);
+    // Another owner's repository of the same name is another repository.
+    git(repo, "remote", "set-url", "origin", "git@github.com:alice/execa.git");
+    exits(
+      inRepo(["validate", SOURCE_PATH, "--record", ".config/jig-audit.yaml"]),
+      2,
+    );
+    // A fork: origin names the fork's owner, another remote the upstream.
+    git(repo, "remote", "set-url", "origin", "git@github.com:alice/web.git");
+    git(
+      repo,
+      "remote",
+      "add",
+      "upstream",
+      "https://github.com/sindresorhus/execa",
+    );
+    exits(
+      inRepo(["validate", SOURCE_PATH, "--record", ".config/jig-audit.yaml"]),
+      0,
+    );
+    git(repo, "remote", "remove", "upstream");
+    // Without a remote the repository's name is unknown, which is no mismatch.
+    git(repo, "remote", "remove", "origin");
+    exits(
+      inRepo(["validate", SOURCE_PATH, "--record", ".config/jig-audit.yaml"]),
+      0,
+    );
+  });
+
+  test("matches a repository name against a remote's whole path", () => {
+    expect(namesRepository("example/web", "example/web")).toBe(true);
+    expect(namesRepository("Example/Web", "example/web")).toBe(true);
+    expect(namesRepository("example/web", "group/example/web")).toBe(true);
+    expect(namesRepository("project/web", "org/project/_git/web")).toBe(true);
+    expect(namesRepository("alice/web", "bob/web")).toBe(false);
+    expect(namesRepository("le/web", "example/web")).toBe(false);
+    expect(namesRepository("group/example/web", "example/web")).toBe(false);
+  });
+
+  test("reads a repository's path from each form of remote URL", () => {
+    expect(remotePath("git@github.com:example/web.git")).toBe("example/web");
+    expect(remotePath("https://github.com/example/web")).toBe("example/web");
+    expect(remotePath("ssh://git@host:22/group/sub/web.git/")).toBe(
+      "group/sub/web",
+    );
+    expect(remotePath("/srv/git/web")).toBeNull();
+  });
+
+  test("explores another profile without changing the record", () => {
+    const base = [
+      "validate",
+      SOURCE_PATH,
+      "--record",
+      RECORD_PATH,
+      "--fit",
+      FIT_PATH,
+    ];
+    const explored = run([
+      ...base,
+      "--profile",
+      "team-standard",
+      "--conditions",
+      "M12, M3",
+    ]);
+    exits(explored, 0);
+    const out = JSON.parse(explored.out);
+    expect(out.explored).toEqual({
+      id: "team-standard",
+      conditions: ["M12", "M3"],
+    });
+    expect(out.uncovered.length).toBeGreaterThan(2);
+    expect(out.uncovered).toContain("M5/amendment-discipline-documented");
+    expect(explored.err).toContain(
+      "is within the Team/Standard target and not met, and no recommendation covers it",
+    );
+    expect(readFileSync(RECORD_PATH, "utf8")).not.toContain("team-standard");
+    for (const [args, says] of [
+      [["--conditions", "M12"], "--conditions needs --profile"],
+      [["--profile", "no-such"], "--profile no-such is not one of"],
+      [
+        ["--profile", "solo-lite", "--conditions", "M12"],
+        "--profile solo-lite: ",
+      ],
+    ] as const) {
+      const r = run([...base, ...args]);
+      exits(r, 2);
+      expect(r.err).toContain(says);
+    }
+    exits(run(["validate", SOURCE_PATH, "--profile", "solo-lite"]), 2);
   });
 });
 

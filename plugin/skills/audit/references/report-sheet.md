@@ -5,7 +5,7 @@ from. It is rendered from two things: the audit record (the scores, the
 evidence, the profile and the declined recommendations) and a **report
 source**, one JSON file the agent writes after scoring. The report source
 holds only what the record does not: the summary, the recommendations, the
-drift found, what was examined and the terms used. `report.ts render` writes
+gaps left on purpose, the drift found, what was examined and the terms used. `report.ts render` writes
 the sheet and a Markdown copy with the same content.
 
 The worked example is the execa calibration run: the report source at
@@ -13,7 +13,8 @@ The worked example is the execa calibration run: the report source at
 record `<skill-dir>/calibration/2026-10-12-execa.jig-audit.yaml` and the
 configuration-fit report `__tests__/fixtures/report/execa.fit.json`.
 `<skill-dir>` is the directory of the `audit` skill (`${CLAUDE_SKILL_DIR}` in
-`SKILL.md`).
+`SKILL.md`). Render it from outside any git repository: inside one, `report.ts`
+refuses a record of a commit that repository does not hold.
 
 ## Contents
 
@@ -51,6 +52,22 @@ configuration-fit report `__tests__/fixtures/report/execa.fit.json`.
     "leverage": "high",
     "effort": "small",
     "quick_win": true
+  }, {
+    "id": "R2",
+    "refs": ["M1/gate-set-documented"],
+    "title": "Name the gate command in the instruction file",
+    "finding": "What was true at the audited commit.",
+    "action": "The step that was taken.",
+    "evidence": ["AGENTS.md:1"],
+    "leverage": "medium",
+    "effort": "small",
+    "status": "applied",
+    "applied_in": "https://github.com/example/web/pull/53"
+  }],
+  "left_on_purpose": [{
+    "refs": ["M0/glossary-exists"],
+    "reason": "Two maintainers share the words.",
+    "revisit_when": "a newcomer asks what a term means"
   }],
   "drift": [{ "text": "The README says X; CI does Y.", "evidence": ["README.md:12", ".github/workflows/ci.yml:8"] }],
   "terms": [{ "term": "Merge gate", "meaning": "A check that must pass before a pull request can merge." }]
@@ -60,8 +77,12 @@ configuration-fit report `__tests__/fixtures/report/execa.fit.json`.
 Required: `v` (1), `repository.name` (one line), `summary`, `examined.read`
 (at least one entry), `stack` (at least one row) and `recommendations` (it may
 be empty). Optional: `repository.url` (https), `profile`,
-`examined.unchecked`, `drift` and `terms`; leave a key out rather than empty.
-An unknown key is an error.
+`examined.unchecked`, `left_on_purpose`, `drift` and `terms`; leave a key out
+rather than empty. An unknown key is an error.
+
+- **`repository.name`** is the repository's path on its host, such as
+  `example/web`. Run inside the repository, `report.ts` refuses a source
+  whose name is not the one one of its remotes names.
 
 - **Do not repeat the record.** Scores, levels, evidence per criterion and
   configuration findings come from the record and the fit report; the sheet
@@ -89,6 +110,20 @@ An unknown key is an error.
   gate. The sheet offers it as its own choice.
 - **`evidence`** lists file paths, or the query that found nothing, at least
   one.
+- **`status: "applied"`**, with **`applied_in`**, marks a recommendation
+  already done after the audited commit, such as one applied in the same run
+  that audited. `applied_in` is required with it: the pull request's URL
+  (https) or number (`53` or `#53`), or the commit (7 to 40 hex digits). The
+  record still scores the audited commit, so the criteria it moves still read
+  as before; the sheet shows the card as done ("Applied in #53"), leaves it
+  out of Start here and the counts of work, and offers no choice on it. The
+  decisions block never names it, and `record.ts apply-feedback` refuses a
+  block that decides one. Leave `status` out while the work is open.
+- **`needs: "host-admin"`** marks a recommendation only someone who
+  administers the repository on its host can apply, such as a branch
+  protection rule. The sheet tags it *Needs a repository admin*. An
+  unattended run, which applies recommendations without a person, skips it
+  and leaves it for the team.
 - A recommendation that names any ref the record declines and still holds is
   refused: leave that work out until its date passes (`record.ts compare`
   says which entries are due) or its condition holds, which you record by
@@ -107,15 +142,36 @@ in the map and the module detail, lists it under the recommendations as *Not
 covered by a recommendation* with the criterion's statement, and counts it in
 the summary. `report.ts validate --record` prints each one as a warning,
 without changing the exit code. Answer each with a recommendation, or leave
-it deliberately and say why in the summary.
+it on purpose in `left_on_purpose`.
+
+**`left_on_purpose`** lists the gaps the audit leaves for now: each entry has
+`refs` (criteria as `M<n>/<id>`, at least one), a `reason`, and optionally
+`revisit_when`, the condition for looking again. A gap it names is not
+uncovered: `validate` does not warn of it, and the sheet lists it under the
+recommendations as *Left on purpose* with the reason. Each ref must be a
+criterion the record scored that is a gap against the record's profile (the
+one it declares, else the report source's `profile`): within its target,
+examined, and short of its bar. It is named once, and not also a
+recommendation's ref: a gap is either recommended or left. An explored
+profile (`--profile`, below) does not change what is valid here; it only
+filters the sheet, which shows the entries that are gaps under it. Unlike a decline, which records the
+team's decision in the record, it is the auditor's choice for this report.
+
+A criterion the record scores **`not-examined`** (beyond the profile's
+target, left unexamined by `score.ts --draft --profile`) is never a gap and
+never uncovered.
 
 ## The profile
 
 The profile is the team's dial: the sheet measures against it and never
 presents a practice beyond it as a shortfall.
 
+- **Which file holds the profile.** The record's `profile:` is the team's
+  choice; the report source's `profile` only suggests one while the record
+  has none. A draft record's `profile:` stays null until the team chooses.
 - When the record declares a profile (`profile:`), the source may leave
-  `profile` out, or repeat it with `"source": "declared"`.
+  `profile` out, or repeat it with `"source": "declared"`; a suggested one is
+  refused.
 - When it does not, the source may suggest one with `"source": "suggested"`
   and a `why` drawn from facts about the repository: contributors, a
   regulated domain, deploy environments.
@@ -128,6 +184,20 @@ presents a practice beyond it as a shortfall.
   neutral tone and never as a finding; the profile stays the team's choice.
   To give signals for a declared profile, repeat it with
   `"source": "declared"`.
+
+When the fit report's profile facts name an **alternative profile**
+(`profile_facts.alternative`, with its `id` and a list of reasons, `why`)
+other than the one the sheet measures against, the sheet shows it beside the
+profile: *Another profile to consider*, its reasons, and how many modules
+would be at their target under it. It helps the team choose the dial; it is
+never a finding.
+
+To see the targets and gaps another profile would set before anyone chooses
+it, give `--profile <id>` to `validate` or `render`, with `--conditions
+M3,M12` for the conditional targets that apply under it (none when left
+out). Neither file changes: the sheet measures against that profile and
+labels it *explored, not recorded*, and `validate` warns of the gaps
+uncovered under it.
 
 Each recommendation is placed by its refs:
 
@@ -147,9 +217,21 @@ Run from the repository under audit:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts" --json > <scratch>/fit.json
-bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" validate <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json
-bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--prior .config/jig-audit.yaml [--history <record>]…] [--out <dir>]
+bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" validate <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--profile <id> [--conditions M3,M12]]
+bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--profile <id> [--conditions M3,M12]] [--prior .config/jig-audit.yaml [--history <record>]…] [--out <dir>]
 ```
+
+Run inside a git repository, both commands refuse (exit 2) a record whose
+`commit` that repository does not hold, and a source whose
+`repository.name` names no repository its remotes name. The whole name is
+compared with each remote's path, owner included and ignoring letter case,
+so `alice/web` is not `bob/web`; a host that puts more before the owner
+(`group/sub/web`) still matches on the trailing parts. A fork matches its
+upstream's name only when one of its remotes names that upstream; without a
+remote nothing is compared. Either refusal
+means a file was written for another repository, as when two sessions share
+a scratch folder; `--other-repository` renders another repository's audit on
+purpose.
 
 - `--record` defaults to `.config/jig-audit.yaml`; during an audit, name the
   completed draft. The record must be complete (`record.ts check`).
@@ -179,6 +261,11 @@ bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json --re
 - `--out` defaults to a new temporary folder, because the sheet names paths
   and settings a team may not want published. It writes
   `jig-audit-<date>.html` and `jig-audit-<date>.md` and prints their paths.
+- `--profile <id>` measures against that profile in place of the record's,
+  and `--conditions` (only with `--profile`) names the conditional targets
+  that apply under it, comma-separated; both are checked as the record's
+  own would be. `validate` needs `--record` for them, and its output then
+  names the explored profile (`explored`).
 - `validate` without `--record` checks the source alone; with it, it also
   warns of every uncovered gap and lists them in its output.
 - `extract <sheet.html>` prints the source, record, fit report, prior record
@@ -186,21 +273,24 @@ bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json --re
   from the file.
 
 Exit codes: 0 done; 1 the source was refused, with every problem listed;
-2 usage, or an input that cannot be read.
+2 usage, an input that cannot be read, or a record or source of another
+repository.
 
 ## What the sheet shows
 
 In reading order: the masthead (repository, date, commit, plugin version,
 profile and heading-to profile) with, on a first audit, a welcome that
 points to the guide, and on a re-audit a link to how to read the sheet; the
-summary with the counts and any signals to revisit the profile; the
+summary with the counts, any alternative profile and any signals to revisit
+the profile; the
 maturity map (one row per module in adoption order, one mark per criterion,
 its rung's icon on its rung's colour, the target and the heading-to target
 as brackets, an amber ring only on a criterion within the target that is
 not met yet, and an amber dot on the ring when no recommendation covers
 it); Start here; the changes since the last audit, as tables with a
 coloured badge per kind of change and the counts as badges above them,
-then the trend; the recommendations with the uncovered gaps; every
+then the trend; the recommendations with the uncovered gaps and the gaps
+left on purpose; every
 criterion with its evidence and whether a probe or the agent decided it;
 the configuration fit with the starter configuration when the fit report
 has one; the drift; what was examined; the terms; and the guide.
@@ -216,7 +306,17 @@ as colour:
 | advisory | an eye |
 | mechanical | a shield with a check |
 | expected absent | a struck-through circle |
+| not examined | a struck-through eye |
 | not scored | a question mark |
+
+When the record leaves criteria **not examined**, the counts say how many
+criteria were examined and how many of those are met ("21 of 40 examined
+criteria met; 89 not examined, beyond the target"), so unexamined criteria
+never read as failures. A module none of whose criteria were examined
+attains *not examined*. In the comparison with the last audit, a criterion
+examined at one audit only is listed apart, under *Examined at one audit
+only* (examined now, or not examined now), never as fixed, regressed or still
+open; one examined at neither is not listed.
 
 Each mark in the map links to its criterion in Module detail and has a
 **popover**, shown on hover and on keyboard focus: the criterion's statement,
@@ -251,7 +351,8 @@ accessibility standard's minimum contrast.
 ## The decisions block
 
 Each recommendation card offers **Accept**, **Take the lighter option**
-(where it has one), **Refine**, **Decline** and **This is wrong**. Decline
+(where it has one), **Refine**, **Decline** and **This is wrong**; an applied
+one offers none. Decline
 needs a reason and a condition for revisiting; Refine and This is wrong need a
 note. Beside the profile selector, under the maturity map, the sheet lists
 the conditional targets of the profile that will apply (the one the reader
@@ -287,7 +388,9 @@ audit_feedback:
 ```
 
 `profile:` appears only when the reader chose a profile other than the
-record's. `profile_conditions:` appears when the reader's set differs from
+record's. `apply-feedback` refuses a profile, or conditional targets, whose
+target reaches criteria the record leaves not examined, and names them:
+score those criteria in the record first, then record the block again. `profile_conditions:` appears when the reader's set differs from
 the record's, or when the reader chose another profile and some of its
 conditional targets apply; it lists every module whose conditional target
 applies, so `[]` says none do. `apply-feedback` refuses a module that is not

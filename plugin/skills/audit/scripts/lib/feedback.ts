@@ -34,12 +34,14 @@
  * (and, for a sheet, the commit of the record it was rendered with), the
  * report's recommendation ids and each one's refs, the criteria the record
  * scored, and the conditional targets of the profile that will apply (or of
- * the record's heading-to profile, as the record itself allows). A block
- * written for another audit changes nothing.
+ * the record's heading-to profile, as the record itself allows). A
+ * recommendation the report marks applied takes no decision, so a block
+ * that decides one is refused. A block written for another audit changes
+ * nothing.
  */
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { load } from "../../../../shared/yaml.ts";
-import type { Module, Score } from "./criteria.ts";
+import { type Module, NOT_EXAMINED, type Score } from "./criteria.ts";
 import { extractEmbedded } from "../../../decide/scripts/sheet-kit/html.ts";
 import { DATA_BLOCK_ID, parseEmbedded } from "../report/data.ts";
 import { LIGHTER_PREFIX } from "../report/feedback-text.ts";
@@ -49,7 +51,7 @@ import {
   type Recommendation as SourceRecommendation,
   reportFingerprint,
 } from "../report/source.ts";
-import type { Profiles } from "./profiles.ts";
+import { beyondTarget, examinedTargets, type Profiles } from "./profiles.ts";
 import {
   type AuditRecord,
   checkProfile,
@@ -327,7 +329,15 @@ export function parseFeedback(source: string): Feedback {
 /** A recommendation, as the report source states it. */
 export type Recommendation = Pick<
   SourceRecommendation,
-  "id" | "refs" | "title" | "action" | "leverage" | "effort" | "quick_win"
+  | "id"
+  | "refs"
+  | "title"
+  | "action"
+  | "leverage"
+  | "effort"
+  | "quick_win"
+  | "status"
+  | "applied_in"
 >;
 
 /** What feedback is checked against in a report, and the drift it lists first. */
@@ -452,6 +462,21 @@ function refsProblems(
   });
 }
 
+/** A decision on a recommendation already applied: it is done, so there is nothing to decide. */
+function appliedChoices(
+  feedback: Feedback,
+  byId: ReadonlyMap<string, Recommendation>,
+): string[] {
+  return choiceIds(feedback).flatMap((id) => {
+    const rec = byId.get(id);
+    return rec?.status === "applied"
+      ? [
+          `${id}: the report marks it applied in ${rec.applied_in ?? "an earlier change"}; it takes no decision`,
+        ]
+      : [];
+  });
+}
+
 /** A decline naming a criterion this plugin version does not have. */
 function staleDeclines(
   feedback: Feedback,
@@ -512,6 +537,41 @@ function profileProblems(feedback: Feedback, ctx: PlanContext): string[] {
   );
 }
 
+/**
+ * The criteria the audit left unexamined that the profile the block chooses
+ * would need scored: within its target, a condition's or the heading-to
+ * profile's. The record cannot hold that profile until they are scored.
+ */
+function unexaminedForProfile(feedback: Feedback, ctx: PlanContext): string[] {
+  const { profile, profile_conditions } = feedback;
+  if (profile === undefined && profile_conditions === undefined) return [];
+  const id = profile ?? ctx.record.profile;
+  const chosen = id === undefined ? undefined : ctx.profiles.profiles.get(id);
+  if (!chosen) return [];
+  const heading =
+    ctx.record.heading_to === undefined
+      ? undefined
+      : ctx.profiles.profiles.get(ctx.record.heading_to);
+  const targets = examinedTargets(
+    chosen,
+    profile_conditions ?? ctx.record.profile_conditions,
+    heading,
+  );
+  const keys = ctx.modules
+    .flatMap((m) => m.criteria)
+    .filter(
+      (c) =>
+        ctx.record.criteria.get(c.key)?.score === NOT_EXAMINED &&
+        !beyondTarget(c, targets),
+    )
+    .map((c) => c.key);
+  return keys.length === 0
+    ? []
+    : [
+        `${chosen.name}${profile_conditions?.length ? ` with ${profile_conditions.join(", ")}` : ""} reaches criteria the audit did not examine: ${keys.join(", ")}; score them in the record first, then record the block again`,
+      ];
+}
+
 /** A score flag on a criterion the record does not hold. */
 function unknownScores(feedback: Feedback, record: AuditRecord): string[] {
   return feedback.scores
@@ -550,11 +610,13 @@ function refusals(
     ...choiceIds(feedback)
       .filter((id) => !byId.has(id))
       .map((id) => `${id}: the report has no such recommendation`),
+    ...appliedChoices(feedback, byId),
     ...refsProblems(feedback, byId),
     ...staleDeclines(feedback, ctx.modules),
     ...conflictingDeclines(feedback),
     ...heldWork(feedback, ctx),
     ...profileProblems(feedback, ctx),
+    ...unexaminedForProfile(feedback, ctx),
     ...unknownScores(feedback, record),
   ];
 }

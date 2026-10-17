@@ -17,6 +17,8 @@ export const LABEL = {
   shape: "Shape",
   declared: "declared",
   suggested: "suggested",
+  /** A profile given to `report.ts --profile`: explored, not the team's choice. */
+  explored: "explored, not recorded",
   noProfile: "none declared",
   headingTo: "Heading to",
   whySuggested: "Why this profile:",
@@ -24,20 +26,32 @@ export const LABEL = {
   signalsIntro:
     "Facts that suggest the project may have grown beyond this profile. The profile is the team's to choose; these are reasons to look at it again, not findings.",
   signalsLink: "worth revisiting",
+  alternativeHead: "Another profile to consider: {profile}",
+  alternativeAtTarget:
+    "Under {profile}, {n} of {m} modules would be at their target.",
 
   inShort: "In short",
   criteriaMet: "criteria met",
+  examinedMet: "examined criteria met",
+  notExaminedCount: "not examined, beyond the target",
   ofWord: "of",
   recommendations: "Recommendations",
   recommendationsNow: "recommendations for now",
   quickWins: "quick wins",
   quickWin: "Quick win",
+  appliedIn: "Applied in",
+  needs: { "host-admin": "Needs a repository admin" },
   modulesAtTarget: "modules at their target",
   expectedAbsentCount: "do not apply to this shape",
   uncoveredCount: {
     one: "gap no recommendation covers",
     many: "gaps no recommendation covers",
   },
+  leftCount: {
+    one: "gap left on purpose",
+    many: "gaps left on purpose",
+  },
+  appliedCount: "applied since the audit",
 
   map: "Maturity map",
   mapIntro: "One row per module, in the order to adopt them.",
@@ -49,6 +63,7 @@ export const LABEL = {
   noTarget: "no target",
   atTarget: "at target",
   toGo: "not yet met",
+  notExaminedHere: "not examined",
   notNeeded: "not needed for this profile",
   criteria: "Criteria",
   notApplicable: "Does not apply to this repository's shape:",
@@ -57,6 +72,7 @@ export const LABEL = {
   attained: {
     none: "none",
     "n/a": "n/a",
+    "not-examined": "not examined",
     lite: "Lite",
     standard: "Standard",
     strict: "Strict",
@@ -68,6 +84,10 @@ export const LABEL = {
   uncoveredHead: "Not covered by a recommendation",
   uncoveredIntro:
     "Criteria within the target that do not meet their bar, and that no recommendation moves. Add a recommendation for each, or leave it deliberately and say why.",
+  leftHead: "Left on purpose",
+  leftIntro:
+    "Gaps within the target the audit leaves on purpose for now, each with the reason.",
+  leftLegend: "left on purpose",
 
   startHere: "Start here",
   topMoves: "The moves that matter most",
@@ -85,6 +105,12 @@ export const LABEL = {
     reclassified: "Reclassified",
     removed: "Removed",
   },
+  /** A criterion examined at one of the two audits only: neither fixed nor regressed. */
+  examination: {
+    examined: "Examined now",
+    unexamined: "Not examined now",
+  },
+  examinationHead: "Examined at one audit only",
   stillOpen: "still open",
   changedHead: "What changed",
   change: "Change",
@@ -120,7 +146,7 @@ export const LABEL = {
   moduleCount: { one: "module", many: "modules" },
   movedUp: "moved up",
   movedDown: "moved down",
-  movedOther: "changed to or from n/a or incomplete",
+  movedOther: "changed to or from n/a, not examined or incomplete",
   andWord: "and",
   sinceWord: "since",
   trendNone: "No module's level changed since {date}.",
@@ -209,6 +235,7 @@ export const LABEL = {
     advisory: "advisory",
     mechanical: "mechanical",
     "expected-absent": "expected absent",
+    "not-examined": "not examined",
   },
   rungMeaning: {
     absent: "not there yet",
@@ -216,6 +243,7 @@ export const LABEL = {
     advisory: "a tool reports it but does not block",
     mechanical: "a check blocks the change",
     "expected-absent": "does not apply to this shape",
+    "not-examined": "the audit did not look: past what the profile asks",
   },
   notScoredMeaning: "no score in the record",
 } as const;
@@ -301,6 +329,8 @@ export const SHEET_LABEL = {
     met: "Meets its bar.",
     notMet: "Does not meet its bar yet.",
     na: "Does not apply to this repository's shape.",
+    notExamined: "Not examined: beyond the target, so the audit did not look.",
+    left: "Left on purpose:",
   },
   sinceCompared: "Compared with the audit of {date} (plugin {version}).",
   noScore: "none",

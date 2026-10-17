@@ -9,10 +9,18 @@ Use a **full clone** of the target — several survey questions (drift over
 time, review practice, supersession) are unanswerable from a shallow
 snapshot. Run the survey prompts in
 [survey-prompts/](survey-prompts/) as **read-only** surveys against the target
-repo, each with the shared preamble prepended. Run them in parallel where the
-agent environment permits safe delegation; otherwise run them sequentially
-without weakening their evidence requirements. Each survey returns a
-structured synthesis with file-path evidence — never file dumps. Add a fifth,
+repo, each with the shared preamble prepended, and give each the host facts
+the audit already read (`fit.json`) and the draft record, so no survey
+queries the host again or scores what a probe decided. Run them in parallel
+where the agent environment permits safe delegation; otherwise run them
+sequentially without weakening their evidence requirements. A repository of
+under about 300 tracked files needs no delegation: the auditor surveys it
+inline, prompt by prompt. Each survey returns a structured synthesis with
+file-path evidence — never file dumps — and an answer for each open
+criterion of its own modules, one line each in the format the skill's
+`record.ts fill` reads (`M1/ci-runs-gates-on-pr: mechanical | evidence`); the
+auditor writes them into the record with `record.ts fill`, or `record.ts
+merge` for copies of the draft that subagents filled. Add a fifth,
 project-specific survey if the target has a large surface the four don't cover
 (e.g., a data platform).
 
@@ -52,16 +60,24 @@ replacement.
 
 For each Jig module, grade the target:
 
-- **absent** — the practice doesn't exist (mark "expected-absent" where the
-  repo's shape makes the practice inapplicable — e.g. no deploy pipeline in
-  a library);
+- **absent** — the practice doesn't exist (mark "expected-absent" only where
+  the repo's shape rules the practice out for good — e.g. no deploy pipeline
+  in a library; a practice that waits on another module's practice not yet
+  adopted, such as a CI check in a repository without CI, is absent);
 - **convention-only** — practiced or documented, but nothing mechanical fails
   when it's violated;
 - **advisory** — a check runs mechanically but cannot block (non-blocking CI
-  step, fail-off coverage upload); score it with its promotion condition,
-  or the lack of one;
-- **mechanically enforced** — hooks/CI/review gates catch violations (note
-  which rung, and whether CI is the authority).
+  step, fail-off coverage upload, a check that runs only in a local git hook
+  anyone can skip); score it with its promotion condition, or the lack of
+  one;
+- **mechanically enforced** — CI, a required check or a review gate catches
+  violations for every change (note which rung, and whether CI is the
+  authority).
+
+The scoring rules for the cases that recur (part of a scope covered, a host
+plan that cannot require checks, a hook configured but not installed, a
+criterion left `not-examined` beyond the profile's target) are in the
+[criteria format](../criteria/README.md#scoring).
 
 Every module carries [criteria](../criteria/README.md), so score
 **every** module by its criteria individually. The skill's `score.ts --draft`
@@ -70,14 +86,35 @@ bar, where a criterion whose probe found its precondition missing is already
 scored `absent` with the search as evidence, marked `probe: `. Grade every
 other entry against the target with a file-path evidence note. A probe's
 `absent` stands unless you find what the probe could not see; then score it
-and write your own evidence in place of the probe's.
+and write your own evidence in place of the probe's. An entry commented
+`# probe capped: …; at most <rung>` lacks only what a higher rung needs
+(CI, for a check CI would enforce): score what you observe, no higher than
+that rung, which its `at_most` field holds the record to.
 Qualitative grading is the fallback only for a criterion the target's shape
-makes inapplicable (score it `expected-absent`). Also record
-**drift findings** — places
-where the repo's stated practices contradict its actual state (stale
-instruction files, docs describing retired tools, dangling paths). Drift is a
-first-class result, and often the most actionable one: a contradiction is
-cheap to fix and misleads every agent session until it is.
+makes inapplicable (score it `expected-absent`).
+
+Where a generator has a documented read-only check mode (a type generator's
+`--check`, `tsc --noEmit`, a frozen-lockfile install check, or
+`git diff --exit-code` after running the generator in a scratch copy of the
+checkout), run it: its result is evidence for the M2 freshness criteria, and
+a failing run is a stale file the survey alone would only have called
+unchecked. A check that prints nothing on success is reported with its exit
+status: silence alone cannot be told from a check that did not run.
+
+Before accepting a survey's scores, verify a sample against the files
+yourself: every `mechanical` score, and one claim per module. A sample that
+fails sends the module's answers back for re-reading.
+
+Then run the **drift pass**, once, across all modules — drift is
+cross-cutting, and surveys that each look for it report the same
+contradiction several times. Drift findings are places where the repo's
+stated practices contradict its actual state: stale instruction files, docs
+describing retired tools, dangling paths, and the repository host's settings
+compared with what the repository's own documents say about them (a document
+saying administrators are bound by branch protection while the host says
+they are not). Drift is a first-class result, and often the most actionable
+one: a contradiction is cheap to fix and misleads every agent session until
+it is.
 
 ## 4. Synthesize the report
 

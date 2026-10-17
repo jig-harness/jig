@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,21 +8,33 @@ import {
   type Module,
   parseModule,
 } from "../scripts/lib/criteria.ts";
+import { loadProfiles } from "../scripts/lib/profiles.ts";
 import {
   type AuditRecord,
   checkRecord,
   compare,
   declinedData,
   declinedEntryLines,
+  evidencePaths,
   parseRecord,
+  renderComparison,
   renderPortfolio,
 } from "../scripts/lib/record.ts";
 import { parseSchema } from "../scripts/lib/schema.ts";
 import { recordData } from "../scripts/report/data.ts";
-import { runScript } from "./helpers.ts";
+import { commitFiles, git, runScript, scratchRepo } from "./helpers.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "jig-record-"));
-afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+const repos: string[] = [];
+afterAll(() => {
+  rmSync(scratch, { recursive: true, force: true });
+  for (const r of repos) rmSync(r, { recursive: true, force: true });
+});
+const repo = (files: Record<string, string>) => {
+  const r = scratchRepo(files);
+  repos.push(r);
+  return r;
+};
 
 const modules: Module[] = [
   parseModule(
@@ -444,4 +456,570 @@ test("portfolio marks what meets the bar", () => {
   );
   expect(out).toContain("| fixed | convention | convention ✓ | convention ✓ |");
   expect(out).toContain("| open | mechanical | advisory | advisory |");
+});
+
+describe("a criterion left not examined", () => {
+  const m = [
+    parseModule(
+      "module: M1\nname: g\npurpose: P.\ncriteria:\n  - { id: a, level: lite, requires: mechanical, statement: A., observe: [a] }\n  - { id: b, level: lite, requires: mechanical, statement: B., observe: [b] }\n  - { id: c, level: lite, requires: mechanical, statement: C., observe: [c] }\n  - { id: d, level: lite, requires: mechanical, statement: D., observe: [d] }\n",
+      "M1.yaml",
+    ),
+    parseModule(
+      "module: M2\nname: h\npurpose: P.\ncriteria:\n  - { id: a, level: lite, requires: mechanical, statement: A., observe: [a] }\n",
+      "M2.yaml",
+    ),
+  ];
+  const prior = record({
+    "M1/a": "not-examined",
+    "M1/b": "mechanical",
+    "M1/c": "not-examined",
+    "M1/d": "absent",
+    "M2/a": "not-examined",
+  });
+  const current = record({
+    "M1/a": "mechanical",
+    "M1/b": "not-examined",
+    "M1/c": "not-examined",
+    "M1/d": "not-examined",
+    "M2/a": "not-examined",
+  });
+  const result = compare(prior, current, m, schema, "2026-10-12");
+
+  test("is examined since, no longer examined, or unexamined both times: never fixed, regressed or new", () => {
+    expect(result.criteria.map((c) => [c.key, c.change])).toEqual([
+      ["M1/a", "examined-since"],
+      ["M1/b", "no-longer-examined"],
+      ["M1/c", "not-examined"],
+      ["M1/d", "no-longer-examined"],
+      ["M2/a", "not-examined"],
+    ]);
+  });
+
+  test("is reported in groups of its own, and a module none of whose criteria were examined says so", () => {
+    const text = renderComparison(result, prior);
+    expect(text).toContain(
+      "## examined since (1)\n\n- M1/a: not-examined → mechanical",
+    );
+    expect(text).toContain("## no longer examined (2)");
+    expect(text).toContain("Not examined: 2.");
+    expect(text).not.toContain("## fixed");
+    expect(text).not.toContain("## regressed");
+    expect(text).toContain("| M2 h | not examined | not examined |");
+  });
+
+  describe("under a declared profile", () => {
+    const real = loadModules();
+    const profiles = loadProfiles(real);
+    const all = real.flatMap((x) => x.criteria);
+    const scored = (
+      header: string,
+      unexamined: readonly string[],
+    ): AuditRecord =>
+      parseRecord(
+        `version: 1\nplugin_version: 0.13.0\ndate: 2026-01-02\ncommit: abc\n${header}criteria:\n${all
+          .map((c) =>
+            unexamined.includes(c.key)
+              ? `  ${c.key}: { score: not-examined, evidence: "not examined: beyond the target" }`
+              : `  ${c.key}: { score: absent, evidence: "none" }`,
+          )
+          .join("\n")}\n`,
+        "r.yaml",
+      );
+    const problems = (header: string, unexamined: readonly string[]) =>
+      checkRecord(scored(header, unexamined), real, profiles);
+
+    test("may leave a criterion beyond its target unexamined, and none within", () => {
+      expect(
+        problems("profile: solo-lite\n", ["M0/per-directory-instructions"]),
+      ).toEqual([]);
+      expect(
+        problems("profile: solo-lite\n", ["M0/universal-instruction-file"]),
+      ).toEqual([
+        "M0/universal-instruction-file: not examined, but within the Solo/Lite target (lite): score it",
+      ]);
+      // Without a declared profile, any criterion may be left.
+      expect(problems("", ["M0/universal-instruction-file"])).toEqual([]);
+    });
+
+    test("counts a condition and the heading-to profile's targets", () => {
+      const port = "M12/branch-reuse-and-footgun-bans-written";
+      expect(problems("profile: team-standard\n", [port])).toEqual([]);
+      expect(
+        problems("profile: team-standard\nprofile_conditions: [M12]\n", [port]),
+      ).toHaveLength(1);
+      const owned = "M0/instruction-set-owned";
+      expect(problems("profile: team-standard\n", [owned])).toEqual([]);
+      expect(
+        problems("profile: team-standard\nheading_to: regulated-strict\n", [
+          owned,
+        ]),
+      ).toEqual([
+        `${owned}: not examined, but within the Team/Standard or Regulated/Strict target (strict): score it`,
+      ]);
+    });
+  });
+});
+
+test("evidence names a path only where it reads unmistakably as one, and not where it says it is missing", () => {
+  const paths = evidencePaths(
+    "@AGENTS.md:12 and (docs/adr/0001-x.md:3-9), `.github/workflows/ci.yml`; .editorconfig, Makefile, ./scripts/gates.ts. See https://example.com/a.md, example.com/b/c.md, src/**/*.ts, M1/ci-runs-gates-on-pr, config/suggestion:gates.command, e.g. Node.js 22, CI/CD, and/or, version 0.13.0, every .ts file, repos/o/r/branches/main/protection; no lefthook.yml or .husky/; ci.yml runs it",
+  );
+  expect(paths.map((p) => p.token)).toEqual([
+    "AGENTS.md:12",
+    "docs/adr/0001-x.md:3-9",
+    ".github/workflows/ci.yml",
+    ".editorconfig",
+    "Makefile",
+    "scripts/gates.ts",
+    "ci.yml",
+  ]);
+  expect(paths[1]).toEqual({
+    token: "docs/adr/0001-x.md:3-9",
+    path: "docs/adr/0001-x.md",
+    line: 3,
+    end: 9,
+  });
+});
+
+describe("records run against the repository they audit", () => {
+  const recordFor = (commit: string, criteria = "{}", extra = "") =>
+    `version: 1\nplugin_version: 0.13.0\ndate: 2026-01-02\ncommit: ${commit}\n${extra}criteria: ${criteria}\n`;
+
+  test("check, compare (either record) and summary refuse another repository's record", () => {
+    const dir = repo({ "AGENTS.md": "# Agents\n" });
+    const other = repo({ "README.md": "# Other\n" });
+    const foreign = join(scratch, "foreign.yaml");
+    writeFileSync(foreign, recordFor(git(other, "rev-parse", "HEAD")));
+    const own = join(scratch, "own.yaml");
+    writeFileSync(own, recordFor(git(dir, "rev-parse", "HEAD")));
+    for (const args of [
+      ["check", foreign],
+      ["compare", foreign, own],
+      ["compare", own, foreign],
+      ["summary", foreign],
+    ]) {
+      const run = runScript("record.ts", args, dir);
+      expect([args.join(" "), run.code]).toEqual([args.join(" "), 1]);
+      expect(run.err).toContain(`${foreign} audits commit`);
+    }
+    expect(runScript("record.ts", ["summary", own], dir).code).toBe(0);
+  });
+
+  test("check warns about evidence naming a path or line the commit does not hold, without failing", () => {
+    const dir = repo({
+      "docs/a.md": "one\ntwo\nthree\n",
+      ".github/workflows/ci.yml": "on: push\n",
+    });
+    const head = git(dir, "rev-parse", "HEAD");
+    // A file added after the audited commit is not evidence of it.
+    commitFiles(dir, { "docs/later.md": "later\n" });
+    const scored = loadModules()
+      .flatMap((x) => x.criteria)
+      .map((c, i) =>
+        i === 0
+          ? `  ${c.key}: { score: convention, evidence: "docs/a.md:2-3, docs/a.md:9, docs/later.md, docs/, src/**/*.ts, ci.yml:1, workflows/ci.yml:4; no lefthook.yml" }`
+          : i === 1
+            ? `  ${c.key}: { score: absent, evidence: "probe: no tracked file matches gone/x.md" }`
+            : `  ${c.key}: { score: absent, evidence: "none" }`,
+      )
+      .join("\n");
+    const path = join(scratch, "evidence.yaml");
+    writeFileSync(path, recordFor(head, `\n${scored}`));
+    const run = runScript("record.ts", ["check", path], dir);
+    expect(run.code).toBe(0);
+    const warnings = run.out
+      .split("\n")
+      .filter((l) => l.startsWith("warning: "));
+    expect(warnings).toHaveLength(3);
+    expect(warnings[0]).toContain(
+      "docs/a.md:9 cites a line past the end of docs/a.md (3 lines",
+    );
+    // A shortened name is read as the one path it ends.
+    expect(warnings[2]).toContain(
+      "workflows/ci.yml:4 cites a line past the end of .github/workflows/ci.yml (1 lines",
+    );
+    expect(warnings[1]).toContain(
+      `docs/later.md is not in commit ${head.slice(0, 12)}`,
+    );
+    expect(run.out).toContain("3 evidence warning(s) to look at");
+  });
+
+  test("summary shows the targets of a profile the record does not declare, without editing it", () => {
+    const path = join(scratch, "explore.yaml");
+    const text = recordFor(
+      "abc",
+      "{ M1/ci-runs-gates-on-pr: { score: mechanical, evidence: x } }",
+    );
+    writeFileSync(path, text);
+    const run = runScript(
+      "record.ts",
+      ["summary", path, "--profile", "team-standard", "--conditions", "M12"],
+      scratch,
+    );
+    expect(run.code).toBe(0);
+    expect(run.out).toContain(
+      "Profile: Team/Standard (from --profile; the record declares none)",
+    );
+    expect(run.out).toContain(
+      "| M12 parallel-agent-ergonomics | incomplete | lite |",
+    );
+    expect(readFileSync(path, "utf8")).toBe(text);
+    const refused = runScript(
+      "record.ts",
+      ["summary", path, "--profile", "solo-lite", "--conditions", "M12"],
+      scratch,
+    );
+    expect(refused.code).toBe(2);
+    expect(refused.err).toContain(
+      "Solo/Lite has no conditional target for M12",
+    );
+  });
+
+  test("summary counts criteria left not-examined apart from the ones to go", () => {
+    /** The M5 row of the summary under Team/Standard, with the first criterion scored `first`. */
+    const m5Row = (first: string) => {
+      const path = join(scratch, `unexamined-${first}.yaml`);
+      writeFileSync(
+        path,
+        recordFor(
+          "abc",
+          `{ M5/adrs-exist-numbered-from-template: { score: ${first}, evidence: "not examined: beyond the Solo/Lite target" } }`,
+        ),
+      );
+      const run = runScript(
+        "record.ts",
+        ["summary", path, "--profile", "team-standard"],
+        scratch,
+      );
+      expect(run.code).toBe(0);
+      return run.out.split("\n").find((l) => l.startsWith("| M5 ")) ?? "";
+    };
+    const toGo = (row: string) => Number(/(\d+) to go/.exec(row)?.[1] ?? 0);
+    const unexamined = m5Row("not-examined");
+    const absent = m5Row("absent");
+    expect(unexamined).toContain("1 not examined");
+    expect(absent).not.toContain("not examined");
+    expect(toGo(unexamined)).toBe(toGo(absent) - 1);
+  });
+});
+
+describe("filling a draft", () => {
+  /** A draft written by score.ts in a fresh repository. */
+  const draftOf = (name: string) => {
+    const dir = repo({ "AGENTS.md": "# Agents\n" });
+    const path = join(scratch, name);
+    const run = runScript(
+      "score.ts",
+      ["--draft", path, "--date", "2026-10-12", "--profile", "solo-lite"],
+      dir,
+    );
+    expect(run.code).toBe(0);
+    return { dir, path };
+  };
+  const probed = (path: string) =>
+    [...parseRecord(readFileSync(path, "utf8"), path).criteria].find(
+      ([, e]) => e.evidence?.startsWith("probe: ") ?? false,
+    )?.[0] ?? "";
+
+  test("writes each answer, keeping the draft's comments, and lists what is still null", () => {
+    const { dir, path } = draftOf("fill.yaml");
+    const before = readFileSync(path, "utf8");
+    const answers = join(scratch, "answers.txt");
+    writeFileSync(
+      answers,
+      [
+        "# scored by hand",
+        "",
+        'M0/universal-instruction-file: convention | AGENTS.md: "the root file" # 1 | of 2',
+        "M0/glossary-exists: absent | no glossary: checked docs/",
+        "M0/per-directory-instructions: mechanical | docs/AGENTS.md",
+      ].join("\n"),
+    );
+    const run = runScript("record.ts", ["fill", path, answers], dir);
+    expect(run.err).toBe("");
+    expect(run.code).toBe(0);
+    expect(run.out).toContain(`filled 3 criteria into ${path}`);
+    expect(run.out).toMatch(/\d+ still null: M0\//);
+    const after = readFileSync(path, "utf8");
+    const comments = (t: string) =>
+      t.split("\n").filter((l) => l.trim().startsWith("#"));
+    expect(comments(after)).toEqual(comments(before));
+    const record = parseRecord(after, path);
+    expect(record.criteria.get("M0/universal-instruction-file")).toEqual({
+      score: "convention",
+      evidence: 'AGENTS.md: "the root file" # 1 | of 2',
+    });
+    // A criterion the draft left unexamined can be examined after all.
+    expect(record.criteria.get("M0/per-directory-instructions")?.score).toBe(
+      "mechanical",
+    );
+  });
+
+  test("reads answers as JSON and writes them where --into says", () => {
+    const { dir, path } = draftOf("fill-json.yaml");
+    const before = readFileSync(path, "utf8");
+    const answers = join(scratch, "answers.json");
+    writeFileSync(
+      answers,
+      JSON.stringify({
+        "M0/glossary-exists": { score: "expected-absent", evidence: "a\nb" },
+      }),
+    );
+    const into = join(scratch, "fill-json-next.yaml");
+    const run = runScript(
+      "record.ts",
+      ["fill", path, answers, "--into", into],
+      dir,
+    );
+    expect(run.code).toBe(0);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(
+      parseRecord(readFileSync(into, "utf8"), into).criteria.get(
+        "M0/glossary-exists",
+      ),
+    ).toEqual({ score: "expected-absent", evidence: "a\nb" });
+  });
+
+  test.each([
+    ["an unknown criterion", "M0/no-such-thing: absent | x", "not a criterion"],
+    ["an invalid score", "M0/glossary-exists: great | x", "is not a score"],
+    ["empty evidence", "M0/glossary-exists: absent |  ", "evidence is empty"],
+    ["a line it cannot read", "M0/glossary-exists absent", "write <criterion>"],
+    [
+      "a criterion answered twice",
+      "M0/glossary-exists: absent | x\nM0/glossary-exists: absent | y",
+      "answered twice",
+    ],
+  ])("refuses %s and writes nothing", (_, line, message) => {
+    const { dir, path } = draftOf("refused.yaml");
+    const before = readFileSync(path, "utf8");
+    const answers = join(scratch, "bad.txt");
+    writeFileSync(
+      answers,
+      `M0/universal-instruction-file: convention | AGENTS.md\n${line}\n`,
+    );
+    const run = runScript("record.ts", ["fill", path, answers], dir);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain(message);
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  test("refuses an answer that changes one the draft already holds", () => {
+    const { dir, path } = draftOf("refill.yaml");
+    const answers = join(scratch, "refill.txt");
+    const first = "M0/universal-instruction-file: convention | AGENTS.md\n";
+    writeFileSync(answers, first);
+    expect(runScript("record.ts", ["fill", path, answers], dir).code).toBe(0);
+    // The same answer again changes nothing and is no disagreement.
+    const again = runScript("record.ts", ["fill", path, answers], dir);
+    expect(again.err).toBe("");
+    expect(again.code).toBe(0);
+    const before = readFileSync(path, "utf8");
+    for (const line of [
+      "M0/universal-instruction-file: mechanical | AGENTS.md",
+      "M0/universal-instruction-file: convention | AGENTS.md and docs/",
+    ]) {
+      writeFileSync(answers, `${line}\n`);
+      const run = runScript("record.ts", ["fill", path, answers], dir);
+      expect(run.code).toBe(1);
+      expect(run.err).toContain(
+        "M0/universal-instruction-file: the draft already scores it convention (AGENTS.md)",
+      );
+      expect(readFileSync(path, "utf8")).toBe(before);
+    }
+  });
+
+  test("refuses to change what a probe decided", () => {
+    const { dir, path } = draftOf("probe.yaml");
+    const key = probed(path);
+    const answers = join(scratch, "probe.txt");
+    writeFileSync(answers, `${key}: convention | it is there after all\n`);
+    const run = runScript("record.ts", ["fill", path, answers], dir);
+    expect(run.code).toBe(1);
+    expect(run.err).toContain(`${key}: its probe decided it`);
+    // The repository's shape may rule the practice out.
+    writeFileSync(
+      answers,
+      `${key}: expected-absent | a library has no deploy\n`,
+    );
+    const shaped = runScript("record.ts", ["fill", path, answers], dir);
+    expect(shaped.code).toBe(0);
+    expect(
+      parseRecord(readFileSync(path, "utf8"), path).criteria.get(key),
+    ).toEqual({
+      score: "expected-absent",
+      evidence: "a library has no deploy",
+    });
+  });
+
+  test("holds a capped criterion to its probe's ceiling, in fill, merge and check", () => {
+    const { dir, path } = draftOf("ceiling.yaml");
+    const key = "M4/frontmatter-machine-validated";
+    // The repository has no CI, which the mechanical rung needs.
+    expect(
+      parseRecord(readFileSync(path, "utf8"), path).criteria.get(key)?.at_most,
+    ).toBe("advisory");
+    const before = readFileSync(path, "utf8");
+    const answers = join(scratch, "ceiling.txt");
+    writeFileSync(
+      answers,
+      `${key}: mechanical | scripts/check-frontmatter.ts\n`,
+    );
+    const above = runScript("record.ts", ["fill", path, answers], dir);
+    expect(above.code).toBe(1);
+    expect(above.err).toContain(`${key}: its probe allows at most advisory`);
+    expect(readFileSync(path, "utf8")).toBe(before);
+
+    // A partial edited by hand past the ceiling is refused too.
+    const partial = join(scratch, "ceiling-partial.yaml");
+    writeFileSync(
+      partial,
+      before.replace(
+        new RegExp(
+          `(  ${key}:[^\\n]*\\n(?:    #[^\\n]*\\n)*)    score: [^\\n]*\\n    evidence: [^\\n]*`,
+        ),
+        '$1    score: mechanical\n    evidence: "scripts/check-frontmatter.ts"',
+      ),
+    );
+    expect(readFileSync(partial, "utf8")).not.toBe(before);
+    const merged = runScript("record.ts", ["merge", path, partial], dir);
+    expect(merged.code).toBe(1);
+    expect(merged.err).toContain(`${key}: its probe allows at most advisory`);
+    // And `check` finds it in a record edited by hand.
+    expect(
+      checkRecord(
+        parseRecord(readFileSync(partial, "utf8"), partial),
+        loadModules(),
+      ),
+    ).toContain(
+      `${key}: its probe allows at most advisory: what a higher rung needs is missing at the audited commit`,
+    );
+
+    writeFileSync(
+      answers,
+      `${key}: advisory | a pre-commit hook validates it\n`,
+    );
+    const within = runScript("record.ts", ["fill", path, answers], dir);
+    expect(within.code).toBe(0);
+    expect(
+      parseRecord(readFileSync(path, "utf8"), path).criteria.get(key),
+    ).toEqual({
+      score: "advisory",
+      evidence: "a pre-commit hook validates it",
+      at_most: "advisory",
+    });
+  });
+});
+
+describe("merging partial drafts", () => {
+  const setup = (name: string) => {
+    const dir = repo({ "AGENTS.md": "# Agents\n" });
+    const path = join(scratch, `${name}.yaml`);
+    expect(
+      runScript("score.ts", ["--draft", path, "--date", "2026-10-12"], dir)
+        .code,
+    ).toBe(0);
+    /** A copy of the draft with `answers` filled, as one worker leaves it. */
+    const partial = (suffix: string, answers: string) => {
+      const into = join(scratch, `${name}-${suffix}.yaml`);
+      const file = join(scratch, `${name}-${suffix}.txt`);
+      writeFileSync(file, answers);
+      expect(
+        runScript("record.ts", ["fill", path, file, "--into", into], dir).code,
+      ).toBe(0);
+      return into;
+    };
+    return { dir, path, partial };
+  };
+
+  test("takes each score the partials set and lists what is still null", () => {
+    const { dir, path, partial } = setup("merge");
+    const a = partial(
+      "a",
+      "M0/universal-instruction-file: convention | AGENTS.md\n",
+    );
+    const b = partial(
+      "b",
+      "M2/hand-editing-forbidden: absent | none listed\nM0/universal-instruction-file: convention | AGENTS.md\n",
+    );
+    const into = join(scratch, "merged.yaml");
+    const run = runScript(
+      "record.ts",
+      ["merge", path, a, b, "--into", into],
+      dir,
+    );
+    expect(run.err).toBe("");
+    expect(run.code).toBe(0);
+    expect(run.out).toContain("merged 2 criteria from 2 partial draft(s)");
+    expect(run.out).toContain("still null");
+    const merged = parseRecord(readFileSync(into, "utf8"), into);
+    expect(merged.criteria.get("M0/universal-instruction-file")?.score).toBe(
+      "convention",
+    );
+    expect(merged.criteria.get("M2/hand-editing-forbidden")?.score).toBe(
+      "absent",
+    );
+  });
+
+  test("refuses two partials that disagree, a partial of another draft, and a changed probe score", () => {
+    const { dir, path, partial } = setup("conflict");
+    const a = partial(
+      "a",
+      "M0/universal-instruction-file: convention | AGENTS.md\n",
+    );
+    const b = partial(
+      "b",
+      "M0/universal-instruction-file: mechanical | AGENTS.md\n",
+    );
+    const before = readFileSync(path, "utf8");
+    const disagree = runScript("record.ts", ["merge", path, a, b], dir);
+    expect(disagree.code).toBe(1);
+    expect(disagree.err).toContain(
+      `M0/universal-instruction-file: ${a} scores it convention, ${b} mechanical`,
+    );
+    const other = join(scratch, "conflict-other.yaml");
+    writeFileSync(
+      other,
+      readFileSync(a, "utf8").replace(/^date: .*$/m, 'date: "2026-10-13"'),
+    );
+    const stranger = runScript("record.ts", ["merge", path, other], dir);
+    expect(stranger.code).toBe(1);
+    expect(stranger.err).toContain(
+      "not a copy of the draft (its date differs)",
+    );
+    const probeKey =
+      [...parseRecord(before, path).criteria].find(
+        ([, e]) => e.evidence?.startsWith("probe: ") ?? false,
+      )?.[0] ?? "";
+    const changed = join(scratch, "conflict-probe.yaml");
+    writeFileSync(
+      changed,
+      before.replace(
+        new RegExp(
+          `(  ${probeKey}:[^\\n]*\\n(?:    #[^\\n]*\\n)*)    score: absent\\n    evidence: [^\\n]*`,
+        ),
+        '$1    score: convention\n    evidence: "there"',
+      ),
+    );
+    expect(readFileSync(changed, "utf8")).not.toBe(before);
+    const probe = runScript("record.ts", ["merge", path, changed], dir);
+    expect(probe.code).toBe(1);
+    expect(probe.err).toContain(`${probeKey}: its probe decided it`);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    const shaped = join(scratch, "conflict-shaped.yaml");
+    writeFileSync(
+      shaped,
+      readFileSync(changed, "utf8").replace(
+        '    score: convention\n    evidence: "there"',
+        '    score: expected-absent\n    evidence: "ruled out by the shape"',
+      ),
+    );
+    const accepted = runScript("record.ts", ["merge", path, shaped], dir);
+    expect(accepted.err).toBe("");
+    expect(accepted.code).toBe(0);
+    expect(
+      parseRecord(readFileSync(path, "utf8"), path).criteria.get(probeKey)
+        ?.score,
+    ).toBe("expected-absent");
+  });
 });

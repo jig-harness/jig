@@ -1,7 +1,8 @@
 /**
  * The report source: one JSON document the agent writes after scoring, holding
  * what the audit record does not: the summary, the ranked recommendations,
- * the drift it found, what it examined and the terms it used. The audit sheet
+ * the gaps it leaves on purpose, the drift it found, what it examined and the
+ * terms it used. The audit sheet
  * and its Markdown copy are rendered from this source together with the
  * record, the configuration-fit report and, on a re-audit, the prior record.
  *
@@ -23,6 +24,9 @@ export const EFFORT = ["small", "medium", "large"] as const;
 export type Effort = (typeof EFFORT)[number];
 export const PROFILE_SOURCES = ["declared", "suggested"] as const;
 export type ProfileSource = (typeof PROFILE_SOURCES)[number];
+/** What a recommendation needs that an agent working in the repository does not have. */
+export const NEEDS = ["host-admin"] as const;
+export type Needs = (typeof NEEDS)[number];
 
 export interface Recommendation {
   /** `R<n>`: the id the team's decisions name. */
@@ -38,6 +42,22 @@ export interface Recommendation {
   quick_win?: boolean;
   /** A lighter way to most of the benefit, such as writing the rule down before building the gate. */
   lighter?: string;
+  /** Set once the work is done after the audited commit: the sheet shows it as done, and it takes no decision. */
+  status?: "applied";
+  /** Where it was applied: a pull request (its URL or number) or a commit. Required with `status`. */
+  applied_in?: string;
+  /** `host-admin`: only someone who administers the repository on its host can apply it. */
+  needs?: Needs;
+}
+
+/**
+ * Gaps the audit leaves on purpose, and why: the criteria it names are not
+ * warned of as uncovered, and the sheet lists them with the reason.
+ */
+export interface LeftOnPurpose {
+  refs: string[];
+  reason: string;
+  revisit_when?: string;
 }
 
 /** A fact suggesting the team revisit its profile: more contributors, a deploy environment, a compliance document. */
@@ -63,6 +83,7 @@ export interface ReportSource {
   examined: { read: string[]; unchecked?: { what: string; why: string }[] };
   stack: { facet: string; detected: string; evidence: string }[];
   recommendations: Recommendation[];
+  left_on_purpose?: LeftOnPurpose[];
   drift?: { text: string; evidence: string[] }[];
   terms?: GlossaryEntry[];
 }
@@ -82,6 +103,8 @@ export const CONFIG_REF = /^config\/.+$/;
 const PROFILE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** A repository name is one line: it heads the decisions block as a comment. */
 const ONE_LINE = /^[^\r\n\u2028\u2029]+$/;
+/** Where a recommendation was applied: a pull request's number (`53`, `#53`) or a commit. A URL is checked as one. */
+const APPLIED_IN = /^(#?[1-9]\d*|[0-9a-f]{7,40})$/;
 
 function checkOneOf(
   c: Checker,
@@ -116,8 +139,36 @@ const REC_FIELDS = [
   "effort",
 ];
 
+const REC_OPTIONAL = ["quick_win", "lighter", "status", "applied_in", "needs"];
+
+/** `status: applied` and where: a pull request's URL or number, or a commit. */
+function checkApplied(c: Checker, r: Record<string, unknown>, p: string): void {
+  if ("status" in r && r.status !== "applied")
+    c.fail(
+      `${p}.status`,
+      "must be applied, or left out while the work is open",
+    );
+  if (!("applied_in" in r)) {
+    if (r.status === "applied")
+      c.fail(`${p}.applied_in`, "is required for an applied recommendation");
+    return;
+  }
+  if (r.status !== "applied")
+    c.fail(`${p}.applied_in`, 'needs "status": "applied"');
+  const at = r.applied_in;
+  if (typeof at === "string" && at.startsWith("https://"))
+    c.url(at, `${p}.applied_in`);
+  else
+    c.pattern(
+      at,
+      APPLIED_IN,
+      `${p}.applied_in`,
+      "a pull request's URL or number, or a commit",
+    );
+}
+
 function checkRecommendation(c: Checker, r: unknown, p: string): void {
-  if (!c.object(r, p, REC_FIELDS, ["quick_win", "lighter"])) return;
+  if (!c.object(r, p, REC_FIELDS, REC_OPTIONAL)) return;
   c.optionalText(r, "lighter", p);
   c.pattern(r.id, REC_ID, `${p}.id`, "R<n>, such as R1");
   checkRefs(c, r.refs, `${p}.refs`);
@@ -127,6 +178,8 @@ function checkRecommendation(c: Checker, r: unknown, p: string): void {
   checkOneOf(c, r.effort, EFFORT, `${p}.effort`);
   if ("quick_win" in r && typeof r.quick_win !== "boolean")
     c.fail(`${p}.quick_win`, "must be true or false");
+  checkApplied(c, r, p);
+  if ("needs" in r) checkOneOf(c, r.needs, NEEDS, `${p}.needs`);
 }
 
 function checkRecommendations(c: Checker, value: unknown): void {
@@ -188,6 +241,26 @@ function checkFacts(c: Checker, value: unknown, path: string): void {
   });
 }
 
+/** Gaps left on purpose: each names criteria and says why. */
+function checkLeftOnPurpose(c: Checker, value: unknown): void {
+  const path = "$.left_on_purpose";
+  if (!c.array(value, path, 1)) return;
+  value.forEach((l, i) => {
+    const p = `${path}[${i}]`;
+    if (!c.object(l, p, ["refs", "reason"], ["revisit_when"])) return;
+    if (c.array(l.refs, `${p}.refs`, 1)) {
+      l.refs.forEach((ref, j) => {
+        if (typeof ref !== "string" || !CRITERION_REF.test(ref))
+          c.fail(`${p}.refs[${j}]`, "must be M<n>/<criterion id>");
+      });
+      if (new Set(l.refs).size !== l.refs.length)
+        c.fail(`${p}.refs`, "names a ref twice");
+    }
+    c.text(l.reason, `${p}.reason`);
+    c.optionalText(l, "revisit_when", p);
+  });
+}
+
 function checkRepository(c: Checker, value: unknown): void {
   if (!c.object(value, "$.repository", ["name"], ["url"])) return;
   c.pattern(value.name, ONE_LINE, "$.repository.name", "one line");
@@ -205,7 +278,8 @@ export function parseReportSource(value: unknown): ReportSource {
     "stack",
     "recommendations",
   ];
-  if (!c.object(value, "$", required, ["profile", "drift", "terms"]))
+  const optional = ["profile", "left_on_purpose", "drift", "terms"];
+  if (!c.object(value, "$", required, optional))
     throw new ReportSourceError(c.problems);
   if (value.v !== 1) c.fail("$.v", "must be 1");
   checkRepository(c, value.repository);
@@ -214,6 +288,7 @@ export function parseReportSource(value: unknown): ReportSource {
   checkExamined(c, value.examined);
   checkStack(c, value.stack);
   checkRecommendations(c, value.recommendations);
+  if ("left_on_purpose" in value) checkLeftOnPurpose(c, value.left_on_purpose);
   if ("drift" in value) checkFacts(c, value.drift, "$.drift");
   if ("terms" in value) c.glossary(value.terms, "$.terms");
   if (c.problems.length > 0) throw new ReportSourceError(c.problems);
@@ -235,7 +310,17 @@ export interface FitFinding {
   message: string;
 }
 
-/** What the sheet reads of `config-fit.ts --json`, with the starter configuration when it printed one. */
+/** Another profile the repository's facts would also support, and why. */
+export interface AlternativeProfile {
+  id: string;
+  why: string[];
+}
+
+/**
+ * What the sheet reads of `config-fit.ts --json`, with the starter
+ * configuration when it printed one and, of its profile facts, the
+ * alternative profile when it names one.
+ */
 export interface Fit {
   file: string;
   configured: boolean;
@@ -244,6 +329,7 @@ export interface Fit {
   findings: FitFinding[];
   declined: { finding: FitFinding; reason: string; revisit_when: string }[];
   draft?: string;
+  profile_facts?: { alternative: AlternativeProfile };
 }
 
 function parseFinding(raw: unknown, at: string): FitFinding {
@@ -282,6 +368,31 @@ function parseFacts(raw: unknown, file: string): Record<string, string> {
   );
 }
 
+/** A configuration-fit report whose profile facts are of another shape. */
+class FitShapeError extends Error {
+  override name = "FitShapeError";
+}
+
+/** The alternative profile of the report's profile facts, when it names one. */
+function parseAlternative(
+  raw: unknown,
+  file: string,
+): AlternativeProfile | null {
+  if (!isMapping(raw) || raw.alternative === undefined) return null;
+  const a = raw.alternative;
+  if (
+    !isMapping(a) ||
+    typeof a.id !== "string" ||
+    !PROFILE_ID.test(a.id) ||
+    !Array.isArray(a.why) ||
+    !a.why.every((w) => typeof w === "string" && w.trim() !== "")
+  )
+    throw new FitShapeError(
+      `${file}: profile_facts.alternative has a profile id and a list of reasons (why)`,
+    );
+  return { id: a.id, why: a.why as string[] };
+}
+
 /** Read a configuration-fit report; a file of another shape is an error naming what is wrong. */
 export function parseFit(raw: unknown, file: string): Fit {
   if (
@@ -301,6 +412,7 @@ export function parseFit(raw: unknown, file: string): Fit {
     typeof raw.draft !== "string"
   )
     throw new Error(`${file}: draft must be text`);
+  const alternative = parseAlternative(raw.profile_facts, file);
   return {
     file: raw.file,
     configured: raw.configured,
@@ -315,6 +427,7 @@ export function parseFit(raw: unknown, file: string): Fit {
     ...(typeof raw.draft === "string" && raw.draft.trim() !== ""
       ? { draft: raw.draft }
       : {}),
+    ...(alternative ? { profile_facts: { alternative } } : {}),
   };
 }
 
@@ -323,6 +436,8 @@ export function parseFit(raw: unknown, file: string): Fit {
  * on. A decision names a recommendation by id, and ids are only numbers, so a
  * decision made on one version of a report must not reach another whose R3
  * is a different recommendation, or the same one asking for different work.
+ * Whether it is applied, and what it needs, count too; a recommendation
+ * without them hashes as it always has.
  */
 export function reportFingerprint(
   recommendations: readonly Recommendation[],
@@ -341,6 +456,15 @@ export function reportFingerprint(
           r.effort,
           r.quick_win ?? false,
           r.lighter ?? null,
+          ...(r.status || r.needs
+            ? [
+                {
+                  status: r.status ?? null,
+                  applied_in: r.applied_in ?? null,
+                  needs: r.needs ?? null,
+                },
+              ]
+            : []),
         ]),
       ),
     )

@@ -2,20 +2,44 @@
 /**
  * Read audit records (`.config/jig-audit.yaml`): check one before it is
  * committed, compare a new one with the prior, summarise the levels one
- * attains, set several repositories' records side by side, and record the
- * team's decisions from the audit sheet.
+ * attains, set several repositories' records side by side, fill a draft's
+ * scores from an answers file or from partial drafts, and record the team's
+ * decisions from the audit sheet.
  *
  * Usage (from anywhere inside the repository; <record> defaults to
- * .config/jig-audit.yaml):
+ * .config/jig-audit.yaml). Run inside a git repository, check, compare and
+ * summary refuse a record whose commit the repository does not hold: it was
+ * made for another repository.
  *   bun record.ts check [<record>]
- *       every criterion scored with evidence, every key a current criterion
+ *       every criterion scored with evidence, every key a current criterion;
+ *       with a profile declared, none within its target (or a condition's,
+ *       or heading_to's) left not-examined. Warns, without failing, about
+ *       evidence naming a path the record's commit does not hold or a line
+ *       past its file's end
  *   bun record.ts compare <prior> <current> [--json] [--date YYYY-MM-DD]
  *       fixed, regressed, still open, new, added by Jig since the prior
- *       audit's plugin version, removed; configuration fields added since;
+ *       audit's plugin version, removed, and apart from those, examined
+ *       since or no longer examined; configuration fields added since;
  *       each declined recommendation held, due, resolved or stale; refuses
  *       a current record that check finds incomplete
- *   bun record.ts summary [<record>]
- *       the level each module attains
+ *   bun record.ts summary [<record>] [--profile <id> [--conditions M12,M3]]
+ *       the level each module attains, and its target and gap under the
+ *       record's profile, or under the one --profile names without editing
+ *       the record
+ *   bun record.ts fill <draft> <answers> [--into <file>]
+ *       write answers into a draft, keeping its comments: one per line,
+ *       `M1/ci-runs-gates-on-pr: mechanical | evidence text` (blank lines
+ *       and # comments skipped), or JSON { "M1/x": { "score": …,
+ *       "evidence": … } }. Refuses unknown criteria, invalid scores, empty
+ *       evidence, a change to a probe's score and a change to an answer the
+ *       draft already holds; lists what is still null
+ *   bun record.ts merge <draft> <partial>... [--into <file>]
+ *       take each score the partials (copies of the draft, each scored by
+ *       one worker) set; refuses a partial of another draft, a criterion two
+ *       partials score differently, a change to a probe's score and a change
+ *       to an answer the draft already holds; lists
+ *       what is still null. fill and merge write the draft in place unless
+ *       --into names another file
  *   bun record.ts portfolio <name>=<record> <name>=<record> ...
  *       levels and scores of several repositories, side by side
  *   bun record.ts apply-feedback <feedback-file|-> --report <source.json>
@@ -32,7 +56,9 @@
  *       plan instead of the report.
  *
  * Exit codes: 0 done; 1 check (or compare, for the current record) found the
- * record unfit to commit, or apply-feedback refused the feedback; 2 usage, an
+ * record unfit to commit, a record names a commit this repository does not
+ * hold, fill or merge refused the answers, or apply-feedback refused the
+ * feedback; 2 usage, an
  * unreadable record, report or feedback file, or a record edit that would not
  * check.
  */
@@ -43,10 +69,19 @@ import { consumerRoot } from "../../../shared/consumer.ts";
 import {
   gaps,
   loadProfiles,
+  type ModuleGap,
   type Profiles,
+  selectProfiles,
   targetsFor,
 } from "./lib/profiles.ts";
-import { attained, loadModules, type Module } from "./lib/criteria.ts";
+import {
+  attained,
+  type Level,
+  loadModules,
+  type Module,
+  NOT_EXAMINED,
+  type Score,
+} from "./lib/criteria.ts";
 import {
   changesRecord,
   checkEdited,
@@ -59,23 +94,34 @@ import {
   renderPlan,
 } from "./lib/feedback.ts";
 import {
+  type Answer,
   type AuditRecord,
+  attainmentText,
+  checkAnswers,
   checkRecord,
   compare,
+  DraftEditRefused,
+  evidenceWarnings,
+  mergePartials,
+  parseAnswers,
   parseRecord,
   RECORD_RELPATH,
   renderComparison,
   renderPortfolio,
   scoresOf,
+  setScores,
+  unscored,
 } from "./lib/record.ts";
-import { isDate, today } from "./lib/repo.ts";
+import { hasCommit, isDate, run, today } from "./lib/repo.ts";
 import { loadSchema } from "./lib/schema.ts";
 
 const USAGE = `usage:
   record.ts check [<record>]
   record.ts compare <prior> <current> [--json] [--date YYYY-MM-DD]
-  record.ts summary [<record>]
+  record.ts summary [<record>] [--profile <id> [--conditions M12,M3]]
   record.ts portfolio <name>=<record> ...
+  record.ts fill <draft> <answers> [--into <file>]
+  record.ts merge <draft> <partial>... [--into <file>]
   record.ts apply-feedback <feedback-file|-> --report <source.json> [<record>] [--dry-run] [--json] [--date YYYY-MM-DD]`;
 
 function read(path: string): AuditRecord {
@@ -86,6 +132,56 @@ function defaultRecord(): string {
   return join(consumerRoot(), RECORD_RELPATH);
 }
 
+/** The repository the command runs in, or null outside a git repository. */
+function gitRoot(): string | null {
+  const top = run("git", ["rev-parse", "--show-toplevel"], {
+    cwd: consumerRoot(),
+  });
+  return top.code === 0 ? top.stdout.trim() : null;
+}
+
+/**
+ * Why `record` cannot be read here: run inside a git repository that does
+ * not hold its commit, it was made for another repository, as a draft left
+ * in a scratch folder several audits share is. Null when it can.
+ */
+function foreignRecord(record: AuditRecord, path: string): string | null {
+  const root = gitRoot();
+  if (root === null || hasCommit(root, record.commit)) return null;
+  return `${path} audits commit ${record.commit}, which the repository at ${root} does not hold: it is another repository's record (a draft from a shared scratch folder?). Run record.ts inside the repository it audits, or score this one again`;
+}
+
+/**
+ * The record at `path`, or null, said on standard error, when it was made
+ * for another repository.
+ */
+function readOwn(path: string): AuditRecord | null {
+  const record = read(path);
+  const foreign = foreignRecord(record, path);
+  if (foreign === null) return record;
+  console.error(foreign);
+  return null;
+}
+
+/** How many of a record's criteria it left unexamined. */
+const unexaminedIn = (record: AuditRecord): number =>
+  [...record.criteria.values()].filter((e) => e.score === NOT_EXAMINED).length;
+
+/** The closing line of `check`: what the record holds, or how much is left to fix. */
+function checkVerdict(
+  record: AuditRecord,
+  problems: number,
+  warnings: number,
+): string {
+  if (problems > 0)
+    return `${problems} problem(s): fill or fix them before committing the record`;
+  const unexamined = unexaminedIn(record);
+  const examined = unexamined > 0 ? ` (${unexamined} not examined)` : "";
+  const warned =
+    warnings > 0 ? `; ${warnings} evidence warning(s) to look at` : "";
+  return `record complete: ${record.criteria.size} criteria scored${examined}, ${record.declined.length} declined${warned}`;
+}
+
 /** One subcommand's input: its words, its flags and the current criteria. */
 interface Invocation {
   positional: string[];
@@ -94,6 +190,11 @@ interface Invocation {
   date: string;
   /** The report source `--report` names. */
   report: string | undefined;
+  /** The profile `--profile` names, and the conditions `--conditions` lists. */
+  profile: string | undefined;
+  conditions: string[] | undefined;
+  /** Where `--into` writes a filled draft. */
+  into: string | undefined;
   modules: Module[];
   profiles: Profiles;
   usage: (why: string) => number;
@@ -106,14 +207,14 @@ function checkCommand({
   usage,
 }: Invocation): number {
   if (positional.length > 1) return usage("check takes one record");
-  const record = read(positional[0] ?? defaultRecord());
+  const record = readOwn(positional[0] ?? defaultRecord());
+  if (record === null) return 1;
   const problems = checkRecord(record, modules, profiles);
   for (const p of problems) console.log(`- ${p}`);
-  console.log(
-    problems.length === 0
-      ? `record complete: ${record.criteria.size} criteria scored, ${record.declined.length} declined`
-      : `${problems.length} problem(s): fill or fix them before committing the record`,
-  );
+  const root = gitRoot();
+  const warnings = root === null ? [] : evidenceWarnings(record, root);
+  for (const w of warnings) console.log(`warning: ${w}`);
+  console.log(checkVerdict(record, problems.length, warnings.length));
   return problems.length === 0 ? 0 : 1;
 }
 
@@ -121,8 +222,10 @@ function compareCommand(inv: Invocation): number {
   if (inv.positional.length !== 2)
     return inv.usage("compare takes two records");
   const [priorPath, currentPath] = inv.positional as [string, string];
-  const prior = read(priorPath);
-  const current = read(currentPath);
+  // A prior record of another repository would invent fixes and regressions.
+  const prior = readOwn(priorPath);
+  const current = readOwn(currentPath);
+  if (prior === null || current === null) return 1;
   // A criterion missing from the new record would drop out of the changes
   // unseen, so the comparison waits until the record is complete.
   const problems = checkRecord(current, inv.modules, inv.profiles);
@@ -142,36 +245,118 @@ function compareCommand(inv: Invocation): number {
   return 0;
 }
 
-function summaryCommand({
-  positional,
-  modules,
-  profiles,
-  usage,
-}: Invocation): number {
+/**
+ * The profile a summary measures against: the one `--profile` names, with
+ * the conditions `--conditions` lists, or else the record's own.
+ */
+function summaryProfile(
+  record: AuditRecord,
+  inv: Invocation,
+): SummaryProfile | { error: string } | null {
+  if (inv.profile === undefined && inv.conditions === undefined)
+    return declaredProfile(record, inv.profiles);
+  const id = inv.profile ?? record.profile;
+  if (id === undefined)
+    return { error: "--conditions needs a profile: give --profile" };
+  const conditions =
+    inv.conditions ??
+    (inv.profile === record.profile ? (record.profile_conditions ?? []) : []);
+  const chosen = selectProfiles(inv.profiles, { profile: id, conditions });
+  if ("error" in chosen) return chosen;
+  return {
+    name: chosen.profile.name,
+    targets: targetsFor(chosen.profile, conditions),
+  };
+}
+
+interface SummaryProfile {
+  name: string;
+  targets: Map<string, Level>;
+}
+
+/**
+ * The record's own profile, or null when it declares none the plugin ships.
+ * Its conditions are check's to judge; a summary applies those that fit.
+ */
+function declaredProfile(
+  record: AuditRecord,
+  profiles: Profiles,
+): SummaryProfile | null {
+  const profile =
+    record.profile === undefined
+      ? undefined
+      : profiles.profiles.get(record.profile);
+  return profile
+    ? {
+        name: profile.name,
+        targets: targetsFor(profile, record.profile_conditions),
+      }
+    : null;
+}
+
+/** Each module's level, without a profile. */
+function levelsTable(modules: Module[], scores: Map<string, Score>): string {
+  return `| Module | Level attained |\n|--------|----------------|\n${modules
+    .map(
+      (m) =>
+        `| ${m.module} ${m.name} | ${attainmentText(attained(m, scores))} |`,
+    )
+    .join("\n")}`;
+}
+
+/**
+ * What a module still needs to reach its target, as the Gap cell says it. A
+ * criterion within the target left `not-examined` is counted apart: it is
+ * not known to be missing, so it is never a gap.
+ */
+function gapText(g: ModuleGap, scores: Map<string, Score>): string {
+  if (g.target === null) return "—";
+  const unexamined = g.missing.filter(
+    (c) => scores.get(c.key) === NOT_EXAMINED,
+  ).length;
+  const toGo = g.missing.length - unexamined;
+  const parts = [
+    ...(toGo > 0 ? [`${toGo} to go`] : []),
+    ...(unexamined > 0 ? [`${unexamined} not examined`] : []),
+  ];
+  return parts.length === 0 ? "reached" : parts.join(", ");
+}
+
+/** Each module's level, target and gap under `profile`, in adoption order. */
+function gapsTable(
+  modules: Module[],
+  scores: Map<string, Score>,
+  profile: SummaryProfile,
+  order: readonly string[],
+): string {
+  const rows = gaps(modules, scores, profile.targets, order).map(
+    (g) =>
+      `| ${g.module.module} ${g.module.name} | ${attainmentText(g.attained)} | ${g.target ?? "—"} | ${gapText(g, scores)} |`,
+  );
+  return `| Module | Level attained | Target | Gap |\n|--------|----------------|--------|-----|\n${rows.join("\n")}`;
+}
+
+function summaryCommand(inv: Invocation): number {
+  const { positional, modules, profiles, usage } = inv;
   if (positional.length > 1) return usage("summary takes one record");
-  const record = read(positional[0] ?? defaultRecord());
+  const record = readOwn(positional[0] ?? defaultRecord());
+  if (record === null) return 1;
+  const profile = summaryProfile(record, inv);
+  if (profile !== null && "error" in profile) return usage(profile.error);
   const scores = scoresOf(record);
-  const profile = record.profile
-    ? profiles.profiles.get(record.profile)
-    : undefined;
-  if (!profile) {
-    console.log(
-      `| Module | Level attained |\n|--------|----------------|\n${modules
-        .map(
-          (m) =>
-            `| ${m.module} ${m.name} | ${attained(m, scores) ?? "incomplete"} |`,
-        )
-        .join("\n")}`,
-    );
+  const unexamined = unexaminedIn(record);
+  const footer =
+    unexamined > 0 ? `\n\n${unexamined} criteria not examined.` : "";
+  if (profile === null) {
+    console.log(`${levelsTable(modules, scores)}${footer}`);
     return 0;
   }
-  const targets = targetsFor(profile, record.profile_conditions);
-  const rows = gaps(modules, scores, targets, profiles.order).map(
-    (g) =>
-      `| ${g.module.module} ${g.module.name} | ${g.attained ?? "incomplete"} | ${g.target ?? "—"} | ${g.target === null ? "—" : g.missing.length === 0 ? "reached" : `${g.missing.length} to go`} |`,
-  );
+  const given =
+    inv.profile !== undefined && inv.profile !== record.profile
+      ? ` (from --profile; the record declares ${record.profile ?? "none"})`
+      : "";
   console.log(
-    `Profile: ${profile.name}, modules in adoption order.\n\n| Module | Level attained | Target | Gap |\n|--------|----------------|--------|-----|\n${rows.join("\n")}`,
+    `Profile: ${profile.name}${given}, modules in adoption order.\n\n${gapsTable(modules, scores, profile, profiles.order)}${footer}`,
   );
   return 0;
 }
@@ -186,6 +371,86 @@ function portfolioCommand({ positional, modules, usage }: Invocation): number {
   });
   console.log(renderPortfolio(records, modules));
   return 0;
+}
+
+/**
+ * Write `answers` into the draft at `draftPath` (or the file `into` names),
+ * then say how many were written and which criteria are still unscored. On a
+ * refusal nothing is written.
+ */
+function writeAnswers(
+  draftPath: string,
+  source: string,
+  answers: ReadonlyMap<string, Answer>,
+  problems: readonly string[],
+  inv: Invocation,
+  done: string,
+): number {
+  const target = inv.into ?? draftPath;
+  let text: string;
+  try {
+    if (problems.length > 0) throw new DraftEditRefused(problems.join("\n"));
+    text = answers.size > 0 ? setScores(source, answers, draftPath) : source;
+  } catch (error) {
+    if (!(error instanceof DraftEditRefused)) throw error;
+    for (const p of error.message.split("\n")) console.error(`- ${p}`);
+    console.error(`refused: ${target} is unchanged`);
+    return 1;
+  }
+  writeFileSync(target, text);
+  const open = unscored(parseRecord(text, target), inv.modules);
+  console.log(`${done.replace("{n}", String(answers.size))} into ${target}`);
+  console.log(
+    open.length === 0
+      ? "every criterion is scored: run record.ts check"
+      : `${open.length} still null: ${open.slice(0, 20).join(", ")}${open.length > 20 ? ", …" : ""}`,
+  );
+  return 0;
+}
+
+function fillCommand(inv: Invocation): number {
+  if (inv.positional.length !== 2)
+    return inv.usage("fill takes a draft and an answers file");
+  const [draftPath, answersPath] = inv.positional as [string, string];
+  const source = readFileSync(draftPath, "utf8");
+  const draft = parseRecord(source, draftPath);
+  let given: ReturnType<typeof parseAnswers>;
+  try {
+    given = parseAnswers(readFileSync(answersPath, "utf8"), answersPath);
+  } catch (error) {
+    if (!(error instanceof DraftEditRefused)) throw error;
+    console.error(
+      `- ${error.message}\nrefused: ${inv.into ?? draftPath} is unchanged`,
+    );
+    return 1;
+  }
+  const { answers, problems } = checkAnswers(given, draft, inv.modules);
+  return writeAnswers(
+    draftPath,
+    source,
+    answers,
+    problems,
+    inv,
+    "filled {n} criteria",
+  );
+}
+
+function mergeCommand(inv: Invocation): number {
+  if (inv.positional.length < 2)
+    return inv.usage("merge takes a draft and one or more partial drafts");
+  const [draftPath, ...partialPaths] = inv.positional as [string, ...string[]];
+  const source = readFileSync(draftPath, "utf8");
+  const draft = parseRecord(source, draftPath);
+  const partials = partialPaths.map((path) => ({ path, record: read(path) }));
+  const { answers, problems } = mergePartials(draft, partials);
+  return writeAnswers(
+    draftPath,
+    source,
+    answers,
+    problems,
+    inv,
+    `merged {n} criteria from ${partials.length} partial draft(s)`,
+  );
 }
 
 /** The feedback block, from a file or, for `-`, from standard input. */
@@ -262,6 +527,8 @@ const COMMANDS = new Map<string, (inv: Invocation) => number>([
   ["summary", summaryCommand],
   ["portfolio", portfolioCommand],
   ["apply-feedback", applyFeedbackCommand],
+  ["fill", fillCommand],
+  ["merge", mergeCommand],
 ]);
 
 const OPTIONS = {
@@ -269,6 +536,9 @@ const OPTIONS = {
   "dry-run": { type: "boolean" },
   date: { type: "string" },
   report: { type: "string" },
+  profile: { type: "string" },
+  conditions: { type: "string" },
+  into: { type: "string" },
 } as const;
 
 /** The flags, the values of `--date` and `--report`, and the words that are neither. */
@@ -287,6 +557,12 @@ function readOptions(rest: string[]) {
     dryRun: values["dry-run"] === true,
     date: values.date,
     report: values.report,
+    profile: values.profile,
+    conditions: values.conditions
+      ?.split(",")
+      .map((m) => m.trim())
+      .filter(Boolean),
+    into: values.into,
     positional: positionals,
   };
 }

@@ -53,6 +53,32 @@ export function scratchRepo(files: Record<string, string>): string {
   return root;
 }
 
+/** Run git in a scratch repository; throws when it fails, and returns its output. */
+export function git(root: string, ...args: string[]): string {
+  const r = spawnSync("git", args, {
+    cwd: root,
+    env: cleanEnv(),
+    encoding: "utf8",
+  });
+  if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+  return r.stdout.trim();
+}
+
+/** Write `files` into a scratch repository and commit them all; returns the new commit. */
+export function commitFiles(
+  root: string,
+  files: Record<string, string>,
+  message = "change",
+): string {
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), content);
+  }
+  git(root, "add", "-A");
+  git(root, "commit", "-q", "--allow-empty", "-m", message);
+  return git(root, "rev-parse", "HEAD");
+}
+
 /** Run one of the audit's scripts in `cwd`, with `input` on its standard input. */
 export function runScript(
   script: string,

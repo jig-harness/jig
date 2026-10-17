@@ -35,29 +35,49 @@ criteria:
       files: &ci-config
         - ".github/workflows/*.yml"
         - ".github/workflows/*.yaml"
-        - ".gitlab-ci.yml"
-        - ".circleci/config.yml"
-        - "azure-pipelines.yml"
-        - "bitbucket-pipelines.yml"
-        - "Jenkinsfile"
-        - ".buildkite/**"
-        - ".drone.yml"
-        - ".woodpecker.yml"
-        - ".woodpecker/**"
-        - ".travis.yml"
         - ".forgejo/workflows/*"
         - ".gitea/workflows/*"
+        - ".gitlab-ci.yml"
+        - ".circleci/config.yml"
+        - ".circleci/config.yaml"
+        - "azure-pipelines.yml"
+        - "azure-pipelines.yaml"
+        - ".azure-pipelines/**"
+        - ".pipelines/**"
+        - "bitbucket-pipelines.yml"
+        - "Jenkinsfile"
+        - "**/Jenkinsfile"
+        - "**/*.jenkinsfile"
+        - ".buildkite/**"
+        - ".drone.yml"
+        - ".drone.yaml"
+        - ".woodpecker.yml"
+        - ".woodpecker.yaml"
+        - ".woodpecker/**"
+        - ".travis.yml"
         - ".cirrus.yml"
+        - ".cirrus.star"
         - "appveyor.yml"
         - ".appveyor.yml"
         - ".semaphore/**"
         - ".teamcity/**"
         - "bitrise.yml"
         - "codemagic.yaml"
+        - "codefresh.yml"
         - "cloudbuild.yaml"
         - "cloudbuild.yml"
         - "buildspec.yml"
+        - "buildspec.yaml"
         - ".tekton/**"
+        - ".harness/**"
+        - ".build.yml"
+        - ".builds/**"
+        - "**/*.gocd.yaml"
+        - "**/*.gocd.yml"
+        - ".concourse/**"
+        - "ci/pipeline*.yml"
+        - "ci/pipeline*.yaml"
+        - ".onedev-buildspec.yml"
 
   - id: precommit-autofix-hooks
     level: standard
@@ -70,7 +90,7 @@ criteria:
         .pre-commit-config.yaml)"
       - "pre-commit entry runs a fixer and stages its output
         (e.g. stage_fixed or an explicit git add)"
-    probe:
+    probe: &hook-manager
       any:
         - files:
             - "lefthook.yml"
@@ -79,16 +99,30 @@ criteria:
             - "lefthook.json"
             - ".lefthook.yml"
             - ".lefthook.yaml"
+            - ".lefthook.toml"
+            - ".lefthook.json"
             - ".config/lefthook.yml"
             - ".config/lefthook.yaml"
+            - ".config/lefthook.toml"
+            - ".config/lefthook.json"
             - ".husky/**"
             - ".pre-commit-config.yaml"
             - ".githooks/**"
+            - ".git-hooks/**"
             - ".overcommit.yml"
             - ".rusty-hook.toml"
+            - "rusty-hook.toml"
             - ".cargo-husky/**"
+            - ".simple-git-hooks.*"
+            - "simple-git-hooks.*"
+            - "captainhook.json"
+            - "grumphp.yml"
+            - "grumphp.yml.dist"
+            - "hk.pkl"
             - "**/pre-commit"
-        - grep: { files: ["package.json"], pattern: "\"(simple-git-hooks|husky|pre-commit)\"" }
+            - "**/pre-push"
+            - "**/commit-msg"
+        - grep: { files: ["package.json"], pattern: "\"(simple-git-hooks|husky|pre-commit|gitHooks|ghooks)\"" }
         - grep:
             files: ["package.json", "Makefile", "GNUmakefile", "justfile", "Taskfile.y*ml", "mise.toml", ".mise.toml", "**/*.sh"]
             pattern: "core\\.hooksPath"
@@ -104,6 +138,11 @@ criteria:
       - "check-<rule> scripts present"
       - "each has a paired self-test (e.g. check-<rule>.test.ts) with fixtures"
       - "both hook config and CI workflow invoke them"
+    probe:
+      all:
+        - mechanical:
+            files: *ci-config
+        - mechanical: *hook-manager
 
   - id: escape-hatch-documented
     level: standard
@@ -114,6 +153,7 @@ criteria:
     observe:
       - "hook config or gate docs mention --no-verify and its conditions"
       - "every hook-enforced check also appears in CI"
+    probe: *hook-manager
 
   - id: third-party-automation-pinned-and-updated
     level: standard
@@ -126,6 +166,37 @@ criteria:
         immutable commit or digest references"
       - "dependency-updater configuration covers those references"
       - "proposed updates run the same required gates as other changes"
+    probe: &updater
+      any:
+        - files:
+            - ".github/dependabot.yml"
+            - ".github/dependabot.yaml"
+            - "renovate.json"
+            - "renovate.json5"
+            - ".renovaterc"
+            - ".renovaterc.json"
+            - ".renovaterc.json5"
+            - ".github/renovate.json"
+            - ".github/renovate.json5"
+            - ".gitlab/renovate.json"
+            - ".gitlab/renovate.json5"
+            - ".gitea/renovate.json"
+            - ".gitea/renovate.json5"
+            - ".forgejo/renovate.json"
+            - ".forgejo/renovate.json5"
+            - "updatecli.yaml"
+            - "updatecli.yml"
+            - "updatecli.d/**"
+            - ".updatecli/**"
+        - grep: { files: ["package.json"], pattern: "\"renovate\"" }
+        - grep:
+            files:
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".forgejo/workflows/*"
+              - ".gitea/workflows/*"
+              - ".gitlab-ci.yml"
+            pattern: "renovate|dependabot|updatecli"
 
   - id: dependency-release-cooldown
     level: standard
@@ -141,6 +212,7 @@ criteria:
       - "each installer's configuration sets the same age in its own unit
         (bunfig.toml, .npmrc, pnpm-workspace.yaml, .yarnrc.yml)"
       - "the exemptions name exact packages, never a pattern"
+    probe: *updater
     since: 0.47.0
 
   - id: install-scripts-allowlisted
@@ -187,6 +259,7 @@ criteria:
         fails on zero or several matches, in CI"
       - "expected-absent where the repository has neither overrides nor
         custom extraction patterns"
+    probe: *updater
     since: 0.47.0
 
   - id: secret-scan-blocks-in-ci
@@ -202,7 +275,8 @@ criteria:
       - "the job fails when the range resolves to zero commits"
       - "the job is in the required set"
     probe:
-      files: *ci-config
+      mechanical:
+        files: *ci-config
     since: 0.47.0
 
   - id: secret-scan-local-and-forge-layers
@@ -217,6 +291,11 @@ criteria:
         over the staged changes"
       - "push protection is enabled for the repository or its organization
         (a host setting the audit reads, or the team states)"
+    probe:
+      all:
+        - mechanical:
+            files: *ci-config
+        - *hook-manager
     since: 0.47.0
 
   - id: gate-outcomes-distinguish-could-not-check
@@ -270,6 +349,7 @@ criteria:
     observe:
       - "commit-msg hook checks staged paths against a marker in the message"
       - "CI (or another unskippable rung) re-verifies the marker"
+    probe: *hook-manager
 
   - id: gate-self-tests-in-ci
     level: strict
@@ -280,7 +360,8 @@ criteria:
     observe:
       - "CI workflow runs each gate's self-test, not only the gates"
     probe:
-      files: *ci-config
+      mechanical:
+        files: *ci-config
 
   - id: gate-self-tests-cover-empty-input
     level: strict

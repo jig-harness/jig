@@ -59,3 +59,66 @@ export function stackingSuggestion(
     id: finding.id,
   };
 }
+
+/** Where issue keys were read, and the key each entry carries, if any. */
+export interface KeySource {
+  /** How the evidence names the source, as in "of the last 20 merged pull requests". */
+  label: string;
+  /** One entry per pull request, commit or branch: its issue key's team, or undefined. */
+  keys: (string | undefined)[];
+}
+
+/** The team of an issue key in a title or commit subject (`ENG-12`), if any. */
+export function keyInText(text: string): string | undefined {
+  return /\b([A-Z][A-Z0-9]+)-\d+\b/.exec(text)?.[1];
+}
+
+/**
+ * The team of an issue key a branch name starts with, after an optional
+ * prefix (`eng-12-fix`, `feature/ENG-12`). Dependency-update branches carry
+ * version numbers, not keys.
+ */
+export function keyInBranch(branch: string): string | undefined {
+  if (/^(dependabot|renovate)\//i.test(branch)) return undefined;
+  return /^(?:[A-Za-z]+\/)?([A-Za-z][A-Za-z0-9]+)-\d+(?:[-_/]|$)/
+    .exec(branch)?.[1]
+    ?.toUpperCase();
+}
+
+/**
+ * With `issue_tracker.team` unset, the team whose issue keys the repository's
+ * history carries most: merged pull requests, commit subjects on the
+ * integration branch and branch names, counted per source. A team is offered
+ * when it has at least 3 keys and more than half of all keys found, and the
+ * evidence states its count in each source that has it, and how many keys
+ * name other teams, so a person can weigh it.
+ */
+export function trackerTeamSuggestion(
+  config: Record<string, unknown>,
+  sources: KeySource[],
+): Suggestion[] {
+  if (at(config, "issue_tracker.team") !== undefined) return [];
+  const totals = new Map<string, number>();
+  for (const source of sources)
+    for (const key of source.keys)
+      if (key !== undefined) totals.set(key, (totals.get(key) ?? 0) + 1);
+  const all = [...totals.values()].reduce((a, b) => a + b, 0);
+  const [team, count] = [...totals].sort((a, b) => b[1] - a[1])[0] ?? [];
+  if (!team || !count || count < 3 || count * 2 <= all) return [];
+  const counts = sources
+    .map((s) => [s.keys.filter((k) => k === team).length, s.label] as const)
+    .filter(([n]) => n > 0)
+    .map(([n, label]) => `${n} of ${label}`);
+  const others = all - count;
+  const evidence = `${team}-<n> issue keys in ${counts.join(", ")}${
+    others > 0 ? ` (${others} key(s) of other teams)` : ""
+  }`;
+  return [
+    {
+      field: "issue_tracker.team",
+      value: team,
+      evidence,
+      message: `${evidence}: set issue_tracker.team: ${team} so the skills recognise them, once you have confirmed it is the tracker's team`,
+    },
+  ];
+}

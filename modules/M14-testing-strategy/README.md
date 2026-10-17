@@ -372,3 +372,10 @@ Each reference piece is a Bun/TypeScript script with a self-test.
   token that fails on a token with no delay beside it, as
   [M1](../M1-gates-enforcement-ladder/README.md) requires of every
   exception.
+- **A new gate's first runs repeated before it blocks**: a test suite that
+  becomes a gate starts failing changes the moment it runs on every pull
+  request, and a flaky test that never failed in normal use (a race that
+  loses one run in eight) fails someone else's change. Running the suite
+  several times before the gate is made required would expose those tests
+  while fixing them is still the gate author's work; no repeat count or
+  procedure has been validated yet.

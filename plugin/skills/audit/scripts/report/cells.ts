@@ -1,14 +1,20 @@
 /**
  * The maturity map's marks: one per criterion, its rung's icon on its rung's
  * colour, with the amber ring of a gap and the dot of a gap no
- * recommendation covers drawn over it. Each mark links to its criterion in
+ * recommendation covers drawn over it; a gap left on purpose keeps its ring
+ * and has no dot. Each mark links to its criterion in
  * Module detail and carries a popover that says, in plain words, what the
  * criterion asks, its level, its bar, its score and what the score means,
  * where it stands against the profile and who decided it. The legend draws
  * the same marks.
  */
 import { esc } from "../../../decide/scripts/sheet-kit/html.ts";
-import { EXPECTED_ABSENT, meets, RUNGS } from "../lib/criteria.ts";
+import {
+  EXPECTED_ABSENT,
+  meets,
+  NOT_EXAMINED,
+  RUNGS,
+} from "../lib/criteria.ts";
 import { LABEL, plural, SHEET_LABEL } from "./labels.ts";
 import {
   critAnchor,
@@ -30,6 +36,7 @@ function markLabel(c: Cell): string {
   const parts = [`${c.criterion.id}: ${rungWord(c.score)}`];
   if (c.gap) parts.push(LABEL.gapLegend);
   if (c.uncovered) parts.push(LABEL.uncoveredLegend);
+  if (c.left) parts.push(LABEL.leftLegend);
   return parts.join("; ");
 }
 
@@ -39,9 +46,11 @@ type Standing = [cls: "gap" | "ok" | "nn", text: string];
 function standing(c: Cell): Standing[] {
   const S = SHEET_LABEL.standing;
   if (c.score === EXPECTED_ABSENT) return [["nn", S.na]];
+  if (c.score === NOT_EXAMINED) return [["nn", S.notExamined]];
   if (c.gap) {
     const out: Standing[] = [["gap", S.gap]];
     if (c.uncovered) out.push(["gap", S.uncovered]);
+    if (c.left) out.push(["nn", `${S.left} ${c.left}`]);
     return out;
   }
   const met = c.score !== null && meets(c.score, c.criterion.requires);
@@ -100,7 +109,7 @@ const tile = (cls: string, score: Parameters<typeof rungIcon>[0]) =>
 export function legend(t: Targets, marks: Marks): string {
   const item = (mk: string, text: string) =>
     `<li>${mk}<span>${text}</span></li>`;
-  const items = ([...RUNGS, EXPECTED_ABSENT] as const).map((r) =>
+  const items = ([...RUNGS, EXPECTED_ABSENT, NOT_EXAMINED] as const).map((r) =>
     item(
       tile(`c-${r}`, r),
       `<b>${esc(LABEL.rung[r])}</b> ${esc(LABEL.rungMeaning[r])}`,

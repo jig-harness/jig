@@ -59,6 +59,54 @@ criteria:
       resolve to existing files or directories.
     observe:
       - "CI job runs a referenced-path-exists check over the instruction files"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
 
   - id: toolchain-pins-one-source
     level: standard
@@ -75,6 +123,9 @@ criteria:
       - "one file (a version manager's file, a project file) is named as the source of each tool's version, and the places that repeat it are listed with it"
       - "a check in CI reads every listed pin site and fails when a pin differs from the source, names no version, or is gone"
       - "a deliberate exception (a canary on the next release) is registered with a reason, and the check fails an exception that excuses nothing"
+    probe:
+      mechanical:
+        files: *ci-config
 
   - id: prose-facts-ci-checked
     level: strict
@@ -86,6 +137,9 @@ criteria:
       - "a registry declares each fact once, with the source it derives from and the phrasings a stated copy may take"
       - "CI job re-derives each registered fact and fails when a stated copy, in any registered phrasing, disagrees, and passes when none is stated"
       - "no generated cache of the derived facts is committed to the repo"
+    probe:
+      mechanical:
+        files: *ci-config
 
   - id: schema-artifacts-use-ephemeral-replay
     level: strict

@@ -1,7 +1,8 @@
 /**
  * The data a sheet embeds: the report source, the record, the
  * configuration-fit report, the prior record and the older records of the
- * trend, exactly as they were read. `report.ts extract` prints it, and each
+ * trend, exactly as they were read, and the profile it explored when
+ * `--profile` named one (render again with the same flags). `report.ts extract` prints it, and each
  * part can be written back to a file and rendered again: a record is embedded
  * as JSON, which YAML reads as it is, so `parseRecord` accepts the extracted
  * record unchanged.
@@ -24,6 +25,8 @@ export interface EmbeddedData {
   prior: Record<string, unknown> | null;
   /** The older records of the trend, in the order they were given. */
   history: Record<string, unknown>[];
+  /** The profile and conditional targets `--profile` and `--conditions` named. */
+  explored?: { id: string; conditions: string[] };
 }
 
 /** A record as plain data, in the shape of the file it came from. */
@@ -53,6 +56,7 @@ export function embeddedData(input: ReportInput): EmbeddedData {
     fit: input.fit,
     prior: input.prior ? recordData(input.prior) : null,
     history: input.history.map(recordData),
+    ...(input.explored ? { explored: input.explored } : {}),
   };
 }
 

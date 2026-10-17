@@ -17,7 +17,7 @@ criteria:
       - "an ADR directory holds ADR-NNNN-*.md files with frontmatter"
       - "an ADR template exists and is referenced by the instructions"
     probe:
-      files:
+      files: &adr-files
         - "**/ADR-[0-9]*.md"
         - "**/*adr*/**/[0-9][0-9][0-9]*.md"
         - "**/*decision*/**/[0-9][0-9][0-9]*.md"
@@ -40,6 +40,56 @@ criteria:
     observe:
       - "a CI job runs a duplicate-ADR-number check and fails on a collision"
       - "the same check is available as a local hook"
+    probe:
+      all:
+        - files: *adr-files
+        - mechanical:
+            files: &ci-config
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".forgejo/workflows/*"
+              - ".gitea/workflows/*"
+              - ".gitlab-ci.yml"
+              - ".circleci/config.yml"
+              - ".circleci/config.yaml"
+              - "azure-pipelines.yml"
+              - "azure-pipelines.yaml"
+              - ".azure-pipelines/**"
+              - ".pipelines/**"
+              - "bitbucket-pipelines.yml"
+              - "Jenkinsfile"
+              - "**/Jenkinsfile"
+              - "**/*.jenkinsfile"
+              - ".buildkite/**"
+              - ".drone.yml"
+              - ".drone.yaml"
+              - ".woodpecker.yml"
+              - ".woodpecker.yaml"
+              - ".woodpecker/**"
+              - ".travis.yml"
+              - ".cirrus.yml"
+              - ".cirrus.star"
+              - "appveyor.yml"
+              - ".appveyor.yml"
+              - ".semaphore/**"
+              - ".teamcity/**"
+              - "bitrise.yml"
+              - "codemagic.yaml"
+              - "codefresh.yml"
+              - "cloudbuild.yaml"
+              - "cloudbuild.yml"
+              - "buildspec.yml"
+              - "buildspec.yaml"
+              - ".tekton/**"
+              - ".harness/**"
+              - ".build.yml"
+              - ".builds/**"
+              - "**/*.gocd.yaml"
+              - "**/*.gocd.yml"
+              - ".concourse/**"
+              - "ci/pipeline*.yml"
+              - "ci/pipeline*.yaml"
+              - ".onedev-buildspec.yml"
 
   - id: adr-frontmatter-validated
     level: standard
@@ -50,6 +100,8 @@ criteria:
     observe:
       - "a frontmatter checker (see M4) enforces ADR-specific required fields"
       - "a CI job runs it on changed ADRs"
+    probe:
+      files: *adr-files
 
   - id: supersession-metadata-used
     level: standard
@@ -60,6 +112,8 @@ criteria:
     observe:
       - "superseded ADRs carry superseded_by and a deprecated/superseded status"
       - "superseding ADRs carry supersedes pointing back"
+    probe:
+      files: *adr-files
 
   - id: decisions-extracted-to-rules
     level: strict
@@ -71,6 +125,11 @@ criteria:
     observe:
       - "a rules catalog maps decisions to patterns, each linked to an ADR"
       - "a CI check applies the rules to changed code and fails on critical violations"
+    probe:
+      all:
+        - files: *adr-files
+        - mechanical:
+            files: *ci-config
 
   - id: numbering-gate-mirrored-both-rungs
     level: strict
@@ -81,6 +140,47 @@ criteria:
     observe:
       - "a pre-push hook runs the numbering gate"
       - "a CI job runs the identical gate as a required check"
+    probe:
+      all:
+        - files: *adr-files
+        - mechanical:
+            files: *ci-config
+        - mechanical: &hook-manager
+            any:
+              - files:
+                  - "lefthook.yml"
+                  - "lefthook.yaml"
+                  - "lefthook.toml"
+                  - "lefthook.json"
+                  - ".lefthook.yml"
+                  - ".lefthook.yaml"
+                  - ".lefthook.toml"
+                  - ".lefthook.json"
+                  - ".config/lefthook.yml"
+                  - ".config/lefthook.yaml"
+                  - ".config/lefthook.toml"
+                  - ".config/lefthook.json"
+                  - ".husky/**"
+                  - ".pre-commit-config.yaml"
+                  - ".githooks/**"
+                  - ".git-hooks/**"
+                  - ".overcommit.yml"
+                  - ".rusty-hook.toml"
+                  - "rusty-hook.toml"
+                  - ".cargo-husky/**"
+                  - ".simple-git-hooks.*"
+                  - "simple-git-hooks.*"
+                  - "captainhook.json"
+                  - "grumphp.yml"
+                  - "grumphp.yml.dist"
+                  - "hk.pkl"
+                  - "**/pre-commit"
+                  - "**/pre-push"
+                  - "**/commit-msg"
+              - grep: { files: ["package.json"], pattern: "\"(simple-git-hooks|husky|pre-commit|gitHooks|ghooks)\"" }
+              - grep:
+                  files: ["package.json", "Makefile", "GNUmakefile", "justfile", "Taskfile.y*ml", "mise.toml", ".mise.toml", "**/*.sh"]
+                  pattern: "core\\.hooksPath"
 
   - id: rule-checker-self-tested
     level: strict
@@ -90,6 +190,11 @@ criteria:
       known violations, run in CI so a broken rule gate fails loudly.
     observe:
       - "a self-test exercises each rule shape and runs in CI"
+    probe:
+      all:
+        - files: *adr-files
+        - mechanical:
+            files: *ci-config
 
   - id: skeleton-changes-need-recorded-authority
     level: strict

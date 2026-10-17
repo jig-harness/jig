@@ -8,6 +8,11 @@
  * proves only that the precondition is there: the files it matched become
  * evidence for the agent, which still scores the criterion. A search that
  * could not read a file it needed is unchecked, and the agent scores it.
+ *
+ * A probe a rung needs (`mechanical: <probe>`) is a necessary condition for
+ * that rung only: CI enforces a check, but a check run by hand or by a local
+ * hook still scores below it. When it does not hold, the criterion stays
+ * open, capped at the rung beneath.
  */
 import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -20,7 +25,11 @@ export type Level = (typeof LEVELS)[number];
 export const REQUIRES = ["convention", "mechanical"] as const;
 export type Requires = (typeof REQUIRES)[number];
 
-/** The observed rungs, weakest first, and the score for a practice the repository's shape rules out. */
+/**
+ * The observed rungs, weakest first; the score for a practice the
+ * repository's shape rules out; and the score for a criterion beyond the
+ * profile's target that the audit chose not to examine, which meets no bar.
+ */
 export const RUNGS = [
   "absent",
   "convention",
@@ -28,14 +37,26 @@ export const RUNGS = [
   "mechanical",
 ] as const;
 export const EXPECTED_ABSENT = "expected-absent";
-export const SCORES = [...RUNGS, EXPECTED_ABSENT] as const;
+export const NOT_EXAMINED = "not-examined";
+export type Rung = (typeof RUNGS)[number];
+export const SCORES = [...RUNGS, EXPECTED_ABSENT, NOT_EXAMINED] as const;
 export type Score = (typeof SCORES)[number];
+
+/** The rungs a probe can be needed for: a cap below them still leaves a rung above `absent`. */
+export const CAPPING_RUNGS = ["advisory", "mechanical"] as const;
+export type CappingRung = (typeof CAPPING_RUNGS)[number];
 
 export type Probe =
   | { files: string[] }
   | { grep: { files: string[]; pattern: string } }
   | { any: Probe[] }
-  | { all: Probe[] };
+  | { all: Probe[] }
+  /** `<rung>: <probe>` in the criteria files: the inner probe is needed for `rung` and above only. */
+  | { rung: CappingRung; needs: Probe };
+
+/** The rung beneath `rung`: the most a criterion scores without what `rung` needs. */
+export const rungBelow = (rung: CappingRung): Rung =>
+  RUNGS[RUNGS.indexOf(rung) - 1] as Rung;
 
 export interface Criterion {
   /** `M<n>/<id>`, the key the audit record uses. */
@@ -109,24 +130,47 @@ function parseGrepProbe(grep: unknown, at: string): Probe {
   return { grep: { files: grep.files, pattern: grep.pattern } };
 }
 
-function parseProbeList(op: "any" | "all", list: unknown, at: string): Probe {
+function parseProbeList(
+  op: "any" | "all",
+  list: unknown,
+  at: string,
+  top: boolean,
+): Probe {
   if (!Array.isArray(list) || list.length === 0)
     throw new Error(`${at}: ${op} must list probes`);
-  const probes = list.map((p, i) => parseProbe(p, `${at}.${op}[${i}]`));
+  // A rung's probe narrows the score only where nothing else decides it: at
+  // the top, or as one of the conditions of a top-level `all`.
+  const probes = list.map((p, i) =>
+    parseProbe(p, `${at}.${op}[${i}]`, top && op === "all"),
+  );
   return op === "any" ? { any: probes } : { all: probes };
 }
 
-function parseProbe(raw: unknown, at: string): Probe {
+const PROBE_FORMS = `one of files, grep, any, all, ${CAPPING_RUNGS.join(", ")}`;
+
+/**
+ * Parse a probe; `capping` says whether a rung's probe may stand here: at
+ * the top of a criterion's probe, or directly under its top-level `all`.
+ */
+function parseProbe(raw: unknown, at: string, capping = true): Probe {
   if (!isRecord(raw) || Object.keys(raw).length !== 1)
-    throw new Error(`${at}: a probe is one of files, grep, any, all`);
+    throw new Error(`${at}: a probe is ${PROBE_FORMS}`);
+  const rung = CAPPING_RUNGS.find((r) => r in raw);
+  if (rung !== undefined) {
+    if (!capping)
+      throw new Error(
+        `${at}: a ${rung} probe stands only at the top of a criterion's probe or directly under its top-level all`,
+      );
+    return { rung, needs: parseProbe(raw[rung], `${at}.${rung}`, false) };
+  }
   if ("files" in raw) {
     if (!isGlobs(raw.files)) throw new Error(`${at}: files must list globs`);
     return { files: raw.files };
   }
   if ("grep" in raw) return parseGrepProbe(raw.grep, at);
-  if ("any" in raw) return parseProbeList("any", raw.any, at);
-  if ("all" in raw) return parseProbeList("all", raw.all, at);
-  throw new Error(`${at}: a probe is one of files, grep, any, all`);
+  if ("any" in raw) return parseProbeList("any", raw.any, at, capping);
+  if ("all" in raw) return parseProbeList("all", raw.all, at, capping);
+  throw new Error(`${at}: a probe is ${PROBE_FORMS}`);
 }
 
 /** Check a criterion's level, bar, statement, observations and version; `at` names it. */
@@ -239,6 +283,12 @@ export interface ProbeResult {
   met: boolean | null;
   /** Matched files when met; the search that found nothing when not; what went unread when unchecked. */
   evidence: string;
+  /**
+   * When a rung's probe did not hold: the most the criterion can score, and
+   * the search that found nothing. Set only while the probe as a whole is
+   * not `met: false`, which rules out every rung anyway.
+   */
+  atMost?: { rung: Rung; evidence: string };
 }
 
 const GREP_LIMIT_BYTES = 1024 * 1024;
@@ -275,6 +325,17 @@ export function evaluateProbe(
         };
   }
   if ("grep" in probe) return evaluateGrep(probe.grep, files, root);
+  if ("needs" in probe) {
+    const inner = evaluateProbe(probe.needs, files, root);
+    // What a rung needs rules out that rung, never the ones beneath it.
+    return inner.met === false
+      ? {
+          met: true,
+          evidence: "",
+          atMost: { rung: rungBelow(probe.rung), evidence: inner.evidence },
+        }
+      : inner;
+  }
   const results = ("any" in probe ? probe.any : probe.all).map((p) =>
     evaluateProbe(p, files, root),
   );
@@ -284,8 +345,18 @@ export function evaluateProbe(
     : results.some((r) => r.met === null)
       ? null
       : !decisive;
-  const relevant = results.filter((r) => r.met === met);
-  return { met, evidence: relevant.map((r) => r.evidence).join("; ") };
+  const relevant = results.filter((r) => r.met === met && r.evidence !== "");
+  const evidence = relevant.map((r) => r.evidence).join("; ");
+  const caps = met === false ? [] : results.flatMap((r) => r.atMost ?? []);
+  if (caps.length === 0) return { met, evidence };
+  const rung = caps
+    .map((c) => c.rung)
+    .reduce((a, b) => (RUNGS.indexOf(b) < RUNGS.indexOf(a) ? b : a));
+  return {
+    met,
+    evidence,
+    atMost: { rung, evidence: caps.map((c) => c.evidence).join("; ") },
+  };
 }
 
 /** Search the tracked files a grep probe names; a file too large to read leaves it unchecked. */
@@ -326,17 +397,26 @@ function list(paths: string[]): string {
 /** Whether an observed score meets a criterion's pass bar. */
 export function meets(score: Score, requires: Requires): boolean {
   if (score === EXPECTED_ABSENT) return true;
+  if (score === NOT_EXAMINED) return false;
   const rank = RUNGS.indexOf(score);
   return requires === "convention" ? rank >= 1 : score === "mechanical";
 }
 
-/** Rank of a score for comparing two runs; expected-absent sorts with met. */
+/**
+ * Rank of a score for comparing two runs; expected-absent sorts with met.
+ * `not-examined` has no rank (-1): a comparison reports it apart, never as
+ * fixed or regressed.
+ */
 export function rank(score: Score): number {
+  if (score === NOT_EXAMINED) return -1;
   return score === EXPECTED_ABSENT ? RUNGS.length : RUNGS.indexOf(score);
 }
 
-/** What a module attains: a level, `none`, or `n/a` when its practice does not apply. */
-export type Attainment = Level | "none" | "n/a";
+/**
+ * What a module attains: a level, `none`, `n/a` when its practice does not
+ * apply, or `not-examined` when the audit examined none of its criteria.
+ */
+export type Attainment = Level | "none" | "n/a" | "not-examined";
 
 /**
  * The module as the catalog of plugin `version` held it: without the criteria
@@ -371,13 +451,19 @@ export function attainedAsOf(
  * The highest level a module attains: every criterion at that level and below
  * meets its bar. `none` when a Lite criterion fails; `n/a` when every
  * criterion is `expected-absent`, since a module whose practice the
- * repository's shape rules out attains nothing, not Strict; `null` when a
- * criterion it needs is not scored.
+ * repository's shape rules out attains nothing, not Strict; `not-examined`
+ * when every criterion is; `null` when a criterion it needs is not scored. A
+ * level with a criterion left unexamined is not attained.
  */
 export function attained(
   module: Module,
   scores: ReadonlyMap<string, Score>,
 ): Attainment | null {
+  if (
+    module.criteria.length > 0 &&
+    module.criteria.every((c) => scores.get(c.key) === NOT_EXAMINED)
+  )
+    return "not-examined";
   if (
     module.criteria.length > 0 &&
     module.criteria.every((c) => scores.get(c.key) === EXPECTED_ABSENT)

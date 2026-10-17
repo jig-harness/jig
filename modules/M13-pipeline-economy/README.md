@@ -523,8 +523,9 @@ reading it.
 
 The criteria are in
 [`M13-pipeline-economy.yaml`](../../plugin/skills/audit/criteria/M13-pipeline-economy.yaml).
-A repository without CI has no pipeline to economize: the module is
-expected-absent there.
+A repository without CI scores the module absent, not expected-absent: its
+criteria presuppose [M1](../M1-gates-enforcement-ladder/README.md)'s CI, which
+the repository can still add, and adopting M1 comes first.
 
 ## Adoption steps
 
@@ -605,8 +606,8 @@ catalog.
 - **What is checked.** Which gates exist and on which rung they sit is
   [M1](../M1-gates-enforcement-ladder/README.md)'s; M13 never trades a gate
   away for speed.
-- **Repositories without CI.** Nothing to economize; the module is
-  expected-absent.
+- **Repositories without CI.** Nothing to economize yet; the module scores
+  absent until M1 brings CI in.
 
 ### Future
 

@@ -412,6 +412,47 @@ describe("choosing", () => {
   );
 });
 
+describe("an applied recommendation", () => {
+  run("offers no choice and is never copied", async () => {
+    const applied = reportInput({
+      source: (s) => {
+        const r1 = (s.recommendations as Record<string, unknown>[])[0];
+        Object.assign(r1 ?? {}, { status: "applied", applied_in: "#53" });
+      },
+    });
+    const sheet = join(dir, "applied.html");
+    writeFileSync(sheet, renderReportHtml(applied));
+    const ctx = await (browser as Browser).newContext();
+    await ctx.addInitScript(STUB_CLIPBOARD);
+    const page = await ctx.newPage();
+    await page.goto(pathToFileURL(sheet).href);
+    expect(await page.locator("#rec-R1 .choose").count()).toBe(0);
+    expect(await page.locator("#rec-R1").innerText()).toContain(
+      "Applied in #53",
+    );
+    await page.click("#rec-R2 .ch-accept span");
+    await page.click('[data-act="copy"]');
+    await page.waitForFunction(() => window.copied !== undefined);
+    const copied = await page.evaluate(() => window.copied);
+    const recs = applied.source.recommendations;
+    expect(copied).toBe(
+      feedbackText(
+        {
+          repository: applied.source.repository.name,
+          commit: COMMIT,
+          report: reportFingerprint(recs),
+          date: applied.record.date,
+          recommendations: recs,
+        },
+        { decisions: { R2: { choice: "accept" } } },
+      ),
+    );
+    expect(copied).toContain("  accept: [R2]");
+    expect(copied).not.toContain("R1");
+    await ctx.close();
+  });
+});
+
 describe("what the profile, the gaps and the trend add", () => {
   run(
     "shows the signals beside the profile, the uncovered gap in the map and under the recommendations, and the trend",
@@ -439,7 +480,9 @@ describe("what the profile, the gaps and the trend add", () => {
       expect(dot).toEqual({ content: '""', width: "6px" });
       await page.click(".unc-n a");
       expect(await page.locator("#uncovered").isVisible()).toBe(true);
-      expect(await text("#uncovered li")).toStartWith("M0 glossary-exists ");
+      expect(await text("#uncovered li:last-child")).toStartWith(
+        "M0 glossary-exists ",
+      );
       expect(await text(".trend-s")).toBe(
         "1 module moved up since 2026-04-02.",
       );
@@ -583,7 +626,7 @@ describe("since the last audit", () => {
       ),
     ).toEqual([
       "Fixed 1",
-      "Added by Jig 108",
+      "Added by Jig 109",
       "Still open within the target 4",
       "Still open beyond the target 78",
       "Unchanged and met 36",

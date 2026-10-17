@@ -1,21 +1,28 @@
 /**
  * The whole decision loop: a sheet rendered from an audit, the decisions its
  * copy button writes, and `record.ts apply-feedback` recording them with the
- * sheet itself as the report.
+ * sheet itself as the report; and the scoring loop before it, from a draft
+ * scoped to a profile, through workers' partial drafts, to a record that
+ * checks.
  */
 import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRecord } from "../scripts/lib/record.ts";
+import { loadModules } from "../scripts/lib/criteria.ts";
+import { parseRecord, unscored } from "../scripts/lib/record.ts";
 import { feedbackText } from "../scripts/report/feedback-text.ts";
 import { renderReportHtml } from "../scripts/report/html.ts";
 import { reportFingerprint } from "../scripts/report/source.ts";
-import { cleanEnv, runScript } from "./helpers.ts";
+import { cleanEnv, runScript, scratchRepo } from "./helpers.ts";
 import { recordText, reportInput } from "./report-fixtures.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "jig-audit-round-trip-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+const repos: string[] = [];
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true });
+  for (const r of repos) rmSync(r, { recursive: true, force: true });
+});
 
 test("decisions copied from a sheet are recorded against that sheet", () => {
   const input = reportInput();
@@ -126,5 +133,63 @@ test("conditional targets and wrong scores copied from a sheet are recorded agai
   );
   expect(run.out).toContain(
     "  the team's note: The docs build generates the view.",
+  );
+});
+
+test("a draft scoped to a profile, scored by two workers, merges into a record that checks", () => {
+  const repo = scratchRepo({
+    "AGENTS.md": "# Agents\n",
+    "docs/notes.md": "a\nb\n",
+  });
+  repos.push(repo);
+  const draft = join(dir, "scoped.yaml");
+  const scoped = runScript(
+    "score.ts",
+    ["--draft", draft, "--profile", "solo-lite"],
+    repo,
+  );
+  expect(scoped.err).toBe("");
+  expect(scoped.code).toBe(0);
+  const open = unscored(
+    parseRecord(readFileSync(draft, "utf8"), draft),
+    loadModules(),
+  );
+  expect(open.length).toBeGreaterThan(0);
+  // Each worker scores half of what is left, in its own copy of the draft.
+  const half = Math.ceil(open.length / 2);
+  const partials = [open.slice(0, half), open.slice(half)].map((keys, i) => {
+    const answers = join(dir, `worker-${i}.txt`);
+    writeFileSync(
+      answers,
+      keys.map((k) => `${k}: convention | docs/notes.md:2`).join("\n"),
+    );
+    const into = join(dir, `worker-${i}.yaml`);
+    const fill = runScript(
+      "record.ts",
+      ["fill", draft, answers, "--into", into],
+      repo,
+    );
+    expect(fill.code).toBe(0);
+    return into;
+  });
+  const merged = runScript("record.ts", ["merge", draft, ...partials], repo);
+  expect(merged.err).toBe("");
+  expect(merged.code).toBe(0);
+  expect(merged.out).toContain("every criterion is scored");
+
+  const check = runScript("record.ts", ["check", draft], repo);
+  expect(check.out).not.toContain("warning:");
+  expect(check.code).toBe(0);
+  expect(check.out).toMatch(
+    /record complete: \d+ criteria scored \(\d+ not examined\)/,
+  );
+  const summary = runScript(
+    "record.ts",
+    ["summary", draft, "--profile", "solo-lite"],
+    repo,
+  );
+  expect(summary.code).toBe(0);
+  expect(summary.out).toContain(
+    "| M3 change-area-catalog | not examined | — | — |",
   );
 });

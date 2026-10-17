@@ -34,7 +34,8 @@
  * there is one. Every text value is written with JSON's string syntax, which
  * is a subset of YAML's double-quoted scalar, so any note reads back
  * unchanged. Any other list with no entries is left out. Ids follow the
- * report's order.
+ * report's order. A recommendation applied since the audit takes no
+ * decision: the block never names it.
  */
 
 /** The choices a card offers, in the order it shows them; `lighter` only on a card that has a lighter option. */
@@ -73,8 +74,13 @@ export interface FeedbackInput {
     id: string;
     refs: readonly string[];
     lighter?: string;
+    status?: "applied";
   }[];
 }
+
+/** The recommendations a reader can decide on: every one not applied yet. */
+const open = (input: FeedbackInput) =>
+  input.recommendations.filter((r) => r.status !== "applied");
 
 export interface Picks {
   /** The profile the reader chose, if any. */
@@ -117,7 +123,7 @@ export function missingFields(
   input: FeedbackInput,
   picks: Picks,
 ): { id: string; needs: Needed[] }[] {
-  const decisions = input.recommendations.flatMap((r) => {
+  const decisions = open(input).flatMap((r) => {
     const d = picks.decisions[r.id];
     const lacking = d ? needs(d) : [];
     return lacking.length > 0 ? [{ id: r.id, needs: lacking }] : [];
@@ -191,7 +197,7 @@ export function feedbackText(input: FeedbackInput, picks: Picks): string {
     out.push(`  profile: ${picks.profile}`);
   out.push(...conditionsLine(input, picks));
   const chosen = (list: string) =>
-    input.recommendations.filter((r) => {
+    open(input).filter((r) => {
       const d = picks.decisions[r.id];
       return d !== undefined && listOf(d.choice) === list;
     });

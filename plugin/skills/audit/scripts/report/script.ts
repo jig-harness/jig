@@ -4,8 +4,9 @@
  * the choices, the profile selector, the score flags, the copy buttons and
  * the tray stay hidden.
  *
- * What it does: shows each recommendation's choices (accept, the lighter
- * option where the card has one, refine, decline, this is wrong) and the
+ * What it does: shows each open recommendation's choices (accept, the
+ * lighter option where the card has one, refine, decline, this is wrong;
+ * an applied one has none and is never copied) and the
  * fields a choice opens; shows the conditional targets of the profile that
  * will apply beside the profile selector, checked as the record has them;
  * lets the reader flag any criterion's score as wrong, with a note; keeps
@@ -40,7 +41,7 @@ import { SHEET_LABEL } from "./labels.ts";
 const SCRIPT_BODY = String.raw`
 var d=document,W=window,D;
 try{D=JSON.parse(d.getElementById(DATA).textContent)}catch(e){return}
-var src=D.source,R=D.record,recs=src.recommendations,KEY='jig-audit:'+src.repository.name+':'+R.commit+':'+D.report;
+var src=D.source,R=D.record,recs=src.recommendations.filter(function(r){return r.status!=='applied'}),KEY='jig-audit:'+src.repository.name+':'+R.commit+':'+D.report;
 var KINDS=CHOICES,S={c:{},profile:'',cond:null,s:{}},byId={};
 recs.forEach(function(r){byId[r.id]=r});
 ${KS.helpers}

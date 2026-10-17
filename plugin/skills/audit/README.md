@@ -25,18 +25,28 @@ added since, and it does not repeat a recommendation the team declined.
    do not exist, required checks that never run, a tracker that cannot be
    reached, declared values the repository contradicts (`stacking: none` with
    stacked pull requests open), tracker labels its label taxonomy does not
-   define, and settings its shape suggests. It also
+   define, and settings its shape suggests. It also reports what a run
+   would trip over: a checkout behind its integration branch, a leftover
+   `groundwork` configuration, `.context/` not ignored, a tracker command
+   that resolves nowhere, a gate command that runs less than CI, and an AI
+   reviewer that is posting without being named for `drive-pr` (or named
+   without posting). It also
    gathers what a profile suggestion rests on (how many people commit, CI
    that deploys or publishes, documents that name a compliance regime) and
-   names the lightest profile those facts support.
+   names the lightest profile those facts support, with the other profile
+   the facts could support when they sit near a boundary.
 2. **Surveys.** Read-only surveys of the repository's practices, run in
    parallel where the agent can: agent scaffolding, documentation governance,
-   automation and enforcement, review and learning loop.
+   automation and enforcement, review and learning loop. Each survey also
+   scores its own modules' criteria, in a form the record tools write into
+   the draft (`record.ts fill`, `record.ts merge`); a small repository is
+   surveyed by the agent itself.
 3. **Maturity scoring.** Every criterion of every module
    ([criteria](criteria/README.md)) is scored on the enforcement ladder with
    file-path evidence. A criterion that names a fact a file search can rule
    out carries a *probe*: when the fact is missing, the script scores it
-   `absent` itself.
+   `absent` itself. Given the profile, the draft leaves the criteria beyond
+   its target *not examined*, so a light profile costs a light audit.
 4. **The record.** `.config/jig-audit.yaml` in the audited repository: the
    plugin version, the date and commit, the profile the team aims for, each
    criterion's score and evidence, and the recommendations the team
@@ -71,7 +81,11 @@ added since, and it does not repeat a recommendation the team declined.
 The audit is read-only: it writes the record and nothing else. Applying a
 recommendation is a separate request (`/jig:audit apply <ref> …`) that applies
 the accepted recommendations together, in one pull request unless part of the
-work needs its own decision, through `do-item`'s pull-request policy.
+work needs its own decision, through `do-item`'s pull-request policy. A
+request that asks for the changes in the same session (such as "optimize
+this repository for Jig") may apply, without the team's decisions, only drift
+fixes and written rules; new gates and host settings wait for a person. The
+sheet then shows each applied recommendation as done.
 
 ## Run it
 
@@ -121,8 +135,8 @@ compares their committed records instead of auditing each again
 | `scripts/config-fit.ts` | Configuration fit (`--offline`, `--json`, `--draft` for a starter configuration) |
 | `scripts/report.ts` | `validate`, `render` and `extract` of the audit sheet |
 | `scripts/report/lucide/` | The icons the sheet draws, vendored from [Lucide](https://lucide.dev) under the ISC licence (its `LICENSE` beside them) |
-| `scripts/score.ts` | The scoring checklist, the draft record, and `--check` of the criteria |
-| `scripts/record.ts` | `check`, `compare`, `summary`, `portfolio` and `apply-feedback` over records |
+| `scripts/score.ts` | The scoring checklist, the draft record (`--profile` to leave criteria beyond the target unexamined, `--at <rev>` to score a commit while the checkout has changes), and `--check` of the criteria |
+| `scripts/record.ts` | `check`, `compare`, `summary`, `fill`, `merge`, `portfolio` and `apply-feedback` over records |
 
 ## Changing it
 

@@ -12,11 +12,17 @@
  * asks for waits until the project grows; anything beyond both is optional.
  * The sheet never presents a practice beyond the target as a shortfall.
  *
+ * A criterion the audit did not examine (`not-examined`, beyond the target)
+ * is never a gap: the counts say how many criteria were examined and how
+ * many of those are met, and a comparison sets a change into or out of it
+ * apart from what was fixed or regressed.
+ *
  * `inputProblems` is the check `validate` and `render` run before any of it:
  * every recommendation names criteria the record scored or configuration
  * findings the fit report holds, none repeats a decline the team holds, the
- * profile agrees with the record, and no record of the trend is newer than
- * the audited one.
+ * gaps left on purpose are the record's and no recommendation's, the profile
+ * agrees with the record, and no record of the trend is newer than the
+ * audited one.
  */
 import {
   type Attainment,
@@ -27,11 +33,13 @@ import {
   type Level,
   meets,
   type Module,
+  NOT_EXAMINED,
   type Score,
 } from "../lib/criteria.ts";
 import { gaps, type Profiles, targetsFor } from "../lib/profiles.ts";
 import {
   type AuditRecord,
+  type Change,
   type Comparison,
   type CriterionChange,
   checkRecord,
@@ -44,6 +52,7 @@ import { LABEL, plural } from "./labels.ts";
 import {
   CONFIG_REF,
   type Fit,
+  type LeftOnPurpose,
   type ProfileSignal,
   type ProfileSource,
   type Recommendation,
@@ -63,6 +72,12 @@ export interface ReportInput {
   schema: Schema;
   /** The day the declined recommendations are judged on, YYYY-MM-DD. */
   today: string;
+  /**
+   * A profile to measure against in place of the record's, with the
+   * conditional targets that apply under it (`report.ts --profile`): a
+   * look at another dial that changes neither file.
+   */
+  explored?: { id: string; conditions: string[] };
 }
 
 // ---------- the checks ----------
@@ -128,6 +143,10 @@ function recommendationProblems(input: ReportInput): string[] {
 const profileIds = (input: ReportInput) =>
   [...input.profiles.profiles.keys()].join(", ");
 
+/** Which file holds which profile, for a reader who put one in the wrong file. */
+const PROFILE_HOME =
+  "the record's profile: is the team's choice; the report source's profile only suggests one while the record has none";
+
 /** The source's profile agrees with the record's; the record's own are checked with it. */
 function profileProblems(input: ReportInput): string[] {
   const problems: string[] = [];
@@ -138,13 +157,67 @@ function profileProblems(input: ReportInput): string[] {
     problems.push(`$.profile.id: ${p.id} is not one of ${profileIds(input)}`);
   if (p.source === "declared" && declared !== p.id)
     problems.push(
-      `$.profile: a declared profile is the record's, and the record's is ${declared ?? "not set"}`,
+      `$.profile: a declared profile is the record's, and the record's is ${declared ?? "not set"} (${PROFILE_HOME})`,
     );
   if (p.source === "suggested" && declared !== undefined)
     problems.push(
-      `$.profile: the record declares ${declared}; suggest a profile only when the team has none`,
+      `$.profile: the record declares ${declared}, so the report source suggests none: leave $.profile out, or repeat it with "source": "declared" (${PROFILE_HOME})`,
     );
   return problems;
+}
+
+/** Each criterion of the catalog by key, with its module. */
+const criteriaOf = (input: ReportInput) =>
+  new Map(
+    input.modules.flatMap((m) =>
+      m.criteria.map((c) => [c.key, { c, module: m.module }] as const),
+    ),
+  );
+
+/**
+ * The gaps left on purpose name criteria the record scored that are gaps
+ * against the target the source was written for, each once, and none a
+ * recommendation also moves: a gap is either worked on or left. A profile
+ * explored with `--profile` does not change that target; it changes only
+ * which of the entries the sheet shows (`leftOnPurpose`).
+ */
+function leftProblems(input: ReportInput): string[] {
+  const moved = new Set(input.source.recommendations.flatMap((r) => r.refs));
+  const seen = new Set<string>();
+  const { explored: _, ...unexplored } = input;
+  const targets = targetsOf(unexplored);
+  const criteria = criteriaOf(input);
+  return (input.source.left_on_purpose ?? []).flatMap((l, i) =>
+    l.refs.flatMap((ref) => {
+      const at = `$.left_on_purpose[${i}].refs`;
+      const problems: string[] = [];
+      const known = criteria.get(ref);
+      if (!input.record.criteria.has(ref))
+        problems.push(`${at}: ${ref} is not a criterion the record scored`);
+      else if (known && !isGap(known.c, known.module, input, targets))
+        problems.push(
+          `${at}: ${ref} is not a gap ${targets.profile ? `against the ${targets.profile.name} target (met, beyond it, or not examined)` : "without a profile to measure against"}; only a gap is left on purpose`,
+        );
+      if (moved.has(ref))
+        problems.push(
+          `${at}: ${ref} is also a recommendation's ref; a gap is either recommended or left on purpose`,
+        );
+      if (seen.has(ref))
+        problems.push(`${at}: ${ref} is left on purpose twice`);
+      seen.add(ref);
+      return problems;
+    }),
+  );
+}
+
+/** The alternative profile the fit report names is one this plugin has. */
+function alternativeProblems(input: ReportInput): string[] {
+  const id = input.fit?.profile_facts?.alternative.id;
+  return id === undefined || input.profiles.profiles.has(id)
+    ? []
+    : [
+        `fit: profile_facts.alternative.id ${id} is not one of ${profileIds(input)}`,
+      ];
 }
 
 const recordAt = (r: AuditRecord) => `${r.date} (${r.commit.slice(0, 7)})`;
@@ -204,6 +277,8 @@ export function inputProblems(input: ReportInput): string[] {
     ),
     ...profileProblems(input),
     ...recommendationProblems(input),
+    ...leftProblems(input),
+    ...alternativeProblems(input),
     ...historyProblems(input),
   ];
 }
@@ -213,23 +288,34 @@ export function inputProblems(input: ReportInput): string[] {
 export interface ProfileView {
   id: string;
   name: string;
-  source: ProfileSource;
+  /** Declared by the record, suggested by the source, or explored with `--profile`. */
+  source: ProfileSource | "explored";
   why?: string;
   /** Facts suggesting the team revisit the profile; never a finding. */
   signals: ProfileSignal[];
 }
 
-/** The record's profile, declared; else the one the source suggests; else none. */
+/** The profile explored with `--profile`; else the record's, declared; else the one the source suggests; else none. */
 export function profileOf(input: ReportInput): ProfileView | null {
-  const id = input.record.profile ?? input.source.profile?.id;
+  const explored = input.explored?.id;
+  const id = explored ?? input.record.profile ?? input.source.profile?.id;
   const profile =
     id === undefined ? undefined : input.profiles.profiles.get(id);
   if (!profile) return null;
-  const why = input.source.profile?.why;
+  // The source's reason is for the profile it names, not for another explored.
+  const why =
+    input.source.profile?.id === profile.id
+      ? input.source.profile.why
+      : undefined;
+  const source = explored
+    ? "explored"
+    : input.record.profile
+      ? "declared"
+      : "suggested";
   return {
     id: profile.id,
     name: profile.name,
-    source: input.record.profile ? "declared" : "suggested",
+    source,
     ...(why ? { why } : {}),
     signals: input.source.profile?.signals ?? [],
   };
@@ -251,8 +337,11 @@ export function targetsOf(input: ReportInput): Targets {
   const { record, profiles } = input;
   const view = profileOf(input);
   const profile = view ? profiles.profiles.get(view.id) : undefined;
-  const conditions =
-    view?.source === "declared" ? (record.profile_conditions ?? []) : [];
+  const conditions = input.explored
+    ? input.explored.conditions
+    : view?.source === "declared"
+      ? (record.profile_conditions ?? [])
+      : [];
   const heading = record.heading_to
     ? profiles.profiles.get(record.heading_to)
     : undefined;
@@ -298,10 +387,12 @@ export interface Cell {
   decidedBy: DecidedBy;
   /** Within the profile's target; null without a profile. */
   inTarget: boolean | null;
-  /** Within the target and not meeting its bar yet: the only cells the sheet marks as a gap. */
+  /** Within the target and not meeting its bar yet: the only cells the sheet marks as a gap. A criterion not examined is never one. */
   gap: boolean;
-  /** A gap no recommendation moves and no held decline leaves deliberately. */
+  /** A gap no recommendation moves, no held decline and nothing left on purpose accounts for. */
   uncovered: boolean;
+  /** Why the report leaves this gap on purpose, when it does. */
+  left?: string;
 }
 
 export interface ModuleRow {
@@ -314,20 +405,48 @@ export interface ModuleRow {
   heading: Level | null;
   /** Criteria at or below the target that do not meet their bar yet. */
   missing: number;
+  /** Criteria at or below the target the audit did not examine: the module is not at its target, and not short of it either. */
+  unexamined: number;
   cells: Cell[];
   /** Why the module does not apply, when every criterion is expected-absent. */
   naReason?: string;
 }
 
 /**
- * The criteria the report accounts for: those a recommendation moves, and
- * those the team declined and still holds, which it leaves deliberately.
+ * The criteria the report accounts for: those a recommendation moves, those
+ * the team declined and still holds, and those the report leaves on purpose.
  */
 function accountedFor(input: ReportInput): Set<string> {
   return new Set([
     ...input.source.recommendations.flatMap((r) => r.refs),
     ...heldRefs(input).keys(),
+    ...leftReasons(input).keys(),
   ]);
+}
+
+/** Each criterion the report leaves on purpose, with the reason. */
+function leftReasons(input: ReportInput): Map<string, string> {
+  return new Map(
+    leftOnPurpose(input).flatMap((l) =>
+      l.refs.map((ref) => [ref, l.reason] as const),
+    ),
+  );
+}
+
+/** Whether a criterion is a gap: within today's target, examined, and short of its bar. */
+function isGap(
+  c: Criterion,
+  module: string,
+  input: ReportInput,
+  targets: Targets,
+): boolean {
+  const score = input.record.criteria.get(c.key)?.score ?? null;
+  return (
+    targets.now !== null &&
+    within(c, module, targets.now) &&
+    score !== NOT_EXAMINED &&
+    (score === null || !meets(score, c.requires))
+  );
 }
 
 /**
@@ -342,12 +461,13 @@ function cellOf(
   input: ReportInput,
   targets: Targets,
   accounted: ReadonlySet<string>,
+  left: ReadonlyMap<string, string>,
 ): Cell {
   const entry = input.record.criteria.get(c.key);
   const score = entry?.score ?? null;
   const inTarget = targets.now ? within(c, module, targets.now) : null;
-  const gap =
-    inTarget === true && (score === null || !meets(score, c.requires));
+  const gap = isGap(c, module, input, targets);
+  const reason = gap ? left.get(c.key) : undefined;
   return {
     criterion: c,
     score,
@@ -356,6 +476,7 @@ function cellOf(
     inTarget,
     gap,
     uncovered: gap && !accounted.has(c.key),
+    ...(reason ? { left: reason } : {}),
   };
 }
 
@@ -382,19 +503,25 @@ export function mapRows(input: ReportInput, targets: Targets): ModuleRow[] {
     profiles.order,
   );
   const accounted = accountedFor(input);
+  const left = leftReasons(input);
+  const scores = scoresOf(record);
   return rows.map((g) => {
     const id = g.module.module;
     const cells = g.module.criteria.map((c) =>
-      cellOf(c, id, input, targets, accounted),
+      cellOf(c, id, input, targets, accounted, left),
     );
     const na = g.attained === "n/a";
+    const unexamined = g.missing.filter(
+      (c) => scores.get(c.key) === NOT_EXAMINED,
+    ).length;
     return {
       module: g.module,
       title: moduleTitle(g.module),
       attained: g.attained,
       target: g.target,
       heading: na ? null : headingLevel(id, g.target, targets),
-      missing: g.missing.length,
+      missing: g.missing.length - unexamined,
+      unexamined,
       cells,
       ...(na
         ? {
@@ -411,12 +538,41 @@ const TALLY_ORDER: readonly (Score | null)[] = [
   "convention",
   "absent",
   EXPECTED_ABSENT,
+  NOT_EXAMINED,
   null,
 ];
 
 /** The gaps no recommendation covers, in the map's order. */
 export function uncoveredGaps(rows: readonly ModuleRow[]): Cell[] {
   return rows.flatMap((r) => r.cells.filter((c) => c.uncovered));
+}
+
+/** The gaps the report leaves on purpose, in the map's order. */
+function leftGaps(rows: readonly ModuleRow[]): Cell[] {
+  return rows.flatMap((r) => r.cells.filter((c) => c.left !== undefined));
+}
+
+/**
+ * What the report leaves on purpose, as it lists it: under an explored
+ * profile, only the criteria that are still gaps against its target, and
+ * only the entries left with one.
+ */
+export function leftOnPurpose(input: ReportInput): LeftOnPurpose[] {
+  const left = input.source.left_on_purpose ?? [];
+  if (!input.explored) return left;
+  const targets = targetsOf(input);
+  const criteria = criteriaOf(input);
+  return left
+    .map((l) => ({
+      ...l,
+      refs: l.refs.filter((ref) => {
+        const known = criteria.get(ref);
+        return (
+          known !== undefined && isGap(known.c, known.module, input, targets)
+        );
+      }),
+    }))
+    .filter((l) => l.refs.length > 0);
 }
 
 /** How many of a module's criteria sit on each rung, strongest first; a rung with none is left out. */
@@ -469,6 +625,9 @@ export function horizonOf(
   return asks(targets.grow) ? "grow" : "optional";
 }
 
+/** Whether a recommendation was applied after the audited commit: done, so never offered as work. */
+export const isApplied = (r: Recommendation): boolean => r.status === "applied";
+
 /** The recommendations of one horizon, in the report's order. */
 export function recsFor(
   horizon: Horizon,
@@ -497,19 +656,26 @@ export function worthWhen(
 }
 
 export interface Counts {
+  /** Examined criteria that meet their bar. */
   met: number;
-  /** Criteria the repository's shape does not rule out. */
+  /** Criteria the audit examined and the repository's shape does not rule out. */
   applicable: number;
   expectedAbsent: number;
-  /** Recommendations for now, and those for later or optional. */
+  /** Criteria beyond the target the audit did not examine. */
+  notExamined: number;
+  /** Open recommendations for now, and those for later or optional. */
   now: number;
   later: number;
   quickWins: number;
+  /** Recommendations applied since the audited commit. */
+  applied: number;
   /** Modules with a target, and how many of them reach it. */
   withTarget: number;
   atTarget: number;
   /** Gaps within the target no recommendation covers. */
   uncovered: number;
+  /** Gaps within the target the report leaves on purpose. */
+  left: number;
 }
 
 export function countsOf(
@@ -521,8 +687,10 @@ export function countsOf(
   const expectedAbsent = cells.filter(
     (c) => c.score === EXPECTED_ABSENT,
   ).length;
+  const notExamined = cells.filter((c) => c.score === NOT_EXAMINED).length;
   const targeted = rows.filter((r) => r.target !== null);
-  const now = recsFor("now", input, targets);
+  const open = input.source.recommendations.filter((r) => !isApplied(r));
+  const now = recsFor("now", input, targets).filter((r) => !isApplied(r));
   return {
     met: cells.filter(
       (c) =>
@@ -530,14 +698,53 @@ export function countsOf(
         c.score !== EXPECTED_ABSENT &&
         meets(c.score, c.criterion.requires),
     ).length,
-    applicable: cells.length - expectedAbsent,
+    applicable: cells.length - expectedAbsent - notExamined,
     expectedAbsent,
+    notExamined,
     now: now.length,
-    later: input.source.recommendations.length - now.length,
+    later: open.length - now.length,
     quickWins: now.filter((r) => r.quick_win).length,
+    applied: input.source.recommendations.length - open.length,
     withTarget: targeted.length,
-    atTarget: targeted.filter((r) => r.missing === 0).length,
+    atTarget: targeted.filter((r) => r.missing === 0 && r.unexamined === 0)
+      .length,
     uncovered: uncoveredGaps(rows).length,
+    left: leftGaps(rows).length,
+  };
+}
+
+/**
+ * Another profile the repository's facts support, as the fit report names
+ * it, with how many modules would be at their target under it; null when it
+ * names none or names the profile the sheet already measures against.
+ */
+export interface Alternative {
+  id: string;
+  name: string;
+  why: string[];
+  atTarget: number;
+  withTarget: number;
+}
+
+export function alternativeOf(
+  input: ReportInput,
+  targets: Targets,
+): Alternative | null {
+  const alt = input.fit?.profile_facts?.alternative;
+  const profile = alt ? input.profiles.profiles.get(alt.id) : undefined;
+  if (!alt || !profile || profile.id === targets.profile?.id) return null;
+  const rows = gaps(
+    input.modules,
+    scoresOf(input.record),
+    targetsFor(profile, []),
+    input.profiles.order,
+  ).filter((g) => g.target !== null);
+  return {
+    id: profile.id,
+    name: profile.name,
+    why: alt.why,
+    atTarget: rows.filter((g) => g.missing.length === 0).length,
+    withTarget: rows.length,
   };
 }
 
@@ -575,7 +782,7 @@ export function startHere(
   input: ReportInput,
   targets: Targets,
 ): { top: Recommendation[]; quick: Recommendation[] } {
-  const now = recsFor("now", input, targets);
+  const now = recsFor("now", input, targets).filter((r) => !isApplied(r));
   const top = ranked(now).slice(0, 3);
   const quick = now.filter((r) => r.quick_win && !top.includes(r));
   return { top, quick };
@@ -652,6 +859,25 @@ export const SHOWN_CHANGES = [
   "removed",
 ] as const;
 
+/** The rows of one kind of change the comparison shows. */
+export const changeRows = (c: Comparison, change: Change): CriterionChange[] =>
+  c.criteria.filter((r) => r.change === change);
+
+/**
+ * The criteria examined at one of the two audits only: examined since, or
+ * no longer examined (`compare`). They are set apart, never counted as
+ * fixed, regressed or still open; one examined at neither is not listed.
+ */
+export function examinationChanges(c: Comparison): {
+  examined: CriterionChange[];
+  unexamined: CriterionChange[];
+} {
+  return {
+    examined: changeRows(c, "examined-since"),
+    unexamined: changeRows(c, "no-longer-examined"),
+  };
+}
+
 /**
  * The criteria still open since the prior audit, split by the profile: those
  * within its target, which the team aims to close, and those beyond it,
@@ -674,7 +900,7 @@ export function stillOpenOf(
       r.cells.map((cell) => [cell.criterion.key, cell.inTarget]),
     ),
   );
-  const open = c.criteria.filter((r) => r.change === "still-open");
+  const open = changeRows(c, "still-open");
   return {
     profile: targets.profile.name,
     within: open.filter((r) => inTarget.get(r.key) === true),
@@ -692,8 +918,7 @@ export function sinceIntro(
   c: Comparison,
   open: StillOpen | null,
 ): string {
-  const count = (change: string) =>
-    c.criteria.filter((r) => r.change === change).length;
+  const count = (change: Change) => changeRows(c, change).length;
   const stillOpen = open
     ? `${open.within.length} ${LABEL.stillOpenWithin.replace("{profile}", open.profile)}; ${open.beyond.length} ${LABEL.stillOpenBeyond};`
     : `${count("still-open")} ${LABEL.stillOpen},`;

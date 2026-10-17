@@ -36,6 +36,54 @@ criteria:
     observe:
       - "a frontmatter checker validates required fields, enums, and last_updated format"
       - "a CI job runs it on changed docs and fails on violations"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
 
   - id: index-generated-and-freshness-gated
     level: standard
@@ -47,6 +95,9 @@ criteria:
     observe:
       - "a generator produces the index from doc frontmatter"
       - "a CI check regenerates and fails on a stale committed index"
+    probe:
+      mechanical:
+        files: *ci-config
 
   - id: frontmatter-subset-declared
     level: standard
@@ -91,6 +142,9 @@ criteria:
       - "a diff-aware check fails when a body change (an added or removed line after the frontmatter) does not advance last_updated, unless it already equals today's UTC date"
       - "only a last_updated line inside the frontmatter counts as a bump, compared after cutting comments and quotes, so a body line starting last_updated: or an added comment does not pass"
       - "CI runs it over the pull request's range with history back to the merge base, and a run without a range says it skipped rather than passing"
+    probe:
+      mechanical:
+        files: *ci-config
 
   - id: generators-stamp-sticky-utc
     level: strict

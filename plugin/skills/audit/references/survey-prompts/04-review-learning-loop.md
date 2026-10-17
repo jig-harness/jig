@@ -1,5 +1,7 @@
 ## Survey 4 — Review architecture and learning loop
 
+Your modules (the answers you return): M7, M8, M9 and M11.
+
 Survey how code review and continuous improvement work.
 
 1. Reviewers in play: humans, bot reviewers (CodeRabbit/Greptile/Copilot/custom), their roles and posture (blocking vs comment-only), and any layering rationale. Count a bot only if its config or workflow wiring is present — a badge or sponsor mention is not a reviewer.
@@ -21,7 +23,7 @@ Survey how code review and continuous improvement work.
    that re-checks the PR is still open each round. A loop driven by a person
    eyeballing the thread list counts as convention, not mechanism.
 5. Measurement: is review quality measured at all (missed-defect tracking, vendor parity, eval fixtures, telemetry)?
-6. Learning loop: when a reviewer (or gate) misses a real defect, does anything systematic happen? Look for miss taxonomies, regression fixtures, checklist growth, retrospective flows. Is reflection triggered by an *observable* (a round-count threshold, say) or by the author remembering — and does its record carry the measurement that triggered it?
+6. Learning loop: when a reviewer (or gate) misses a real defect, does anything systematic happen? Look for miss taxonomies, regression fixtures, checklist growth, retrospective flows. Is reflection triggered by an *observable* (a round-count threshold, say) or by the author remembering — and does its record carry the measurement that triggered it? Say whose habit it is: turned on in a person's own configuration (with Jig's plugin, the user layer `~/.jig/jig.yaml`, which you can only learn by asking) or in the repository's, which turns it on for everyone working there.
 7. Task/memory systems: tracker taxonomy (do labels drive process?), persistent agent memory, phase formulas with required gates.
 8. HITL codification: which decisions are explicitly reserved for humans (merge, release, destructive ops, scope expansion), and where is that written?
 

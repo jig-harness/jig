@@ -36,7 +36,9 @@ criteria:
       for later processing (not lost at session end).
     observe:
       - "a reflect step / command appends feedback to a durable inbox"
-      - "with Jig's plugin: a `reflection` section in a configuration layer (usually `~/.jig/jig.yaml`, so ask the person), and `/jig:reflect` contributing to the store it names"
+      - "with Jig's plugin: a `reflection` section in a configuration layer, and `/jig:reflect` contributing to the store it names"
+      - "say whose habit it is: a `reflection` section in the user layer (`~/.jig/jig.yaml`, so ask the person) turns it on for that person only; one in the repository's `.config/jig.yaml` turns it on for everyone working in the repository"
+      - "a recommendation to add the section to the repository's file names that it is a team decision, since it turns reflection on for everyone working there; the per-person alternative is the user layer"
 
   - id: corpus-machine-readable
     level: standard
@@ -48,6 +50,54 @@ criteria:
     observe:
       - "a corpus file lists fixtures with lever id + category + pinned_commit"
       - "a corpus-lint check runs in CI and fails on a duplicate/unknown/unpinned entry"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
 
   - id: lenses-additive
     level: standard
@@ -118,6 +168,9 @@ criteria:
     observe:
       - "each gate has a paired self-test exercising a known pass and a known fail"
       - "CI runs the self-tests"
+    probe:
+      mechanical:
+        files: *ci-config
 
   - id: memory-promotion-tracked
     level: strict

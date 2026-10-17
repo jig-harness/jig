@@ -64,6 +64,18 @@ export interface ProfileFacts {
   compliance_documents: ComplianceDocument[];
   /** Absent when the facts settle nothing: no history and no deploy signal. */
   suggested_profile?: SuggestedProfile;
+  /**
+   * The other profile the facts could support at a boundary, such as
+   * team-standard when CI deploys but one person commits; absent when the
+   * facts point one way.
+   */
+  alternative?: ProfileAlternative;
+}
+
+/** A profile the facts could also support, and why. */
+export interface ProfileAlternative {
+  id: SuggestableProfile;
+  why: string[];
 }
 
 const DAY_MS = 86_400_000;
@@ -384,14 +396,31 @@ function some(items: string[], limit = 5): string {
     : shown;
 }
 
+/** The deploy signals as one line of a profile's reasons. */
+const deployReason = (signals: DeploySignal[]) =>
+  `CI names deploy, release or publish work: ${some(signals.map((s) => s.file))}`;
+
+/** How many people, in words, for a profile's reasons. */
+const peopleText = (n: number) =>
+  n === 0
+    ? "no human contributor"
+    : n === 1
+      ? "one human contributor"
+      : `${n} human contributors`;
+
 /**
- * The lightest profile the facts support. Two or more people committing in
- * the last 90 days, or any deploy signal, make it team-standard; otherwise at
- * most one person and no deploy signal make it solo-lite, naming the CI files
- * that could not be read. Regulated-strict is never suggested: a compliance
- * document is a reason to consider it, which the team decides. Without
- * readable history and without a deploy signal the facts settle nothing, and
- * there is no suggestion.
+ * The lightest profile the facts support, and the other profile they could
+ * support at a boundary. Two or more people committing in the last 90 days
+ * make it team-standard. At most one person in the last year makes it
+ * solo-lite even when CI deploys: who reviews matters more than what ships,
+ * and the deploy signals are named as the reason to revisit, with
+ * team-standard as the alternative. Otherwise any deploy signal makes it
+ * team-standard, with solo-lite as the alternative while at most one person
+ * committed in the last 90 days; and at most one person and no deploy signal
+ * make it solo-lite, naming the CI files that could not be read.
+ * Regulated-strict is never suggested: a compliance document is a reason to
+ * consider it, which the team decides. Without readable history and without a
+ * deploy signal the facts settle nothing, and there is no suggestion.
  */
 export function suggestProfile(
   facts: Pick<
@@ -400,34 +429,91 @@ export function suggestProfile(
   > &
     Partial<Pick<ProfileFacts, "unreadable_ci_files">>,
 ): SuggestedProfile | undefined {
-  const people = facts.contributors?.last_90_days;
-  const why: string[] = [];
-  if (people !== undefined && people >= 2)
-    why.push(`${people} human contributors in the last 90 days`);
-  if (facts.deploy_signals.length > 0)
-    why.push(
-      `CI names deploy, release or publish work: ${some(facts.deploy_signals.map((s) => s.file))}`,
-    );
-  let id: SuggestableProfile = "team-standard";
-  if (why.length === 0) {
-    if (people === undefined) return undefined;
-    id = "solo-lite";
-    const unread = facts.unreadable_ci_files ?? [];
-    why.push(
-      `${people === 0 ? "no human contributor" : "one human contributor"} in the last 90 days, and no ${unread.length > 0 ? "readable " : ""}CI file names deploy, release or publish work`,
-    );
-    if (unread.length > 0)
-      why.push(
-        `unchecked, as they could not be read: ${some(unread.map((u) => u.split(" (")[0] ?? u))}`,
-      );
-  }
-  if (facts.contributors?.shallow)
+  return profileChoice(facts)?.suggested;
+}
+
+/** The suggested profile with its alternative, as {@link suggestProfile} describes. */
+function profileChoice(
+  facts: Parameters<typeof suggestProfile>[0],
+):
+  | { suggested: SuggestedProfile; alternative?: ProfileAlternative }
+  | undefined {
+  const c = facts.contributors;
+  const deploys = facts.deploy_signals;
+  let choice: { suggested: SuggestedProfile; alternative?: ProfileAlternative };
+  if (c !== null && c.last_90_days >= 2) {
+    const why = [`${c.last_90_days} human contributors in the last 90 days`];
+    if (deploys.length > 0) why.push(deployReason(deploys));
+    choice = { suggested: { id: "team-standard", why } };
+  } else if (deploys.length > 0 && c !== null && c.last_year <= 1)
+    choice = soloThatDeploys(c.last_year, deploys);
+  else if (deploys.length > 0) choice = deployingTeam(c, deploys);
+  else if (c === null) return undefined;
+  else choice = { suggested: soloLite(c.last_90_days, facts) };
+  const why = choice.suggested.why;
+  if (c?.shallow)
     why.push("the clone is shallow, so the contributor count may be low");
   if (facts.compliance_documents.length > 0)
     why.push(
       `compliance documents found: consider regulated-strict (${some(facts.compliance_documents.map((d) => d.path))})`,
     );
-  return { id, why };
+  return choice;
+}
+
+/** At most one person in a year, and CI that deploys: solo-lite, team-standard beside it. */
+function soloThatDeploys(
+  people: number,
+  deploys: DeploySignal[],
+): { suggested: SuggestedProfile; alternative: ProfileAlternative } {
+  return {
+    suggested: {
+      id: "solo-lite",
+      why: [
+        `${peopleText(people)} in the last year, so no second person reviews`,
+        `revisit when a second person joins or the deploys need review gates: ${deployReason(deploys)}`,
+      ],
+    },
+    alternative: {
+      id: "team-standard",
+      why: [deployReason(deploys), `${peopleText(people)} in the last year`],
+    },
+  };
+}
+
+/** CI that deploys with more than one person in the year, or an unread history: team-standard. */
+function deployingTeam(
+  c: Contributors | null,
+  deploys: DeploySignal[],
+): { suggested: SuggestedProfile; alternative?: ProfileAlternative } {
+  const suggested: SuggestedProfile = {
+    id: "team-standard",
+    why: [deployReason(deploys)],
+  };
+  if (c === null) return { suggested };
+  suggested.why.push(`${c.last_year} human contributors in the last year`);
+  return {
+    suggested,
+    alternative: {
+      id: "solo-lite",
+      why: [`${peopleText(c.last_90_days)} in the last 90 days`],
+    },
+  };
+}
+
+/** At most one person and no deploy signal: solo-lite. */
+function soloLite(
+  people: number,
+  facts: Parameters<typeof suggestProfile>[0],
+): SuggestedProfile {
+  const unread = facts.unreadable_ci_files ?? [];
+  const why = [
+    `${peopleText(people)} in the last 90 days, and no ${unread.length > 0 ? "readable " : ""}CI file names deploy, release or publish work`,
+  ];
+  if (unread.length > 0)
+    why.push(
+      `unchecked, as they could not be read: ${some(unread.map((u) => u.split(" (")[0] ?? u))}`,
+    );
+  return { id: "solo-lite", why };
 }
 
 /** Gather the profile facts of the repository at `root` from git and its tracked `files`. */
@@ -445,10 +531,13 @@ export function profileFacts(
     unreadable_ci_files: unreadable,
     compliance_documents: complianceDocuments(root, files),
   };
-  const suggested = suggestProfile(facts);
-  return suggested === undefined
-    ? facts
-    : { ...facts, suggested_profile: suggested };
+  const choice = profileChoice(facts);
+  if (choice === undefined) return facts;
+  return {
+    ...facts,
+    suggested_profile: choice.suggested,
+    ...(choice.alternative ? { alternative: choice.alternative } : {}),
+  };
 }
 
 /** The profile facts as one-line entries of the report's `facts`. */
@@ -484,5 +573,8 @@ export function profileFactLines(facts: ProfileFacts): Record<string, string> {
     s === undefined
       ? "none: the history could not be read and no CI file names deploy, release or publish work"
       : `${s.id}: ${s.why.join("; ")}`;
+  const alt = facts.alternative;
+  if (alt !== undefined)
+    lines.alternative_profile = `${alt.id}: ${alt.why.join("; ")}`;
   return lines;
 }

@@ -181,3 +181,71 @@ export function gaps(
       return { module, attained: reached, target, missing };
     });
 }
+
+/**
+ * The level each module must be examined to under `profile`: its targets
+ * with the conditions that apply, raised to `heading`'s where the profile the
+ * project grows toward reaches further. A criterion beyond these may be left
+ * `not-examined`; one within them must be scored.
+ */
+export function examinedTargets(
+  profile: Profile,
+  conditions: readonly string[] = [],
+  heading?: Profile,
+): Map<string, Level> {
+  const targets = targetsFor(profile, conditions);
+  if (heading)
+    for (const [m, l] of targetsFor(heading, conditions)) {
+      const own = targets.get(m);
+      if (own === undefined || LEVELS.indexOf(l) > LEVELS.indexOf(own))
+        targets.set(m, l);
+    }
+  return targets;
+}
+
+/** Whether `criterion` lies beyond `targets`: its module has none, or aims lower. */
+export function beyondTarget(
+  criterion: Criterion,
+  targets: ReadonlyMap<string, Level>,
+): boolean {
+  const target = targets.get(criterion.key.split("/")[0] ?? "");
+  return (
+    target === undefined ||
+    LEVELS.indexOf(criterion.level) > LEVELS.indexOf(target)
+  );
+}
+
+/**
+ * The profiles a selection names, or why it does not hold: an unknown
+ * profile, or a condition neither the profile nor the heading-to profile
+ * makes conditional.
+ */
+export function selectProfiles(
+  profiles: Profiles,
+  selection: {
+    profile: string;
+    conditions?: readonly string[];
+    heading_to?: string;
+  },
+): { profile: Profile; heading?: Profile } | { error: string } {
+  const known = [...profiles.profiles.keys()].join(", ");
+  const profile = profiles.profiles.get(selection.profile);
+  if (!profile)
+    return { error: `profile ${selection.profile} is not one of ${known}` };
+  const heading =
+    selection.heading_to === undefined
+      ? undefined
+      : profiles.profiles.get(selection.heading_to);
+  if (selection.heading_to !== undefined && !heading)
+    return {
+      error: `heading-to ${selection.heading_to} is not one of ${known}`,
+    };
+  const stray = (selection.conditions ?? []).filter(
+    (m) => !profile.conditional.has(m) && !heading?.conditional.has(m),
+  );
+  if (stray.length > 0)
+    return {
+      error: `${heading ? `neither ${profile.name} nor ${heading.name} has a` : `${profile.name} has no`} conditional target for ${stray.join(", ")}`,
+    };
+  return heading ? { profile, heading } : { profile };
+}

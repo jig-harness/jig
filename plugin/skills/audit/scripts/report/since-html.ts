@@ -6,15 +6,19 @@
  * score before and after as score chips, and the change as a badge whose
  * colour says good (fixed), bad (regressed), neutral (reclassified), new
  * (new, added by Jig), to do (still open within the target) or quiet
- * (removed, beyond the target). The levels that changed, or the trend across
- * older records, follow in the same table style, then the declined
+ * (removed, beyond the target). A criterion examined at one of the two
+ * audits only has a table of its own, in a neutral colour: it was neither
+ * fixed nor regressed. The levels that changed, or the trend across older
+ * records, follow in the same table style, then the declined
  * recommendations.
  */
 import { esc } from "../../../decide/scripts/sheet-kit/html.ts";
-import type { Comparison, CriterionChange } from "../lib/record.ts";
+import type { Change, Comparison, CriterionChange } from "../lib/record.ts";
 import { LABEL, SHEET_LABEL } from "./labels.ts";
 import { critAnchor, type Marks, scoreChip } from "./marks.ts";
 import {
+  changeRows,
+  examinationChanges,
   levelChanges,
   type ModuleRow,
   type ReportInput,
@@ -33,7 +37,9 @@ type BadgeKind =
   | (typeof SHOWN_CHANGES)[number]
   | "open"
   | "beyond"
-  | "unchanged";
+  | "unchanged"
+  | "examined"
+  | "unexamined";
 
 /** A badge's word, capitalised like the change kinds beside it. */
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -46,11 +52,14 @@ const countBadge = (kind: BadgeKind, text: string, n: number) =>
 
 /** The counts, as badges: each kind of change with any rows, then what stayed open or met. */
 function countRow(c: Comparison, open: StillOpen | null): string {
-  const count = (change: string) =>
-    c.criteria.filter((r) => r.change === change).length;
+  const count = (change: Change) => changeRows(c, change).length;
   const items = SHOWN_CHANGES.filter((k) => count(k) > 0).map((k) =>
     countBadge(k, LABEL.changes[k], count(k)),
   );
+  const apart = examinationChanges(c);
+  for (const k of ["examined", "unexamined"] as const)
+    if (apart[k].length)
+      items.push(countBadge(k, LABEL.examination[k], apart[k].length));
   if (open) {
     if (open.within.length)
       items.push(countBadge("open", LABEL.stillOpenHead, open.within.length));
@@ -92,12 +101,20 @@ function changeTable(rows: string[]): string {
 /** Every criterion that changed, worst first, as one table. */
 function changedTable(c: Comparison, marks: Marks): string {
   const rows = SHOWN_CHANGES.flatMap((k) =>
-    c.criteria
-      .filter((r) => r.change === k)
-      .map((r) => changeRow(r, k, LABEL.changes[k], marks)),
+    changeRows(c, k).map((r) => changeRow(r, k, LABEL.changes[k], marks)),
   );
   if (rows.length === 0) return "";
   return `<h3 class="sev-h">${esc(LABEL.changedHead)} (${rows.length})</h3>${changeTable(rows)}`;
+}
+
+/** The criteria examined at one audit only: neither fixed nor regressed, so apart from what changed. */
+function examinationTable(c: Comparison, marks: Marks): string {
+  const apart = examinationChanges(c);
+  const rows = (["examined", "unexamined"] as const).flatMap((k) =>
+    apart[k].map((r) => changeRow(r, k, LABEL.examination[k], marks)),
+  );
+  if (rows.length === 0) return "";
+  return `<h3 class="sev-h">${esc(LABEL.examinationHead)} (${rows.length})</h3>${changeTable(rows)}`;
 }
 
 /** The criteria still open within the target, then those beyond it, both folded like the later recommendations: the counts above already say how many. */
@@ -178,6 +195,7 @@ export function sinceBody(
   const levels = trend ? trendTable(trend, marks) : levelTable(input, c, marks);
   const body =
     changedTable(c, marks) +
+    examinationTable(c, marks) +
     stillOpenTables(open, marks) +
     levels +
     declinedList(c, marks);

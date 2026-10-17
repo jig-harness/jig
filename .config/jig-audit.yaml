@@ -10,10 +10,14 @@ profile_conditions: [M3, M12]
 criteria:
   # M0 instruction-architecture
   M0/universal-instruction-file:   # lite, requires convention
-    # A vendor-neutral universal instruction file (AGENTS.md or equivalent) exists at the repo root and stays small (on the order of 150 lines).
+    # A vendor-neutral universal instruction file (AGENTS.md or equivalent) exists at the repo root.
     # prior: convention: AGENTS.md at root (134 lines), vendor-neutral ('Compatible with Claude Code, Codex, Cursor'); root CLAUDE.md (9 lines) is an @AGENTS.md pointer
     score: convention
-    evidence: "AGENTS.md at root, 164 lines (134 at the prior audit), vendor-neutral ('Compatible with Claude Code, Codex, Cursor'); CLAUDE.md (9 lines) is an @AGENTS.md pointer; about the ~150-line bar"
+    evidence: "AGENTS.md at root, vendor-neutral ('Compatible with Claude Code, Codex, Cursor'); CLAUDE.md (9 lines) is an @AGENTS.md pointer"
+  M0/instruction-file-stays-small:   # lite, requires convention
+    # The universal instruction file stays small (on the order of 150 lines): what every session needs, with longer practice detail linked from it rather than written into it.
+    score: convention
+    evidence: "AGENTS.md is 164 lines at the audited commit (134 at the prior audit), about the ~150-line bar; no check holds it to the bar"
   M0/gates-and-guardrails-listed:   # lite, requires convention
     # The universal instruction file lists the quality gates (runnable commands) and the critical guardrails.
     # prior: convention: AGENTS.md 'Ways of working' lists `bun run gates` with ordered set matching scripts/gates.ts; guardrails: writing conventions, origin-reference rule, HITL list; plugin/AGENTS.md adds verify commands

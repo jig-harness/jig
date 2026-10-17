@@ -11,16 +11,27 @@ import {
   href,
   lit,
 } from "../../../decide/scripts/sheet-kit/markdown.ts";
-import { EXPECTED_ABSENT, meets, RUNGS, type Score } from "../lib/criteria.ts";
+import {
+  EXPECTED_ABSENT,
+  meets,
+  NOT_EXAMINED,
+  RUNGS,
+  type Score,
+} from "../lib/criteria.ts";
 import type { Comparison, CriterionChange } from "../lib/record.ts";
 import { FILE_STEM, LABEL, plural } from "./labels.ts";
 import {
+  alternativeOf,
   attainedWord,
   type Cell,
+  changeRows,
   countsOf,
+  examinationChanges,
   groups,
   type Horizon,
   horizonWhy,
+  isApplied,
+  leftOnPurpose,
   levelChanges,
   mapRows,
   type ModuleRow,
@@ -90,14 +101,30 @@ function signals(t: Targets): string[] {
   ];
 }
 
+/** Another profile the facts support, as the sheet shows it beside the profile. */
+function alternative(input: ReportInput, t: Targets): string[] {
+  const alt = alternativeOf(input, t);
+  if (!alt) return [];
+  return [
+    `**${LABEL.alternativeHead.replace("{profile}", lit(alt.name))}.** ${LABEL.alternativeAtTarget
+      .replace("{profile}", lit(alt.name))
+      .replace("{n}", String(alt.atTarget))
+      .replace("{m}", String(alt.withTarget))}`,
+    "",
+    ...alt.why.map((w) => `- ${lit(w)}`),
+    ...(alt.why.length ? [""] : []),
+  ];
+}
+
 function inShort(input: ReportInput, rows: ModuleRow[], t: Targets): string[] {
   const n = countsOf(input, rows, t);
   const out = [`## ${LABEL.inShort}`, "", lit(input.source.summary), ""];
   if (t.profile?.why)
     out.push(`*${LABEL.whySuggested}* ${lit(t.profile.why)}`, "");
+  const met = n.notExamined > 0 ? LABEL.examinedMet : LABEL.criteriaMet;
   out.push(
-    `- ${n.met} ${LABEL.ofWord} ${n.applicable} ${LABEL.criteriaMet}${n.expectedAbsent > 0 ? `; ${n.expectedAbsent} ${LABEL.expectedAbsentCount}` : ""}`,
-    `- ${n.now} ${LABEL.recommendationsNow}, ${n.quickWins} ${LABEL.quickWins}${n.later > 0 ? `; ${n.later} ${LABEL.laterCount}` : ""}`,
+    `- ${n.met} ${LABEL.ofWord} ${n.applicable} ${met}${n.expectedAbsent > 0 ? `; ${n.expectedAbsent} ${LABEL.expectedAbsentCount}` : ""}${n.notExamined > 0 ? `; ${n.notExamined} ${LABEL.notExaminedCount}` : ""}`,
+    `- ${n.now} ${LABEL.recommendationsNow}, ${n.quickWins} ${LABEL.quickWins}${n.later > 0 ? `; ${n.later} ${LABEL.laterCount}` : ""}${n.applied > 0 ? `; ${n.applied} ${LABEL.appliedCount}` : ""}`,
   );
   if (n.withTarget > 0)
     out.push(
@@ -105,7 +132,8 @@ function inShort(input: ReportInput, rows: ModuleRow[], t: Targets): string[] {
     );
   if (n.uncovered > 0)
     out.push(`- ${n.uncovered} ${LABEL.uncoveredCount[plural(n.uncovered)]}`);
-  return [...out, "", ...signals(t)];
+  if (n.left > 0) out.push(`- ${n.left} ${LABEL.leftCount[plural(n.left)]}`);
+  return [...out, "", ...alternative(input, t), ...signals(t)];
 }
 
 const rungCounts = (row: ModuleRow) =>
@@ -115,11 +143,17 @@ const rungCounts = (row: ModuleRow) =>
 
 function targetCell(row: ModuleRow, t: Targets): string {
   const parts: string[] = [];
-  if (row.target !== null)
+  if (row.target !== null) {
+    const standing = [
+      ...(row.missing > 0 ? [`${row.missing} ${LABEL.toGo}`] : []),
+      ...(row.unexamined > 0
+        ? [`${row.unexamined} ${LABEL.notExaminedHere}`]
+        : []),
+    ];
     parts.push(
-      `${LABEL.levelWord[row.target]} (${row.missing === 0 ? LABEL.atTarget : `${row.missing} ${LABEL.toGo}`})`,
+      `${LABEL.levelWord[row.target]} (${standing.length ? standing.join(", ") : LABEL.atTarget})`,
     );
-  else if (t.now && !row.naReason) parts.push(LABEL.notNeeded);
+  } else if (t.now && !row.naReason) parts.push(LABEL.notNeeded);
   if (row.heading !== null)
     parts.push(`${LABEL.headingTo}: ${LABEL.levelWord[row.heading]}`);
   return parts.length ? parts.join("; ") : "—";
@@ -127,7 +161,7 @@ function targetCell(row: ModuleRow, t: Targets): string {
 
 /** The rungs and what each means: the sheet draws them as icons, the copy names them. */
 const rungLegend = () =>
-  `${LABEL.rungsLegend} ${([...RUNGS, EXPECTED_ABSENT] as const).map((r) => `**${LABEL.rung[r]}** (${LABEL.rungMeaning[r]})`).join(", ")}.`;
+  `${LABEL.rungsLegend} ${([...RUNGS, EXPECTED_ABSENT, NOT_EXAMINED] as const).map((r) => `**${LABEL.rung[r]}** (${LABEL.rungMeaning[r]})`).join(", ")}.`;
 
 function mapTable(rows: ModuleRow[], t: Targets): string[] {
   return [
@@ -147,8 +181,15 @@ function mapTable(rows: ModuleRow[], t: Targets): string[] {
   ];
 }
 
+/** Where a recommendation was applied: the pull request's link or number, or the commit. */
+function appliedWhere(at: string): string {
+  if (at.startsWith("https://")) return `[${lit(at)}](${href(at)})`;
+  if (/^#?\d+$/.test(at)) return at.startsWith("#") ? at : `#${at}`;
+  return code(at.slice(0, 7));
+}
+
 const effortLine = (r: Recommendation) =>
-  `*${LABEL.leverage}* ${LABEL.leverageWord[r.leverage]} · *${LABEL.effort}* ${LABEL.effortWord[r.effort]}${r.quick_win ? ` · ${LABEL.quickWin}` : ""}`;
+  `${isApplied(r) && r.applied_in ? `**${LABEL.appliedIn} ${appliedWhere(r.applied_in)}** · ` : ""}*${LABEL.leverage}* ${LABEL.leverageWord[r.leverage]} · *${LABEL.effort}* ${LABEL.effortWord[r.effort]}${r.quick_win ? ` · ${LABEL.quickWin}` : ""}${r.needs ? ` · ${LABEL.needs[r.needs]}` : ""}`;
 
 function start(input: ReportInput, t: Targets): string[] {
   const { top, quick } = startHere(input, t);
@@ -190,13 +231,28 @@ function changeLine(r: CriterionChange, word: string, titles: Titles): string {
 /** Every criterion that changed, worst first, as one table. */
 function changes(c: Comparison, titles: Titles): string[] {
   const rows = SHOWN_CHANGES.flatMap((k) =>
-    c.criteria
-      .filter((r) => r.change === k)
-      .map((r) => changeLine(r, LABEL.changes[k], titles)),
+    changeRows(c, k).map((r) => changeLine(r, LABEL.changes[k], titles)),
   );
   if (rows.length === 0) return [];
   return [
     `### ${LABEL.changedHead} (${rows.length})`,
+    "",
+    CHANGE_HEAD,
+    CHANGE_RULE,
+    ...rows,
+    "",
+  ];
+}
+
+/** The criteria examined at one audit only, apart from what changed. */
+function examination(c: Comparison, titles: Titles): string[] {
+  const apart = examinationChanges(c);
+  const rows = (["examined", "unexamined"] as const).flatMap((k) =>
+    apart[k].map((r) => changeLine(r, LABEL.examination[k], titles)),
+  );
+  if (rows.length === 0) return [];
+  return [
+    `### ${LABEL.examinationHead} (${rows.length})`,
     "",
     CHANGE_HEAD,
     CHANGE_RULE,
@@ -277,6 +333,7 @@ function since(
     sinceIntro(input.prior, c, open),
     "",
     ...changes(c, titles),
+    ...examination(c, titles),
     ...stillOpenLines(open, titles),
     ...levelLines(input, c),
   ];
@@ -367,12 +424,29 @@ function uncoveredLines(rows: readonly ModuleRow[]): string[] {
   ];
 }
 
+/** What the report leaves on purpose, each with its reason. */
+function leftLines(input: ReportInput): string[] {
+  const left = leftOnPurpose(input);
+  if (left.length === 0) return [];
+  return [
+    `### ${LABEL.leftHead} (${left.flatMap((l) => l.refs).length})`,
+    "",
+    LABEL.leftIntro,
+    "",
+    ...left.map(
+      (l) =>
+        `- ${l.refs.map(code).join(", ")}: ${lit(l.reason)}${l.revisit_when ? ` ${LABEL.revisitWhen} ${lit(l.revisit_when)}` : ""}`,
+    ),
+    "",
+  ];
+}
+
 function recommendations(
   input: ReportInput,
   rows: readonly ModuleRow[],
   t: Targets,
 ): string[] {
-  const uncovered = uncoveredLines(rows);
+  const uncovered = [...uncoveredLines(rows), ...leftLines(input)];
   const none = input.source.recommendations.length === 0;
   if (none && uncovered.length === 0) return [];
   return [
@@ -388,7 +462,9 @@ function recommendations(
 
 /** Where a criterion stands against the profile, when that matters. */
 function standingNote(c: Cell): string {
+  if (c.score === NOT_EXAMINED) return "";
   if (c.uncovered) return `${LABEL.gapLegend}; ${LABEL.uncoveredLegend}`;
+  if (c.left) return `${LABEL.gapLegend}; ${LABEL.leftLegend}`;
   if (c.gap) return LABEL.gapLegend;
   const met = c.score !== null && meets(c.score, c.criterion.requires);
   return c.inTarget === false && !met ? LABEL.notNeeded : "";

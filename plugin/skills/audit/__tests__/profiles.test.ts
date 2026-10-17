@@ -7,9 +7,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadModules, parseModule } from "../scripts/lib/criteria.ts";
 import {
+  beyondTarget,
+  examinedTargets,
   gaps,
   loadProfiles,
   parseProfiles,
+  selectProfiles,
   targetsFor,
 } from "../scripts/lib/profiles.ts";
 import { checkProfile, parseRecord } from "../scripts/lib/record.ts";
@@ -183,4 +186,78 @@ test("a record's profile and conditions must be the shipped profile's", () => {
       profiles,
     )[0],
   ).toContain("no conditional target for M12");
+});
+
+describe("what an audit must examine", () => {
+  const p = (id: string) => {
+    const profile = profiles.profiles.get(id);
+    if (!profile) throw new Error(`no profile ${id}`);
+    return profile;
+  };
+  const criterion = (key: string) => {
+    const c = modules.flatMap((m) => m.criteria).find((x) => x.key === key);
+    if (!c) throw new Error(`no criterion ${key}`);
+    return c;
+  };
+
+  test("reaches the profile's targets, a listed condition's, and the heading-to profile's where it aims higher", () => {
+    const solo = examinedTargets(p("solo-lite"));
+    expect(solo.get("M0")).toBe("lite");
+    expect(solo.has("M12")).toBe(false);
+    expect(examinedTargets(p("team-standard"), ["M12"]).get("M12")).toBe(
+      "lite",
+    );
+    const growing = examinedTargets(p("solo-lite"), [], p("regulated-strict"));
+    expect(growing.get("M0")).toBe("strict");
+    expect(growing.get("M8")).toBe("standard");
+  });
+
+  test("a criterion is beyond the target above its module's level, or in a module without one", () => {
+    const solo = examinedTargets(p("solo-lite"));
+    expect(beyondTarget(criterion("M0/universal-instruction-file"), solo)).toBe(
+      false,
+    );
+    expect(beyondTarget(criterion("M0/per-directory-instructions"), solo)).toBe(
+      true,
+    );
+    expect(
+      beyondTarget(
+        criterion("M12/branch-reuse-and-footgun-bans-written"),
+        solo,
+      ),
+    ).toBe(true);
+  });
+
+  test("a selection names shipped profiles and their conditions", () => {
+    expect(selectProfiles(profiles, { profile: "solo-lite" })).toEqual({
+      profile: p("solo-lite"),
+    });
+    expect(
+      selectProfiles(profiles, {
+        profile: "solo-lite",
+        conditions: ["M12"],
+        heading_to: "team-standard",
+      }),
+    ).toEqual({ profile: p("solo-lite"), heading: p("team-standard") });
+    expect(selectProfiles(profiles, { profile: "big" })).toEqual({
+      error:
+        "profile big is not one of solo-lite, team-standard, regulated-strict",
+    });
+    expect(
+      selectProfiles(profiles, { profile: "solo-lite", heading_to: "big" }),
+    ).toEqual({
+      error:
+        "heading-to big is not one of solo-lite, team-standard, regulated-strict",
+    });
+    expect(
+      selectProfiles(profiles, {
+        profile: "team-standard",
+        conditions: ["M8"],
+        heading_to: "regulated-strict",
+      }),
+    ).toEqual({
+      error:
+        "neither Team/Standard nor Regulated/Strict has a conditional target for M8",
+    });
+  });
 });

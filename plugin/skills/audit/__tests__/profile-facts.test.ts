@@ -60,9 +60,13 @@ function emptyRepo(): string {
   return dir;
 }
 
-const people = (last_90_days: number, shallow = false): Contributors => ({
+const people = (
+  last_90_days: number,
+  shallow = false,
+  last_year = last_90_days,
+): Contributors => ({
   last_90_days,
-  last_year: last_90_days,
+  last_year,
   automation_last_year: 0,
   shallow,
 });
@@ -91,7 +95,7 @@ describe("the suggested profile", () => {
     ]);
   });
 
-  test("two people, or any deploy signal, is team-standard", () => {
+  test("two people in 90 days, or a deploy signal with two in the year, is team-standard", () => {
     expect(suggestProfile({ ...none, contributors: people(2) })).toEqual({
       id: "team-standard",
       why: ["2 human contributors in the last 90 days"],
@@ -99,13 +103,14 @@ describe("the suggested profile", () => {
     expect(
       suggestProfile({
         ...none,
-        contributors: people(1),
+        contributors: people(1, false, 2),
         deploy_signals: [deploy],
       }),
     ).toEqual({
       id: "team-standard",
       why: [
         "CI names deploy, release or publish work: .github/workflows/deploy.yml",
+        "2 human contributors in the last year",
       ],
     });
     expect(
@@ -115,6 +120,46 @@ describe("the suggested profile", () => {
         deploy_signals: [deploy],
       })?.why,
     ).toHaveLength(2);
+  });
+
+  test("one person in a year is solo-lite even when CI deploys, with team-standard as the alternative", () => {
+    const facts = {
+      ...none,
+      contributors: people(1),
+      deploy_signals: [deploy],
+    };
+    expect(suggestProfile(facts)).toEqual({
+      id: "solo-lite",
+      why: [
+        "one human contributor in the last year, so no second person reviews",
+        "revisit when a second person joins or the deploys need review gates: CI names deploy, release or publish work: .github/workflows/deploy.yml",
+      ],
+    });
+    const dir = repo({
+      ".github/workflows/deploy.yml":
+        "on: push\njobs:\n  ship:\n    runs-on: ubuntu-latest\n    environment: production\n    steps:\n      - run: ./deploy.sh\n",
+    });
+    const gathered = profileFacts(dir, [".github/workflows/deploy.yml"]);
+    expect(gathered.suggested_profile?.id).toBe("solo-lite");
+    expect(gathered.alternative).toEqual({
+      id: "team-standard",
+      why: [
+        "CI names deploy, release or publish work: .github/workflows/deploy.yml",
+        "one human contributor in the last year",
+      ],
+    });
+    // Two people in the year but one lately: team-standard, solo-lite beside it.
+    commitAs(dir, "Bea", "bea@example.com", 200);
+    const lately = profileFacts(dir, [".github/workflows/deploy.yml"]);
+    expect(lately.suggested_profile?.id).toBe("team-standard");
+    expect(lately.alternative).toEqual({
+      id: "solo-lite",
+      why: ["one human contributor in the last 90 days"],
+    });
+    // Facts that point one way have no alternative.
+    expect(
+      profileFacts(repo({ "README.md": "# x\n" }), ["README.md"]).alternative,
+    ).toBeUndefined();
   });
 
   test("compliance documents ask to consider regulated-strict but never suggest it", () => {
@@ -307,12 +352,14 @@ upload_docs:
       },
     ]);
     expect(facts.suggested_profile).toEqual({
-      id: "team-standard",
+      id: "solo-lite",
       why: [
-        "CI names deploy, release or publish work: .github/workflows/ship.yml, .github/workflows/release.yml, .gitlab-ci.yml",
+        "one human contributor in the last year, so no second person reviews",
+        "revisit when a second person joins or the deploys need review gates: CI names deploy, release or publish work: .github/workflows/ship.yml, .github/workflows/release.yml, .gitlab-ci.yml",
         "compliance documents found: consider regulated-strict (docs/threat-model.md, docs/policies/data.md)",
       ],
     });
+    expect(facts.alternative?.id).toBe("team-standard");
   });
 
   test("GitLab templates reached by many paths are read once, and a cycle stops", () => {
@@ -350,9 +397,19 @@ publish_docs:
     const json = runScript("config-fit.ts", ["--offline", "--json"], dir);
     const report = JSON.parse(json.out) as {
       facts: Record<string, string>;
-      profile_facts: { suggested_profile: { id: string; why: string[] } };
+      profile_facts: {
+        suggested_profile: { id: string; why: string[] };
+        alternative?: { id: string; why: string[] };
+      };
     };
-    expect(report.profile_facts.suggested_profile.id).toBe("team-standard");
+    expect(report.profile_facts.suggested_profile.id).toBe("solo-lite");
+    expect(report.profile_facts.alternative).toEqual({
+      id: "team-standard",
+      why: [
+        "CI names deploy, release or publish work: .github/workflows/release.yml, .github/workflows/ship.yml, .gitlab-ci.yml",
+        "one human contributor in the last year",
+      ],
+    });
     expect(report.facts.contributors_last_90_days).toBe("1");
     expect(report.facts.deploy_signals).toContain(
       ".github/workflows/ship.yml (environment: production; ",
@@ -366,7 +423,10 @@ publish_docs:
     const text = runScript("config-fit.ts", ["--offline"], dir).out;
     const facts = text.slice(text.indexOf("## Facts"));
     expect(facts).toContain(
-      "- suggested_profile: team-standard: CI names deploy, release or publish work: .github/workflows/release.yml, .github/workflows/ship.yml, .gitlab-ci.yml; compliance documents found: consider regulated-strict",
+      "- suggested_profile: solo-lite: one human contributor in the last year, so no second person reviews; revisit when a second person joins or the deploys need review gates: CI names deploy, release or publish work: .github/workflows/release.yml, .github/workflows/ship.yml, .gitlab-ci.yml; compliance documents found: consider regulated-strict",
+    );
+    expect(facts).toContain(
+      "- alternative_profile: team-standard: CI names deploy, release or publish work: ",
     );
   });
 

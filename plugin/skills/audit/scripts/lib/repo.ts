@@ -52,6 +52,17 @@ export function run(
   };
 }
 
+/**
+ * Whether the repository at `root` holds `commit`: a record or report naming
+ * a commit it does not have was made for another repository.
+ */
+export function hasCommit(root: string, commit: string): boolean {
+  return (
+    run("git", ["cat-file", "-e", `${commit}^{commit}`], { cwd: root }).code ===
+    0
+  );
+}
+
 /** `gh` with JSON output parsed, or the reason it gave none. */
 export function ghJson(
   args: string[],

@@ -3,9 +3,9 @@
 # observable repo fact, scored absent -> convention -> mechanical.
 #
 # No probe on the instruction file or the glossary: an equivalent may carry
-# any name, so no file search can rule either out. The CI list in
-# context-budget-gated is M1's ci-runs-gates-on-pr list; an anchor cannot
-# reach across files, so keep the two in step.
+# any name, so no file search can rule either out. The CI list is M1's
+# ci-runs-gates-on-pr list; an anchor cannot reach across files, so every
+# criteria file that carries it keeps its copy in step with M1's.
 module: M0
 name: instruction-architecture
 purpose: >-
@@ -17,11 +17,23 @@ criteria:
     requires: convention
     statement: >-
       A vendor-neutral universal instruction file (AGENTS.md or equivalent)
-      exists at the repo root and stays small (on the order of 150 lines).
+      exists at the repo root.
     observe:
       - "AGENTS.md (or documented equivalent) exists at repo root"
       - "file is not tool-specific (readable truth for every agent runtime)"
-      - "file length is on the order of 150 lines or less"
+
+  - id: instruction-file-stays-small
+    level: lite
+    requires: convention
+    statement: >-
+      The universal instruction file stays small (on the order of 150 lines):
+      what every session needs, with longer practice detail linked from it
+      rather than written into it.
+    observe:
+      - "the universal instruction file is on the order of 150 lines or less"
+      - "long content (full workflows, gate documentation, background) lives in documents the file links to"
+      - "where shrinking the file means moving content the repository's own rules guard (a trust posture, a safety rule), a recommendation names that tension"
+    since: next
 
   - id: gates-and-guardrails-listed
     level: lite
@@ -59,6 +71,7 @@ criteria:
       - "each tool-specific file imports the universal file (Claude Code: an @AGENTS.md line), or its runtime reads the universal file natively"
       - "where a runtime has neither, its delta is generated from the universal file, or the gap is recorded where the load model is; a pointer line alone does not count"
       - "no rule text is maintained by hand in both the universal file and a tool delta; a delta generated from the universal file and checked for freshness is a projection of it, not a copy"
+      - "before recommending an import, verify what the runtime already loads natively (the load model, or a session's loaded instructions): an import of a file the runtime already loads loads it twice"
 
   - id: per-directory-instructions
     level: standard
@@ -141,6 +154,54 @@ criteria:
     observe:
       - "a CI job re-derives countable facts stated in instruction files"
       - "a CI job (or link checker) verifies referenced paths exist"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
 
   - id: instruction-set-owned
     level: strict
@@ -165,30 +226,6 @@ criteria:
       - "a CI step checks each skill and agent description against a per-item cap and the skill listing against an aggregate allowance"
       - "the steps run before the dependency install, on every pull request, with no path filter"
     probe:
-      files:
-        - ".github/workflows/*.yml"
-        - ".github/workflows/*.yaml"
-        - ".gitlab-ci.yml"
-        - ".circleci/config.yml"
-        - "azure-pipelines.yml"
-        - "bitbucket-pipelines.yml"
-        - "Jenkinsfile"
-        - ".buildkite/**"
-        - ".drone.yml"
-        - ".woodpecker.yml"
-        - ".woodpecker/**"
-        - ".travis.yml"
-        - ".forgejo/workflows/*"
-        - ".gitea/workflows/*"
-        - ".cirrus.yml"
-        - "appveyor.yml"
-        - ".appveyor.yml"
-        - ".semaphore/**"
-        - ".teamcity/**"
-        - "bitrise.yml"
-        - "codemagic.yaml"
-        - "cloudbuild.yaml"
-        - "cloudbuild.yml"
-        - "buildspec.yml"
-        - ".tekton/**"
+      mechanical:
+        files: *ci-config
     since: 0.22.0

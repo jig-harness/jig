@@ -2,6 +2,24 @@
 
 Improving an existing project. The entry point is an **audit**, not a module.
 
+## Before the first audit
+
+An audit scores one commit, so settle what would make that commit misleading
+first. If the repository still uses the `groundwork` plugin (Jig's former
+name), migrate it as
+[moving from the `groundwork` plugin](../plugin/README.md#moving-from-the-groundwork-plugin)
+says and commit the migration, then audit: the audit reads the configuration
+the migration writes. The rest of the hygiene before a first audit:
+
+- the Jig configuration (`.config/jig.yaml`) migrated and committed, so the
+  audit's draft names a commit that holds it;
+- `.context/` in `.gitignore` where the workspace tool keeps working files
+  there, so they never show as changes;
+- the dependencies installed, so the git hooks the repository configures
+  actually run in this checkout;
+- the checkout on the integration branch and up to date with the remote, so
+  the audit does not score a stale tree.
+
 ## The ladder
 
 1. **Audit** — run [`/jig:audit`](../plugin/skills/audit/README.md) in the

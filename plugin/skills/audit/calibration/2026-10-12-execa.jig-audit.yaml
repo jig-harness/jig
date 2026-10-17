@@ -11,6 +11,10 @@ criteria:
     # A vendor-neutral universal instruction file (AGENTS.md or equivalent) exists at the repo root and stays small (on the order of 150 lines).
     score: absent
     evidence: "probe: no tracked file matches AGENTS.md, CLAUDE.md, GEMINI.md, .github/copilot-instructions.md, .cursorrules, .cursor/rules/**, .windsurfrules, .clinerules, .junie/guidelines.md, CONVENTIONS.md"
+  M0/instruction-file-stays-small:   # lite, requires convention
+    # The universal instruction file stays small (on the order of 150 lines): what every session needs, with longer practice detail linked from it rather than written into it.
+    score: absent
+    evidence: "No instruction file exists (see universal-instruction-file), so there is none to keep small. Met only vacuously, so it is not counted as met."
   M0/gates-and-guardrails-listed:   # lite, requires convention
     # The universal instruction file lists the quality gates (runnable commands) and the critical guardrails.
     score: absent

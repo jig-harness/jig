@@ -2,8 +2,11 @@
 # Schema: README.md in this folder. Each criterion is an
 # observable repo fact, scored absent -> convention -> mechanical.
 #
-# A repository without CI has no pipeline to economize: score the module
-# expected-absent there, and score M1's criteria instead.
+# A repository without CI scores these criteria absent, not expected-absent:
+# they presuppose M1's CI, which can still come (the probes write that absent).
+# The cancellation and timeout probes read the syntax of GitHub-style workflows
+# only; on any other provider, where the setting may live in the host or in a
+# syntax they do not read, they hold and the agent scores the criterion.
 module: M13
 name: pipeline-economy
 purpose: >-
@@ -20,6 +23,57 @@ criteria:
     observe:
       - "every pull-request workflow declares a concurrency group keyed by the pull request (or its ref) with cancel-in-progress, or the provider's equivalent (GitLab: interruptible jobs with auto-cancel)"
       - "the group is not shared with runs that check something the surviving run does not"
+    probe:
+      any:
+        - grep:
+            files:
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".forgejo/workflows/*"
+              - ".gitea/workflows/*"
+            pattern: "[Cc]ancel"
+        - files: &ci-outside-github-family
+            - ".gitlab-ci.yml"
+            - ".circleci/config.yml"
+            - ".circleci/config.yaml"
+            - "azure-pipelines.yml"
+            - "azure-pipelines.yaml"
+            - ".azure-pipelines/**"
+            - ".pipelines/**"
+            - "bitbucket-pipelines.yml"
+            - "Jenkinsfile"
+            - "**/Jenkinsfile"
+            - "**/*.jenkinsfile"
+            - ".buildkite/**"
+            - ".drone.yml"
+            - ".drone.yaml"
+            - ".woodpecker.yml"
+            - ".woodpecker.yaml"
+            - ".woodpecker/**"
+            - ".travis.yml"
+            - ".cirrus.yml"
+            - ".cirrus.star"
+            - "appveyor.yml"
+            - ".appveyor.yml"
+            - ".semaphore/**"
+            - ".teamcity/**"
+            - "bitrise.yml"
+            - "codemagic.yaml"
+            - "codefresh.yml"
+            - "cloudbuild.yaml"
+            - "cloudbuild.yml"
+            - "buildspec.yml"
+            - "buildspec.yaml"
+            - ".tekton/**"
+            - ".harness/**"
+            - ".build.yml"
+            - ".builds/**"
+            - "**/*.gocd.yaml"
+            - "**/*.gocd.yml"
+            - ".concourse/**"
+            - "ci/pipeline*.yml"
+            - "ci/pipeline*.yaml"
+            - ".onedev-buildspec.yml"
 
   - id: every-job-has-timeout
     level: lite
@@ -32,6 +86,16 @@ criteria:
     observe:
       - "each job carries timeout-minutes (GitHub Actions), timeout (GitLab CI) or the provider's equivalent"
       - "each value is below the provider's default job limit (360 minutes on GitHub-hosted runners)"
+    probe:
+      any:
+        - grep:
+            files:
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".forgejo/workflows/*"
+              - ".gitea/workflows/*"
+            pattern: "timeout-minutes"
+        - files: *ci-outside-github-family
 
   - id: no-required-pipeline-path-filtered
     level: lite
@@ -57,6 +121,53 @@ criteria:
       - "one small job runs the catalog resolver and publishes its result (job outputs on GitHub Actions), or the jobs' change rules are generated from the catalog, or the resolver writes a child pipeline that the parent waits for (GitLab CI)"
       - "the other jobs' conditions come from the resolver's answer or the catalog, not from path patterns written by hand per job"
       - "an unmatched file selects every job, or a gate fails the change until the file belongs to an area (fail closed)"
+    probe:
+      files: &ci-config
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+        - ".forgejo/workflows/*"
+        - ".gitea/workflows/*"
+        - ".gitlab-ci.yml"
+        - ".circleci/config.yml"
+        - ".circleci/config.yaml"
+        - "azure-pipelines.yml"
+        - "azure-pipelines.yaml"
+        - ".azure-pipelines/**"
+        - ".pipelines/**"
+        - "bitbucket-pipelines.yml"
+        - "Jenkinsfile"
+        - "**/Jenkinsfile"
+        - "**/*.jenkinsfile"
+        - ".buildkite/**"
+        - ".drone.yml"
+        - ".drone.yaml"
+        - ".woodpecker.yml"
+        - ".woodpecker.yaml"
+        - ".woodpecker/**"
+        - ".travis.yml"
+        - ".cirrus.yml"
+        - ".cirrus.star"
+        - "appveyor.yml"
+        - ".appveyor.yml"
+        - ".semaphore/**"
+        - ".teamcity/**"
+        - "bitrise.yml"
+        - "codemagic.yaml"
+        - "codefresh.yml"
+        - "cloudbuild.yaml"
+        - "cloudbuild.yml"
+        - "buildspec.yml"
+        - "buildspec.yaml"
+        - ".tekton/**"
+        - ".harness/**"
+        - ".build.yml"
+        - ".builds/**"
+        - "**/*.gocd.yaml"
+        - "**/*.gocd.yml"
+        - ".concourse/**"
+        - "ci/pipeline*.yml"
+        - "ci/pipeline*.yaml"
+        - ".onedev-buildspec.yml"
 
   - id: aggregate-required-check
     level: standard
@@ -72,6 +183,8 @@ criteria:
       - "where each job reports its own check (GitHub Actions), an aggregator job needs every selected job, runs on !cancelled() (not always()), and compares each needed job's result with whether the resolver selected it"
       - "where the provider judges the whole pipeline (GitLab CI's \"Pipelines must succeed\"), that built-in verdict is the required check, no job that must block is allowed to fail, and a child pipeline mirrors its status to its trigger job"
       - "the merge rule requires that one verdict, not the individual jobs"
+    probe:
+      files: *ci-config
 
   - id: heavy-non-gating-suites-scheduled
     level: standard
@@ -103,6 +216,8 @@ criteria:
       - "a file that does not parse (a repeated key included) makes it fail, not pass"
       - "its exceptions are checked in, each with a reason; an entry without one, or one that suppresses no finding, fails the lint"
       - "it runs in CI on changes to the workflow files, with its own self-test"
+    probe:
+      files: *ci-config
 
   - id: job-timeout-ceiling-linted
     level: strict
@@ -117,6 +232,8 @@ criteria:
       - "the lint fails a literal job timeout above 60 minutes, and passes one of exactly 60"
       - "a job above the ceiling passes only through a checked-in exception that gives a reason"
       - "a timeout written as an expression is outside this criterion: its value is known only at run time, and review checks it"
+    probe:
+      files: *ci-config
 
   - id: ci-cost-measured
     level: strict

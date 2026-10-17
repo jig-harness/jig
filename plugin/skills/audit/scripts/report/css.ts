@@ -26,13 +26,14 @@ import { PALETTE } from "../../../decide/scripts/sheet-kit/html.ts";
  */
 const ABSENT_FILL = "#eef1f4";
 
-/** The fill of each rung, weakest to strongest, and of a criterion the shape rules out. */
+/** The fill of each rung, weakest to strongest, of a criterion the shape rules out, and of one the audit did not examine. */
 export const RUNG_FILL = {
   absent: ABSENT_FILL,
   convention: "oklch(0.9 0.045 255)",
   advisory: "oklch(0.72 0.1 255)",
   mechanical: PALETTE.accent,
   "expected-absent": PALETTE.hairLight,
+  "not-examined": PALETTE.bg,
 } as const;
 
 /** The text and icon drawn on each rung's fill: grey for nothing there, then blues that deepen with the rung. */
@@ -42,6 +43,7 @@ export const RUNG_INK = {
   advisory: "oklch(0.3 0.08 255)",
   mechanical: PALETTE.surface,
   "expected-absent": PALETTE.muted,
+  "not-examined": PALETTE.muted,
 } as const;
 
 /** Every text-on-background pair the stylesheet draws, for the contrast test. Each is [foreground, background, where]. */
@@ -93,6 +95,15 @@ export const TEXT_PAIRS: readonly [string, string, string][] = [
   [PALETTE.muted, PALETTE.bg, "a removed badge"],
   [OUTCOME_INK.amber, TOKEN_TINTS.amberLight, "a still-open badge"],
   [PALETTE.muted, ABSENT_FILL, "a still-open-beyond badge"],
+  [PALETTE.ink, PALETTE.hairLight, "an examined-at-one-audit-only badge"],
+  [
+    OUTCOME_INK.emerald,
+    TOKEN_TINTS.emeraldLight,
+    "an applied recommendation's tag",
+  ],
+  [PALETTE.ink, PALETTE.surface, "a needs-an-admin tag"],
+  [PALETTE.ink, PALETTE.bg, "a gap left on purpose, the alternative profile"],
+  [PALETTE.muted, PALETTE.bg, "an alternative profile's reasons"],
   [OUTCOME_INK.emerald, PALETTE.surface, "an unchanged-and-met badge"],
   [PALETTE.ink, TOKEN_TINTS.blueLight, "the welcome, a guide note"],
   [PALETTE.accent, TOKEN_TINTS.blueLight, "the welcome's link"],
@@ -108,6 +119,7 @@ const inShort = `.lead{max-width:var(--m);font-size:18px;line-height:1.55}
 .pchip{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:1px 7px;border-radius:999px;vertical-align:.1em}
 .p-declared{color:var(--em-ink);background:var(--em-l)}
 .p-suggested{color:var(--am-ink);background:var(--am-l)}
+.p-explored{color:var(--ink);background:var(--hair)}
 .why{max-width:var(--m);margin-top:10px;color:var(--sec);font-size:15px}
 .sig-l{font-size:14px;margin-left:4px;white-space:nowrap}
 .signals{max-width:var(--m);margin-top:18px;padding:12px 16px;border-left:3px solid var(--rule);background:var(--bg)}
@@ -116,6 +128,10 @@ const inShort = `.lead{max-width:var(--m);font-size:18px;line-height:1.55}
 .signals ul{list-style:none;display:flex;flex-direction:column;gap:8px}
 .signals li p{margin:0;font-size:15px}
 .signals .src{color:var(--sec);overflow-wrap:anywhere}
+.alt{max-width:var(--m);margin-top:18px;padding:12px 16px;border-left:3px solid var(--rule);background:var(--bg);color:var(--ink)}
+.alt h3{font-size:16px;margin-bottom:4px}
+.alt ul{padding-left:1.1em;color:var(--sec)}
+.alt p{margin:6px 0 0}
 .signals code{font-size:13px;margin-right:6px}`;
 
 /** The maturity map: a row per module, a mark per criterion. */
@@ -151,6 +167,7 @@ const map = `.intro{max-width:var(--m);color:var(--sec);margin-bottom:16px}
 .c-advisory{background:${RUNG_FILL.advisory};color:${RUNG_INK.advisory}}
 .c-mechanical{background:${RUNG_FILL.mechanical};color:${RUNG_INK.mechanical}}
 .c-expected-absent{background:repeating-linear-gradient(135deg,${RUNG_FILL["expected-absent"]} 0 3px,var(--surface) 3px 6px);color:${RUNG_INK["expected-absent"]};box-shadow:inset 0 0 0 1px var(--hair)}
+.c-not-examined{background:${RUNG_FILL["not-examined"]};color:${RUNG_INK["not-examined"]};outline:1px dotted var(--rule);outline-offset:-1px}
 .c-unscored{background:var(--surface);color:var(--sec);outline:1px dashed var(--rule);outline-offset:-1px}
 .c.gap{box-shadow:inset 0 0 0 2px var(--am-ink)}
 .c.unc::after{content:"";position:absolute;right:-3px;top:-3px;width:6px;height:6px;border-radius:50%;background:var(--am-ink);box-shadow:0 0 0 1.5px var(--surface)}
@@ -187,6 +204,10 @@ const cards = `.top{list-style:none;display:grid;grid-template-columns:repeat(au
 .tag{display:inline-block;font-size:13px;line-height:1.4;padding:0 7px;border:1px solid var(--rule);border-radius:3px;color:var(--sec);white-space:nowrap}
 .tag b{font-weight:600;color:var(--ink)}
 .tag-qw{border-color:transparent;background:var(--em-l);color:var(--em-ink);font-weight:600}
+.tag-done{border-color:transparent;background:var(--em-l);color:var(--em-ink);font-weight:600;white-space:normal}
+.tag-done a{color:inherit}
+.tag-admin{border-color:var(--ink);color:var(--ink);font-weight:600}
+.rec.done{border-left-color:var(--em-ink);background:var(--bg)}
 .later{margin-top:36px;border-top:1px solid var(--rule);padding-top:16px}
 .later summary{cursor:pointer;font-size:20px;font-weight:600;list-style-position:outside}
 .later summary::marker{color:var(--sec)}
@@ -223,6 +244,7 @@ const cards = `.top{list-style:none;display:grid;grid-template-columns:repeat(au
 .s-advisory{background:${RUNG_FILL.advisory};color:${RUNG_INK.advisory}}
 .s-mechanical{background:${RUNG_FILL.mechanical};color:${RUNG_INK.mechanical}}
 .s-expected-absent{background:${RUNG_FILL["expected-absent"]};color:${RUNG_INK["expected-absent"]}}
+.s-not-examined{background:${RUNG_FILL["not-examined"]};color:${RUNG_INK["not-examined"]};box-shadow:inset 0 0 0 1px var(--rule)}
 .s-unscored{background:var(--surface);color:var(--sec);box-shadow:inset 0 0 0 1px var(--rule)}`;
 
 /** The choices of a card, and the fields a choice opens. */
@@ -300,7 +322,11 @@ const config = `.sev-h{margin:20px 0 8px;font-size:16px}
 .trend-s{font-weight:600;margin-bottom:4px}
 .mv-up{color:var(--em-ink);font-weight:600}.mv-down{color:var(--red);font-weight:600}
 .uncov{margin-top:34px;max-width:calc(var(--m) + 10rem)}
-.uncov .intro{margin-bottom:8px}`;
+.uncov .intro{margin-bottom:8px}
+.left{margin-top:34px;max-width:calc(var(--m) + 10rem)}
+.left .intro{margin-bottom:8px}
+.left .lr{display:block;margin-top:2px;color:var(--ink)}
+.left .lw{display:block;color:var(--sec);font-size:14px}`;
 
 /**
  * Icons, module chips, criterion refs and the popovers beside them. A popover
@@ -346,6 +372,7 @@ const since = `.bds{list-style:none;display:flex;flex-wrap:wrap;gap:8px;margin:4
 .bd-removed{background:var(--bg);color:var(--sec);box-shadow:inset 0 0 0 1px var(--rule)}
 .bd-open{background:var(--am-l);color:var(--am-ink)}
 .bd-beyond{background:${ABSENT_FILL};color:var(--sec)}
+.bd-examined,.bd-unexamined{background:var(--hair);color:var(--ink)}
 .bd-unchanged{background:var(--surface);color:var(--em-ink);box-shadow:inset 0 0 0 1px var(--em-ink)}
 .chgt{width:100%;max-width:calc(var(--m) + 16rem);border-collapse:collapse;font-size:14px;margin-bottom:6px}
 .chgt th,.chgt td{text-align:left;vertical-align:middle;padding:7px 16px 7px 0;border-top:1px solid var(--hair)}

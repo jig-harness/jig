@@ -297,8 +297,13 @@ so a reviewer applies it where the lint's shape test cannot.
    compare each structured artifact as data
    ([`reference/compare-as-data/`](reference/compare-as-data/)). Check the
    paths that instruction files reference with
-   [`reference/prose-facts/check-referenced-paths.ts`](reference/prose-facts/check-referenced-paths.ts),
-   and state in the instruction file that a number which tallies a list is
+   [`reference/prose-facts/check-referenced-paths.ts`](reference/prose-facts/check-referenced-paths.ts);
+   a path that lives in another repository is not this one's to check, so
+   name that repository with it, as a link to the file there (a URL is never
+   checked) or with the repository as a placeholder prefix
+   (`<other-repo>/scripts/update.sh`; a placeholder is never checked), rather
+   than moving the text out of the instruction file. State in the
+   instruction file that a number which tallies a list is
    dropped or registered, and one that constrains stays. Declare each toolchain version's source and
    pin sites and run
    [`reference/toolchain-pins/`](reference/toolchain-pins/) on every change.

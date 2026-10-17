@@ -12,8 +12,12 @@
  * profile does not ask for yet sit in their own folded groups, "as you grow"
  * and "optional", each saying why. A gap no recommendation covers carries a
  * second mark and is listed under the recommendations, so each gap is either
- * addressed or visibly left. Facts suggesting the team revisit its profile
- * sit beside the profile in the summary, never among the findings.
+ * addressed or visibly left; the gaps the report leaves on purpose are
+ * listed with their reasons. A recommendation applied since the audited
+ * commit shows where, and offers no choice. Facts suggesting the team
+ * revisit its profile, and another profile the facts support, sit beside
+ * the profile in the summary, never among the findings. A criterion the
+ * audit did not examine is shown as such, never as a gap.
  *
  * Every criterion's mark in the map, and every module's chip wherever a
  * module is named, carries a popover that explains it in plain words; the
@@ -43,7 +47,7 @@ import {
   createInline,
   type Inline,
 } from "../../../decide/scripts/sheet-kit/inline.ts";
-import { LEVELS, meets } from "../lib/criteria.ts";
+import { LEVELS, meets, NOT_EXAMINED } from "../lib/criteria.ts";
 import type { Conditional } from "../lib/profiles.ts";
 import type { Comparison } from "../lib/record.ts";
 import { cellsLabel, legend, mark } from "./cells.ts";
@@ -56,12 +60,15 @@ import { LABEL, plural, SHEET_LABEL } from "./labels.ts";
 import { iconSprite } from "./lucide/icons.ts";
 import { critAnchor, createMarks, type Marks, scoreChip } from "./marks.ts";
 import {
+  alternativeOf,
   attainedWord,
   type Cell,
   countsOf,
   groups,
   type Horizon,
   horizonWhy,
+  isApplied,
+  leftOnPurpose,
   mapRows,
   type ModuleRow,
   moduleTitle,
@@ -103,7 +110,11 @@ function richIn(ctx: Ctx): Rich {
 const codes = (items: readonly string[]) =>
   `<ul class="ev">${items.map((e) => `<li><code>${esc(e)}</code></li>`).join("")}</ul>`;
 const lvClass = (row: ModuleRow) =>
-  row.attained === "none" || row.attained === "n/a" ? "lv lv-none" : "lv";
+  row.attained === "none" ||
+  row.attained === "n/a" ||
+  row.attained === "not-examined"
+    ? "lv lv-none"
+    : "lv";
 
 // ---------- masthead and summary ----------
 
@@ -164,9 +175,16 @@ function stats(ctx: Ctx): string {
   const of = (a: number, b: number) =>
     `<span class="big">${a} <small>${esc(LABEL.ofWord)} ${b}</small></span>`;
   const later = n.later > 0 ? `; ${n.later} ${esc(LABEL.laterCount)}` : "";
+  const met = n.notExamined > 0 ? LABEL.examinedMet : LABEL.criteriaMet;
+  const notExamined =
+    n.notExamined > 0
+      ? `; ${n.notExamined} ${esc(LABEL.notExaminedCount)}`
+      : "";
+  const applied =
+    n.applied > 0 ? `; ${n.applied} ${esc(LABEL.appliedCount)}` : "";
   const items = [
-    `<li class="met">${of(n.met, n.applicable)}${esc(LABEL.criteriaMet)}${n.expectedAbsent > 0 ? `; ${n.expectedAbsent} ${esc(LABEL.expectedAbsentCount)}` : ""}</li>`,
-    `<li><span class="big">${n.now}</span>${esc(LABEL.recommendationsNow)}, ${n.quickWins} ${esc(LABEL.quickWins)}${later}</li>`,
+    `<li class="met">${of(n.met, n.applicable)}${esc(met)}${n.expectedAbsent > 0 ? `; ${n.expectedAbsent} ${esc(LABEL.expectedAbsentCount)}` : ""}${notExamined}</li>`,
+    `<li><span class="big">${n.now}</span>${esc(LABEL.recommendationsNow)}, ${n.quickWins} ${esc(LABEL.quickWins)}${later}${applied}</li>`,
   ];
   if (n.withTarget > 0)
     items.push(
@@ -175,6 +193,10 @@ function stats(ctx: Ctx): string {
   if (n.uncovered > 0)
     items.push(
       `<li class="unc-n"><a class="big" href="#uncovered">${n.uncovered}</a>${esc(LABEL.uncoveredCount[plural(n.uncovered)])}</li>`,
+    );
+  if (n.left > 0)
+    items.push(
+      `<li><a class="big" href="#left">${n.left}</a>${esc(LABEL.leftCount[plural(n.left)])}</li>`,
     );
   return `<ul class="stats">${items.join("")}</ul>`;
 }
@@ -192,6 +214,18 @@ function signalsHtml(ctx: Ctx, rich: Rich): string {
   return `<div class="signals" id="signals"><h3>${esc(LABEL.signalsHead)}</h3><p class="intro">${esc(LABEL.signalsIntro)}</p><ul>${items}</ul></div>`;
 }
 
+/** Another profile the facts support, with why and how the modules would stand under it: beside the profile, so the dial is chosen knowingly. */
+function alternativeHtml(ctx: Ctx, rich: Rich): string {
+  const alt = alternativeOf(ctx.input, ctx.targets);
+  if (!alt) return "";
+  const why = alt.why.map((w) => `<li>${rich(w)}</li>`).join("");
+  const at = LABEL.alternativeAtTarget
+    .replace("{profile}", alt.name)
+    .replace("{n}", String(alt.atTarget))
+    .replace("{m}", String(alt.withTarget));
+  return `<div class="alt" id="alternative"><h3>${esc(LABEL.alternativeHead.replace("{profile}", alt.name))}</h3>${why ? `<ul>${why}</ul>` : ""}<p>${esc(at)}</p></div>`;
+}
+
 function inShort(ctx: Ctx): string {
   const rich = richIn(ctx);
   const why = ctx.targets.profile?.why
@@ -199,7 +233,7 @@ function inShort(ctx: Ctx): string {
     : "";
   return section(
     LABEL.inShort,
-    `<div class="main"><p class="lead">${rich(ctx.input.source.summary)}</p>${why}${signalsHtml(ctx, rich)}</div><aside class="side">${stats(ctx)}</aside>`,
+    `<div class="main"><p class="lead">${rich(ctx.input.source.summary)}</p>${why}${alternativeHtml(ctx, rich)}${signalsHtml(ctx, rich)}</div><aside class="side">${stats(ctx)}</aside>`,
     { id: "summary", pair: true },
   );
 }
@@ -230,10 +264,16 @@ function levelCell(row: ModuleRow, t: Targets): string {
   if (row.target !== null) {
     parts.push(
       `<span class="tgt">${esc(LABEL.target)}: ${esc(LABEL.levelWord[row.target])}</span>`,
-      row.missing === 0
+      row.missing === 0 && row.unexamined === 0
         ? `<span class="ok">${esc(LABEL.atTarget)}</span>`
-        : `<span class="go">${row.missing} ${esc(LABEL.toGo)}</span>`,
+        : row.missing > 0
+          ? `<span class="go">${row.missing} ${esc(LABEL.toGo)}</span>`
+          : "",
     );
+    if (row.unexamined > 0)
+      parts.push(
+        `<span class="tgt">${row.unexamined} ${esc(LABEL.notExaminedHere)}</span>`,
+      );
   } else if (t.now && !row.naReason)
     parts.push(`<span class="tgt">${esc(LABEL.notNeeded)}</span>`);
   if (row.heading !== null)
@@ -315,8 +355,22 @@ function mapSection(ctx: Ctx): string {
 
 // ---------- recommendations ----------
 
+/** Where a recommendation was applied: a link to the pull request, its number, or the commit. */
+function appliedWhere(at: string): string {
+  if (at.startsWith("https://")) return extLink(at, at);
+  if (/^#?\d+$/.test(at)) return esc(at.startsWith("#") ? at : `#${at}`);
+  return `<code>${esc(at.slice(0, 7))}</code>`;
+}
+
 function tags(r: Recommendation): string {
-  return `<div class="tags"><span class="tag">${esc(LABEL.leverage)} <b>${esc(LABEL.leverageWord[r.leverage])}</b></span><span class="tag">${esc(LABEL.effort)} <b>${esc(LABEL.effortWord[r.effort])}</b></span>${r.quick_win ? `<span class="tag tag-qw">${esc(LABEL.quickWin)}</span>` : ""}</div>`;
+  const done =
+    isApplied(r) && r.applied_in
+      ? `<span class="tag tag-done">${esc(LABEL.appliedIn)} ${appliedWhere(r.applied_in)}</span>`
+      : "";
+  const needs = r.needs
+    ? `<span class="tag tag-admin">${esc(LABEL.needs[r.needs])}</span>`
+    : "";
+  return `<div class="tags">${done}<span class="tag">${esc(LABEL.leverage)} <b>${esc(LABEL.leverageWord[r.leverage])}</b></span><span class="tag">${esc(LABEL.effort)} <b>${esc(LABEL.effortWord[r.effort])}</b></span>${r.quick_win ? `<span class="tag tag-qw">${esc(LABEL.quickWin)}</span>` : ""}${needs}</div>`;
 }
 
 const recLink = (r: Recommendation) =>
@@ -389,7 +443,11 @@ function card(
   const dl = fields
     .map(([dt, dd]) => `<dt>${esc(dt)}</dt><dd>${dd}</dd>`)
     .join("");
-  return `<li><article class="rec" id="rec-${esc(r.id)}" data-rec="${esc(r.id)}"><div class="rec-h"><span class="rid">${esc(r.id)}</span><h4>${esc(r.title)}</h4></div>${tags(r)}<dl class="fields">${dl}</dl>${choices(r)}</article></li>`;
+  // An applied recommendation is done: it takes no decision, so it offers no choice.
+  const head = isApplied(r)
+    ? `<article class="rec done" id="rec-${esc(r.id)}">`
+    : `<article class="rec" id="rec-${esc(r.id)}" data-rec="${esc(r.id)}">`;
+  return `<li>${head}<div class="rec-h"><span class="rid">${esc(r.id)}</span><h4>${esc(r.title)}</h4></div>${tags(r)}<dl class="fields">${dl}</dl>${isApplied(r) ? "" : choices(r)}</article></li>`;
 }
 
 /** A group's heading: a module's chip and name, or the configuration's title. */
@@ -436,6 +494,20 @@ function uncoveredList(rows: readonly ModuleRow[], marks: Marks): string {
   return `<div class="uncov" id="uncovered"><h3 class="sev-h">${esc(LABEL.uncoveredHead)} (${cells.length})</h3><p class="intro">${marks.phrase(LABEL.uncoveredIntro, ["target", "target"])}</p><ul class="fl">${items}</ul></div>`;
 }
 
+/** What the report leaves on purpose: each entry's criteria, its reason and when to look again. */
+function leftList(ctx: Ctx): string {
+  const left = leftOnPurpose(ctx.input);
+  if (left.length === 0) return "";
+  const rich = richIn(ctx);
+  const items = left
+    .map(
+      (l) =>
+        `<li>${l.refs.map(ctx.marks.ref).join(" ")}<span class="lr">${rich(l.reason)}</span>${l.revisit_when ? `<span class="lw">${esc(LABEL.revisitWhen)} ${rich(l.revisit_when)}</span>` : ""}</li>`,
+    )
+    .join("");
+  return `<div class="left" id="left"><h3 class="sev-h">${esc(LABEL.leftHead)} (${left.flatMap((l) => l.refs).length})</h3><p class="intro">${ctx.marks.phrase(LABEL.leftIntro, ["target", "target"])}</p><ul class="fl">${items}</ul></div>`;
+}
+
 function recsSection(ctx: Ctx): string {
   const rich = richIn(ctx);
   const now = recsFor("now", ctx.input, ctx.targets);
@@ -447,6 +519,7 @@ function recsSection(ctx: Ctx): string {
     none +
     groupsHtml(ctx, now, "now", rich) +
     uncoveredList(ctx.rows, ctx.marks) +
+    leftList(ctx) +
     laterGroup(ctx, "grow", rich) +
     laterGroup(ctx, "optional", rich);
   return section(LABEL.recommendations, body, { id: "recs", cls: "heavy" });
@@ -466,11 +539,13 @@ function sinceSection(ctx: Ctx, c: Comparison): string {
 
 /** Where a criterion stands against the profile: needed and not met, or not needed and not met. */
 function standing(c: Cell): string {
+  if (c.score === NOT_EXAMINED) return "";
   const uncovered = c.uncovered
     ? `<span class="unct">${esc(LABEL.uncoveredLegend)}</span>`
     : "";
+  const left = c.left ? `<span class="nn">${esc(LABEL.leftLegend)}</span>` : "";
   if (c.gap)
-    return `<span class="gapt">${esc(LABEL.gapLegend)}</span>${uncovered}`;
+    return `<span class="gapt">${esc(LABEL.gapLegend)}</span>${uncovered}${left}`;
   const met = c.score !== null && meets(c.score, c.criterion.requires);
   return c.inTarget === false && !met
     ? `<span class="nn">${esc(LABEL.notNeeded)}</span>`
@@ -615,7 +690,8 @@ function sections(input: ReportInput): [string, string, string][] {
   if (comparison) out.push(["since", N.since, sinceSection(ctx, comparison)]);
   if (
     input.source.recommendations.length > 0 ||
-    uncoveredGaps(ctx.rows).length > 0
+    uncoveredGaps(ctx.rows).length > 0 ||
+    leftOnPurpose(input).length > 0
   )
     out.push(["recs", N.recs, recsSection(ctx)]);
   out.push(

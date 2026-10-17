@@ -8,6 +8,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import { load } from "../../../shared/yaml.ts";
 import {
   commandProblems,
@@ -57,6 +59,54 @@ function fit(
   const run = runScript("config-fit.ts", [...args, "--json"], dir, env);
   if (run.code === 2) throw new Error(run.err);
   return { code: run.code, report: JSON.parse(run.out) as Report, dir };
+}
+
+/** Run git in a scratch repository, failing the test when it fails. */
+function git(dir: string, ...args: string[]): string {
+  const r = spawnSync("git", args, {
+    cwd: dir,
+    env: cleanEnv(),
+    encoding: "utf8",
+  });
+  expectSpawnExit(
+    { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
+    0,
+  );
+  return r.stdout.trim();
+}
+
+/** Commit an empty change with `subject` to the scratch repository. */
+function commit(dir: string, subject: string): void {
+  git(dir, "commit", "-q", "--allow-empty", "-m", subject);
+}
+
+/**
+ * Give a scratch repository an origin remote that is never contacted, its
+ * remote-tracking branches (each at HEAD unless a commit is given) and an
+ * origin/HEAD naming `head`.
+ */
+function withOrigin(
+  dir: string,
+  branches: Record<string, string | null>,
+  head?: string,
+): void {
+  git(dir, "remote", "add", "origin", "https://example.invalid/web.git");
+  for (const [name, at] of Object.entries(branches))
+    git(dir, "update-ref", `refs/remotes/origin/${name}`, at ?? "HEAD");
+  if (head !== undefined)
+    git(
+      dir,
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+      `refs/remotes/origin/${head}`,
+    );
+}
+
+/** Run config-fit with `--json` in an existing repository. */
+function fitIn(dir: string, args: string[], env = cleanEnv()): Report {
+  const run = runScript("config-fit.ts", [...args, "--json"], dir, env);
+  if (run.code === 2) throw new Error(run.err);
+  return JSON.parse(run.out) as Report;
 }
 
 const ids = (r: Report, severity?: string) =>
@@ -651,6 +701,7 @@ declined:
     const files = {
       "package.json": '{"scripts":{"test":"true"}}',
       "bun.lock": "",
+      ".gitignore": ".context/\n",
     };
     const dir = repo(files);
     const run = runScript("config-fit.ts", ["--offline", "--draft"], dir);
@@ -751,12 +802,13 @@ describe.skipIf(process.platform === "win32")("the forge", () => {
     over?: Record<string, string>,
     files: Record<string, string> = {},
   ) {
-    const dir = repo({ ".config/jig.yaml": config, ...files });
+    return onlineIn(repo({ ".config/jig.yaml": config, ...files }), over);
+  }
+
+  /** config-fit against the fake forge, in an existing repository. */
+  function onlineIn(dir: string, over?: Record<string, string>) {
     const bin = fakeGh(dir, answers(over));
-    const env = cleanEnv({ PATH: withPath(bin) });
-    const run = runScript("config-fit.ts", ["--json"], dir, env);
-    if (run.code === 2) throw new Error(run.err);
-    return JSON.parse(run.out) as Report;
+    return fitIn(dir, [], cleanEnv({ PATH: withPath(bin) }));
   }
 
   test("required checks that never ran, stacking, labels, reviewers and issue keys", () => {
@@ -1003,9 +1055,9 @@ declined:
     const report = JSON.parse(run.out) as Report;
     expect(report.suggestions.map((s) => s.field)).toEqual([
       "review.bots",
-      "issue_tracker.team",
       "pull_requests.stacking",
       "review.repo_slug",
+      "issue_tracker.team",
       "drive.change_areas_catalog",
       "gates.command",
     ]);
@@ -1019,12 +1071,12 @@ declined:
   bots: ["example-review[bot]"]
   # the forge names this repository example/web
   repo_slug: example/web
-issue_tracker:
-  # 3 of the last 3 merged pull requests carry ENG-<n> issue keys
-  team: ENG
 pull_requests:
   # 1 open pull request(s) are based on another open pull request's branch, not main (#8 → eng-7-change): base-branch chaining; native instead if they are linked as a GitHub stack
   stacking: branch
+issue_tracker:
+  # ENG-<n> issue keys in 3 of the last 3 merged pull requests
+  team: ENG
 drive:
   # docs/change-areas.yaml is tracked and named like a change-area catalog
   change_areas_catalog: docs/change-areas.yaml
@@ -1083,5 +1135,711 @@ gates:
     expect(
       report.findings.find((f) => f.id === "derivation:issue_tracker")?.message,
     ).toContain("cannot be reached");
+  });
+  test("the forge's default branch wins over a stale origin/HEAD, which is warned", () => {
+    const stale = repo({ ".config/jig.yaml": 'gates:\n  command: "true"\n' });
+    withOrigin(stale, { main: null, develop: null }, "main");
+    const report = onlineIn(stale, {
+      "repo view": JSON.stringify({
+        nameWithOwner: "example/web",
+        defaultBranchRef: { name: "develop" },
+      }),
+    });
+    expect(report.facts.integration_branch).toBe("develop");
+    expect(report.facts.integration_branch_source).toBe(
+      "the forge's default branch",
+    );
+    expect(
+      report.findings.find((f) => f.id === "fact:origin-head-differs"),
+    ).toMatchObject({
+      severity: "warning",
+      message: expect.stringContaining("git remote set-head origin --auto"),
+    });
+
+    const agreeing = repo({
+      ".config/jig.yaml": 'gates:\n  command: "true"\n',
+    });
+    withOrigin(agreeing, { main: null }, "main");
+    const same = onlineIn(agreeing);
+    expect(same.facts.integration_branch).toBe("main");
+    expect(ids(same)).not.toContain("fact:origin-head-differs");
+
+    // A declared branch is the integration branch whatever the forge says.
+    const declared = repo({
+      ".config/jig.yaml": "repository:\n  base_branch: main\n",
+    });
+    withOrigin(declared, { main: null, develop: null }, "main");
+    const kept = onlineIn(declared, {
+      "repo view": JSON.stringify({
+        nameWithOwner: "example/web",
+        defaultBranchRef: { name: "develop" },
+      }),
+    });
+    expect(kept.facts.integration_branch).toBe("main");
+    expect(ids(kept)).not.toContain("fact:origin-head-differs");
+  });
+
+  test("the tracker team counts keys in pull requests, commit subjects and branches, per source", () => {
+    const dir = repo({ ".config/jig.yaml": 'gates:\n  command: "true"\n' });
+    for (const n of [1, 2, 3, 4, 5]) commit(dir, `fix: change ${n} (OPS-${n})`);
+    withOrigin(dir, { main: null, "ops-6-more": null, "feature/OPS-7": null });
+    const report = onlineIn(dir);
+    const team = report.suggestions.find(
+      (s) => s.field === "issue_tracker.team",
+    );
+    expect(team?.value).toBe("OPS");
+    // The merged pull requests carry ENG keys; the history outweighs them.
+    expect(team?.evidence).toBe(
+      "OPS-<n> issue keys in 5 of the last 6 commit subjects on origin/main, 2 of the 2 most recent branches on origin (3 key(s) of other teams)",
+    );
+
+    // Keys split between teams settle nothing.
+    const split = repo({ ".config/jig.yaml": 'gates:\n  command: "true"\n' });
+    for (const n of [1, 2, 3]) commit(split, `fix: change ${n} (OPS-${n})`);
+    withOrigin(split, { main: null });
+    expect(onlineIn(split).suggestions.map((s) => s.field)).not.toContain(
+      "issue_tracker.team",
+    );
+  });
+
+  test("a reviewer-looking check that ran while no reviewer is named is warned", () => {
+    const unnamed = online("repository:\n  base_branch: main\n", {
+      "--state merged": pulls(["build", "AI review"], []),
+    });
+    expect(
+      unnamed.findings.find(
+        (f) => f.id === "contradiction:review.reviewer-unnamed",
+      ),
+    ).toMatchObject({
+      severity: "warning",
+      message: expect.stringContaining(
+        '"AI review" ran on 3 of the last 3 merged pull requests',
+      ),
+    });
+    // A skipped check did not run: a dormant reviewer arm is not a reviewer.
+    const skipped = online("repository:\n  base_branch: main\n", {
+      "--state merged": JSON.stringify(
+        JSON.parse(pulls(["build"], [])).map((p: Record<string, unknown>) => ({
+          ...p,
+          statusCheckRollup: [{ name: "AI review", conclusion: "SKIPPED" }],
+        })),
+      ),
+    });
+    expect(ids(skipped)).not.toContain("contradiction:review.reviewer-unnamed");
+    // Plain checks are no reviewer.
+    expect(ids(online("repository:\n  base_branch: main\n"))).not.toContain(
+      "contradiction:review.reviewer-unnamed",
+    );
+  });
+
+  test("a named reviewer that posted on no recent pull request is warned", () => {
+    const silent = (review: string, over?: Record<string, string>) =>
+      ids(online(`repository:\n  base_branch: main\nreview:\n${review}`, over));
+    expect(silent("  reviewer_app: ghost-app\n")).toContain(
+      "contradiction:review.reviewer",
+    );
+    expect(silent('  reviewer_check_pattern: "^Claude review$"\n')).toContain(
+      "contradiction:review.reviewer",
+    );
+    // A review by the app, or a check its pattern matches, shows it posts.
+    expect(silent("  reviewer_app: example-review\n")).not.toContain(
+      "contradiction:review.reviewer",
+    );
+    expect(
+      silent('  reviewer_check_pattern: "^Claude review$"\n', {
+        "--state merged": pulls(["Claude review"], []),
+      }),
+    ).not.toContain("contradiction:review.reviewer");
+    expect(
+      silent("  reviewer_app: ghost-app\n", {
+        "--state merged": pulls(["AI review (shadow)"], []),
+      }),
+    ).not.toContain("contradiction:review.reviewer");
+  });
+
+  test("the gate is compared with the jobs behind the required checks", () => {
+    const workflow = `on: [pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bun run build
+  other:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bun run other
+`;
+    const report = online(
+      "repository:\n  base_branch: main\ngates:\n  command: bun run lint\n",
+      undefined,
+      {
+        ".github/workflows/ci.yml": workflow,
+        "package.json":
+          '{"scripts":{"lint":"true","build":"true","other":"true"}}',
+      },
+    );
+    const finding = report.findings.find(
+      (f) => f.id === "suggestion:gates.command:ci",
+    );
+    // The branch requires "build" and "lint": only the build job is compared.
+    expect(finding?.message).toContain(
+      "`bun run build` (.github/workflows/ci.yml, job build)",
+    );
+    expect(finding?.message).not.toContain("bun run other");
+  });
+});
+
+describe("the repository around the configuration", () => {
+  test("HEAD behind the integration branch is reported, as of the last fetch", () => {
+    const dir = repo({ ".gitignore": ".context/\n" });
+    const first = git(dir, "rev-parse", "HEAD");
+    commit(dir, "second");
+    commit(dir, "third");
+    withOrigin(dir, { main: null }, "main");
+    git(dir, "checkout", "-q", first);
+    const behind = fitIn(dir, ["--offline"]);
+    expect(behind.facts.integration_branch_source).toBe("origin/HEAD");
+    expect(behind.facts.behind_integration_branch).toStartWith(
+      "2 commit(s) of origin/main not in HEAD",
+    );
+    expect(
+      behind.findings.find((f) => f.id === "fact:behind-integration-branch"),
+    ).toMatchObject({
+      severity: "warning",
+      message: expect.stringContaining("HEAD lacks 2 commit(s) of origin/main"),
+    });
+    git(dir, "checkout", "-q", "main");
+    const current = fitIn(dir, ["--offline"]);
+    expect(current.facts.behind_integration_branch).toStartWith("0 commit(s)");
+    expect(ids(current)).not.toContain("fact:behind-integration-branch");
+  });
+
+  test("a leftover groundwork overlay is an error alone and a warning beside jig.yaml", () => {
+    const files = {
+      ".config/groundwork-overlay.yaml": "gates:\n  command: make check\n",
+      "AGENTS.md": "# Agents\n\nRun /groundwork:do-item to pick up work.\n",
+      ".claude/settings.json":
+        '{\n  "enabledPlugins": {\n    "groundwork@groundwork": true\n  }\n}\n',
+      "mise.toml": "[env]\nGROUNDWORK_HOME = '~/.groundwork/'\n",
+      "docs/history.md": "We used /groundwork:do-item.\n",
+    };
+    const alone = fit(files);
+    expect(alone.code).toBe(1);
+    expect(
+      alone.report.findings.find((f) => f.id === "legacy-overlay"),
+    ).toMatchObject({
+      severity: "error",
+      message: expect.stringContaining(
+        "git mv .config/groundwork-overlay.yaml .config/jig.yaml",
+      ),
+    });
+    const references = alone.report.findings.filter((f) =>
+      f.id.startsWith("legacy-reference:"),
+    );
+    expect(references.map((f) => f.id)).toEqual([
+      "legacy-reference:.claude/settings.json",
+      "legacy-reference:AGENTS.md",
+      "legacy-reference:mise.toml",
+    ]);
+    expect(references[0]?.message).toStartWith(".claude/settings.json:3 names");
+    expect(references[0]?.message).toContain("`jig@jig`");
+    expect(references[1]?.message).toContain(
+      "change `/groundwork:` to `/jig:`",
+    );
+    expect(references[2]?.message).toContain("(`.groundwork/`, `GROUNDWORK_`)");
+
+    const both = fit({
+      ...files,
+      ".config/jig.yaml": 'gates:\n  command: "true"\n',
+    }).report;
+    expect(both.findings.find((f) => f.id === "legacy-overlay")?.severity).toBe(
+      "warning",
+    );
+    expect(ids(fit({ "README.md": "# x\n" }).report)).not.toContain(
+      "legacy-overlay",
+    );
+  });
+
+  test("every agent instruction surface is scanned for the old names", () => {
+    const { report } = fit({
+      ".agents/skills/pickup/SKILL.md": "Run /groundwork:do-item.\n",
+      ".cursor/rules/work.mdc": "Run /groundwork:do-item.\n",
+      ".cursorrules": "Run /groundwork:do-item.\n",
+      ".github/copilot-instructions.md": "Run /groundwork:do-item.\n",
+      "docs/history.md": "We used /groundwork:do-item.\n",
+    });
+    expect(
+      report.findings
+        .filter((f) => f.id.startsWith("legacy-reference:"))
+        .map((f) => f.id),
+    ).toEqual([
+      "legacy-reference:.agents/skills/pickup/SKILL.md",
+      "legacy-reference:.cursor/rules/work.mdc",
+      "legacy-reference:.cursorrules",
+      "legacy-reference:.github/copilot-instructions.md",
+    ]);
+  });
+
+  test("a field the groundwork overlay used says what replaces it", () => {
+    const { report } = fit({
+      ".config/jig.yaml":
+        "schema_version: 2\nrepo_label: web\nreview:\n  dormant_check_pattern: x\nissue_tracker:\n  system: linear\n",
+    });
+    const message = (id: string) =>
+      report.findings.find((f) => f.id === id)?.message ?? "";
+    for (const id of [
+      "unknown:schema_version",
+      "unknown:repo_label",
+      "unknown:review.dormant_check_pattern",
+      "unknown:issue_tracker.system",
+    ])
+      expect(message(id)).toContain("left from the former groundwork overlay");
+    expect(message("unknown:schema_version")).toContain("dropping it is safe");
+    expect(message("unknown:repo_label")).toContain("review.repo_label");
+    expect(message("unknown:issue_tracker.system")).toContain(
+      "issue_tracker.adapter",
+    );
+  });
+
+  test(".context/ not ignored by git is a warning", () => {
+    expect(ids(fit({ "README.md": "# x\n" }).report)).toContain(
+      "context-dir-not-ignored",
+    );
+    expect(ids(fit({ ".gitignore": ".context/\n" }).report)).not.toContain(
+      "context-dir-not-ignored",
+    );
+  });
+
+  test("a slash command in issue_tracker.file_command must resolve", () => {
+    const fileCommand = (value: string, files: Record<string, string> = {}) =>
+      fit({
+        ".config/jig.yaml": `issue_tracker:\n  file_command: "${value}"\n`,
+        ...files,
+      }).report.findings.filter((f) =>
+        f.id.endsWith("issue_tracker.file_command"),
+      );
+    expect(fileCommand("/file-issue")).toMatchObject([
+      {
+        id: "derivation:issue_tracker.file_command",
+        severity: "warning",
+        message: expect.stringContaining(".claude/commands/file-issue.md"),
+      },
+    ]);
+    for (const resolved of [
+      ".claude/commands/file-issue.md",
+      ".claude/commands/tracker/file-issue.md",
+      ".claude/skills/file-issue/SKILL.md",
+    ])
+      expect(fileCommand("/file-issue", { [resolved]: "x\n" })).toEqual([]);
+    expect(fileCommand("/jig:do-item")).toEqual([]);
+    // A bare name runs this plugin's skill when nothing else has it.
+    expect(fileCommand("/do-item")).toEqual([]);
+    expect(fileCommand("/jig:no-such-skill")[0]?.id).toBe(
+      "derivation:issue_tracker.file_command",
+    );
+    expect(fileCommand("/tracker:file")).toMatchObject([
+      { id: "unchecked:issue_tracker.file_command", severity: "info" },
+    ]);
+    expect(fileCommand("linear issue create")).toEqual([]);
+  });
+
+  describe("the gate command against CI", () => {
+    const gateFit = (
+      command: string,
+      scripts: Record<string, string>,
+      workflow: string,
+      extra = "",
+    ) =>
+      fit({
+        ".config/jig.yaml": `gates:\n  command: "${command}"\n${extra}`,
+        "package.json": JSON.stringify({ scripts }),
+        ".github/workflows/ci.yml": workflow,
+      }).report.findings.find((f) => f.id === "suggestion:gates.command:ci");
+    const workflow = `on:
+  pull_request:
+jobs:
+  check:
+    name: Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bun install --frozen-lockfile
+      - run: |
+          bun run lint
+          bun run lint:licenses \\
+            --strict
+          ./scripts/check-analytics.sh
+      - run: echo "\${{ github.sha }}" && bun run never-compared
+`;
+
+    test("what CI runs and the gate does not is a suggestion", () => {
+      const finding = gateFit(
+        "bun run gates",
+        {
+          gates: "bun run lint && bun test",
+          lint: "true",
+          "lint:licenses": "true",
+        },
+        workflow,
+      );
+      expect(finding?.severity).toBe("suggestion");
+      expect(finding?.message).toContain(
+        "`bun run lint:licenses --strict` (.github/workflows/ci.yml, job check)",
+      );
+      expect(finding?.message).toContain("`./scripts/check-analytics.sh`");
+      // Covered through the gates script, setup, and templated lines are not listed.
+      expect(finding?.message).not.toContain("`bun run lint`");
+      expect(finding?.message).not.toContain("bun install");
+      expect(finding?.message).not.toContain("never-compared");
+      expect(finding?.message).toContain("may be listed");
+    });
+
+    test("a gate that runs what CI runs, directly or through a script, has no finding", () => {
+      expect(
+        gateFit(
+          "bun run gates",
+          {
+            gates:
+              "bun run lint && bun run lint:licenses --strict && ./scripts/check-analytics.sh",
+            lint: "true",
+            "lint:licenses": "true",
+          },
+          workflow,
+        ),
+      ).toBeUndefined();
+      // Flags are not compared, and a step in another folder or shell is left out.
+      expect(
+        gateFit(
+          "bun test",
+          {},
+          "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bun test --coverage\n      - run: npm run e2e\n        working-directory: web\n      - run: print('x')\n        shell: python\n",
+        ),
+      ).toBeUndefined();
+      // A file CI runs that the gate's own runner or makefile names is covered.
+      for (const [command, runner] of [
+        ["bash scripts/gates.sh", "scripts/gates.sh"],
+        ["make check", "Makefile"],
+      ] as const) {
+        const covered = fit({
+          ".config/jig.yaml": `gates:\n  command: "${command}"\n`,
+          [runner]: "check:\n\t./scripts/check-analytics.sh\n",
+          "scripts/check-analytics.sh": "",
+          ".github/workflows/ci.yml":
+            "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./scripts/check-analytics.sh\n",
+        }).report;
+        expect(ids(covered)).not.toContain("suggestion:gates.command:ci");
+      }
+      // CI running a script whose every command the gate runs is covered too.
+      expect(
+        gateFit(
+          "bun run lint && bun test",
+          { lint: "true", check: "bun run lint && bun test" },
+          "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm ci\n      - run: bun run check\n",
+        ),
+      ).toBeUndefined();
+    });
+
+    /** The suggestion's message when the gate runs one runner file, by its language. */
+    const runnerFit = (file: string, text: string) =>
+      fit({
+        ".config/jig.yaml": `gates:\n  command: "${file.endsWith(".sh") ? "bash" : file.endsWith(".py") ? "python3" : "bun"} ${file}"\n`,
+        [file]: text,
+        "scripts/check-analytics.sh": "",
+        ".github/workflows/ci.yml":
+          "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./scripts/check-analytics.sh\n",
+      }).report.findings.find((f) => f.id === "suggestion:gates.command:ci")
+        ?.message;
+
+    test("a runner that only mentions a file CI runs, or names another file of that name, does not cover it", () => {
+      for (const [file, text] of [
+        [
+          "scripts/gates.ts",
+          "// TODO: run scripts/check-analytics.sh\nconsole.log('ok');\n",
+        ],
+        ["scripts/gates.sh", "# ./scripts/check-analytics.sh is not run yet\n"],
+        ["scripts/gates.ts", "await $`./tools/check-analytics.sh`;\n"],
+        ["scripts/gates.ts", "console.log('scripts/check-analytics.sh');\n"],
+        ["scripts/gates.sh", "make test # TODO: scripts/check-analytics.sh\n"],
+        [
+          "scripts/gates.ts",
+          "await run(['bun', 'test']); // then ./scripts/check-analytics.sh\n",
+        ],
+        ["scripts/gates.sh", "echo scripts/check-analytics.sh\n"],
+        // A command or call shaped string is still only a string.
+        [
+          "scripts/gates.ts",
+          "console.log('spawnSync(\"./scripts/check-analytics.sh\")');\n",
+        ],
+        ["scripts/gates.sh", 'echo "done; ./scripts/check-analytics.sh"\n'],
+        ["scripts/gates.ts", "console.log(`./scripts/check-analytics.sh`);\n"],
+        [
+          "scripts/gates.ts",
+          'log("say \\"hi\\"; bash scripts/check-analytics.sh");\n',
+        ],
+        // An escaped quote, a string over several lines, an inline block comment.
+        [
+          "scripts/gates.ts",
+          "console.log('don\\'t; ./scripts/check-analytics.sh');\n",
+        ],
+        [
+          "scripts/gates.ts",
+          "console.log(`checks:\n./scripts/check-analytics.sh\n`);\n",
+        ],
+        [
+          "scripts/gates.ts",
+          'const x = 1; /* spawnSync("./scripts/check-analytics.sh"); */\n',
+        ],
+        [
+          "scripts/gates.sh",
+          "echo 'first line\n./scripts/check-analytics.sh'\n",
+        ],
+        [
+          "scripts/gates.py",
+          '"""Runs:\n./scripts/check-analytics.sh\n"""\nprint("ok")  # spawnSync("./scripts/check-analytics.sh")\n',
+        ],
+        // A here-document's body, quoted, tab-indented or piped on.
+        [
+          "scripts/gates.sh",
+          "cat <<'EOF'\n./scripts/check-analytics.sh\nEOF\n",
+        ],
+        [
+          "scripts/gates.sh",
+          "cat <<-EOF\n\t./scripts/check-analytics.sh\n\tEOF\necho ok\n",
+        ],
+        [
+          "scripts/gates.sh",
+          'cat <<"EOF" | tee notes.txt\n./scripts/check-analytics.sh\nEOF\n',
+        ],
+        ["scripts/gates.sh", "cat <<EOF\n./scripts/check-analytics.sh\nEOF\n"],
+        [
+          "scripts/gates.sh",
+          "cat <<END-TEXT\nEND\n./scripts/check-analytics.sh\nEND-TEXT\n",
+        ],
+        // A quoted empty delimiter, closed by an empty line.
+        [
+          "scripts/gates.sh",
+          "cat <<''\n./scripts/check-analytics.sh\n\necho ok\n",
+        ],
+        // A double-quoted delimiter with an escaped quote in it.
+        [
+          "scripts/gates.sh",
+          'cat <<"E\\"OF"\n./scripts/check-analytics.sh\nE"OF\n',
+        ],
+        // An unquoted body's backslash-newline joins the next line to it.
+        [
+          "scripts/gates.sh",
+          "cat <<EOF\ntext \\\nEOF\n./scripts/check-analytics.sh\nEOF\n",
+        ],
+        // A quoted delimiter, or part of one, leaves the body's substitutions text.
+        [
+          "scripts/gates.sh",
+          "cat <<'EOF'\n$(./scripts/check-analytics.sh)\nEOF\n",
+        ],
+        [
+          "scripts/gates.sh",
+          'cat <<E"OF"\n$(./scripts/check-analytics.sh)\nEOF\n',
+        ],
+        [
+          "scripts/gates.sh",
+          "cat <<EOF\n\\$(./scripts/check-analytics.sh)\nEOF\n",
+        ],
+        // An escaped separator is a literal argument.
+        ["scripts/gates.sh", "echo \\; ./scripts/check-analytics.sh\n"],
+        ["scripts/gates.sh", "echo \\| ./scripts/check-analytics.sh\n"],
+        ["scripts/gates.sh", "echo \\& ./scripts/check-analytics.sh\n"],
+        // An argument list no call runs.
+        [
+          "scripts/gates.ts",
+          'const examples = ["bash", "scripts/check-analytics.sh"]; console.log("ok");\n',
+        ],
+        [
+          "scripts/gates.ts",
+          'console.log(["bash", "scripts/check-analytics.sh"]);\n',
+        ],
+      ] as const) {
+        expect(runnerFit(file, text)).toContain(
+          "`./scripts/check-analytics.sh`",
+        );
+      }
+    });
+
+    test("a runner that runs a file CI runs, as a command or through a shell or spawn call, covers it", () => {
+      for (const [file, text] of [
+        [
+          "scripts/gates.sh",
+          "set -e\nbun test && ./scripts/check-analytics.sh\n",
+        ],
+        [
+          "scripts/gates.sh",
+          "if true; then bash scripts/check-analytics.sh; fi\n",
+        ],
+        ["scripts/gates.ts", "await $`./scripts/check-analytics.sh`;\n"],
+        [
+          "scripts/gates.ts",
+          "spawnSync('./scripts/check-analytics.sh', { stdio: 'inherit' });\n",
+        ],
+        ["scripts/gates.ts", 'run(["bash", "scripts/check-analytics.sh"]);\n'],
+        [
+          "scripts/gates.py",
+          'subprocess.run(["bash", "scripts/check-analytics.sh"])\n',
+        ],
+        // A command substitution runs its command, inside double quotes too.
+        ["scripts/gates.sh", 'echo "$(./scripts/check-analytics.sh)"\n'],
+        ["scripts/gates.sh", "result=`./scripts/check-analytics.sh`\n"],
+        // After a here-document, and on the line that opens one.
+        [
+          "scripts/gates.sh",
+          "cat <<EOF\nnotes\nEOF\n./scripts/check-analytics.sh\n",
+        ],
+        [
+          "scripts/gates.sh",
+          "cat <<'EOF' && ./scripts/check-analytics.sh\nbody\nEOF\n",
+        ],
+        // A substitution in an unquoted body runs.
+        [
+          "scripts/gates.sh",
+          "cat <<EOF\n$(./scripts/check-analytics.sh)\nEOF\n",
+        ],
+        [
+          "scripts/gates.sh",
+          "cat <<EOF\n`./scripts/check-analytics.sh`\nEOF\n",
+        ],
+        // A delimiter is a whole shell word, with its quotes removed.
+        [
+          "scripts/gates.sh",
+          "cat <<END-TEXT\nbody\nEND-TEXT\n./scripts/check-analytics.sh\n",
+        ],
+        [
+          "scripts/gates.sh",
+          'cat <<E"OF"\nbody\nEOF\n./scripts/check-analytics.sh\n',
+        ],
+        [
+          "scripts/gates.sh",
+          'cat <<"E\\"OF"\nbody\nE"OF\n./scripts/check-analytics.sh\n',
+        ],
+        [
+          "scripts/gates.sh",
+          "cat <<''\nbody\n\n./scripts/check-analytics.sh\n",
+        ],
+        // An unquoted body's closing line is a logical line; an escaped backslash continues nothing.
+        [
+          "scripts/gates.sh",
+          "cat <<EOF\nbody\nEO\\\nF\n./scripts/check-analytics.sh\n",
+        ],
+        [
+          "scripts/gates.sh",
+          "cat <<EOF\ntext \\\\\nEOF\n./scripts/check-analytics.sh\nEOF\n",
+        ],
+        // A here-string, or a shift, opens no here-document.
+        [
+          "scripts/gates.sh",
+          "cat <<<notes\n./scripts/check-analytics.sh\nnotes\n",
+        ],
+        ["scripts/gates.sh", "echo $((1<<2))\n./scripts/check-analytics.sh\n"],
+        ["scripts/gates.sh", "(( n = 1<<2 ))\n./scripts/check-analytics.sh\n"],
+        [
+          "scripts/gates.ts",
+          'spawnSync("bash", ["scripts/check-analytics.sh"]);\n',
+        ],
+      ] as const) {
+        expect(runnerFit(file, text)).toBeUndefined();
+      }
+    });
+
+    test("a yarn command other than an install is compared, not taken for setup", () => {
+      const finding = gateFit(
+        "bun test",
+        { lint: "true" },
+        "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: yarn\n      - run: yarn install --frozen-lockfile\n      - run: yarn --immutable\n      - run: yarn lint\n      - run: yarn run check\n",
+      );
+      expect(finding?.message).toContain("`yarn lint`");
+      expect(finding?.message).toContain("`yarn run check`");
+      expect(finding?.message).not.toContain("`yarn`");
+      expect(finding?.message).not.toContain("yarn install");
+      expect(finding?.message).not.toContain("--immutable");
+    });
+
+    test("jobs pull requests do not run, or the required checks do not name, are not compared", () => {
+      const push = workflow.replace("on:\n  pull_request:", "on:\n  push:");
+      expect(gateFit("bun run lint", { lint: "true" }, push)).toBeUndefined();
+      const twoJobs = `${workflow}  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bun run docs
+`;
+      const required = gateFit(
+        "bun run lint",
+        { lint: "true", docs: "true", "lint:licenses": "true" },
+        twoJobs,
+        "ci:\n  required_checks: [Checks]\n",
+      );
+      expect(required?.message).toContain("lint:licenses");
+      expect(required?.message).not.toContain("bun run docs");
+      expect(required?.message).toContain(
+        "the jobs behind the required checks",
+      );
+      // A required job that gathers others' results stands for the jobs it needs.
+      const gathered = gateFit(
+        "bun run lint",
+        { lint: "true", docs: "true", "lint:licenses": "true" },
+        `on: pull_request
+jobs:
+  all:
+    name: Checks
+    needs: [licenses]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo done
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bun run lint:licenses
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bun run docs
+`,
+        "ci:\n  required_checks: [Checks]\n",
+      );
+      expect(gathered?.message).toContain("job licenses");
+      expect(gathered?.message).not.toContain("bun run docs");
+    });
+  });
+
+  test("a gate program the Claude Code settings do not allow is suggested", () => {
+    const permission = (command: string, allow: string[] | null) =>
+      fit({
+        ".config/jig.yaml": `gates:\n  command: "${command}"\n`,
+        "package.json": '{"scripts":{"gates":"true"}}',
+        ...(allow === null
+          ? {}
+          : {
+              ".claude/settings.json": JSON.stringify({
+                permissions: { allow },
+              }),
+            }),
+      }).report.findings.find((f) => f.id === "suggestion:permissions.gates");
+    expect(permission("pnpm run gates", ["Bash(git *)"])?.message).toContain(
+      'add "Bash(pnpm *)" to permissions.allow',
+    );
+    for (const allow of [["Bash(pnpm *)"], ["Bash(pnpm:*)"], ["Bash"]])
+      expect(permission("pnpm run gates", allow)).toBeUndefined();
+    expect(permission("bun run gates", [])).toBeUndefined();
+    expect(permission("pnpm run gates", null)).toBeUndefined();
+    expect(
+      permission("bun run gates && make check", ["Bash(git *)"])?.message,
+    ).toContain('"Bash(make *)"');
+  });
+
+  test("the tracker team is suggested offline from commit subjects", () => {
+    const dir = repo({ ".gitignore": ".context/\n" });
+    for (const n of [1, 2, 3]) commit(dir, `feat: change ${n} (OPS-${n})`);
+    const report = fitIn(dir, ["--offline"]);
+    expect(
+      report.suggestions.find((s) => s.field === "issue_tracker.team"),
+    ).toMatchObject({
+      value: "OPS",
+      evidence: "OPS-<n> issue keys in 3 of the last 4 commit subjects on HEAD",
+    });
   });
 });

@@ -37,7 +37,8 @@ export const rungWord = (score: Score | null) =>
  * Each rung's icon, distinct in shape so the map reads without colour:
  * a dashed circle for nothing there, a page for written down, an eye for a
  * tool that watches, a shield for a check that blocks, a struck circle for
- * a practice the shape rules out, a question mark for no score.
+ * a practice the shape rules out, a struck eye for a criterion the audit
+ * did not look at, a question mark for no score.
  */
 export const RUNG_ICON: Readonly<Record<RungClass, IconName>> = {
   absent: "circle-dashed",
@@ -45,6 +46,7 @@ export const RUNG_ICON: Readonly<Record<RungClass, IconName>> = {
   advisory: "eye",
   mechanical: "shield-check",
   "expected-absent": "circle-slash",
+  "not-examined": "eye-off",
   unscored: "circle-question-mark",
 };
 

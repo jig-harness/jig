@@ -27,6 +27,8 @@ try {
       join(fixtures, "execa.fit.json"),
       "--out",
       scratch,
+      // The example audits another repository, not the one this runs in.
+      "--other-repository",
     ],
     { stdout: "pipe", stderr: "inherit" },
   );

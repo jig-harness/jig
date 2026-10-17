@@ -1140,8 +1140,30 @@ make, use the entry's term instead.
   script opens as a view of its own.
 - **Uncovered gap** — a maturity criterion within the target of the team's
   profile that does not meet its bar, which no recommendation of the audit
-  moves and no held decline leaves on purpose. The *audit sheet* marks and
-  lists each one, so every gap is either addressed or visibly left.
+  moves, no held decline and no *left on purpose* entry leaves on purpose.
+  The *audit sheet* marks and lists each one, so every gap is either
+  addressed or visibly left.
+- **Left on purpose** — a gap within the target that the auditor chose not
+  to recommend work for now, listed in the *report source* with the reason
+  and when to revisit it. The *audit sheet* shows it in its own list rather
+  than as an *uncovered gap*. Unlike a decline, the team did not decide it.
+- **Not examined** (audit) — the score of a maturity criterion beyond the
+  target of the profile the audit was run for, which the audit chose not to
+  examine so its effort goes to the criteria the target asks for. It meets no
+  bar, is never a gap, and a later audit reports it as examined rather than
+  as fixed.
+- **Applied recommendation** — a recommendation carried out after the audit
+  that made it, in the same session or later, marked in the *report source*
+  with the pull request or commit that applied it. The *audit sheet* shows it
+  as done and asks for no decision on it; the *audit record* still scores the
+  commit it audited.
+- **Explored profile** — a profile the *audit sheet* is rendered against to
+  see how the repository would read under it, without changing the profile
+  the *audit record* holds. The sheet labels it explored, not recorded.
+- **Alternative profile** — the other profile the facts could support when
+  they sit near a boundary (deploys, but one person commits), which the
+  *audit sheet* shows beside the suggested one with how many modules would
+  be at their target under it.
 - **Profile signal** — an observed fact suggesting a project has outgrown
   the profile it aims for, such as more contributors, a new deploy
   environment or a compliance document. The *audit sheet* shows it beside the

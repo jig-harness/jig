@@ -117,7 +117,10 @@ const escapeRe = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** `text` with each criterion's score replaced by the one `scores` names; a key the record lacks is refused. */
-function withScores(text: string, scores: Record<string, string>): string {
+export function withScores(
+  text: string,
+  scores: Record<string, string>,
+): string {
   for (const [key, score] of Object.entries(scores)) {
     const entry = new RegExp(
       `(^  ${escapeRe(key)}:[^\\n]*\\n(?:\\s+#[^\\n]*\\n)*\\s+score:) \\S+`,

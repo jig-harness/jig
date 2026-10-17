@@ -137,6 +137,8 @@ export const GUIDE = {
       mechanical: "A check blocks the change until the rule holds.",
       "expected-absent":
         "The practice does not apply to this repository's shape, so it is not counted.",
+      "not-examined":
+        "The criterion lies beyond the profile's target, and the audit chose not to examine it. It is not counted, and it is never a gap.",
     } satisfies Record<Score, string>,
     unscored: "The record holds no score for the criterion.",
     higher:
@@ -148,7 +150,7 @@ export const GUIDE = {
     list: "The modules, with the problem each one solves:",
     levelsH: "Levels: Lite, Standard, Strict",
     levels:
-      "A module attains a level when every criterion at that level and below meets its bar: Lite first, then Standard, then Strict. A module with a Lite criterion not met attains none yet. A module whose practices the repository's shape rules out is n/a.",
+      "A module attains a level when every criterion at that level and below meets its bar: Lite first, then Standard, then Strict. A module with a Lite criterion not met attains none yet. A module whose practices the repository's shape rules out is n/a; one whose criteria the audit did not examine is not examined.",
   },
   profiles: {
     h: "Profiles",

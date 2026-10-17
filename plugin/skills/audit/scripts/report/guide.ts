@@ -17,7 +17,12 @@ import {
   extLink,
   section,
 } from "../../../decide/scripts/sheet-kit/html.ts";
-import { EXPECTED_ABSENT, type Module, RUNGS } from "../lib/criteria.ts";
+import {
+  EXPECTED_ABSENT,
+  type Module,
+  NOT_EXAMINED,
+  RUNGS,
+} from "../lib/criteria.ts";
 import type { Profile, Profiles } from "../lib/profiles.ts";
 import { GUIDE, GUIDE_ID, METHOD_TERMS, PROFILE_WHO } from "./guide-text.ts";
 import { LABEL, SHEET_LABEL } from "./labels.ts";
@@ -40,7 +45,7 @@ const paras = (texts: readonly string[]) =>
 
 function idea(): string {
   const G = GUIDE.idea;
-  const rungs = ([...RUNGS, EXPECTED_ABSENT] as const)
+  const rungs = ([...RUNGS, EXPECTED_ABSENT, NOT_EXAMINED] as const)
     .map((r) => `<li>${scoreChip(r)}<span>${esc(G.rung[r])}</span></li>`)
     .join("");
   const unscored = `<li>${scoreChip(null)}<span>${esc(G.unscored)}</span></li>`;

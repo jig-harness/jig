@@ -246,6 +246,55 @@ describe("planning against the audit", () => {
     ]);
   });
 
+  test("refuses any decision on a recommendation the report marks applied", () => {
+    const source = JSON.parse(reportSource);
+    Object.assign(source.recommendations[1], {
+      status: "applied",
+      applied_in: "https://example.com/web/pull/53",
+    });
+    const applied = readReportView(JSON.stringify(source), "report.json");
+    const decide = (body: string) =>
+      planFeedback(
+        parseFeedback(
+          block(body).replace(report.fingerprint, applied.fingerprint),
+        ),
+        {
+          record: parseRecord(recordText(), "record.yaml"),
+          report: applied,
+          modules,
+          profiles,
+          today: TODAY,
+        },
+      );
+    for (const body of [
+      "  accept: [R2]\n",
+      '  decline:\n    - { id: R2, refs: ["M1/ci-runs-gates-on-pr"], reason: "r", revisit_when: "w" }\n',
+    ])
+      expect(refusedWith(() => decide(body))).toEqual([
+        "R2: the report marks it applied in https://example.com/web/pull/53; it takes no decision",
+      ]);
+    // It needs no decision: a block that leaves it out is recorded.
+    expect(decide("  accept: [R1]\n").work.map((w) => w.id)).toEqual(["R1"]);
+  });
+
+  test("refuses a profile that reaches criteria the audit did not examine, naming them", () => {
+    const unexamined = recordText().replace(
+      /( {2}M5\/(adrs-exist-numbered-from-template|numbering-gate-enforced):[^\n]*\n {4}#[^\n]*\n {4}score:) absent/g,
+      "$1 not-examined",
+    );
+    expect(unexamined.match(/not-examined/g)?.length).toBe(2);
+    expect(
+      refusedWith(() => plan(block("  profile: team-standard\n"), unexamined)),
+    ).toEqual([
+      "Team/Standard reaches criteria the audit did not examine: M5/adrs-exist-numbered-from-template, M5/numbering-gate-enforced; score them in the record first, then record the block again",
+    ]);
+    // Solo/Lite does not reach M5: nothing is left to score.
+    expect(plan(block("  profile: solo-lite\n"), unexamined).profile).toEqual({
+      from: null,
+      to: "solo-lite",
+    });
+  });
+
   test("refuses refs that differ from the recommendation's", () => {
     const problems = refusedWith(() =>
       plan(
