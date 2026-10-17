@@ -234,6 +234,8 @@ so any platform can supply it:
 - **Measurement**: the delivery process emits typed events with wired sources,
   so review quality, gate health and cycle time are measured rather than
   assumed ([M11](modules/M11-process-observability/)).
-- **Supply chain**: third-party automation pinned and updated, and reviewers
-  wired so the change under review cannot alter them
+- **Supply chain**: third-party automation pinned and updated, application
+  dependencies held back by a [release cooldown](GLOSSARY.md) and an
+  [install-script allowlist](GLOSSARY.md), secrets scanned in layers, and
+  reviewers wired so the change under review cannot alter them
   ([M1](modules/M1-gates-enforcement-ladder/), [M7](modules/M7-pr-lifecycle-review/)).
