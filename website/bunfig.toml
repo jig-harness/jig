@@ -1,0 +1,6 @@
+[install]
+# The release cooldown of ../.config/supply-chain-policy.yaml, in seconds:
+# Bun reads the bunfig.toml beside the package.json it installs, so the
+# website, an install root of its own, states the cooldown here too. Checked
+# against the policy by scripts/check-supply-chain-lockstep.ts.
+minimumReleaseAge = 259200

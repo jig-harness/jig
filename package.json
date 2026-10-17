@@ -26,5 +26,6 @@
     "quality": "bun modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts --config tools/quality/ratchet.jsonc",
     "quality:report": "bun modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts --config tools/quality/ratchet.jsonc --report"
   },
-  "type": "module"
+  "type": "module",
+  "trustedDependencies": []
 }

@@ -1,0 +1,10 @@
+# The one supply-chain policy every installer and the updater state.
+cooldown:
+  days: 3
+  exempt:
+    - typescript
+    - "@types/bun"
+install-scripts:
+  allow:
+    - esbuild
+    - sharp

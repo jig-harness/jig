@@ -1275,3 +1275,50 @@ console.log("owned");
   expectSpawnExit({ ...child, exitCode: child.status }, 0);
   expect(child.stdout.trim()).toBe("owned");
 });
+
+test("the turn-budget hook runs from the plugin copy, where its registration points", () => {
+  const cache = join(scratch, "cache");
+  const registration = JSON.parse(
+    readFileSync(join(cache, "hooks", "hooks.json"), "utf8"),
+  ) as { hooks: { PreToolUse: { hooks: { command: string }[] }[] } };
+  const command = registration.hooks.PreToolUse[0]?.hooks[0]?.command ?? "";
+  const relative =
+    /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"/.exec(command)?.[1] ?? "missing";
+  const hook = join(cache, relative);
+  expect(existsSync(hook)).toBe(true);
+  const dir = mkdtempSync(join(scratch, "turn-budget-"));
+  const transcript = join(dir, "transcript.jsonl");
+  writeFileSync(
+    transcript,
+    `${Array.from({ length: 95 }, (_, i) =>
+      JSON.stringify({ type: "assistant", requestId: `req_${i}` }),
+    ).join("\n")}\n`,
+  );
+  const result = spawnSync(process.execPath, [hook], {
+    cwd: dir,
+    env: {
+      ...env,
+      JIG_TURN_BUDGET: "100",
+      JIG_TURN_BUDGET_MARGIN: "10",
+      JIG_TURN_BUDGET_STATE_DIR: join(dir, "state"),
+    },
+    encoding: "utf8",
+    input: JSON.stringify({
+      session_id: "copy",
+      transcript_path: transcript,
+      hook_event_name: "PreToolUse",
+    }),
+    timeout: 10_000,
+  });
+  expectSpawnExit({ ...result, exitCode: result.status }, 0);
+  const context = (
+    JSON.parse(result.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    }
+  ).hookSpecificOutput.additionalContext;
+  expect(context).toContain("about 95 of 100");
+  // The wrap-up names the copy's own drive-pr, not this repository's.
+  expect(context).toContain(
+    join(cache, "skills", "drive-pr", "scripts", "drive-state.ts"),
+  );
+});

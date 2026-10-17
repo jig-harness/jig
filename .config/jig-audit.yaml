@@ -99,6 +99,31 @@ criteria:
     # prior: mechanical: gates.yml pins actions/checkout and jdx/mise-action to full SHAs; renovate.json5 pins digests for GitHub Actions, mise and Bun; Renovate's pull requests run the required gates check
     score: mechanical
     evidence: "gates.yml pins actions/checkout and jdx/mise-action by SHA in every job; renovate.json5 pins digests for GitHub Actions; Renovate is live and its pull requests run the full required set"
+  M1/dependency-release-cooldown:   # standard, requires mechanical
+    # A minimum release age holds for application dependencies in the updater's configuration and in every package manager the repository installs with, and its exemptions are a list of exact package names.
+    score: absent
+    evidence: "renovate.json5 sets minimumReleaseAge: 3 days with internalChecksFilter strict, but bunfig.toml has only a [test] section, so bun add and bun update resolve a release of any age; the installer half is missing"
+  M1/install-scripts-allowlisted:   # standard, requires mechanical
+    # Only the packages a list names may run lifecycle scripts at install time, every installer the repository uses blocks the rest, and the updater never auto-merges a listed package.
+    score: absent
+    evidence: "package.json has no trustedDependencies and no file states which packages may run scripts, so Bun's built-in trusted list applies to any dependency on it; renovate.json5 has no automerge rule"
+  M1/supply-chain-policy-lockstep:   # strict, requires mechanical
+    # One policy file states the release cooldown, its exemptions and the install-script allowlist, and a gate in the required set checks that every installer and the updater state the same values, running before any install that could run a script.
+    score: absent
+    evidence: "no policy file (.config/ holds ai-review, change-areas, jig and jig-audit only) and no gate in scripts/gates.ts compares bunfig.toml, package.json and renovate.json5"
+  M1/updater-self-checked:   # strict, requires mechanical
+    # Range-valued version overrides are excluded from the updater's normal path, and every custom extraction pattern of the updater has a check that re-applies it to the tree and requires exactly one value.
+    score: expected-absent
+    evidence: "package.json has no overrides and renovate.json5 no customManagers: nothing for the updater to leave alone or to re-extract"
+  M1/secret-scan-blocks-in-ci:   # standard, requires mechanical
+    # A required CI job scans exactly the commits a change introduces for secrets with a pinned scanner, and fails on a finding or on an empty commit range.
+    # probe found: .github/workflows/gates.yml
+    score: absent
+    evidence: "the only workflow, .github/workflows/gates.yml, runs the gate set and the separate suites; no step runs a secret scanner"
+  M1/secret-scan-local-and-forge-layers:   # strict, requires mechanical
+    # Beside the CI scan, a pre-commit hook scans the staged changes for secrets on the committer's machine, and the forge's push protection is on.
+    score: absent
+    evidence: "no hook manager configuration (no lefthook.yml, .husky/ or .pre-commit-config.yaml), so no pre-commit scanner; push protection is not recorded as on"
   M1/gate-outcomes-distinguish-could-not-check:   # standard, requires mechanical
     # Every repository-written gate has three outcomes, passed, found violations and could not check (exit 0, 1 and 2), and reports a missing or unreadable input, an input empty where its format requires content, or a failed command as could not check, never as a pass.
     score: absent
@@ -127,6 +152,10 @@ criteria:
     # Each repository-written gate's self-test includes a case where the gate has nothing to examine (its input or section missing, or empty where the input's format requires content, such as a scan root with no file) and asserts that the gate does not pass on it.
     score: absent
     evidence: "scripts/freshness.test.ts 'TODO gate: empty root' and 'does-not-exist' assert that the reference gate passes with nothing to scan; scripts/gates.test.ts asserts exit 2 only for the origin-reference gate's missing root; the Markdown and glossary gates have no empty-input case"
+  M1/agent-runtime-hooks-self-tested:   # strict, requires mechanical
+    # Every hook the repository registers in an agent runtime (around tool calls, on prompt and session events) has a self-test beside it that feeds it the runtime's payload and asserts each outcome, and one runner discovers every hook's test and runs it in CI.
+    score: expected-absent
+    evidence: "No agent-runtime hook is registered at the audited commit: git ls-files has no .claude/settings.json, no .codex/ and no plugin/hooks/, so there is no hook to self-test"
   M1/existing-findings-ratcheted:   # strict, requires mechanical
     # A rule that still has findings is ratcheted rather than left advisory: a required gate fails a change that adds a finding to it or loosens its configuration, measured against the merge base, and a rule whose count reaches zero is promoted to blocking.
     # prior: mechanical: bun run quality (modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts with tools/quality/ratchet.jsonc) runs inside bun run gates, the required gates check; it counts Biome warnings, GritQL rules, ratcheted compiler flags and suppression comments against the merge base and needs a Ratchet-Loosen trailer to loosen a rule

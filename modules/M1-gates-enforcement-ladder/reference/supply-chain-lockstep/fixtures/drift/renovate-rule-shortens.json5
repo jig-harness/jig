@@ -1,0 +1,9 @@
+{
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "strict",
+  packageRules: [
+    { matchPackageNames: ["typescript", "@types/bun"], minimumReleaseAge: "0 days" },
+    { matchPackageNames: ["left-pad"], minimumReleaseAge: "1 day" },
+    { matchPackageNames: ["esbuild", "sharp"], automerge: false },
+  ],
+}

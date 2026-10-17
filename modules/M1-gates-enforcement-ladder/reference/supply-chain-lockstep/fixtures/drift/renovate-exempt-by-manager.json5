@@ -1,0 +1,13 @@
+// The exemption selects a manager, not packages: every npm dependency skips
+// the cooldown.
+{
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "strict",
+  packageRules: [
+    { matchManagers: ["npm"], minimumReleaseAge: "0 days" },
+    {
+      matchPackageNames: ["esbuild", "sharp"],
+      automerge: false,
+    },
+  ],
+}

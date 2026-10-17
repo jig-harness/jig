@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    cooldown:
+      default-days: 3
+      include: ["react"]
+      exclude: ["typescript", "@types/bun"]

@@ -2086,11 +2086,17 @@ a long interactive round that reaches it leaves its successor nothing.
 
 Unlike context usage, this one is observable: the session transcript records
 every round-trip, and distinct `requestId`s since the last real user message
-count them. The skill ships no counter; a repository can install one as an
-agent-tool hook that runs before each tool call (a `PreToolUse` hook in Claude
-Code), counts those ids, and injects a wrap-up instruction once the count is
-within a margin of the cap. A margin of 50 turns under a cap of 1000, with at
-most one later reminder, has worked in practice.
+count them. The plugin ships the counter as an agent-runtime hook,
+`<plugin-dir>/hooks/turn-budget-guard.ts`, registered by `hooks/hooks.json` to
+run before every tool call: it counts those ids off the transcript since its
+last call and injects a wrap-up instruction once the count is within a margin
+of the cap, 50 turns under a cap of 1000, with one later reminder when half
+the margin remains. `JIG_TURN_BUDGET`, `JIG_TURN_BUDGET_MARGIN` and
+`JIG_TURN_BUDGET_REFIRE` change those, and a budget of `0` turns the guard
+off; its tests are in `hooks/__tests__/`. That holds under Claude Code only:
+Codex's transcript is not in the format the guard reads, so under Codex it
+counts nothing and reports could not check
+([plugin README § Codex notes](../../../README.md#codex-notes)).
 
 **When such a warning fires mid-drive, the round is over.** Finish only the
 step in flight — a push already underway, a reply already promised — then
@@ -2103,10 +2109,11 @@ compaction and session resume replay earlier messages into the same
 transcript, which deduplicating by `requestId` absorbs, but a resume that also
 resets the harness's own counter is not observable from the transcript, so
 the guard can run ahead of the real number when counting succeeds. That is not
-a guarantee against ever running behind — a counter that fails open (an
-unreadable transcript, a lock timeout under contention) simply does not count
-for that call, and a persistently misconfigured environment never counts at
-all. Treat the margin as the signal, not the number.
+a guarantee against ever running behind — a counter that cannot check (an
+unreadable transcript, state it cannot write, a transcript in a format it does
+not read) does not count for that call; the guard then lets the tool call
+through and reports a hook error, so a session it is not guarding says so
+rather than staying silent. Treat the margin as the signal, not the number.
 
 `drive.ts`'s per-round `claude -p` processes each start a fresh session, so the
 budget resets per round there and the guard bites hardest exactly where

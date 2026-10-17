@@ -39,6 +39,22 @@ module (`reference/grep-gate/`, `reference/commit-msg-marker/`) run with Bun and
 | A skipped or cancelled job | The aggregator job (above) counts a selected job that was skipped or cancelled as not passed, and accepts a skip only for a job the resolver did not select | A job left out by `rules:` is not run and not counted: keep a job that must run free of `rules:` that can skip it |
 | Commit-msg marker re-check | Step iterating `git rev-list` over PR commits (see template) | Same script; diff range `$CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD` |
 
+## Cheapest first, every independent gate reports
+
+The gate set runs its cheap stages before its slow ones and runs to the end:
+a failing stage does not stop the stages that do not depend on it, and the
+run closes with the list of what failed. The first half is the order the
+stages are written in; each runner has a switch for the second.
+
+| Runner | Keep going after a failure | Note |
+|--------|----------------------------|------|
+| A runner script of your own (Jig's `scripts/gates.ts`) | Collect each stage's status and decide at the end | Name each stage by the command that reruns it alone, so the closing list is a list of commands |
+| make | `--keep-going` (`-k`) | A target that depends on a failed one is still left out |
+| turbo | `--continue=dependencies-successful` | A task whose dependency failed is left out; every other task runs |
+| lefthook | The default: every command of a hook runs and the hook fails at the end; `piped: true` stops at the first failure | Keep `piped` for a sequence whose later commands need the earlier ones' output |
+| GitHub Actions | A step after a failed step runs only with `if: ${{ !cancelled() }}`; `strategy.fail-fast: false` keeps a matrix's other jobs running | Separate jobs are independent already; the aggregator job (above) judges them together |
+| GitLab CI | The jobs of one stage run independently of each other; a job in a later stage runs after a failure only with `when: always` | `allow_failure` is for an advisory gate, not for keeping the run going |
+
 ## Actionable findings in CI
 
 A finding names its rule, its place, its problem and its fix in the log on
@@ -127,6 +143,111 @@ Keep compatibility restrictions next to the updater policy with a reason,
 owner, review date, tested range, and removal condition. A permanently ignored
 update or unexplained version ceiling is hidden maintenance debt.
 
+## Release cooldown
+
+The cooldown is one number stated in the policy and repeated by the updater
+and by every installer, each in its own unit; the policy's exemptions are
+exact names everywhere. The
+[lockstep gate](reference/supply-chain-lockstep/README.md) reads every row
+whose note does not say otherwise.
+
+| Tool | The cooldown | The exemptions | Note |
+|------|--------------|----------------|------|
+| Renovate (`renovate.json5`) | `minimumReleaseAge: "3 days"`, with `internalChecksFilter: "strict"` set explicitly, so no branch and no green pull request exists before the age check passes | One package rule with `matchPackageNames: [<names>]`, `minimumReleaseAge: "0 days"` and no other selector: without the names it exempts everything its other selectors match, and another selector exempts only some updates of the names | `vulnerabilityAlerts` is the security path and may set `minimumReleaseAge: null` with `schedule: ["at any time"]`; a registry without release timestamps needs `minimumReleaseAgeBehaviour: "timestamp-optional"` on its rule, or its updates never clear |
+| Dependabot (`.github/dependabot.yml`) | `cooldown: { default-days: 3 }` on each `updates` entry; `semver-major-days` (and minor, patch) for a longer wait per update type | `cooldown.exclude: [<names>]` | `cooldown.include` narrows the cooldown to the names it lists, which the gate refuses; security updates skip the cooldown |
+| Bun (`bunfig.toml`) | `[install] minimumReleaseAge = 259200` (seconds) | `minimumReleaseAgeExcludes = [<names>]`, exact names only | Applies when `bun add` or `bun update` resolves a version; a frozen-lockfile install resolves nothing |
+| pnpm (`pnpm-workspace.yaml`) | `minimumReleaseAge: 4320` (minutes) | `minimumReleaseAgeExclude: [<names>]` | Current pnpm reads only authentication and registry settings from `.npmrc`, so the workspace file is the one the gate requires; for a version that still reads `.npmrc`, the gate also checks `minimum-release-age=4320` and one `minimum-release-age-exclude[]=<name>` line per name there. No effect under `--frozen-lockfile`; a deliberate lockfile refresh passes `--config.minimum-release-age=0` for that one run |
+| npm (`.npmrc`) | `min-release-age=3` (days); older releases have only `before=<date>`, a fixed date rather than a rolling age | `min-release-age-exclude[]=<name>` | Not read by the gate yet |
+| yarn (`.yarnrc.yml`) | `npmMinimalAgeGate: 3d` | `npmPreapprovedPackages: [<names>]` | Not read by the gate yet |
+
+## Install-script allowlist
+
+| Installer | The allowlist | Every other package | Which packages want scripts |
+|-----------|---------------|---------------------|-----------------------------|
+| Bun (`package.json`) | `trustedDependencies: [<names>]`. A list that is set is the only list, an empty one included; omitted, Bun's built-in list of trusted packages applies (`bun pm default-trusted` prints it), so the gate requires the field even when the policy allows none | Scripts blocked at install | `bun pm untrusted` lists the blocked ones; `bun pm trust <name>` adds one to the list |
+| pnpm (`pnpm-workspace.yaml`) | `onlyBuiltDependencies: [<names>]`; every other setting that grants builds (`dangerouslyAllowAllBuilds`, `neverBuiltDependencies`, `onlyBuiltDependenciesFile`, `allowBuilds`) can let packages outside it run scripts, and the gate refuses each, in `.npmrc` too | Scripts blocked at install | `pnpm approve-builds` lists them and adds the chosen ones |
+| npm (`.npmrc`) | None: `ignore-scripts=true` blocks every dependency script, and each allowed package is built on purpose with `npm rebuild <name> --ignore-scripts=false` after the install, since `npm rebuild` honours the setting too | Blocked by the same setting | `npm query ":attr(scripts, [postinstall])"` and the other script names |
+| yarn (`.yarnrc.yml`, `package.json`) | `enableScripts: false` in `.yarnrc.yml` blocks every build, and `dependenciesMeta: { <name>: { built: true } }` in `package.json` re-enables one | Scripts blocked at install | `yarn install` reports the packages it built |
+
+The updater never auto-merges a package on the list:
+
+| Updater | The rule |
+|---------|----------|
+| Renovate | One `packageRules` entry with `matchPackageNames: [<the allowlist>]`, `automerge: false` and `groupName: null` (its own pull request, not diluted in a weekly group), selecting by nothing else, so every update of those packages is covered, and last in the list, because a later rule overrides an earlier one |
+| Dependabot | Dependabot has no auto-merge of its own; the workflow or branch rule that auto-merges its pull requests leaves the allowlist's packages out |
+
+## Policy lockstep
+
+One policy file ([`templates/supply-chain-policy.yaml`](templates/supply-chain-policy.yaml))
+states the cooldown, its exemptions and the allowlist; the
+[lockstep gate](reference/supply-chain-lockstep/README.md) holds each
+installer's and updater's file to it. The gate judges which packages may run
+scripts, so it runs before any install that could run one: before the
+install step (it needs no installed dependency), or after an install with
+scripts off.
+
+| Installer | Install with scripts off |
+|-----------|--------------------------|
+| Bun | `bun install --frozen-lockfile --ignore-scripts` |
+| pnpm | `pnpm install --frozen-lockfile --ignore-scripts` |
+| npm | `npm ci --ignore-scripts` |
+| yarn | `yarn install --immutable --mode=skip-build` |
+
+## The updater checks itself
+
+| Concern | Renovate | Dependabot |
+|---------|----------|------------|
+| Range-valued overrides (a security floor, a major cap) | A rule with `matchDepTypes: ["overrides", "pnpm.overrides", "pnpm-workspace.overrides"]`, `matchCurrentValue: "!/^\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.+-]*)?$/"` and `enabled: false`: anything that is not an exact version is left alone, and a floor is raised by hand, with the advisory | Overrides are not updated; nothing to exclude |
+| Custom extraction (a pin in source code, a workflow variable) | `customManagers` with `customType: "regex"`, `managerFilePatterns` and `matchStrings`; a repository check parses those patterns out of the configuration (never a copy of them) and re-applies each to the tree, failing unless exactly one file and one match come back, with the expected dependency name and a value of the expected shape | None: a pin it cannot read is not updated, so list such pins in a scheduled stale-pin check |
+
+## Layered secret scanning
+
+Each layer catches what the one before let through; the CI layer is the
+blocking one. A hook that finds no scanner installed says so and passes,
+since CI blocks.
+
+| Layer | gitleaks (and its forks) | trufflehog | The forge |
+|-------|--------------------------|------------|-----------|
+| Pre-commit hook, over the staged changes | `gitleaks git --pre-commit --staged --redact --config <file>` as a hook-manager command | `trufflehog git file://. --since-commit HEAD --fail` | — |
+| CI, over exactly the change's commits | `gitleaks git . --log-opts="<base>..<head>" --redact --exit-code 1`, from a full-history checkout; the range and its empty-range refusal are in [`templates/secret-scan.yml`](templates/secret-scan.yml) | `trufflehog git file://. --since-commit <base> --branch <head> --fail` | — |
+| Push protection | — | — | GitHub: secret scanning with push protection, a repository or organization setting; GitLab: secret push protection |
+| A known false positive | An inline `gitleaks:allow` comment, or an allowlist rule in the scanner's configuration, each with a reason beside it | `--exclude-paths <file>`, or a detector left out, with a reason | The forge's bypass, which asks for a reason and logs it |
+
+## Agent-runtime hooks
+
+A hook is one script, registered in each runtime's own file in the same
+shape: an event, an optional matcher on the tool name, and a command the
+runtime runs with a JSON payload on standard input. The two runtimes below
+share the payload's and the output's field names, so one hook and one
+`hooks.json` serve both.
+
+| | Claude Code | Codex |
+|---|---|---|
+| A repository's hooks | `hooks` in `.claude/settings.json` | `.codex/hooks.json`, or `[hooks]` tables in `.codex/config.toml`; read only in a trusted project |
+| A plugin's hooks | `hooks/hooks.json` at the plugin root, or a `hooks` field in the manifest; the command reaches the plugin's files through `${CLAUDE_PLUGIN_ROOT}` | `hooks/hooks.json` at the plugin root, or a `hooks` field in the manifest; `PLUGIN_ROOT`, and `CLAUDE_PLUGIN_ROOT` for the same path |
+| Trust | A plugin's hooks run once the plugin is enabled | A hook runs only once its current definition is trusted (`/hooks`); a plugin's hooks are skipped until then, and an edited hook is trusted again |
+| Events | `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart` (matcher `startup`, `resume`, `clear`, `compact`), `PreCompact`, `Stop`, `SubagentStop`, among others | `PreToolUse`, `PostToolUse`, `PermissionRequest`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `PreCompact`, `PostCompact`, `Stop`, `SubagentStart`, `SubagentStop`, `Interrupt` |
+| The payload | JSON on standard input: `session_id`, `transcript_path`, `cwd`, `hook_event_name`; `tool_name` and `tool_input` before a tool call; `agent_id` when the call is a subagent's | The same names; `transcript_path` names Codex's own transcript, whose records differ from Claude Code's |
+| Clear | Exit 0 with nothing on standard output | Same |
+| Clear, with context | Exit 0 and `{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "…"}}` on standard output | Same |
+| Deny | Exit 2 with the reason on standard error, or `permissionDecision: "deny"` with `permissionDecisionReason` | Same |
+| Timeout | `timeout` in seconds per command, default 600; a hook that runs before every tool call sets a short one | Same default |
+
+Two behaviours are validated under Claude Code only. A hook exit other
+than 0 and 2 lets the action proceed, and the transcript shows a hook error
+with the hook's standard error, which is how a could-not-check notice
+reaches the agent. Hooks fire inside subagents too, with `agent_id` set.
+Under Codex both are open ([README.md § Status](README.md#status)).
+
+The hooks the practice has validated, each run before a tool call:
+
+| Hook | What it does | Ships as |
+|------|--------------|----------|
+| Turn-budget guard | Counts the session's round-trips off the transcript since its last call and hands the agent a wrap-up instruction within a margin of the runtime's turn cap | The plugin's [`hooks/turn-budget-guard.ts`](../../plugin/hooks/turn-budget-guard.ts) |
+| Shell-syntax guard (matcher: the shell tool) | Denies a command that is valid in one shell but a hard error in the shell the tool runs (an unquoted glob that matches nothing, a word starting with `=`, an unquoted variable holding a command and its arguments), each with a one-line correction; anything its lexer does not model passes | An example, written against the repository's own shell |
+| Test-output filter (matcher: the shell tool) | Rewrites a bare test-runner command, and only one with no shell metacharacter, to a wrapper that prints a summary when the run passes and the whole output when it fails, keeping the run's exit code | An example |
+| Refocus after compaction | Re-injects a session's intent after a compaction and on later prompts | Future: it waits on the comparison in [ROADMAP.md](../../ROADMAP.md#later) |
+
 ## Where each piece lands
 
 | M1 piece | This module ships | You install it at |
@@ -138,6 +259,11 @@ update or unexplained version ceiling is hidden maintenance debt.
 | Commit-msg marker | `reference/commit-msg-marker/` | `scripts/` + the manager's commit-msg hook + a CI re-check |
 | Classified retry | `reference/retry-classified/` | Around a command a CI step or a hook retries, with the pattern list and its recorded messages beside the workflow |
 | Ratchet gate | `reference/ratchet/` | A wiring file of counters and configuration files (Jig's: `tools/quality/ratchet.jsonc`), run by a package script in the gate set; CI checks out full history so the merge base exists |
+| Supply-chain policy | `templates/supply-chain-policy.yaml` | One file every reader can see (Jig's: `.config/supply-chain-policy.yaml`), repeated by the updater and each installer per the tables above |
+| Policy lockstep gate | `reference/supply-chain-lockstep/` | A wrapper script naming the policy and the repository's installer and updater files (Jig's: `scripts/check-supply-chain-lockstep.ts`), in the gate set and as a CI step before the install |
+| Secret scan | `templates/secret-scan.yml` | `.github/workflows/`, with the scanner's configuration at the root; the hook layer in the hook manager, push protection in the forge's settings |
+| Agent-runtime hook | The plugin's `hooks/turn-budget-guard.ts`, registered by its `hooks/hooks.json` | Installed with the plugin; a hook of the repository's own goes in the runtime's hook file per the table above, with its test beside it |
+| Hook self-test runner | `templates/hook-self-tests.sh` | A CI step in the required set, naming the hooks directory |
 
 ## Non-JavaScript repositories
 

@@ -1,0 +1,8 @@
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+dangerouslyAllowAllBuilds: true
+minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - typescript
+  - "@types/bun"

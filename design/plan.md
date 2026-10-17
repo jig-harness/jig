@@ -285,10 +285,6 @@ rest of the work listed above is in the module.
 
 Practices a working repository validated, for modules that exist today:
 
-- **M1**:
-  - supply chain beyond action pins (release cooldown, install-script
-    allowlist, layered secret scanning);
-  - agent-runtime hooks as a rung of the ladder.
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion;
   - a registry of external preconditions;

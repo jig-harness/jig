@@ -56,8 +56,8 @@ jobs:
           # with main, which a shallow checkout does not have.
           fetch-depth: 0
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Install locked dependencies, scripts off
+        run: bun install --frozen-lockfile --ignore-scripts
       - name: Run gate set
         run: bun run gates
 
@@ -77,8 +77,8 @@ jobs:
           # of this repository, which a shallow checkout does not have.
           fetch-depth: 0
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Install locked dependencies, scripts off
+        run: bun install --frozen-lockfile --ignore-scripts
       - name: Run this shard of the drive-pr suite
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
 
@@ -97,10 +97,10 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-      - name: Install the website's locked dependencies
+      - name: Install locked dependencies, scripts off
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install the website's locked dependencies, scripts off
         working-directory: website
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
       - name: Test the document parsers
         run: bun run test ./website/

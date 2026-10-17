@@ -1,0 +1,4 @@
+{
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "strict",
+}

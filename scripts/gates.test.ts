@@ -959,20 +959,6 @@ test("the test step leaves out POSIX-only suites on Windows and separate suites 
   for (const suite of [...POSIX_ONLY_SUITES, ...SEPARATE_SUITES])
     expect(windows).toContain(suite);
   expect(testArgs([], ["**/fixtures/**"])).toEqual(["run", "test"]);
-  // The pre-push hook's fast set: format, lint and types, then every
-  // repository check; the full set starts the same way and adds the rest.
-  const { plan, CHECKS } = await import("./gates.ts");
-  const full = plan(false, ["run", "test"]);
-  const fast = plan(true, ["run", "test"]);
-  expect(fast.steps).toEqual([
-    ["run", "format:check"],
-    ["run", "lint"],
-    ["run", "typecheck"],
-  ]);
-  expect(full.steps.slice(0, fast.steps.length)).toEqual(fast.steps);
-  expect(full.steps).toContainEqual(["run", "test"]);
-  expect(fast.checks).toEqual(CHECKS);
-  expect(full.checks).toEqual(CHECKS);
   // Bun replaces the configured ignore list, so it must be passed along.
   expect(testArgs(["suite/**"], ["**/fixtures/**"])).toEqual([
     "run",
@@ -981,6 +967,223 @@ test("the test step leaves out POSIX-only suites on Windows and separate suites 
     "--path-ignore-patterns=suite/**",
   ]);
 });
+
+test("the gate set runs its cheap stages first and --fast runs only those", async () => {
+  const { plan, CHECKS, heavyStages, testStage } = await import("./gates.ts");
+  const test = testStage(["suite/**"], () => []);
+  const full = plan(false, test).map((stage) => stage.name);
+  const fast = plan(true, test).map((stage) => stage.name);
+  // The pre-push hook's fast set: the context budget, format, lint and
+  // types, then every repository check, and nothing that takes minutes.
+  expect(fast).toEqual([
+    "bun scripts/check-context-budget.ts",
+    "bun run format:check",
+    "bun run lint",
+    "bun run typecheck",
+    ...CHECKS.map((stage) => stage.name),
+  ]);
+  // The full set is the fast set followed by the heavy stages, so every
+  // repository check reports before the first of them starts.
+  const heavy = heavyStages(test).map((stage) => stage.name);
+  expect(heavy).toEqual([
+    "bun run deadcode",
+    "bun run audit",
+    "bun run quality",
+    "bun run test '--path-ignore-patterns=suite/**'",
+    "bun run build",
+  ]);
+  expect(full).toEqual([...fast, ...heavy]);
+  // The repository checks, stated here rather than read back from CHECKS:
+  // the lockstep gate first, judging install scripts before anything else.
+  expect(CHECKS.map((stage) => stage.name)).toEqual([
+    "bun scripts/check-supply-chain-lockstep.ts",
+    "bun scripts/check-md-links.ts",
+    "bun scripts/check-instruction-paths.ts",
+    "bun scripts/check-md-tables.ts",
+    "bun scripts/check-glossary-coverage.ts",
+    "bun scripts/check-no-tracker-refs.ts",
+    "bun scripts/check-licences.ts",
+    "bun scripts/check-workflow-safety.ts",
+    "bun scripts/check-workflow-conventions.ts",
+    "bun scripts/check-schedules-declared.ts",
+    "bun scripts/check-changelog.ts",
+    "bun scripts/check-audit-fit.ts",
+    "bun scripts/change-areas.ts --check",
+    "bun scripts/check-generated-files.ts",
+    "bun scripts/review-risk.ts --check",
+    "bun scripts/check-roadmap.ts",
+  ]);
+});
+
+test.skipIf(process.platform === "win32")(
+  "a stage's name is a command a shell runs as it is",
+  async () => {
+    const { heavyStages, shellWord, testStage } = await import("./gates.ts");
+    expect(shellWord("run")).toBe("run");
+    expect(shellWord("--path-ignore-patterns=**/fixtures/**")).toBe(
+      "'--path-ignore-patterns=**/fixtures/**'",
+    );
+    expect(shellWord("it's")).toBe(`'it'\\''s'`);
+    // The test stage's name, pasted into a shell, hands bun the same arguments.
+    const args = [
+      "run",
+      "test",
+      "--path-ignore-patterns=**/fixtures/**",
+      "--path-ignore-patterns=a b",
+    ];
+    const stage = heavyStages(
+      testStage(["a b"], () => ["**/fixtures/**"]),
+    ).find((s) => s.name.startsWith("bun run test "));
+    if (stage === undefined) throw new Error("no test stage");
+    const echoed = Bun.spawnSync(
+      [
+        "sh",
+        "-c",
+        `set -- ${stage.name.replace(/^bun /, "")}; printf '%s\\n' "$@"`,
+      ],
+      { cwd: root, stdout: "pipe" },
+    );
+    expect(echoed.stdout.toString().trimEnd().split("\n")).toEqual(args);
+  },
+);
+
+test("a failing stage does not end the run: every stage reports and the run lists what failed", async () => {
+  const { runStages, summary, verdict } = await import("./gates.ts");
+  const ran: string[] = [];
+  const stage = (name: string, status: number) => ({
+    name,
+    check: (seen: string) => {
+      expect(seen).toBe(root);
+      ran.push(name);
+      return status;
+    },
+  });
+  const outcomes = await runStages(
+    [
+      stage("first violation", 1),
+      // A command's status is its exit code; it runs for real.
+      { name: "command", command: ["-e", "process.exit(1)"] },
+      {
+        name: "throws",
+        check: () => {
+          ran.push("throws");
+          throw new Error("unreadable input");
+        },
+      },
+      stage("could not check", 2),
+      stage("last and green", 0),
+    ],
+    root,
+  );
+  // A command that cannot be started could not check, and the run goes on.
+  const unstartable = await runStages(
+    [
+      { name: "cannot start", command: ["-e", "0"] },
+      { name: "after it", check: () => 0 },
+    ],
+    join(root, "no-such-directory"),
+  );
+  expect(unstartable).toEqual([
+    { name: "cannot start", status: 2 },
+    { name: "after it", status: 0 },
+  ]);
+  expect(ran).toEqual([
+    "first violation",
+    "throws",
+    "could not check",
+    "last and green",
+  ]);
+  expect(outcomes).toEqual([
+    { name: "first violation", status: 1 },
+    { name: "command", status: 1 },
+    { name: "throws", status: 2 },
+    { name: "could not check", status: 2 },
+    { name: "last and green", status: 0 },
+  ]);
+  // Found violations outranks could not check; the closing report names
+  // every failed stage with its status and leaves the green ones out.
+  expect(verdict(outcomes)).toBe(1);
+  expect(summary(outcomes, false)).toBe(
+    [
+      "gates: 4 of 5 stages failed",
+      "  first violation  # exit 1",
+      "  command  # exit 1",
+      "  throws  # exit 2",
+      "  could not check  # exit 2",
+    ].join("\n"),
+  );
+  // Only could-not-check failures: the run itself could not decide.
+  const undecided = [
+    { name: "a", status: 0 },
+    { name: "b", status: 2 },
+  ];
+  expect(verdict(undecided)).toBe(2);
+  expect(summary(undecided, true)).toBe(
+    "gates: 1 of 2 stages failed\n  b  # exit 2",
+  );
+  // Green: the pass line says which set ran.
+  const green = [{ name: "a", status: 0 }];
+  expect(verdict(green)).toBe(0);
+  expect(summary(green, true)).toBe("fast gates passed");
+  expect(summary(green, false)).toBe("all gates passed");
+  // No stage at all is not a pass.
+  expect(verdict([])).toBe(2);
+  expect(summary([], false)).toBe("gates: could not check: no stage ran");
+});
+
+test("an unreadable test configuration fails the test stage alone", async () => {
+  const { runStages, testStage } = await import("./gates.ts");
+  let reads = 0;
+  const unreadable = () => {
+    reads++;
+    throw new Error("bunfig.toml is not TOML");
+  };
+  // Nothing is read when no suite is skipped, as under --fast.
+  expect(testStage([], unreadable)).toMatchObject({
+    name: "bun run test",
+    command: ["run", "test"],
+  });
+  expect(reads).toBe(0);
+  const stage = testStage(["suite/**"], unreadable);
+  expect(stage.name).toBe("bun run test");
+  const outcomes = await runStages(
+    [
+      { name: "before", check: () => 0 },
+      stage,
+      { name: "after", check: () => 0 },
+    ],
+    root,
+  );
+  expect(outcomes).toEqual([
+    { name: "before", status: 0 },
+    { name: "bun run test", status: 2 },
+    { name: "after", status: 0 },
+  ]);
+});
+
+test.skipIf(process.platform === "win32")(
+  "a failed stage's closing line, pasted whole, reruns its command",
+  async () => {
+    const { summary } = await import("./gates.ts");
+    const line = summary([{ name: "bun run lint", status: 1 }], true)
+      .split("\n")
+      .at(-1);
+    if (line === undefined) throw new Error("no closing line");
+    // The arguments a shell hands bun when the whole line is pasted.
+    const echoed = Bun.spawnSync(
+      [
+        "sh",
+        "-c",
+        `set -- ${line.replace(/^ *bun /, "")}\nprintf '%s\\n' "$@"`,
+      ],
+      { cwd: root, stdout: "pipe" },
+    );
+    expect(echoed.stdout.toString().trimEnd().split("\n")).toEqual([
+      "run",
+      "lint",
+    ]);
+  },
+);
 
 type SuiteJob = {
   env?: Record<string, string>;

@@ -41,6 +41,12 @@ once.
   A skill's own logic that another skill reads stays in the skill.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
+- **A hook** lives in `hooks/<name>.ts`, is registered in `hooks/hooks.json`
+  through `${CLAUDE_PLUGIN_ROOT}` (the one file both tools read), holds to
+  the rules of M1's rung
+  ([core piece 8](../modules/M1-gates-enforcement-ladder/README.md#core-pieces)),
+  and has its tests in `hooks/__tests__/`; `tools/plugin/plugin.test.ts`
+  runs it from a copy.
 - **`SKILL.md` is the agent's contract; `README.md` (where a skill has one) is
   the human's page.** Change both when behaviour changes; keep each to its
   reader.

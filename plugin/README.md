@@ -429,6 +429,11 @@ them together.
 - **Skills** work in Codex as in Claude Code. Codex does not fill in
   `${CLAUDE_SKILL_DIR}`; each `SKILL.md` tells the agent to substitute the
   skill's own directory.
+- **The turn-budget hook runs once trusted.** Codex reads the plugin's
+  `hooks/hooks.json` but skips a plugin's hooks until their current
+  definition is trusted (`/hooks`), and asks again when a release changes
+  them. Codex's transcript is not in the format the guard reads, so there it
+  counts nothing and reports could not check once.
 - **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
   skills, MCP servers, apps and hooks, but not agents; Codex reads custom
   agents only from its own agent folders (`~/.codex/agents/` or a
@@ -548,6 +553,8 @@ plugin/skills/<name>/SKILL.md            the skills both tools load
 plugin/skills/<name>/scripts/            the scripts the skills run
 plugin/shared/                           code more than one skill's scripts import
 plugin/agents/<name>.md                  agents Claude Code loads (Codex: see Codex notes)
+plugin/hooks/hooks.json                  the agent-runtime hooks both tools register
+plugin/hooks/<name>.ts                   the hook scripts, each tested in hooks/__tests__/
 ```
 
 The plugin is a directory of its own rather than the repository root for two
@@ -569,6 +576,16 @@ is already visible everywhere. The trade-off is that versions are chosen per
 machine, so skills stay compatible with older configuration files wherever
 they can; a change that needs a configuration edit is a breaking release (see
 [release](#releases)), and the skill's first step names the edit.
+
+The plugin also registers an [agent-runtime hook](../GLOSSARY.md), the
+turn-budget guard (`hooks/turn-budget-guard.ts`): before every tool call it
+counts the session's agentic turns off the transcript and, within 50 turns of
+the runtime's cap of 1000, hands the agent a wrap-up instruction, so an
+unattended session writes its handoff before the runtime aborts it. It reads
+local files only, lets the call through whenever it cannot count (and says so
+as a hook error), and is off with `JIG_TURN_BUDGET=0`; its knobs are in
+[CONFIGURATION.md § Environment variables](CONFIGURATION.md#environment-variables)
+and the practice is [M1's rung](../modules/M1-gates-enforcement-ladder/README.md#core-pieces).
 
 ## Releases
 

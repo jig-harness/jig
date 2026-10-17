@@ -1,3 +1,10 @@
+[install]
+# The release cooldown of .config/supply-chain-policy.yaml, in seconds: a
+# `bun add` or `bun update` does not resolve a release younger than this.
+# A frozen-lockfile install is not affected. Checked against the policy by
+# scripts/check-supply-chain-lockstep.ts.
+minimumReleaseAge = 259200
+
 [test]
 # Fixtures are input data, including deliberate .test.ts examples.
 pathIgnorePatterns = ["**/fixtures/**", "**/fixture/**", ".context/**", "dist/**", "seeds/**"]

@@ -1,0 +1,17 @@
+# Jig's supply-chain policy (M1 core piece 7): the one statement of the
+# release cooldown, its exemptions and the install-script allowlist. Every
+# installer and the updater state the same values; scripts/check-supply-chain-lockstep.ts
+# (M1's lockstep reference gate) holds bunfig.toml, package.json and
+# renovate.json5 to it in `bun run gates` and before CI's install step.
+cooldown:
+  # A release must be this old before the updater proposes it or an installer
+  # resolves it, so a yanked or compromised release is usually gone first.
+  days: 3
+  # Exact package names the cooldown does not apply to. Jig exempts none:
+  # its pins are exact and every bump arrives through the updater.
+  exempt: []
+install-scripts:
+  # Packages that may run lifecycle scripts at install. None of Jig's
+  # dependencies needs one (`bun pm untrusted` lists nothing); a package that
+  # does is added here and to package.json's trustedDependencies together.
+  allow: []

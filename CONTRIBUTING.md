@@ -110,7 +110,7 @@ natively under the pinned Bun runtime.
 ## Quality gates
 
 Dogfooded [M1](modules/M1-gates-enforcement-ladder/README.md), tiny by
-design. Run all with one command: `bun run gates`. The set, in order:
+design. Run all with one command: `bun run gates`. The set, cheapest first:
 
 1. the [always-loaded context](GLOSSARY.md) budget
    (`scripts/check-context-budget.ts`: M0's instruction-chain and
@@ -118,31 +118,47 @@ design. Run all with one command: `bun run gates`. The set, in order:
    dependencies);
 2. format, lint (Biome, with Jig's GritQL rules in `tools/quality/grit/`),
    types (`bun check`);
-3. unused code, and the changed files' complexity and duplication (fallow);
-4. the ratchet (below);
-5. gate self-tests, then build;
-6. the repository checks (`CHECKS` in `scripts/gates.ts`): Markdown links
+3. the repository checks (`CHECKS` in `scripts/gates.ts`): the supply-chain
+   policy lockstep (`scripts/check-supply-chain-lockstep.ts`: `bunfig.toml`,
+   `package.json`, `website/bunfig.toml`, `website/package.json` and
+   `renovate.json5` state `.config/supply-chain-policy.yaml`, which CI also
+   runs before installing dependencies); Markdown links
    and the paths the `AGENTS.md`, `CLAUDE.md` and `CONTRIBUTING.md` files
    name resolve; a blank line before every table; terms of art defined in the
    glossary (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`,
    each entry under a reason and removed once nothing uses it);
-   no origin references; no workflow that runs a fork's code with secrets
-   (M7's PR-target safety lint); the workflows meeting M13's pipeline
+   no origin references; the licence files and NOTICE complete
+   (`scripts/check-licences.ts`); no workflow that runs a fork's code with
+   secrets (M7's PR-target safety lint); the workflows meeting M13's pipeline
    conventions (the workflow-convention lint, with its heavy suites in
    `.config/workflow-conventions.yaml` and its reasoned exceptions in
    `.config/workflow-conventions-exceptions.txt`); every scheduled workflow
    declared with its cadence in `.config/scheduled-jobs.yaml` (M11's
-   heartbeat coverage check); the licence files and NOTICE complete
-   (`scripts/check-licences.ts`); a changelog section for the current plugin
-   version, change notes the release step can read, and a branch that leaves
-   the changelog's open sections and the version to that step (with a note
-   asking for a release when it changes `plugin/`); Jig's own audit record and configuration fitting the audit skill;
-   every file belonging to an area of the change-area catalog
+   heartbeat coverage check); a changelog section for
+   the current plugin version, change notes the release step can read, and a
+   branch that leaves the changelog's open sections and the version to that
+   step (with a note asking for a release when it changes `plugin/`); Jig's
+   own audit record and configuration fitting the audit skill; every file
+   belonging to an area of the change-area catalog
    (`.config/change-areas.yaml`); every derived file the catalog declares
    fresh, through M2's runner (`scripts/check-generated-files.ts`, see
-   § Derived files); and the AI reviewer's high-risk paths
+   § Derived files); the AI reviewer's high-risk paths
    matching the catalog's `reviewRisk: high` areas
-   (`bun scripts/review-risk.ts --write` regenerates them).
+   (`bun scripts/review-risk.ts --write` regenerates them); and every
+   ROADMAP.md item in `design/plan.md` in the same group and order
+   (`scripts/check-roadmap.ts`);
+4. unused code, and the changed files' complexity and duplication (fallow);
+5. the ratchet (below);
+6. gate self-tests, the plugin hook's tests among them, then build.
+
+Steps 1 to 3 take seconds and run before the minutes the tests and build
+take, so a broken link is reported at the start of a run, not after the
+suite. The stages are independent, so a failing one does not end the run:
+every stage reports, the run closes with the list of what failed, each line
+the command that reruns that stage alone, and it exits 1 when a stage found
+violations and 2 when the only failures are stages that could not check.
+Two unrelated failures surface in one run rather than two; fix every stage
+the list names, not only the first.
 
 CI runs the same command on Linux for every pull request
 (`.github/workflows/gates.yml`); the catalog decides which of its jobs a pull
@@ -195,6 +211,26 @@ meet a rule:
 | `check-schedules-declared` | Findings name no rule and no file or line, and are not annotated in CI | It reports through M11's heartbeat check (`UNDECLARED <id> …`), whose output format belongs to M11 |
 | The ratchet (`bun run quality`) | A missing merge base passes locally, reported as skipped | So the pre-push hook works in a shallow clone; CI, the authority, exits 2 |
 | Unused code (`bun run deadcode`, fallow) | Entry points are declared by folder pattern in `.fallowrc.jsonc` (the scripts, tools, skill scripts and reference gates folders) rather than file by file | Those folders hold the scripts a hook, CI, a skill or a reader runs by path; listing each from its invocation is open work |
+
+### Jig's own supply chain
+
+Jig states its policy in `.config/supply-chain-policy.yaml` (a cooldown of
+3 days, no exemption, no package allowed to run install scripts) and holds
+`renovate.json5` and the `bunfig.toml` and `package.json` of each install
+root (the repository's and the website's) to it with
+`scripts/check-supply-chain-lockstep.ts`, the first of the repository checks
+in `bun run gates` and a step of CI's gates job before the install, so a
+change to the allowlist is judged before any script could run. CI then
+installs with scripts off (`bun install --ignore-scripts`) in every
+install root, so no dependency's script runs there at all. A developer's
+install goes by `trustedDependencies`, which each `package.json` sets to
+the empty list: set, even empty, it replaces Bun's built-in list of trusted
+packages, so no dependency's script runs there either. `bun pm untrusted`
+shows whether an installed package has a script the list blocks, and a
+dependency that needs its script run is added to the policy and to
+`package.json` together. Jig has no secret scan of its
+own yet (no pre-commit hook, no CI scan, and push protection is a host
+setting): adding those layers to Jig is future work.
 
 ### The ratchet
 

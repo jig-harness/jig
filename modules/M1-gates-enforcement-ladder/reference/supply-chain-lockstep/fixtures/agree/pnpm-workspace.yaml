@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+# 3 days, in minutes.
+minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - typescript
+  - "@types/bun"

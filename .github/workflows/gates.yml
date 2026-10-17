@@ -79,8 +79,12 @@ jobs:
       # install cannot keep the check from running.
       - name: Check the always-loaded context budget
         run: bun scripts/check-context-budget.ts
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      # Also built-ins only, and before the install on purpose: it judges
+      # which packages may run install scripts, so it runs before any could.
+      - name: Check the supply-chain policy lockstep
+        run: bun scripts/check-supply-chain-lockstep.ts
+      - name: Install locked dependencies, scripts off
+        run: bun install --frozen-lockfile --ignore-scripts
       - name: Run gate set
         run: bun run gates
 
@@ -102,8 +106,8 @@ jobs:
           # of this repository, which a shallow checkout does not have.
           fetch-depth: 0
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Install locked dependencies, scripts off
+        run: bun install --frozen-lockfile --ignore-scripts
       - name: Check terminal states against their documentation
         if: matrix.shard == 1
         run: bun plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts
@@ -121,11 +125,11 @@ jobs:
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       # The build renders the live audit example with the audit skill's
       # renderer, which needs the repository's own dependencies.
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-      - name: Install the website's locked dependencies
+      - name: Install locked dependencies, scripts off
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install the website's locked dependencies, scripts off
         working-directory: website
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
       - name: Check types
         working-directory: website
         run: bun run check

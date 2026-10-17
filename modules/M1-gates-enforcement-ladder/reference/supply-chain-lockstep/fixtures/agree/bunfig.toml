@@ -1,0 +1,7 @@
+[install]
+# 3 days, in seconds.
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = ["typescript", "@types/bun"]
+
+[test]
+preload = ["./preload.ts"]

@@ -1,0 +1,33 @@
+# Supply-chain policy — the one statement of the release cooldown, its
+# exemptions and the install-script allowlist (Jig module M1, core piece 7).
+#
+# Copy to a place every reader can see (Jig keeps its own under .config/),
+# fill in the values, then make every installer and the updater state the
+# same ones and hold them to it with the lockstep gate:
+#   https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/reference/supply-chain-lockstep/README.md
+# Which file states which value, per installer and updater:
+#   https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/mappings.md
+# The practice:
+#   https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md
+cooldown:
+  # A release must be this old before the updater proposes it or an installer
+  # resolves it, so a yanked or compromised release is usually gone before
+  # anyone here sees it. A whole number of days, at least 1. A fix for a
+  # known vulnerability takes the updater's security path, which skips it.
+  days: 3
+  # Exact package names the cooldown does not apply to: typically a package
+  # version-locked to a runtime pin, which must move the day the pin moves.
+  # Never a pattern: `@scope/*` would trust whatever is published under the
+  # scope later. Keep the list short; each entry is a package whose brand-new
+  # release runs here unseen.
+  exempt: []
+    # - <package version-locked to a runtime pin>
+install-scripts:
+  # Packages that may run lifecycle scripts (preinstall, install,
+  # postinstall, prepare) at install time. Everything else has its scripts
+  # blocked by the installer. A package listed here is never auto-merged by
+  # the updater: its new release runs code on every machine that installs it,
+  # so a person reads the diff. Ask the installer which packages want scripts
+  # before adding one (`bun pm untrusted`, `pnpm approve-builds`).
+  allow: []
+    # - <package whose install script is needed>

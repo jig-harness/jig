@@ -1,0 +1,16 @@
+// The exemption covers only patch releases of the exempt packages.
+{
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "strict",
+  packageRules: [
+    {
+      matchPackageNames: ["typescript", "@types/bun"],
+      matchUpdateTypes: ["patch"],
+      minimumReleaseAge: "0 days",
+    },
+    {
+      matchPackageNames: ["esbuild", "sharp"],
+      automerge: false,
+    },
+  ],
+}

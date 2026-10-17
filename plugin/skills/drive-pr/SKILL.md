@@ -2383,8 +2383,12 @@ a real guard and the paragraph goes away.
 not this dial.** The harness caps agentic turns (API round-trips) per user
 message and, on reaching it, aborts the session outright — `Claude Code error:
 Reached maximum number of turns (1000)` — mid-action, with no handoff written.
-A repository can install a hook that counts round-trips off the transcript and
-injects a wrap-up instruction some turns short of the cap. **When such a
+Under Claude Code, the plugin's turn-budget hook
+(`<plugin-dir>/hooks/turn-budget-guard.ts`, run before every tool call) counts
+round-trips off the transcript and injects a wrap-up instruction some turns
+short of the cap. Under Codex it counts nothing: Codex's transcript is not in
+the format it reads, so it reports could not check and no warning ever comes
+([plugin README § Codex notes](../../README.md#codex-notes)). **When such a
 warning fires, finish only the step in flight, run `drive-state.ts handoff
 [PR]`, report, and end the turn** — do not open another triage-fix-validate
 cycle inside that margin. Why the counting is an approximation:

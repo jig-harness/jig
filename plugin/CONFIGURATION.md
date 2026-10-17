@@ -559,6 +559,8 @@ These are set per machine or per run, not committed:
 | `JIG_TRACE_FILE` | Enables tracing to this JSON lines file instead of the default trace directory; child processes inherit the same destination |
 | `TRACEPARENT` | Carries the active trace and parent span to child processes; set by the runtime when tracing is enabled |
 | `AWAIT_ROUND_CHECKS_MAX_AGE` | Seconds a still-waiting read of a pull request's checks may be reused while nothing on GitHub changed; default 300, `0` always reads |
+| `JIG_TURN_BUDGET`, `JIG_TURN_BUDGET_MARGIN`, `JIG_TURN_BUDGET_REFIRE` | The turn-budget hook's cap (default 1000; `0` turns the hook off), the margin before it at which the hook warns (default 50), and how often it warns again (unset or `0`: once more when half the margin remains) |
+| `JIG_TURN_BUDGET_STATE_DIR` | Where the turn-budget hook keeps its per-session state; default `jig-turn-budget` under the temporary directory |
 | `JIG_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
 | `BASH_MAX_TIMEOUT_MS` | Claude Code's own variable, not Jig's: the longest `timeout` an agent may give a background command in an unattended session, 2 hours unless raised. Set it to `28800000` so a drive can outlast 2 hours (see [the background time limit](skills/drive-pr/README.md#the-background-time-limit)) |
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |

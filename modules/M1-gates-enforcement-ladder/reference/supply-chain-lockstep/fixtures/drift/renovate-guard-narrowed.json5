@@ -1,0 +1,18 @@
+// The guard covers only major updates, so minor and patch updates of the
+// install-script packages keep the earlier automerge.
+{
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "strict",
+  packageRules: [
+    {
+      matchPackageNames: ["typescript", "@types/bun"],
+      minimumReleaseAge: "0 days",
+    },
+    { matchUpdateTypes: ["minor", "patch"], automerge: true },
+    {
+      matchPackageNames: ["esbuild", "sharp"],
+      matchUpdateTypes: ["major"],
+      automerge: false,
+    },
+  ],
+}

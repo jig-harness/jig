@@ -30,11 +30,11 @@ jobs:
           # checkout token is not kept for the build's scripts to read.
           persist-credentials: false
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-      - name: Install the website's locked dependencies
+      - name: Install locked dependencies, scripts off
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install the website's locked dependencies, scripts off
         working-directory: website
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
       - name: Build the site and check its links
         working-directory: website
         run: bun run build

@@ -14,7 +14,11 @@ modules/M0-instruction-architecture/templates/dispositions.md
 modules/M0-instruction-architecture/templates/hitl-registry.md
 modules/M0-instruction-architecture/templates/rules-README.md
 modules/M1-gates-enforcement-ladder/templates/ci-pr-gates.yml
+modules/M1-gates-enforcement-ladder/templates/hook-self-tests.sh
+modules/M1-gates-enforcement-ladder/templates/hook-self-tests.test.ts
 modules/M1-gates-enforcement-ladder/templates/lefthook.yml
+modules/M1-gates-enforcement-ladder/templates/secret-scan.yml
+modules/M1-gates-enforcement-ladder/templates/supply-chain-policy.yaml
 modules/M1-gates-enforcement-ladder/templates/suppression-registry.md
 modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md
 modules/M10-environments-deploy/templates/pipeline.example.yaml

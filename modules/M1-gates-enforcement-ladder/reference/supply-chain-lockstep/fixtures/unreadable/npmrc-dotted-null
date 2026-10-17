@@ -1,0 +1,5 @@
+minimum-release-age=4320
+minimum-release-age-exclude[]=typescript
+minimum-release-age-exclude[]=@types/bun
+dangerously-allow-all-builds=false
+dangerously-allow-all-builds.extra=null

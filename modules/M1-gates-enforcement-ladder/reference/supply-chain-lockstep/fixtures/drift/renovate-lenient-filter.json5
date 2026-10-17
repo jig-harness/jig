@@ -1,0 +1,8 @@
+{
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "none",
+  packageRules: [
+    { matchPackageNames: ["typescript", "@types/bun"], minimumReleaseAge: "0 days" },
+    { matchPackageNames: ["esbuild", "sharp"], automerge: false },
+  ],
+}

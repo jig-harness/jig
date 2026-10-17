@@ -98,8 +98,8 @@ make, use the entry's term instead.
 - **Quality gate** — a check that must pass before work proceeds (formatting,
   linting, type checks, tests, build).
 - **Enforcement ladder** — the ordered places a rule can live: written
-  convention → editor/local script → *git hook* → *CI* → mandatory review
-  step. Each rung is harder to bypass. Jig treats "which rung is this
+  convention → editor/local script → *agent-runtime hook* → *git hook* →
+  *CI* → mandatory review step. Each rung is harder to bypass. Jig treats "which rung is this
   rule on, and what promotes it?" as a first-class question — and the rung is
   what the *auditor* scores. *Avoid*: level for a rung (a module's
   *maturity level* uses it).
@@ -108,6 +108,13 @@ make, use the entry's term instead.
 - **Git hook** — a script that runs automatically at a git event
   (pre-commit, pre-push, commit-msg). Managed by tools like lefthook, husky,
   or pre-commit.
+- **Agent-runtime hook** — a command an agent runtime (Claude Code, Codex)
+  runs at its own events: before or after a tool call, when a prompt is
+  submitted, when a session starts, resumes or compacts. It sees what no
+  *git hook* can (the command about to run, the prompt, the session's
+  transcript) and is the softer rung: it runs only where it is registered
+  and trusted, so *CI* re-checks whatever it enforces. The *turn budget*
+  guard in Jig's *plugin* is an example.
 - **CI (continuous integration)** — the service that runs checks on every
   push/PR (GitHub Actions, GitLab CI, …). In Jig's model, CI is the
   *authority*: local hooks are conveniences that can be bypassed; CI closes
@@ -125,6 +132,27 @@ make, use the entry's term instead.
   violations (exit status 2 by convention): the gate could not decide, so the
   fix belongs to its input or environment, not to the code under check. Never
   evidence that a change passed.
+- **Release cooldown** — a minimum age a dependency release must reach
+  before the dependency updater proposes it or a package manager resolves it
+  (a few days), so a release that is yanked or found compromised is usually
+  gone before anyone sees it. Held in the updater and in every installer,
+  with exemptions as exact package names, and kept in step by one policy
+  ([M1](modules/M1-gates-enforcement-ladder/README.md)).
+- **Install-script allowlist** — the list of packages allowed to run
+  lifecycle scripts (preinstall, install, postinstall, prepare) when
+  dependencies are installed; the installer blocks every other package's
+  scripts. A listed package is never auto-merged by the updater, since its
+  new release runs code on every machine that installs it
+  ([M1](modules/M1-gates-enforcement-ladder/README.md)).
+- **Policy lockstep** — one policy file states the release cooldown, its
+  exemptions and the install-script allowlist; every installer and the
+  dependency updater repeat those values in their own configuration and
+  units, and a gate checks they still agree, running before any install
+  that could run a script ([M1](modules/M1-gates-enforcement-ladder/README.md)).
+- **Push protection** — the forge's own secret scan on a push, which rejects
+  a push carrying a credential before it lands. The outermost layer of a
+  secret scan, behind the pre-commit hook and the blocking *CI* scan over a change's
+  commits ([M1](modules/M1-gates-enforcement-ladder/README.md)).
 - **Quiet mode** — the form of a *quality gate* command written for an agent
   to read: on success it prints a summary (a *verdict line* and the last few
   lines), on failure the full output, and it keeps the gate's own exit
@@ -1109,6 +1137,12 @@ make, use the entry's term instead.
   that an agent tool loads in every session. Jig ships its skills and
   its review agent as one plugin for Claude Code and Codex, installed once
   per machine ([plugin/README.md](plugin/README.md)).
+- **Turn budget** — the number of agentic turns (API round-trips: one request
+  to the model and its reply, which may hold several content blocks) an agent
+  runtime allows one prompt before it aborts the session outright, with no
+  handoff written. The plugin's turn-budget guard, an *agent-runtime hook*,
+  counts the round-trips off the transcript and tells the agent to wrap up
+  within a margin of the cap.
 - **Shared code (`plugin/shared/`)** — the plugin's code that more than one
   skill uses: the configuration reader, the process runner, the
   command-line boundary, the logger. Skills import it by relative path; it

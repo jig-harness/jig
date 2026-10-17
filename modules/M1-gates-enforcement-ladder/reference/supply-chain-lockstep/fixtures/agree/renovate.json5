@@ -1,0 +1,26 @@
+// The updater's copy of the policy.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "strict",
+  vulnerabilityAlerts: { minimumReleaseAge: null },
+  packageRules: [
+    {
+      description: "The policy's exemptions skip the cooldown.",
+      matchPackageNames: ["typescript", "@types/bun"],
+      minimumReleaseAge: "0 days",
+    },
+    {
+      description: "Non-major bumps in one weekly pull request.",
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "non-major",
+    },
+    {
+      description: "Packages that run install scripts are never auto-merged.",
+      matchPackageNames: ["esbuild", "sharp"],
+      automerge: false,
+      groupName: null,
+    },
+  ],
+}

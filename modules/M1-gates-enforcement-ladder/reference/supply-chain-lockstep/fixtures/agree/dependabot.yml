@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+      exclude:
+        - typescript
+        - "@types/bun"

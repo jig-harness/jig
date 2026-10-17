@@ -127,6 +127,98 @@ criteria:
       - "dependency-updater configuration covers those references"
       - "proposed updates run the same required gates as other changes"
 
+  - id: dependency-release-cooldown
+    level: standard
+    requires: mechanical
+    statement: >-
+      A minimum release age holds for application dependencies in the
+      updater's configuration and in every package manager the repository
+      installs with, and its exemptions are a list of exact package names.
+    observe:
+      - "the updater's configuration sets a minimum release age for the
+        application's dependencies (Renovate minimumReleaseAge, Dependabot
+        cooldown)"
+      - "each installer's configuration sets the same age in its own unit
+        (bunfig.toml, .npmrc, pnpm-workspace.yaml, .yarnrc.yml)"
+      - "the exemptions name exact packages, never a pattern"
+    since: next
+
+  - id: install-scripts-allowlisted
+    level: standard
+    requires: mechanical
+    statement: >-
+      Only the packages a list names may run lifecycle scripts at install
+      time, every installer the repository uses blocks the rest, and the
+      updater never auto-merges a listed package.
+    observe:
+      - "each installer's allowlist is present (package.json
+        trustedDependencies, pnpm-workspace.yaml onlyBuiltDependencies, or
+        ignore-scripts with the allowed packages rebuilt on purpose)"
+      - "the updater's configuration sets automerge off for the listed
+        packages, or no auto-merge reaches them"
+    since: next
+
+  - id: supply-chain-policy-lockstep
+    level: strict
+    requires: mechanical
+    statement: >-
+      One policy file states the release cooldown, its exemptions and the
+      install-script allowlist, and a gate in the required set checks that
+      every installer and the updater state the same values, running before
+      any install that could run a script.
+    observe:
+      - "a policy file names the three values once"
+      - "a gate compares each installer's and the updater's file with it and
+        runs in the required CI set"
+      - "the gate's CI step precedes the dependency install, or the install
+        runs with scripts disabled"
+    since: next
+
+  - id: updater-self-checked
+    level: strict
+    requires: mechanical
+    statement: >-
+      Range-valued version overrides are excluded from the updater's normal
+      path, and every custom extraction pattern of the updater has a check
+      that re-applies it to the tree and requires exactly one value.
+    observe:
+      - "an updater rule leaves overrides that are not exact versions alone"
+      - "a check runs each custom manager's own patterns against the tree and
+        fails on zero or several matches, in CI"
+      - "expected-absent where the repository has neither overrides nor
+        custom extraction patterns"
+    since: next
+
+  - id: secret-scan-blocks-in-ci
+    level: standard
+    requires: mechanical
+    statement: >-
+      A required CI job scans exactly the commits a change introduces for
+      secrets with a pinned scanner, and fails on a finding or on an empty
+      commit range.
+    observe:
+      - "a workflow runs a secret scanner over the merge-base-to-head range on
+        pull requests, from a full-history checkout"
+      - "the job fails when the range resolves to zero commits"
+      - "the job is in the required set"
+    probe:
+      files: *ci-config
+    since: next
+
+  - id: secret-scan-local-and-forge-layers
+    level: strict
+    requires: mechanical
+    statement: >-
+      Beside the CI scan, a pre-commit hook scans the staged changes for
+      secrets on the committer's machine, and the forge's push protection is
+      on.
+    observe:
+      - "the hook manager's pre-commit configuration runs a secret scanner
+        over the staged changes"
+      - "push protection is enabled for the repository or its organization
+        (a host setting the audit reads, or the team states)"
+    since: next
+
   - id: gate-outcomes-distinguish-could-not-check
     level: standard
     requires: mechanical
@@ -206,6 +298,22 @@ criteria:
         the gate's output then says it examined zero"
       - "those self-tests run in CI"
     since: 0.21.0
+
+  - id: agent-runtime-hooks-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every hook the repository registers in an agent runtime (around tool
+      calls, on prompt and session events) has a self-test beside it that
+      feeds it the runtime's payload and asserts each outcome, and one runner
+      discovers every hook's test and runs it in CI.
+    observe:
+      - "each command a runtime's hook registration names (a settings file's
+        hooks, a hooks.json, a plugin's hooks/) has a test beside it or in
+        the hooks' test directory"
+      - "a runner discovers the tests by name rather than listing them, and a
+        CI job in the required set runs it"
+    since: next
 
   - id: existing-findings-ratcheted
     level: strict

@@ -116,6 +116,34 @@ criteria:
     # A rule that still has findings is ratcheted rather than left advisory: a required gate fails a change that adds a finding to it or loosens its configuration, measured against the merge base, and a rule whose count reaches zero is promoted to blocking.
     score: absent
     evidence: "xo runs each rule as an error or switches it off (package.json xo overrides); nothing counts findings against a base"
+  M1/dependency-release-cooldown:   # standard, requires mechanical
+    # A minimum release age holds for application dependencies in the updater's configuration and in every package manager the repository installs with, and its exemptions are a list of exact package names.
+    score: absent
+    evidence: "No updater configuration in the tree (no renovate.json, .github/renovate.json or .github/dependabot.yml) and .npmrc holds only package-lock=false: no minimum release age is set anywhere"
+  M1/install-scripts-allowlisted:   # standard, requires mechanical
+    # Only the packages a list names may run lifecycle scripts at install time, every installer the repository uses blocks the rest, and the updater never auto-merges a listed package.
+    score: absent
+    evidence: "main.yml's npm install runs lifecycle scripts: .npmrc sets no ignore-scripts, package.json has no allowlist an installer reads, and no updater configuration exists to hold an auto-merge rule"
+  M1/supply-chain-policy-lockstep:   # strict, requires mechanical
+    # One policy file states the release cooldown, its exemptions and the install-script allowlist, and a gate in the required set checks that every installer and the updater state the same values, running before any install that could run a script.
+    score: absent
+    evidence: "No policy file and no gate: the steps before npm install in main.yml are the link-checker cache, the checkout and setup-node"
+  M1/updater-self-checked:   # strict, requires mechanical
+    # Range-valued version overrides are excluded from the updater's normal path, and every custom extraction pattern of the updater has a check that re-applies it to the tree and requires exactly one value.
+    score: expected-absent
+    evidence: "package.json carries no overrides field and the tree has no updater configuration, so there are neither range-valued overrides nor custom extraction patterns to check"
+  M1/secret-scan-blocks-in-ci:   # standard, requires mechanical
+    # A required CI job scans exactly the commits a change introduces for secrets with a pinned scanner, and fails on a finding or on an empty commit range.
+    score: absent
+    evidence: "main.yml runs no secret scanner: its steps are the cache, the checkout, setup-node, npm install, the lychee link check, lint, type, unit and the codecov upload"
+  M1/secret-scan-local-and-forge-layers:   # strict, requires mechanical
+    # Beside the CI scan, a pre-commit hook scans the staged changes for secrets on the committer's machine, and the forge's push protection is on.
+    score: absent
+    evidence: "No hook manager configuration (no lefthook.yml, .husky/ or .pre-commit-config.yaml) and nothing in the tree records push protection; the host setting was not read"
+  M1/agent-runtime-hooks-self-tested:   # strict, requires mechanical
+    # Every hook the repository registers in an agent runtime (around tool calls, on prompt and session events) has a self-test beside it that feeds it the runtime's payload and asserts each outcome, and one runner discovers every hook's test and runs it in CI.
+    score: expected-absent
+    evidence: "No agent-runtime hook is registered: the tree has no .claude/, .codex/ or hooks.json, and no instruction file at the root"
   M1/retries-classify-errors:   # strict, requires mechanical
     # Every retry in the pipeline's steps and in the gates and scripts it runs retries only an error a classifier marks transient, aborts at once on any other with the command's own message and status, and the classifier is tested against messages recorded from the real tool.
     score: expected-absent

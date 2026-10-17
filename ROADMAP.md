@@ -107,9 +107,9 @@ dependency behaviour a workaround exists for.
 ### 17. Corrected designs for the existing modules
 
 Practices working repositories validated, added to the modules that exist:
-supply-chain checks beyond pinned actions (M1), watchdogs and heartbeats for what is deployed (M10,
-M11), acceptance and post-merge stages (M6, M7), a generator for the model
-roster and instructions that keep working in every agent tool (M0, M4, M5).
+watchdogs and heartbeats for what is deployed (M10, M11), acceptance and
+post-merge stages (M6, M7), a generator for the model roster and
+instructions that keep working in every agent tool (M0, M4, M5).
 
 ## Later
 
