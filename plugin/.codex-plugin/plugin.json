@@ -1,6 +1,6 @@
 {
   "name": "jig",
-  "version": "0.48.0",
+  "version": "0.48.1",
   "description": "Jig shared agent tooling: drive-pr runs a pull request's review rounds unattended, do-item works a tracker item through to a pull request, resolve-review-comments settles review threads, the review-arbiter agent rules on contested findings, and procedure skills cover reviewing a change (review), repairing failing CI (fix-ci), resolving merge, rebase and cherry-pick conflicts (resolve-conflicts), GitHub Actions workflows (github-actions), architecture decision records (adr), de-scarring documents (descar), recording what a session learned about the scaffolding in a shared store (reflect) and turning it into approved changes (review-reflections), promoting agent memory (promote-memory), bulk read-only analysis (programmatic-execution), design briefs (design-brief-builder), settling technical dilemmas with cited decision sheets (decide), cited explainer sheets of how a system works (explain), a changelog and version kept from per-pull-request change notes (changelog) and auditing a repository against Jig's practice modules, with a committed record each re-run compares against (audit); and an agent-runtime hook, the turn-budget guard, which warns the agent before the runtime's turn cap aborts a session. Each repository supplies its own values in .config/jig.yaml.",
   "author": { "name": "Docomply" },
   "homepage": "https://github.com/docomply/jig/blob/main/plugin/README.md",

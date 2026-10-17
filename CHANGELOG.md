@@ -254,6 +254,14 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.48.1] - 2026-10-17
+
+### Changed
+
+- The plugin's README says a release run writes the waiting changes that ask
+  for a release as one version, the largest bump any of them asks for. A test covers notes
+  from several merges becoming one version and one changelog section.
+
 ## [0.48.0] - 2026-10-17
 
 `fix-ci` attributes a test failure on a freshly fetched base before it fixes
@@ -2464,7 +2472,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.48.1...HEAD
+[0.48.1]: https://github.com/docomply/jig/compare/v0.48.0...v0.48.1
 [0.48.0]: https://github.com/docomply/jig/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/docomply/jig/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/docomply/jig/compare/v0.45.0...v0.46.0
