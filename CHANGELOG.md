@@ -273,6 +273,17 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 
+## [0.51.1] - 2026-10-17
+
+### Changed
+
+- A template or a gate that a skill uses now lives in that skill, not in the
+  module it came from: the module contract no longer requires `templates/` and
+  `reference/` in every module, and the licence gate lists templates under
+  `plugin/skills/*/templates/` in `NOTICE` like those under `modules/`. Nothing
+  moves yet; the `kickoff` and `docs` skills bring their assets in when they
+  arrive.
+
 ## [0.51.0] - 2026-10-17
 
 The audit costs what the profile asks for, runs unattended, and splits its
@@ -2601,7 +2612,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.51.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.51.1...HEAD
+[0.51.1]: https://github.com/docomply/jig/compare/v0.51.0...v0.51.1
 [0.51.0]: https://github.com/docomply/jig/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/docomply/jig/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/docomply/jig/compare/v0.48.1...v0.49.0
