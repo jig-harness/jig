@@ -513,30 +513,30 @@ fields:
     items: { type: map, values_type: any }
     read_by: [code-stats]
     repository_only: true
-    since: next
+    since: 0.50.0
   code_stats.default_area:
     type: string
     default: production
     read_by: [code-stats]
     repository_only: true
-    since: next
+    since: 0.50.0
   code_stats.kinds:
     type: map
     keys: [code, test, docs, config, data, generated, fixture, asset, vendored, other]
     values_type: { type: list, items: string }
     read_by: [code-stats]
     repository_only: true
-    since: next
+    since: 0.50.0
   code_stats.modules:
     type: list
     items: string
     nonempty: true
     read_by: [code-stats]
     repository_only: true
-    since: next
+    since: 0.50.0
   code_stats.classify_command:
     type: command
     nullable: true
     read_by: [code-stats]
     repository_only: true
-    since: next
+    since: 0.50.0

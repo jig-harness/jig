@@ -241,6 +241,18 @@ changes are marked **Breaking** and say what a consumer changes.
   as a feature that does not exist. The feature field, the dashed chips, their
   popovers, the factory legends and [FACTORY.md](FACTORY.md) use the one
   wording.
+- The website's home page is laid out around its drawings: the jig stands
+  beside the opening statement as a bleed and is assembled and closed by the
+  first stretch of scrolling (a [plate sequence](GLOSSARY.md), CSS alone,
+  a still plate without scroll-driven animations, under reduced motion or
+  in a window narrower than 1000 pixels); the module map
+  has a strip of its own under the factory, with what a filled cell means;
+  the ways to use Jig each stand beside a plate; the page closes with
+  where to start, above the foundation plate rising from its foot; the list
+  of principles leaves the home page, which links to them from its close,
+  as the module map's page now does. The frames are provisional, cut from
+  the jig plate; [design/website.md](design/website.md) has the series
+  to draw in their place.
 
 ### Fixed
 
@@ -259,6 +271,30 @@ changes are marked **Breaking** and say what a consumer changes.
   a scratch directory outside the repository, so a suite that reads every
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
+
+## [0.50.0] - 2026-10-17
+
+### Added
+
+- [`/jig:code-stats`](plugin/skills/code-stats/README.md) measures what a
+  repository is made of. It classifies every tracked file by area (what it is
+  for: scaffolding, CI, build, database, ops, tools, docs, repository
+  configuration, production), kind (code, test, docs, config, data,
+  generated, fixture, asset, vendored), language and module, counts its lines
+  of code, and reports in the terminal, as versioned JSON (`--json`) or as a
+  self-contained interactive HTML report (`--html`). It needs no setup: test
+  conventions for JavaScript and TypeScript, Python, Go, Java and Kotlin,
+  Rust, Ruby, PHP, C#, Elixir and shell, the `linguist-*` attributes in
+  `.gitattributes`, generator banners, lockfiles, a table of build tools and
+  one of database tools, and the workspace manifests of pnpm, npm, Go, Cargo,
+  Gradle and uv. Vendored files are left out of the totals unless
+  `--include-vendored` is given. Every output shows the unclassified share,
+  so a layout the defaults do not fit is visible, and `--explain <path>`
+  names the rule behind each value of one file. A new
+  [`code_stats`](plugin/CONFIGURATION.md#code_stats) section of
+  `.config/jig.yaml` sets the areas, the default area, kind globs and module
+  folders, and `code_stats.classify_command` lets a repository classify files
+  with a command of its own.
 
 ## [0.49.0] - 2026-10-17
 
@@ -2496,7 +2532,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.49.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/docomply/jig/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/docomply/jig/compare/v0.48.1...v0.49.0
 [0.48.1]: https://github.com/docomply/jig/compare/v0.48.0...v0.48.1
 [0.48.0]: https://github.com/docomply/jig/compare/v0.47.0...v0.48.0
