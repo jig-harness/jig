@@ -5,10 +5,13 @@ import Ladder from "../components/Ladder.astro";
 import LevelGlyph from "../components/LevelGlyph.astro";
 import ModuleMap from "../components/ModuleMap.astro";
 import Plate from "../components/Plate.astro";
+import PlateSequence from "../components/PlateSequence.astro";
 import SkillCommand from "../components/SkillCommand.astro";
 import Base from "../layouts/Base.astro";
-import { modules, principles, profiles, readme } from "../lib/data/index.ts";
+import { modules, profiles, readme } from "../lib/data/index.ts";
+import { LEVEL_NAME } from "../lib/data/modules.ts";
 import { mdInline } from "../lib/markdown.ts";
+import { JIG_FRAMES, type PlateName } from "../lib/plates.ts";
 import { countWord } from "../lib/view.ts";
 
 const count = modules().length;
@@ -17,14 +20,32 @@ const allProfiles = profiles().profiles;
 const solo = allProfiles.find((p) => p.id === "solo-lite");
 if (!solo) throw new Error("profiles.yaml has no solo-lite profile");
 const soloCount = Object.keys(solo.targets).length;
-const principleList = principles();
+const levelNames = Object.values(LEVEL_NAME);
 const fxLead = await mdInline(r.factory.lead, "README.md");
 const fxJobs = await Promise.all(
   r.factory.jobs.map(async (j) => ({ lead: j.lead, html: await mdInline(j.body, "README.md") })),
 );
 const fxFits = await mdInline(r.factory.fits, "README.md");
 const fxStations = await mdInline(r.factory.stations, "README.md");
-const ways = await Promise.all(r.ways.map(async (w) => ({ n: w.n, html: await mdInline(w.body, "README.md") })));
+
+// The plate beside each way of using Jig, by the way's number in the README:
+// a stencil set for the template, the wrench rack for the upgrade one module
+// at a time, the card catalog for the pattern looked up, the tool wall for
+// the tooling every repository shares.
+const WAY_PLATES: readonly PlateName[] = ["stencils", "wrenches", "catalog", "toolwall"];
+const ways = await Promise.all(
+  r.ways.map(async (w, i) => {
+    const plate = WAY_PLATES[i];
+    if (!plate) throw new Error(`the README names more ways to use Jig than the home page has plates for (${w.lead})`);
+    const body = w.body.replace(/^\*\*[^*]+\*\*\s*[—–-]\s*/, "");
+    return {
+      n: w.n,
+      lead: w.lead,
+      plate,
+      html: await mdInline(body.charAt(0).toUpperCase() + body.slice(1), "README.md"),
+    };
+  }),
+);
 const profileCards = allProfiles.map((p, i) => ({
   id: p.id,
   name: p.name,
@@ -48,52 +69,41 @@ const LIMITS = [
 
 <Base title="Jig">
   <section class="hero wrap">
-    <div class="hero-text">
-      <span class="label">Delivery practices for teams that build with AI coding agents</span>
-      <h1 class="display">Scaffolding that lets AI agents work your repository well — adopted one module at a time.</h1>
-      <div class="lede-row">
-        <p class="lede">
-          Jig is a modular collection of software-delivery practices for teams that build and maintain software with AI
-          coding agents. A jig, in a workshop, holds the work and guides the tool so every cut comes out the same; Jig's
-          skills and gates do that for agents.
-        </p>
-        <span class="hero-plate"><Plate name="jig" width="230px" /></span>
-      </div>
-      <p class="sub">
-        You don't adopt all of it: <a href="/modules/">{count} independent modules</a>, each at three levels. A one-person
-        project starts with {countWord(soloCount)} modules at Lite. Every practice is a tool-independent rule first, mapped to your tools
-        second.
-      </p>
-      <div class="paths">
-        <div class="path">
-          <span class="label">Evaluating Jig for a team</span>
-          <p>Ten minutes: what it is, what it never does, and how far a team like yours should go.</p>
-          <div class="path-links">
-            <a href="/features/">What you get: the skills, gates and loops, and what runs each →</a>
-            <a href="#factory">Jig as a software factory: what it runs on, and who runs each station ↓</a>
-            <a href="#limits">What Jig never does ↓</a>
-            <a href="/adopt/">Choose how far to go: {countWord(allProfiles.length)} profiles →</a>
-          </div>
+    <span class="label">Delivery practices for teams that build with AI coding agents</span>
+    <h1 class="display">Scaffolding that lets AI agents work your repository well — adopted one module at a time.</h1>
+    <p class="lede">
+      Jig is a modular collection of software-delivery practices for teams that build and maintain software with AI
+      coding agents. A jig, in a workshop, holds the work and guides the tool so every cut comes out the same; Jig's
+      skills and gates do that for agents.
+    </p>
+    <p class="sub">
+      You don't adopt all of it: <a href="#map">{count} independent modules</a>, each at three levels. A one-person
+      project starts with {countWord(soloCount)} modules at Lite. Every practice is a tool-independent rule first, mapped to your tools
+      second.
+    </p>
+    <span class="hero-plate"><PlateSequence frames={JIG_FRAMES} tone={0.78} /></span>
+    <div class="paths">
+      <div class="path">
+        <span class="label">Evaluating Jig for a team</span>
+        <p>Ten minutes: what it is, what it never does, and how far a team like yours should go.</p>
+        <div class="path-links">
+          <a href="/features/">What you get: the skills, gates and loops, and what runs each →</a>
+          <a href="#factory">Jig as a software factory: what it runs on, and who runs each station ↓</a>
+          <a href="#limits">What Jig never does ↓</a>
+          <a href="/adopt/">Choose how far to go: {countWord(allProfiles.length)} profiles →</a>
         </div>
-        <div class="path lit">
-          <span class="eyebrow">Working on a repository</span>
-          <p>Start with an audit. It scores your repository against every module and says what to do first.</p>
-          <SkillCommand name="audit" />
-          <div class="path-links">
-            <a href="/plugin/">Install the plugin →</a>
-            <a href="/adopt/">The adoption guide →</a>
-            <a href="/modules/">Find a module →</a>
-          </div>
+      </div>
+      <div class="path lit">
+        <span class="eyebrow">Working on a repository</span>
+        <p>Start with an audit. It scores your repository against every module and says what to do first.</p>
+        <SkillCommand name="audit" />
+        <div class="path-links">
+          <a href="/plugin/">Install the plugin →</a>
+          <a href="/adopt/">The adoption guide →</a>
+          <a href="/modules/">Find a module →</a>
         </div>
       </div>
     </div>
-    <figure class="map-card">
-      <figcaption>
-        <span class="map-title">All of Jig, and how much of it you need</span>
-        <a href="/modules/">Full map →</a>
-      </figcaption>
-      <ModuleMap variant="compact" />
-    </figure>
   </section>
 
   <section id="factory" class="factory wrap band" aria-labelledby="factory-h">
@@ -109,6 +119,26 @@ const LIMITS = [
       <a class="more" href="/factory/">What the factory runs on, every station, and what is on the roadmap →</a>
     </div>
     <CrossSection variant="mini" />
+  </section>
+
+  <section id="map" class="map-strip wrap band" aria-labelledby="map-h">
+    <div class="map-text">
+      <span class="eyebrow">The map</span>
+      <h2 id="map-h" class="display small-h">All of Jig, and how much of it you need.</h2>
+      <p>
+        Jig is {count} modules, one per practice; an adopted module can reach one of three levels:{" "}
+        {levelNames.join(", ")}. The map shows every module at every level; pick a profile and the cells it fills are
+        the levels a team like yours aims for. The rest is there when the answer changes.
+      </p>
+      <p class="muted small">
+        A one-person project fills {countWord(soloCount)} cells. Nobody fills them all: a module you don't need is
+        a row you skip.
+      </p>
+      <a class="more" href="/modules/">The full map: every level named, and the skills that run each module →</a>
+    </div>
+    <figure class="map-card">
+      <ModuleMap variant="compact" />
+    </figure>
   </section>
 
   <section id="limits" class="limits wrap band band-sunk">
@@ -187,43 +217,60 @@ const LIMITS = [
     <AuditSpecimen />
   </section>
 
-  <section class="ways wrap band">
-    <div>
-      <span class="label">{countWord(ways.length, true)} ways to use it</span>
-      <ol class="numbered">{ways.map((w) => <li><span class="num">{w.n}</span><span set:html={w.html} /></li>)}</ol>
+  <section class="ways wrap band" aria-labelledby="ways-h">
+    <div class="ways-head">
+      <span class="eyebrow">{countWord(ways.length, true)} ways to use it</span>
+      <h2 id="ways-h" class="display small-h">A template, an upgrade path, a reference, or tooling you never copy.</h2>
     </div>
-    <div>
-      <span class="label">{countWord(principleList.length, true)} principles behind it</span>
-      <ol class="numbered">
-        {
-          principleList.map((p) => (
-            <li>
-              <span class="num">{p.n}</span>
-              <a class="principle" href={`/principles/${p.n}/`}>
-                <span class="p-title">{p.title}</span>
-                <span class="muted">{p.oneLiner}</span>
-              </a>
-            </li>
-          ))
-        }
-      </ol>
+    <ol class="way-cards">
+      {
+        ways.map((w) => (
+          <li class="way">
+            <span class="way-plate"><Plate name={w.plate} width="auto" tone={0.78} /></span>
+            <span class="way-title"><span class="num">{w.n}</span>{w.lead}</span>
+            <span class="way-body" set:html={w.html} />
+          </li>
+        ))
+      }
+    </ol>
+  </section>
+
+  <section class="close wrap band" aria-labelledby="close-h">
+    <div class="close-text">
+      <span class="eyebrow">Where to start</span>
+      <h2 id="close-h" class="display">One command, then one module at a time.</h2>
+      <p>
+        Install the plugin, run the audit, read the sheet. Nothing in your repository changes until you choose what
+        to adopt first, and the profile you pick says how far to take it.
+      </p>
+      <SkillCommand name="audit" />
+      <div class="close-links">
+        <a href="/plugin/">Install the plugin →</a>
+        <a href="/adopt/">The adoption guide →</a>
+        <a href="/principles/">The principles behind every module →</a>
+      </div>
     </div>
+    <span class="close-plate"><Plate name="slab" tone={0.7} /></span>
   </section>
 </Base>
 
 <style>
+  /* The hero: the statement and the two reader paths on the left; the jig
+     on the right as a bleed, larger than the column, feathered into the
+     page from past the window's right edge, and played as a sequence by the
+     first --seq-len of scrolling. Below 1000px the jig stands still between
+     the statement and the paths, at the column's width. */
   .hero {
+    --seq-len: 55vh;
+    position: relative;
     padding-top: clamp(24px, 3.4vw, 48px);
     padding-bottom: 40px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
-    gap: clamp(28px, 4vw, 64px);
-    align-items: start;
-  }
-  .hero-text {
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
+    overflow-x: clip;
+  }
+  .hero > * {
     min-width: 0;
   }
   .hero h1 {
@@ -231,21 +278,44 @@ const LIMITS = [
     line-height: 1.04;
     max-width: 17ch;
   }
-  .lede-row {
-    display: flex;
-    gap: 24px;
-    align-items: center;
-  }
-  .lede-row .lede {
+  .lede {
     margin: 0;
-    min-width: 0;
+    max-width: 60ch;
   }
   .hero-plate {
-    flex: none;
+    display: block;
+    width: min(130%, 640px);
+    justify-self: center;
+    pointer-events: none;
   }
-  @media (max-width: 600px) {
+  @media (max-width: 1000px) {
+    .hero-plate :global(.seq .frame) {
+      animation: none;
+    }
+  }
+  @media (width > 1000px) {
+    .hero {
+      grid-template-columns: minmax(0, 58%) minmax(0, 1fr);
+      min-height: clamp(520px, 50vw, 760px);
+      align-content: center;
+    }
+    .hero > * {
+      grid-column: 1;
+    }
     .hero-plate {
-      display: none;
+      --bleed-w: min(72vw, 1200px);
+      position: absolute;
+      top: 50%;
+      right: calc(-1 * var(--gutter) - 0.2 * var(--bleed-w));
+      width: var(--bleed-w);
+      translate: 0 -50%;
+      justify-self: auto;
+      -webkit-mask-image:
+        linear-gradient(to right, transparent 6%, #000 40%, #000 70%, transparent 94%), linear-gradient(to bottom, transparent, #000 14%, #000 78%, transparent);
+      -webkit-mask-composite: source-in;
+      mask-image:
+        linear-gradient(to right, transparent 6%, #000 40%, #000 70%, transparent 94%), linear-gradient(to bottom, transparent, #000 14%, #000 78%, transparent);
+      mask-composite: intersect;
     }
   }
   .sub {
@@ -258,7 +328,6 @@ const LIMITS = [
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
     gap: 14px;
-    margin-top: 6px;
   }
   .path {
     background: var(--card);
@@ -285,26 +354,6 @@ const LIMITS = [
     font-weight: 500;
     font-size: 15px;
     margin-top: auto;
-  }
-  .map-card {
-    margin: 0;
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: var(--r-card);
-    padding: 18px 18px 14px;
-    min-width: 0;
-  }
-  .map-card figcaption {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: baseline;
-    flex-wrap: wrap;
-    margin-bottom: 12px;
-  }
-  .map-title {
-    font-weight: 600;
-    font-size: 17px;
   }
 
   .factory {
@@ -346,6 +395,36 @@ const LIMITS = [
   }
   .more {
     font-weight: 500;
+  }
+
+  /* The map strip: what the map means on the left, the map on the right. */
+  .map-strip {
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+    gap: clamp(24px, 4vw, 64px);
+    align-items: start;
+  }
+  .map-text {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+    position: sticky;
+    top: 24px;
+  }
+  .map-text p {
+    margin: 0;
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+  .map-card {
+    margin: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    padding: 18px 18px 14px;
+    min-width: 0;
   }
 
   .split {
@@ -485,27 +564,110 @@ const LIMITS = [
     max-width: 60ch;
     text-wrap: pretty;
   }
-  .ways {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-    gap: clamp(28px, 4vw, 64px);
-  }
-  .principle {
+
+  /* The ways: one card per way, its plate above its name. */
+  .ways-head {
     display: flex;
     flex-direction: column;
-    text-decoration: none;
-    color: var(--ink);
+    gap: 10px;
+    margin-bottom: 26px;
   }
-  .p-title {
+  .ways-head h2 {
+    max-width: 30ch;
+  }
+  .way-cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    gap: 14px;
+  }
+  .way {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--card);
+  }
+  .way-plate {
+    display: grid;
+    place-items: center;
+    height: 150px;
+    padding: 4px 18px;
+    margin-bottom: 6px;
+  }
+  .way-plate :global(.plate) {
+    height: 100%;
+  }
+  .way-title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
     font-weight: 600;
-    text-decoration: underline;
-    text-decoration-color: var(--accent);
-    text-underline-offset: 3px;
+    font-size: 18px;
   }
-  .principle:hover .p-title {
-    color: var(--accent-hover);
+  .way-title .num {
+    font: 600 13px var(--mono);
+    color: var(--accent);
   }
-  .principle .muted {
-    font-size: 14.5px;
+  .way-body {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* The close: where to start, with the foundation plate rising from the
+     page's lower edge behind it, feathered on its upper and left edges and
+     cut by the footer, so the page stands on it. */
+  .close {
+    position: relative;
+    overflow: clip;
+    border-top: 1px solid var(--line);
+    padding-bottom: clamp(120px, 14vw, 200px);
+  }
+  .close-text {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 56ch;
+  }
+  .close-text p {
+    margin: 0;
+    text-wrap: pretty;
+  }
+  .close :global(.cmd) {
+    max-width: 320px;
+  }
+  .close-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    font-weight: 500;
+    font-size: 15px;
+  }
+  .close-plate {
+    --bleed-w: min(72vw, 1180px);
+    position: absolute;
+    right: calc(-1 * var(--gutter) - 0.06 * var(--bleed-w));
+    bottom: calc(-0.2 * var(--bleed-w) * 0.56);
+    width: var(--bleed-w);
+    pointer-events: none;
+    -webkit-mask-image:
+      linear-gradient(to right, transparent 4%, #000 42%, #000 100%), linear-gradient(to bottom, transparent 4%, #000 44%);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(to right, transparent 4%, #000 42%, #000 100%), linear-gradient(to bottom, transparent 4%, #000 44%);
+    mask-composite: intersect;
+  }
+  @media (max-width: 1000px) {
+    .close-plate {
+      --bleed-w: 120vw;
+      right: -20vw;
+      opacity: 0.6;
+    }
   }
 </style>

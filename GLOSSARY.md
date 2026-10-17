@@ -1329,8 +1329,18 @@ make, use the entry's term instead.
 - **WCAG (Web Content Accessibility Guidelines)** — the W3C's standard for
   making web pages usable by people with disabilities. Its levels A, AA and
   AAA are increasingly strict.
+- **CSS (Cascading Style Sheets)** — the language a web page's look is
+  written in: layout, colors, type, and animation, kept apart from the
+  page's content.
 - **Bleed** — a picture that runs past the edge of the page or window
   instead of stopping at its column, a term taken from print
+  ([design/website.md](design/website.md)).
+- **Plate sequence** — a run of drawings of one subject, stacked in one place
+  on a web page, that the reader's scrolling plays from the first to the last,
+  each fading into the next, so the drawing moves as the page scrolls. It uses
+  the browser's scroll-driven animations (animation tied to the scroll
+  position rather than to time); without them, or for a reader who asks for
+  reduced motion, the first drawing stands still
   ([design/website.md](design/website.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`

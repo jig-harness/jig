@@ -1,0 +1,99 @@
+---
+// A plate sequence: a run of plates of one subject, played by the reader's
+// scrolling. The frames stack in one box, and the first --seq-len of
+// scrolling (set by the page; from the top of the document) is divided
+// among them: each frame fades in over the step before its own and out
+// over the step after, so at any point one frame stands, or two cross-fade,
+// and the drawing moves from the first frame to the last as the page
+// scrolls. Without scroll-driven animations, or when the reader asks for
+// reduced motion, the first frame stands alone, as a plate.
+import { PLATES, type PlateName } from "../lib/plates.ts";
+
+interface Props {
+  /** The frames in order, all of one ratio; one frame is a plate. */
+  frames: readonly PlateName[];
+  /** The rendered width; the height follows the first frame's ratio. */
+  width?: string;
+  /** How dark the ink is drawn: 1 is the text color. */
+  tone?: number;
+  class?: string;
+}
+const { frames, width = "100%", tone = 0.82, class: cls } = Astro.props;
+const first = frames[0];
+if (!first) throw new Error("a plate sequence needs at least one frame");
+const style = `aspect-ratio:${PLATES[first]};width:${width};--tone:${tone};--steps:${frames.length - 1}`;
+---
+
+<span class:list={["seq", cls]} style={style} aria-hidden="true">
+  {frames.map((name, i) => <span class="frame" style={`--plate:url(/plates/${name}.webp);--i:${i}`} />)}
+</span>
+
+<style>
+  .seq {
+    position: relative;
+    display: block;
+    max-width: 100%;
+  }
+  .frame {
+    position: absolute;
+    inset: 0;
+    background: var(--ink);
+    -webkit-mask: var(--plate) center / contain no-repeat;
+    mask: var(--plate) center / contain no-repeat;
+    opacity: var(--tone);
+  }
+  .frame:not(:first-child) {
+    opacity: 0;
+  }
+  @supports (animation-timeline: scroll()) {
+    .frame {
+      --step: calc(var(--seq-len, 60vh) / max(var(--steps), 1));
+      animation: seq-through linear both;
+      animation-timeline: scroll(root block);
+      animation-range: calc((var(--i) - 1) * var(--step)) calc((var(--i) + 1) * var(--step));
+    }
+    .frame:first-child {
+      animation-name: seq-out;
+      animation-range: 0 var(--step);
+    }
+    .frame:last-child {
+      animation-name: seq-in;
+      animation-range: calc((var(--i) - 1) * var(--step)) calc(var(--i) * var(--step));
+    }
+    .frame:only-child {
+      animation: none;
+    }
+  }
+  /* The ramps overlap: a frame is fully drawn from 35% to 65% of its span,
+     so the two frames of a cross-fade sum to about one frame's ink. */
+  @keyframes seq-through {
+    0% {
+      opacity: 0;
+    }
+    35%,
+    65% {
+      opacity: var(--tone);
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes seq-out {
+    0%,
+    30% {
+      opacity: var(--tone);
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes seq-in {
+    0% {
+      opacity: 0;
+    }
+    70%,
+    100% {
+      opacity: var(--tone);
+    }
+  }
+</style>
