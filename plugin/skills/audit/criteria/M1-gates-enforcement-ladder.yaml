@@ -141,7 +141,7 @@ criteria:
       - "each installer's configuration sets the same age in its own unit
         (bunfig.toml, .npmrc, pnpm-workspace.yaml, .yarnrc.yml)"
       - "the exemptions name exact packages, never a pattern"
-    since: next
+    since: 0.47.0
 
   - id: install-scripts-allowlisted
     level: standard
@@ -156,7 +156,7 @@ criteria:
         ignore-scripts with the allowed packages rebuilt on purpose)"
       - "the updater's configuration sets automerge off for the listed
         packages, or no auto-merge reaches them"
-    since: next
+    since: 0.47.0
 
   - id: supply-chain-policy-lockstep
     level: strict
@@ -172,7 +172,7 @@ criteria:
         runs in the required CI set"
       - "the gate's CI step precedes the dependency install, or the install
         runs with scripts disabled"
-    since: next
+    since: 0.47.0
 
   - id: updater-self-checked
     level: strict
@@ -187,7 +187,7 @@ criteria:
         fails on zero or several matches, in CI"
       - "expected-absent where the repository has neither overrides nor
         custom extraction patterns"
-    since: next
+    since: 0.47.0
 
   - id: secret-scan-blocks-in-ci
     level: standard
@@ -203,7 +203,7 @@ criteria:
       - "the job is in the required set"
     probe:
       files: *ci-config
-    since: next
+    since: 0.47.0
 
   - id: secret-scan-local-and-forge-layers
     level: strict
@@ -217,7 +217,7 @@ criteria:
         over the staged changes"
       - "push protection is enabled for the repository or its organization
         (a host setting the audit reads, or the team states)"
-    since: next
+    since: 0.47.0
 
   - id: gate-outcomes-distinguish-could-not-check
     level: standard
@@ -313,7 +313,7 @@ criteria:
         the hooks' test directory"
       - "a runner discovers the tests by name rather than listing them, and a
         CI job in the required set runs it"
-    since: next
+    since: 0.47.0
 
   - id: existing-findings-ratcheted
     level: strict
