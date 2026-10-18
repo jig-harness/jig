@@ -70,7 +70,8 @@ that a skill hands a narrow job to):
 |-------|--------------|--------------|
 | [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
-Contents: [requirements](#requirements) ·
+Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
+[requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
 [configure a repository](#configure-a-repository) ·
 [drive loop and issue pickup](#the-drive-loop-and-issue-pickup) ·
@@ -82,6 +83,57 @@ Contents: [requirements](#requirements) ·
 [release](#releases) ·
 [moving from the `groundwork` plugin](#moving-from-the-groundwork-plugin) ·
 [moving off the per-worktree installer](#moving-off-the-per-worktree-installer)
+
+## Set up from an agent session
+
+An agent can do the setup with you: check what is installed, tell you the
+one step it cannot take, and run the first audit. Installing is the step it
+leaves to you: the plugin changes every repository on the machine, and a
+session loads a plugin only when it starts, so the session that installs it
+could not use it anyway. Paste this into a session of Claude Code or Codex
+started in the repository you want to adopt Jig in:
+
+```text
+Set up Jig (https://github.com/docomply/jig) in this repository, then audit it.
+
+1. If this agent tool has no plugin support, say so, give me these steps
+   and stop: clone https://github.com/docomply/jig.git; copy or link every
+   folder of its plugin/skills/ into this tool's user skill directory (for
+   example ~/.claude/skills/ or ~/.agents/skills/), side by side, and its
+   plugin/shared/ into a shared/ folder beside that directory; then start a
+   new session and run the audit skill, under its bare name.
+2. If the jig:audit skill is available in this session, run it and follow
+   it; stop here.
+3. Otherwise look for jig@jig in `claude plugin list` or
+   `codex plugin list`. Act on what it shows:
+   - Installed and enabled: this session started before the install. Tell
+     me to run /reload-plugins (Claude Code) or start a new session
+     (Codex), and stop.
+   - Installed but disabled: tell me to enable it, with
+     `claude plugin enable jig@jig` (Claude Code) or by setting
+     `enabled = true` under `[plugins."jig@jig"]` in
+     ~/.codex/config.toml (Codex), then to run /reload-plugins or start a
+     new session, and stop.
+   - Not listed: go on to step 4.
+4. Check the requirements: Bun, git 2.36 or later,
+   and the GitHub CLI 2.48 or later, signed in with read access to
+   https://github.com/docomply/jig (`gh auth login`, then
+   `gh auth setup-git`). Tell me what is missing and how to install it.
+5. Then give me the install command for this tool and stop. I run it in a
+   terminal and start a new session in this repository, since a plugin
+   loads only when a session starts.
+   - Claude Code 2.1.292 or later:
+     claude plugin install jig --marketplace https://github.com/docomply/jig.git
+     Older Claude Code: claude plugin marketplace add
+     https://github.com/docomply/jig.git, then claude plugin install jig@jig
+   - Codex:
+     codex plugin marketplace add https://github.com/docomply/jig.git
+     codex plugin add jig@jig
+```
+
+The prompt carries everything the agent needs, so it fetches nothing. In
+the new session, run the audit: `/jig:audit` in Claude Code, or ask for the
+`jig:audit` skill in Codex ([use a skill](#use-a-skill)).
 
 ## Requirements
 

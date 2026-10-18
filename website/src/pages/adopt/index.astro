@@ -1,196 +1,180 @@
 ---
-import GuideTabs from "../../components/GuideTabs.astro";
-import LevelGlyph from "../../components/LevelGlyph.astro";
-import PlanRail from "../../components/PlanRail.astro";
-import SectionHead from "../../components/SectionHead.astro";
+import AdoptTabs from "../../components/AdoptTabs.astro";
+import AuditSpecimen from "../../components/AuditSpecimen.astro";
+import SideIndex from "../../components/SideIndex.astro";
 import SkillCommand from "../../components/SkillCommand.astro";
 import Base from "../../layouts/Base.astro";
-import { brownfield, profiles } from "../../lib/data/index.ts";
-import { md, mdInline } from "../../lib/markdown.ts";
+import { md } from "../../lib/markdown.ts";
+import { START_SECTIONS } from "../../lib/plugin-guide.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+import { read } from "../../lib/site.ts";
+import { sections } from "../../lib/source.ts";
+import { headingId } from "../../lib/view.ts";
 
-const FROM = "adoption/brownfield.md";
-const b = brownfield();
-const p = profiles();
-const introHtml = await mdInline(b.intro, FROM);
-const cards = await Promise.all(
-  p.profiles.map(async (prof, i) => ({
-    name: prof.name,
-    rank: i + 1,
-    question: await mdInline(prof.question, "profiles/README.md"),
-    rationale: await md(prof.rationale, "profiles/README.md"),
+const FROM = "plugin/README.md";
+const parts = sections(read(FROM));
+const take = (title: string) => parts.find((p) => p.title === title)?.body ?? "";
+const demote = (body: string) => body.replace(/^### /gm, "#### ");
+const [agentSource, ...stationSources] = START_SECTIONS;
+const agentHtml = await md(take(agentSource), FROM);
+// The stations from nothing installed to a first audit, each a section of
+// the plugin's README; the last, the audit itself, is this page's own.
+const TITLES: Record<string, string> = {
+  Requirements: "What you need",
+  "Install the plugin": "Install once per machine",
+  "Use a skill": "Use a skill",
+  "Configure a repository": "Configure the repository",
+};
+const stations = await Promise.all(
+  stationSources.map(async (source, i) => ({
+    source,
+    title: TITLES[source] ?? source,
+    id: `st-${i + 1}`,
+    html: await md(demote(take(source)), FROM),
   })),
 );
-const ladder = await Promise.all(
-  b.ladder.map(async (s) => ({ n: s.n, lead: s.lead, html: await mdInline(s.body, FROM) })),
-);
-const constraintsHtml = await md(b.constraints, FROM);
-const grandfatheringHtml = await md(b.grandfathering, FROM);
+const auditStation = `st-${stations.length + 1}`;
 ---
 
-<Base title="Adopt Jig in an existing repository" description="Decide how far to go, then climb one rung at a time: the audit, the ladder, and your plan.">
+<Base title="Get started with Jig" description="Hand the setup to your agent, or do it yourself: from nothing installed to your first audit, then the guide for your repository.">
   <section class="page wrap with-side">
-    <article class="main" style="--main-max:880px">
-      <GuideTabs current="existing" />
-      <div class="banner" role="status" data-handed-over hidden>
-        <strong>Someone chose <span data-profile-name></span> for your repository.</strong> Below is what that means, in the order to do it. Step 1 takes one command.
-      </div>
-      <div class="intro">
-        <span class="eyebrow">Adoption guide · existing repository</span>
-        <h1 class="display">Decide how far to go, then climb one rung at a time.</h1>
-        <p class="lede-p" set:html={introHtml} />
-        <p class="muted small">Starting a new project instead? The <a href="/adopt/greenfield/">greenfield guide</a> runs eleven kickoff phases, each handing over to the module that governs it.</p>
-      </div>
+    <SideIndex
+      title="Getting started"
+      items={[
+        { label: "Hand it to your agent", href: `#${headingId(agentSource)}` },
+        ...stations.map((s, i) => ({ label: s.title, href: `#${s.id}`, num: String(i + 1) })),
+        { label: "Run your first audit", href: `#${auditStation}`, num: String(stations.length + 1) },
+        { label: "Then follow your guide", href: "#guides" },
+      ]}
+    />
+    <article class="main">
+      <AdoptTabs current="start" />
+      <span class="eyebrow">Adopt Jig · getting started</span>
+      <h1 class="display">From nothing installed to your first audit.</h1>
+      <p class="lede-p">
+        To adopt Jig, install the jig plugin once on your machine, run its audit on your repository, then follow the
+        guide for an existing repository or a new project, one module at a time. The audit writes one file, its record
+        <code>.config/jig-audit.yaml</code>; nothing else in your repository changes until you choose what to adopt.
+      </p>
 
-      <SectionHead id="profiles" label="A · How far to go" note="Choose the strictest profile whose question applies to you." />
-      <div class="cards" role="radiogroup" aria-label="Profile">
-        {
-          cards.map((c, i) => (
-            <button type="button" role="radio" aria-checked={i === 0 ? "true" : "false"} data-profile={i} class="card">
-              <span class="q" set:html={c.question} />
-              <span class="answer">
-                <LevelGlyph rank={c.rank} />
-                {c.name}
-              </span>
-            </button>
-          ))
-        }
-      </div>
-      {cards.map((c, i) => <div class="prose rationale" data-for-profile={i} hidden={i !== 0} set:html={c.rationale} />)}
-      <p class="muted note">A profile is the whole repository's aim; a level is one module's rung. They share words, and the profile is your dial, never a grade.</p>
+      <section class="agent" id={headingId(agentSource)}>
+        <span class="eyebrow">The quick way</span>
+        <h2>Hand it to your agent</h2>
+        <div class="prose" set:html={agentHtml} />
+      </section>
 
-      <SectionHead id="ladder" label="B · The ladder" note="five steps, from the brownfield guide" />
-      <ol class="steps">
-        {
-          ladder.map((s) => (
-            <li>
-              <span class="step-n">{s.n}</span>
-              <div class="step">
-                <p set:html={s.html} />
-                {s.lead === "Audit" && (
-                  <>
-                    <SkillCommand name="audit" />
-                    <span class="muted small">Needs the <a href="/plugin/">jig plugin</a>, installed once per machine for Claude Code or Codex; any other agent tool can <a href="/plugin/extending/#agent-tools">copy the skills</a>. On a first audit it asks which profile you aim for. <a href="/#day-one">See a real audit sheet</a>.</span>
-                  </>
-                )}
-                {s.n === 3 && <p class="plan-note">Your order for the profile you chose is in <strong>Your plan</strong>, beside this guide. Each level links to its requirements.</p>}
-              </div>
-            </li>
-          ))
-        }
-      </ol>
+      <h2 class="yourself">Or do it yourself</h2>
+      {
+        stations.map((s, i) => (
+          <section class="station" id={s.id}>
+            <span class="anchor" id={headingId(s.source)} />
+            <h3><span class="num">{i + 1}</span>{" "}{s.title}</h3>
+            <div class="prose" set:html={s.html} />
+          </section>
+        ))
+      }
+      <section class="station" id={auditStation}>
+        <h3><span class="num">{stations.length + 1}</span>{" "}Run your first audit</h3>
+        <p>In the repository, start a session and run:</p>
+        <SkillCommand name="audit" />
+        <p>On a first audit it asks which profile you aim for. What you will see is a sheet like this one, a real run on an open-source library:</p>
+        <AuditSpecimen compact />
+      </section>
 
-      <SectionHead id="different" label="C · What makes an existing repository different" />
-      <div class="prose" set:html={constraintsHtml} />
-
-      <SectionHead id="grandfathering-a-coverage-gate" label="D · Grandfathering a coverage gate" />
-      <div class="prose" set:html={grandfatheringHtml} />
+      <section class="guides" id="guides">
+        <h2>Then follow your guide</h2>
+        <p>The sheet ranks what to adopt first. The guide for your kind of repository says how far to take it.</p>
+        <div class="cards">
+          <a class="card" href="/adopt/existing/">
+            <span class="card-name">Existing repository →</span>
+            <span>Choose a profile, then climb one rung at a time, in the order the audit ranks.</span>
+          </a>
+          <a class="card" href="/adopt/greenfield/">
+            <span class="card-name">New project →</span>
+            <span>Run the kickoff, each phase handing over to the module that governs it.</span>
+          </a>
+        </div>
+      </section>
+      <p class="source"><a class="out" href={`${REPO_URL}/blob/main/${FROM}`}>Source: {FROM}</a> · <a href="/adopt/plugin/">The rest of the plugin guide</a> · <a href="/adopt/configuration/">Every configuration field</a></p>
     </article>
-    <PlanRail audit listLabel="Step 3 · adopt in this order, one rung at a time" path="/adopt/" />
   </section>
 </Base>
 
-<script>
-  import "../../scripts/adopt.ts";
-</script>
-
 <style>
-  .banner {
-    background: var(--accent-soft);
-    border-radius: var(--r-card);
-    padding: 14px 18px;
-    margin-bottom: 22px;
-    font-size: 15.5px;
-    line-height: 1.45;
-  }
-  .banner strong {
-    font-weight: 600;
+  h1 {
+    font-size: clamp(30px, 3.2vw, 46px);
+    margin: 12px 0 16px;
   }
   .lede-p {
     margin: 0;
+    max-width: 70ch;
     font-size: 18px;
   }
-  .small {
-    font-size: 14.5px;
+  .anchor {
+    display: block;
+    scroll-margin-top: 84px;
   }
-  .intro .small {
-    margin: 0;
+  .agent {
+    margin-top: 28px;
+    padding: 18px 20px;
+    background: var(--accent-soft);
+    border-radius: var(--r-card);
+    scroll-margin-top: 84px;
+  }
+  .agent h2,
+  .yourself,
+  .guides h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 26px;
+    margin: 4px 0 12px;
+  }
+  .yourself {
+    margin-top: 40px;
+  }
+  .station {
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+    margin-top: 28px;
+    scroll-margin-top: 84px;
+  }
+  .station h3 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 22px;
+    margin: 0 0 12px;
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .station > p {
+    max-width: 70ch;
+  }
+  .guides {
+    margin-top: 44px;
+    scroll-margin-top: 84px;
   }
   .cards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
     gap: 12px;
   }
   .card {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    text-align: left;
+    gap: 6px;
     padding: 16px;
     border: 1px solid var(--line-strong);
     border-radius: var(--r-card);
     background: var(--card);
     color: var(--ink);
-    cursor: pointer;
-    font-family: var(--sans);
+    text-decoration: none;
   }
   .card:hover {
     border-color: var(--accent);
   }
-  .card[aria-checked="true"] {
-    border: 1.5px solid var(--accent);
-    background: var(--accent-soft);
-  }
-  .q {
-    font-size: 15px;
-    line-height: 1.4;
-  }
-  .answer {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-top: auto;
+  .card-name {
     font-weight: 600;
     font-size: 17px;
-  }
-  .rationale {
-    margin-top: 18px;
-    font-size: 15.5px;
-  }
-  .note {
-    margin: 0;
-    font-size: 14.5px;
-  }
-  .steps {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .steps > li {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
-    gap: 16px;
-    padding: 18px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .step {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    min-width: 0;
-  }
-  .step p {
-    margin: 0;
-    max-width: 70ch;
-    text-wrap: pretty;
-    line-height: 1.6;
-  }
-  .step :global(strong:first-child) {
-    font-size: 19px;
-  }
-  .plan-note {
-    font-size: 14.5px;
-    padding: 10px 14px;
-    background: var(--sunk);
-    border-radius: var(--r-card);
   }
 </style>

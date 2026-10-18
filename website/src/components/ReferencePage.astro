@@ -1,6 +1,7 @@
 ---
 // One reference document rendered whole, with a side index of its sections:
-// the plugin's configuration reference and its extending guide.
+// the plugin's configuration reference and its extending guide. A page
+// passes its section's page switch in the `nav` slot.
 import Base from "../layouts/Base.astro";
 import { md } from "../lib/markdown.ts";
 import { REPO_URL } from "../lib/routes.ts";
@@ -26,6 +27,7 @@ const title = titleLine(text);
   <section class="page wrap with-side">
     <SideIndex title="On this page" items={parts.slice(1).map((p) => ({ label: p.title.replace(/[`*]/g, ""), href: `#${headingId(p.title)}` }))} />
     <article class="main" style="--main-max:860px">
+      <slot name="nav" />
       <span class="eyebrow">{eyebrow}</span>
       <h1 class="display">{title}</h1>
       <div class="prose" set:html={html} />

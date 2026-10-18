@@ -66,10 +66,13 @@ Ask these of every `content` commit. One yes is enough to look closer.
 - **Adoption** (`website/src/pages/adopt/*.astro`): the kickoff phase count,
   the step count, which step carries the audit command.
 - **Skills and plugin** (`website/src/pages/skills/**`,
-  `website/src/pages/plugin/index.astro`): the agent count, the station notes
-  for skills outside the line, the plugin page's stations, read from the
-  plugin README's headings (Requirements, Install the plugin, Use a skill,
-  Configure a repository) plus a hand-written last one.
+  `website/src/pages/adopt/index.astro`, `website/src/pages/adopt/plugin.astro`):
+  the agent count, the station notes for skills outside the line, and
+  getting started's sections, read from the plugin README's headings named in
+  `website/src/lib/plugin-guide.ts` (Set up from an agent session,
+  Requirements, Install the plugin, Use a skill, Configure a repository) plus
+  a hand-written last station; the plugin page renders the README's other
+  sections.
 - **Modules** (`website/src/pages/modules/index.astro`,
   `website/src/components/module/*.astro`): the map's explanatory
   paragraphs, the level taglines, the CI providers the mappings switch shows.

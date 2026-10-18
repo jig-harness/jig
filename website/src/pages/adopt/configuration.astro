@@ -1,9 +1,12 @@
 ---
+import AdoptTabs from "../../components/AdoptTabs.astro";
 import ReferencePage from "../../components/ReferencePage.astro";
 ---
 
 <ReferencePage
   from="plugin/CONFIGURATION.md"
   description="Every field of a repository's Jig configuration, the layers it is read from, and who reads it."
-  eyebrow="The jig plugin · configuration"
-/>
+  eyebrow="Adopt · the plugin · configuration"
+>
+  <AdoptTabs slot="nav" current="configuration" />
+</ReferencePage>

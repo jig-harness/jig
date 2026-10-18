@@ -17,7 +17,7 @@ const prefix = command.slice(0, command.indexOf(":") + 1);
   <div class="cmd"><code><span class="accent">{prefix}</span>{name}</code><button type="button" class="copy" data-copy data-copy-text={command}>Copy</button></div>
   {
     agent ? (
-      <p>Claude Code only: Codex plugins carry no agents (<a href="/plugin/#codex-notes">Codex notes</a>).</p>
+      <p>Claude Code only: Codex plugins carry no agents (<a href="/adopt/plugin/#codex-notes">Codex notes</a>).</p>
     ) : (
       <p>Typed in Claude Code. In Codex, ask for the <code>jig:{name}</code> skill by name.</p>
     )

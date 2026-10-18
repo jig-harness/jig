@@ -90,7 +90,7 @@ const LIMITS = [
           <a href="/features/">What you get: the skills, gates and loops, and what runs each →</a>
           <a href="#factory">Jig as a software factory: what it runs on, and who runs each station ↓</a>
           <a href="#limits">What Jig never does ↓</a>
-          <a href="/adopt/">Choose how far to go: {countWord(allProfiles.length)} profiles →</a>
+          <a href="/adopt/existing/#profiles">Choose how far to go: {countWord(allProfiles.length)} profiles →</a>
         </div>
       </div>
       <div class="path lit">
@@ -98,8 +98,9 @@ const LIMITS = [
         <p>Start with an audit. It scores your repository against every module and says what to do first.</p>
         <SkillCommand name="audit" />
         <div class="path-links">
-          <a href="/plugin/">Install the plugin →</a>
-          <a href="/adopt/">The adoption guide →</a>
+          <a href="/adopt/#set-up-from-an-agent-session">Hand the setup to your agent →</a>
+          <a href="/adopt/">Get started: install the plugin →</a>
+          <a href="/adopt/existing/">The adoption guide →</a>
           <a href="/modules/">Find a module →</a>
         </div>
       </div>
@@ -183,12 +184,12 @@ const LIMITS = [
         <span class="eyebrow">How far to go</span>
         <h2 class="display small-h">{countWord(allProfiles.length, true)} profiles. Answer one question.</h2>
       </div>
-      <a class="more" href="/adopt/">Compare what each one asks →</a>
+      <a class="more" href="/adopt/existing/#profiles">Compare what each one asks →</a>
     </div>
     <div class="cards">
       {
         profileCards.map((p) => (
-          <a class="card" href={`/adopt/?profile=${p.id}`}>
+          <a class="card" href={`/adopt/existing/?profile=${p.id}`}>
             <span class="card-name">
               <LevelGlyph rank={p.rank} />
               {p.name}
@@ -240,13 +241,14 @@ const LIMITS = [
       <span class="eyebrow">Where to start</span>
       <h2 id="close-h" class="display">One command, then one module at a time.</h2>
       <p>
-        Install the plugin, run the audit, read the sheet. Nothing in your repository changes until you choose what
-        to adopt first, and the profile you pick says how far to take it.
+        Install the plugin, run the audit, read the sheet. The audit writes only its own record; nothing else in your
+        repository changes until you choose what to adopt first, and the profile you pick says how far to take it.
       </p>
       <SkillCommand name="audit" />
       <div class="close-links">
-        <a href="/plugin/">Install the plugin →</a>
-        <a href="/adopt/">The adoption guide →</a>
+        <a href="/adopt/#set-up-from-an-agent-session">Hand the setup to your agent →</a>
+        <a href="/adopt/">Get started: install the plugin →</a>
+        <a href="/adopt/existing/">The adoption guide →</a>
         <a href="/principles/">The principles behind every module →</a>
       </div>
     </div>

@@ -67,8 +67,9 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | `/factory/scaffolding/` | FACTORY.md, CONFIGURATION.md | the jobs with the modules that build each, when each verification module acts along a session, running many agents at once, and what Jig provides: the configuration layers and the tracker interface |
 | `/factory/design/`, `/factory/execution/` | FACTORY.md | one level each: its stations as a row with handoffs, the stages or the pull-request loop in text, the skills that run them or the station table |
 | `/factory/learning-loop/` | FACTORY.md, M8's README | the miss-to-lens flywheel step by step, its two companion cycles, and what triggers reflection |
-| `/adopt/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
-| `/plugin/`, `/plugin/configuration/` | plugin/README.md, CONFIGURATION.md | five stations from nothing installed to a first audit; the rest of the README folded; the configuration reference |
+| `/adopt/` | plugin/README.md | getting started: the prompt that hands the setup to an agent, then the stations from nothing installed to a first audit, then the guides for an existing repository and a new project; a page switch joins it to the section's other pages |
+| `/adopt/existing/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
+| `/adopt/plugin/`, `/adopt/configuration/`, `/adopt/extending/` | plugin/README.md, CONFIGURATION.md, EXTENDING.md | the plugin README's sections getting started does not render; the configuration reference; the extending guide |
 | `/skills/`, `/skills/<name>/`, `/skills/<name>/skill/` | plugin README tables, each skill's README or SKILL.md | what each skill runs (stations and modules), the stations no skill runs, each skill's own page, and its agent contract where the page is its README |
 | `/principles/`, `/principles/<n>/` | principles/ | the index shows each principle's statement and the first paragraph of its why, with a link to where it is visible on the site; each principle's page has its statement, why and consequences; principle 4 draws the ladder |
 | `/glossary/` | GLOSSARY.md | every term in its group, an anchor per term, a find filter |
@@ -308,16 +309,18 @@ Markdown, and an index to find it by.
 - **`llms.txt` at the root and in each section.** `/llms.txt` says what Jig
   is, from the README, and links to the file of each section:
   `/modules/llms.txt`, `/skills/llms.txt`, `/principles/llms.txt`,
-  `/factory/llms.txt`, `/adopt/llms.txt` and `/plugin/llms.txt`, plus the
-  pages that belong to no section (what you get, what's new). Each section
+  `/factory/llms.txt` and `/adopt/llms.txt`, plus the
+  pages that belong to no section (what you get, what's new). Its first
+  link, under "Start here", is getting started, where an agent asked to set
+  Jig up in a repository finds the steps it follows. Each section
   file lists its pages, its overview and the skills' agent contracts
   included, each linked as its twin, with a line on it. The glossary has no
   file: it is long, and most of it is not about Jig. See
   [`llms.txt`](../GLOSSARY.md).
 - **Derived where a document holds the list.** The modules, skills and
   principles come from the same parsers as their pages, so a document change
-  reaches the files on the next deploy. The few fixed pages of the factory,
-  adopt and plugin sections are named in `website/src/lib/llms.ts`, with the
+  reaches the files on the next deploy. The few fixed pages of the factory
+  and adopt sections are named in `website/src/lib/llms.ts`, with the
   description their page carries, as the search index names its pages.
 - **Links resolve.** `scripts/check-links.ts` parses each built `llms.txt`
   and twin as Markdown in the dialect the twins are written in

@@ -37,23 +37,28 @@ const PAGES: [string, string, string][] = [
     "features what you get tooling skills gates audit learning loop reflection change notes changelog tracker configuration launcher",
   ],
   [
-    "Install and configure the plugin",
-    "/plugin/",
-    "install claude code codex jig.yaml configure setup requirements bun",
+    "Get started with Jig",
+    "/adopt/",
+    "get started getting started install claude code codex agent prompt setup jig.yaml configure requirements bun first audit",
+  ],
+  [
+    "The jig plugin",
+    "/adopt/plugin/",
+    "plugin drive loop issue pickup codex notes update pin remove where it works troubleshooting release",
   ],
   [
     "Configuration",
-    "/plugin/configuration/",
+    "/adopt/configuration/",
     "configuration layers jig.yaml user repository environment overlay tracker adapter linear",
   ],
   [
     "Extending and adapting Jig",
-    "/plugin/extending/",
+    "/adopt/extending/",
     "extend adapt interface adapter tracker linear jira store reflection notion command hook forge github gitlab ci github actions windows macos linux operating system wsl launcher provider requirements",
   ],
   [
     "Adoption guide · existing repository",
-    "/adopt/",
+    "/adopt/existing/",
     "brownfield audit ladder profile order grandfathering coverage gate",
   ],
   [

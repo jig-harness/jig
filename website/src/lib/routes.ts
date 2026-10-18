@@ -8,6 +8,7 @@
  * reference gate) becomes its address on GitHub, where the source lives.
  */
 import { posix } from "node:path";
+import { START_ANCHORS } from "./plugin-guide.ts";
 
 export const REPO_URL = "https://github.com/docomply/jig";
 const REPO_BLOB = `${REPO_URL}/blob/main/`;
@@ -33,12 +34,12 @@ export const FIXED: Readonly<Record<string, string>> = {
   "ROADMAP.md": "/whats-new/#roadmap",
   "modules/README.md": "/modules/",
   "principles/README.md": "/principles/",
-  "profiles/README.md": "/adopt/#profiles",
-  "adoption/brownfield.md": "/adopt/",
+  "profiles/README.md": "/adopt/existing/#profiles",
+  "adoption/brownfield.md": "/adopt/existing/",
   "adoption/greenfield.md": "/adopt/greenfield/",
-  "plugin/README.md": "/plugin/",
-  "plugin/CONFIGURATION.md": "/plugin/configuration/",
-  "plugin/EXTENDING.md": "/plugin/extending/",
+  "plugin/README.md": "/adopt/plugin/",
+  "plugin/CONFIGURATION.md": "/adopt/configuration/",
+  "plugin/EXTENDING.md": "/adopt/extending/",
 };
 
 /** Whether a repository path exists (or, for `isFile`, is a file); the default knows of none. */
@@ -93,7 +94,8 @@ function repoUrl(path: string, isFile: Exists = () => false): string {
  * The anchors a designed page gives a document's headings, where they differ
  * from the heading anchors the document's own links use. The roadmap renders
  * as groups (`rm-<name>`) and numbered items (`rm-item-<n>`). FACTORY.md
- * renders as several pages, so a heading's anchor may be a whole route.
+ * and the plugin README render as several pages, so a heading's anchor may
+ * be a whole route.
  */
 const FACTORY_HEADINGS: Record<string, string> = {
   "a-factory-of-agents-runs-on-scaffolding":
@@ -112,6 +114,8 @@ const ANCHORS: Record<string, (anchor: string) => string> = {
     return n ? `rm-item-${n}` : `rm-${anchor}`;
   },
   "FACTORY.md": (anchor) => FACTORY_HEADINGS[anchor] ?? anchor,
+  "plugin/README.md": (anchor) =>
+    START_ANCHORS.has(anchor) ? `/adopt/#${anchor}` : anchor,
 };
 
 /** The anchor on the site for an anchor in the document at `path`. */

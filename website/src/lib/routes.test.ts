@@ -30,7 +30,8 @@ describe("siteRoute", () => {
       "/skills/review-arbiter/",
     );
     expect(siteRoute("adoption/greenfield.md")).toBe("/adopt/greenfield/");
-    expect(siteRoute("plugin")).toBe("/plugin/");
+    expect(siteRoute("plugin")).toBe("/adopt/plugin/");
+    expect(siteRoute("adoption/brownfield.md")).toBe("/adopt/existing/");
     const withReadme = (path: string) =>
       path === "plugin/skills/drive-pr/README.md";
     expect(siteRoute("plugin/skills/drive-pr/SKILL.md", withReadme)).toBe(
@@ -101,9 +102,24 @@ describe("resolveHref", () => {
     );
   });
 
+  test("points a getting-started section of the plugin README at getting started", () => {
+    expect(resolveHref("#install-the-plugin", "plugin/README.md")).toBe(
+      "/adopt/#install-the-plugin",
+    );
+    expect(
+      resolveHref(
+        "../plugin/README.md#set-up-from-an-agent-session",
+        "docs/x.md",
+      ),
+    ).toBe("/adopt/#set-up-from-an-agent-session");
+    expect(resolveHref("../plugin/README.md#where-it-works", "docs/x.md")).toBe(
+      "/adopt/plugin/#where-it-works",
+    );
+  });
+
   test("points an anchor alone at its document's page", () => {
-    expect(resolveHref("#install", "plugin/README.md")).toBe(
-      "/plugin/#install",
+    expect(resolveHref("#codex-notes", "plugin/README.md")).toBe(
+      "/adopt/plugin/#codex-notes",
     );
     expect(
       resolveHref("#gitlab-ci", "modules/M8-learning-loop/mappings.md"),

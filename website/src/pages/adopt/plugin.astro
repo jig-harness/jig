@@ -1,0 +1,78 @@
+---
+import AdoptTabs from "../../components/AdoptTabs.astro";
+import SideIndex from "../../components/SideIndex.astro";
+import Base from "../../layouts/Base.astro";
+import { md, mdInline } from "../../lib/markdown.ts";
+import { START_SECTIONS } from "../../lib/plugin-guide.ts";
+import { REPO_URL } from "../../lib/routes.ts";
+import { read } from "../../lib/site.ts";
+import { paragraphs, sections, withoutTitle } from "../../lib/source.ts";
+import { headingId } from "../../lib/view.ts";
+
+const FROM = "plugin/README.md";
+const parts = sections(read(FROM));
+const intro = paragraphs(withoutTitle(parts[0]?.body ?? ""));
+const demote = (body: string) => body.replace(/^### /gm, "#### ");
+// Getting started renders the sections that lead to a first audit; this
+// page renders the rest of the README, in its order.
+const start = new Set<string>(START_SECTIONS);
+const rest = await Promise.all(
+  parts
+    .slice(1)
+    .filter((p) => !start.has(p.title))
+    .map(async (p) => ({
+      id: headingId(p.title),
+      label: p.title.replace(/[`*]/g, ""),
+      title: await mdInline(p.title, FROM),
+      html: await md(demote(p.body), FROM),
+    })),
+);
+const introHtml = await md(intro.slice(0, 2).join("\n\n"), FROM);
+---
+
+<Base title="The jig plugin" description="How the plugin works once installed: the drive loop, Codex notes, updating, where it works and troubleshooting.">
+  <section class="page wrap with-side">
+    <SideIndex title="On this page" items={rest.map((r) => ({ label: r.label, href: `#${r.id}` }))} />
+    <article class="main">
+      <AdoptTabs current="plugin" />
+      <span class="eyebrow">Adopt · the plugin</span>
+      <h1 class="display">The jig plugin, once it is installed.</h1>
+      <div class="prose lede-block" set:html={introHtml} />
+      <p class="muted small">Not installed yet? <a href="/adopt/">Getting started</a> takes you from nothing installed to a first audit, or hands the setup to your agent.</p>
+      {
+        rest.map((r) => (
+          <section class="part" id={r.id}>
+            <h2 set:html={r.title} />
+            <div class="prose" set:html={r.html} />
+          </section>
+        ))
+      }
+      <p class="source"><a class="out" href={`${REPO_URL}/blob/main/${FROM}`}>Source: {FROM}</a></p>
+    </article>
+  </section>
+</Base>
+
+<style>
+  h1 {
+    font-size: clamp(30px, 3.2vw, 46px);
+    margin: 12px 0 16px;
+  }
+  .lede-block {
+    font-size: 17px;
+  }
+  .small {
+    font-size: 14.5px;
+  }
+  .part {
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+    margin-top: 32px;
+    scroll-margin-top: 84px;
+  }
+  .part h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 24px;
+    margin: 0 0 12px;
+  }
+</style>

@@ -67,17 +67,19 @@ export const SECTIONS: readonly SectionEntry[] = [
   },
   {
     slug: "adopt",
-    summary: "How to adopt Jig in an existing repository or a new project.",
+    summary:
+      "How to adopt Jig: set up the plugin and run a first audit, follow the guide for an existing repository or a new project, and the plugin's reference.",
     title: "Adopt",
-    note: "adopting Jig in an existing repository or a new project",
-  },
-  {
-    slug: "plugin",
-    summary: "How to install, configure and extend the Jig plugin.",
-    title: "Plugin",
-    note: "installing, configuring and extending the Jig plugin",
+    note: "getting started, the adoption guides, and installing, configuring and extending the plugin",
   },
 ];
+
+/** Where an agent asked to set Jig up in a repository begins. */
+const START_PAGE: Link = {
+  title: "Get started with Jig",
+  route: "/adopt/",
+  note: "the steps an agent follows to set Jig up in a repository with its person, and the first audit",
+};
 
 /** Pages that belong to no section's file, listed in the root index. */
 const ROOT_PAGES: readonly Link[] = [
@@ -145,8 +147,13 @@ export const FIXED_PAGES: Readonly<Record<string, readonly Link[]>> = {
   ],
   adopt: [
     {
-      title: "Adopt Jig in an existing repository",
+      title: "Get started with Jig",
       route: "/adopt/",
+      note: "hand the setup to your agent, or do it yourself: from nothing installed to a first audit",
+    },
+    {
+      title: "Adopt Jig in an existing repository",
+      route: "/adopt/existing/",
       note: "decide how far to go, then climb one rung at a time: the audit, the ladder and the profiles",
     },
     {
@@ -154,21 +161,19 @@ export const FIXED_PAGES: Readonly<Record<string, readonly Link[]>> = {
       route: "/adopt/greenfield/",
       note: "run the kickoff, and hand each phase to the module that governs it",
     },
-  ],
-  plugin: [
     {
-      title: "Install and configure the plugin",
-      route: "/plugin/",
-      note: "requirements, install, first use and configuration",
+      title: "The jig plugin",
+      route: "/adopt/plugin/",
+      note: "the plugin once installed: the drive loop, Codex notes, updating, where it works and troubleshooting",
     },
     {
       title: "Configuration",
-      route: "/plugin/configuration/",
+      route: "/adopt/configuration/",
       note: "every field of a repository's Jig configuration, and the layers it is read from",
     },
     {
       title: "Extending and adapting Jig",
-      route: "/plugin/extending/",
+      route: "/adopt/extending/",
       note: "what a repository adapts with a value, a command of its own or an implementation in Jig",
     },
   ],
@@ -209,8 +214,9 @@ export function rootFile(summary: string, intro: string): LlmsFile {
   return {
     title: "Jig",
     summary,
-    intro: `${intro} Each section below has its own llms.txt listing its pages. Every page is also served as Markdown, at its address with index.md added or to a request that asks for text/markdown.`,
+    intro: `${intro} An agent asked to set Jig up in a repository starts with the getting-started page under Start here. Each section below has its own llms.txt listing its pages. Every page is also served as Markdown, at its address with index.md added or to a request that asks for text/markdown.`,
     groups: [
+      { heading: "Start here", links: [START_PAGE] },
       {
         heading: "Sections",
         links: SECTIONS.map((s) => ({
