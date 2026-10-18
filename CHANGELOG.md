@@ -285,6 +285,8 @@ changes are marked **Breaking** and say what a consumer changes.
   `do-item` in steps: a Windows test harness, a pass's processes without `ps`
   and POSIX signals, state and locks hardened for Windows, the skills under
   Git for Windows' Bash, then PowerShell for Codex.
+- The module map on the website starts on Team/Standard instead of Solo/Lite, so it opens with more of the modules filled and a clearer picture of what a team takes and leaves. The profile switch still offers every profile.
+- Hovering or focusing a row of the home page's map opens that module's popover, the same one the module chips show, with a link to the module.
 
 ### Fixed
 
