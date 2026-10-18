@@ -3,9 +3,10 @@
 // scaffolding jobs, levels, the chosen profile's note and its skills.
 import { LEVEL_NAME } from "../../lib/data/modules.ts";
 import ActorChip from "../ActorChip.astro";
-import { mapRows } from "../../lib/map.ts";
+import { defaultProfileIndex, mapRows } from "../../lib/map.ts";
 
 const rows = await mapRows();
+const start = defaultProfileIndex();
 ---
 
 <div class="full-table">
@@ -33,14 +34,14 @@ const rows = await mapRows();
       <div class="levels">
         <div class="cells">
           {r.cells.map((c) => (
-            <a class="cell big" href={`/modules/${r.id}/#${c.level}`} data-states={c.states.join(" ")} data-state={c.states[0]}>
+            <a class="cell big" href={`/modules/${r.id}/#${c.level}`} data-states={c.states.join(" ")} data-state={c.states[start]}>
               {LEVEL_NAME[c.level]}
               <span class="if"> if</span>
             </a>
           ))}
         </div>
         {r.notes.map((n, i) => (
-          <span class="note" data-for-profile={i} hidden={i !== 0}>
+          <span class="note" data-for-profile={i} hidden={i !== start}>
             {n}
           </span>
         ))}

@@ -58,7 +58,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; the factory miniature; the map strip (the compact module map, with what a filled cell means); the limits; the enforcement ladder; the profiles; the live audit; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
+| `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; the factory miniature; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the live audit; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, number, title and skill chips) linking to its section, then one section per feature: its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
@@ -272,9 +272,10 @@ screen).
   limited to the account's Workers scripts and the zone's routes and
   domain-name records. To deploy from a machine instead, log in with
   `wrangler login`: `cd website && bun run deploy`.
-- **CI**: the `website` change-area selects the `website` job in
-  `gates.yml` (type check, build, link check) for any change to the site or
-  to a document it renders; the required `gates` check waits for it.
+- **CI**: the `website` change-area turns on the website steps of the
+  `gate-set` job in `gates.yml` (type check, parser tests, build, link
+  check) for any change to the site or to a document it renders; the
+  required `gates` check waits for that job.
 
 ### Text for agents: Markdown and `llms.txt`
 
@@ -354,7 +355,7 @@ bun run build                   # what CI runs
 bun run check                   # types
 ```
 
-The parser tests run in CI's `website` job, and locally with
+The parser tests run in CI's website steps of the `gate-set` job, and locally with
 `bun run test ./website/` from the repository root once `website/` has its
 dependencies.
 Building writes Astro's generated types into `website/.astro/` and the site

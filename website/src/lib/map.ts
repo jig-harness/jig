@@ -2,9 +2,9 @@
  * The module map's rows: every module in id order, with each level's state
  * under every profile, and a note per profile. Each cell
  * carries all its states so the profile switch (scripts/map.ts) only moves
- * attributes; without it the map shows the first profile.
+ * attributes; without it the map shows the default profile.
  */
-import { modules, profiles, skillActor } from "./data/index.ts";
+import { moduleSummary, modules, profiles, skillActor } from "./data/index.ts";
 import { LEVEL_NAME, LEVELS, type Level } from "./data/modules.ts";
 import { mdInline } from "./markdown.ts";
 import { jobTags } from "./view.ts";
@@ -16,6 +16,21 @@ const MEANING: Record<State, string> = {
   cond: "target when a condition holds",
   off: "not targeted",
 };
+
+function fail(message: string): never {
+  throw new Error(message);
+}
+
+/** The profile the map shows before a reader picks one: the middle of the range, which fills the most telling picture. */
+const DEFAULT_PROFILE = "team-standard";
+
+/** Index of the profile the map starts on. */
+export function defaultProfileIndex(): number {
+  const index = profiles().profiles.findIndex((p) => p.id === DEFAULT_PROFILE);
+  return index < 0
+    ? fail(`profiles.yaml has no ${DEFAULT_PROFILE} profile`)
+    : index;
+}
 
 const rank = (l: Level) => LEVELS.indexOf(l);
 
@@ -42,6 +57,7 @@ function noteOf(id: string, profileIndex: number): string {
 export async function mapRows() {
   const p = profiles();
   const byId = new Map(modules().map((m) => [m.id, m]));
+  const start = defaultProfileIndex();
   const ids = [...p.order].sort(
     (a, b) => Number(a.slice(1)) - Number(b.slice(1)),
   );
@@ -49,18 +65,19 @@ export async function mapRows() {
     ids.map(async (id) => {
       const m = byId.get(id);
       if (!m)
-        throw new Error(
+        fail(
           `profiles.yaml orders ${id}, which modules/README.md does not list`,
         );
       return {
         id,
         title: m.title,
+        summary: moduleSummary(id),
         area: await mdInline(m.area, "modules/README.md"),
         skills: m.skills.map(skillActor),
         jobs: jobTags(id),
         cells: LEVELS.map((level) => {
           const states = p.profiles.map((_, pi) => stateOf(id, pi, level));
-          return { level, states, label: MEANING[states[0] ?? "off"] };
+          return { level, states, label: MEANING[states[start] ?? "off"] };
         }),
         notes: p.profiles.map((_, pi) => noteOf(id, pi)),
       };

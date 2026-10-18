@@ -3,7 +3,7 @@
 // profile's targets filled in. `compact` is the home page's
 // form (one link per row); `full` is the modules page's (titles, areas,
 // scaffolding jobs, the skills that run each module, a note per row).
-import { mapSummary } from "../lib/map.ts";
+import { defaultProfileIndex, mapSummary } from "../lib/map.ts";
 import CompactMap from "./map/CompactMap.astro";
 import FullMap from "./map/FullMap.astro";
 
@@ -13,6 +13,7 @@ interface Props {
 const { variant } = Astro.props;
 const { profiles, lines } = mapSummary();
 const full = variant === "full";
+const start = defaultProfileIndex();
 ---
 
 <div class:list={["map", variant]} data-map>
@@ -21,7 +22,7 @@ const full = variant === "full";
     <div class="pills" role="radiogroup" aria-label="Show the targets of a profile" data-map-switch hidden>
       {
         profiles.map((prof, i) => (
-          <button type="button" role="radio" aria-checked={i === 0} data-profile={i}>
+          <button type="button" role="radio" aria-checked={i === start} data-profile={i}>
             {prof.name}
           </button>
         ))
@@ -30,7 +31,7 @@ const full = variant === "full";
     {
       full &&
         lines.map((line, i) => (
-          <span class="summary" data-for-profile={i} hidden={i !== 0}>
+          <span class="summary" data-for-profile={i} hidden={i !== start}>
             {line}
           </span>
         ))
