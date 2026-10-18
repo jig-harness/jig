@@ -1,0 +1,71 @@
+---
+// The home page's jig: its model (public/models/doweling-jig.glb) drawn as
+// a technical drawing in the page's tokens, closed by the first --seq-len
+// of scrolling and swivelled by the pointer (scripts/jig-model.ts). Until
+// the first frame is drawn, and wherever the script does not run (reduced
+// motion, no WebGL, no JavaScript), the still plate stands in its place:
+// the model's own first frame, captured by scripts/jig-still.ts, so the
+// model takes over from it unseen.
+// The figure decorates: what it shows is in the text beside it.
+import Plate from "./Plate.astro";
+
+interface Props {
+  class?: string;
+}
+const { class: cls } = Astro.props;
+---
+
+<span class:list={["jig-model", cls]} data-jig-model data-src="/models/doweling-jig.glb" aria-hidden="true">
+  <span class="seq-probe"></span>
+  <span class="paper-probe"></span>
+  {/* Full strength: the capture already holds the drawing's own ink. */}
+  <Plate name="jig-still" class="still" tone={1} />
+</span>
+
+<script>
+  import "../scripts/jig-model.ts";
+</script>
+
+<style>
+  .jig-model {
+    position: relative;
+    display: block;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    color: var(--ink);
+  }
+  .jig-model :global(canvas) {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+  .jig-model[data-ready] :global(.still) {
+    visibility: hidden;
+  }
+  /* Where the script would not start the model, a model already running
+     gives way to the still plate (scripts/jig-model.ts). */
+  @media (width <= 1000px), (prefers-reduced-motion: reduce) {
+    .jig-model :global(canvas) {
+      display: none;
+    }
+    .jig-model[data-ready] :global(.still) {
+      visibility: visible;
+    }
+  }
+  .seq-probe,
+  .paper-probe {
+    position: absolute;
+    width: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .seq-probe {
+    height: var(--seq-len, 60vh);
+  }
+  .paper-probe {
+    height: 0;
+    background: var(--bg);
+  }
+</style>

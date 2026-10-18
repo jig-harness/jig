@@ -58,7 +58,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, which the first stretch of scrolling assembles and closes; the factory miniature; the map strip (the compact module map, with what a filled cell means); the limits; the enforcement ladder; the profiles; the live audit; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
+| `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; the factory miniature; the map strip (the compact module map, with what a filled cell means); the limits; the enforcement ladder; the profiles; the live audit; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, number, title and skill chips) linking to its section, then one section per feature: its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
@@ -103,15 +103,20 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   beyond it (the factory overview and What you get use it). A plate that
   fills more of its own frame sets a smaller `--bleed-w` (its width) and
   `--bleed-shift` (the share of it past the window's edge) on the row, so
-  its drawing still ends inside the window. The home page's hero is the
-  same idea at a larger size, and its plate is a
-  [plate sequence](../GLOSSARY.md) (`PlateSequence.astro`): frames of one
-  subject stacked in one box, and the first stretch of scrolling
-  (`--seq-len`, from the top of the document) divided among them, each
-  frame cross-fading into the next, so the drawing moves as the reader
-  scrolls. It is CSS alone (scroll-driven animations); a browser without
-  them, a reader who asks for reduced motion, or a window narrower than
-  1000 pixels sees the first frame as a still plate. The page's foot is the
+  its drawing still ends inside the window. The home page's hero sets its
+  figure beside the text instead of bleeding it, and that figure is the
+  [jig model](../GLOSSARY.md) (`JigModel.astro`, `scripts/jig-model.ts`):
+  the model in `public/models/doweling-jig.glb`, drawn by three.js as paper
+  faces with ink edges and silhouettes in the page's own tokens, so it
+  follows the theme like a plate; the first stretch of scrolling
+  (`--seq-len`, from the top of the document) scrubs its `close` clip, and
+  a fine pointer swivels it a few degrees. The still `jig-still` plate, the
+  model's own first frame captured by `website/scripts/jig-still.ts`,
+  stands in its place until the first frame is drawn, so the model takes
+  over unseen, and stays under reduced motion, without WebGL or JavaScript,
+  and in a window narrower than 1000 pixels, where the script does not
+  load; it loads on that page alone. The model's sources
+  and how to rebuild it are in `website/models/doweling-jig/`. The page's foot is the
   mirror of the hero: the `slab` plate rising from the lower edge of the
   closing band, feathered on its upper and left edges and cut by the
   footer, so the page stands on it.
@@ -152,8 +157,7 @@ subjects:
 
 | Plate | Where | Subject |
 |-------|-------|---------|
-| `jig` | the home page's hero, the first frame of its sequence, 16:9 | a woodworking jig: a hardwood guide block with two steel drill bushings and a toggle clamp holding a small workpiece, as an exploded assembly view |
-| `jig-1` … `jig-8` | the frames after it (`JIG_FRAMES` in `plates.ts`) | **provisional**: cut from the `jig` plate's parts and moved along their axes by a script, until the series in [§ Drawing the jig's frames](#drawing-the-jigs-frames) replaces them |
+| `jig-still` | the home page's hero, the still in the model's place, 9:10 | not drawn by the image model: the jig model's own first frame, captured from the running site by `website/scripts/jig-still.ts` (`bun run jig-still <url>` in `website/`, after any change to the model, its camera or its engraving) and converted as a plate |
 | `hall` | the factory page's intro, 16:9 | a side-elevation cross-section of a small industrial hall: seven identical workbenches on a mezzanine, the mezzanine on a lattice of scaffolding, a foundation slab with pipes below |
 | `map` | the Context job, 1:1 | a surveyor's map unrolled on a table, held flat by two brass weights, a compass rose on the map and a folding ruler beside it |
 | `gauge` | the Verification job, 16:9 | a pair of steel vernier calipers measuring a small machined part, next to a cylindrical go/no-go plug gauge standing upright |
@@ -181,64 +185,32 @@ subjects:
 | `footing` | not yet drawn: the home page's foot, 3:1, in place of `slab` | a wide cross-section of the ground under a building: a concrete slab on driven piles, service pipes and conduits running the width of the drawing beneath it, and a scaffolding lattice standing on the slab at the right, cut by the drawing's upper edge |
 | `numberer` | not yet placed: the `changelog` skill, once FEATURES.md has a section for it ([ROADMAP.md](../ROADMAP.md) item 4), 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
 
-#### Drawing the jig's frames
+#### The jig's model
 
-The hero's sequence wants one subject drawn in several states from one
-camera. An image model holds a drawing steady across edits better than it
-reproduces one from a description, so the frames are made in order, each
-an edit of the one before, with the first frame also attached as the
-style reference. Set the aspect ratio to 16:9 for every frame.
-
-**Frame 0, the master.** The preamble, then:
-
-> An exploded assembly view of a woodworking drill jig, drawn for
-> animation. The parts: a rectangular hardwood guide block with a
-> rectangular notch cut into its front right corner; two steel drill
-> bushings, each a flanged cylinder; a vertical-handle toggle clamp with a
-> flat base plate, its handle pointing straight up in the open position
-> and its spindle with a rubber pad over the notch; three screws for the
-> base plate; and a small rectangular workpiece. The block sits low and
-> central. Every loose part floats directly above its seat along a
-> vertical axis: each bushing above its own hole, the clamp above its
-> three screw holes with the three screws between the plate and the
-> holes, heads up and shafts pointing straight down; the workpiece floats
-> directly above the notch. A thin dashed line joins each part to its
-> seat. Generous white space above and around the parts so they can move.
-> Three-quarter view from above and the front, consistent light line
-> weight, no part overlapping another.
-
-Check the master before going on: screws head-up on vertical axes, no
-part overlapping another, the handle vertical, dashed lines straight and
-vertical. A master that fails is regenerated, not fixed downstream.
-
-**Frames 1 to 7, the edits.** Attach the previous frame, and the master,
-and give the edit as:
-
-> Edit this drawing. Keep the camera, the block, the notch, the line
-> style and the shape of every part exactly as they are; change only what
-> follows. *[the state]* Shorten each dashed line to the gap that is left
-> between the part and its seat; remove a line whose gap is closed.
-
-with *the state*, frame by frame. Every fraction of the way is measured
-from where the part stands in the master to its seat, along the master's
-dashed line, never along the shortened line of the previous frame:
-
-| Frame | The state |
-|-------|-----------|
-| 1 | Move the two bushings, the clamp with its three screws, and the workpiece one quarter of the way down their axes toward their seats. |
-| 2 | Move them on to half way: each part is now at the midpoint of its dashed line in the master. |
-| 3 | Move them on to three quarters of the way; the lowest point of each part is just above its seat. |
-| 4 | Seat everything: the bushings sit in their holes with only the flange above the surface, the clamp's base plate lies flat on the block with the three screw heads flush in it, the workpiece lies in the notch. No dashed lines remain. The handle still points straight up. |
-| 5 | Swing the clamp's handle a third of the way from vertical toward horizontal, pivoting at its base; the spindle starts to descend toward the workpiece. |
-| 6 | Swing the handle two thirds of the way; the spindle's pad is a hair above the workpiece. |
-| 7 | Close the clamp: the handle lies horizontal, pointing away from the notch, and the spindle's pad presses on the workpiece. |
-
-Accept a frame only if, laid over the previous one, the block and every
-unmoved part coincide; otherwise regenerate it from the same inputs. Then
-convert each as any plate (below, at 1600 wide), name them `jig-1` to
-`jig-7` with `jig` the master, and list them in `JIG_FRAMES`
-(`website/src/lib/plates.ts`), which takes any count: the sequence divides
-the scroll evenly among whatever frames it is given.
+The hero's figure is a model rather than a plate because its motion has to
+be exact: a self-centering doweling jig (two jaws on guide rods close on a
+board when the T-handle turns, drill bushings drop into the guide block on
+top, a bit descends through the centre bushing), built in Blender from
+`website/models/doweling-jig/` (`parameters.json` holds the parts' sizes and
+positions, `build.py` builds the parts and bakes the `close` clip; its README
+has the commands and what stays in `build.py`) and compressed with meshopt into `public/models/doweling-jig.glb`.
+The page draws it as a drawing, not a render: every part gets a
+paper-coloured face, its sharp edges as ink lines, and an
+[inverted hull](../GLOSSARY.md) in ink for the silhouettes the edges miss (a
+slightly enlarged copy of the part with only its inside faces drawn, which
+shows past the part's curving sides as an outline), all from the tokens; the GLB's own
+materials are unused. The engraving's shade is drawn too, in a shader from
+each part's UV map (one unit per 100 mm, U along the board and around the
+cylinders): on the jaws and the guide block a face turned from one fixed
+light is hatched in ink, and cross-hatched when turned away; the board
+carries its grain along its length, hatched where it turns away; the round
+parts (rods, screw, handle, bushings, bit) stay plain, their edges and
+silhouettes being enough. Every line is about a pixel wide and fades out
+where lines would pack closer than three pixels.
+The screw keeps no UV map: its thread draws itself through its edges, and
+its UVs would be most of the file. An image model is the wrong tool for a figure that
+moves: a series of edited images drifts in style and in parts between
+frames, where a model moves by a number.
 
 The conversion, from the image the model returns to the mask (ImageMagick and
 `cwebp`; the width is the plate's largest rendered size, 640 for a spot

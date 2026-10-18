@@ -3,15 +3,7 @@
  * `Plate.astro` draws them; a new plate is added here.
  */
 export const PLATES = {
-  jig: 1.79,
-  "jig-1": 1.79,
-  "jig-2": 1.79,
-  "jig-3": 1.79,
-  "jig-4": 1.79,
-  "jig-5": 1.79,
-  "jig-6": 1.79,
-  "jig-7": 1.79,
-  "jig-8": 1.79,
+  "jig-still": 0.9,
   hall: 1.79,
   map: 1,
   gauge: 1.79,
@@ -39,20 +31,3 @@ export const PLATES = {
 } as const;
 
 export type PlateName = keyof typeof PLATES;
-
-/**
- * The home page's jig, as the frames of one sequence: the exploded assembly
- * first, then the parts seating and the clamp closing, played by scrolling
- * (`PlateSequence.astro`). One frame stands alone as the still plate.
- */
-export const JIG_FRAMES: readonly PlateName[] = [
-  "jig",
-  "jig-1",
-  "jig-2",
-  "jig-3",
-  "jig-4",
-  "jig-5",
-  "jig-6",
-  "jig-7",
-  "jig-8",
-];

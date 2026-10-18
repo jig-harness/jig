@@ -5,13 +5,13 @@ import Ladder from "../components/Ladder.astro";
 import LevelGlyph from "../components/LevelGlyph.astro";
 import ModuleMap from "../components/ModuleMap.astro";
 import Plate from "../components/Plate.astro";
-import PlateSequence from "../components/PlateSequence.astro";
+import JigModel from "../components/JigModel.astro";
 import SkillCommand from "../components/SkillCommand.astro";
 import Base from "../layouts/Base.astro";
 import { modules, profiles, readme } from "../lib/data/index.ts";
 import { LEVEL_NAME } from "../lib/data/modules.ts";
 import { mdInline } from "../lib/markdown.ts";
-import { JIG_FRAMES, type PlateName } from "../lib/plates.ts";
+import type { PlateName } from "../lib/plates.ts";
 import { countWord } from "../lib/view.ts";
 
 const count = modules().length;
@@ -81,7 +81,7 @@ const LIMITS = [
       project starts with {countWord(soloCount)} modules at Lite. Every practice is a tool-independent rule first, mapped to your tools
       second.
     </p>
-    <span class="hero-plate"><PlateSequence frames={JIG_FRAMES} tone={0.78} /></span>
+    <span class="hero-plate"><JigModel /></span>
     <div class="paths">
       <div class="path">
         <span class="label">Evaluating Jig for a team</span>
@@ -256,10 +256,9 @@ const LIMITS = [
 
 <style>
   /* The hero: the statement and the two reader paths on the left; the jig
-     on the right as a bleed, larger than the column, feathered into the
-     page from past the window's right edge, and played as a sequence by the
-     first --seq-len of scrolling. Below 1000px the jig stands still between
-     the statement and the paths, at the column's width. */
+     on the right, filling the rest of the window to a margin, closed by the
+     first --seq-len of scrolling and swivelled by the pointer. Below 1000px
+     it stands between the statement and the paths, at the column's width. */
   .hero {
     --seq-len: 55vh;
     position: relative;
@@ -288,11 +287,6 @@ const LIMITS = [
     justify-self: center;
     pointer-events: none;
   }
-  @media (max-width: 1000px) {
-    .hero-plate :global(.seq .frame) {
-      animation: none;
-    }
-  }
   @media (width > 1000px) {
     .hero {
       grid-template-columns: minmax(0, 58%) minmax(0, 1fr);
@@ -303,19 +297,18 @@ const LIMITS = [
       grid-column: 1;
     }
     .hero-plate {
-      --bleed-w: min(72vw, 1200px);
+      --figure-w: min(46vw, 760px);
       position: absolute;
-      top: 50%;
-      right: calc(-1 * var(--gutter) - 0.2 * var(--bleed-w));
-      width: var(--bleed-w);
+      top: 48%;
+      right: calc(var(--gutter) * 0.5 - 20px);
+      width: var(--figure-w);
       translate: 0 -50%;
       justify-self: auto;
-      -webkit-mask-image:
-        linear-gradient(to right, transparent 6%, #000 40%, #000 70%, transparent 94%), linear-gradient(to bottom, transparent, #000 14%, #000 78%, transparent);
-      -webkit-mask-composite: source-in;
-      mask-image:
-        linear-gradient(to right, transparent 6%, #000 40%, #000 70%, transparent 94%), linear-gradient(to bottom, transparent, #000 14%, #000 78%, transparent);
-      mask-composite: intersect;
+    }
+    /* Taller than wide: the handle swings low as the jig turns, and the
+       bit stands high while it is open. */
+    .hero-plate :global(.jig-model) {
+      aspect-ratio: 0.9;
     }
   }
   .sub {

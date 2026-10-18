@@ -1364,12 +1364,28 @@ make, use the entry's term instead.
 - **Bleed** — a picture that runs past the edge of the page or window
   instead of stopping at its column, a term taken from print
   ([design/website.md](design/website.md)).
-- **Plate sequence** — a run of drawings of one subject, stacked in one place
-  on a web page, that the reader's scrolling plays from the first to the last,
-  each fading into the next, so the drawing moves as the page scrolls. It uses
-  the browser's scroll-driven animations (animation tied to the scroll
-  position rather than to time); without them, or for a reader who asks for
-  reduced motion, the first drawing stands still
+- **Jig model** — the figure on the website's home page: a three-dimensional
+  model of a doweling jig that the browser draws as a technical drawing
+  (paper faces, ink edges) in the page's own colors, closes as the reader
+  scrolls, and turns a few degrees toward the pointer. It needs WebGL (the
+  browser's drawing interface for three-dimensional graphics) and
+  JavaScript; without them, for a reader who asks for reduced motion, or on
+  a narrow screen, a still drawing stands in its place
+  ([design/website.md](design/website.md)).
+- **GLB** — the binary form of glTF, the standard file format for
+  three-dimensional models on the web: one file holding a model's parts,
+  their placement, their materials and its animations, which a browser can
+  load and draw ([design/website.md](design/website.md)).
+- **UV map** — the flat layout a three-dimensional model's surface is
+  unfolded onto, giving every point on it two coordinates (called U and V)
+  so that a pattern or an image can be drawn across the surface; the website
+  draws the jig model's grain and hatching from its UV maps
+  ([design/website.md](design/website.md)).
+- **Inverted hull** — a way to draw a 3D model's outline: a second copy of
+  each part, pushed slightly outward and with only its inside faces drawn,
+  in ink. Where the part's edge curves away from the viewer, the copy shows
+  past it as a line, so smooth shapes such as a cylinder's sides get an
+  outline that edge lines alone would miss
   ([design/website.md](design/website.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`
