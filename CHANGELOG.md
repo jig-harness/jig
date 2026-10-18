@@ -269,6 +269,13 @@ changes are marked **Breaking** and say what a consumer changes.
   summary, now says who Jig is for and names all it provides: "A jig for AI
   coding agents: modular delivery practices, shared skills and gates, and an
   auditor that scores your repository."
+- The website's Factory and Adopt sections show their pages in the header:
+  a menu under each entry lists them (Escape closes it), and on each of the
+  section's pages a bar under the header holds them, with the current page
+  marked, as the reader scrolls. It replaces the page switch each page carried in its body.
+- A skill's page lists the other skills in the same side index the
+  principles and the adopt pages use; a list taller than the window scrolls
+  within it.
 
 ### Fixed
 
@@ -288,6 +295,9 @@ changes are marked **Breaking** and say what a consumer changes.
   Markdown file in the repository at the same time no longer fails on a file
   deleted mid-read.
 - Renovate no longer reads the pinned, drifted and malformed versions inside `fixtures/` folders as Jig's own dependencies, so the Dependency Dashboard stops offering updates that would break the gates' test inputs and no longer reports a failed lookup for a fixture workflow.
+- A link to a section of the getting-started, plugin, features or
+  principles page no longer stops well below the header: it lands just
+  under it.
 
 ## [0.57.0] - 2026-10-18
 
