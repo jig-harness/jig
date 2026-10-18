@@ -31,10 +31,7 @@ The script imports helpers from the Jig repository's `lib/` (`cli.ts`, the
 exit-code boundary, and `record.ts`, a plain-object guard that comes from the
 plugin's own scripts), and those reach further into the repository. So run it
 from a pinned Jig checkout; copying the script, or the script with `lib/`,
-into another repository leaves imports that do not resolve. A workflow's
-own token reads only its repository, so while Jig is private that checkout
-needs a read-only credential of its own; the workflow template shows where it
-goes.
+into another repository leaves imports that do not resolve.
 
 ## Input shapes
 

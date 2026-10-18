@@ -12,7 +12,8 @@ disagree with them.
 
 This is the design of [plan](plan.md) item 18. The site is
 built and deployed: `website/` renders every page type below in the final
-design, behind a private link. What is left is in
+design, open to every reader and kept out of search engines. What is left
+is in
 [§ Build order](#build-order).
 
 ## How it works
@@ -255,17 +256,11 @@ screen).
 - **Worker**: `website/wrangler.jsonc`, a Worker on the custom domain
   `jig-harness.dev` that serves the built files; its `workers.dev` and
   preview addresses are off, so the domain is the only way in.
-- **Private link**: until the site is public, `website/worker/index.ts`
-  serves a page only to a reader holding the key. The link
-  `https://jig-harness.dev/?key=<key>` sets a 30-day cookie holding the
-  key's SHA-256 digest and redirects to the same address without the key;
-  a request with neither a valid key nor a valid cookie gets a short "this
-  site is private" page. The key is the Worker's `SITE_KEY` secret
-  (`wrangler secret put SITE_KEY`); with none set, nothing but `robots.txt`
-  is served, and changing it ends every visit and every link sent out. Anyone who holds the link can forward it, so it is for people the
-  site is shown to on purpose, not for anything secret. `robots.txt`
-  (disallow everything) is served to everyone, and every page also carries
-  `noindex`.
+- **Open, not indexed**: every reader is served. `website/worker/index.ts`
+  answers with the built page or file, or a page's Markdown twin for a
+  reader that prefers Markdown. `robots.txt` (disallow everything) and
+  `noindex` on every page keep the site out of search engines until it
+  opens to them ([§ Build order](#build-order)).
 - **Deploy**: `.github/workflows/website.yml` deploys every push to `main`
   (the site renders the documents, so most changes reach it). It needs the
   `CLOUDFLARE_API_TOKEN` secret of the `website` environment: a token
@@ -339,11 +334,9 @@ Markdown, and an index to find it by.
   images; not code), reads the HTML the file carries as it reads a page, and
   fails the build on a link to a missing page or twin, or to an anchor the
   page or twin does not have, as it does for a page.
-- **Served like any page.** The private-link gate covers all of it: until the
-  site opens, only a reader or an agent given the link can fetch it, and
-  `robots.txt` asks crawlers to stay out. Opening the site removes the key
-  check, so any agent can fetch it, and takes `robots.txt` and `noindex` off,
-  so crawlers and search engines can find it.
+- **Served like any page.** Any reader or agent can fetch it, and
+  `robots.txt` asks crawlers to stay out. Opening the site to search engines
+  takes `robots.txt` and `noindex` off, so crawlers can find it.
 
 ### Working on the site
 
@@ -378,7 +371,8 @@ update is not a plugin release.
 
 ## Build order
 
-Done: the site, its design, CI and deployment from `main` behind a private link.
+Done: the site, its design, CI and deployment from `main`, open to every
+reader.
 Open, each its own pull request:
 
 1. **Contrast gate.** A check, run in CI after the build, that every text
@@ -392,10 +386,10 @@ Open, each its own pull request:
 4. **Skill page summary cards.** "It never" and "Runs on" for each skill,
    once the skills' READMEs state their limits and platforms in a form a
    page can read.
-5. **Opening the site** (a person's decision, with the repository's own
-   visibility): remove `noindex`, `robots.txt` and the key check in `website/worker/index.ts`;
-   review the site's own copy (the home page's statements, the limits, the
-   figure captions); decide whether the live audit example keeps showing a
+5. **Opening the site to search engines** (a person's decision): remove
+   `noindex`, `robots.txt` and the "Internal preview" strip; review the
+   site's own copy (the home page's statements, the limits, the figure
+   captions); decide whether the live audit example keeps showing a
    third party's repository or shows Jig's own audit.
 
 ## Left out

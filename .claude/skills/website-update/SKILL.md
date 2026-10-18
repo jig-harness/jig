@@ -129,9 +129,9 @@ beats a guessed edit.
 - Site copy follows the repository's writing rules ([AGENTS.md](../../../AGENTS.md)):
   plain language, terms linked to the glossary, no origin references, no
   history in the copy.
-- **Leave alone**: the private-link gate (`website/worker/`), `noindex`,
-  `robots.txt` and the "Internal preview" strip. Opening the site is a
-  person's decision ([design/website.md § Build order](../../../design/website.md#build-order)).
+- **Leave alone**: `noindex`, `robots.txt` and the "Internal preview"
+  strip. Opening the site to search engines is a person's decision
+  ([design/website.md § Build order](../../../design/website.md#build-order)).
   Copy whose new wording needs a person's judgement (what Jig claims, what it
   never does) goes in the report as a question, not into an edit.
 

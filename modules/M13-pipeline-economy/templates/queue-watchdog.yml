@@ -56,15 +56,10 @@ jobs:
       - uses: actions/checkout@<pinned-sha>
       # The script runs from a pinned Jig checkout: it imports helpers from
       # across that repository, so a lone copy does not resolve its imports.
-      # github.token reads only this repository, so a private Jig repository
-      # needs a read-only credential for it (a fine-grained token with
-      # Contents: read, or a deploy key through `ssh-key`); drop `token`
-      # when Jig is public.
       - uses: actions/checkout@<pinned-sha>
         with:
           repository: <owner/name of the Jig repository>
           ref: <pinned Jig commit>
-          token: ${{ secrets.<read-only token for the Jig repository> }}
           persist-credentials: false
           path: jig
       # mise reads the tool pins of its working directory, so point it at the

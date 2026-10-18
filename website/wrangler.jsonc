@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // Serves the built site to readers who hold the key (worker/index.ts).
+  // Serves the built site (worker/index.ts).
   "name": "jig-website",
   "account_id": "5aa39c31a8adb212a10de1a76e9e1bad",
   "compatibility_date": "2026-10-13",
@@ -10,7 +10,8 @@
     "binding": "ASSETS",
     "not_found_handling": "404-page",
     "html_handling": "auto-trailing-slash",
-    // Every request, files included, passes the key check first.
+    // Every request passes the Worker first, so a page can answer a reader
+    // that prefers Markdown with its twin.
     "run_worker_first": true
   },
   // Only the custom domain serves the site, so there is one way in to guard.
