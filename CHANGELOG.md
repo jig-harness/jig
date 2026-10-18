@@ -145,6 +145,12 @@ changes are marked **Breaking** and say what a consumer changes.
   in a stable Bun release, with what the move would cost: the custom rules,
   the ratchet's counting, the rule settings and the module mappings.
 - The website serves every page as Markdown for coding agents (each page at a directory address; the not-found page has no twin): a request that asks for `text/markdown` gets the page's Markdown twin (also at the page's address with `index.md` added), and the site has an `llms.txt` at the root and one in each of the modules, skills, principles, factory, adopt and plugin sections, linking to those twins, the section overviews and the skills' agent contracts among them. The build converts each page, keeping the anchors twins link to, checks every link in the twins and the `llms.txt` files, and fails on a missing page, twin or anchor ([design/website.md](design/website.md#text-for-agents-markdown-and-llmstxt)); the glossary defines the term.
+- The roadmap gains item 22, merge conflicts measured: a report of where a
+  repository's merges conflict, from its git history and from each
+  resolution `resolve-conflicts` makes, with the cause of each conflict and
+  the change that removes it. [design/merge-conflicts.md](design/merge-conflicts.md)
+  has how it will work, starting from a replay of Jig's own history. The
+  glossary gains *conflict hotspot*.
 
 ### Changed
 
