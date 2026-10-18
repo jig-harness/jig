@@ -193,9 +193,11 @@ no up-to-date branch, which would cost a pull, a push and a full CI run on
 every open pull request at each merge. Only the `jig-release` GitHub App,
 which pushes the release commit after a merge
 ([ADR-0004](docs/adr/ADR-0004-change-notes-released-after-the-merge.md)),
-and repository administrators may bypass it. `bun scripts/check-branch-protection.ts`
-checks the setting against that policy; it needs an administrator's `gh`
-login, so it runs by hand, not in CI.
+and repository administrators may bypass it.
+`bun scripts/check-branch-protection.ts` checks the setting against that
+policy; it needs an administrator's `gh` login, so it runs by hand, not in
+CI. This repository's ruleset also requires the AI reviewer's check, beyond
+that policy.
 
 Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out the long
 drive-pr suite and the website's tests, which CI runs in the drive-pr job and
@@ -368,11 +370,17 @@ links to private systems out of commit messages: a pull request description
 may link an issue; a commit message is history that anyone reads.
 
 A pull request from a fork runs the gates once a maintainer approves the
-workflow run, and the AI reviewer reads it once a maintainer adds the
-`ai-review` label; a maintainer's own pull requests get both without a
-step. Pull requests open as drafts and are driven to convergence the same
-way ([§ Pull-request lifecycle](#pull-request-lifecycle)); a contributor
-without the plugin drives the review by hand, one round at a time.
+workflow run. The AI reviewer reads only pull requests whose branch is in
+this repository, and a branch pushed here runs its workflows with this
+repository's own token. So a maintainer first reads the whole change, its
+workflows and anything the gates run above all; then pushes the branch here,
+with the contributor's commits and sign-off as they are, and opens the pull
+request from it. That pull request carries the review and the merge, and the
+fork's closes with a link to it. A maintainer's own pull requests get both
+without a step. Pull requests open as drafts and are driven to convergence
+the same way ([§ Pull-request lifecycle](#pull-request-lifecycle)); a
+contributor without the plugin drives the review by hand, one round at a
+time.
 
 ## Adding or changing a plugin skill
 

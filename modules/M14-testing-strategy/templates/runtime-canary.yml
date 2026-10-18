@@ -91,14 +91,12 @@ jobs:
         run: >-
           bun test <paths> --reporter=junit --reporter-outfile=reports/canary.xml
       # The skip tripwire runs from a pinned Jig checkout: it imports helpers
-      # from across that repository. A private Jig repository needs a
-      # read-only credential here; drop `token` when Jig is public.
+      # from across that repository.
       - uses: actions/checkout@<pinned-sha>
         if: always()
         with:
           repository: <owner/name of the Jig repository>
           ref: <pinned Jig commit>
-          token: ${{ secrets.<read-only token for the Jig repository> }}
           persist-credentials: false
           path: jig
       - name: Fail unless every suite executed a test
